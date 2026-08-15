@@ -4,7 +4,7 @@ Without importing it: `rbt generate` may not have run, no servicer has
 to exist, and the file may be half written. Only the source.
 """
 import unittest
-from rbt.dashboard.v1.dashboard_pb2 import Call, MethodCalls
+from rbt.dashboard.v1.dashboard_pb2 import Call, MethodCalls, Unanalyzed
 from reboot.dashboard.call_analysis import analyze, parse
 
 # Every servicer below is written against this, so that the tests read
@@ -30,6 +30,14 @@ def _calls(analyses: dict[str, MethodCalls],
     return [
         (call.state_type, call.method, Call.How.Name(call.how))
         for call in analyses[key].calls
+    ]
+
+
+def _unanalyzed(analyses: dict[str, MethodCalls],
+                key: str) -> list[tuple[str, str]]:
+    return [
+        (Unanalyzed.Why.Name(entry.why), entry.expression)
+        for entry in analyses[key].unanalyzed
     ]
 
 
@@ -134,6 +142,7 @@ class CallAnalysisTest(unittest.TestCase):
         )
 
         self.assertEqual(_calls(analyses, 'bank.v1.Account.balance'), [])
+        self.assertEqual(_unanalyzed(analyses, 'bank.v1.Account.balance'), [])
 
     def test_the_servicers_own_state(self) -> None:
         analyses = _analyze(
@@ -202,6 +211,71 @@ class CallAnalysisTest(unittest.TestCase):
             [('bank.v1.Account', 'balance', 'CALL')],
         )
 
+    def test_a_helper_in_the_same_file(self) -> None:
+        analyses = _analyze(
+            servicer=_servicer(
+                '''
+    async def move(self, context, request):
+        await _transfer(context, request.amount)
+''' + '''
+
+async def _transfer(context, amount):
+    await Account.ref('a').withdraw(context, amount=amount)
+'''
+            )
+        )
+
+        self.assertEqual(
+            _calls(analyses, 'bank.v1.Account.move'),
+            [('bank.v1.Account', 'withdraw', 'CALL')],
+        )
+
+    def test_a_helper_in_another_file(self) -> None:
+        analyses = _analyze(
+            servicer=_servicer(
+                '''
+    async def move(self, context, request):
+        await transfer(context, request.amount)
+'''
+            ).replace(
+                'from bank.v1.bank_rbt import Bank',
+                'from helpers import transfer',
+            ),
+            helpers=IMPORTS + '''
+
+async def transfer(context, amount):
+    await Account.ref('a').withdraw(context, amount=amount)
+''',
+        )
+
+        self.assertEqual(
+            _calls(analyses, 'bank.v1.Account.move'),
+            [('bank.v1.Account', 'withdraw', 'CALL')],
+        )
+
+    def test_a_helper_reached_through_its_module(self) -> None:
+        analyses = _analyze(
+            servicer=_servicer(
+                '''
+    async def move(self, context, request):
+        await helpers.transfer(context, request.amount)
+'''
+            ).replace(
+                'from bank.v1.bank_rbt import Bank',
+                'import helpers',
+            ),
+            helpers=IMPORTS + '''
+
+async def transfer(context, amount):
+    await Account.ref('a').withdraw(context, amount=amount)
+''',
+        )
+
+        self.assertEqual(
+            _calls(analyses, 'bank.v1.Account.move'),
+            [('bank.v1.Account', 'withdraw', 'CALL')],
+        )
+
     def test_a_function_that_closes_over_the_context(self) -> None:
         """It is given no context, so nothing is passed to follow; what
         makes its calls findable is that it is read where what it
@@ -224,6 +298,26 @@ class CallAnalysisTest(unittest.TestCase):
             [('bank.v1.Account', 'balance', 'CALL')],
         )
 
+    def test_a_helper_that_calls_itself(self) -> None:
+        analyses = _analyze(
+            servicer=_servicer(
+                '''
+    async def sweep(self, context, request):
+        await _sweep(context, request.id)
+''' + '''
+
+async def _sweep(context, id):
+    await Account.ref(id).withdraw(context, amount=1)
+    await _sweep(context, id)
+'''
+            )
+        )
+
+        self.assertEqual(
+            _calls(analyses, 'bank.v1.Account.sweep'),
+            [('bank.v1.Account', 'withdraw', 'CALL')],
+        )
+
     def test_the_same_call_written_twice_is_said_once(self) -> None:
         analyses = _analyze(
             servicer=_servicer(
@@ -239,6 +333,98 @@ class CallAnalysisTest(unittest.TestCase):
             _calls(analyses, 'bank.v1.Account.twice'),
             [('bank.v1.Account', 'deposit', 'CALL')],
         )
+
+    ###################################################################
+    # What it cannot follow.
+
+    def test_a_context_reaching_a_function_it_cannot_read(self) -> None:
+        analyses = _analyze(
+            servicer=_servicer(
+                '''
+    async def move(self, context, request):
+        await elsewhere.transfer(context, request.amount)
+'''
+            )
+        )
+
+        self.assertEqual(_calls(analyses, 'bank.v1.Account.move'), [])
+        self.assertEqual(
+            _unanalyzed(analyses, 'bank.v1.Account.move'),
+            [
+                (
+                    'CONTEXT_PASSED_TO_UNKNOWN_FUNCTION',
+                    'elsewhere.transfer(context, request.amount)',
+                ),
+            ],
+        )
+
+    def test_a_reference_stored_where_it_cannot_be_followed(self) -> None:
+        analyses = _analyze(
+            servicer=_servicer(
+                '''
+    async def keep(self, context, request):
+        self.account = Account.ref(request.id)
+'''
+            )
+        )
+
+        self.assertEqual(
+            _unanalyzed(analyses, 'bank.v1.Account.keep'),
+            [('REFERENCE_ESCAPED', 'self.account')],
+        )
+
+    def test_a_reference_put_into_a_container(self) -> None:
+        analyses = _analyze(
+            servicer=_servicer(
+                '''
+    async def gather(self, context, request):
+        accounts = [Account.ref(id) for id in request.ids]
+'''
+            )
+        )
+
+        self.assertEqual(
+            _unanalyzed(analyses, 'bank.v1.Account.gather'),
+            [('REFERENCE_ESCAPED', 'Account.ref(id)')],
+        )
+
+    def test_a_method_the_source_does_not_spell(self) -> None:
+        analyses = _analyze(
+            servicer=_servicer(
+                '''
+    async def dynamic(self, context, request):
+        await getattr(Account.ref(request.id), request.method)(context)
+'''
+            )
+        )
+
+        self.assertEqual(
+            _unanalyzed(analyses, 'bank.v1.Account.dynamic'),
+            [
+                (
+                    'UNKNOWN_METHOD',
+                    'getattr(Account.ref(request.id), request.method)',
+                ),
+            ],
+        )
+
+    def test_ordinary_python_is_not_reported(self) -> None:
+        """Everything the analysis never claimed to follow would drown
+        out the little it genuinely could not."""
+        analyses = _analyze(
+            servicer=_servicer(
+                '''
+    async def ordinary(self, context, request):
+        logging.info('a balance was read')
+        total = sum(entry.amount for entry in self.state.entries)
+        self.state.balance = round(total, 2)
+        return Account.BalanceResponse(amount=self.state.balance)
+'''
+            )
+        )
+
+        self.assertEqual(_calls(analyses, 'bank.v1.Account.ordinary'), [])
+        self.assertEqual(_unanalyzed(analyses, 'bank.v1.Account.ordinary'), [])
 
 
 if __name__ == '__main__':

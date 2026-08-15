@@ -17,7 +17,7 @@ what it does not know is visible rather than merely missing.
 import ast
 import os
 from dataclasses import dataclass
-from rbt.dashboard.v1.dashboard_pb2 import Call, MethodCalls
+from rbt.dashboard.v1.dashboard_pb2 import Call, MethodCalls, Unanalyzed
 from typing import Optional, Union
 
 # The suffix a generated Python module carries. A name imported from
@@ -221,6 +221,12 @@ class _MethodAnalyzer:
     def __init__(self, modules: dict[str, Module]):
         self._modules = modules
         self._calls: list[Call] = []
+        self._unanalyzed: list[Unanalyzed] = []
+
+        # Functions being followed right now, so that a helper that
+        # calls itself, or two that call each other, stop rather than
+        # recurse forever.
+        self._following: set[str] = set()
 
     def analyze(
         self,
@@ -236,6 +242,7 @@ class _MethodAnalyzer:
             state_type=servicer.state_type,
             method=method.name,
             calls=_unique(self._calls),
+            unanalyzed=_unique(self._unanalyzed),
         )
 
     def _parameters(
@@ -294,7 +301,7 @@ class _MethodAnalyzer:
                 self._expression(value_node, module, environment)
 
             case ast.Return(value=ast.expr() as value_node):
-                self._expression(value_node, module, environment)
+                self._escapes(value_node, module, environment)
 
             # A function written inside a method can use the context it
             # closes over, so it is read here, where what it closes
@@ -384,6 +391,13 @@ class _MethodAnalyzer:
                             element_value = _Reference(state_type, Call.CALL)
                     self._bind(element, element_value, module, environment)
 
+            # Stored on an attribute or into a container, where calls
+            # made through it later cannot be followed.
+            case _:
+                match value:
+                    case _Reference() | _Constructed():
+                        self._escaped(target)
+
     ###################################################################
     # Expressions.
 
@@ -427,7 +441,7 @@ class _MethodAnalyzer:
                 ast.Set(elts=elements)
             ):
                 for element in elements:
-                    self._expression(element, module, environment)
+                    self._escapes(element, module, environment)
                 return None
 
             case ast.Dict(keys=keys, values=values):
@@ -435,9 +449,9 @@ class _MethodAnalyzer:
                     # A `**rest` in a dict display names no key.
                     match key:
                         case ast.expr():
-                            self._expression(key, module, environment)
+                            self._escapes(key, module, environment)
                 for value_node in values:
-                    self._expression(value_node, module, environment)
+                    self._escapes(value_node, module, environment)
                 return None
 
             case (
@@ -486,7 +500,27 @@ class _MethodAnalyzer:
             for condition in generator.ifs:
                 self._expression(condition, module, nested)
         for element in elements:
-            self._expression(element, module, nested)
+            self._escapes(element, module, nested)
+
+    def _escapes(
+        self,
+        node: ast.expr,
+        module: Module,
+        environment: dict[str, _Value],
+    ) -> None:
+        """Evaluates an expression in a place a reference cannot be
+        followed out of, recording it if one goes there."""
+        match self._expression(node, module, environment):
+            case _Reference() | _Constructed():
+                self._escaped(node)
+
+    def _escaped(self, node: ast.expr) -> None:
+        self._unanalyzed.append(
+            Unanalyzed(
+                why=Unanalyzed.REFERENCE_ESCAPED,
+                expression=ast.unparse(node),
+            )
+        )
 
     ###################################################################
     # Calls.
@@ -576,6 +610,9 @@ class _MethodAnalyzer:
             case _Servicer(state_type=state_type):
                 if attribute == 'ref':
                     return _Reference(state_type, Call.CALL)
+                self._follow_servicer_method(
+                    node, receiver, attribute, arguments
+                )
                 return None
 
             # The context's own API, such as `context.loop(...)`, is
@@ -584,6 +621,7 @@ class _MethodAnalyzer:
                 return None
 
             case _:
+                self._follow_module_function(node, arguments, module)
                 return None
 
     def _named_call(
@@ -594,9 +632,159 @@ class _MethodAnalyzer:
         module: Module,
         environment: dict[str, _Value],
     ) -> _Value:
-        # Calling a state class itself is not something the generated
-        # code offers; nothing to say about it.
+        if name in module.state_classes:
+            # Calling a state class itself is not something the
+            # generated code offers; nothing to say about it.
+            return None
+
+        match name, arguments.positional:
+            case 'getattr', [_Reference(), *_]:
+                self._unanalyzed.append(
+                    Unanalyzed(
+                        why=Unanalyzed.UNKNOWN_METHOD,
+                        expression=ast.unparse(node),
+                    )
+                )
+                return None
+
+        self._follow_function(node, name, arguments, module)
+
         return None
+
+    ###################################################################
+    # Following.
+
+    def _follow_function(
+        self,
+        node: ast.Call,
+        name: str,
+        arguments: '_Arguments',
+        module: Module,
+    ) -> None:
+        """Follows a plain function call, when a context reaches it.
+
+        A context is what lets a function make a call of its own, so
+        one that gets a context is worth reading; one that does not
+        cannot call anything.
+        """
+        if not arguments.has_context:
+            return
+
+        found = self._resolve_function(name, module)
+
+        if found is None:
+            self._unfollowable(node)
+            return
+
+        target_module, function = found
+
+        self._follow(target_module, function, arguments)
+
+    def _follow_module_function(
+        self,
+        node: ast.Call,
+        arguments: '_Arguments',
+        module: Module,
+    ) -> None:
+        """Follows a call written through a module, such as
+        `helpers.transfer(context, ...)`."""
+        if not arguments.has_context:
+            return
+
+        match node.func:
+            case ast.Attribute(value=ast.Name(id=name),
+                               attr=attribute) if (name in module.modules):
+                other = self._modules.get(module.modules[name])
+                if other is not None:
+                    function = other.functions.get(attribute)
+                    if function is not None:
+                        self._follow(other, function, arguments)
+                        return
+
+        self._unfollowable(node)
+
+    def _follow_servicer_method(
+        self,
+        node: ast.Call,
+        servicer: _Servicer,
+        attribute: str,
+        arguments: '_Arguments',
+    ) -> None:
+        """Follows a helper a servicer keeps on itself."""
+        if not arguments.has_context:
+            return
+
+        module = self._modules.get(servicer.module)
+        class_definition = (
+            None if module is None else module.classes.get(servicer.name)
+        )
+
+        if module is not None and class_definition is not None:
+            for statement in class_definition.body:
+                match statement:
+                    case (
+                        ast.FunctionDef(name=defined) |
+                        ast.AsyncFunctionDef(name=defined)
+                    ) if defined == attribute:
+                        self._follow(
+                            module, statement, arguments, servicer=servicer
+                        )
+                        return
+
+        self._unfollowable(node)
+
+    def _unfollowable(self, node: ast.Call) -> None:
+        self._unanalyzed.append(
+            Unanalyzed(
+                why=Unanalyzed.CONTEXT_PASSED_TO_UNKNOWN_FUNCTION,
+                expression=ast.unparse(node),
+            )
+        )
+
+    def _resolve_function(
+        self,
+        name: str,
+        module: Module,
+    ) -> Optional[tuple[Module, _Function]]:
+        function = module.functions.get(name)
+        if function is not None:
+            return (module, function)
+
+        imported = module.imports.get(name)
+        if imported is not None:
+            other = self._modules.get(imported[0])
+            if other is not None:
+                function = other.functions.get(imported[1])
+                if function is not None:
+                    return (other, function)
+
+        return None
+
+    def _follow(
+        self,
+        target_module: Module,
+        function: _Function,
+        arguments: '_Arguments',
+        servicer: Optional[_Servicer] = None,
+    ) -> None:
+        key = _function_key(
+            target_module,
+            function,
+            None if servicer is None else servicer.name,
+        )
+
+        if key in self._following:
+            return
+
+        self._following.add(key)
+        try:
+            self._statements(
+                function.body,
+                target_module,
+                _followed_environment(function, arguments, servicer),
+            )
+        finally:
+            self._following.discard(key)
 
     def _called(
         self,
@@ -614,11 +802,60 @@ class _Arguments:
     keyword: dict[str, _Value]
 
     @property
+    def has_context(self) -> bool:
+        return (
+            any(value is _CONTEXT for value in self.positional) or
+            any(value is _CONTEXT for value in self.keyword.values())
+        )
+
+    @property
     def takes_context(self) -> bool:
         """Whether a context comes first, which is how every Reboot
         method is called and how a constructor is told apart from the
         request and error types a state class also carries."""
         return len(self.positional) > 0 and self.positional[0] is _CONTEXT
+
+
+def _followed_environment(
+    function: _Function,
+    arguments: _Arguments,
+    servicer: Optional[_Servicer],
+) -> dict[str, _Value]:
+    """Binds what the caller passed to what the callee calls it."""
+    names = [argument.arg for argument in function.args.args]
+
+    environment: dict[str, _Value] = {}
+
+    if (
+        servicer is not None and len(names) > 0 and
+        names[0] in ('self', 'cls')
+    ):
+        environment[names[0]] = servicer
+        names = names[1:]
+
+    for index, value in enumerate(arguments.positional):
+        if index < len(names):
+            environment[names[index]] = value
+
+    for name, value in arguments.keyword.items():
+        if name in names:
+            environment[name] = value
+
+    return environment
+
+
+def _function_key(
+    module: Module,
+    function: _Function,
+    class_name: Optional[str] = None,
+) -> str:
+    """Names one function, so that two of the same name -- a module's
+    and a class's -- are not taken for each other."""
+    qualified = (
+        function.name
+        if class_name is None else f'{class_name}.{function.name}'
+    )
+    return f'{module.name}:{qualified}'
 
 
 def _unique(messages: list) -> list:

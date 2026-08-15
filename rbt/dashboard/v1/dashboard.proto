@@ -77,6 +77,34 @@ message Call {
   How how = 3;
 }
 
+// Something in a method that the analysis could not follow, so that
+// what it does not know is visible rather than merely missing.
+//
+// Only what there is reason to believe is Reboot-related is recorded.
+// Ordinary Python the analysis never followed in the first place is
+// not, or this would be a list of every line in the file.
+message Unanalyzed {
+  enum Why {
+    UNKNOWN = 0;
+    // A context reached a function that could not be found or read,
+    // so whatever calls that function makes are unknown.
+    CONTEXT_PASSED_TO_UNKNOWN_FUNCTION = 1;
+    // A reference to a state type was stored or passed somewhere that
+    // could not be followed, so calls made through it later are
+    // unknown.
+    REFERENCE_ESCAPED = 2;
+    // A reference was called with a method name that the source does
+    // not spell out.
+    UNKNOWN_METHOD = 3;
+  }
+
+  Why why = 1;
+
+  // The expression this is about, as Python's `ast` writes it back
+  // out, which is how the developer finds it in their file.
+  string expression = 2;
+}
+
 // The calls one method's implementation makes.
 message MethodCalls {
   // The state type and method whose implementation this describes,
@@ -85,6 +113,7 @@ message MethodCalls {
   string method = 2;
 
   repeated Call calls = 3;
+  repeated Unanalyzed unanalyzed = 4;
 }
 
 ////////////////////////////////////////////////////////////////////////
