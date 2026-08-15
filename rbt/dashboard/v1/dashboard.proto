@@ -40,6 +40,55 @@ message StateTypeInfo {
 
 ////////////////////////////////////////////////////////////////////////
 
+// One Reboot call that a method's implementation makes.
+message Call {
+  // How the call is reached, which is the chain the developer wrote
+  // between the reference and the method.
+  enum How {
+    UNKNOWN = 0;
+    // A plain method call on a reference.
+    CALL = 1;
+    // A constructor, which both makes the state and hands back a
+    // reference to it.
+    CONSTRUCT = 2;
+    // Reached through `.schedule(when=...)`.
+    SCHEDULE = 3;
+    // Reached through `.spawn()`.
+    SPAWN = 4;
+    // Reached through `.reactively()`.
+    REACTIVELY = 5;
+    // Reached through `.until(alias)`.
+    UNTIL = 6;
+    // A workflow's `.read(context)`.
+    READ = 7;
+    // A workflow's `.write(context, ...)`.
+    WRITE = 8;
+  }
+
+  // The state type called, spelled the way `StateTypeInfo` spells it,
+  // such as `bank.v1.Account`.
+  string state_type = 1;
+
+  // The method called, spelled the way the call spells it, which is
+  // the way `MethodInfo` spells it too. Empty for `READ` and `WRITE`,
+  // which name no method.
+  string method = 2;
+
+  How how = 3;
+}
+
+// The calls one method's implementation makes.
+message MethodCalls {
+  // The state type and method whose implementation this describes,
+  // spelled the way `StateTypeInfo` and `MethodInfo` spell them.
+  string state_type = 1;
+  string method = 2;
+
+  repeated Call calls = 3;
+}
+
+////////////////////////////////////////////////////////////////////////
+
 // What the dashboard application has read of the developer's API
 // files, so that a browser can read it without reaching the
 // application itself.
