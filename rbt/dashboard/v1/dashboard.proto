@@ -40,6 +40,111 @@ message StateTypeInfo {
 
 ////////////////////////////////////////////////////////////////////////
 
+// One Reboot call that a method's implementation makes.
+message Call {
+  // How the call is reached, which is the chain the developer wrote
+  // between the reference and the method.
+  enum How {
+    UNKNOWN = 0;
+    // A plain method call on a reference.
+    CALL = 1;
+    // A constructor, which both makes the state and hands back a
+    // reference to it.
+    CONSTRUCT = 2;
+    // Reached through `.schedule(when=...)`.
+    SCHEDULE = 3;
+    // Reached through `.spawn()`.
+    SPAWN = 4;
+    // Reached through `.reactively()`.
+    REACTIVELY = 5;
+    // Reached through `.until(alias)`.
+    UNTIL = 6;
+    // A workflow's `.read(context)`.
+    READ = 7;
+    // A workflow's `.write(context, ...)`.
+    WRITE = 8;
+  }
+
+  // The state type called, spelled the way `StateTypeInfo` spells it,
+  // such as `bank.v1.Account`.
+  string state_type = 1;
+
+  // The method called, spelled the way the call spells it, which is
+  // the way `MethodInfo` spells it too. Empty for `READ` and `WRITE`,
+  // which name no method.
+  string method = 2;
+
+  How how = 3;
+}
+
+// Something in a method that the analysis could not follow, so that
+// what it does not know is visible rather than merely missing.
+//
+// Only what there is reason to believe is Reboot-related is recorded.
+// Ordinary Python the analysis never followed in the first place is
+// not, or this would be a list of every line in the file.
+message Unanalyzed {
+  enum Why {
+    UNKNOWN = 0;
+    // A context reached a function that could not be found or read,
+    // so whatever calls that function makes are unknown.
+    CONTEXT_PASSED_TO_UNKNOWN_FUNCTION = 1;
+    // A reference to a state type was stored or passed somewhere that
+    // could not be followed, so calls made through it later are
+    // unknown.
+    REFERENCE_ESCAPED = 2;
+    // A reference was called with a method name that the source does
+    // not spell out.
+    UNKNOWN_METHOD = 3;
+  }
+
+  Why why = 1;
+
+  // The expression this is about, as Python's `ast` writes it back
+  // out, which is how the developer finds it in their file.
+  string expression = 2;
+}
+
+// One source file as the analysis last saw it, so that a dashboard
+// starting again can tell which files it need not read.
+message FileState {
+  // Relative to the source directory, e.g. `bank_servicer.py`.
+  string filename = 1;
+
+  // Compared for being different rather than for being newer:
+  // checking out an older branch moves a file's time backwards, and
+  // that is as much an edit as any other.
+  uint64 modified_ns = 2;
+
+  uint64 size = 3;
+}
+
+// What one method's analysis depended on, so that it can be kept when
+// none of those things has changed.
+message MethodHashes {
+  string state_type = 1;
+  string method = 2;
+
+  // The method's own hash and that of every function the analysis
+  // followed into, by `<file>:<qualified name>`. A change anywhere in
+  // that set, however many calls away it is, is what makes the method
+  // worth analyzing again.
+  map<string, string> hashes = 3;
+}
+
+// The calls one method's implementation makes.
+message MethodCalls {
+  // The state type and method whose implementation this describes,
+  // spelled the way `StateTypeInfo` and `MethodInfo` spell them.
+  string state_type = 1;
+  string method = 2;
+
+  repeated Call calls = 3;
+  repeated Unanalyzed unanalyzed = 4;
+}
+
+////////////////////////////////////////////////////////////////////////
+
 // What the dashboard application has read of the developer's API
 // files, so that a browser can read it without reaching the
 // application itself.
@@ -55,6 +160,29 @@ message API {
   // half-written file is the normal case while someone is typing, and
   // saying so beats showing nothing.
   string error = 2;
+
+  // What each method's implementation calls, read from the
+  // developer's source files rather than from their API files.
+  //
+  // Held beside `state_types` rather than inside them, with its own
+  // writer, because a different watcher on a different directory
+  // produces it; one writer replacing the other's field would lose
+  // whichever wrote first.
+  repeated MethodCalls method_calls = 3;
+
+  // Why the source files could not be read, if they could not be.
+  string calls_error = 4;
+
+  // What the analysis last read, so that a dashboard starting again
+  // reads only what has changed since. Deliberately not in
+  // `APIGetResponse`: a browser has no use for any of it.
+  repeated FileState file_states = 5;
+  repeated MethodHashes method_hashes = 6;
+
+  // What produced all of the above. A dashboard whose analysis is not
+  // the one that wrote this cannot trust it, however untouched the
+  // developer's source is, so it reads everything again.
+  string analyzer_version = 7;
 }
 
 message APIGetRequest {}
@@ -62,6 +190,8 @@ message APIGetRequest {}
 message APIGetResponse {
   repeated StateTypeInfo state_types = 1;
   string error = 2;
+  repeated MethodCalls method_calls = 3;
+  string calls_error = 4;
 }
 
 message APIUpdateRequest {
@@ -71,9 +201,33 @@ message APIUpdateRequest {
 
 message APIUpdateResponse {}
 
+message APIUpdateCallsRequest {
+  repeated MethodCalls method_calls = 1;
+  string error = 2;
+  repeated FileState file_states = 3;
+  repeated MethodHashes method_hashes = 4;
+  string analyzer_version = 5;
+}
+
+message APIUpdateCallsResponse {}
+
+message APIAnalysisRequest {}
+
+message APIAnalysisResponse {
+  repeated MethodCalls method_calls = 1;
+  string error = 2;
+  repeated FileState file_states = 3;
+  repeated MethodHashes method_hashes = 4;
+  string analyzer_version = 5;
+}
+
 message APIWatchRequest {}
 
 message APIWatchResponse {}
+
+message APIWatchCallsRequest {}
+
+message APIWatchCallsResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -143,9 +297,33 @@ service APIMethods {
     };
   }
 
+  rpc UpdateCalls(APIUpdateCallsRequest) returns (APIUpdateCallsResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // What the last analysis read and concluded, which is what lets a
+  // dashboard starting again pick up where the one before it left
+  // off. Apart from `Get` because this is for the analysis to read,
+  // not for a browser.
+  rpc Analysis(APIAnalysisRequest) returns (APIAnalysisResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
   // Watches the developer's API files for as long as the dashboard
   // application runs, reading each one that changes.
   rpc Watch(APIWatchRequest) returns (APIWatchResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  // Watches the developer's source files the same way, analyzing what
+  // their methods call. Its own workflow rather than more of `Watch`
+  // because a workflow may only have one loop, and because a source
+  // directory the developer never named leaves this one with nothing
+  // to do while `Watch` still has its files.
+  rpc WatchCalls(APIWatchCallsRequest) returns (APIWatchCallsResponse) {
     option (rbt.v1alpha1.method).workflow = {
     };
   }

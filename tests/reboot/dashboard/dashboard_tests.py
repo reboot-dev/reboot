@@ -8,7 +8,14 @@ API read, and rendering) in one process.
 import asyncio
 import socket
 import unittest
-from rbt.dashboard.v1.dashboard_pb2 import FieldInfo, MethodInfo, StateTypeInfo
+from rbt.dashboard.v1.dashboard_pb2 import (
+    Call,
+    FieldInfo,
+    MethodCalls,
+    MethodInfo,
+    StateTypeInfo,
+    Unanalyzed,
+)
 from rbt.dashboard.v1.dashboard_rbt import API, Preferences
 from reboot.aio.tests import Reboot
 from reboot.dashboard.constants import (
@@ -140,6 +147,39 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             error='',
         )
 
+    async def _record_method_calls(self) -> None:
+        """Puts what analyzing a servicer would yield into the
+        application, for the same reason `_record_state_types` does."""
+        context = self.rbt.create_external_context(name=self.id())
+        await API.ref(API_ID).UpdateCalls(
+            context,
+            method_calls=[
+                MethodCalls(
+                    state_type='shop.v1.Shop',
+                    method='look',
+                    calls=[
+                        Call(
+                            state_type='shop.v1.Depot',
+                            method='stock',
+                            how=Call.CALL,
+                        ),
+                        Call(
+                            state_type='shop.v1.Depot',
+                            method='restock',
+                            how=Call.SCHEDULE,
+                        ),
+                    ],
+                    unanalyzed=[
+                        Unanalyzed(
+                            why=Unanalyzed.CONTEXT_PASSED_TO_UNKNOWN_FUNCTION,
+                            expression='elsewhere.audit(context)',
+                        ),
+                    ],
+                ),
+            ],
+            error='',
+        )
+
     def _run(self, body):
         driver = _driver()
         try:
@@ -183,6 +223,40 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         # declares one of each, which also covers the singular.
         self.assertIn('1 state type', page)
         self.assertIn('1 method', page)
+
+    async def test_shows_what_a_method_calls(self) -> None:
+        # What a method calls is read from the developer's source
+        # files, so it arrives separately from what their API files
+        # declare and is joined back onto the method here.
+        def body(driver):
+            driver.get(f'{self.url}{DASHBOARD_PATH}/')
+            WebDriverWait(driver, 60).until(
+                expected_conditions.presence_of_element_located(
+                    (By.CLASS_NAME, 'method-calls')
+                )
+            )
+            return driver.page_source
+
+        await self._record_state_types()
+        await self._record_method_calls()
+
+        page = await asyncio.to_thread(self._run, body)
+
+        # Each call says how it is reached, which is what tells a
+        # scheduled call from an awaited one.
+        self.assertIn('calls', page)
+        self.assertIn('schedules', page)
+        self.assertIn('stock', page)
+        self.assertIn('restock', page)
+
+        # A call links to the state type it calls, which the page
+        # renders in a section carrying that name as its id.
+        self.assertIn('#shop.v1.Depot', page)
+
+        # What could not be followed is shown too, so that the list
+        # above does not read as everything there is.
+        self.assertIn('elsewhere.audit(context)', page)
+        self.assertIn('calls something this could not read', page)
 
     async def test_says_why_a_file_could_not_be_read(self) -> None:
         # A half-written file is the normal case while someone is

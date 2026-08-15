@@ -36,6 +36,13 @@ PREFERENCES_ID = 'preferences'
 # is serving, and the dashboard is meant to be startable that early.
 ENVVAR_RBT_API_DIRECTORY = 'RBT_API_DIRECTORY'
 
+# The directory the developer's servicers are in, which `rbt dashboard`
+# takes as `--source-directory`. Separate from the API directory
+# because what a method calls is written where the method is
+# implemented, not where its API is declared. Unset when the developer
+# named no such directory, in which case nothing is analyzed.
+ENVVAR_RBT_SOURCE_DIRECTORY = 'RBT_SOURCE_DIRECTORY'
+
 # The `Presence` state the dashboard page subscribes to, recording who
 # is looking at a dashboard right now. `rbt dev run` reads it to decide
 # whether to open one.

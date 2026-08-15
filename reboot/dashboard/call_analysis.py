@@ -1,0 +1,1256 @@
+"""Finds the Reboot calls the developer's methods make.
+
+Reads their source rather than importing it. Importing would need the
+application's `sys.path` and its generated `_rbt` modules, which is to
+say a tree that builds; the dashboard is meant to work before one
+does, and a half-written file is the normal case while someone is
+typing.
+
+Nothing here needs the generated code anyway. A state type only
+becomes reachable by importing a generated module, and
+`from bank.v1.account_rbt import Account` names `bank.v1.Account`
+outright -- the same spelling the API files produce.
+
+What the analysis cannot follow it records, as `Unanalyzed`, so that
+what it does not know is visible rather than merely missing.
+"""
+import ast
+import hashlib
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from rbt.dashboard.v1.dashboard_pb2 import Call, MethodCalls, Unanalyzed
+from typing import Optional, Union
+
+
+def _version() -> str:
+    """What this analysis is, as a hash of the code that performs it.
+
+    Results an older dashboard wrote are only worth keeping if the
+    analysis that wrote them was this one; hashing the source is what
+    makes that true without anyone having to remember to raise a
+    number when they change how the analysis works.
+
+    Empty when the source cannot be read, which no result matches, so
+    everything is read again rather than trusted.
+    """
+    try:
+        return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    except OSError:
+        return ''
+
+
+VERSION = _version()
+
+# The suffix a generated Python module carries. A name imported from
+# one is a state type, and the package it came from qualifies it.
+GENERATED_SUFFIX = '_rbt'
+
+# The standard library's states are declared under `rbt.std.` and
+# generated into `..._rbt` like any other, but an application imports
+# them from the `reboot.std.` module that wraps each one and re-exports
+# it -- `from reboot.std.collections.v1.sorted_map import SortedMap`.
+# The two paths run in step, so a name imported from the wrapper names
+# the state its generated module would.
+STANDARD_LIBRARY_MODULE = 'reboot.std.'
+STANDARD_LIBRARY_PACKAGE = 'rbt.std.'
+
+# Chain methods that say when or how a call happens without changing
+# what is called, so a call written through them still names a state
+# type and a method.
+_IDEMPOTENCY_MODIFIERS = frozenset(
+    [
+        'idempotently',
+        'per_workflow',
+        'per_iteration',
+        'always',
+    ]
+)
+
+# Chain methods that a call is still written through, but which say
+# enough about the call to be worth reporting on their own.
+_HOW_MODIFIERS: dict[str, 'Call.How.ValueType'] = {
+    'reactively': Call.REACTIVELY,
+    'until': Call.UNTIL,
+    'schedule': Call.SCHEDULE,
+    'spawn': Call.SPAWN,
+}
+
+# Class methods that hand back a reference without calling anything.
+_REFERENCE_ENTRIES = frozenset(['ref', 'forall'])
+
+# Reference methods that reach the state itself rather than one of its
+# methods, and so name no method.
+_STATE_TERMINALS: dict[str, 'Call.How.ValueType'] = {
+    'read': Call.READ,
+    'write': Call.WRITE,
+}
+
+# What a servicer class defines that is not one of its state's
+# methods.
+_NOT_A_METHOD = frozenset(['authorizer'])
+
+# Decorators that say the same: a Reboot method is a plain `def`, or a
+# `classmethod` when it is a workflow. A property is how an
+# application names a state it uses throughout, not a method of its
+# own.
+_NOT_A_METHOD_DECORATORS = frozenset(
+    [
+        'property',
+        'cached_property',
+        'staticmethod',
+    ]
+)
+
+
+class _Context:
+    """The context a Reboot method is given, or anything bound from
+    it. Passing one to a function is what makes that function worth
+    following: it is how the function can make a call of its own."""
+
+
+_CONTEXT = _Context()
+
+
+@dataclass(frozen=True)
+class _StateClass:
+    """A generated state class, such as the `Account` bound by
+    `from bank.v1.account_rbt import Account`."""
+    state_type: str
+
+
+@dataclass(frozen=True)
+class _Reference:
+    """A reference to a state, and how far along the chain between the
+    reference and a method the source has got."""
+    state_type: str
+    how: 'Call.How.ValueType'
+
+
+@dataclass(frozen=True)
+class _Constructed:
+    """What a constructor hands back: a reference, and a response."""
+    state_type: str
+
+
+@dataclass(frozen=True)
+class _Servicer:
+    """The `self` of a servicer method."""
+    state_type: str
+    module: str
+    name: str
+
+
+_Value = Union[_StateClass, _Reference, _Constructed, _Servicer, _Context,
+               None]
+
+_Function = Union[ast.FunctionDef, ast.AsyncFunctionDef]
+
+
+@dataclass(frozen=True)
+class Analysis:
+    """What one method calls, and what that answer depended on.
+
+    `hashes` holds the method's own hash and that of every function the
+    analysis followed into, so that a change to a helper in another
+    file invalidates this as surely as a change to the method itself.
+    """
+    method_calls: MethodCalls
+    hashes: dict[str, str]
+
+
+def method_key(state_type: str, method: str) -> str:
+    """Names one method the way `Analysis`es are keyed."""
+    return f'{state_type}.{method}'
+
+
+def _docstring_stripped(body: list[ast.stmt]) -> list[ast.stmt]:
+    match body:
+        case [ast.Expr(value=ast.Constant(value=str())), *rest]:
+            return rest
+        case _:
+            return body
+
+
+def _strip_docstrings(tree: ast.AST) -> None:
+    """Drops every docstring, so that what is left is what the code
+    does. Prose is no more a part of that than a comment is, and both
+    would otherwise make a method look changed when it is not."""
+    for node in ast.walk(tree):
+        match node:
+            case (
+                ast.Module() | ast.ClassDef() | ast.FunctionDef() |
+                ast.AsyncFunctionDef()
+            ):
+                node.body = _docstring_stripped(node.body)
+
+
+def hash_function(function: _Function) -> str:
+    """What a function does, as a hash.
+
+    `include_attributes=False` leaves out line and column numbers, so
+    reflowing an argument list or moving a method down a file gives
+    back the same hash; comments never reach the tree at all, and
+    docstrings are stripped when the file is parsed.
+    """
+    parts = [
+        function.name,
+        ast.dump(function.args, include_attributes=False),
+    ]
+    parts.extend(
+        ast.dump(statement, include_attributes=False)
+        for statement in function.body
+    )
+    return hashlib.sha256('\n'.join(parts).encode()).hexdigest()
+
+
+@dataclass
+class Module:
+    """One of the developer's source files, parsed."""
+
+    # Dotted, relative to the source directory, e.g. `bank_servicer`.
+    name: str
+
+    # State classes this file imported, by the name it calls them:
+    # `Account` -> `bank.v1.Account`.
+    state_classes: dict[str, str]
+
+    # Names this file imported from another file in the same tree, by
+    # the name it calls them: `helper` -> (`helpers`, `do_transfer`).
+    imports: dict[str, tuple[str, str]]
+
+    # Whole modules this file imported, by the name it calls them:
+    # `helpers` -> `helpers`.
+    modules: dict[str, str]
+
+    functions: dict[str, _Function]
+    classes: dict[str, ast.ClassDef]
+
+
+def _state_type(module_name: str, name: str) -> Optional[str]:
+    """The state type a name imported from `module_name` refers to,
+    if `module_name` is a generated module.
+
+    `bank.v1.account_rbt` and `Account` give `bank.v1.Account`: the
+    package qualifies the name, exactly as the directory of an API
+    file qualifies what it declares.
+
+    A standard-library wrapper qualifies it the same way, through the
+    `rbt.std.` package its module stands in for:
+    `reboot.std.collections.v1.sorted_map` and `SortedMap` give
+    `rbt.std.collections.v1.SortedMap`.
+    """
+    if '.' not in module_name:
+        return name if module_name.endswith(GENERATED_SUFFIX) else None
+
+    package = module_name.rsplit('.', 1)[0]
+
+    if module_name.startswith(STANDARD_LIBRARY_MODULE):
+        package = STANDARD_LIBRARY_PACKAGE + package[
+            len(STANDARD_LIBRARY_MODULE):]
+    elif not module_name.endswith(GENERATED_SUFFIX):
+        return None
+
+    return f'{package}.{name}'
+
+
+def parse(name: str, source: str) -> Module:
+    """Reads one source file. Raises `SyntaxError` on a file that is
+    half written, which is for the caller to report."""
+    tree = ast.parse(source)
+
+    _strip_docstrings(tree)
+
+    module = Module(
+        name=name,
+        state_classes={},
+        imports={},
+        modules={},
+        functions={},
+        classes={},
+    )
+
+    for statement in tree.body:
+        match statement:
+            case ast.Import(names=names):
+                for alias in names:
+                    module.modules[alias.asname or alias.name] = alias.name
+
+            # A relative import names no module of its own, and
+            # `from . import x` has nowhere to be read from here.
+            case ast.ImportFrom(module=str(imported), level=0, names=names):
+                for alias in names:
+                    bound = alias.asname or alias.name
+                    state_type = _state_type(imported, alias.name)
+                    within = f'{imported}.{alias.name}'
+                    if state_type is not None:
+                        module.state_classes[bound] = state_type
+                    elif _is_generated(within):
+                        # A generated module imported as a whole, as
+                        # `from rbt.thirdparty.mailgun.v1 import
+                        # mailgun_rbt as mailgun`, so that the states
+                        # in it are reached through the name it was
+                        # bound to.
+                        module.modules[bound] = within
+                    else:
+                        module.imports[bound] = (imported, alias.name)
+
+            case ast.FunctionDef(name=name) | ast.AsyncFunctionDef(name=name):
+                module.functions[name] = statement
+
+            case ast.ClassDef(name=name):
+                module.classes[name] = statement
+
+    return module
+
+
+def _is_generated(module_name: str) -> bool:
+    """Whether a module is one the states are reached through."""
+    return (
+        module_name.endswith(GENERATED_SUFFIX) or
+        module_name.startswith(STANDARD_LIBRARY_MODULE)
+    )
+
+
+def _module_named(
+    modules: dict[str, Module],
+    name: str,
+) -> Optional[Module]:
+    """The parsed file an import names.
+
+    A file is keyed by where it sits under the source directory, but is
+    imported by whatever `sys.path` makes it -- flatly as
+    `account_servicer` when the directory is itself on the path, and as
+    `backend.src.account_servicer` when a directory above it is. Trying
+    each suffix in turn reads both the same way.
+    """
+    module = modules.get(name)
+    if module is not None:
+        return module
+
+    parts = name.split('.')
+
+    for index in range(1, len(parts)):
+        module = modules.get('.'.join(parts[index:]))
+        if module is not None:
+            return module
+
+    return None
+
+
+def _state_class(
+    modules: dict[str, Module],
+    module: Module,
+    name: str,
+) -> Optional[str]:
+    """The state type a name stands for in one file.
+
+    A file may import one from its generated module, or from another of
+    the developer's files that imported it first -- both name the same
+    state, so a re-export is followed until a generated module answers
+    or nothing does.
+    """
+    seen: set[str] = set()
+
+    while True:
+        state_type = module.state_classes.get(name)
+        if state_type is not None:
+            return state_type
+
+        imported = module.imports.get(name)
+        if imported is None:
+            return None
+
+        key = f'{module.name}:{name}'
+        if key in seen:
+            return None
+        seen.add(key)
+
+        other = _module_named(modules, imported[0])
+        if other is None:
+            return None
+
+        module, name = other, imported[1]
+
+
+def _servicer_state_type(
+    modules: dict[str, Module],
+    class_definition: ast.ClassDef,
+    module: Module,
+) -> Optional[str]:
+    """The state type a class services, if it services one.
+
+    A servicer says so by what it inherits: `Account.Servicer`, or
+    `Account.singleton.Servicer` for a singleton.
+    """
+    for base in class_definition.bases:
+        match base:
+            case (
+                ast.Attribute(value=ast.Name(id=name), attr='Servicer') |
+                ast.Attribute(
+                    value=ast.
+                    Attribute(value=ast.Name(id=name), attr='singleton'),
+                    attr='Servicer',
+                )
+            ):
+                state_type = _state_class(modules, module, name)
+                if state_type is not None:
+                    return state_type
+
+    return None
+
+
+class _MethodAnalyzer:
+    """Finds what one method calls."""
+
+    def __init__(self, modules: dict[str, Module]):
+        self._modules = modules
+        self._calls: list[Call] = []
+        self._unanalyzed: list[Unanalyzed] = []
+        self._hashes: dict[str, str] = {}
+
+        # Functions being followed right now, so that a helper that
+        # calls itself, or two that call each other, stop rather than
+        # recurse forever.
+        self._following: set[str] = set()
+
+    def analyze(
+        self,
+        module: Module,
+        servicer: _Servicer,
+        method: _Function,
+    ) -> Analysis:
+        self._hashes[_function_key(module, method,
+                                   servicer.name)] = hash_function(method)
+
+        environment = self._parameters(method, servicer)
+
+        self._statements(method.body, module, environment)
+
+        return Analysis(
+            method_calls=MethodCalls(
+                state_type=servicer.state_type,
+                method=method.name,
+                calls=_unique(self._calls),
+                unanalyzed=_unique(self._unanalyzed),
+            ),
+            hashes=dict(self._hashes),
+        )
+
+    def _parameters(
+        self,
+        function: _Function,
+        servicer: Optional[_Servicer],
+    ) -> dict[str, _Value]:
+        """Binds a method's parameters.
+
+        A Reboot method takes its context first, after `self` or `cls`.
+        """
+        environment: dict[str, _Value] = {}
+
+        names = [argument.arg for argument in function.args.args]
+
+        if servicer is not None and len(names) > 0:
+            if names[0] in ('self', 'cls'):
+                environment[names[0]] = servicer
+                names = names[1:]
+            if len(names) > 0:
+                environment[names[0]] = _CONTEXT
+
+        return environment
+
+    ###################################################################
+    # Statements.
+
+    def _statements(
+        self,
+        statements: list[ast.stmt],
+        module: Module,
+        environment: dict[str, _Value],
+    ) -> None:
+        for statement in statements:
+            self._statement(statement, module, environment)
+
+    def _statement(
+        self,
+        statement: ast.stmt,
+        module: Module,
+        environment: dict[str, _Value],
+    ) -> None:
+        match statement:
+            case ast.Assign(targets=targets, value=value_node):
+                value = self._expression(value_node, module, environment)
+                for target in targets:
+                    self._bind(target, value, module, environment)
+
+            case ast.AnnAssign(target=target, value=ast.expr() as value_node):
+                value = self._expression(value_node, module, environment)
+                self._bind(target, value, module, environment)
+
+            # `x += y` leaves `x` whatever it already was, so
+            # evaluating `y` is all there is to do.
+            case ast.AugAssign(value=value_node):
+                self._expression(value_node, module, environment)
+
+            case ast.Return(value=ast.expr() as value_node):
+                self._escapes(value_node, module, environment)
+
+            # A function written inside a method can use the context it
+            # closes over, so it is read here, where what it closes
+            # over is known.
+            case (
+                ast.FunctionDef(args=args, body=body) |
+                ast.AsyncFunctionDef(args=args, body=body)
+            ):
+                nested = dict(environment)
+                for parameter in args.args:
+                    nested.pop(parameter.arg, None)
+                self._statements(body, module, nested)
+
+            case (
+                ast.
+                For(iter=iterated, target=target, body=body, orelse=orelse) |
+                ast.AsyncFor(
+                    iter=iterated, target=target, body=body, orelse=orelse
+                )
+            ):
+                self._expression(iterated, module, environment)
+                self._bind(target, None, module, environment)
+                self._statements(body, module, environment)
+                self._statements(orelse, module, environment)
+
+            case (
+                ast.With(items=items, body=body) |
+                ast.AsyncWith(items=items, body=body)
+            ):
+                for item in items:
+                    value = self._expression(
+                        item.context_expr, module, environment
+                    )
+                    match item.optional_vars:
+                        case ast.expr() as target:
+                            self._bind(target, value, module, environment)
+                self._statements(body, module, environment)
+
+            case ast.Try(
+                body=body, handlers=handlers, orelse=orelse,
+                finalbody=finalbody
+            ):
+                self._statements(body, module, environment)
+                for handler in handlers:
+                    self._statements(handler.body, module, environment)
+                self._statements(orelse, module, environment)
+                self._statements(finalbody, module, environment)
+
+            case (
+                ast.If(test=test, body=body, orelse=orelse) |
+                ast.While(test=test, body=body, orelse=orelse)
+            ):
+                self._expression(test, module, environment)
+                self._statements(body, module, environment)
+                self._statements(orelse, module, environment)
+
+            # A class written inside a method defines methods of its
+            # own, which are not this method's to read.
+            case ast.ClassDef():
+                pass
+
+            case _:
+                for child in ast.iter_child_nodes(statement):
+                    match child:
+                        case ast.expr():
+                            self._expression(child, module, environment)
+
+    def _bind(
+        self,
+        target: ast.expr,
+        value: _Value,
+        module: Module,
+        environment: dict[str, _Value],
+    ) -> None:
+        match target:
+            case ast.Name(id=name):
+                environment[name] = value
+
+            # A constructor hands back a reference and a response, so
+            # `account, _ = await Account.open(context, id)` binds a
+            # reference to the first name.
+            case ast.Tuple(elts=elements) | ast.List(elts=elements):
+                for index, element in enumerate(elements):
+                    element_value: _Value = None
+                    match value:
+                        case _Constructed(state_type=state_type) if index == 0:
+                            element_value = _Reference(state_type, Call.CALL)
+                    self._bind(element, element_value, module, environment)
+
+            # Stored on an attribute or into a container, where calls
+            # made through it later cannot be followed.
+            case _:
+                match value:
+                    case _Reference() | _Constructed():
+                        self._escaped(target)
+
+    ###################################################################
+    # Expressions.
+
+    def _expression(
+        self,
+        node: ast.expr,
+        module: Module,
+        environment: dict[str, _Value],
+    ) -> _Value:
+        """What an expression is worth to the analysis, recording any
+        calls written inside it along the way."""
+        match node:
+            case ast.Await(value=awaited):
+                return self._expression(awaited, module, environment)
+
+            case ast.Name(id=name):
+                if name in environment:
+                    return environment[name]
+                state_type = _state_class(self._modules, module, name)
+                return None if state_type is None else _StateClass(state_type)
+
+            case ast.Call():
+                return self._call(node, module, environment)
+
+            case ast.Attribute(value=value_node, attr=attribute):
+                # A state reached through the module it was bound to,
+                # as `mailgun.Message`.
+                match value_node:
+                    case ast.Name(id=name) if name in module.modules:
+                        state_type = _state_type(
+                            module.modules[name], attribute
+                        )
+                        if state_type is not None:
+                            return _StateClass(state_type)
+
+                match self._expression(value_node, module, environment):
+                    case _Servicer() as servicer:
+                        return self._servicer_attribute(servicer, attribute)
+                return None
+
+            case ast.Subscript(value=value_node, slice=index):
+                value = self._expression(value_node, module, environment)
+                self._expression(index, module, environment)
+                # The reference half of what a constructor handed back.
+                match value, index:
+                    case _Constructed(state_type=state_type
+                                     ), ast.Constant(value=0):
+                        return _Reference(state_type, Call.CALL)
+                return None
+
+            case (
+                ast.List(elts=elements) | ast.Tuple(elts=elements) |
+                ast.Set(elts=elements)
+            ):
+                for element in elements:
+                    self._escapes(element, module, environment)
+                return None
+
+            case ast.Dict(keys=keys, values=values):
+                for key in keys:
+                    # A `**rest` in a dict display names no key.
+                    match key:
+                        case ast.expr():
+                            self._escapes(key, module, environment)
+                for value_node in values:
+                    self._escapes(value_node, module, environment)
+                return None
+
+            case (
+                ast.ListComp(generators=generators, elt=element) |
+                ast.SetComp(generators=generators, elt=element) |
+                ast.GeneratorExp(generators=generators, elt=element)
+            ):
+                self._comprehension(generators, [element], module, environment)
+                return None
+
+            case ast.DictComp(
+                generators=generators, key=key, value=value_node
+            ):
+                self._comprehension(
+                    generators, [key, value_node], module, environment
+                )
+                return None
+
+            case ast.Lambda(args=args, body=body):
+                nested = dict(environment)
+                for parameter in args.args:
+                    nested.pop(parameter.arg, None)
+                self._expression(body, module, nested)
+                return None
+
+            # Anything else is walked into rather than understood, so
+            # that a call written inside it is still found.
+            case _:
+                for child in ast.iter_child_nodes(node):
+                    match child:
+                        case ast.expr():
+                            self._expression(child, module, environment)
+                return None
+
+    def _comprehension(
+        self,
+        generators: list[ast.comprehension],
+        elements: list[ast.expr],
+        module: Module,
+        environment: dict[str, _Value],
+    ) -> None:
+        nested = dict(environment)
+        for generator in generators:
+            self._expression(generator.iter, module, nested)
+            self._bind(generator.target, None, module, nested)
+            for condition in generator.ifs:
+                self._expression(condition, module, nested)
+        for element in elements:
+            self._escapes(element, module, nested)
+
+    def _escapes(
+        self,
+        node: ast.expr,
+        module: Module,
+        environment: dict[str, _Value],
+    ) -> None:
+        """Evaluates an expression in a place a reference cannot be
+        followed out of, recording it if one goes there."""
+        match self._expression(node, module, environment):
+            case _Reference() | _Constructed():
+                self._escaped(node)
+
+    def _escaped(self, node: ast.expr) -> None:
+        self._unanalyzed.append(
+            Unanalyzed(
+                why=Unanalyzed.REFERENCE_ESCAPED,
+                expression=ast.unparse(node),
+            )
+        )
+
+    ###################################################################
+    # Calls.
+
+    def _call(
+        self,
+        node: ast.Call,
+        module: Module,
+        environment: dict[str, _Value],
+    ) -> _Value:
+        # Once, up front: evaluating an argument is what finds a call
+        # written inside it, and doing it twice would find it twice.
+        arguments = _Arguments(
+            positional=[
+                self._expression(argument, module, environment)
+                for argument in node.args
+            ],
+            keyword={
+                keyword.arg:
+                    self._expression(keyword.value, module, environment)
+                for keyword in node.keywords
+                if keyword.arg is not None
+            },
+        )
+
+        match node.func:
+            case ast.Attribute(value=value_node, attr=attribute):
+                receiver = self._expression(value_node, module, environment)
+                return self._receiver_call(
+                    node, receiver, attribute, arguments, module, environment
+                )
+
+            case ast.Name(id=name):
+                return self._named_call(
+                    node, name, arguments, module, environment
+                )
+
+            case _:
+                self._expression(node.func, module, environment)
+                return None
+
+    def _receiver_call(
+        self,
+        node: ast.Call,
+        receiver: _Value,
+        attribute: str,
+        arguments: '_Arguments',
+        module: Module,
+        environment: dict[str, _Value],
+    ) -> _Value:
+        match receiver:
+            case _StateClass(state_type=state_type):
+                if attribute in _REFERENCE_ENTRIES:
+                    return _Reference(state_type, Call.CALL)
+
+                if attribute in _IDEMPOTENCY_MODIFIERS:
+                    # `Account.per_workflow('open').open(context)`:
+                    # still the class, still about to construct.
+                    return receiver
+
+                if not arguments.takes_context:
+                    # A state class carries its request, response and
+                    # error types too, and `Account.WithdrawAborted(...)`
+                    # makes one of those rather than an account. A
+                    # constructor is what takes the context first.
+                    return None
+
+                self._called(state_type, attribute, Call.CONSTRUCT)
+                return _Constructed(state_type)
+
+            case _Reference(state_type=state_type, how=how):
+                if attribute in _IDEMPOTENCY_MODIFIERS:
+                    return receiver
+
+                modified = _HOW_MODIFIERS.get(attribute)
+                if modified is not None:
+                    return _Reference(state_type, modified)
+
+                terminal = _STATE_TERMINALS.get(attribute)
+                if terminal is not None:
+                    self._called(state_type, '', terminal)
+                    return None
+
+                self._called(state_type, attribute, how)
+                return None
+
+            case _Servicer(state_type=state_type):
+                if attribute == 'ref':
+                    return _Reference(state_type, Call.CALL)
+                if not arguments.has_context:
+                    # Nothing it could call, but it may still hand back
+                    # a reference, as `self._index()` does.
+                    return self._servicer_attribute(receiver, attribute)
+                self._follow_servicer_method(
+                    node, receiver, attribute, arguments
+                )
+                return None
+
+            # The context's own API, such as `context.loop(...)`, is
+            # not a call to a state.
+            case _Context():
+                return None
+
+            case _:
+                self._follow_module_function(node, arguments, module)
+                return None
+
+    def _named_call(
+        self,
+        node: ast.Call,
+        name: str,
+        arguments: '_Arguments',
+        module: Module,
+        environment: dict[str, _Value],
+    ) -> _Value:
+        if _state_class(self._modules, module, name) is not None:
+            # Calling a state class itself is not something the
+            # generated code offers; nothing to say about it.
+            return None
+
+        match name, arguments.positional:
+            case 'getattr', [_Reference(), *_]:
+                self._unanalyzed.append(
+                    Unanalyzed(
+                        why=Unanalyzed.UNKNOWN_METHOD,
+                        expression=ast.unparse(node),
+                    )
+                )
+                return None
+
+        self._follow_function(node, name, arguments, module)
+
+        return None
+
+    ###################################################################
+    # Following.
+
+    def _follow_function(
+        self,
+        node: ast.Call,
+        name: str,
+        arguments: '_Arguments',
+        module: Module,
+    ) -> None:
+        """Follows a plain function call, when a context reaches it.
+
+        A context is what lets a function make a call of its own, so
+        one that gets a context is worth reading; one that does not
+        cannot call anything.
+        """
+        if not arguments.has_context:
+            return
+
+        found = self._resolve_function(name, module)
+
+        if found is None:
+            self._unfollowable(node)
+            return
+
+        target_module, function = found
+
+        self._follow(target_module, function, arguments)
+
+    def _follow_module_function(
+        self,
+        node: ast.Call,
+        arguments: '_Arguments',
+        module: Module,
+    ) -> None:
+        """Follows a call written through a module, such as
+        `helpers.transfer(context, ...)`."""
+        if not arguments.has_context:
+            return
+
+        match node.func:
+            case ast.Attribute(value=ast.Name(id=name),
+                               attr=attribute) if (name in module.modules):
+                other = _module_named(self._modules, module.modules[name])
+                if other is not None:
+                    function = other.functions.get(attribute)
+                    if function is not None:
+                        self._follow(other, function, arguments)
+                        return
+
+        self._unfollowable(node)
+
+    def _follow_servicer_method(
+        self,
+        node: ast.Call,
+        servicer: _Servicer,
+        attribute: str,
+        arguments: '_Arguments',
+    ) -> None:
+        """Follows a helper a servicer keeps on itself."""
+        found = self._servicer_function(servicer, attribute)
+
+        if found is None:
+            self._unfollowable(node)
+            return
+
+        module, function = found
+
+        self._follow(module, function, arguments, servicer=servicer)
+
+    def _servicer_function(
+        self,
+        servicer: _Servicer,
+        name: str,
+    ) -> Optional[tuple[Module, _Function]]:
+        """A function a servicer class defines, and the file it is
+        written in."""
+        module = self._modules.get(servicer.module)
+
+        class_definition = (
+            None if module is None else module.classes.get(servicer.name)
+        )
+
+        if module is None or class_definition is None:
+            return None
+
+        for statement in class_definition.body:
+            match statement:
+                case (
+                    ast.FunctionDef(name=defined) |
+                    ast.AsyncFunctionDef(name=defined)
+                ) if defined == name:
+                    return (module, statement)
+
+        return None
+
+    def _servicer_attribute(
+        self,
+        servicer: _Servicer,
+        name: str,
+    ) -> _Value:
+        """What a helper a servicer keeps on itself hands back.
+
+        Naming a state an application uses throughout by keeping it
+        behind a property is the ordinary way to write it:
+
+            @property
+            def _applications_index(self):
+                return SortedMap.ref(APPLICATIONS_INDEX_ID)
+
+        so `self._applications_index.insert(context, ...)` is as much a
+        call as writing the reference out would have been. Only a body
+        that is a single `return` is read this way; a longer one is not
+        something one value can stand for, and is left unanalyzed
+        rather than guessed at.
+        """
+        found = self._servicer_function(servicer, name)
+
+        if found is None:
+            return None
+
+        module, function = found
+
+        match function.body:
+            case [ast.Return(value=ast.expr() as returned)]:
+                pass
+            case _:
+                return None
+
+        key = _function_key(module, function, servicer.name)
+
+        if key in self._following:
+            return None
+
+        self._hashes[key] = hash_function(function)
+
+        self._following.add(key)
+        try:
+            return self._expression(
+                returned,
+                module,
+                {
+                    'self': servicer,
+                    'cls': servicer
+                },
+            )
+        finally:
+            self._following.discard(key)
+
+    def _unfollowable(self, node: ast.Call) -> None:
+        self._unanalyzed.append(
+            Unanalyzed(
+                why=Unanalyzed.CONTEXT_PASSED_TO_UNKNOWN_FUNCTION,
+                expression=ast.unparse(node),
+            )
+        )
+
+    def _resolve_function(
+        self,
+        name: str,
+        module: Module,
+    ) -> Optional[tuple[Module, _Function]]:
+        function = module.functions.get(name)
+        if function is not None:
+            return (module, function)
+
+        imported = module.imports.get(name)
+        if imported is not None:
+            other = _module_named(self._modules, imported[0])
+            if other is not None:
+                function = other.functions.get(imported[1])
+                if function is not None:
+                    return (other, function)
+
+        return None
+
+    def _follow(
+        self,
+        target_module: Module,
+        function: _Function,
+        arguments: '_Arguments',
+        servicer: Optional[_Servicer] = None,
+    ) -> None:
+        key = _function_key(
+            target_module,
+            function,
+            None if servicer is None else servicer.name,
+        )
+
+        if key in self._following:
+            return
+
+        self._hashes[key] = hash_function(function)
+
+        self._following.add(key)
+        try:
+            self._statements(
+                function.body,
+                target_module,
+                _followed_environment(function, arguments, servicer),
+            )
+        finally:
+            self._following.discard(key)
+
+    def _called(
+        self,
+        state_type: str,
+        method: str,
+        how: 'Call.How.ValueType',
+    ) -> None:
+        self._calls.append(Call(state_type=state_type, method=method, how=how))
+
+
+@dataclass(frozen=True)
+class _Arguments:
+    """What a call was given, already evaluated."""
+    positional: list[_Value]
+    keyword: dict[str, _Value]
+
+    @property
+    def has_context(self) -> bool:
+        return (
+            any(value is _CONTEXT for value in self.positional) or
+            any(value is _CONTEXT for value in self.keyword.values())
+        )
+
+    @property
+    def takes_context(self) -> bool:
+        """Whether a context comes first, which is how every Reboot
+        method is called and how a constructor is told apart from the
+        request and error types a state class also carries."""
+        return len(self.positional) > 0 and self.positional[0] is _CONTEXT
+
+
+def _followed_environment(
+    function: _Function,
+    arguments: _Arguments,
+    servicer: Optional[_Servicer],
+) -> dict[str, _Value]:
+    """Binds what the caller passed to what the callee calls it."""
+    names = [argument.arg for argument in function.args.args]
+
+    environment: dict[str, _Value] = {}
+
+    if (
+        servicer is not None and len(names) > 0 and
+        names[0] in ('self', 'cls')
+    ):
+        environment[names[0]] = servicer
+        names = names[1:]
+
+    for index, value in enumerate(arguments.positional):
+        if index < len(names):
+            environment[names[index]] = value
+
+    for name, value in arguments.keyword.items():
+        if name in names:
+            environment[name] = value
+
+    return environment
+
+
+def _decorated(function: _Function, names: frozenset) -> bool:
+    """Whether a function carries any of `names` as a decorator,
+    however it was spelled: `property` or `functools.cached_property`
+    alike."""
+    for decorator in function.decorator_list:
+        match decorator:
+            case (
+                ast.Call(func=ast.Name(id=name)) | ast.Name(id=name) |
+                ast.Call(func=ast.Attribute(attr=name)) |
+                ast.Attribute(attr=name)
+            ) if name in names:
+                return True
+    return False
+
+
+def _function_key(
+    module: Module,
+    function: _Function,
+    class_name: Optional[str] = None,
+) -> str:
+    """Names one function, so that two of the same name -- a module's
+    and a class's -- are not taken for each other."""
+    qualified = (
+        function.name
+        if class_name is None else f'{class_name}.{function.name}'
+    )
+    return f'{module.name}:{qualified}'
+
+
+def _unique(messages: list) -> list:
+    """The same list without repeats, in the order they were found.
+
+    A method that calls the same thing twice says nothing more than one
+    that calls it once.
+    """
+    seen: set[bytes] = set()
+    unique = []
+    for message in messages:
+        serialized = message.SerializeToString(deterministic=True)
+        if serialized not in seen:
+            seen.add(serialized)
+            unique.append(message)
+    return unique
+
+
+def analyze(
+    modules: dict[str, Module],
+    cache: Optional[dict[str, Analysis]] = None,
+) -> dict[str, Analysis]:
+    """Analyzes every servicer method in a tree of parsed files.
+
+    A method whose own hash and whose followed functions' hashes are
+    all as `cache` last saw them is taken from `cache` rather than
+    analyzed again, which is what keeps a keystroke from costing a
+    whole tree.
+    """
+    cache = cache or {}
+
+    hashes = _tree_hashes(modules)
+
+    analyses: dict[str, Analysis] = {}
+
+    for module in modules.values():
+        for class_definition in module.classes.values():
+            state_type = _servicer_state_type(
+                modules, class_definition, module
+            )
+            if state_type is None:
+                continue
+
+            servicer = _Servicer(
+                state_type=state_type,
+                module=module.name,
+                name=class_definition.name,
+            )
+
+            for statement in class_definition.body:
+                match statement:
+                    case (
+                        ast.FunctionDef(name=name) |
+                        ast.AsyncFunctionDef(name=name)
+                    ) if (
+                        name not in _NOT_A_METHOD and
+                        not name.startswith('_') and
+                        not _decorated(statement, _NOT_A_METHOD_DECORATORS)
+                    ):
+                        pass
+                    case _:
+                        continue
+
+                key = method_key(state_type, name)
+
+                cached = cache.get(key)
+                if cached is not None and _unchanged(cached, hashes):
+                    analyses[key] = cached
+                    continue
+
+                analyses[key] = _MethodAnalyzer(modules).analyze(
+                    module, servicer, statement
+                )
+
+    return analyses
+
+
+def _tree_hashes(modules: dict[str, Module]) -> dict[str, str]:
+    """Every function in the tree, hashed, so that what changed can be
+    told from what did not."""
+    hashes: dict[str, str] = {}
+
+    for module in modules.values():
+        for function in module.functions.values():
+            hashes[_function_key(module, function)] = hash_function(function)
+        for class_definition in module.classes.values():
+            for statement in class_definition.body:
+                match statement:
+                    case ast.FunctionDef() | ast.AsyncFunctionDef():
+                        hashes[_function_key(
+                            module, statement, class_definition.name
+                        )] = hash_function(statement)
+
+    return hashes
+
+
+def _unchanged(analysis: Analysis, hashes: dict[str, str]) -> bool:
+    return all(
+        hashes.get(key) == value for key, value in analysis.hashes.items()
+    )
+
+
+def module_name(filename: str) -> str:
+    """The dotted name a source file goes by, relative to the source
+    directory it was found in."""
+    return filename.rsplit('.py', 1)[0].replace(os.sep, '.')

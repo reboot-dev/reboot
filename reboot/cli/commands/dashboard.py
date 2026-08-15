@@ -23,6 +23,7 @@ from reboot.dashboard.constants import (
     DASHBOARD_PATH,
     DEFAULT_DASHBOARD_PORT,
     ENVVAR_RBT_API_DIRECTORY,
+    ENVVAR_RBT_SOURCE_DIRECTORY,
 )
 from reboot.settings import (
     ENVVAR_RBT_DEV,
@@ -64,6 +65,14 @@ def register_dashboard(parser: ArgumentParser):
     )
 
     parser.subcommand('dashboard').add_argument(
+        '--source-directory',
+        type=str,
+        required=False,
+        help='directory containing the servicers the dashboard analyzes, '
+        'to show what each method calls; without it, no calls are shown',
+    )
+
+    parser.subcommand('dashboard').add_argument(
         '--port',
         type=int,
         help='port on which the dashboard will serve traffic; defaults to '
@@ -77,6 +86,7 @@ def _dashboard_env(
     *,
     port: int,
     api_directory: str,
+    source_directory: Optional[str],
 ) -> dict[str, str]:
     """The environment for the dashboard application.
 
@@ -117,6 +127,14 @@ def _dashboard_env(
     # `api/bank/v1/account.py`; the dashboard runs in this working
     # directory, where that spelling resolves.
     composed[ENVVAR_RBT_API_DIRECTORY] = api_directory
+
+    # Where the developer's servicers are, spelled the same way and
+    # for the same reason. Left out of the environment entirely when
+    # the developer named no directory, which is what tells the
+    # dashboard there is nothing to analyze.
+    composed.pop(ENVVAR_RBT_SOURCE_DIRECTORY, None)
+    if source_directory is not None:
+        composed[ENVVAR_RBT_SOURCE_DIRECTORY] = source_directory
 
     composed[ENVVAR_RBT_NAME] = DASHBOARD_STATE_DIRECTORY_NAME
 
@@ -219,6 +237,7 @@ async def dashboard(
             parser,
             port=port,
             api_directory=args.api_directory,
+            source_directory=args.source_directory,
         )
 
         terminal.info(

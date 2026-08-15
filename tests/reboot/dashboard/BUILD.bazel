@@ -23,6 +23,35 @@ py_test(
 )
 
 py_test(
+    name = "call_analysis_tests_py",
+    srcs = ["call_analysis_tests.py"],
+    main = "call_analysis_tests.py",
+    deps = [
+        "//reboot/dashboard:call_analysis_py",
+    ],
+)
+
+py_test(
+    name = "servicer_reader_tests_py",
+    srcs = ["servicer_reader_tests.py"],
+    main = "servicer_reader_tests.py",
+    deps = [
+        "//reboot/dashboard:servicer_reader_py",
+    ],
+)
+
+py_test(
+    name = "servicer_watcher_tests_py",
+    srcs = ["servicer_watcher_tests.py"],
+    main = "servicer_watcher_tests.py",
+    deps = [
+        "//reboot/aio:tests_py",
+        "//reboot/dashboard:main_py",
+        "//reboot/dashboard:servicer_watcher_py",
+    ],
+)
+
+py_test(
     name = "application_tests_py",
     srcs = [":application_tests.py"],
     main = "application_tests.py",

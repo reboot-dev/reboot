@@ -75,6 +75,9 @@ async def initialize(context: InitializeContext) -> None:
     # watcher.
     _ = await API.ref(API_ID).idempotently('watch').spawn().Watch(context)
 
+    _ = await API.ref(API_ID).idempotently('watch calls'
+                                          ).spawn().WatchCalls(context)
+
 
 async def main():
     await application().run()
