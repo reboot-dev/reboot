@@ -195,6 +195,7 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
         self,
         state_id: StateId,
         database_timestamp_ms: Optional[int] = None,
+        idempotency_key: Optional[uuid.UUID] = None,
     ) -> TransactionContext:
         """Create a `TransactionContext` for testing."""
         state_ref = StateRef.from_id(
@@ -206,6 +207,7 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
             headers=Headers(
                 application_id=ApplicationId('unused'),
                 state_ref=state_ref,
+                idempotency_key=idempotency_key,
             ),
             state_type_name=(MyGreeterServicer.__state_type_name__),
             method="unused",
@@ -781,6 +783,58 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(transaction)
             # Legacy behavior is the transaction should be stored.
             self.assertTrue(transaction._stored)
+
+    async def test_transaction_without_idempotency_key_is_shared(self):
+        """Test that a transaction with nothing to persist takes this
+        state's lock in shared mode, which is what lets more than one
+        transaction run inside one state at the same time.
+        """
+        # Server recovered at time 1000, transaction created at 2000.
+        self.state_manager._recovery_timestamp_ms = 1000
+
+        context = self.create_transaction_context(
+            "test-1234",
+            database_timestamp_ms=2000,
+        )
+        self.assertIsNone(context.idempotency_key)
+
+        async with self.state_manager.transactionally(
+            context,
+            self.create_task_dispatcher_mock(),
+            aborted_type=None,
+        ) as transaction:
+            assert transaction is not None
+            self.assertEqual(transaction.mode, Lock.Mode.SHARED)
+
+    async def test_transaction_with_idempotency_key_is_exclusive(self):
+        """Test that a transaction carrying an idempotency key takes
+        this state's lock in exclusive mode.
+
+        The key means there is an idempotent mutation to persist, so
+        such a transaction is never elided as read-only and claims
+        this state's one database transaction slot. Holding the lock
+        exclusively is what keeps it the only claimant: were two of
+        them to hold the lock in shared mode they would both claim
+        that slot, and the database allows only one transaction per
+        state at a time.
+        """
+        # Server recovered at time 1000, transaction created at 2000.
+        self.state_manager._recovery_timestamp_ms = 1000
+
+        context = self.create_transaction_context(
+            "test-1234",
+            database_timestamp_ms=2000,
+            idempotency_key=uuid.uuid4(),
+        )
+        self.assertIsNotNone(context.idempotency_key)
+
+        async with self.state_manager.transactionally(
+            context,
+            self.create_task_dispatcher_mock(),
+            aborted_type=None,
+        ) as transaction:
+            assert transaction is not None
+            self.assertEqual(transaction.mode, Lock.Mode.EXCLUSIVE)
 
 
 class LockTest(unittest.IsolatedAsyncioTestCase):

@@ -40,11 +40,8 @@ const ongoingTransactionStates = {};
 // Helper to get the `ongoingTransactionStates` dictionary key.
 // The key contains the state type name and the state ID to avoid
 // conflicts when multiple states share the same ID, and the root
-// transaction ID because several transactions may be joined to one
-// state at the same time (they join it "shared", and only upgrade to
-// "exclusive" once they write). Without the transaction ID they would
-// share a single entry, and whichever registered last would receive
-// the others' writer updates, silently losing their effects.
+// transaction ID because more than one transaction may be running on
+// a state at the same time and each needs its own entry.
 const ongoingTransactionStateKey = (context) => {
     return `${context.stateTypeName}/${context.stateId}/${context.transactionRootId}`;
 };

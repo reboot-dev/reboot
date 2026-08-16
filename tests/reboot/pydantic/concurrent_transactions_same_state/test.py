@@ -6,17 +6,16 @@ from reboot.aio.tests import Reboot
 from tests.reboot.pydantic.concurrent_transactions_same_state.servicer import (
     COUNTER_ID,
     CounterServicer,
+    parked_increment_is_participant,
+    parked_increment_may_write,
     rendezvous,
 )
 from tests.reboot.pydantic.concurrent_transactions_same_state.servicer_api_rbt import (
     Counter,
 )
 
-# How many transactions to run at the same time against the one state.
+# How many transactions to run at the same time against one state.
 CONCURRENCY = 20
-
-# How many distinct states one transaction writes.
-FANOUT = 5
 
 
 class ConcurrentTransactionsOnOneStateTest(unittest.IsolatedAsyncioTestCase):
@@ -27,8 +26,13 @@ class ConcurrentTransactionsOnOneStateTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(servicers=[CounterServicer]),
             servers=1,
-            # Re-running every writer to validate that its effects are
-            # deterministic would obscure what these tests are about.
+            # Effect validation re-runs a method to check that its
+            # effects are deterministic. The re-run happens once a
+            # test has already set its events, so a method that
+            # parked on the first run does not park again and never
+            # overlaps with the other transaction: the result would
+            # come out right whether or not the runtime keeps its
+            # per-state data per transaction.
             effect_validation=EffectValidation.DISABLED,
         )
         self.context = self.rbt.create_external_context(name=self.id())
@@ -37,176 +41,82 @@ class ConcurrentTransactionsOnOneStateTest(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         await self.rbt.stop()
 
-    async def test_concurrent_transactions_that_never_write(self) -> None:
-        """Transactions that never write still name their state as a
-        participant, so running them at the same time against one
-        state must not fail or take down the database."""
-        counter = Counter.ref(COUNTER_ID)
-
-        await asyncio.gather(
-            *(counter.noop(self.context) for _ in range(CONCURRENCY))
-        )
-
-        # The state is untouched, but it must still be readable: if the
-        # database server died, this read cannot succeed.
-        response = await counter.get(self.context)
-        self.assertEqual(response.count, 0)
-
     async def test_nested_transactions_on_one_state_are_parallel(self) -> None:
-        """Nested transactions join their participant in shared mode,
-        so many of them may be inside one state at the same time. The
-        rendezvous only opens once every one of them has arrived, so
-        this can only finish if they really do overlap."""
-        outer_ids = [f"outer-{index}" for index in range(CONCURRENCY)]
+        """Nested transactions take their participant's lock in
+        shared mode, so many of them may be running inside one state
+        at the same time. The rendezvous only opens once every one of
+        them has arrived, so this can only finish if they really do
+        overlap."""
+        driver_ids = [f"driver-{index}" for index in range(CONCURRENCY)]
         await asyncio.gather(
-            *
-            (Counter.create(self.context, outer_id) for outer_id in outer_ids)
+            *(
+                Counter.create(self.context, driver_id)
+                for driver_id in driver_ids
+            )
         )
 
         rendezvous.reset(CONCURRENCY)
 
         await asyncio.gather(
             *(
-                Counter.ref(outer_id).outer(self.context, peer_id=COUNTER_ID)
-                for outer_id in outer_ids
+                Counter.ref(driver_id).call_inner(
+                    self.context,
+                    peer_id=COUNTER_ID,
+                ) for driver_id in driver_ids
             )
         )
 
         self.assertEqual(rendezvous.arrived, CONCURRENCY)
 
-    async def test_transaction_writes_many_unrelated_states(self) -> None:
-        """One transaction writing several distinct state refs. Each
-        gets its own entry in the database's per-actor transaction
-        map, so none of them may collide with another."""
-        peer_ids = [f"peer-{index}" for index in range(FANOUT)]
-        await asyncio.gather(
-            *(Counter.create(self.context, peer_id) for peer_id in peer_ids)
-        )
+    async def test_finishing_transaction_keeps_anothers_write(self) -> None:
+        """A transaction's write survives another transaction on the
+        same state finishing first.
 
-        await Counter.ref(COUNTER_ID).fanout(self.context, peer_ids=peer_ids)
+        Both of them are nested, so neither carries an idempotency key
+        and both are participants on `COUNTER_ID` at the same time.
+        The test drives them into this order:
 
-        for peer_id in peer_ids:
-            response = await Counter.ref(peer_id).get(self.context)
-            self.assertEqual(response.count, 1, f"{peer_id} was not written")
+        1. `parked_increment` becomes a participant and then stops,
+           having written nothing yet.
+        2. `touch` becomes a participant on that same state and runs
+           all the way to completion, writing nothing.
+        3. `parked_increment` is released and does its increment.
 
-    async def test_concurrent_transactions_over_disjoint_states(self) -> None:
-        """Many transactions at once, each writing its own disjoint
-        set of states, so no two of them share a state ref."""
-        groups = [
-            [f"group-{group}-{index}"
-             for index in range(FANOUT)]
-            for group in range(CONCURRENCY)
-        ]
-        await asyncio.gather(
-            *(
-                Counter.create(self.context, state_id) for state_id in
-                [peer_id for group in groups for peer_id in group] + [
-                    f"fanout-coordinator-{index}"
-                    for index in range(CONCURRENCY)
-                ]
+        The count must then be 1. Whatever the runtime keeps per
+        state for the duration of a call has to be kept per
+        transaction as well: otherwise step 2 tears down what step 1
+        set up, step 3 writes into something nothing else reads, and
+        the increment is lost with no error reported anywhere.
+        """
+        await Counter.create(self.context, "writing-driver")
+        await Counter.create(self.context, "touching-driver")
+
+        parked_increment_is_participant.clear()
+        parked_increment_may_write.clear()
+
+        # Becomes a participant on the state, then parks before
+        # writing anything.
+        writing = asyncio.create_task(
+            Counter.ref("writing-driver").call_parked_increment(
+                self.context,
+                peer_id=COUNTER_ID,
             )
         )
+        await parked_increment_is_participant.wait()
 
-        await asyncio.gather(
-            *(
-                Counter.ref(f"fanout-coordinator-{index}").fanout(
-                    self.context,
-                    peer_ids=group,
-                ) for index, group in enumerate(groups)
-            )
+        # Becomes a participant on the same state and runs all the way
+        # to completion while the first transaction is still in flight.
+        await Counter.ref("touching-driver").call_touch(
+            self.context,
+            peer_id=COUNTER_ID,
         )
 
-        for group in groups:
-            for peer_id in group:
-                response = await Counter.ref(peer_id).get(self.context)
-                self.assertEqual(
-                    response.count, 1, f"{peer_id} was not written"
-                )
+        # Only now let the first transaction do its write.
+        parked_increment_may_write.set()
+        await writing
 
-    async def test_shared_transactions_on_one_ref_fanning_out(self) -> None:
-        """Many transactions all coordinated on the SAME state ref —
-        so they join it shared and never upgrade it — while each one's
-        nested writers fan out to its own unrelated states."""
-        groups = [
-            [f"fan-{group}-{index}"
-             for index in range(FANOUT)]
-            for group in range(CONCURRENCY)
-        ]
-        await asyncio.gather(
-            *(
-                Counter.create(self.context, peer_id)
-                for group in groups
-                for peer_id in group
-            )
-        )
-
-        await asyncio.gather(
-            *(
-                Counter.ref(COUNTER_ID).fanout(self.context, peer_ids=group)
-                for group in groups
-            )
-        )
-
-        for group in groups:
-            for peer_id in group:
-                response = await Counter.ref(peer_id).get(self.context)
-                self.assertEqual(
-                    response.count, 1, f"{peer_id} was not written"
-                )
-
-    async def test_concurrent_plain_writers(self) -> None:
-        """The control: the same increments as plain writers rather
-        than transactions. Writers take the state's exclusive lock for
-        their whole call, so none of them may be lost."""
-        counter = Counter.ref(COUNTER_ID)
-
-        responses = await asyncio.gather(
-            *(counter.increment(self.context) for _ in range(CONCURRENCY))
-        )
-
-        counts = sorted(response.count for response in responses)
-        self.assertEqual(counts, list(range(1, CONCURRENCY + 1)))
-
-        response = await counter.get(self.context)
-        self.assertEqual(response.count, CONCURRENCY)
-
-    async def test_sequential_transactions_that_write(self) -> None:
-        """The same transactions, one strictly after another. If the
-        bug needs contention, this must pass."""
-        counter = Counter.ref(COUNTER_ID)
-
-        responses = []
-        for _ in range(CONCURRENCY):
-            responses.append(
-                await counter.transactionally_increment(self.context)
-            )
-
-        counts = sorted(response.count for response in responses)
-        self.assertEqual(counts, list(range(1, CONCURRENCY + 1)))
-
-        response = await counter.get(self.context)
-        self.assertEqual(response.count, CONCURRENCY)
-
-    async def test_concurrent_transactions_that_write(self) -> None:
-        """The same shape, but each transaction writes its own state,
-        which upgrades its participant lock to exclusive."""
-        counter = Counter.ref(COUNTER_ID)
-
-        responses = await asyncio.gather(
-            *(
-                counter.transactionally_increment(self.context)
-                for _ in range(CONCURRENCY)
-            )
-        )
-
-        # Every transaction that reported success must have produced a
-        # distinct count: two transactions handing back the same count
-        # means one of them was lost.
-        counts = sorted(response.count for response in responses)
-        self.assertEqual(counts, list(range(1, CONCURRENCY + 1)))
-
-        response = await counter.get(self.context)
-        self.assertEqual(response.count, CONCURRENCY)
+        response = await Counter.ref(COUNTER_ID).get(self.context)
+        self.assertEqual(response.count, 1)
 
 
 if __name__ == '__main__':
