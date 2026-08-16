@@ -9,13 +9,14 @@ being developed.
 """
 import asyncio
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_rbt import API, Preferences
+from rbt.dashboard.v1.dashboard_rbt import API, Implementation, Preferences
 from rbt.std.presence.v1.presence_rbt import Presence
 from reboot.aio.applications import Application
 from reboot.aio.external import InitializeContext
 from reboot.dashboard.constants import (
     API_ID,
     DASHBOARD_PATH,
+    IMPLEMENTATION_ID,
     PREFERENCES_ID,
     PRESENCE_ID,
 )
@@ -70,10 +71,15 @@ async def initialize(context: InitializeContext) -> None:
     # dashboard is up.
     await Presence.ref(PRESENCE_ID).Create(context)
 
-    # Idempotently, so that a restart of a named application finds
-    # the `Watch` it already spawned rather than starting a second
-    # watcher.
-    _ = await API.ref(API_ID).idempotently('watch').spawn().Watch(context)
+    # Idempotency is required of every mutation from `initialize`,
+    # and needs no alias: the key is derived from the method, the
+    # state id and `initialize`'s seed, which is itself derived from
+    # the application. So a restart finds the watchers it already
+    # spawned rather than starting more.
+    _ = await API.ref(API_ID).idempotently().spawn().Watch(context)
+
+    _ = await Implementation.ref(IMPLEMENTATION_ID
+                                ).idempotently().spawn().Watch(context)
 
 
 async def main():
