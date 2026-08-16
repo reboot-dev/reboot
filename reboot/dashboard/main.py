@@ -9,7 +9,7 @@ being developed.
 """
 import asyncio
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_rbt import API, Preferences
+from rbt.dashboard.v1.dashboard_rbt import API, Implementation, Preferences
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from rbt.std.presence.v1.presence_rbt import Presence
 from reboot.aio.applications import Application
@@ -19,10 +19,15 @@ from reboot.dashboard.constants import (
     API_ID,
     CHANGELOG_ID,
     DASHBOARD_PATH,
+    IMPLEMENTATION_ID,
     PREFERENCES_ID,
     PRESENCE_ID,
 )
-from reboot.dashboard.servicers import APIServicer, PreferencesServicer
+from reboot.dashboard.servicers import (
+    APIServicer,
+    ImplementationServicer,
+    PreferencesServicer,
+)
 from reboot.std.collections.ordered_map.v1.ordered_map import (
     ordered_map_library,
 )
@@ -43,6 +48,7 @@ def application() -> Application:
     application = Application(
         servicers=[
             APIServicer,
+            ImplementationServicer,
             PreferencesServicer,
         ] + presence.servicers(),
         libraries=[
@@ -101,10 +107,15 @@ async def initialize(context: InitializeContext) -> None:
     # abort the application logs about.
     await OrderedMap.ref(CHANGELOG_ID).Create(context)
 
-    # Idempotently, so that a restart of a named application finds
-    # the `Watch` it already spawned rather than starting a second
-    # watcher.
-    _ = await API.ref(API_ID).idempotently('watch').spawn().Watch(context)
+    # Idempotency is required of every mutation from `initialize`,
+    # and needs no alias: the key is derived from the method, the
+    # state id and `initialize`'s seed, which is itself derived from
+    # the application. So a restart finds the watchers it already
+    # spawned rather than starting more.
+    _ = await API.ref(API_ID).idempotently().spawn().Watch(context)
+
+    _ = await Implementation.ref(IMPLEMENTATION_ID
+                                ).idempotently().spawn().Watch(context)
 
 
 async def main():
