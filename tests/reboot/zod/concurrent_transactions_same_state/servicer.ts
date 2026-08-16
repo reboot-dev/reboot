@@ -8,16 +8,72 @@ import { Counter } from "./servicer_api_rbt.js";
 
 export const COUNTER_ID = "the-one-counter";
 
+// A one-shot signal that a test and a servicer method use to agree on
+// when something has happened.
+class Gate {
+  #open!: () => void;
+  opened!: Promise<void>;
+
+  constructor() {
+    this.reset();
+  }
+
+  reset(): void {
+    this.opened = new Promise<void>((resolve) => {
+      this.#open = resolve;
+    });
+  }
+
+  open(): void {
+    this.#open();
+  }
+}
+
+// A meeting point that only opens once `expected` callers have
+// arrived, so a caller can only get through if all of them are inside
+// at the same time. Serialized callers deadlock instead.
+class Rendezvous {
+  expected = 0;
+  arrived = 0;
+  #everyoneArrived = new Gate();
+
+  reset(expected: number): void {
+    this.expected = expected;
+    this.arrived = 0;
+    this.#everyoneArrived.reset();
+  }
+
+  async arrive(): Promise<void> {
+    this.arrived += 1;
+    if (this.arrived >= this.expected) {
+      this.#everyoneArrived.open();
+    }
+    await this.#everyoneArrived.opened;
+  }
+}
+
+// Shared by the servicers and the tests, which run in this process.
+export const rendezvous = new Rendezvous();
+
+// Opened by `parkedIncrement` once it is a participant on the state
+// and holding its lock; awaited by a test that needs that to have
+// happened before it does anything else.
+export const parkedIncrementIsParticipant = new Gate();
+
+// Awaited by `parkedIncrement` before it writes; opened by a test that
+// wants to choose when that write happens.
+export const parkedIncrementMayWrite = new Gate();
+
 export class CounterServicer extends Counter.Servicer {
   authorizer() {
     return allow();
   }
 
-  async transactionallyIncrement(
-    context: TransactionContext,
-    request: Counter.TransactionallyIncrementRequest
-  ): Promise<Counter.TransactionallyIncrementResponse> {
-    return await Counter.ref(COUNTER_ID).increment(context, {});
+  async create(
+    context: WriterContext,
+    request: Counter.CreateRequest
+  ): Promise<void> {
+    this.state.count = 0;
   }
 
   async increment(
@@ -34,4 +90,47 @@ export class CounterServicer extends Counter.Servicer {
   ): Promise<Counter.GetResponse> {
     return { count: this.state.count };
   }
+
+  async callInner(
+    context: TransactionContext,
+    request: Counter.CallInnerRequest
+  ): Promise<void> {
+    await Counter.ref(request.peerId).inner(context, {});
+  }
+
+  async inner(
+    context: TransactionContext,
+    request: Counter.InnerRequest
+  ): Promise<Counter.InnerResponse> {
+    await rendezvous.arrive();
+    return { count: this.state.count };
+  }
+
+  async callParkedIncrement(
+    context: TransactionContext,
+    request: Counter.CallParkedIncrementRequest
+  ): Promise<void> {
+    await Counter.ref(request.peerId).parkedIncrement(context, {});
+  }
+
+  async parkedIncrement(
+    context: TransactionContext,
+    request: Counter.ParkedIncrementRequest
+  ): Promise<Counter.ParkedIncrementResponse> {
+    parkedIncrementIsParticipant.open();
+    await parkedIncrementMayWrite.opened;
+    return await this.ref().increment(context, {});
+  }
+
+  async callTouch(
+    context: TransactionContext,
+    request: Counter.CallTouchRequest
+  ): Promise<void> {
+    await Counter.ref(request.peerId).touch(context, {});
+  }
+
+  async touch(
+    context: TransactionContext,
+    request: Counter.TouchRequest
+  ): Promise<void> {}
 }

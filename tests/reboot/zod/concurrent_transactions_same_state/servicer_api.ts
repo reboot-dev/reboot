@@ -6,13 +6,11 @@ export const Counter = {
     count: z.number().default(0).meta({ tag: 1 }),
   },
   methods: {
-    // A transaction that writes its own state, via a nested writer on
-    // the very state it is coordinated on.
-    transactionallyIncrement: transaction({
+    // Must use this method to create an instance of `Counter`.
+    create: writer({
+      factory: {},
       request: z.object({}),
-      response: z.object({
-        count: z.number().meta({ tag: 1 }),
-      }),
+      response: z.void(),
     }),
     increment: writer({
       request: z.object({}),
@@ -25,6 +23,48 @@ export const Counter = {
       response: z.object({
         count: z.number().meta({ tag: 1 }),
       }),
+    }),
+    // The rest are pairs of a root transaction and the nested
+    // transaction it calls on `peerId`. A nested call carries no
+    // idempotency key, so the nested transaction takes its state's
+    // lock in shared mode, which is what lets several of them run on
+    // one state at the same time.
+    callInner: transaction({
+      request: z.object({
+        peerId: z.string().meta({ tag: 1 }),
+      }),
+      response: z.void(),
+    }),
+    inner: transaction({
+      request: z.object({}),
+      response: z.object({
+        count: z.number().meta({ tag: 1 }),
+      }),
+    }),
+    callParkedIncrement: transaction({
+      request: z.object({
+        peerId: z.string().meta({ tag: 1 }),
+      }),
+      response: z.void(),
+    }),
+    // Waits to be released, then increments through a writer.
+    parkedIncrement: transaction({
+      request: z.object({}),
+      response: z.object({
+        count: z.number().meta({ tag: 1 }),
+      }),
+    }),
+    callTouch: transaction({
+      request: z.object({
+        peerId: z.string().meta({ tag: 1 }),
+      }),
+      response: z.void(),
+    }),
+    // Becomes a participant on the state and completes without
+    // writing anything.
+    touch: transaction({
+      request: z.object({}),
+      response: z.void(),
     }),
   },
 };

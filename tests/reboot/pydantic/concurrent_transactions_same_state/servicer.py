@@ -8,7 +8,6 @@ from reboot.aio.contexts import (
 from tests.reboot.pydantic.concurrent_transactions_same_state.servicer_api import (
     CountResponse,
     PeerRequest,
-    PeersRequest,
 )
 from tests.reboot.pydantic.concurrent_transactions_same_state.servicer_api_rbt import (
     Counter,
@@ -39,8 +38,17 @@ class Rendezvous:
         await self.everyone_arrived.wait()
 
 
-# Shared by the servicer and the test, which both run in this process.
+# Shared by the servicers and the tests, which run in this process.
 rendezvous = Rendezvous()
+
+# Set by `parked_increment` once it is a participant on the state and
+# holding its lock; awaited by a test that needs that to have happened
+# before it does anything else.
+parked_increment_is_participant = asyncio.Event()
+
+# Awaited by `parked_increment` before it writes; set by a test that
+# wants to choose when that write happens.
+parked_increment_may_write = asyncio.Event()
 
 
 class CounterServicer(Counter.Servicer):
@@ -54,18 +62,6 @@ class CounterServicer(Counter.Servicer):
     ) -> None:
         self.state.count = 0
 
-    async def noop(
-        self,
-        context: TransactionContext,
-    ) -> None:
-        pass
-
-    async def transactionally_increment(
-        self,
-        context: TransactionContext,
-    ) -> CountResponse:
-        return await self.ref().increment(context)
-
     async def increment(
         self,
         context: WriterContext,
@@ -73,15 +69,13 @@ class CounterServicer(Counter.Servicer):
         self.state.count += 1
         return CountResponse(count=self.state.count)
 
-    async def fanout(
+    async def get(
         self,
-        context: TransactionContext,
-        request: PeersRequest,
-    ) -> None:
-        for peer_id in request.peer_ids:
-            await Counter.ref(peer_id).increment(context)
+        context: ReaderContext,
+    ) -> CountResponse:
+        return CountResponse(count=self.state.count)
 
-    async def outer(
+    async def call_inner(
         self,
         context: TransactionContext,
         request: PeerRequest,
@@ -95,8 +89,30 @@ class CounterServicer(Counter.Servicer):
         await rendezvous.arrive()
         return CountResponse(count=self.state.count)
 
-    async def get(
+    async def call_parked_increment(
         self,
-        context: ReaderContext,
+        context: TransactionContext,
+        request: PeerRequest,
+    ) -> None:
+        await Counter.ref(request.peer_id).parked_increment(context)
+
+    async def parked_increment(
+        self,
+        context: TransactionContext,
     ) -> CountResponse:
-        return CountResponse(count=self.state.count)
+        parked_increment_is_participant.set()
+        await parked_increment_may_write.wait()
+        return await self.ref().increment(context)
+
+    async def call_touch(
+        self,
+        context: TransactionContext,
+        request: PeerRequest,
+    ) -> None:
+        await Counter.ref(request.peer_id).touch(context)
+
+    async def touch(
+        self,
+        context: TransactionContext,
+    ) -> None:
+        pass

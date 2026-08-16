@@ -14,10 +14,6 @@ message Context {
   bool app_internal = 6;
   optional bytes auth = 7;
   optional string workflow_id = 8;
-  // The outermost transaction this call belongs to, if any. Several
-  // transactions may be joined to one state at the same time, so
-  // anything caching per-state data for the duration of a call must
-  // key on this too.
   optional string transaction_root_id = 9;
 }
 

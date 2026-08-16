@@ -59,5 +59,11 @@ js_reboot_test(
         ":test_ts",
     ],
     entry_point = "test.js",
+    # Effect validation re-runs a method to check that its effects are
+    # deterministic. The re-run happens once this test has already sent
+    # its signals, so `parkedIncrement` no longer parks and never
+    # overlaps with `touch`: the count would come out right whether or
+    # not the runtime keeps its per-state data per transaction.
+    env = {"RBT_EFFECT_VALIDATION": "DISABLED"},
     visibility = ["//visibility:public"],
 )
