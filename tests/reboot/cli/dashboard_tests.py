@@ -49,6 +49,43 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(dashboard._api_directory(parser), 'api/')
 
+    async def test_the_application_comes_from_dev_run(self) -> None:
+        """Named once, where `rbt dev run` already needs it."""
+        with tempfile.TemporaryDirectory() as state_directory:
+            args, parser = self._parse(
+                state_directory,
+                rbtrc=(
+                    'generate api/\n'
+                    'dev run --application=backend/src/main.py'
+                ),
+            )
+
+            env = dashboard._dashboard_env(
+                args,
+                parser,
+                port=DEFAULT_DASHBOARD_PORT,
+                api_directory=dashboard._api_directory(parser),
+                application=dashboard._application(parser),
+            )
+
+            self.assertEqual(env['RBT_APPLICATION'], 'backend/src/main.py')
+
+    async def test_an_rbtrc_that_names_no_application(self) -> None:
+        """Somebody who names none gets a dashboard that looks for no
+        implementations, rather than an error."""
+        with tempfile.TemporaryDirectory() as state_directory:
+            args, parser = self._parse(state_directory, rbtrc='generate api/')
+
+            env = dashboard._dashboard_env(
+                args,
+                parser,
+                port=DEFAULT_DASHBOARD_PORT,
+                api_directory=dashboard._api_directory(parser),
+                application=dashboard._application(parser),
+            )
+
+            self.assertNotIn('RBT_APPLICATION', env)
+
     async def test_an_rbtrc_that_says_nothing_about_generate(self) -> None:
         with tempfile.TemporaryDirectory() as state_directory:
             _, parser = self._parse(
@@ -81,6 +118,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                     parser,
                     port=DEFAULT_DASHBOARD_PORT,
                     api_directory=dashboard._api_directory(parser),
+                    application=dashboard._application(parser),
                 )
 
             self.assertEqual(env['RBT_NAME'], 'dashboard')
@@ -115,6 +153,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                     parser,
                     port=DEFAULT_DASHBOARD_PORT,
                     api_directory=dashboard._api_directory(parser),
+                    application=dashboard._application(parser),
                 )
 
             self.assertNotEqual(env['REBOOT_CRYPTO_ROOT_KEYS'], 'v1:theirs')
@@ -126,6 +165,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 parser,
                 port=DEFAULT_DASHBOARD_PORT,
                 api_directory=dashboard._api_directory(parser),
+                application=dashboard._application(parser),
             )
             self.assertEqual(
                 env['REBOOT_CRYPTO_ROOT_KEYS'],
@@ -141,6 +181,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 parser,
                 port=DEFAULT_DASHBOARD_PORT,
                 api_directory=dashboard._api_directory(parser),
+                application=dashboard._application(parser),
             )
 
             # As the developer spelled it, so files can be shown as

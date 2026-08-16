@@ -36,9 +36,19 @@ message StateTypeInfo {
 
   // What the state type does, in the author's own words.
   optional string description = 5;
-}
 
-////////////////////////////////////////////////////////////////////////
+  // Where this state type is implemented, which its API file does not
+  // say; worked out from the application, which is what registers the
+  // servicers. Neither field is set until it has been looked for.
+  oneof implementation {
+    // The file implementing its servicer, spelled the way the
+    // developer would open it, e.g. "backend/src/account_servicer.py".
+    string servicer_file = 6;
+
+    // Why no servicer file was found.
+    string servicer_file_error = 7;
+  }
+}
 
 // What the dashboard application has read of the developer's API
 // files, so that a browser can read it without reaching the
@@ -74,6 +84,10 @@ message APIUpdateResponse {}
 message APIWatchRequest {}
 
 message APIWatchResponse {}
+
+message APIAnalyzeRequest {}
+
+message APIAnalyzeResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -146,6 +160,15 @@ service APIMethods {
   // Watches the developer's API files for as long as the dashboard
   // application runs, reading each one that changes.
   rpc Watch(APIWatchRequest) returns (APIWatchResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  // Works out where each state type the API files declare is
+  // implemented, again whenever those state types change. Driven by
+  // the API rather than by the filesystem because the API is what
+  // says which state types there are to look for.
+  rpc Analyze(APIAnalyzeRequest) returns (APIAnalyzeResponse) {
     option (rbt.v1alpha1.method).workflow = {
     };
   }

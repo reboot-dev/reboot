@@ -23,6 +23,17 @@ py_test(
 )
 
 py_test(
+    name = "servicer_analyzer_tests_py",
+    srcs = ["servicer_analyzer_tests.py"],
+    main = "servicer_analyzer_tests.py",
+    deps = [
+        "//reboot/aio:tests_py",
+        "//reboot/dashboard:main_py",
+        "//reboot/dashboard:servicer_analyzer_py",
+    ],
+)
+
+py_test(
     name = "application_tests_py",
     srcs = [":application_tests.py"],
     main = "application_tests.py",

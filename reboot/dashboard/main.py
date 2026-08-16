@@ -73,7 +73,9 @@ async def initialize(context: InitializeContext) -> None:
     # Idempotently, so that a restart of a named application finds
     # the `Watch` it already spawned rather than starting a second
     # watcher.
-    _ = await API.ref(API_ID).idempotently('watch').spawn().Watch(context)
+    _ = await API.ref(API_ID).idempotently('Watch').spawn().Watch(context)
+
+    _ = await API.ref(API_ID).idempotently('Analyze').spawn().Analyze(context)
 
 
 async def main():

@@ -36,6 +36,13 @@ PREFERENCES_ID = 'preferences'
 # the dashboard is meant to be startable that early.
 ENVVAR_RBT_API_DIRECTORY = 'RBT_API_DIRECTORY'
 
+# The developer's application entry point, as the `.rbtrc` spells it
+# for `rbt dev run`. What the API files declare says nothing about
+# which file implements a state type; the application, which registers
+# the servicers, is what says. Unset when the developer named none, in
+# which case no implementation is looked for.
+ENVVAR_RBT_APPLICATION = 'RBT_APPLICATION'
+
 # The `Presence` state the dashboard page subscribes to, recording who
 # is looking at a dashboard right now. `rbt dev run` reads it to decide
 # whether to open one.

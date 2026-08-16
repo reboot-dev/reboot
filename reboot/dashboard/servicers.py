@@ -18,7 +18,11 @@ from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
 from reboot.aio.servicers import Servicer
 from reboot.dashboard.api_watcher import watch
-from reboot.dashboard.constants import ENVVAR_RBT_API_DIRECTORY
+from reboot.dashboard.constants import (
+    ENVVAR_RBT_API_DIRECTORY,
+    ENVVAR_RBT_APPLICATION,
+)
+from reboot.dashboard.servicer_analyzer import analyze
 
 
 class APIServicer(API.Servicer):
@@ -43,7 +47,8 @@ class APIServicer(API.Servicer):
         context: WorkflowContext,
         request: API.WatchRequest,
     ) -> API.WatchResponse:
-        """Reads the developer's API files when they change.
+        """Returns only when the dashboard stops, reading the
+        developer's API files whenever they change.
 
         The directory comes from the environment each time this runs,
         so that an `rbt dashboard` restarted against a different one
@@ -56,13 +61,55 @@ class APIServicer(API.Servicer):
 
         return API.WatchResponse()
 
+    @classmethod
+    async def Analyze(
+        cls,
+        context: WorkflowContext,
+        request: API.AnalyzeRequest,
+    ) -> API.AnalyzeResponse:
+        """Returns only when the dashboard stops, working out where
+        each state type is implemented.
+
+        The application comes from the environment each time this
+        runs, for the same reason the API directory does. A developer
+        who named none gets no implementations looked for, which is
+        the normal case for a Node.js application.
+        """
+        application = os.environ.get(ENVVAR_RBT_APPLICATION)
+
+        if application is not None:
+            await analyze(context, application=application)
+
+        return API.AnalyzeResponse()
+
     async def Update(
         self,
         context: WriterContext,
         request: APIUpdateRequest,
     ) -> APIUpdateResponse:
+        # Where a state type is implemented is carried over rather
+        # than replaced. Reading an API file says what a state type
+        # declares; it says nothing about which file implements it,
+        # and that is worked out from the application by `Analyze`.
+        implementations = {
+            state_type.name: state_type
+            for state_type in self.state.state_types
+        }
+
         del self.state.state_types[:]
-        self.state.state_types.extend(request.state_types)
+
+        for state_type in request.state_types:
+            previous = implementations.get(state_type.name)
+            if previous is not None:
+                match previous.WhichOneof('implementation'):
+                    case 'servicer_file':
+                        state_type.servicer_file = previous.servicer_file
+                    case 'servicer_file_error':
+                        state_type.servicer_file_error = (
+                            previous.servicer_file_error
+                        )
+            self.state.state_types.append(state_type)
+
         self.state.error = request.error
         return APIUpdateResponse()
 
@@ -115,7 +162,7 @@ class PreferencesServicer(Preferences.Servicer):
 
 
 def servicers() -> list[type[Servicer]]:
-    """The servicers that back the dashboard's own state.
+    """Returns the servicers that back the dashboard's own state.
 
     This state belongs to the dashboard rather than to the application
     being developed, so it lives in its own application and its own
