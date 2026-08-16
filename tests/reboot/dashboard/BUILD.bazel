@@ -24,6 +24,17 @@ py_test(
     ],
 )
 
+py_test(
+    name = "implementation_watcher_tests_py",
+    srcs = ["implementation_watcher_tests.py"],
+    main = "implementation_watcher_tests.py",
+    deps = [
+        "//reboot/aio:tests_py",
+        "//reboot/dashboard:implementation_watcher_py",
+        "//reboot/dashboard:main_py",
+    ],
+)
+
 py_web_test_suite_env(
     name = "dashboard_tests_py",
     srcs = ["dashboard_tests.py"],
