@@ -6,32 +6,58 @@ from reboot.cli.common import cli
 from reboot.cli.common.directories import dot_rbt_directory
 from reboot.cli.common.rc import ArgumentParser
 from reboot.dashboard.constants import DEFAULT_DASHBOARD_PORT
-from tests.reboot.cli.mock_exit import (
-    MockExitException,
-    mock_raise_instead_of_exit,
-)
+from tests.reboot.cli.mock_exit import mock_raise_instead_of_exit
 from unittest.mock import patch
 
 
 @patch('argparse.ArgumentParser.exit', mock_raise_instead_of_exit)
 class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
 
-    def _parse(self, state_directory: str):
+    def _parse(self, state_directory: str, *, rbtrc: str = 'generate api/'):
+        rc_file = os.path.join(state_directory, '.rbtrc')
+        with open(rc_file, 'w') as file:
+            file.write(rbtrc + '\n')
+
         parser: ArgumentParser = cli.create_parser(
+            rc_file=rc_file,
             argv=[
                 'rbt',
                 f'--state-directory={state_directory}',
                 'dashboard',
-                '--api-directory=api',
-            ]
+            ],
         )
         args, _ = parser.parse_args()
         return args, parser
 
-    async def test_api_directory_is_required(self) -> None:
-        parser: ArgumentParser = cli.create_parser(argv=['rbt', 'dashboard'])
-        with self.assertRaises(MockExitException):
-            parser.parse_args()
+    async def test_the_api_directory_comes_from_generate(self) -> None:
+        """Naming it twice is how the two come to disagree, so it is
+        named once, where `rbt generate` already needs it."""
+        with tempfile.TemporaryDirectory() as state_directory:
+            _, parser = self._parse(
+                state_directory,
+                rbtrc=(
+                    '# Find the API files in `api/`.\n'
+                    'generate api/\n'
+                    '\n'
+                    'generate --python=backend/api\n'
+                    'generate --react=frontend/api\n'
+                    '\n'
+                    'dev run --application=backend/src/main.py\n'
+                    'dev run:hmr --frontend-host=http://localhost:4444'
+                ),
+            )
+
+            self.assertEqual(dashboard._api_directory(parser), 'api/')
+
+    async def test_an_rbtrc_that_says_nothing_about_generate(self) -> None:
+        with tempfile.TemporaryDirectory() as state_directory:
+            _, parser = self._parse(
+                state_directory,
+                rbtrc='dev run --application=backend/src/main.py',
+            )
+
+            with self.assertRaises(SystemExit):
+                dashboard._api_directory(parser)
 
     async def test_env_is_isolated_from_any_application(self) -> None:
         with tempfile.TemporaryDirectory() as state_directory:
@@ -56,7 +82,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                     args,
                     parser,
                     port=DEFAULT_DASHBOARD_PORT,
-                    api_directory=args.api_directory,
+                    api_directory=dashboard._api_directory(parser),
                 )
 
             self.assertEqual(env['RBT_NAME'], 'dashboard')
@@ -98,7 +124,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                     args,
                     parser,
                     port=DEFAULT_DASHBOARD_PORT,
-                    api_directory=args.api_directory,
+                    api_directory=dashboard._api_directory(parser),
                 )
 
             self.assertNotEqual(env['REBOOT_CRYPTO_ROOT_KEYS'], 'v1:theirs')
@@ -109,7 +135,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 args,
                 parser,
                 port=DEFAULT_DASHBOARD_PORT,
-                api_directory=args.api_directory,
+                api_directory=dashboard._api_directory(parser),
             )
             self.assertEqual(
                 env['REBOOT_CRYPTO_ROOT_KEYS'],
@@ -124,13 +150,13 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 args,
                 parser,
                 port=DEFAULT_DASHBOARD_PORT,
-                api_directory=args.api_directory,
+                api_directory=dashboard._api_directory(parser),
             )
 
             # As the developer spelled it, so files can be shown as
             # `api/bank/v1/account.py`; the dashboard runs in the
             # working directory where that spelling resolves.
-            self.assertEqual(env['RBT_API_DIRECTORY'], 'api')
+            self.assertEqual(env['RBT_API_DIRECTORY'], 'api/')
 
 
 if __name__ == '__main__':

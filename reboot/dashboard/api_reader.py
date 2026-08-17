@@ -136,7 +136,7 @@ def state_types_in_file(api_directory: str, filename: str) -> list[StateType]:
     `Shop` yields `shop.v1.Shop`.
     """
     # The path as the developer spelled it, joined before anything
-    # resolves it away: with `--api-directory=api` the file shows as
+    # resolves it away: with `generate api/` the file shows as
     # `api/bank/v1/account.py`, the path they would open.
     file = os.path.join(api_directory, filename)
 
