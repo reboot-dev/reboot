@@ -23,6 +23,7 @@ from reboot.dashboard.constants import (
     DASHBOARD_PATH,
     DEFAULT_DASHBOARD_PORT,
     ENVVAR_RBT_API_DIRECTORY,
+    ENVVAR_RBT_APPLICATION,
 )
 from reboot.settings import (
     ENVVAR_RBT_DEV,
@@ -57,18 +58,51 @@ def register_dashboard(parser: ArgumentParser):
     add_working_directory_options(parser.subcommand('dashboard'))
 
     parser.subcommand('dashboard').add_argument(
-        '--api-directory',
-        type=str,
-        required=True,
-        help='directory containing the API files the dashboard watches',
-    )
-
-    parser.subcommand('dashboard').add_argument(
         '--port',
         type=int,
         help='port on which the dashboard will serve traffic; defaults to '
         f'{DEFAULT_DASHBOARD_PORT}',
     )
+
+
+def _api_directory(parser: ArgumentParser) -> str:
+    """Returns the directory holding the developer's API files, which
+    is the directory they tell `rbt generate` to read them from.
+
+    Taken from there rather than named again here, so that moving the
+    API files is one edit and the dashboard cannot end up watching a
+    directory the rest of the tooling has stopped using.
+    """
+    for argument in parser.dot_rc_arguments('generate'):
+        # The directory is the one thing `rbt generate` takes that is
+        # not a flag; its flags say where to put what it generates.
+        if not argument.startswith('-'):
+            return argument
+
+    terminal.fail(
+        'Could not tell where your API files are. `rbt dashboard` reads '
+        f'that from the same place `rbt generate` does, so name a '
+        f'directory for it in your {parser.dot_rc_filename}:\n'
+        '\n'
+        '    generate api/\n'
+    )
+
+
+def _application(parser: ArgumentParser) -> Optional[str]:
+    """Returns the developer's application, which is the one they tell
+    `rbt dev run` to run, and `None` when they tell it none.
+
+    Read rather than asked for again, so that moving the application
+    is one edit; a second place to name it is a second place to forget
+    to change. `None` is what an application this cannot read looks
+    like -- a Node.js one names no Python for the servicers to be in.
+    """
+    for argument in parser.dot_rc_arguments('dev run'):
+        name, separator, value = argument.partition('=')
+        if name == '--application' and separator == '=':
+            return value
+
+    return None
 
 
 def _dashboard_env(
@@ -77,6 +111,7 @@ def _dashboard_env(
     *,
     port: int,
     api_directory: str,
+    application: Optional[str],
 ) -> dict[str, str]:
     """The environment for the dashboard application.
 
@@ -117,6 +152,14 @@ def _dashboard_env(
     # `api/bank/v1/account.py`; the dashboard runs in this working
     # directory, where that spelling resolves.
     composed[ENVVAR_RBT_API_DIRECTORY] = api_directory
+
+    # Where the developer's servicers are, spelled the same way and
+    # for the same reason. Left out of the environment entirely when
+    # the developer named no application, which is what tells the
+    # dashboard there is nothing to look for.
+    composed.pop(ENVVAR_RBT_APPLICATION, None)
+    if application is not None:
+        composed[ENVVAR_RBT_APPLICATION] = application
 
     composed[ENVVAR_RBT_NAME] = DASHBOARD_STATE_DIRECTORY_NAME
 
@@ -218,7 +261,8 @@ async def dashboard(
             args,
             parser,
             port=port,
-            api_directory=args.api_directory,
+            api_directory=_api_directory(parser),
+            application=_application(parser),
         )
 
         terminal.info(

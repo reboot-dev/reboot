@@ -739,6 +739,22 @@ class ArgumentParser(_Parser):
             raise ValueError(f"Invalid subcommand '{subcommand}'")
         return self._subcommand_parsers[subcommand]
 
+    def dot_rc_arguments(self, subcommand: str) -> list[str]:
+        """Returns the arguments the '.rc' file gives a subcommand,
+        spelled as they are written there and in the order they appear,
+        and nothing at all when there is no such file.
+
+        Only the lines that always apply: one written for a config,
+        such as `dev run:hmr --frontend-host=...`, is left out, because
+        whether that config was asked for is not known here.
+        """
+        if self.dot_rc is None:
+            return []
+
+        flags = self._read_flags_from_dot_rc(self.dot_rc_filename, self.dot_rc)
+
+        return flags[(subcommand, None)]
+
     def parse_args(self) -> tuple[argparse.Namespace, list[str]]:
         """Pass through to top-level parser with the expanded arguments after
         first validating that all flags include '=' between them and their value."""

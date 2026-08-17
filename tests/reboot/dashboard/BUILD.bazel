@@ -23,6 +23,17 @@ py_test(
 )
 
 py_test(
+    name = "implementation_watcher_tests_py",
+    srcs = ["implementation_watcher_tests.py"],
+    main = "implementation_watcher_tests.py",
+    deps = [
+        "//reboot/aio:tests_py",
+        "//reboot/dashboard:implementation_watcher_py",
+        "//reboot/dashboard:main_py",
+    ],
+)
+
+py_test(
     name = "application_tests_py",
     srcs = [":application_tests.py"],
     main = "application_tests.py",

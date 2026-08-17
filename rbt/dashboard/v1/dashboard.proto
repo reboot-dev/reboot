@@ -77,6 +77,68 @@ message APIWatchResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
+// One servicer found in the developer's application, and the state
+// type it services.
+message ServicerInfo {
+  // Represents one method a servicer defines, and what analyzing it
+  // found.
+  message Method {
+    // Represents the name of the method as the developer wrote it,
+    // e.g. "deposit". A method the API files declare is spelled the
+    // same way there.
+    string name = 1;
+
+    // Represents a hash digest of the method's syntax with the lines
+    // and columns left out, so that a comment added above the method
+    // or arguments rewrapped across lines do not change it. It says
+    // whether the method does anything different, not whether it was
+    // written down differently.
+    bytes digest = 2;
+  }
+
+  // The state type it services, spelled as `StateTypeInfo.name`.
+  string state_type = 1;
+
+  // The file it is written in, spelled the way the developer would
+  // open it, e.g. "backend/src/account_servicer.py".
+  string file = 2;
+
+  // Represents every method it defines, in the order they are
+  // written, which is the order somebody reading the file meets them.
+  repeated Method methods = 3;
+}
+
+// What the dashboard application has read of the developer's
+// application: which of their files implements each state type.
+//
+// Held apart from `API` because the two are read from different
+// places, at different moments, and neither says anything about the
+// other. An API file says a state type exists; only the application
+// says where it is implemented. Whoever wants both asks for both.
+message Implementation {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  // Every servicer found, sorted. A state type with no entry here is
+  // one no servicer was found for -- which, before this has ever been
+  // written, is all of them. A state type with two is two classes
+  // servicing it, which is for whoever reads this to make of what
+  // they will.
+  repeated ServicerInfo servicers = 1;
+}
+
+message ImplementationGetRequest {}
+
+message ImplementationGetResponse {
+  repeated ServicerInfo servicers = 1;
+}
+
+message ImplementationWatchRequest {}
+
+message ImplementationWatchResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
 // What the developer has told the dashboard about opening dashboards.
 //
 // Kept here rather than in a file under their project because it is a
@@ -146,6 +208,23 @@ service APIMethods {
   // Watches the developer's API files for as long as the dashboard
   // application runs, reading each one that changes.
   rpc Watch(APIWatchRequest) returns (APIWatchResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+service ImplementationMethods {
+  rpc Get(ImplementationGetRequest) returns (ImplementationGetResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  // Watches the developer's application for as long as the dashboard
+  // application runs, working out which of their files implements
+  // each state type whenever one of those files changes.
+  rpc Watch(ImplementationWatchRequest) returns (ImplementationWatchResponse) {
     option (rbt.v1alpha1.method).workflow = {
     };
   }
