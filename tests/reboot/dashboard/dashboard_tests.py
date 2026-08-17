@@ -8,7 +8,8 @@ API read, and rendering) in one process.
 import asyncio
 import socket
 import unittest
-from rbt.dashboard.v1.dashboard_pb2 import FieldInfo, MethodInfo, StateTypeInfo
+from google.protobuf.json_format import ParseDict
+from google.protobuf.struct_pb2 import Value
 from rbt.dashboard.v1.dashboard_rbt import API, Preferences
 from reboot.aio.tests import Reboot
 from reboot.dashboard.constants import (
@@ -42,6 +43,63 @@ def _driver():
             },
         }
     )
+
+
+# One state type, spelled the way `api_reader` spells it: types by
+# `$ref` into the state type's own `$defs`.
+_SHOP = {
+    'name': 'shop.v1.Shop',
+    'file': 'api/shop/v1/shop.py',
+    'state': {
+        '$ref': '#/$defs/ShopState'
+    },
+    'methods':
+        [
+            {
+                'name': 'look',
+                'kind': 'reader',
+                'factory': False,
+                'mcp': False,
+                'errors': [],
+                'request': {
+                    '$ref': '#/$defs/LookRequest'
+                },
+                'response': {
+                    '$ref': '#/$defs/LookResponse'
+                },
+            },
+        ],
+    '$defs':
+        {
+            'ShopState':
+                {
+                    'type': 'object',
+                    'properties': {
+                        'name': {
+                            'type': 'string'
+                        }
+                    },
+                },
+            'LookRequest':
+                {
+                    'type': 'object',
+                    'properties': {
+                        'item': {
+                            'type': 'string'
+                        }
+                    },
+                },
+            'LookResponse':
+                {
+                    'type': 'object',
+                    'properties': {
+                        'found': {
+                            'type': 'boolean'
+                        }
+                    },
+                },
+        },
+}
 
 
 class DashboardTest(unittest.IsolatedAsyncioTestCase):
@@ -122,22 +180,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
         await API.ref(API_ID).Update(
             context,
-            state_types=[
-                StateTypeInfo(
-                    name='shop.v1.Shop',
-                    file='api/shop/v1/shop.py',
-                    fields=[FieldInfo(name='name', type='str')],
-                    methods=[
-                        MethodInfo(
-                            name='look',
-                            kind='reader',
-                            arguments=[FieldInfo(name='item', type='str')],
-                            returns=[FieldInfo(name='found', type='bool')],
-                        ),
-                    ],
-                ),
-            ],
-            error='',
+            state_types=ParseDict([_SHOP], Value()),
         )
 
     def _run(self, body):
@@ -200,13 +243,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
         await API.ref(API_ID).Update(
             context,
-            state_types=[
-                StateTypeInfo(
-                    name='shop.v1.Shop',
-                    file='api/shop/v1/shop.py',
-                    fields=[FieldInfo(name='name', type='str')],
-                ),
-            ],
+            state_types=ParseDict([_SHOP], Value()),
             error='shop.py: SyntaxError: invalid syntax',
         )
 

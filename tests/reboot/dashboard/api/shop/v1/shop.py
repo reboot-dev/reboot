@@ -8,6 +8,7 @@ from reboot.api import (
     Transaction,
     Type,
 )
+from typing import Optional
 
 
 class ShopState(Model):
@@ -20,8 +21,21 @@ class StockRequest(Model):
     quantity: int = Field(tag=2)
 
 
+class Price(Model):
+    """What one item costs."""
+    currency: str = Field(tag=1)
+    cents: int = Field(tag=2)
+
+
+class Item(Model):
+    """One thing the shop sells."""
+    name: str = Field(tag=1)
+    price: Optional[Price] = Field(tag=2, default=None)
+
+
 class StockResponse(Model):
     remaining: int = Field(tag=1)
+    items: list[Item] = Field(tag=2, default_factory=list)
 
 
 class OutOfStockError(Model):

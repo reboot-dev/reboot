@@ -26,11 +26,13 @@ from reboot.dashboard.constants import (
 )
 from reboot.settings import (
     ENVVAR_RBT_DEV,
+    ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_FRONTEND_DIST_PATH,
     ENVVAR_RBT_FRONTEND_HOST,
     ENVVAR_RBT_FRONTEND_ROOT_PATH,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
+    ENVVAR_RBT_SERVE,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
@@ -99,7 +101,16 @@ def _dashboard_env(
     ):
         composed.pop(name, None)
 
-    composed[ENVVAR_RBT_DEV] = 'true'
+    # Served with `rbt serve` defaults rather than `rbt dev` ones.
+    # Popped rather than left unset, since `detect_run_environment`
+    # reads `RBT_DEV` first.
+    composed.pop(ENVVAR_RBT_DEV, None)
+    composed[ENVVAR_RBT_SERVE] = 'true'
+
+    # Also what `rbt serve` sets: `RBT_SERVE` alone is not enough to
+    # produce a `rbt serve` environment.
+    composed[ENVVAR_RBT_EFFECT_VALIDATION] = 'DISABLED'
+
     composed[ENVVAR_REBOOT_EXPECTED_VERSION] = REBOOT_VERSION
     composed[ENVVAR_REBOOT_LOCAL_ENVOY] = 'true'
     composed[ENVVAR_REBOOT_LOCAL_ENVOY_PORT] = str(port)
@@ -165,10 +176,6 @@ async def _run_dashboard(
             '-m',
             'reboot.dashboard.main',
             env=env,
-            # The application's own startup output would drown the one
-            # line this command prints; anything it writes to stderr
-            # still reaches the terminal.
-            stdout=asyncio.subprocess.DEVNULL,
         ) as process:
             await process.wait()
             failed = process.returncode != 0

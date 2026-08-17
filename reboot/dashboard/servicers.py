@@ -33,8 +33,11 @@ class APIServicer(API.Servicer):
         request: APIGetRequest,
     ) -> APIGetResponse:
         return APIGetResponse(
-            state_types=self.state.state_types,
-            error=self.state.error,
+            state_types=(
+                self.state.state_types
+                if self.state.HasField('state_types') else None
+            ),
+            error=self.state.error if self.state.HasField('error') else None,
         )
 
     @classmethod
@@ -61,9 +64,14 @@ class APIServicer(API.Servicer):
         context: WriterContext,
         request: APIUpdateRequest,
     ) -> APIUpdateResponse:
-        del self.state.state_types[:]
-        self.state.state_types.extend(request.state_types)
-        self.state.error = request.error
+        if request.HasField('state_types'):
+            self.state.state_types.CopyFrom(request.state_types)
+        else:
+            self.state.ClearField('state_types')
+        if request.HasField('error'):
+            self.state.error = request.error
+        else:
+            self.state.ClearField('error')
         return APIUpdateResponse()
 
 

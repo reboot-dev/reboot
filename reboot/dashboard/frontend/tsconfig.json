@@ -5,6 +5,8 @@
     "jsx": "react-jsx",
     "moduleResolution": "bundler",
     "skipLibCheck": true,
+    // So the contract test can import `description.ts` by name.
+    "declaration": true,
     "verbatimModuleSyntax": true,
     "baseUrl": ".",
     "paths": {

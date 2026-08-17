@@ -10,18 +10,24 @@ ts_project(
     name = "dashboard_ts",
     srcs = [
         "src/constants.ts",
+        "src/description.ts",
         "src/main.tsx",
     ],
+    declaration = True,
     tsconfig = ":tsconfig",
+    # `description.ts` is what the contract test parses with.
+    visibility = ["//tests/reboot/dashboard:__pkg__"],
     deps = [
         "//:node_modules/@reboot-dev/reboot-react",
         "//:node_modules/@reboot-dev/reboot-std",
         "//:node_modules/@reboot-dev/reboot-std-api",
         "//:node_modules/@reboot-dev/reboot-std-react",
         "//:node_modules/@reboot-dev/reboot-web",
+        "//:node_modules/@stoplight/json-schema-tree",
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/uuid",
+        "//:node_modules/zod",
         "//rbt/dashboard/v1:dashboard_js_reboot_react",
     ],
 )

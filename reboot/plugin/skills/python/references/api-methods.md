@@ -177,6 +177,35 @@ withdraw=Writer(
 
 See `api-errors.md` for raising and catching them.
 
+## `description=` Says What the Method Does
+
+All four method kinds take an optional `description=`:
+
+```python
+balance=Reader(
+    request=None,
+    response=BalanceResponse,
+    description="The funds currently available to withdraw.",
+    mcp=None,
+),
+withdraw=Writer(
+    request=WithdrawRequest,
+    response=None,
+    errors=[OverdraftError],
+    description="Take funds out, or raise `OverdraftError` if the "
+    "balance would go negative.",
+    mcp=Tool(),
+),
+```
+
+The dev dashboard shows it, and `mcp=Tool()` methods use it as the
+tool's description. Write what a caller cannot derive from the
+signature: the precondition, the side effect, the unit, which error it
+raises and when.
+
+A state type takes one too, via `Type(description=...)`; see
+`api-pydantic.md`.
+
 ## Every Factory Takes `mcp=`
 
 All four factories require an explicit `mcp=` keyword. Use

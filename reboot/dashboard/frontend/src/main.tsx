@@ -1,4 +1,3 @@
-import type { MethodInfo, StateTypeInfo } from "@dashboard/dashboard_pb";
 import { useAPI, usePreferences } from "@dashboard/dashboard_rbt_react";
 import { RebootClientProvider } from "@reboot-dev/reboot-react";
 import { Presence } from "@reboot-dev/reboot-std-react/presence";
@@ -15,6 +14,8 @@ import {
 import { createRoot } from "react-dom/client";
 import { v4 as uuidv4 } from "uuid";
 import { API_ID, PREFERENCES_ID, PRESENCE_ID } from "./constants";
+import type { Field, Method, Ref, StateType } from "./description";
+import { fieldsOf, parseDescription } from "./description";
 
 // One subscriber per tab, for as long as the tab is open.
 const SUBSCRIBER_ID = uuidv4();
@@ -46,26 +47,66 @@ const DEFINITIONS: Record<string, string> = {
     "change them. You can have as many of these as you want.",
 };
 
+// The gap between a pill and its definition, matching the offset
+// `.definition` is placed at.
+const DEFINITION_GAP = 8;
+
 // A pill, with its definition a hover away when it has one. The
 // small mark is what says there is something to hover.
+//
+// The definition opens above the pill, where it does not cover the
+// row being read, unless the pane has been scrolled to leave no room
+// above: the pane clips whatever leaves it, so a pill against its top
+// edge would show nothing at all. Then it opens downward instead.
 const Pill: FC<{ className: string; label: string; meaning?: string }> = ({
   className,
   label,
   meaning,
-}) =>
-  meaning === undefined ? (
-    <span className={className}>{label}</span>
-  ) : (
-    <span className={`${className} defined`}>
+}) => {
+  const pill = useRef<HTMLSpanElement>(null);
+  const [below, setBelow] = useState(false);
+
+  // Measured on the way in rather than on every scroll, since where
+  // it opens only matters at the moment it opens. The definition is
+  // hidden by `visibility`, so it has a height to read while closed;
+  // and the room is measured from the pill rather than from the
+  // definition, whose own position is what this decides.
+  const place = useCallback(() => {
+    const pane = pill.current?.closest(".pane");
+    const definition = pill.current?.querySelector(".definition");
+    if (pane == null || definition == null) {
+      return;
+    }
+    const room =
+      pill.current!.getBoundingClientRect().top -
+      pane.getBoundingClientRect().top;
+    setBelow(room < definition.getBoundingClientRect().height + DEFINITION_GAP);
+  }, []);
+
+  if (meaning === undefined) {
+    return <span className={className}>{label}</span>;
+  }
+
+  return (
+    <span
+      ref={pill}
+      className={`${className} defined`}
+      onPointerEnter={place}
+      onFocus={place}
+    >
       {label}
       <span className="define-mark" aria-hidden="true">
         ?
       </span>
-      <span className="definition" role="tooltip">
+      <span
+        className={below ? "definition below" : "definition"}
+        role="tooltip"
+      >
         {meaning}
       </span>
     </span>
   );
+};
 
 const Kind: FC<{ kind: string }> = ({ kind }) => (
   <Pill
@@ -113,7 +154,7 @@ const typeNameOf = (name: string): string =>
 const isStandardLibrary = (namespace: string): boolean =>
   namespace.startsWith("rbt.");
 
-const Namespace: FC<{ namespace: string; types: StateTypeInfo[] }> = ({
+const Namespace: FC<{ namespace: string; types: StateType[] }> = ({
   namespace,
   types,
 }) => {
@@ -146,17 +187,52 @@ const Namespace: FC<{ namespace: string; types: StateTypeInfo[] }> = ({
   );
 };
 
-const Method: FC<{ method: MethodInfo }> = ({ method }) => {
-  const args = method.arguments
-    .map((argument) => `${argument.name}: ${argument.type}`)
-    .join(", ");
+// A type's fields, and the fields of any type they hold. Nesting is
+// what this page is for: a field whose type is another type is not a
+// dead end, it opens.
+const Fields: FC<{ fields: Field[]; depth?: number }> = ({
+  fields,
+  depth = 0,
+}) => (
+  <div className={depth === 0 ? "fields" : "fields nested"}>
+    {fields.map((field) => (
+      <div className="field-group" key={field.name}>
+        <div className="field">
+          <span className="field-name">{field.name}</span>
+          <span className="field-type">
+            {field.type}
+            {field.optional && <span className="optional">?</span>}
+          </span>
+          {field.description !== undefined && (
+            <span className="field-description">{field.description}</span>
+          )}
+        </div>
+        {field.children.length > 0 && (
+          <Fields fields={field.children} depth={depth + 1} />
+        )}
+      </div>
+    ))}
+  </div>
+);
 
-  // The response's keys and value types, spelled the way a Python
-  // reader would write them.
-  const returns = method.returns
-    .map((field) => `${field.name}: ${field.type}`)
-    .join(", ");
+// A request, response or error, named and opened.
+const TypeOf: FC<{ stateType: StateType; label: string; type: Ref }> = ({
+  stateType,
+  label,
+  type,
+}) => (
+  <div className="type">
+    <div className="type-name">
+      {label} <code>{type.$ref.replace("#/$defs/", "")}</code>
+    </div>
+    <Fields fields={fieldsOf(stateType, type)} />
+  </div>
+);
 
+const Method: FC<{ stateType: StateType; method: Method }> = ({
+  stateType,
+  method,
+}) => {
   return (
     <div className="method" id={`m-${method.name}`}>
       <div className="method-head">
@@ -200,16 +276,33 @@ const Method: FC<{ method: MethodInfo }> = ({ method }) => {
               text={method.description}
             />
           )}
-          <div className="method-signature">
-            <span>
-              ({args}) <span className="arrow">→</span>{" "}
-              <span className="returns">
-                {method.returns.length > 0 ? `{${returns}}` : "None"}
-              </span>
-            </span>
-            {method.errors.length > 0 && (
-              <span className="errors">raises {method.errors.join(", ")}</span>
+          <div className="method-types">
+            {method.request !== undefined ? (
+              <TypeOf
+                stateType={stateType}
+                label="takes"
+                type={method.request}
+              />
+            ) : (
+              <div className="type empty">takes nothing</div>
             )}
+            {method.response !== undefined ? (
+              <TypeOf
+                stateType={stateType}
+                label="returns"
+                type={method.response}
+              />
+            ) : (
+              <div className="type empty">returns nothing</div>
+            )}
+            {method.errors.map((error) => (
+              <TypeOf
+                stateType={stateType}
+                label="raises"
+                type={error}
+                key={error.$ref}
+              />
+            ))}
           </div>
         </div>
       </div>
@@ -280,11 +373,12 @@ const useSlidingPills = (expanded: boolean) => {
 };
 
 const StateType: FC<{
-  stateType: StateTypeInfo;
+  stateType: StateType;
   expanded: boolean;
   onToggle: () => void;
 }> = ({ stateType, expanded, onToggle }) => {
   const section = useSlidingPills(expanded);
+  const fields = fieldsOf(stateType, stateType.state);
 
   return (
     // Every method's detail opens and closes off this one class, so a
@@ -305,7 +399,7 @@ const StateType: FC<{
         <div className="state-type-heading">
           <h2>{typeNameOf(stateType.name)}</h2>
           <span className="summary-line">
-            {countOf(stateType.fields.length, "field")} ·{" "}
+            {countOf(fields.length, "field")} ·{" "}
             {countOf(stateType.methods.length, "method")}
           </span>
         </div>
@@ -330,25 +424,18 @@ const StateType: FC<{
       )}
 
       <div className="eyebrow section">state</div>
-      {stateType.fields.length === 0 ? (
+      {fields.length === 0 ? (
         <div className="empty">
           No state fields. The key is the whole state.
         </div>
       ) : (
-        <div className="fields">
-          {stateType.fields.map((field) => (
-            <div className="field" key={field.name}>
-              <span className="field-name">{field.name}</span>
-              <span className="field-type">{field.type}</span>
-            </div>
-          ))}
-        </div>
+        <Fields fields={fields} />
       )}
 
       <div className="eyebrow section">methods</div>
       <div className="methods">
         {stateType.methods.map((method) => (
-          <Method method={method} key={method.name} />
+          <Method stateType={stateType} method={method} key={method.name} />
         ))}
       </div>
     </section>
@@ -383,18 +470,24 @@ const Overview: FC<{
   // What the developer's API files declare. Those exist before the
   // application is generated, built or started, which is why they are
   // what this page shows.
-  const read = response?.stateTypes;
+  // The description travels as a `google.protobuf.Value`: the types
+  // in it are Pydantic's own JSON Schema, which proto has no business
+  // restating.
+  const read = useMemo(
+    () => parseDescription(response?.stateTypes?.toJson()),
+    [response?.stateTypes]
+  );
 
   // Restarting `rbt dashboard` closes this page's connection for a
   // few seconds. Keep the last shape that was read so the page stays
   // readable across that.
-  const seen = useRef<StateTypeInfo[]>([]);
+  const seen = useRef<StateType[]>([]);
 
-  if (read !== undefined && read.length > 0) {
+  if (read.length > 0) {
     seen.current = read;
   }
 
-  const stateTypes: StateTypeInfo[] = read?.length ? read : seen.current;
+  const stateTypes: StateType[] = read.length ? read : seen.current;
 
   // Why the API files could not be read, shown beside the last shape
   // that was: a half-written file is the normal case while someone is
@@ -402,7 +495,7 @@ const Overview: FC<{
   const error = response?.error ?? "";
 
   const namespaces = useMemo(() => {
-    const byNamespace = new Map<string, StateTypeInfo[]>();
+    const byNamespace = new Map<string, StateType[]>();
     for (const stateType of stateTypes) {
       const namespace = namespaceOf(stateType.name);
       const types = byNamespace.get(namespace);

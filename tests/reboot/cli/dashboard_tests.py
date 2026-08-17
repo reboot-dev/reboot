@@ -48,6 +48,8 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                     'RBT_STATE_DIRECTORY': '/somewhere/app',
                     'RBT_NODEJS': 'true',
                     'REBOOT_LOCAL_ENVOY_PORT': '9991',
+                    'RBT_DEV': 'true',
+                    'RBT_EFFECT_VALIDATION': 'ENABLED',
                 },
             ):
                 env = dashboard._dashboard_env(
@@ -69,6 +71,14 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
             # the dashboard.
             self.assertEqual(env['RBT_SERVERS'], '1')
             self.assertEqual(env['REBOOT_LOCAL_ENVOY'], 'true')
+
+            # `rbt serve` defaults, not `rbt dev` ones: `RBT_SERVE`
+            # alone is not enough to produce a `rbt serve`
+            # environment, and `RBT_DEV` has to be gone rather than
+            # merely unset, since it is read first.
+            self.assertEqual(env['RBT_SERVE'], 'true')
+            self.assertNotIn('RBT_DEV', env)
+            self.assertEqual(env['RBT_EFFECT_VALIDATION'], 'DISABLED')
 
             # A sibling of `.rbt/dev/`, so that it can never collide
             # with an application's state at `.rbt/dev/<name>/`.

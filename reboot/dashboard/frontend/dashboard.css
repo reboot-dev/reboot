@@ -23,7 +23,6 @@
   --border-soft: 240 5.9% 94%;
   --surface-sunken: 240 4.8% 97%;
   --prose: 211 40% 30%;
-  --returns: 166 47% 33%;
   --errors: 0 62% 45%;
 }
 
@@ -401,11 +400,15 @@ header h1 {
   gap: 14px;
 }
 
+/* Deliberately not a scroll container. Nothing inside a card paints
+   out to its edges, so there is no corner for `overflow: hidden` to
+   clip, and it would clip two things that must escape: a pill's
+   tooltip, which opens above the card, and the subgrid below, which
+   stops propagating at a scroll container. */
 .method {
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   background: hsl(var(--card));
-  overflow: hidden;
 }
 
 .method-head {
@@ -456,14 +459,6 @@ header h1 {
     grid-column: 1 / -1;
     grid-template-columns: subgrid;
     align-items: center;
-  }
-
-  /* A scroll container cannot be a subgrid, so the columns would stop
-     propagating at the card. `.method` is one only because of the
-     `overflow: hidden` that clips the detail to the card's rounded
-     corners, and a closed method has no detail drawn to clip. */
-  .state-type:not(.is-expanded) .method {
-    overflow: visible;
   }
 
   .state-type:not(.is-expanded) .method-detail {
@@ -629,6 +624,14 @@ header h1 {
   visibility: visible;
 }
 
+/* Opened downward instead, when the pane has been scrolled to leave
+   no room above the pill. `Pill` decides which, since only it can
+   measure. */
+.definition.below {
+  top: calc(100% + 8px);
+  bottom: auto;
+}
+
 /* The section eyebrow sits at the pane's left edge, and the pane
    clips whatever leaves it, so a centred tooltip loses its left
    half. Open rightward from the label instead. */
@@ -683,25 +686,51 @@ header h1 {
   text-wrap: pretty;
 }
 
-.method-signature {
+.method-types {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 10px;
   padding: 10px 18px;
   background: hsl(var(--surface-sunken));
-  border-top: 1px solid hsl(var(--border-soft));
-  font-family: ui-monospace, Menlo, monospace;
+}
+
+.type {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.type-name {
   font-size: 11.5px;
   color: hsl(var(--muted-foreground));
 }
 
-.arrow {
-  color: hsl(240 3.8% 65%);
+.type-name code {
+  font-family: ui-monospace, Menlo, monospace;
+  color: hsl(var(--foreground));
 }
-.returns {
-  color: hsl(var(--returns));
+
+/* A type held by a field, drawn under it and stepped in, so depth is
+   read down the left edge rather than counted. */
+.fields.nested {
+  margin-left: 14px;
+  padding-left: 10px;
+  border-left: 1px solid hsl(240 5.9% 90%);
 }
-.errors {
-  color: hsl(var(--errors));
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-description {
+  font-size: 11.5px;
+  color: hsl(var(--muted-foreground));
+}
+
+/* `Optional[X]` reaches the page as a union with null; the question
+   mark says the same thing in the space of one character. */
+.optional {
+  color: hsl(var(--muted-foreground));
 }
