@@ -2,41 +2,8 @@ syntax = "proto3";
 
 package rbt.dashboard.v1;
 
+import "google/protobuf/struct.proto";
 import "rbt/v1alpha1/options.proto";
-
-////////////////////////////////////////////////////////////////////////
-
-// The information the developer dashboard needs to display data
-// about the Reboot application being developed.
-
-message FieldInfo {
-  string name = 1;
-  string type = 2;
-}
-
-message MethodInfo {
-  string name = 1;
-  string kind = 2;
-  repeated FieldInfo arguments = 3;
-  repeated FieldInfo returns = 4;
-  repeated string errors = 5;
-  optional string description = 6;
-  bool factory = 7;
-  bool mcp = 8;
-}
-
-message StateTypeInfo {
-  string name = 1;
-
-  // The file the developer declared it in, e.g.
-  // "bank/v1/account.py".
-  string file = 2;
-  repeated FieldInfo fields = 3;
-  repeated MethodInfo methods = 4;
-
-  // What the state type does, in the author's own words.
-  optional string description = 5;
-}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -48,25 +15,30 @@ message API {
   };
 
   // The state types the developer's API files declare, which exist
-  // before the application does.
-  repeated StateTypeInfo state_types = 1;
+  // before the application does. A JSON array: each state type
+  // carries its methods and a `$defs` of every type they mention,
+  // referred to by `$ref`. `Value` because the types are Pydantic's
+  // own JSON Schema, which is recursive and open-ended, and describing
+  // it in proto would mean owning a second copy of a mapping Pydantic
+  // already has.
+  google.protobuf.Value state_types = 1;
 
   // Why the API files could not be read, if they could not be. A
   // half-written file is the normal case while someone is typing, and
   // saying so beats showing nothing.
-  string error = 2;
+  optional string error = 2;
 }
 
 message APIGetRequest {}
 
 message APIGetResponse {
-  repeated StateTypeInfo state_types = 1;
-  string error = 2;
+  google.protobuf.Value state_types = 1;
+  optional string error = 2;
 }
 
 message APIUpdateRequest {
-  repeated StateTypeInfo state_types = 1;
-  string error = 2;
+  google.protobuf.Value state_types = 1;
+  optional string error = 2;
 }
 
 message APIUpdateResponse {}
@@ -121,8 +93,8 @@ message PreferencesSetSuppressOpenOnRestartRequest {
 message PreferencesSetSuppressOpenOnRestartResponse {}
 
 message PreferencesSetExpandedRequest {
-  // The fully qualified name of one state type, spelled the way
-  // `StateTypeInfo` spells it.
+  // The fully qualified name of one state type, spelled the way the
+  // description spells it.
   string state_type = 1;
 
   bool expanded = 2;

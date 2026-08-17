@@ -118,7 +118,8 @@ api = API(
 
 Attach typed errors via `errors=[ErrorModel, ...]`. Mark a method as a
 constructor with `factory=True` (only valid on `Writer` and
-`Transaction`, see below).
+`Transaction`, see below). Say what the method does with
+`description="..."`; see `api-methods.md`.
 
 ### `factory=True` Only Works on `Writer` and `Transaction`
 
@@ -315,6 +316,29 @@ type name via `Type(state=<NameState>, methods=<NameMethods>)` inside an
 with `<Name>.Servicer`, `<Name>.ref(id)`, and request/response messages
 nested as attributes (`Account.BalanceResponse`, `Account.DepositRequest`,
 etc.).
+
+### `Type(description=...)` Says What the State Type Is For
+
+`Type` takes an optional `description=`, shown by the dev dashboard
+beside the state type's name and file:
+
+```python
+api = API(
+    Account=Type(
+        state=AccountState,
+        methods=AccountMethods,
+        description="One customer's money, and the consistency "
+        "boundary every balance change is serialized on.",
+    ),
+)
+```
+
+A state type is the sum of its state and its methods, and its name
+alone rarely says what it is _for_. Write about the part a reader
+cannot derive from the fields and methods listed beside it: what it
+is the consistency boundary for, what one instance corresponds to,
+how its ID is chosen. Restating them adds nothing. Per-method
+descriptions are separate; see `api-methods.md`.
 
 ### Generated Request/Response Names Come From the **Method Name**
 

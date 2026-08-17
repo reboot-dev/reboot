@@ -19,6 +19,20 @@ py_library(
     ],
 )
 
+# The reader as a command, so a `genrule` can produce a description
+# for the test that holds `api_reader.py` and `description.ts` to the
+# same shape. `main()` writes the description to stdout.
+py_binary(
+    name = "api_reader",
+    srcs = ["api_reader.py"],
+    main = "api_reader.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//reboot:api_py",
+    ],
+)
+
 py_library(
     name = "api_watcher_py",
     srcs = ["api_watcher.py"],

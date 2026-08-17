@@ -8,6 +8,7 @@ import asyncio
 import os
 import tempfile
 import unittest
+from google.protobuf.json_format import MessageToDict
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import API
 from reboot.aio.tests import Reboot
@@ -43,6 +44,13 @@ class LookResponse(Model):
 
 api = API({state}=Type(state={state}State, methods={state}Methods))
 '''
+
+
+def _read(response) -> list[dict]:
+    """The state types the description carries, as JSON."""
+    if not response.HasField('state_types'):
+        return []
+    return MessageToDict(response.state_types)
 
 
 class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
@@ -91,18 +99,18 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         # application came up.
         self._write(self.directory, 'shop', 'Shop')
 
-        response = await self._wait_for(lambda api: len(api.state_types) == 1)
+        response = await self._wait_for(lambda api: len(_read(api)) == 1)
         self.assertEqual(
-            [state.name for state in response.state_types],
+            [state['name'] for state in _read(response)],
             ['shop.v1.Shop'],
         )
-        self.assertEqual(response.error, '')
+        self.assertFalse(response.HasField('error'))
 
         self._write(self.directory, 'depot', 'Depot')
 
-        response = await self._wait_for(lambda api: len(api.state_types) == 2)
+        response = await self._wait_for(lambda api: len(_read(api)) == 2)
         self.assertEqual(
-            sorted(state.name for state in response.state_types),
+            sorted(state['name'] for state in _read(response)),
             ['shop.v1.Depot', 'shop.v1.Shop'],
         )
 

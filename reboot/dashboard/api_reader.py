@@ -5,8 +5,8 @@ Run as a subprocess:
     python -m reboot.dashboard.api_reader <api-directory> \
         <file-relative-to-it>
 
-and it writes a JSON list of `StateTypeInfo` to stdout, or a message
-to stderr and a non-zero exit if the file cannot be read.
+and it writes a JSON list of state types to stdout, or a message to
+stderr and a non-zero exit if the file cannot be read.
 
 A subprocess for two reasons. Reading a Pydantic API means importing
 it, so doing it in the dashboard would accumulate stale modules across
@@ -14,78 +14,79 @@ edits. And it derives a module path from a relative filename, so it
 needs a working directory and `sys.path` that the dashboard should not
 adopt.
 
-The description comes from walking the imported `API` object itself,
-so everything is spelled the way its author spelled it: method names
-as `names_like_this`, field types as `int` or `Optional[str]`, and
-errors by the names of the declared models.
+Types are Pydantic's own JSON Schema rather than anything spelled
+here, so a nested type is followed rather than named: a state type
+carries a `$defs` of everything its methods mention, and its state,
+requests, responses and errors are `$ref`s into it. Scoped per state
+type, so two files declaring the same name do not collide.
 """
 import asyncio
 import importlib
 import json
 import os
 import sys
-import types
-from google.protobuf.json_format import MessageToDict
-from rbt.dashboard.v1.dashboard_pb2 import FieldInfo, MethodInfo, StateTypeInfo
+from pydantic.json_schema import models_json_schema
 from reboot.api import API, MethodModel, Model
-from typing import Any, Literal, Optional, Union, get_args, get_origin
+from typing import Optional
 
 
-def _type_string(annotation) -> str:
-    """The source spelling of `annotation`, e.g. `Optional[str]`."""
-    if annotation is type(None):
-        return 'None'
-    if annotation is Any:
-        return 'Any'
+def _schemas_of(models: list[type[Model]]) -> tuple[dict, dict]:
+    """The `$defs` for `models`, and a `$ref` to each by model.
 
-    origin = get_origin(annotation)
+    One call for the whole state type, so a type two of its methods
+    both mention is described once.
+    """
+    if len(models) == 0:
+        return {}, {}
 
-    if origin is Union or origin is types.UnionType:
-        arguments = get_args(annotation)
-        others = [a for a in arguments if a is not type(None)]
-        spelled = ', '.join(_type_string(a) for a in others)
-        if len(others) == len(arguments):
-            return f'Union[{spelled}]'
-        if len(others) == 1:
-            return f'Optional[{spelled}]'
-        return f'Optional[Union[{spelled}]]'
-    if origin is Literal:
-        return str(annotation).replace('typing.', '')
-    if origin is list:
-        (item,) = get_args(annotation)
-        return f'list[{_type_string(item)}]'
-    if origin is dict:
-        key, value = get_args(annotation)
-        return f'dict[{_type_string(key)}, {_type_string(value)}]'
-    if origin is None and isinstance(annotation, type):
-        return annotation.__name__
-    return str(annotation).replace('typing.', '')
+    # `models_json_schema` dedupes for us, but wants each model once.
+    unique = list(dict.fromkeys(models))
 
-
-def _fields_of(model: type[Model]) -> list[FieldInfo]:
-    return [
-        FieldInfo(name=name, type=_type_string(field.annotation))
-        for name, field in model.model_fields.items()
-    ]
-
-
-def _describe_method(method_name: str, spec: MethodModel) -> MethodInfo:
-    info = MethodInfo(
-        name=method_name,
-        kind=spec.kind.value,
-        factory=spec.factory,
-        mcp=spec.mcp is not None,
-        errors=[error.__name__ for error in spec.errors],
+    refs, schema = models_json_schema(
+        [(model, 'validation') for model in unique],
+        ref_template='#/$defs/{model}',
     )
 
-    if spec.request is not None:
-        info.arguments.extend(_fields_of(spec.request))
-    if spec.response is not None:
-        info.returns.extend(_fields_of(spec.response))
-    if spec.description is not None:
-        info.description = spec.description
+    return schema.get('$defs', {}), {
+        model: refs[(model, 'validation')] for model in unique
+    }
 
-    return info
+
+def _models_of(type_obj) -> list[type[Model]]:
+    """Every model one state type mentions, state first."""
+    models: list[type[Model]] = [type_obj.state]
+
+    for spec in type_obj.methods.values():
+        # A `UI` method has no RPC to call, so there is nothing to
+        # put in a method row for it.
+        if not isinstance(spec, MethodModel):
+            continue
+        if spec.request is not None:
+            models.append(spec.request)
+        if spec.response is not None:
+            models.append(spec.response)
+        models.extend(spec.errors)
+
+    return models
+
+
+def _describe_method(method_name: str, spec: MethodModel, refs: dict) -> dict:
+    method: dict = {
+        'name': method_name,
+        'kind': spec.kind.value,
+        'factory': spec.factory,
+        'mcp': spec.mcp is not None,
+        'errors': [refs[error] for error in spec.errors],
+    }
+
+    if spec.request is not None:
+        method['request'] = refs[spec.request]
+    if spec.response is not None:
+        method['response'] = refs[spec.response]
+    if spec.description is not None:
+        method['description'] = spec.description
+
+    return method
 
 
 def describe(api_directory: str, filename: str) -> list[dict]:
@@ -118,21 +119,25 @@ def describe(api_directory: str, filename: str) -> list[dict]:
 
     described = []
     for type_name, type_obj in api.get_types().items():
-        info = StateTypeInfo(
-            name=f'{package}.{type_name}',
-            file=file,
-            fields=_fields_of(type_obj.state),
-        )
+        definitions, refs = _schemas_of(_models_of(type_obj))
+
+        state_type: dict = {
+            'name': f'{package}.{type_name}',
+            'file': file,
+            'state': refs[type_obj.state],
+            'methods':
+                [
+                    _describe_method(method_name, spec, refs)
+                    for method_name, spec in type_obj.methods.items()
+                    if isinstance(spec, MethodModel)
+                ],
+            '$defs': definitions,
+        }
+
         if type_obj.description is not None:
-            info.description = type_obj.description
+            state_type['description'] = type_obj.description
 
-        for method_name, spec in type_obj.methods.items():
-            # A `UI` method has no RPC to call, so there is nothing
-            # to put in a method row for it.
-            if isinstance(spec, MethodModel):
-                info.methods.append(_describe_method(method_name, spec))
-
-        described.append(MessageToDict(info, preserving_proto_field_name=True))
+        described.append(state_type)
 
     return described
 

@@ -13,12 +13,10 @@ the normal case while someone is typing, costs only its own types.
 from google.protobuf.json_format import ParseDict
 from log.log import get_logger
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_pb2 import StateTypeInfo
 from rbt.dashboard.v1.dashboard_rbt import API
 from reboot.aio.contexts import WorkflowContext
 from reboot.cli.common.watch import file_watcher
 from reboot.dashboard.api_reader import read
-from reboot.dashboard.constants import API_ID
 from typing import Optional
 from watchdog.events import FileSystemEvent
 
@@ -87,14 +85,17 @@ class _Descriptions:
             if stored not in filenames:
                 del self._errors[stored]
 
-    def state_types(self) -> list[StateTypeInfo]:
+    def state_types(self) -> list[dict]:
         described = []
         for filename in sorted(self._state_types):
-            for state_type in self._state_types[filename]:
-                described.append(ParseDict(state_type, StateTypeInfo()))
+            described.extend(self._state_types[filename])
         return described
 
-    def error(self) -> str:
+    def error(self) -> Optional[str]:
+        """Why the files that failed to read failed, or `None` if none
+        did."""
+        if not self._errors:
+            return None
         return '\n'.join(
             f'{filename}: {self._errors[filename]}'
             for filename in sorted(self._errors)
@@ -130,16 +131,19 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
         nonlocal updated
 
         current = (descriptions.state_types(), descriptions.error())
-        if current != updated:
-            updated = current
-            # Every write from a workflow needs an identity, and this
-            # one writes once per file that changed, on every
-            # iteration.
-            await API.ref(API_ID).per_iteration(alias).Update(
-                context,
-                state_types=descriptions.state_types(),
-                error=descriptions.error(),
-            )
+        if current == updated:
+            return
+        updated = current
+        state_types, error = current
+
+        async def update(state: API.State) -> None:
+            ParseDict(state_types, state.state_types)
+            if error is None:
+                state.ClearField('error')
+            else:
+                state.error = error
+
+        await API.ref().per_iteration(alias).write(context, update)
 
     # Everything, once: the developer may have written the whole API
     # before the dashboard started. After this only what changes is
