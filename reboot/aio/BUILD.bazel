@@ -129,6 +129,13 @@ py_library(
 )
 
 py_library(
+    name = "cooperatively_py",
+    srcs = ["cooperatively.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "directories_py",
     srcs = ["directories.py"],
     visibility = ["//visibility:public"],
@@ -569,6 +576,7 @@ py_library(
         ":caller_id_py",
         ":concurrently_py",
         ":contexts_py",
+        ":cooperatively_py",
         ":directories_py",
         ":exceptions_py",
         ":external_py",
