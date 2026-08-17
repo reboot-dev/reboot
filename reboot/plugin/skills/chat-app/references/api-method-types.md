@@ -35,6 +35,8 @@ Every method must explicitly declare its MCP exposure:
 - **`Tool(name="...", title="...")`** — override the default tool
   name or add a human-readable title.
 
+A tool's description comes from the method's `description`.
+
 `Workflow(...)` requires `mcp=` like every other method factory;
 usually `None` since workflows are rarely AI-callable tools
 directly. Omitting `mcp=` raises at codegen with
@@ -162,6 +164,10 @@ api = API(
     ),
     Counter=Type(
         state=CounterState,
+        # What the state type is for, shown by the dev dashboard
+        # beside its name and file.
+        description="One counter the user created, and the "
+        "consistency boundary its value changes on.",
         methods=Methods(
             # `show_clicker` lives on `Counter` (not `User`)
             # because it shows ONE specific Counter. The AI calls
@@ -175,10 +181,13 @@ api = API(
                 title="Counter Clicker",
                 description="Interactive clicker UI for the counter.",
             ),
+            # Not an MCP tool, and still worth describing: the dev
+            # dashboard shows `description=` for every method.
             create=Writer(
                 request=None,
                 response=None,
                 factory=True,
+                description="Create the counter at zero.",
                 mcp=None,
             ),
             get=Reader(
