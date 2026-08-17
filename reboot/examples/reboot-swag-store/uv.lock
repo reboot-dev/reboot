@@ -1796,7 +1796,7 @@ wheels = [
 
 [[package]]
 name = "reboot"
-version = "1.4.0"
+version = "1.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiofiles" },
@@ -1846,9 +1846,9 @@ dependencies = [
     { name = "websockets" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/52/1c/a2ad3ca054990b7639bebbb38dcccd0b45b4ab41f6579ff0643747a10c0a/reboot-1.4.0-py3-none-macosx_14_0_arm64.whl", hash = "sha256:83d9d0550f44dc35c31a2fa95c89f6085a374648ad407d2538d6d9c104f3fc0d", size = 20507102, upload-time = "2026-07-29T14:10:58.927Z" },
-    { url = "https://files.pythonhosted.org/packages/2b/cf/a59308c43328579e288385fca59cce3bbd1b07de028061dc90331d7b51e9/reboot-1.4.0-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:6980596cdcd5f42c10b05e8ce85cba92ceb56ad7a91d1fda7cb976782aebf7f6", size = 24193171, upload-time = "2026-07-29T14:02:49.669Z" },
-    { url = "https://files.pythonhosted.org/packages/27/c9/3728628bb128b296b8192e9e56053aaac675742d56e78482dbdf8b623e8f/reboot-1.4.0-py3-none-manylinux_2_34_x86_64.whl", hash = "sha256:960a17ee1f841a0cf145c7a13fcc7d9bcb6b2cc6c8abea93aa19b68cd7eea153", size = 24321447, upload-time = "2026-07-29T14:03:12.414Z" },
+    { url = "https://files.pythonhosted.org/packages/11/51/74d32406c1642ed6569604f75e077909069fc6797394a2dcc13c570ff353/reboot-1.4.1-py3-none-macosx_14_0_arm64.whl", hash = "sha256:0880afdeca6b6377804b3517e4a0154efbd22c6fa49a989c35174077f260c086", size = 20510733, upload-time = "2026-08-17T21:30:40.522Z" },
+    { url = "https://files.pythonhosted.org/packages/69/7e/a1644408ee4f4c981a365e9e91181208282ea53e94a817f49522861a7240/reboot-1.4.1-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:ee85bc428491a2cdc62ba72678de3895c863e00c37f1193e8f0712d8ea6123c0", size = 24196805, upload-time = "2026-08-17T21:14:11.116Z" },
+    { url = "https://files.pythonhosted.org/packages/9e/1b/baa5e8094713b23e1d9877ba42b091498cc775af79bdff63efcc09f83bed/reboot-1.4.1-py3-none-manylinux_2_34_x86_64.whl", hash = "sha256:fe0f3ae507f3b36573f9ae9b7827b38b77b3e502ed632e985eb6bf717ab51720", size = 24325188, upload-time = "2026-08-17T21:13:59.858Z" },
 ]
 
 [[package]]
@@ -1873,7 +1873,7 @@ requires-dist = [
     { name = "anyio", specifier = ">=4.0.0" },
     { name = "httpx", specifier = ">=0.27,<1.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "reboot", specifier = "==1.4.0" },
+    { name = "reboot", specifier = "==1.4.1" },
     { name = "uuid7", specifier = ">=0.1.0" },
 ]
 
