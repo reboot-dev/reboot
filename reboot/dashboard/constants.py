@@ -34,10 +34,10 @@ PREFERENCES_ID = 'preferences'
 # uuidv7 so a reverse range is newest first.
 CHANGELOG_ID = 'changelog'
 
-# The directory the developer's API files are in, which
-# `rbt dashboard` takes as `--api-directory`. Separate from the
-# application's URL because the files are there long before anything
-# is serving, and the dashboard is meant to be startable that early.
+# The directory the developer's API files are in, as the `.rbtrc`
+# spells it for `rbt generate`. Separate from the application's URL
+# because the files are there long before anything is serving, and
+# the dashboard is meant to be startable that early.
 ENVVAR_RBT_API_DIRECTORY = 'RBT_API_DIRECTORY'
 
 # The `Presence` state the dashboard page subscribes to, recording who

@@ -59,17 +59,33 @@ def register_dashboard(parser: ArgumentParser):
     add_working_directory_options(parser.subcommand('dashboard'))
 
     parser.subcommand('dashboard').add_argument(
-        '--api-directory',
-        type=str,
-        required=True,
-        help='directory containing the API files the dashboard watches',
-    )
-
-    parser.subcommand('dashboard').add_argument(
         '--port',
         type=int,
         help='port on which the dashboard will serve traffic; defaults to '
         f'{DEFAULT_DASHBOARD_PORT}',
+    )
+
+
+def _api_directory(parser: ArgumentParser) -> str:
+    """Returns the directory holding the developer's API files, which
+    is the directory they tell `rbt generate` to read them from.
+
+    Taken from there rather than named again here, so that moving the
+    API files is one edit and the dashboard cannot end up watching a
+    directory the rest of the tooling has stopped using.
+    """
+    for argument in parser.dot_rc_arguments('generate'):
+        # The directory is the one thing `rbt generate` takes that is
+        # not a flag; its flags say where to put what it generates.
+        if not argument.startswith('-'):
+            return argument
+
+    terminal.fail(
+        'Could not tell where your API files are. `rbt dashboard` reads '
+        f'that from the same place `rbt generate` does, so name a '
+        f'directory for it in your {parser.dot_rc_filename}:\n'
+        '\n'
+        '    generate api/\n'
     )
 
 
@@ -225,7 +241,7 @@ async def dashboard(
             args,
             parser,
             port=port,
-            api_directory=args.api_directory,
+            api_directory=_api_directory(parser),
         )
 
         terminal.info(
