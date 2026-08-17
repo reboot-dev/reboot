@@ -155,25 +155,57 @@ def _state_type_if_servicer(
 
 @dataclass(frozen=True, kw_only=True)
 class File:
-    """What one of the developer's files was found to hold.
+    """What one of the developer's files was found to hold."""
 
-    `digest` is of the bytes it held, and is what says whether
-    parsing it again would say anything new. Not `st_mtime_ns`, which is only
-    as fine as the kernel's coarse clock -- around ten milliseconds --
-    so a save landing in the same tick as a read leaves an mtime that
-    says nothing happened.
-    """
+    # Of the bytes the file held, saying whether parsing it again
+    # would say anything new. Not `st_mtime_ns`, which is only as fine
+    # as the kernel's coarse clock -- around ten milliseconds -- so a
+    # save landing in the same tick as a read leaves an mtime that
+    # says nothing happened.
     digest: bytes
+
+    # Every module the file names, to be followed if a root holds it.
     imported_modules: list[str]
-    state_types: list[str]
+
+    # Every servicer the file defines.
+    servicers: list[ServicerInfo]
 
 
-def _parse(source: bytes, *, digest: bytes) -> Optional[File]:
+def _digest(node: ast.AST) -> bytes:
+    """Returns a digest of what a piece of syntax says.
+
+    The digest is computed using `ast.dump` without attributes so that
+    the lines and columns are left out, and thus a comment added above
+    a method or arguments rewrapped across lines do not change the
+    digest.
+    """
+    return hashlib.sha256(ast.dump(node,
+                                   include_attributes=False).encode()).digest()
+
+
+def _methods(class_definition: ast.ClassDef) -> list[ServicerInfo.Method]:
+    """Returns the methods a class defines, in the order written."""
+    methods = []
+
+    for node in class_definition.body:
+        match node:
+            case (
+                ast.FunctionDef(name=str(name)) |
+                ast.AsyncFunctionDef(name=str(name))
+            ):
+                methods.append(
+                    ServicerInfo.Method(name=name, digest=_digest(node))
+                )
+
+    return methods
+
+
+def _parse(source: bytes, *, digest: bytes, filename: str) -> Optional[File]:
     """Returns what a file holds, and `None` when it will not parse.
 
     A file that will not parse is left unrecorded rather than recorded
-    as empty, so that the next round parses it again: half-written
-    is the normal state of a file somebody is typing into.
+    as empty, so that the next round parses it again: half-written is
+    the normal state of a file somebody is typing into.
     """
     try:
         module: ast.Module = ast.parse(source)
@@ -185,25 +217,31 @@ def _parse(source: bytes, *, digest: bytes) -> Optional[File]:
     # and every name must be known before any class is resolved.
     symbols, imported_modules = _imports(module)
 
-    state_types: set[str] = set()
+    servicers = []
 
     for node in ast.walk(module):
         match node:
             case ast.ClassDef():
                 state_type = _state_type_if_servicer(node, symbols=symbols)
                 if state_type is not None:
-                    state_types.add(state_type)
+                    servicers.append(
+                        ServicerInfo(
+                            state_type=state_type,
+                            file=filename,
+                            methods=_methods(node),
+                        )
+                    )
 
     return File(
         digest=digest,
         imported_modules=imported_modules,
-        state_types=sorted(state_types),
+        servicers=servicers,
     )
 
 
-def servicers(files: dict[str, File]) -> list[tuple[str, str]]:
-    """Returns every servicer found, as the state type it services and
-    the file it is written in, sorted.
+def servicers(files: dict[str, File]) -> list[ServicerInfo]:
+    """Returns every servicer found, sorted by the state type it
+    services and the file it is written in.
 
     A state type appearing twice is two classes servicing it, which is
     for whoever reads this to make of what they will; a state type not
@@ -211,9 +249,8 @@ def servicers(files: dict[str, File]) -> list[tuple[str, str]]:
     that would not parse looks like too.
     """
     return sorted(
-        (state_type, filename)
-        for filename, file in files.items()
-        for state_type in file.state_types
+        (servicer for file in files.values() for servicer in file.servicers),
+        key=lambda servicer: (servicer.state_type, servicer.file),
     )
 
 
@@ -271,7 +308,7 @@ async def files(
             file = known.get(filename)
 
             if file is None or file.digest != digest:
-                file = _parse(source, digest=digest)
+                file = _parse(source, digest=digest, filename=filename)
 
             if file is None:
                 continue
@@ -292,7 +329,7 @@ async def watch(context: WorkflowContext, *, application: str) -> None:
     roots = _roots(application)
     globs = [os.path.join(root, SOURCE_GLOB) for root in roots]
 
-    recorded: Optional[list[tuple[str, str]]] = None
+    recorded: Optional[list[ServicerInfo]] = None
     known: dict[str, File] = {}
 
     with file_watcher() as watcher:
@@ -315,13 +352,7 @@ async def watch(context: WorkflowContext, *, application: str) -> None:
 
                     async def record(state) -> None:
                         del state.servicers[:]
-                        for state_type, file in found:
-                            state.servicers.append(
-                                ServicerInfo(
-                                    state_type=state_type,
-                                    file=file,
-                                )
-                            )
+                        state.servicers.extend(found)
 
                     # Written inline rather than through a method of
                     # its own: the workflow runs on this very state.
