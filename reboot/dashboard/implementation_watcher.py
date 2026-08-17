@@ -28,12 +28,14 @@ time through `cooperatively`, so that the dashboard goes on answering
 while a large one is walked.
 
 And driven by the filesystem, because that is what it is a function
-of: where a state type is implemented can only move when the
-developer's source moves, so an edit under the roots is what wakes
+of: where a state type is implemented can only change when the
+developer's source changes, so an edit under the roots is what wakes
 this, and nothing else does.
 """
 import ast
+import hashlib
 import os
+from dataclasses import dataclass
 from rbt.dashboard.v1.dashboard_pb2 import ServicerInfo
 from rbt.dashboard.v1.dashboard_rbt import Implementation
 from reboot.aio.contexts import WorkflowContext
@@ -55,9 +57,9 @@ def _roots(application: str) -> list[str]:
     return [os.path.dirname(application)]
 
 
-def _parse(filename: str) -> ast.Module:
-    with open(filename) as file:
-        return ast.parse(file.read())
+def _read(filename: str) -> bytes:
+    with open(filename, 'rb') as file:
+        return file.read()
 
 
 def _imports(
@@ -151,20 +153,87 @@ def _state_type_if_servicer(
     return None
 
 
-async def servicer_files(
-    *,
-    application: str,
-    roots: Optional[list[str]] = None,
-) -> list[tuple[str, str]]:
-    """Returns every servicer found in the developer's application as
-    the state type it services and the file it is written in, sorted,
-    with no state type appearing twice for one file.
+@dataclass(frozen=True, kw_only=True)
+class File:
+    """What one of the developer's files was found to hold.
+
+    `digest` is of the bytes it held, and is what says whether
+    parsing it again would say anything new. Not `st_mtime_ns`, which is only
+    as fine as the kernel's coarse clock -- around ten milliseconds --
+    so a save landing in the same tick as a read leaves an mtime that
+    says nothing happened.
+    """
+    digest: bytes
+    imported_modules: list[str]
+    state_types: list[str]
+
+
+def _parse(source: bytes, *, digest: bytes) -> Optional[File]:
+    """Returns what a file holds, and `None` when it will not parse.
+
+    A file that will not parse is left unrecorded rather than recorded
+    as empty, so that the next round parses it again: half-written
+    is the normal state of a file somebody is typing into.
+    """
+    try:
+        module: ast.Module = ast.parse(source)
+    except SyntaxError:
+        return None
+
+    # First, and on its own: `ast.walk` is breadth-first, so a
+    # top-level class comes out before an import nested in a `try`,
+    # and every name must be known before any class is resolved.
+    symbols, imported_modules = _imports(module)
+
+    state_types: set[str] = set()
+
+    for node in ast.walk(module):
+        match node:
+            case ast.ClassDef():
+                state_type = _state_type_if_servicer(node, symbols=symbols)
+                if state_type is not None:
+                    state_types.add(state_type)
+
+    return File(
+        digest=digest,
+        imported_modules=imported_modules,
+        state_types=sorted(state_types),
+    )
+
+
+def servicers(files: dict[str, File]) -> list[tuple[str, str]]:
+    """Returns every servicer found, as the state type it services and
+    the file it is written in, sorted.
 
     A state type appearing twice is two classes servicing it, which is
     for whoever reads this to make of what they will; a state type not
     appearing at all is one no servicer was found for, which a file
-    that would not parse looks like too. The files are spelled the way
-    the developer would open them.
+    that would not parse looks like too.
+    """
+    return sorted(
+        (state_type, filename)
+        for filename, file in files.items()
+        for state_type in file.state_types
+    )
+
+
+async def files(
+    *,
+    application: str,
+    roots: Optional[list[str]] = None,
+    known: Optional[dict[str, File]] = None,
+) -> dict[str, File]:
+    """Returns what each file the developer's application reaches
+    holds, keyed by the file, spelled the way they would open it.
+
+    Only what it reaches: a file that has stopped being imported is
+    absent, however recently it changed, and one that has started
+    being imported is parsed for the first time.
+
+    `known` is what a previous call returned, and spares this one from
+    parsing a file whose bytes have not changed since. Parsing is the
+    expensive part -- around fifty times what reading and hashing the
+    bytes costs -- and an edit changes one file.
 
     `roots` are the directories a module may be found under, which is
     both how a module name becomes a file and where the developer's
@@ -175,8 +244,10 @@ async def servicer_files(
     if roots is None:
         roots = _roots(application)
 
-    servicers: set[tuple[str, str]] = set()
-    read: set[str] = set()
+    if known is None:
+        known = {}
+
+    reachable: dict[str, File] = {}
 
     pending = [application]
 
@@ -187,40 +258,32 @@ async def servicer_files(
         # Parsing holds on to the interpreter for as long as it takes,
         # so a file at a time leaves the dashboard free to answer.
         async for filename in cooperatively(current):
-            if filename in read:
+            if filename in reachable:
                 continue
-            read.add(filename)
 
             try:
-                module: ast.Module = _parse(filename)
-            except (SyntaxError, OSError):
-                # Which state type this file would have serviced is
-                # precisely what went unread, so there is nothing to
-                # say about it and it falls through to no servicer
-                # having been found.
+                source: bytes = _read(filename)
+            except OSError:
                 continue
 
-            # First, and on its own: `ast.walk` is breadth-first, so a
-            # top-level class comes out before an import nested in a
-            # `try`, and every name must be known before any class is
-            # resolved.
-            symbols, imported_modules = _imports(module)
+            digest = hashlib.sha256(source).digest()
 
-            for node in ast.walk(module):
-                match node:
-                    case ast.ClassDef():
-                        state_type = _state_type_if_servicer(
-                            node, symbols=symbols
-                        )
-                        if state_type is not None:
-                            servicers.add((state_type, filename))
+            file = known.get(filename)
 
-            for imported_module in imported_modules:
+            if file is None or file.digest != digest:
+                file = _parse(source, digest=digest)
+
+            if file is None:
+                continue
+
+            reachable[filename] = file
+
+            for imported_module in file.imported_modules:
                 resolved = _resolve(imported_module, roots=roots)
                 if resolved is not None:
                     pending.append(resolved)
 
-    return sorted(servicers)
+    return reachable
 
 
 async def watch(context: WorkflowContext, *, application: str) -> None:
@@ -230,6 +293,7 @@ async def watch(context: WorkflowContext, *, application: str) -> None:
     globs = [os.path.join(root, SOURCE_GLOB) for root in roots]
 
     recorded: Optional[list[tuple[str, str]]] = None
+    known: dict[str, File] = {}
 
     with file_watcher() as watcher:
         async for iteration in context.loop('Watch the application'):
@@ -238,18 +302,20 @@ async def watch(context: WorkflowContext, *, application: str) -> None:
             # arriving while nothing is listening. A watch is consumed
             # by one event, so it is re-entered for each.
             async with watcher.watch(globs) as event:
-                servicers = await servicer_files(
-                    application=application, roots=roots
+                known = await files(
+                    application=application, roots=roots, known=known
                 )
 
-                # Most edits move no servicer, and a write wakes every
+                found = servicers(known)
+
+                # Most edits change no servicer, and a write wakes every
                 # browser reading `Get`, so one is only worth making
                 # when the answer is different.
-                if servicers != recorded:
+                if found != recorded:
 
                     async def record(state) -> None:
                         del state.servicers[:]
-                        for state_type, file in servicers:
+                        for state_type, file in found:
                             state.servicers.append(
                                 ServicerInfo(
                                     state_type=state_type,
@@ -265,12 +331,12 @@ async def watch(context: WorkflowContext, *, application: str) -> None:
 
                     # After the write, so that what is remembered is
                     # what was recorded and not what was about to be.
-                    recorded = servicers
+                    recorded = found
 
                 # Which save wakes this, and when, is not
                 # deterministic, and a replay may wait on a different
-                # one. Nothing depends on that: an iteration reads the
-                # application from scratch and writes what it finds,
-                # so one that runs at a different moment writes the
-                # same answer or a newer one.
+                # one. Nothing depends on that: an iteration parses
+                # whatever has changed since the last and writes what
+                # it finds, so one that runs at a different moment
+                # writes the same answer or a newer one.
                 await event

@@ -9,13 +9,14 @@ import unittest
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import API, Implementation
 from reboot.aio.tests import Reboot
+from reboot.dashboard import implementation_watcher
 from reboot.dashboard.constants import (
     API_ID,
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
     IMPLEMENTATION_ID,
 )
-from reboot.dashboard.implementation_watcher import servicer_files
+from reboot.dashboard.implementation_watcher import files, servicers
 from reboot.dashboard.main import application
 from unittest.mock import patch
 
@@ -149,24 +150,23 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         async for response in Implementation.ref(IMPLEMENTATION_ID
                                                 ).reactively().Get(context):
-            servicers: dict[str, list[str]] = {}
+            found: dict[str, list[str]] = {}
 
             for servicer in response.servicers:
-                servicers.setdefault(servicer.state_type,
-                                     []).append(servicer.file)
+                found.setdefault(servicer.state_type, []).append(servicer.file)
 
-            if satisfied(servicers):
-                return servicers
+            if satisfied(found):
+                return found
 
         raise AssertionError('never satisfied')
 
     async def test_records_the_servicer_it_finds(self) -> None:
-        servicers = await self._servicers(
+        found = await self._servicers(
             satisfied=lambda found: 'shop.v1.Shop' in found
         )
 
         self.assertEqual(
-            servicers['shop.v1.Shop'],
+            found['shop.v1.Shop'],
             [str(self.source / 'shop_servicer.py')],
         )
 
@@ -175,11 +175,11 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         is how a reader tells it apart from one that was placed."""
         self._declare('depot', state='Depot')
 
-        servicers = await self._servicers(
+        found = await self._servicers(
             satisfied=lambda found: 'shop.v1.Shop' in found
         )
 
-        self.assertNotIn('shop.v1.Depot', servicers)
+        self.assertNotIn('shop.v1.Depot', found)
 
     async def test_a_state_type_two_classes_service(self) -> None:
         """Both files are recorded against it, rather than one being
@@ -193,12 +193,12 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        servicers = await self._servicers(
+        found = await self._servicers(
             satisfied=lambda found: len(found.get('shop.v1.Shop', [])) == 2
         )
 
         self.assertEqual(
-            servicers['shop.v1.Shop'], [
+            found['shop.v1.Shop'], [
                 str(self.source / 'other_servicer.py'),
                 str(self.source / 'shop_servicer.py'),
             ]
@@ -220,12 +220,12 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        servicers = await self._servicers(
+        found = await self._servicers(
             satisfied=lambda found: 'shop.v1.Depot' in found
         )
 
         self.assertEqual(
-            servicers['shop.v1.Depot'],
+            found['shop.v1.Depot'],
             [str(self.source / 'depot_servicer.py')],
         )
 
@@ -236,11 +236,11 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         recorded without either waiting on the other."""
         self._declare('shop', state='Shop')
 
-        servicers = await self._servicers(
+        found = await self._servicers(
             satisfied=lambda found: 'shop.v1.Shop' in found
         )
         self.assertEqual(
-            servicers['shop.v1.Shop'],
+            found['shop.v1.Shop'],
             [str(self.source / 'shop_servicer.py')],
         )
 
@@ -276,10 +276,10 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         self._write('shop_servicer.py', source=SHOP)
         application = self._write('main.py', source=APPLICATION)
 
-        servicers = await servicer_files(application=application)
+        found = servicers(await files(application=application))
 
         self.assertEqual(
-            servicers,
+            found,
             [('shop.v1.Shop', str(self.directory / 'shop_servicer.py'))],
         )
 
@@ -295,10 +295,10 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                                        ),
         )
 
-        servicers = await servicer_files(application=application)
+        found = servicers(await files(application=application))
 
         self.assertEqual(
-            servicers,
+            found,
             [('shop.v1.Depot', str(self.directory / 'depot_servicer.py'))],
         )
 
@@ -317,10 +317,10 @@ async def main():
 '''
         )
 
-        servicers = await servicer_files(application=application)
+        found = servicers(await files(application=application))
 
         self.assertEqual(
-            servicers, [
+            found, [
                 ('shop.v1.Depot', str(self.directory / 'servicers.py')),
                 ('shop.v1.Shop', str(self.directory / 'servicers.py')),
             ]
@@ -347,10 +347,10 @@ async def main():
 '''
         )
 
-        servicers = await servicer_files(application=application)
+        found = servicers(await files(application=application))
 
         self.assertEqual(
-            servicers,
+            found,
             [('shop.v1.Shop', str(self.directory / 'servicers.py'))],
         )
 
@@ -371,10 +371,10 @@ async def main():
 '''
         )
 
-        servicers = await servicer_files(application=application)
+        found = servicers(await files(application=application))
 
         self.assertEqual(
-            servicers,
+            found,
             [('shop.v1.Shop', str(self.directory / 'shop_servicer.py'))],
         )
 
@@ -398,10 +398,10 @@ async def main():
 '''
         )
 
-        servicers = await servicer_files(application=application)
+        found = servicers(await files(application=application))
 
         self.assertEqual(
-            servicers,
+            found,
             [('shop.v1.Shop', str(self.directory / 'shop_servicer.py'))],
         )
 
@@ -419,10 +419,10 @@ async def main():
 '''
         )
 
-        servicers = await servicer_files(application=application)
+        found = servicers(await files(application=application))
 
         self.assertEqual(
-            servicers,
+            found,
             [('shop.v1.Shop', str(self.directory / 'servicers' / 'shop.py'))],
         )
 
@@ -450,21 +450,120 @@ async def main():
 '''
             )
 
-            servicers = await servicer_files(application=application)
+            found = servicers(await files(application=application))
 
-            self.assertEqual(servicers, [])
+            self.assertEqual(found, [])
 
             # Named as a root, the very same import leads there.
-            servicers = await servicer_files(
-                application=application,
-                roots=[str(self.directory), elsewhere.name],
+            found = servicers(
+                await files(
+                    application=application,
+                    roots=[str(self.directory), elsewhere.name],
+                )
             )
             self.assertEqual(
-                servicers,
+                found,
                 [('shop.v1.Shop', str(Path(elsewhere.name) / 'library.py'))],
             )
         finally:
             elsewhere.cleanup()
+
+    ###################################################################
+    # Parse again only what has changed.
+
+    async def test_a_file_written_with_the_same_bytes_is_not_parsed_again(
+        self
+    ) -> None:
+        """Identical bytes are nothing to parse, which is only
+        observable as the parsing not happening."""
+        servicer = self._write('shop_servicer.py', source=SHOP)
+        application = self._write('main.py', source=APPLICATION)
+
+        known = await files(application=application)
+
+        Path(servicer).write_text(SHOP)
+
+        with patch.object(
+            implementation_watcher,
+            '_parse',
+            wraps=implementation_watcher._parse,
+        ) as parse:
+            await files(application=application, known=known)
+
+        parse.assert_not_called()
+
+    async def test_a_file_written_with_other_bytes_is_parsed_again(
+        self
+    ) -> None:
+        """Even with the mtime it was read with put back, which is
+        what a save landing in the same clock tick leaves behind."""
+        servicer = self._write('shop_servicer.py', source=SHOP)
+        application = self._write('main.py', source=APPLICATION)
+
+        modified = os.stat(servicer).st_mtime_ns
+        known = await files(application=application)
+
+        Path(servicer).write_text(DEPOT)
+        os.utime(servicer, ns=(modified, modified))
+
+        found = servicers(await files(application=application, known=known))
+
+        self.assertEqual(found, [('shop.v1.Depot', servicer)])
+
+    async def test_a_servicer_that_stops_being_imported_is_dropped(
+        self
+    ) -> None:
+        """However recently it changed: what the application reaches
+        is what it registers."""
+        self._write('shop_servicer.py', source=SHOP)
+        self._write('depot_servicer.py', source=DEPOT)
+        application = self._write(
+            'main.py',
+            source=APPLICATION.replace(
+                'from shop_servicer import ShopServicer',
+                'from depot_servicer import DepotServicer\n'
+                'from shop_servicer import ShopServicer',
+            ),
+        )
+
+        known = await files(application=application)
+        self.assertEqual(len(servicers(known)), 2)
+
+        self._write('main.py', source=APPLICATION)
+
+        found = servicers(await files(application=application, known=known))
+
+        self.assertEqual(
+            found,
+            [('shop.v1.Shop', str(self.directory / 'shop_servicer.py'))],
+        )
+
+    async def test_a_servicer_that_starts_being_imported_is_found(
+        self
+    ) -> None:
+        self._write('shop_servicer.py', source=SHOP)
+        application = self._write('main.py', source=APPLICATION)
+
+        known = await files(application=application)
+
+        self._write('depot_servicer.py', source=DEPOT)
+        self._write(
+            'main.py',
+            source=APPLICATION.replace(
+                'from shop_servicer import ShopServicer',
+                'from depot_servicer import DepotServicer\n'
+                'from shop_servicer import ShopServicer',
+            ),
+        )
+
+        found = servicers(await files(application=application, known=known))
+
+        self.assertEqual(
+            found, [
+                ('shop.v1.Depot', str(self.directory / 'depot_servicer.py')),
+                ('shop.v1.Shop', str(self.directory / 'shop_servicer.py')),
+            ]
+        )
 
     ###################################################################
     # What it cannot place.
@@ -475,16 +574,16 @@ async def main():
         self._write('shop_servicer.py', source='class ShopServicer(')
         application = self._write('main.py', source=APPLICATION)
 
-        servicers = await servicer_files(application=application)
+        found = servicers(await files(application=application))
 
-        self.assertEqual(servicers, [])
+        self.assertEqual(found, [])
 
     async def test_an_application_that_is_not_there(self) -> None:
-        servicers = await servicer_files(
-            application=str(self.directory / 'nowhere.py')
+        found = servicers(
+            await files(application=str(self.directory / 'nowhere.py'))
         )
 
-        self.assertEqual(servicers, [])
+        self.assertEqual(found, [])
 
     async def test_two_classes_servicing_the_same_state_type(self) -> None:
         """Both are recorded, rather than one being chosen between
@@ -503,10 +602,10 @@ async def main():
 '''
         )
 
-        servicers = await servicer_files(application=application)
+        found = servicers(await files(application=application))
 
         self.assertEqual(
-            servicers, [
+            found, [
                 ('shop.v1.Shop', str(self.directory / 'other_servicer.py')),
                 ('shop.v1.Shop', str(self.directory / 'shop_servicer.py')),
             ]
@@ -523,9 +622,9 @@ class ShopServicer(SomethingElse):
         )
         application = self._write('main.py', source=APPLICATION)
 
-        servicers = await servicer_files(application=application)
+        found = servicers(await files(application=application))
 
-        self.assertEqual(servicers, [])
+        self.assertEqual(found, [])
 
 
 if __name__ == '__main__':
