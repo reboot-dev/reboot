@@ -7,6 +7,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from rbt.dashboard.v1.dashboard_pb2 import ServicerInfo
 from rbt.dashboard.v1.dashboard_rbt import API, Implementation
 from reboot.aio.tests import Reboot
 from reboot.dashboard import implementation_watcher
@@ -16,7 +17,7 @@ from reboot.dashboard.constants import (
     ENVVAR_RBT_APPLICATION,
     IMPLEMENTATION_ID,
 )
-from reboot.dashboard.implementation_watcher import files, servicers
+from reboot.dashboard.implementation_watcher import File, files, servicers
 from reboot.dashboard.main import application
 from unittest.mock import patch
 
@@ -88,6 +89,14 @@ async def main():
 '''
 
 
+def _state_types_and_files(files: dict[str, File]) -> list[tuple[str, str]]:
+    """Returns every servicer as the state type it services and the
+    file it is written in."""
+    return [
+        (servicer.state_type, servicer.file) for servicer in servicers(files)
+    ]
+
+
 class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
@@ -140,8 +149,8 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def _servicers(self, *, satisfied):
-        """Returns the files recorded against each state type once
-        they satisfy, reading again whenever they change.
+        """Returns the servicers recorded against each state type
+        once they satisfy, reading again whenever they change.
 
         A list per state type, because two classes servicing one is
         two entries rather than anything the recording adjudicates.
@@ -150,10 +159,10 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         async for response in Implementation.ref(IMPLEMENTATION_ID
                                                 ).reactively().Get(context):
-            found: dict[str, list[str]] = {}
+            found: dict[str, list[ServicerInfo]] = {}
 
             for servicer in response.servicers:
-                found.setdefault(servicer.state_type, []).append(servicer.file)
+                found.setdefault(servicer.state_type, []).append(servicer)
 
             if satisfied(found):
                 return found
@@ -166,13 +175,26 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(
-            found['shop.v1.Shop'],
+            [servicer.file for servicer in found['shop.v1.Shop']],
             [str(self.source / 'shop_servicer.py')],
+        )
+
+    async def test_the_methods_reach_the_state(self) -> None:
+        """What the browser will join against what the API files say
+        each state type declares."""
+        found = await self._servicers(
+            satisfied=lambda found: 'shop.v1.Shop' in found
+        )
+
+        self.assertEqual(
+            [method.name for method in found['shop.v1.Shop'][0].methods],
+            ['look'],
         )
 
     async def test_a_state_type_nothing_services(self) -> None:
         """A state type nothing services is one with no entry, which
-        is how a reader tells it apart from one that was placed."""
+        is how a reader tells it apart from one a servicer was found
+        for."""
         self._declare('depot', state='Depot')
 
         found = await self._servicers(
@@ -198,7 +220,7 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(
-            found['shop.v1.Shop'], [
+            [servicer.file for servicer in found['shop.v1.Shop']], [
                 str(self.source / 'other_servicer.py'),
                 str(self.source / 'shop_servicer.py'),
             ]
@@ -225,7 +247,7 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(
-            found['shop.v1.Depot'],
+            [servicer.file for servicer in found['shop.v1.Depot']],
             [str(self.source / 'depot_servicer.py')],
         )
 
@@ -240,7 +262,7 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
             satisfied=lambda found: 'shop.v1.Shop' in found
         )
         self.assertEqual(
-            found['shop.v1.Shop'],
+            [servicer.file for servicer in found['shop.v1.Shop']],
             [str(self.source / 'shop_servicer.py')],
         )
 
@@ -276,7 +298,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         self._write('shop_servicer.py', source=SHOP)
         application = self._write('main.py', source=APPLICATION)
 
-        found = servicers(await files(application=application))
+        found = _state_types_and_files(await files(application=application))
 
         self.assertEqual(
             found,
@@ -295,7 +317,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                                        ),
         )
 
-        found = servicers(await files(application=application))
+        found = _state_types_and_files(await files(application=application))
 
         self.assertEqual(
             found,
@@ -317,7 +339,7 @@ async def main():
 '''
         )
 
-        found = servicers(await files(application=application))
+        found = _state_types_and_files(await files(application=application))
 
         self.assertEqual(
             found, [
@@ -347,7 +369,7 @@ async def main():
 '''
         )
 
-        found = servicers(await files(application=application))
+        found = _state_types_and_files(await files(application=application))
 
         self.assertEqual(
             found,
@@ -371,7 +393,7 @@ async def main():
 '''
         )
 
-        found = servicers(await files(application=application))
+        found = _state_types_and_files(await files(application=application))
 
         self.assertEqual(
             found,
@@ -398,7 +420,7 @@ async def main():
 '''
         )
 
-        found = servicers(await files(application=application))
+        found = _state_types_and_files(await files(application=application))
 
         self.assertEqual(
             found,
@@ -419,7 +441,7 @@ async def main():
 '''
         )
 
-        found = servicers(await files(application=application))
+        found = _state_types_and_files(await files(application=application))
 
         self.assertEqual(
             found,
@@ -450,12 +472,14 @@ async def main():
 '''
             )
 
-            found = servicers(await files(application=application))
+            found = _state_types_and_files(
+                await files(application=application)
+            )
 
             self.assertEqual(found, [])
 
             # Named as a root, the very same import leads there.
-            found = servicers(
+            found = _state_types_and_files(
                 await files(
                     application=application,
                     roots=[str(self.directory), elsewhere.name],
@@ -467,6 +491,68 @@ async def main():
             )
         finally:
             elsewhere.cleanup()
+
+    ###################################################################
+    # The methods each servicer defines.
+
+    async def test_records_the_methods_a_servicer_defines(self) -> None:
+        self._write('shop_servicer.py', source=SHOP)
+        application = self._write('main.py', source=APPLICATION)
+
+        found = servicers(await files(application=application))
+
+        self.assertEqual(
+            [method.name for method in found[0].methods], ['look']
+        )
+
+    async def test_a_method_reformatted_digests_the_same(self) -> None:
+        """The digest is over what the method says, so laying it out
+        differently or writing a comment in it is not a change."""
+        self._write('shop_servicer.py', source=SHOP)
+        application = self._write('main.py', source=APPLICATION)
+
+        before = servicers(await files(application=application))
+
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace(
+                'async def look(self, context, request):\n        pass',
+                'async def look(\n'
+                '        self,\n'
+                '        context,\n'
+                '        request,\n'
+                '    ):\n'
+                '        # Nothing to look up yet.\n'
+                '        pass',
+            ),
+        )
+
+        after = servicers(await files(application=application))
+
+        self.assertEqual(
+            [method.digest for method in after[0].methods],
+            [method.digest for method in before[0].methods],
+        )
+
+    async def test_a_method_whose_body_changes_digests_differently(
+        self
+    ) -> None:
+        self._write('shop_servicer.py', source=SHOP)
+        application = self._write('main.py', source=APPLICATION)
+
+        before = servicers(await files(application=application))
+
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace('        pass', '        return None'),
+        )
+
+        after = servicers(await files(application=application))
+
+        self.assertNotEqual(
+            after[0].methods[0].digest,
+            before[0].methods[0].digest,
+        )
 
     ###################################################################
     # Parse again only what has changed.
@@ -506,7 +592,9 @@ async def main():
         Path(servicer).write_text(DEPOT)
         os.utime(servicer, ns=(modified, modified))
 
-        found = servicers(await files(application=application, known=known))
+        found = _state_types_and_files(
+            await files(application=application, known=known)
+        )
 
         self.assertEqual(found, [('shop.v1.Depot', servicer)])
 
@@ -531,7 +619,9 @@ async def main():
 
         self._write('main.py', source=APPLICATION)
 
-        found = servicers(await files(application=application, known=known))
+        found = _state_types_and_files(
+            await files(application=application, known=known)
+        )
 
         self.assertEqual(
             found,
@@ -556,7 +646,9 @@ async def main():
             ),
         )
 
-        found = servicers(await files(application=application, known=known))
+        found = _state_types_and_files(
+            await files(application=application, known=known)
+        )
 
         self.assertEqual(
             found, [
@@ -566,7 +658,7 @@ async def main():
         )
 
     ###################################################################
-    # What it cannot place.
+    # What it finds no servicer for.
 
     async def test_a_file_that_will_not_parse(self) -> None:
         """Its servicers go unfound, because which state types they
@@ -574,12 +666,12 @@ async def main():
         self._write('shop_servicer.py', source='class ShopServicer(')
         application = self._write('main.py', source=APPLICATION)
 
-        found = servicers(await files(application=application))
+        found = _state_types_and_files(await files(application=application))
 
         self.assertEqual(found, [])
 
     async def test_an_application_that_is_not_there(self) -> None:
-        found = servicers(
+        found = _state_types_and_files(
             await files(application=str(self.directory / 'nowhere.py'))
         )
 
@@ -602,7 +694,7 @@ async def main():
 '''
         )
 
-        found = servicers(await files(application=application))
+        found = _state_types_and_files(await files(application=application))
 
         self.assertEqual(
             found, [
@@ -612,8 +704,8 @@ async def main():
         )
 
     async def test_a_class_that_services_nothing(self) -> None:
-        """A class whose base names no generated module is not a
-        servicer this can place."""
+        """A class whose base names no generated module is not one
+        this recognizes as a servicer."""
         self._write(
             'shop_servicer.py', source='''
 class ShopServicer(SomethingElse):
@@ -622,7 +714,7 @@ class ShopServicer(SomethingElse):
         )
         application = self._write('main.py', source=APPLICATION)
 
-        found = servicers(await files(application=application))
+        found = _state_types_and_files(await files(application=application))
 
         self.assertEqual(found, [])
 
