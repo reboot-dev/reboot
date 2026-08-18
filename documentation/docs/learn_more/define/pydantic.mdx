@@ -121,6 +121,7 @@ api = API(
                 request=InitializeCounterRequest,
                 response=None,
                 factory=True,
+                description="Create the counter at its initial value.",
                 mcp=None,
             ),
             get=Reader(
@@ -235,6 +236,7 @@ CounterMethods = Methods(
         request=None,
         response=None,
         factory=True,
+        description="Create the counter at zero.",
         mcp=None,
     ),
 )
@@ -324,10 +326,12 @@ ChatRoomMethods = Methods(
     messages=Reader(
         request=None,
         response=MessagesResponse,
+        description="Every message posted to the room so far.",
     ),
     send=Writer(
         request=SendRequest,
         response=None,
+        description="Post one message to the room.",
     ),
 )
 

@@ -205,6 +205,8 @@ api = API(
                 request=WikiCreateRequest,
                 response=None,
                 factory=True,
+                description="Bring the Wiki into existence "
+                "with an empty body.",
                 mcp=None,
             ),
             get=Reader(
@@ -294,6 +296,8 @@ api = API(
                 request=PageCreateRequest,
                 response=None,
                 factory=True,
+                description="Bring the Page into existence "
+                "with its title and body.",
                 mcp=None,
             ),
             get=Reader(
@@ -343,6 +347,8 @@ api = API(
                 request=TranscriptCreateRequest,
                 response=None,
                 factory=True,
+                description="Record one raw conversation "
+                "transcript.",
                 mcp=None,
             ),
             get=Reader(

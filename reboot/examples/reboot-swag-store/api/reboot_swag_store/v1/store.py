@@ -259,6 +259,8 @@ api = API(
                 request=CartCreateRequest,
                 response=None,
                 factory=True,
+                description="Start an empty cart for one "
+                "shopper.",
                 mcp=None,
             ),
             add_item=Writer(
@@ -312,6 +314,8 @@ api = API(
                 request=None,
                 response=None,
                 factory=True,
+                description="Bring the coupon book into "
+                "existence with no codes in it.",
                 mcp=None,
             ),
             generate_codes=Writer(
@@ -344,6 +348,8 @@ api = API(
                 request=CreateOrderRequest,
                 response=None,
                 factory=True,
+                description="Place the order from a "
+                "checked-out cart.",
                 mcp=None,
             ),
             fulfill=Workflow(

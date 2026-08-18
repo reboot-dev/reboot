@@ -27,6 +27,8 @@ AccountMethods = Methods(
         request=None,
         response=None,
         factory=True,
+        description="Bring the account into existence with a zero "
+        "balance.",
         mcp=None,
     ),
     balance=Reader(
@@ -56,6 +58,7 @@ AccountMethods = Methods(
     interest=Writer(
         request=None,
         response=None,
+        description="Credit one period's interest at the current rate.",
         mcp=None,
     ),
 )
@@ -64,5 +67,7 @@ api = API(
     Account=Type(
         state=AccountState,
         methods=AccountMethods,
+        description="One account's money, and the consistency boundary "
+        "for every change to it.",
     ),
 )

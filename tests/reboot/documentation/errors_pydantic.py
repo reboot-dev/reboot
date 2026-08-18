@@ -16,6 +16,8 @@ AccountMethods = Methods(
         request=WithdrawRequest,
         response=None,
         errors=[OverdraftError],
+        description="Take funds out, or raise `OverdraftError` if the "
+        "balance would go negative.",
         mcp=None,
     ),
     # ...
