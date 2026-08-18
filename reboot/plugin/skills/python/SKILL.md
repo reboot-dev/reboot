@@ -159,9 +159,20 @@ api = API(
     ChatRoom=Type(
         state=ChatRoomState,
         methods=Methods(
-            messages=Reader(request=None, response=MessagesResponse, mcp=None),
-            send=Writer(request=SendRequest, response=None, mcp=None),
+            messages=Reader(
+                request=None,
+                response=MessagesResponse,
+                description="Every message posted so far, oldest first.",
+                mcp=None,
+            ),
+            send=Writer(
+                request=SendRequest,
+                response=None,
+                description="Post one message to the room.",
+                mcp=None,
+            ),
         ),
+        description="One chat room, and everyone posting into it.",
     ),
 )
 ```

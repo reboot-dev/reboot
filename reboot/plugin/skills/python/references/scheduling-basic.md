@@ -37,10 +37,14 @@ asyncio.create_task(self._fire_later())  # disappears on restart
 
 ```python
 open=Writer(
-    request=OpenRequest, response=None, factory=True, mcp=None,
+    request=OpenRequest, response=None, factory=True,
+    description="Bring the account into existence with a zero balance.",
+    mcp=None,
 ),
 interest=Writer(
-    request=None, response=None, mcp=None,
+    request=None, response=None,
+    description="Credit one period's interest at the current rate.",
+    mcp=None,
 ),
 ```
 

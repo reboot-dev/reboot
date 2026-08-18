@@ -72,28 +72,35 @@ AccountMethods = Methods(
     balance=Reader(
         request=None,
         response=BalanceResponse,
+        description="The funds currently available to withdraw.",
         mcp=None,
     ),
     deposit=Writer(
         request=DepositRequest,
         response=None,
+        description="Add funds. Any amount is accepted.",
         mcp=None,
     ),
     withdraw=Writer(
         request=WithdrawRequest,
         response=None,
         errors=[OverdraftError],
+        description="Take funds out, or raise `OverdraftError` if the "
+        "balance would go negative.",
         mcp=None,
     ),
     open=Writer(
         request=None,
         response=None,
         factory=True,
+        description="Bring the account into existence with a zero "
+        "balance.",
         mcp=None,
     ),
     interest=Writer(
         request=None,
         response=None,
+        description="Credit one period's interest at the current rate.",
         mcp=None,
     ),
 )
@@ -103,6 +110,8 @@ api = API(
     Account=Type(
         state=AccountState,
         methods=AccountMethods,
+        description="One customer's money, and the consistency "
+        "boundary for every change to it.",
     ),
 )
 ```
@@ -167,10 +176,28 @@ mcp
 
 ```python
 # All four factories — same shape:
-balance=Reader(request=None, response=BalanceResponse, mcp=None),
-deposit=Writer(request=DepositRequest, response=None, mcp=None),
-transfer=Transaction(request=TransferRequest, response=None, mcp=None),
-autoplay=Workflow(request=None, response=None, mcp=None),
+balance=Reader(
+    request=None, response=BalanceResponse,
+    description="The funds currently available to withdraw.",
+    mcp=None,
+),
+deposit=Writer(
+    request=DepositRequest, response=None,
+    description="Add funds. Any amount is accepted.",
+    mcp=None,
+),
+transfer=Transaction(
+    request=TransferRequest, response=None,
+    description="Move funds between two accounts, both sides landing "
+    "together or neither.",
+    mcp=None,
+),
+autoplay=Workflow(
+    request=None, response=None,
+    description="Play the game out to a result without a human taking "
+    "turns.",
+    mcp=None,
+),
 ```
 
 Workflows in particular get caught by this — they're rarely
@@ -370,6 +397,7 @@ api = API(
             create_checkers_game=Transaction(
                 request=None,
                 response=CreateCheckersGameResponse,
+                description="Start a checkers game, returning its id.",
                 mcp=Tool(),
             ),
         ),
