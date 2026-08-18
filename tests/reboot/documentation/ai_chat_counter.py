@@ -100,6 +100,7 @@ api = API(
                 request=InitializeCounterRequest,
                 response=None,
                 factory=True,
+                description="Create the counter at its initial value.",
                 mcp=None,
             ),
             get=Reader(

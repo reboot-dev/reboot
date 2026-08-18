@@ -53,7 +53,7 @@ export const api = {
   </TabItem>
   <TabItem value="python" label="Pydantic">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/documentation/chat_room_pydantic.py&lines=1-37) -->
+(CODE:src=../../../../tests/reboot/documentation/chat_room_pydantic.py&lines=1-39) -->
 <!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/chat_room_pydantic.py -->
 
 ```py
@@ -78,12 +78,14 @@ ChatRoomMethods = Methods(
     messages=Reader(
         request=None,
         response=MessagesResponse,
+        description="Every message posted to the room so far.",
         mcp=None,
     ),
     # Adds a new message to the list of recorded messages.
     send=Writer(
         request=SendRequest,
         response=None,
+        description="Post one message to the room.",
         mcp=None,
     ),
 )

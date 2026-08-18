@@ -19,12 +19,14 @@ ChatRoomMethods = Methods(
     messages=Reader(
         request=None,
         response=MessagesResponse,
+        description="Every message posted to the room so far.",
         mcp=None,
     ),
     # Adds a new message to the list of recorded messages.
     send=Writer(
         request=SendRequest,
         response=None,
+        description="Post one message to the room.",
         mcp=None,
     ),
 )
