@@ -38,6 +38,7 @@ open=Writer(
     request=OpenRequest,
     response=None,
     factory=True,
+    description="Bring the account into existence with a zero balance.",
     mcp=None,
 ),
 ```

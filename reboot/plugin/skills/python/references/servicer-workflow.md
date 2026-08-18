@@ -61,6 +61,8 @@ async def control_loop(
 control_loop=Workflow(
     request=ControlLoopRequest,
     response=None,
+    description="Answer messages for as long as the chatbot is "
+    "running.",
     mcp=None,
 ),
 ```
@@ -1373,6 +1375,8 @@ api = API(
                 request=FulfillRequest,
                 response=None,
                 errors=[PaymentDeclined, CustomerSuspended],
+                description="Take the order from paid to shipped, "
+                "resuming where it left off after a restart.",
                 mcp=None,
             ),
         ),
