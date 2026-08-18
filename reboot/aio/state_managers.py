@@ -5404,13 +5404,43 @@ class SidecarStateManager(
         participants: Participants,
         coordinator_state_ref: Optional[StateRef],
     ):
-        """Aborts a transaction for which we are the coordinator: (1) cleans
-        up the "preparing" record that may be in the database; (2)
-        best-effort sends `Abort` RPCs to all participants; and (3)
-        resolves the `_coordinator_participants` future to `None` so
-        any participant "watch control loops" observe the abort, then
-        deletes the future entry.
+        """Aborts a transaction for which we are the coordinator: (1)
+        resolves the `_coordinator_participants` future to `None` and
+        drops its entry so any participant "watch control loops"
+        observe the abort; (2) cleans up the "preparing" record that
+        may be in the database; and (3) best-effort sends `Abort` RPCs
+        to all participants.
         """
+        # To indicate that the transaction has aborted we resolve the
+        # future to `None`, so a participant `Watch` that already passed
+        # the "is it still in the map" check and is awaiting the future
+        # observes the abort rather than finding itself still listed to
+        # commit. Both statements are synchronous and come before
+        # anything that can be interrupted, so from here on every
+        # watcher has an answer no matter where a cancellation lands.
+        #
+        # Answering before the database cleanup below lands is safe,
+        # because an abort is not something a coordinator records: its
+        # durable outcomes are "preparing" and "absent", and neither
+        # says a transaction committed. A coordinator only gets here
+        # while the transaction is not durably prepared -- either its
+        # `_transaction_coordinator_complete()` did not return, or it
+        # is re-preparing, which asserts as much -- so there is no
+        # committed outcome for an early answer to contradict. Should
+        # this process die before the cleanup lands, recovery finds
+        # "preparing" and re-prepares, the participants that have
+        # already aborted report that they never prepared, and the
+        # transaction aborts again.
+        #
+        # Not expecting the future to ever be cancelled, see:
+        # https://github.com/reboot-dev/mono/issues/3241
+        assert not self._coordinator_participants[transaction_id].cancelled()
+        self._coordinator_participants[transaction_id].set_result(None)
+
+        # Remove transaction so that participants "watch control loop"
+        # will determine that the transaction has aborted!
+        del self._coordinator_participants[transaction_id]
+
         # Clean up the "preparing" record that may be in the database
         # when the coordinator stored the transaction participants
         # (and `preparing=True`). The database write may or may not
@@ -5474,21 +5504,6 @@ class SidecarStateManager(
             abort(state_type, state_ref)
             for (state_type, state_ref) in participants.should_prepare()
         )
-
-        # To indicate that the transaction has aborted we resolve the
-        # future to `None`, so a participant `Watch` that already passed
-        # the "is it still in the map" check and is awaiting the future
-        # observes the abort rather than finding itself still listed to
-        # commit.
-        #
-        # Not expecting the future to ever be cancelled, see:
-        # https://github.com/reboot-dev/mono/issues/3241
-        assert not self._coordinator_participants[transaction_id].cancelled()
-        self._coordinator_participants[transaction_id].set_result(None)
-
-        # Remove transaction so that participants "watch control loop"
-        # will determine that the transaction has aborted!
-        del self._coordinator_participants[transaction_id]
 
     async def _transaction_participant_watch(
         self,
