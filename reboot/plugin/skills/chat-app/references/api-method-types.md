@@ -362,6 +362,8 @@ class DoPingPeriodicallyResponse(Model):
 do_ping_periodically=Workflow(
     request=DoPingPeriodicallyRequest,
     response=DoPingPeriodicallyResponse,
+    description="Ping on a fixed interval for as long as the "
+    "application runs.",
     # `Workflow` requires `mcp=` like every other factory; usually `None`
     # since workflows are rarely AI-callable tools directly.
     mcp=None,
