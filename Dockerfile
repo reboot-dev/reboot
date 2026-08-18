@@ -324,6 +324,24 @@ RUN curl --retry 5 --retry-all-errors -fSsL https://github.com/groundcover-com/c
     && tar -zxf /tmp/groundcover.tar.gz -C /usr/bin \
     && chmod +x /usr/bin/groundcover
 
+# Install the Ory CLI so developers can `ory auth` and manage Ory
+# Network projects. The non-sqlite build is deliberate: the `sqlite`
+# variants link against GLIBC 2.38, newer than this image (Ubuntu
+# Jammy, GLIBC 2.35).
+ARG ORY_VERSION=1.3.1
+RUN set -e; \
+    if [ "${TARGETARCH}" = "amd64" ]; then \
+    ARCH_SUFFIX="64bit"; \
+    elif [ "${TARGETARCH}" = "arm64" ]; then \
+    ARCH_SUFFIX="arm64"; \
+    else \
+    echo "Unsupported arch: ${TARGETARCH}" && exit 1; \
+    fi; \
+    curl --retry 5 --retry-all-errors -fsL "https://github.com/ory/cli/releases/download/v${ORY_VERSION}/ory_${ORY_VERSION}-linux_${ARCH_SUFFIX}.tar.gz" -o ory.tar.gz \
+    && tar -zxf ory.tar.gz -C /usr/local/bin/ ory \
+    && rm ory.tar.gz \
+    && chmod +x /usr/local/bin/ory
+
 # Install the Envoy binary, so we can run the tests that use
 # local-binary Envoy rather than Docker-based Envoy.
 RUN set -e; \
