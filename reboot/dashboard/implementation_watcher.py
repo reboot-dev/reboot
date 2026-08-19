@@ -35,6 +35,7 @@ import ast
 import hashlib
 import os
 from dataclasses import dataclass, replace
+from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import ServicerInfo
 from rbt.dashboard.v1.dashboard_rbt import Implementation
 from reboot.aio.contexts import WorkflowContext
@@ -154,6 +155,34 @@ class Imports:
         # The `_rbt` module name alone says what a name from one is:
         # `Account` from `bank.v1.account_rbt` is `bank.v1.Account`.
         if module.endswith(GENERATED_SUFFIX):
+            # A relative import spells its module as a path, but a
+            # state type's name is dotted. In a file
+            # `backend/src/shop/cart/servicer.py`:
+            #
+            #   from ..v1 import shop_rbt
+            #     module -> `backend/src/shop/v1/shop_rbt`
+            #
+            # `Shop` from that module must still be named
+            # `shop.v1.Shop`, the same as if it had been imported
+            # as `shop.v1.shop_rbt`. The dots come back by cutting
+            # the root off the front of the path: cutting
+            # `backend/src` leaves `shop/v1/shop_rbt`, and joining
+            # its parts with dots gives `shop.v1.shop_rbt`. If no
+            # root contains the path, there is no way to spell the
+            # name, so there is no answer.
+            if os.sep in module:
+                module_path = Path(module).absolute()
+                for root in list(analysis.files.roots):
+                    directory = Path(root).absolute()
+                    if module_path.is_relative_to(directory):
+                        dotted = '.'.join(
+                            module_path.relative_to(directory).parts
+                        )
+                        return (
+                            f"{dotted.rsplit('.', 1)[0]}.{attribute}",
+                            analysis,
+                        )
+                return None, analysis
             return f"{module.rsplit('.', 1)[0]}.{attribute}", analysis
 
         found, files = analysis.files.lookup_or_parse_module(
@@ -177,7 +206,9 @@ class Imports:
 Import = Imports.Symbol | Imports.Module
 
 
-def _imports(module: ast.Module) -> Imports:
+def _imports(
+    module: ast.Module, *, directory: Optional[str] = None
+) -> Imports:
     """Returns what a file's imports bound each of its names to.
 
     Names come from every import, wherever it is written. One inside
@@ -185,6 +216,9 @@ def _imports(module: ast.Module) -> Imports:
     file does, and guarding an import is common enough to be worth
     reading. `ast.walk` yields the shallowest first, so a name bound
     at the top of the file wins over one bound inside something.
+
+    `directory` is where the file itself is, which is what a relative
+    import is relative to; without it relative imports bind nothing.
     """
     bindings: dict[str, Import] = {}
     may_load: list[str] = []
@@ -207,13 +241,51 @@ def _imports(module: ast.Module) -> Imports:
                             first, Imports.Module(module=first)
                         )
 
-            case ast.ImportFrom(module=str(from_module), level=0, names=names):
-                may_load.append(from_module)
+            case ast.ImportFrom(
+                module=from_module, level=int(level), names=names
+            ):
+                # Having a `level` means we have to determine what
+                # file Python might load. For example, in a file
+                # `shop/cart/servicer.py`:
+                #
+                #   from shop.cart.types import Item
+                #     level 0 -> `shop.cart.types`
+                #   from .types import Item
+                #     level 1 -> `shop/cart/types`
+                #   from ..api import Item
+                #     level 2 -> `shop/api`
+                #   from .. import api
+                #     level 2, no module -> `shop`
+                #
+                # `level` counts the leading dots. No dots: keep the
+                # module as written. One dot: start from the file's
+                # own directory. Each extra dot: climb one parent.
+                # If a module comes after the dots, it goes under
+                # that directory: `..api` is `shop` plus `api`, so
+                # `shop/api`. A relative import can only be spelled
+                # as a path, and without a `directory` the dots
+                # point at nothing, so the import binds nothing.
+                if level == 0:
+                    if from_module is None:
+                        continue
+                    base = from_module
+                elif directory is not None:
+                    climbed = directory
+                    for _ in range(level - 1):
+                        climbed = os.path.dirname(climbed)
+                    if from_module is None:
+                        base = climbed
+                    else:
+                        base = os.path.join(climbed, *from_module.split('.'))
+                else:
+                    continue
+
+                may_load.append(base)
 
                 for alias in names:
                     bindings.setdefault(
                         alias.asname or alias.name,
-                        Imports.Symbol(module=from_module, name=alias.name),
+                        Imports.Symbol(module=base, name=alias.name),
                     )
                     # Since we cannot tell whether `y` in
                     # `from x import y` is a module of its own or a
@@ -222,7 +294,7 @@ def _imports(module: ast.Module) -> Imports:
                     # if a root holds one by that name, so `x.y`
                     # naming something that is not a module resolves
                     # to nothing and is dropped.
-                    may_load.append(_join(from_module, alias.name))
+                    may_load.append(_join(base, alias.name))
 
     # A top-level `Alias = Name` binds `Alias` to whatever `Name` was
     # bound to. In written order, so an alias of an alias resolves
@@ -246,19 +318,28 @@ def _try_find_file_of(module: str, *, roots: Sequence[str]) -> Optional[str]:
     """Returns the file a module names if one of `roots` contains it,
     and `None` otherwise.
 
-    `None` is not a failure: the standard library and installed
-    packages live outside every root, so `import asyncio` resolves to
-    nothing and there is nothing to read.
+    A module spelled as a path -- what a relative import resolved to
+    -- is looked for where it already points. `None` is not a failure:
+    the standard library and installed packages live outside every
+    root, so `import asyncio` resolves to nothing and there is nothing
+    to read.
     """
-    relative = module.replace('.', os.sep)
+    if os.sep in module:
+        candidates = [
+            module + '.py',
+            os.path.join(module, '__init__.py'),
+        ]
+    else:
+        relative = module.replace('.', os.sep)
+        candidates = [
+            os.path.join(root, relative + suffix)
+            for root in roots
+            for suffix in ('.py', os.sep + '__init__.py')
+        ]
 
-    for root in roots:
-        for candidate in (
-            os.path.join(root, relative + '.py'),
-            os.path.join(root, relative, '__init__.py'),
-        ):
-            if os.path.isfile(candidate):
-                return candidate
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
 
     return None
 
@@ -278,7 +359,11 @@ def _path(expression: ast.expr) -> Optional[list[str]]:
 
 
 def _join(base: str, *parts: str) -> str:
-    """Returns a module extended by more components."""
+    """Returns a module extended by more components, joined the way
+    the module is spelled: with dots for a dotted name, as a path for
+    a path."""
+    if os.sep in base:
+        return os.path.join(base, *parts)
     return '.'.join([base, *parts])
 
 
@@ -382,11 +467,21 @@ class Files:
     def lookup(self, filename: str) -> Optional[ParsedFile | File]:
         """Returns what this iteration read for a file, wherever it
         lives -- `analyzed` or `parsed` -- and `None` when
-        it has not read the file."""
+        it has not read the file.
+
+        By the file's absolute path, since a relative import spells
+        a file one way and an absolute import another.
+        """
         for entries in (self.analyzed, self.parsed):
             entry = entries.get(filename)
             if entry is not None:
                 return entry
+
+        absolute = Path(filename).absolute()
+        for entries in (self.analyzed, self.parsed):
+            for entry in entries.values():
+                if Path(entry.filename).absolute() == absolute:
+                    return entry
 
         return None
 
@@ -522,6 +617,15 @@ class Files:
             files = files.with_digest(filename, digest)
 
         known = files.known.get(filename)
+        if known is None:
+            # A relative import spells a file one way and an absolute
+            # import another, so the previous iteration is searched
+            # by absolute path too.
+            absolute = Path(filename).absolute()
+            for file in files.known.values():
+                if Path(file.filename).absolute() == absolute:
+                    known = file
+                    break
         if known is not None:
             reanalyze, files = files.needs_reanalyzing(known, digest=digest)
             if not reanalyze:
@@ -587,7 +691,9 @@ def _parse(source: bytes, *, filename: str,
     return ParsedFile(
         filename=filename,
         digest=digest,
-        imports=_imports(module),
+        imports=_imports(
+            module, directory=os.path.dirname(os.path.abspath(filename))
+        ),
         module=module,
     )
 
