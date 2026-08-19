@@ -111,7 +111,11 @@ class Imports:
         head, *rest = path
 
         match self.bindings.get(head):
-            case Imports.Symbol(module=module, name=name) if not rest:
+            case Imports.Symbol(module=module, name=name):
+                if rest:
+                    # Used dotted: the code treats it as a module,
+                    # and is believed.
+                    return _join(module, name, *rest[:-1]), rest[-1]
                 return module, name
 
             case Imports.Module(module=module) if rest:
