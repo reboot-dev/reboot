@@ -27,6 +27,8 @@
     "esbuild": "^0.28.0",
     "express": "^5.1.0",
     "lru-cache-idb": "^0.5.2",
+    "react-resizable-panels": "4.12.3",
+    "react-router": "7.18.2",
     "react": "19.2.1",
     "react-dom": "19.2.1",
     "toobusy-js": "^0.5.1",

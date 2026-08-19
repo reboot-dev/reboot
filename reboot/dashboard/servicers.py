@@ -10,6 +10,8 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     PreferencesGetResponse,
     PreferencesSetExpandedRequest,
     PreferencesSetExpandedResponse,
+    PreferencesSetNavWidthRequest,
+    PreferencesSetNavWidthResponse,
     PreferencesSetSuppressOpenOnRestartRequest,
     PreferencesSetSuppressOpenOnRestartResponse,
 )
@@ -95,6 +97,10 @@ class PreferencesServicer(Preferences.Servicer):
         return PreferencesGetResponse(
             suppress_open_on_restart=self.state.suppress_open_on_restart,
             expanded_state_types=self.state.expanded_state_types,
+            nav_width=(
+                self.state.nav_width
+                if self.state.HasField('nav_width') else None
+            ),
         )
 
     async def SetSuppressOpenOnRestart(
@@ -120,6 +126,14 @@ class PreferencesServicer(Preferences.Servicer):
         self.state.expanded_state_types[:] = sorted(expanded)
 
         return PreferencesSetExpandedResponse()
+
+    async def SetNavWidth(
+        self,
+        context: WriterContext,
+        request: PreferencesSetNavWidthRequest,
+    ) -> PreferencesSetNavWidthResponse:
+        self.state.nav_width = request.nav_width
+        return PreferencesSetNavWidthResponse()
 
 
 def servicers() -> list[type[Servicer]]:

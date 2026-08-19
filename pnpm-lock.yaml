@@ -101,6 +101,12 @@ importers:
       react-dom:
         specifier: 19.2.1
         version: 19.2.1(react@19.2.1)
+      react-resizable-panels:
+        specifier: 4.12.3
+        version: 4.12.3(react-dom@19.2.1)(react@19.2.1)
+      react-router:
+        specifier: 7.18.2
+        version: 7.18.2(react-dom@19.2.1)(react@19.2.1)
       toobusy-js:
         specifier: ^0.5.1
         version: 0.5.1
@@ -2226,6 +2232,11 @@ packages:
     engines: {node: '>= 0.6'}
     dev: false
 
+  /cookie@1.1.1:
+    resolution: {integrity: sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ==}
+    engines: {node: '>=18'}
+    dev: false
+
   /cors@2.8.6:
     resolution: {integrity: sha512-tJtZBBHA6vjIAaF6EnIaq6laBBP9aq/Y3ouVJjEfoHbRBcHBAHYcMh/w8LDrk2PvIMMq8gmopa5D4V8RmbrxGw==}
     engines: {node: '>= 0.10'}
@@ -3503,6 +3514,32 @@ packages:
     engines: {node: '>=0.10.0'}
     dev: false
 
+  /react-resizable-panels@4.12.3(react-dom@19.2.1)(react@19.2.1):
+    resolution: {integrity: sha512-GHMJWnDXui/3RX4bT+cgBP+N3N2nkwcoZATr/2xLFpqQQe7TlBrE0cGM0dUa9ceT7A90tUrSRsiqgRG+g0/2AA==}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
+    dependencies:
+      react: 19.2.1
+      react-dom: 19.2.1(react@19.2.1)
+    dev: false
+
+  /react-router@7.18.2(react-dom@19.2.1)(react@19.2.1):
+    resolution: {integrity: sha512-aUVMjFm3GAPTTZL7oYr5E7ETiqfQCHRLH+B+5afnICvf0r7kkK4eR6SMuwbSTJw/7t+12khT/Kahij49fqOCIg==}
+    engines: {node: '>=20.0.0'}
+    peerDependencies:
+      react: '>=18'
+      react-dom: '>=18'
+    peerDependenciesMeta:
+      react-dom:
+        optional: true
+    dependencies:
+      cookie: 1.1.1
+      react: 19.2.1
+      react-dom: 19.2.1(react@19.2.1)
+      set-cookie-parser: 2.7.2
+    dev: false
+
   /react-textarea-autosize@8.5.9(@types/react@19.2.7)(react@19.2.1):
     resolution: {integrity: sha512-U1DGlIQN5AwgjTyOEnI1oCcMuEr1pv1qOtklB2l4nyMGbHzWrI0eFsYK0zos2YWqAolJyG0IWJaqWmWj5ETh0A==}
     engines: {node: '>=10'}
@@ -3642,6 +3679,10 @@ packages:
       send: 1.2.1
     transitivePeerDependencies:
       - supports-color
+    dev: false
+
+  /set-cookie-parser@2.7.2:
+    resolution: {integrity: sha512-oeM1lpU/UvhTxw+g3cIfxXHyJRc/uidd3yK1P242gzHds0udQBYzs3y8j4gCCW+ZJ7ad0yctld8RYO+bdurlvw==}
     dev: false
 
   /setimmediate@1.0.5:

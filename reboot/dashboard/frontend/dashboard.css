@@ -89,12 +89,49 @@ main {
   height: 100%;
 }
 
+/* Two panels and the separator between them, laid out by
+   `react-resizable-panels`: it owns the widths, the bounds and the
+   drag, so nothing here says how wide the sidebar is. */
 .shell {
-  display: grid;
-  grid-template-columns: 250px 1fr;
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+/* A flex item will not shrink below its content unless it is told
+   it may, and the sidebar has to be as wide as it is dragged rather
+   than as wide as the longest name in it. */
+.nav-panel,
+.pane-panel {
+  min-width: 0;
+}
+
+/* The border between the two, widened into something a pointer can
+   catch. The line only shows while it is being reached for: the
+   sidebar already has a border, and a second one drawn over it at
+   rest would just be a thicker border. */
+.nav-resizer {
+  position: relative;
+  width: 9px;
+  margin: 0 -4px;
+  z-index: 5;
+}
+
+.nav-resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0 4px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+/* `data-separator` rather than `:hover` and `:active`: the library
+   keeps it in step through a drag, which a pointer that has left the
+   handle would otherwise drop. */
+.nav-resizer[data-separator="hover"]::after,
+.nav-resizer[data-separator="active"]::after,
+.nav-resizer:focus-visible::after {
+  background: hsl(var(--primary));
 }
 
 /* --- Banner --- */
@@ -127,7 +164,10 @@ main {
 
 /* --- Sidebar --- */
 
+/* `height: 100%` because the panel around it is what has a height;
+   without one there is nothing for `overflow-y` to scroll against. */
 nav {
+  height: 100%;
   background: hsl(var(--sidebar));
   border-right: 1px solid hsl(var(--border));
   overflow-y: auto;
@@ -146,56 +186,59 @@ nav > .eyebrow {
   padding: 0 8px 8px;
 }
 
-.namespace-head {
+/* The whole sidebar is one two-column grid: what a row names, and
+   how much of something it holds. Every row is `display: contents`,
+   so its two cells are the grid's own items rather than a row's, and
+   the count column is therefore sized once across the sidebar. That
+   is what lets `1 field` and `12 state types` begin at the same x,
+   so the column reads down instead of each row being read across.
+
+   Not `subgrid`, which would say this more directly but which the
+   browsers this has to run in do not all have yet.
+
+   The columns touch, and the gap between them is padding on the
+   cells, so that a row's hover fill is continuous across both rather
+   than broken in the middle by a grid gap. */
+nav {
   display: grid;
-  grid-template-columns: 10px 1fr auto;
-  align-items: center;
-  gap: 0 7px;
-  width: 100%;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
+  grid-template-columns: 1fr max-content;
+  align-content: start;
+  gap: 1px 0;
+}
+
+.namespace,
+.namespace-types,
+.namespace-head,
+.page-selector,
+.page-link,
+nav a {
+  display: contents;
+}
+
+nav > .eyebrow {
+  grid-column: 1 / -1;
+  padding: 12px 10px 8px;
+}
+
+/* The eyebrow under the page selector carries the line between the
+   two, since the selector itself has no box to draw one on. */
+.page-selector ~ .eyebrow {
+  margin-top: 6px;
+  border-top: 1px solid hsl(var(--border));
+}
+
+.nav-name,
+.nav-count {
+  padding: 5px 10px;
   cursor: pointer;
 }
 
-.namespace-head:hover {
-  background: hsl(var(--card) / 0.6);
-}
-
-.caret {
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 10px;
-  color: hsl(240 3.8% 55%);
-}
-
-.namespace-name {
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 11.5px;
-  font-weight: 600;
-}
-
-nav a {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 0 8px;
-  padding: 5px 10px 5px 34px;
-  border-radius: 5px;
-  color: inherit;
-}
-
-nav a:hover {
-  background: hsl(var(--card) / 0.6);
-  color: inherit;
-}
-
 .nav-name {
+  grid-column: 1;
+  border-radius: 5px 0 0 5px;
   font-weight: 600;
   font-size: 12.5px;
+  color: hsl(var(--foreground));
 }
 
 /* The counts name what they count, since a namespace's number and a
@@ -203,15 +246,85 @@ nav a:hover {
    things. `nowrap` because the sidebar is narrow enough that "12
    state types" would otherwise break across two lines. */
 .nav-count {
+  grid-column: 2;
+  border-radius: 0 5px 5px 0;
   font-family: ui-monospace, Menlo, monospace;
   font-size: 10px;
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
 
+/* A row is two cells, so its fill is painted on both and rounded
+   only on the outside. */
+.namespace-head:hover > *,
+nav a:hover > * {
+  background: hsl(var(--card) / 0.6);
+}
+
+.namespace-head {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.namespace-name {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+}
+
+/* A type belongs to the namespace above it, and is stepped in to say
+   so. A margin rather than padding, so the cell it sits in still
+   begins where every other row's does and the fill stays square with
+   the column. */
+nav a .nav-name {
+  margin-left: 17px;
+}
+
+.caret {
+  display: inline-block;
+  width: 10px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  color: hsl(240 3.8% 55%);
+}
+
+/* Which of the two indexes is being read. Rows like every other, so
+   the sidebar is one column of names and one of counts from top to
+   bottom. */
+.page-link .nav-name {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+
+.page-link:hover > * {
+  background: hsl(240 5% 90% / 0.5);
+}
+
+/* The page being read is filled rather than merely marked, so that
+   which index you are in is answered before it is asked. */
+.page-link.current > * {
+  background: hsl(var(--primary));
+}
+
+.page-link.current .nav-name {
+  color: hsl(var(--primary-foreground));
+}
+
+/* Dimmed by the colour rather than by `opacity`, which would fade
+   the cell's fill along with its text and split the row in two. */
+.page-link.current .nav-count {
+  color: hsl(var(--primary-foreground) / 0.7);
+}
+
 /* --- Document pane --- */
 
 .pane {
+  height: 100%;
   overflow-y: auto;
   background: hsl(var(--background));
 }
@@ -311,6 +424,28 @@ header h1 {
   min-width: 0;
 }
 
+/* Kept out of the way until it is wanted. Faded rather than hidden:
+   `display: none` would shift the heading when it appeared, and
+   `visibility: hidden` would take it out of the tab order, so it
+   could never be reached to be revealed. */
+.anchor {
+  opacity: 0;
+  margin-left: -6px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 14px;
+  color: hsl(var(--muted-foreground));
+  text-decoration: none;
+}
+
+.state-type-head:hover .anchor,
+.anchor:focus-visible {
+  opacity: 1;
+}
+
+.anchor:hover {
+  color: hsl(var(--primary));
+}
+
 /* Solid while closed and outlined while open, so the one that
    has something left to offer is the one that draws the eye. */
 .expand-button {
@@ -364,34 +499,6 @@ header h1 {
   font-size: 12.5px;
   color: hsl(var(--muted-foreground));
   line-height: 1.5;
-}
-
-.fields {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.field {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  border: 1px solid hsl(240 5.9% 92%);
-  border-radius: calc(var(--radius) - 2px);
-  padding: 10px 14px;
-  background: hsl(var(--card) / 0.6);
-}
-
-.field-name {
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.field-type {
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 11.5px;
-  color: hsl(var(--muted-foreground));
 }
 
 .methods {
@@ -686,51 +793,113 @@ header h1 {
   text-wrap: pretty;
 }
 
-.method-types {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 10px 18px;
-  background: hsl(var(--surface-sunken));
-}
-
-.type {
+/* What a method takes and gives back, on one line: the keys it
+   carries and, for a key holding one of the developer's own types,
+   that type's name rather than its keys. Set in the mono face
+   because it is read as a signature rather than as prose. */
+.method-signature {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.type-name {
+  padding: 10px 18px;
+  background: hsl(var(--surface-sunken));
+  font-family: ui-monospace, Menlo, monospace;
   font-size: 11.5px;
   color: hsl(var(--muted-foreground));
+  /* A long signature wraps rather than widening the card. */
+  overflow-wrap: anywhere;
 }
 
-.type-name code {
+.arrow {
+  color: hsl(240 3.8% 65%);
+}
+
+/* A method that returns nothing says so in words, so the eye does
+   not read an empty `{}` as a type it failed to load. */
+.nothing {
+  font-style: italic;
+}
+
+.errors {
+  color: hsl(var(--errors));
+}
+
+/* The errors are the one place a type is named rather than opened,
+   so their links take the colour of the line they sit on. */
+.errors .type-link {
+  color: inherit;
+}
+
+/* A type as its author would write it: braces, one field to a line,
+   the name and then what it holds. Set as a code block because that
+   is what it is, and because a shape is read down its left edge
+   rather than across a row of labels. */
+.type-block {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid hsl(var(--border-soft));
+  border-radius: var(--radius);
+  background: hsl(var(--surface-sunken));
   font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: hsl(var(--muted-foreground));
+  /* The braces and field names are pre-formatted, but a long
+     description should wrap rather than widen the card. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* What the reader is looking for; the punctuation holding it is
+   not. */
+.key {
   color: hsl(var(--foreground));
 }
 
-/* A type held by a field, drawn under it and stepped in, so depth is
-   read down the left edge rather than counted. */
-.fields.nested {
-  margin-left: 14px;
-  padding-left: 10px;
-  border-left: 1px solid hsl(240 5.9% 90%);
-}
-
-.field-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.field-description {
-  font-size: 11.5px;
-  color: hsl(var(--muted-foreground));
+.comment {
+  color: hsl(240 3.8% 62%);
+  font-style: italic;
 }
 
 /* `Optional[X]` reaches the page as a union with null; the question
    mark says the same thing in the space of one character. */
 .optional {
   color: hsl(var(--muted-foreground));
+}
+
+/* A type this dashboard can show. Underlined on hover rather than
+   always, so a column of fields reads as fields rather than as a
+   column of links, while still saying which of them open. */
+.type-link {
+  color: hsl(var(--primary));
+  text-decoration: none;
+}
+
+.type-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* What holds a type, listed under it. Laid out as a wrapping row
+   rather than a list, because each is short and there may be many. */
+.referrers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.referrer {
+  padding: 3px 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--card));
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  color: hsl(var(--muted-foreground));
+  text-decoration: none;
+}
+
+.referrer:hover {
+  color: hsl(var(--foreground));
+  border-color: hsl(240 5.9% 78%);
 }
