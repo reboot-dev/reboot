@@ -684,6 +684,34 @@ async def main():
     ###################################################################
     # Followed to the state type however it is reached.
 
+    async def test_a_servicer_reached_through_a_relative_import(self) -> None:
+        self._write('package/__init__.py', source='')
+        self._write('package/shop_servicer.py', source=SHOP)
+        self._write(
+            'package/servicers.py',
+            source='from .shop_servicer import ShopServicer\n',
+        )
+        application = self._write(
+            'main.py',
+            source=APPLICATION.replace(
+                'from shop_servicer import ShopServicer',
+                'from package.servicers import ShopServicer',
+            ),
+        )
+
+        found = _state_types_and_files(await analyze(application=application))
+
+        self.assertEqual(
+            found,
+            [(
+                'Shop',
+                str(self.directory / 'package' / 'shop_servicer.py'),
+            )],
+        )
+
+    ###################################################################
+    # What it finds no servicer for.
+
     async def test_a_file_that_will_not_parse(self) -> None:
         """Its servicers go unfound, because which state types they
         service is precisely what went unread."""
