@@ -858,6 +858,23 @@ async def main():
             [('shop.v1.Shop', str(self.directory / 'shop_servicer.py'))],
         )
 
+    async def test_a_state_type_aliased_at_top_level(self) -> None:
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace(
+                'class ShopServicer(Shop.Servicer):',
+                'Store = Shop\n\n\nclass ShopServicer(Store.Servicer):',
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = _state_types_and_files(await analyze(application=application))
+
+        self.assertEqual(
+            found,
+            [('shop.v1.Shop', str(self.directory / 'shop_servicer.py'))],
+        )
+
     async def test_a_changed_reexport_reresolves_its_dependents(self) -> None:
         """The staleness the `followed` digests exist to close: what a
         file's servicers say depends on the files resolving them read,

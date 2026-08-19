@@ -86,7 +86,8 @@ class Imports:
         # Its name there, which the local name may differ from.
         name: str
 
-    # By the name the file calls it.
+    # By the name the file calls it. A top-level `Alias = Name` binds
+    # the alias to whatever `Name` was bound to.
     bindings: Mapping[str, 'Import']
 
     # Every module these imports may have Python load: `import a.b.c`
@@ -192,6 +193,18 @@ def _imports(module: ast.Module) -> Imports:
                     # naming something that is not a module resolves
                     # to nothing and is dropped.
                     may_load.append(_join(from_module, alias.name))
+
+    # A top-level `Alias = Name` binds `Alias` to whatever `Name` was
+    # bound to. In written order, so an alias of an alias resolves
+    # too. After the imports, whose bindings are what an alias copies.
+    for statement in module.body:
+        match statement:
+            case ast.Assign(
+                targets=[ast.Name(id=str(target))],
+                value=ast.Name(id=str(value)),
+            ):
+                if value in bindings:
+                    bindings[target] = bindings[value]
 
     return Imports(
         bindings=MappingProxyType(bindings),
