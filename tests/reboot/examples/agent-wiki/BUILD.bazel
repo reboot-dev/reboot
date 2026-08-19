@@ -30,12 +30,6 @@ osx_env.update({
 
 sh_test_in_working_directory(
     name = "test",
-    # This example depends on the `pydantic-ai` stack on top of
-    # `reboot`, so a cold `uv sync` fetches a much bigger dependency
-    # tree (and possibly a managed Python interpreter) into the test
-    # sandbox than our other example tests do, which on a slow runner
-    # exceeds the default "medium" 300s timeout.
-    size = "large",
     data = test_packages + [
         ":test_packages",
         # The actual test script will be given access to all of
