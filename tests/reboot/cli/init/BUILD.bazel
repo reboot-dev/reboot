@@ -96,7 +96,15 @@ sh_test(
     # Additionally, in all our example tests, we initiate LocalEnvoy on the
     # default secure port 9991. We require 'exclusive' to not run multiple
     # tests, that use the same port, concurrently.
+    #
+    # Installing the locally built Reboot npm packages, `rbt generate`
+    # and `npx rbt dev run` are exercised on MacOS by
+    # `//tests/reboot/examples/chat-room-nodejs:test`, and the `rbt
+    # init` flow by `init_sh_test_python310`; both keep running
+    # there, and what is left is the content of the Node.js
+    # templates.
     tags = [
         "exclusive",
+        "platform-independent",
     ],
 )
