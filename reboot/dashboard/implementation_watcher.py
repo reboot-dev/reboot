@@ -798,6 +798,16 @@ MODIFIERS = frozenset(
     }
 )
 
+# The modifiers that change how the call after them is reached.
+HOW_MODIFIERS: Mapping[str, 'ServicerInfo.Method.Call.How.ValueType'] = (
+    MappingProxyType(
+        {
+            'schedule': ServicerInfo.Method.Call.How.SCHEDULE,
+            'spawn': ServicerInfo.Method.Call.How.SPAWN,
+        }
+    )
+)
+
 
 @dataclass(frozen=True, kw_only=True)
 class Reference:
@@ -1086,6 +1096,11 @@ async def _evaluate(expression: ast.expr, *,
                         # A modifier. The chain passes through it
                         # and what comes after names the method.
                         return reference, analysis
+                    how = HOW_MODIFIERS.get(attribute)
+                    if how is not None:
+                        # The chain passes through and remembers
+                        # how the call at the end is reached.
+                        return replace(reference, how=how), analysis
                     handed, analysis = await _first_argument_is_the_context(
                         arguments, analysis=analysis
                     )

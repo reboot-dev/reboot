@@ -362,6 +362,24 @@ class AnalyzeTest(unittest.TestCase):
             ['restock'],
         )
 
+    async def test_a_scheduled_call(self) -> None:
+        analysis = await self._analyze(
+            '        await self.ref().schedule().restock(context)'
+        )
+        self.assertEqual(
+            [(call.method, call.how) for call in analysis.calls],
+            [('restock', ServicerInfo.Method.Call.How.SCHEDULE)],
+        )
+
+    async def test_a_spawned_call(self) -> None:
+        analysis = await self._analyze(
+            "        await Shop.ref('a').spawn().restock(context)"
+        )
+        self.assertEqual(
+            [(call.method, call.how) for call in analysis.calls],
+            [('restock', ServicerInfo.Method.Call.How.SPAWN)],
+        )
+
     async def test_a_call_without_the_context_is_unsupported(self) -> None:
         analysis = await self._analyze(
             "        await Shop.ref('a').restock(request)"
