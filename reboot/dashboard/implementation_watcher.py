@@ -1149,6 +1149,21 @@ async def _evaluate(
                     # call without it is not one and falls through
                     # to be flagged, since it touches a reference.
                     if handed:
+                        if attribute in ('read', 'write'):
+                            # A workflow reading or writing the
+                            # state. It names no method.
+                            analysis = analysis.with_call(
+                                ServicerInfo.Method.Call(
+                                    state_type=reference.state_type,
+                                    method='',
+                                    how=(
+                                        ServicerInfo.Method.Call.How.READ
+                                        if attribute == 'read' else
+                                        ServicerInfo.Method.Call.How.WRITE
+                                    ),
+                                )
+                            )
+                            return None, analysis
                         analysis = analysis.with_call(
                             ServicerInfo.Method.Call(
                                 state_type=reference.state_type,

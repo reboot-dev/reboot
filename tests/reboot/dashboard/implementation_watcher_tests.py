@@ -410,6 +410,24 @@ class AnalyzeTest(unittest.TestCase):
             [('restock', ServicerInfo.Method.Call.How.CALL)],
         )
 
+    async def test_a_workflow_read(self) -> None:
+        analysis = await self._analyze(
+            '        state = await self.ref().read(context)'
+        )
+        self.assertEqual(
+            [(call.method, call.how) for call in analysis.calls],
+            [('', ServicerInfo.Method.Call.How.READ)],
+        )
+
+    async def test_a_workflow_write(self) -> None:
+        analysis = await self._analyze(
+            '        await self.ref().write(context, mutate)'
+        )
+        self.assertEqual(
+            [(call.method, call.how) for call in analysis.calls],
+            [('', ServicerInfo.Method.Call.How.WRITE)],
+        )
+
     async def test_a_call_without_the_context_is_unsupported(self) -> None:
         analysis = await self._analyze(
             "        await Shop.ref('a').restock(request)"
