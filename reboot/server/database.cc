@@ -3614,8 +3614,6 @@ grpc::Status DatabaseService::RecoverTransactionIdempotentMutations(
   std::unique_ptr<rocksdb::WBWIIterator> iterator(
       CHECK_NOTNULL(batch->NewIterator(*column_family_handle)));
 
-  iterator->Seek(rocksdb::Slice(IDEMPOTENT_MUTATION_KEY_PREFIX));
-
   // When iterating via the transaction's write batch directly we get
   // `rocksdb::WriteEntry`s which may exist for the same key multiple
   // times. In the case of an idempotent mutation, we never expect it
@@ -3623,36 +3621,49 @@ grpc::Status DatabaseService::RecoverTransactionIdempotentMutations(
   // each idempotency key we find in a set.
   std::set<std::string> idempotency_keys;
 
-  while (iterator->Valid()) {
-    rocksdb::WriteEntry entry = iterator->Entry();
+  // Idempotent mutations are stored under a scope-specific key
+  // prefix (see `MakeIdempotentMutationKey`), so we scan the write
+  // batch once per prefix.
+  for (const std::string_view prefix : {
+           std::string_view(IDEMPOTENT_MUTATION_KEY_PREFIX),
+           std::string_view(EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX),
+           std::string_view(WORKFLOW_IDEMPOTENT_MUTATION_KEY_PREFIX),
+           std::string_view(WORKFLOW_EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX),
+           std::string_view(WORKFLOW_ITERATION_IDEMPOTENT_MUTATION_KEY_PREFIX),
+       }) {
+    iterator->Seek(rocksdb::Slice(prefix.data(), prefix.size()));
 
-    // Make sure this is still a key we care about.
-    if (entry.key.ToStringView().find(IDEMPOTENT_MUTATION_KEY_PREFIX) != 0) {
-      break;
+    while (iterator->Valid()) {
+      rocksdb::WriteEntry entry = iterator->Entry();
+
+      // Make sure this is still a key we care about.
+      if (entry.key.ToStringView().find(prefix) != 0) {
+        break;
+      }
+
+      // We are only expecting idempotent mutations to be inserted into
+      // the database during a transaction.
+      CHECK_EQ(entry.type, rocksdb::kPutRecord);
+
+      IdempotentMutation idempotent_mutation;
+
+      CHECK(idempotent_mutation.ParseFromArray(
+          entry.value.data(),
+          entry.value.size()));
+
+      // Idempotent mutation should be for this transaction's state ref!
+      CHECK_EQ(idempotent_mutation.state_type(), transaction.state_type());
+      CHECK_EQ(idempotent_mutation.state_ref(), transaction.state_ref());
+
+      CHECK(idempotency_keys.count(idempotent_mutation.key()) == 0);
+
+      idempotency_keys.insert(idempotent_mutation.key());
+
+      *transaction.add_uncommitted_idempotent_mutations() =
+          std::move(idempotent_mutation);
+
+      iterator->Next();
     }
-
-    // We are only expecting idempotent mutations to be inserted into
-    // the database during a transaction.
-    CHECK_EQ(entry.type, rocksdb::kPutRecord);
-
-    IdempotentMutation idempotent_mutation;
-
-    CHECK(idempotent_mutation.ParseFromArray(
-        entry.value.data(),
-        entry.value.size()));
-
-    // Idempotent mutation should be for this transaction's state ref!
-    CHECK_EQ(idempotent_mutation.state_type(), transaction.state_type());
-    CHECK_EQ(idempotent_mutation.state_ref(), transaction.state_ref());
-
-    CHECK(idempotency_keys.count(idempotent_mutation.key()) == 0);
-
-    idempotency_keys.insert(idempotent_mutation.key());
-
-    *transaction.add_uncommitted_idempotent_mutations() =
-        std::move(idempotent_mutation);
-
-    iterator->Next();
   }
 
   return grpc::Status::OK;

@@ -137,6 +137,15 @@ jobs:
           # the exchange; the job's `pull-requests: write` is all the
           # inline comments need.
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Aviator drives our merge queue and pushes to a pull request
+          # when it rebases the branch, firing a `synchronize` event
+          # whose actor is `aviator-app[bot]`. The action refuses to run
+          # for a non-human actor unless it is named here, so a review
+          # triggered by a rebase failed outright and left the queue
+          # blocked. Name our own merge-queue app rather than `*`, which
+          # would let any GitHub App that can trigger this workflow
+          # spend our Anthropic API budget.
+          allowed_bots: "aviator-app"
           plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
           plugins: "code-review@claude-code-plugins"
           # Pass `--comment` so findings post as inline PR comments;
