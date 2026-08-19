@@ -844,6 +844,16 @@ class Constructed:
     state_type: str
 
 
+@dataclass(frozen=True, kw_only=True)
+class Tupled:
+    """A tuple an expression evaluates to, element by element, as
+    far as the analysis can say."""
+
+    # What each element is, in order. `None` for an element the
+    # analysis cannot say anything about.
+    values: tuple[Optional[Local], ...]
+
+
 def _statements(node: ast.AST) -> Iterator[ast.stmt]:
     """Returns every statement under a node, in the order written.
 
@@ -1062,6 +1072,25 @@ async def _reboot_related(expression: ast.expr, *,
     return False, analysis
 
 
+def _returns_of(
+    function: ast.FunctionDef | ast.AsyncFunctionDef
+) -> Iterator[ast.Return]:
+    """Returns every `return` written in a function itself. Nested
+    functions keep their own."""
+
+    def walk(node: ast.AST) -> Iterator[ast.Return]:
+        for child in ast.iter_child_nodes(node):
+            match child:
+                case ast.Return():
+                    yield child
+                case ast.FunctionDef() | ast.AsyncFunctionDef() | ast.Lambda():
+                    continue
+                case _:
+                    yield from walk(child)
+
+    yield from walk(function)
+
+
 def _function_named(
     name: str, *, module: ast.Module
 ) -> Optional[ast.FunctionDef | ast.AsyncFunctionDef]:
@@ -1133,22 +1162,43 @@ def _parameter_for_the_context(
 async def _follow_helper(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
     *,
-    context_parameter: str,
+    context_parameter: Optional[str],
     analysis: Analysis,
-) -> Analysis:
-    """Returns the analysis carried through a helper's body. The
-    helper's parameter that receives the context is bound to it and
-    the helper's names are kept apart from the caller's, so the
-    calls the helper makes are recorded for the calling method."""
+) -> tuple[Optional[Local | Constructed | Tupled], Analysis]:
+    """Returns what a helper returns and the analysis carried
+    through its body. The helper's parameter that receives the
+    context, when one does, is bound to it, and the helper's names
+    are kept apart from the caller's, so the calls the helper makes
+    are recorded for the calling method.
+
+    The returned value is what every `return` in the helper
+    evaluates to. Returns that disagree return nothing, since the
+    analysis cannot say which one a caller gets."""
     saved_locals = analysis.locals
 
     analysis = analysis.with_helper(function.name).with_locals(
-        {context_parameter: Context()}
+        {} if context_parameter is None else {context_parameter: Context()}
     )
 
     analysis = await _analyze_statements(function, analysis=analysis)
 
-    return analysis.with_locals(saved_locals)
+    value: Optional[Local | Constructed | Tupled] = None
+    first = True
+
+    for returned in _returns_of(function):
+        if returned.value is None:
+            returned_value: Optional[Local | Constructed | Tupled] = None
+        else:
+            returned_value, analysis = await _evaluate(
+                returned.value, analysis=analysis
+            )
+        if first:
+            value = returned_value
+            first = False
+        elif value != returned_value:
+            value = None
+
+    return value, analysis.with_locals(saved_locals)
 
 
 async def _first_argument_is_the_context(
@@ -1170,7 +1220,7 @@ async def _first_argument_is_the_context(
 
 async def _evaluate(
     expression: ast.expr, *, analysis: Analysis
-) -> tuple[Optional[Local | Constructed], Analysis]:
+) -> tuple[Optional[Local | Constructed | Tupled], Analysis]:
     """Returns what an expression evaluates to, in the only terms the
     analysis knows. Those are a reference to a state type, the
     context, and what a constructor call makes. `None` for the
@@ -1215,26 +1265,28 @@ async def _evaluate(
             args=arguments,
             keywords=keywords,
         ):
-            # A helper in the same file, handed the context, is
-            # followed so the calls it makes are recorded too.
+            # A helper in the same file is followed, so the calls
+            # it makes are recorded too and what it returns can be
+            # bound to a name.
             handed, analysis = await _context_argument(
                 arguments, keywords, analysis=analysis
             )
-            if handed is not None and function_name not in analysis.helpers:
+            if function_name not in analysis.helpers:
                 function = _function_named(
                     function_name, module=analysis.module()
                 )
                 if function is not None:
-                    parameter = _parameter_for_the_context(
-                        function, handed, method=False
+                    parameter = (
+                        None if handed is None else _parameter_for_the_context(
+                            function, handed, method=False
+                        )
                     )
-                    if parameter is not None:
-                        analysis = await _follow_helper(
+                    if handed is None or parameter is not None:
+                        return await _follow_helper(
                             function,
                             context_parameter=parameter,
                             analysis=analysis,
                         )
-                        return None, analysis
 
         case ast.Call(
             func=ast.Attribute(value=receiver, attr=str(attribute)),
@@ -1314,34 +1366,47 @@ async def _evaluate(
 
             match receiver:
                 case ast.Name(id='self'):
-                    # A helper method in the same file, handed the
-                    # context, is followed so the calls it makes are
-                    # recorded too.
+                    # A helper method in the same file is followed,
+                    # so the calls it makes are recorded too and
+                    # what it returns can be bound to a name.
                     handed, analysis = await _context_argument(
                         arguments, keywords, analysis=analysis
                     )
-                    if (
-                        handed is not None and
-                        attribute not in analysis.helpers
-                    ):
+                    if attribute not in analysis.helpers:
                         function = _function_named(
                             attribute, module=analysis.module()
                         )
                         if function is not None:
-                            parameter = _parameter_for_the_context(
-                                function, handed, method=True
+                            parameter = (
+                                None if handed is None else
+                                _parameter_for_the_context(
+                                    function, handed, method=True
+                                )
                             )
-                            if parameter is not None:
-                                analysis = await _follow_helper(
+                            if handed is None or parameter is not None:
+                                return await _follow_helper(
                                     function,
                                     context_parameter=parameter,
                                     analysis=analysis,
                                 )
-                                return None, analysis
 
         case ast.Name(id=str(name)) if name in analysis.locals:
             # `another = account`, holding whatever `account` holds.
             return analysis.locals[name], analysis
+
+        case ast.Tuple(elts=elements):
+            # A tuple, element by element, so an unpacking
+            # assignment can bind each name.
+            values: list[Optional[Local]] = []
+            for element in elements:
+                element_value, analysis = await _evaluate(
+                    element, analysis=analysis
+                )
+                values.append(
+                    element_value if
+                    isinstance(element_value, (Reference, Context)) else None
+                )
+            return Tupled(values=tuple(values)), analysis
 
     # Nothing this evaluates. Said out loud when the expression
     # touches something Reboot related -- whatever it does with it is
@@ -1388,12 +1453,23 @@ async def _assign(
             targets = [assign.target]
             value = None
 
-    evaluated: Optional[Local | Constructed] = None
+    evaluated: Optional[Local | Constructed | Tupled] = None
 
     if value is not None:
         evaluated, analysis = await _evaluate(value, analysis=analysis)
 
     match targets, evaluated:
+        case [ast.Tuple(elts=elements)], Tupled(values=values) if (
+            len(elements) == len(values) and
+            all(isinstance(element, ast.Name) for element in elements)
+        ):
+            # `shop, name = self.shop_and_name()` binds each name to
+            # its element.
+            for element, element_value in zip(elements, values):
+                assert isinstance(element, ast.Name)
+                analysis = analysis.with_local(element.id, element_value)
+            return analysis
+
         case [ast.Tuple(elts=[ast.Name(id=str(first)), *rest])
              ], Constructed(state_type=state_type):
             # `shop, response = await Shop.open(context, 'a')`
@@ -1409,10 +1485,18 @@ async def _assign(
                             analysis = analysis.with_local(name, None)
             return analysis
 
-    # A name cannot be bound to the pair itself.
+    # A name cannot be bound to a constructor's pair or to a tuple
+    # itself.
     local: Optional[Local] = (
-        None if isinstance(evaluated, Constructed) else evaluated
+        None if isinstance(evaluated, (Constructed, Tupled)) else evaluated
     )
+
+    if isinstance(evaluated, Tupled) and any(
+        value is not None for value in evaluated.values
+    ):
+        # A reference or the context in a tuple nothing unpacks is
+        # not followed further.
+        analysis = analysis.with_unsupported(assign)
 
     for target in targets:
         match target:

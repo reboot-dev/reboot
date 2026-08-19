@@ -951,6 +951,72 @@ async def main():
             ['restock'],
         )
 
+    async def test_a_helper_returning_a_reference(self) -> None:
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace(
+                '    async def look(self, context, request):\n        pass',
+                '    async def look(self, context, request):\n'
+                '        shop = self.shop_of_the_day()\n'
+                '        await shop.restock(context)\n'
+                '\n'
+                '    def shop_of_the_day(self):\n'
+                "        return Shop.ref('a')",
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = servicers(await analyze(application=application))
+
+        self.assertEqual(
+            [call.method for call in found[0].methods[0].calls],
+            ['restock'],
+        )
+
+    async def test_a_helper_returning_a_tuple(self) -> None:
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace(
+                '    async def look(self, context, request):\n        pass',
+                '    async def look(self, context, request):\n'
+                '        shop, name = self.shop_and_name()\n'
+                '        await shop.restock(context)\n'
+                '\n'
+                '    def shop_and_name(self):\n'
+                "        return Shop.ref('a'), 'a'",
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = servicers(await analyze(application=application))
+
+        self.assertEqual(
+            [call.method for call in found[0].methods[0].calls],
+            ['restock'],
+        )
+
+    async def test_a_helper_returning_the_context(self) -> None:
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace(
+                '    async def look(self, context, request):\n        pass',
+                '    async def look(self, context, request):\n'
+                '        somehow = self.the_context(context)\n'
+                "        await Shop.ref('a').restock(somehow)\n"
+                '\n'
+                '    def the_context(self, context):\n'
+                '        return context',
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = servicers(await analyze(application=application))
+
+        self.assertEqual(
+            [call.method for call in found[0].methods[0].calls],
+            ['restock'],
+        )
+
     async def test_records_the_methods_a_servicer_defines(self) -> None:
         self._write('shop_servicer.py', source=SHOP)
         application = self._write('main.py', source=APPLICATION)
