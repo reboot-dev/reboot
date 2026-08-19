@@ -792,6 +792,12 @@ class Reference:
     # The state type referred to, spelled as `StateTypeInfo.name`.
     state_type: str
 
+    # How a call made through this reference is reached. Plain by
+    # default.
+    how: 'ServicerInfo.Method.Call.How.ValueType' = (
+        ServicerInfo.Method.Call.How.CALL
+    )
+
 
 @dataclass(frozen=True, kw_only=True)
 class Context:
@@ -815,18 +821,6 @@ def _statements(node: ast.AST) -> Iterator[ast.stmt]:
         if isinstance(child, ast.stmt):
             yield child
         yield from _statements(child)
-
-
-@dataclass(frozen=True, kw_only=True)
-class Call:
-    """One Reboot call a method's body was found to make."""
-
-    # The state type the call is made on, spelled as
-    # `StateTypeInfo.name`.
-    state_type: str
-
-    # The method called, as the developer wrote it.
-    method: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -862,7 +856,7 @@ class Analysis:
     # The Reboot calls the method being analyzed makes, in the order
     # met. Folded into the method's entry when the method is
     # recorded.
-    calls: tuple[Call, ...]
+    calls: tuple[ServicerInfo.Method.Call, ...]
 
     # What was met that the analysis does not follow, spelled the way
     # it was written, so whoever reads the calls can be told they are
@@ -911,6 +905,11 @@ class Analysis:
             ),
             files=files,
         )
+
+    def with_call(self, call: ServicerInfo.Method.Call) -> 'Analysis':
+        """Returns this analysis with one more Reboot call recorded,
+        in the order met."""
+        return replace(self, calls=(*self.calls, call))
 
     def with_state_type(self, state_type: str) -> 'Analysis':
         """Returns this analysis inside a class servicing a state
@@ -1006,6 +1005,23 @@ async def _reboot_related(expression: ast.expr, *,
     return False, analysis
 
 
+async def _first_argument_is_the_context(
+    arguments: Sequence[ast.expr], *, analysis: Analysis
+) -> tuple[bool, Analysis]:
+    """Returns whether a call hands the context as its first
+    argument, the way every Reboot call does."""
+    if len(arguments) == 0:
+        return False, analysis
+
+    first, analysis = await _evaluate(arguments[0], analysis=analysis)
+
+    match first:
+        case Context():
+            return True, analysis
+
+    return False, analysis
+
+
 async def _evaluate(expression: ast.expr, *,
                     analysis: Analysis) -> tuple[Optional[Local], Analysis]:
     """Returns what an expression evaluates to, in the only terms the
@@ -1040,6 +1056,32 @@ async def _evaluate(expression: ast.expr, *,
                 ).try_resolve_state_type(path, analysis=analysis)
                 if state_type is not None:
                     return Reference(state_type=state_type), analysis
+
+        case ast.Call(
+            func=ast.Attribute(value=receiver, attr=str(attribute)),
+            args=arguments,
+        ):
+            # A call on a reference is a Reboot call. The reference
+            # says which state type is called and the attribute
+            # names the method.
+            local, analysis = await _evaluate(receiver, analysis=analysis)
+            match local:
+                case Reference(state_type=state_type, how=how):
+                    handed, analysis = await _first_argument_is_the_context(
+                        arguments, analysis=analysis
+                    )
+                    # Every Reboot call hands the context first. A
+                    # call without it is not one and falls through
+                    # to be flagged, since it touches a reference.
+                    if handed:
+                        analysis = analysis.with_call(
+                            ServicerInfo.Method.Call(
+                                state_type=state_type,
+                                method=attribute,
+                                how=how,
+                            )
+                        )
+                        return None, analysis
 
         case ast.Name(id=str(name)) if name in analysis.locals:
             # `another = account`, holding whatever `account` holds.
@@ -1149,13 +1191,15 @@ async def _analyze_method(
         analysis = analysis.with_local(arguments[1].arg, Context())
 
     for statement in _statements(method):
-        # TODO: Record the calls this statement makes, through what
-        # each name holds right now -- before what it assigns is
-        # bound, since a statement's value runs before its target.
-
         match statement:
             case ast.Assign() | ast.AnnAssign() | ast.AugAssign():
                 analysis = await _assign(statement, analysis=analysis)
+
+            case ast.Expr(value=value):
+                # A statement that is just an expression. Most
+                # calls are written this way, like
+                # `await shop.restock(context)` on its own line.
+                _, analysis = await _evaluate(value, analysis=analysis)
 
     return analysis
 
@@ -1210,11 +1254,13 @@ async def _analyze_file(filename: str, files: Files) -> Files:
                             )
                             servicer.methods.append(
                                 ServicerInfo.Method(
-                                    name=name, digest=_digest(statement)
+                                    name=name,
+                                    digest=_digest(statement),
+                                    calls=analysis.calls,
                                 )
                             )
-                            # Calls and unsupported fold in here once
-                            # the proto has fields for them.
+                            # Unsupported folds in here once the
+                            # proto has a field for it.
                             analysis = analysis.with_method_reset()
                 servicers.append(servicer)
 

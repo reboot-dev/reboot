@@ -287,6 +287,71 @@ class AnalyzeTest(unittest.TestCase):
 
         self.assertEqual(analysis.unsupported, ('self._helper(context)',))
 
+    async def test_a_call_through_a_reference(self) -> None:
+        analysis = await self._analyze(
+            "        await Shop.ref('a').restock(context)"
+        )
+        self.assertEqual(
+            analysis.calls,
+            (
+                ServicerInfo.Method.Call(
+                    state_type='shop.v1.Shop',
+                    method='restock',
+                    how=ServicerInfo.Method.Call.How.CALL,
+                ),
+            ),
+        )
+
+    async def test_a_call_through_a_name(self) -> None:
+        analysis = await self._analyze(
+            "        shop = Shop.ref('a')\n"
+            '        await shop.restock(context)'
+        )
+        self.assertEqual(
+            analysis.calls,
+            (
+                ServicerInfo.Method.Call(
+                    state_type='shop.v1.Shop',
+                    method='restock',
+                    how=ServicerInfo.Method.Call.How.CALL,
+                ),
+            ),
+        )
+
+    async def test_a_call_through_self(self) -> None:
+        analysis = await self._analyze(
+            '        await self.ref().restock(context)'
+        )
+        self.assertEqual(
+            analysis.calls,
+            (
+                ServicerInfo.Method.Call(
+                    state_type='shop.v1.Shop',
+                    method='restock',
+                    how=ServicerInfo.Method.Call.How.CALL,
+                ),
+            ),
+        )
+
+    async def test_calls_are_recorded_in_the_order_met(self) -> None:
+        analysis = await self._analyze(
+            "        await Shop.ref('a').restock(context)\n"
+            "        await Shop.ref('b').close(context)"
+        )
+        self.assertEqual(
+            [call.method for call in analysis.calls],
+            ['restock', 'close'],
+        )
+
+    async def test_a_call_without_the_context_is_unsupported(self) -> None:
+        analysis = await self._analyze(
+            "        await Shop.ref('a').restock(request)"
+        )
+        self.assertEqual(analysis.calls, ())
+        self.assertEqual(
+            analysis.unsupported, ("Shop.ref('a').restock(request)",)
+        )
+
     async def test_an_ordinary_assignment_is_not_unsupported(self) -> None:
         analysis = await self._analyze('        total = request.a + request.b')
 

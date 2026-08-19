@@ -94,6 +94,48 @@ message ServicerInfo {
     // whether the method does anything different, not whether it was
     // written down differently.
     bytes digest = 2;
+
+    // Represents one Reboot call the method makes.
+    message Call {
+      // Represents how the call is reached.
+      enum How {
+        UNKNOWN = 0;
+
+        // A plain method call on a reference.
+        CALL = 1;
+
+        // Scheduled to run later with `.schedule(when=...)`.
+        SCHEDULE = 2;
+
+        // Run as a task with `.spawn()`.
+        SPAWN = 3;
+
+        // A constructor. It is a method called on the state type
+        // itself and it makes the state.
+        CONSTRUCT = 4;
+
+        // A workflow reading the state with `.read(context)`.
+        READ = 5;
+
+        // A workflow writing the state with `.write(context, ...)`.
+        WRITE = 6;
+      }
+
+      // Represents the state type the call is made on, spelled as
+      // `StateTypeInfo.name`.
+      string state_type = 1;
+
+      // Represents the method called as the developer wrote it.
+      // Empty for a workflow `read` or `write` because those name
+      // no method.
+      string method = 2;
+
+      How how = 3;
+    }
+
+    // Represents every Reboot call the method makes, in the order
+    // met.
+    repeated Call calls = 3;
   }
 
   // The state type it services, spelled as `StateTypeInfo.name`.
