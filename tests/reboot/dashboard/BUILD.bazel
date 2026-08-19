@@ -95,10 +95,14 @@ genrule(
     name = "described",
     srcs = glob(["api/**"]),
     outs = ["described.ts"],
-    cmd = "echo 'export default ' > $@ && " +
-          "$(location //reboot/dashboard:api_reader) " +
-          "$$(dirname $(location api/shop/v1/shop.py))/../.. " +
-          "shop/v1/shop.py >> $@",
+    # Run from this package with a relative `api`, the way
+    # `rbt dashboard --api-directory=api` does, so that the `file` each
+    # state type carries reads the way it does in a real dashboard.
+    cmd = "OUT=$$PWD/$@ && " +
+          "READER=$$PWD/$(location //reboot/dashboard:api_reader) && " +
+          "cd $$(dirname $(location api/shop/v1/shop.py))/../../.. && " +
+          "echo 'export default ' > $$OUT && " +
+          "$$READER api shop/v1/shop.py >> $$OUT",
     tools = ["//reboot/dashboard:api_reader"],
 )
 

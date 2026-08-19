@@ -92,9 +92,26 @@ _SHOP = {
             'LookResponse':
                 {
                     'type': 'object',
+                    'properties':
+                        {
+                            'found': {
+                                'type': 'boolean'
+                            },
+                            'shelf': {
+                                '$ref': '#/$defs/Shelf'
+                            },
+                        },
+                },
+            # Named by nothing: reached only as a field of
+            # `LookResponse`, which is what the data page is for.
+            'Shelf':
+                {
+                    'type': 'object',
+                    'title': 'Shelf',
+                    'description': 'Where an item sits.',
                     'properties': {
-                        'found': {
-                            'type': 'boolean'
+                        'aisle': {
+                            'type': 'integer'
                         }
                     },
                 },
@@ -201,7 +218,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             driver.get(f'{self.url}{DASHBOARD_PATH}/')
             WebDriverWait(driver, 60).until(
                 expected_conditions.presence_of_element_located(
-                    (By.ID, 'shop.v1.Shop')
+                    (By.CSS_SELECTOR, '[id="/state/shop.v1.Shop"]')
                 )
             )
             return driver.page_source
@@ -427,6 +444,111 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             self._wait_for_detail(driver, opened=True)
 
         await asyncio.to_thread(self._run, body)
+
+    async def test_the_data_page_lists_types_that_are_not_state(self) -> None:
+        # `Shelf` is named by nothing: it is reached only as a field of
+        # `LookResponse`, which is what the data page is for.
+        await self._record_state_types()
+
+        def body(driver):
+            driver.get(f'{self.url}{DASHBOARD_PATH}/#/data')
+            WebDriverWait(driver, 60).until(
+                expected_conditions.presence_of_element_located(
+                    (By.CSS_SELECTOR, '[id="/data/shop.v1.Shelf"]')
+                )
+            )
+            # A row names the type it holds rather than calling it an
+            # object, and that name is what links to it.
+            held = driver.find_element(
+                By.CSS_SELECTOR,
+                '.type-block a[href="#/data/shop.v1.Shelf"]',
+            )
+            self.assertEqual(held.text, 'Shelf')
+            return driver.page_source
+
+        page = await asyncio.to_thread(self._run, body)
+
+        # Every type the file declares except the state type's own
+        # state, which is what the state page is.
+        self.assertIn('LookRequest', page)
+        self.assertIn('LookResponse', page)
+        self.assertIn('Where an item sits.', page)
+        self.assertNotIn('/data/shop.v1.ShopState', page)
+
+        # And what holds each, so the page reads in both directions.
+        self.assertIn('LookResponse.shelf', page)
+        self.assertIn('Shop.look (takes)', page)
+
+    async def test_a_deep_link_lands_on_the_type_it_names(self) -> None:
+        # The section's `id` is the route that addresses it, so the
+        # link reads as though the browser could scroll to it by
+        # itself. It cannot: on load nothing is rendered yet when the
+        # fragment is read, and in-app navigation goes through
+        # `pushState`, which does not scroll. The page does it.
+        await self._record_state_types()
+
+        def body(driver):
+            # Small enough that the last of three types is well below
+            # the fold, so arriving at it has to be a scroll.
+            driver.set_window_size(900, 600)
+            driver.get(f'{self.url}{DASHBOARD_PATH}/#/data/shop.v1.Shelf')
+            WebDriverWait(driver, 60).until(
+                expected_conditions.presence_of_element_located(
+                    (By.CSS_SELECTOR, '[id="/data/shop.v1.Shelf"]')
+                )
+            )
+            return driver.execute_script(
+                'const pane = document.querySelector(".pane");'
+                'const shelf ='
+                '  document.querySelector(\'[id="/data/shop.v1.Shelf"]\');'
+                'const box = shelf.getBoundingClientRect();'
+                'return {'
+                '  scrolled: pane.scrollTop,'
+                '  top: box.top,'
+                '  height: window.innerHeight,'
+                '};'
+            )
+
+        landed = await asyncio.to_thread(self._run, body)
+
+        # It had somewhere to scroll to, and it went there.
+        self.assertGreater(landed['scrolled'], 0)
+        self.assertGreaterEqual(landed['top'], 0)
+        self.assertLess(landed['top'], landed['height'])
+
+    async def test_a_held_type_is_followed_to_the_data_page(self) -> None:
+        # One level deep and a click away is the whole convention: a
+        # field says what it holds, and following it lands on it.
+        await self._record_state_types()
+
+        def body(driver):
+            driver.get(f'{self.url}{DASHBOARD_PATH}/')
+            self._click_to_expand(
+                driver,
+                showing=self._EXPAND,
+                becomes=self._HIDE,
+            )
+            self._wait_for_detail(driver, opened=True)
+
+            # A method shows what it holds by name, in its signature.
+            driver.find_element(
+                By.CSS_SELECTOR,
+                '.method-signature a[href="#/data/shop.v1.Shelf"]',
+            ).click()
+
+            # The page it links to was not showing when the hash
+            # changed, so the section it names has to be rendered
+            # before anything can scroll to it.
+            WebDriverWait(driver, 60).until(
+                expected_conditions.presence_of_element_located(
+                    (By.CSS_SELECTOR, '[id="/data/shop.v1.Shelf"]')
+                )
+            )
+            return driver.page_source
+
+        page = await asyncio.to_thread(self._run, body)
+
+        self.assertIn('aisle', page)
 
     async def test_the_page_holds_presence(self) -> None:
         # `rbt dev run` decides whether to open a dashboard by asking

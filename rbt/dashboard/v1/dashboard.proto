@@ -77,6 +77,13 @@ message Preferences {
   // Kept sorted, so that clicking two state types open in one order
   // and then the other stores the same thing both times.
   repeated string expanded_state_types = 2;
+
+  // How wide the developer has dragged the sidebar, in CSS pixels.
+  // Optional, so that never having dragged it is a different answer
+  // than having dragged it to whatever the default happens to be:
+  // the page picks the default, and can change it, until somebody
+  // has an opinion.
+  optional uint32 nav_width = 3;
 }
 
 message PreferencesGetRequest {}
@@ -84,6 +91,7 @@ message PreferencesGetRequest {}
 message PreferencesGetResponse {
   bool suppress_open_on_restart = 1;
   repeated string expanded_state_types = 2;
+  optional uint32 nav_width = 3;
 }
 
 message PreferencesSetSuppressOpenOnRestartRequest {
@@ -101,6 +109,12 @@ message PreferencesSetExpandedRequest {
 }
 
 message PreferencesSetExpandedResponse {}
+
+message PreferencesSetNavWidthRequest {
+  uint32 nav_width = 1;
+}
+
+message PreferencesSetNavWidthResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -142,6 +156,14 @@ service PreferencesMethods {
   // each write back a set that predates the other's click.
   rpc SetExpanded(PreferencesSetExpandedRequest)
       returns (PreferencesSetExpandedResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Its own writer, like the two above, so that recording a drag
+  // never writes back the rest of what this state holds.
+  rpc SetNavWidth(PreferencesSetNavWidthRequest)
+      returns (PreferencesSetNavWidthResponse) {
     option (rbt.v1alpha1.method).writer = {
     };
   }
