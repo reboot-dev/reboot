@@ -35,6 +35,7 @@ import ast
 import hashlib
 import os
 from dataclasses import dataclass, replace
+from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import ServicerInfo
 from rbt.dashboard.v1.dashboard_rbt import Implementation
 from reboot.aio.contexts import WorkflowContext
@@ -81,13 +82,18 @@ class Imports:
     may_load: tuple[str, ...]
 
 
-def _imports(module: ast.Module) -> Imports:
+def _imports(
+    module: ast.Module, *, directory: Optional[str] = None
+) -> Imports:
     """Returns every module a file's imports may make Python load.
 
     Modules come from every import, wherever it is written. One
     inside an `if` or a `try` loads its module just as one at the
     top of the file does, and guarding an import is common enough to
     be worth reading.
+
+    `directory` is where the file itself is, which is what a relative
+    import is relative to; without it relative imports load nothing.
     """
     may_load: list[str] = []
 
@@ -96,8 +102,44 @@ def _imports(module: ast.Module) -> Imports:
             case ast.Import(names=names):
                 may_load.extend(alias.name for alias in names)
 
-            case ast.ImportFrom(module=str(from_module), level=0, names=names):
-                base = from_module
+            case ast.ImportFrom(
+                module=from_module, level=int(level), names=names
+            ):
+                # Having a `level` means we have to determine what
+                # file Python might load. For example, in a file
+                # `shop/cart/servicer.py`:
+                #
+                #   from shop.cart.types import Item
+                #     level 0 -> `shop.cart.types`
+                #   from .types import Item
+                #     level 1 -> `shop/cart/types`
+                #   from ..api import Item
+                #     level 2 -> `shop/api`
+                #   from .. import api
+                #     level 2, no module -> `shop`
+                #
+                # `level` counts the leading dots. No dots: keep the
+                # module as written. One dot: start from the file's
+                # own directory. Each extra dot: climb one parent.
+                # If a module comes after the dots, it goes under
+                # that directory: `..api` is `shop` plus `api`, so
+                # `shop/api`. A relative import can only be spelled
+                # as a path, and without a `directory` the dots
+                # point at nothing, so the import binds nothing.
+                if level == 0:
+                    if from_module is None:
+                        continue
+                    base = from_module
+                elif directory is not None:
+                    climbed = directory
+                    for _ in range(level - 1):
+                        climbed = os.path.dirname(climbed)
+                    if from_module is None:
+                        base = climbed
+                    else:
+                        base = os.path.join(climbed, *from_module.split('.'))
+                else:
+                    continue
 
                 may_load.append(base)
 
@@ -122,19 +164,28 @@ def _try_find_file_of(module: str, *, roots: Sequence[str]) -> Optional[str]:
     """Returns the file a module names if one of `roots` contains it,
     and `None` otherwise.
 
-    `None` is not a failure: the standard library and installed
-    packages live outside every root, so `import asyncio` resolves to
-    nothing and there is nothing to read.
+    A module spelled as a path -- what a relative import resolved to
+    -- is looked for where it already points. `None` is not a failure:
+    the standard library and installed packages live outside every
+    root, so `import asyncio` resolves to nothing and there is nothing
+    to read.
     """
-    relative = module.replace('.', os.sep)
+    if os.sep in module:
+        candidates = [
+            module + '.py',
+            os.path.join(module, '__init__.py'),
+        ]
+    else:
+        relative = module.replace('.', os.sep)
+        candidates = [
+            os.path.join(root, relative + suffix)
+            for root in roots
+            for suffix in ('.py', os.sep + '__init__.py')
+        ]
 
-    for root in roots:
-        for candidate in (
-            os.path.join(root, relative + '.py'),
-            os.path.join(root, relative, '__init__.py'),
-        ):
-            if os.path.isfile(candidate):
-                return candidate
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
 
     return None
 
@@ -154,7 +205,11 @@ def _path(expression: ast.expr) -> Optional[list[str]]:
 
 
 def _join(base: str, *parts: str) -> str:
-    """Returns a module extended by more components."""
+    """Returns a module extended by more components, joined the way
+    the module is spelled: with dots for a dotted name, as a path for
+    a path."""
+    if os.sep in base:
+        return os.path.join(base, *parts)
     return '.'.join([base, *parts])
 
 
@@ -261,11 +316,21 @@ class Files:
     def lookup(self, filename: str) -> Optional[ParsedFile | File]:
         """Returns what this iteration read for a file, wherever it
         lives -- `analyzed` or `parsed` -- and `None` when it has
-        not read the file."""
+        not read the file.
+
+        By the file's absolute path, since a relative import spells
+        a file one way and an absolute import another.
+        """
         for entries in (self.analyzed, self.parsed):
             entry = entries.get(filename)
             if entry is not None:
                 return entry
+
+        absolute = Path(filename).absolute()
+        for entries in (self.analyzed, self.parsed):
+            for entry in entries.values():
+                if Path(entry.filename).absolute() == absolute:
+                    return entry
 
         return None
 
@@ -400,6 +465,15 @@ class Files:
             files = files.with_digest(filename, digest)
 
         known = files.known.get(filename)
+        if known is None:
+            # A relative import spells a file one way and an absolute
+            # import another, so the previous iteration is searched
+            # by absolute path too.
+            absolute = Path(filename).absolute()
+            for file in files.known.values():
+                if Path(file.filename).absolute() == absolute:
+                    known = file
+                    break
         if known is not None:
             reanalyze, files = files.needs_reanalyzing(known, digest=digest)
             if not reanalyze:
@@ -461,7 +535,9 @@ def _parse(source: bytes, *, filename: str,
     return ParsedFile(
         filename=filename,
         digest=digest,
-        imports=_imports(module),
+        imports=_imports(
+            module, directory=os.path.dirname(os.path.abspath(filename))
+        ),
         module=module,
     )
 
