@@ -170,24 +170,20 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         raise AssertionError('never satisfied')
 
     async def test_records_the_servicer_it_finds(self) -> None:
-        found = await self._servicers(
-            satisfied=lambda found: 'shop.v1.Shop' in found
-        )
+        found = await self._servicers(satisfied=lambda found: 'Shop' in found)
 
         self.assertEqual(
-            [servicer.file for servicer in found['shop.v1.Shop']],
+            [servicer.file for servicer in found['Shop']],
             [str(self.source / 'shop_servicer.py')],
         )
 
     async def test_the_methods_reach_the_state(self) -> None:
         """What the browser will join against what the API files say
         each state type declares."""
-        found = await self._servicers(
-            satisfied=lambda found: 'shop.v1.Shop' in found
-        )
+        found = await self._servicers(satisfied=lambda found: 'Shop' in found)
 
         self.assertEqual(
-            [method.name for method in found['shop.v1.Shop'][0].methods],
+            [method.name for method in found['Shop'][0].methods],
             ['look'],
         )
 
@@ -197,11 +193,9 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         for."""
         self._declare('depot', state='Depot')
 
-        found = await self._servicers(
-            satisfied=lambda found: 'shop.v1.Shop' in found
-        )
+        found = await self._servicers(satisfied=lambda found: 'Shop' in found)
 
-        self.assertNotIn('shop.v1.Depot', found)
+        self.assertNotIn('Depot', found)
 
     async def test_a_state_type_two_classes_service(self) -> None:
         """Both files are recorded against it, rather than one being
@@ -216,11 +210,11 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
 
         found = await self._servicers(
-            satisfied=lambda found: len(found.get('shop.v1.Shop', [])) == 2
+            satisfied=lambda found: len(found.get('Shop', [])) == 2
         )
 
         self.assertEqual(
-            [servicer.file for servicer in found['shop.v1.Shop']], [
+            [servicer.file for servicer in found['Shop']], [
                 str(self.source / 'other_servicer.py'),
                 str(self.source / 'shop_servicer.py'),
             ]
@@ -231,7 +225,7 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         """The application is watched, so a servicer written while the
         dashboard runs is found without a restart."""
-        await self._servicers(satisfied=lambda found: 'shop.v1.Shop' in found)
+        await self._servicers(satisfied=lambda found: 'Shop' in found)
 
         (self.source / 'depot_servicer.py').write_text(DEPOT)
         (self.source / 'main.py').write_text(
@@ -242,12 +236,10 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        found = await self._servicers(
-            satisfied=lambda found: 'shop.v1.Depot' in found
-        )
+        found = await self._servicers(satisfied=lambda found: 'Depot' in found)
 
         self.assertEqual(
-            [servicer.file for servicer in found['shop.v1.Depot']],
+            [servicer.file for servicer in found['Depot']],
             [str(self.source / 'depot_servicer.py')],
         )
 
@@ -258,11 +250,9 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         recorded without either waiting on the other."""
         self._declare('shop', state='Shop')
 
-        found = await self._servicers(
-            satisfied=lambda found: 'shop.v1.Shop' in found
-        )
+        found = await self._servicers(satisfied=lambda found: 'Shop' in found)
         self.assertEqual(
-            [servicer.file for servicer in found['shop.v1.Shop']],
+            [servicer.file for servicer in found['Shop']],
             [str(self.source / 'shop_servicer.py')],
         )
 
@@ -302,7 +292,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             found,
-            [('shop.v1.Shop', str(self.directory / 'shop_servicer.py'))],
+            [('Shop', str(self.directory / 'shop_servicer.py'))],
         )
 
     async def test_a_singleton_says_what_it_services_the_same_way(
@@ -321,7 +311,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             found,
-            [('shop.v1.Depot', str(self.directory / 'depot_servicer.py'))],
+            [('Depot', str(self.directory / 'depot_servicer.py'))],
         )
 
     async def test_several_state_types_in_one_file(self) -> None:
@@ -343,8 +333,8 @@ async def main():
 
         self.assertEqual(
             found, [
-                ('shop.v1.Depot', str(self.directory / 'servicers.py')),
-                ('shop.v1.Shop', str(self.directory / 'servicers.py')),
+                ('Depot', str(self.directory / 'servicers.py')),
+                ('Shop', str(self.directory / 'servicers.py')),
             ]
         )
 
@@ -373,7 +363,7 @@ async def main():
 
         self.assertEqual(
             found,
-            [('shop.v1.Shop', str(self.directory / 'servicers.py'))],
+            [('Shop', str(self.directory / 'servicers.py'))],
         )
 
     async def test_a_servicer_reached_through_another_module(self) -> None:
@@ -397,7 +387,7 @@ async def main():
 
         self.assertEqual(
             found,
-            [('shop.v1.Shop', str(self.directory / 'shop_servicer.py'))],
+            [('Shop', str(self.directory / 'shop_servicer.py'))],
         )
 
     async def test_an_import_that_is_not_at_the_top_of_the_file(self) -> None:
@@ -424,7 +414,7 @@ async def main():
 
         self.assertEqual(
             found,
-            [('shop.v1.Shop', str(self.directory / 'shop_servicer.py'))],
+            [('Shop', str(self.directory / 'shop_servicer.py'))],
         )
 
     async def test_a_servicer_in_a_package(self) -> None:
@@ -445,7 +435,7 @@ async def main():
 
         self.assertEqual(
             found,
-            [('shop.v1.Shop', str(self.directory / 'servicers' / 'shop.py'))],
+            [('Shop', str(self.directory / 'servicers' / 'shop.py'))],
         )
 
     ###################################################################
@@ -487,7 +477,7 @@ async def main():
             )
             self.assertEqual(
                 found,
-                [('shop.v1.Shop', str(Path(elsewhere.name) / 'library.py'))],
+                [('Shop', str(Path(elsewhere.name) / 'library.py'))],
             )
         finally:
             elsewhere.cleanup()
@@ -596,7 +586,7 @@ async def main():
             await files(application=application, known=known)
         )
 
-        self.assertEqual(found, [('shop.v1.Depot', servicer)])
+        self.assertEqual(found, [('Depot', servicer)])
 
     async def test_a_servicer_that_stops_being_imported_is_dropped(
         self
@@ -625,7 +615,7 @@ async def main():
 
         self.assertEqual(
             found,
-            [('shop.v1.Shop', str(self.directory / 'shop_servicer.py'))],
+            [('Shop', str(self.directory / 'shop_servicer.py'))],
         )
 
     async def test_a_servicer_that_starts_being_imported_is_found(
@@ -652,8 +642,8 @@ async def main():
 
         self.assertEqual(
             found, [
-                ('shop.v1.Depot', str(self.directory / 'depot_servicer.py')),
-                ('shop.v1.Shop', str(self.directory / 'shop_servicer.py')),
+                ('Depot', str(self.directory / 'depot_servicer.py')),
+                ('Shop', str(self.directory / 'shop_servicer.py')),
             ]
         )
 
@@ -698,8 +688,8 @@ async def main():
 
         self.assertEqual(
             found, [
-                ('shop.v1.Shop', str(self.directory / 'other_servicer.py')),
-                ('shop.v1.Shop', str(self.directory / 'shop_servicer.py')),
+                ('Shop', str(self.directory / 'other_servicer.py')),
+                ('Shop', str(self.directory / 'shop_servicer.py')),
             ]
         )
 
