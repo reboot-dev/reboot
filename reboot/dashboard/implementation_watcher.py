@@ -16,10 +16,9 @@ Following the imports rather than reading the list handed to
 behind a conditional import -- which have one thing in common: the
 file defining the servicer had to be imported for any of them to run.
 
-Where the walk of the imports stops is what makes this the
-developer's code rather than somebody else's. A module resolves to a
-file only if a root holds it, so an import of an installed package
-leads nowhere.
+Where following stops is what makes this the developer's code rather
+than somebody else's. A module resolves to a file only if a root
+holds it, so an import of an installed package leads nowhere.
 
 Read rather than imported, because importing an application means
 having its generated code, its dependencies and its `sys.path`, and
@@ -49,6 +48,11 @@ from typing import Iterator, Mapping, Optional, Sequence
 Digest = bytes
 
 GENERATED_SUFFIX = '_rbt'
+
+# Suffixes of the files `rbt generate` writes. Named so that a chain
+# of imports is never followed into generated code by reading it --
+# the `_rbt` module name alone says what a name from one is.
+GENERATED_SUFFIXES = ('_rbt.py', '_pb2.py', '_pb2_grpc.py')
 
 # Every file the developer might have written a servicer in, which is
 # the rule `rbt generate` and `rbt dev run` both use for source.
@@ -104,22 +108,51 @@ class Imports:
 
         return None
 
-    def try_resolve_state_type(self, path: Sequence[str]) -> Optional[str]:
-        """Returns the state type a dotted name refers to, if where
-        it was bound from is generated code."""
+    def try_resolve_state_type(
+        self,
+        path: Sequence[str],
+        *,
+        analysis: 'Analysis',
+        visiting: frozenset[str] = frozenset(),
+    ) -> tuple[Optional[str], 'Analysis']:
+        """Returns the state type a dotted name refers to, if
+        following where these imports bound it from ends in generated
+        code, and the analysis carried forward, since answering may
+        read files.
+
+        Every file read becomes a dependency of the analysis whether
+        or not a state type was found: a "no" that read it depends on
+        it just the same, since a change to it may turn the "no" into
+        a "yes". `visiting` is the files already being read through,
+        which is what stops a circular import.
+        """
         resolved = self.try_resolve_module(path)
 
         if resolved is None:
-            return None
+            return None, analysis
 
         module, attribute = resolved
 
         # The `_rbt` module name alone says what a name from one is:
         # `Account` from `bank.v1.account_rbt` is `bank.v1.Account`.
-        if not module.endswith(GENERATED_SUFFIX):
-            return None
+        if module.endswith(GENERATED_SUFFIX):
+            return f"{module.rsplit('.', 1)[0]}.{attribute}", analysis
 
-        return f"{module.rsplit('.', 1)[0]}.{attribute}"
+        found, files = analysis.files.lookup_or_parse_module(
+            module, visiting=visiting
+        )
+        if found is None:
+            return None, analysis
+
+        analysis = analysis.with_dependency(found, files=files)
+
+        # The rest of the chain resolves against the followed file's
+        # own imports: theirs to answer.
+        return found.imports.try_resolve_state_type(
+            [attribute],
+            analysis=analysis,
+            visiting=visiting | {found.filename},
+        )
 
 
 # What one import bound a name to.
@@ -207,43 +240,313 @@ def _join(base: str, *parts: str) -> str:
 
 
 @dataclass(frozen=True, kw_only=True)
-class File:
-    """What one of the developer's files was found to hold."""
+class ParsedFile:
+    """What parsing one file said, before any name in it is
+    resolved."""
+
+    # The file this is, spelled the way the developer would open it.
+    filename: str
 
     # Of the bytes the file held, saying whether parsing it again
     # would say anything new.
     digest: Digest
 
-    # Every module the file's imports may have Python load, to be
-    # followed if a root holds it.
-    may_load: tuple[str, ...]
+    # What the file's imports bound each of its names to.
+    imports: Imports
+
+    # The syntax itself, so that a file parsed while resolving names
+    # is not parsed again when its own servicers are looked for.
+    module: ast.Module
+
+
+@dataclass(frozen=True, kw_only=True)
+class File:
+    """What analyzing one of the developer's files found."""
+
+    # The file this is, spelled the way the developer would open it.
+    filename: str
+
+    # Of the bytes the file held, saying whether parsing it again
+    # would say anything new.
+    digest: Digest
+
+    # What the file's imports bound each of its names to.
+    imports: Imports
+
+    # The files this file depends on, by the digest each had when it
+    # was read. If any of them changes, this file needs reanalyzing.
+    dependencies: Mapping[str, Digest]
 
     # Every servicer the file defines.
     servicers: tuple[ServicerInfo, ...]
 
 
-def _state_type_if_servicer(
-    class_definition: ast.ClassDef, *, imports: Imports
-) -> Optional[str]:
-    """Returns the state type a class services, if it says so.
+@dataclass(frozen=True, kw_only=True)
+class Files:
+    """The developer's files, as far as one iteration of the watch
+    has taken them.
 
-    A servicer says it by what it inherits: `Account.Servicer`, or
-    `Account.singleton.Servicer` for a singleton, with `Account`
-    reached by any dotted name that refers to a state type.
+    An iteration is one call to `files()`, which `watch` makes each
+    time a save wakes it.
+
+    Immutable: carrying the iteration forward means holding the one a
+    method below returned.
     """
-    for base in class_definition.bases:
-        match base:
-            case ast.Attribute(value=value, attr='Servicer'):
-                path = _path(value)
-                if path is None:
-                    continue
-                if len(path) > 1 and path[-1] == 'singleton':
-                    path = path[:-1]
-                state_type = imports.try_resolve_state_type(path)
-                if state_type is not None:
-                    return state_type
 
-    return None
+    # Where the developer's modules are found: the application's own
+    # directory. What an iteration is allowed to analyze.
+    roots: tuple[str, ...]
+
+    # What the previous iteration analyzed, so a file unchanged
+    # since is neither parsed nor analyzed again.
+    known: Mapping[str, File]
+
+    # Parsed this iteration, not yet analyzed.
+    parsed: Mapping[str, ParsedFile]
+
+    # Analyzed: this iteration, each servicer and method resolved
+    # against bytes as they are on disk right now -- or a previous
+    # one, verified unchanged. What an iteration returns.
+    analyzed: Mapping[str, File]
+
+    # Reached this iteration, imports not yet followed. The loop's
+    # frontier: every file enters once, when it is parsed or kept,
+    # and leaves once, handled.
+    pending: frozenset[str]
+
+    # The digest of every file read this iteration, by filename --
+    # including files that joined no other map. What spares a second
+    # read of the same bytes. The bytes themselves are not kept: they
+    # are needed again only when a file changed and must be parsed,
+    # which a save makes rare, and the parse path reads its own.
+    digests: Mapping[str, Digest]
+
+    @classmethod
+    def create(
+        cls, *, roots: Sequence[str], known: Mapping[str, File]
+    ) -> 'Files':
+        """Returns the files an iteration starts from: nothing
+        parsed, nothing analyzed."""
+        return cls(
+            roots=tuple(roots),
+            known=MappingProxyType(dict(known)),
+            parsed=MappingProxyType({}),
+            analyzed=MappingProxyType({}),
+            pending=frozenset(),
+            digests=MappingProxyType({}),
+        )
+
+    def lookup(self, filename: str) -> Optional[ParsedFile | File]:
+        """Returns what this iteration read for a file, wherever it
+        lives -- `analyzed` or `parsed` -- and `None` when
+        it has not read the file."""
+        for entries in (self.analyzed, self.parsed):
+            entry = entries.get(filename)
+            if entry is not None:
+                return entry
+
+        return None
+
+    def with_parsed_file(self, parsed: ParsedFile) -> 'Files':
+        """Returns this with one more file parsed, into `parsed` and
+        onto the frontier."""
+        return replace(
+            self,
+            parsed=MappingProxyType({
+                **self.parsed, parsed.filename: parsed
+            }),
+            pending=self.pending | {parsed.filename},
+        )
+
+    def with_reused_known_file(self, file: File) -> 'Files':
+        """Returns this with a file the previous iteration analyzed
+        kept: verified unchanged, so analyzed as it was -- and onto
+        the frontier, its imports still to follow."""
+        return replace(
+            self,
+            analyzed=MappingProxyType({
+                **self.analyzed, file.filename: file
+            }),
+            pending=self.pending | {file.filename},
+        )
+
+    def with_analyzed_file(
+        self,
+        filename: str,
+        *,
+        dependencies: Mapping[str, Digest],
+        servicers: Sequence[ServicerInfo],
+    ) -> 'Files':
+        """Returns this with a file analyzed: a `File` built from
+        its `parsed` entry and what analyzing it found, moved to
+        `analyzed`."""
+        parsed = self.parsed[filename]
+
+        file = File(
+            filename=parsed.filename,
+            digest=parsed.digest,
+            imports=parsed.imports,
+            dependencies=MappingProxyType(dict(dependencies)),
+            servicers=tuple(servicers),
+        )
+
+        parsed_files = dict(self.parsed)
+        del parsed_files[filename]
+
+        return replace(
+            self,
+            parsed=MappingProxyType(parsed_files),
+            analyzed=MappingProxyType({
+                **self.analyzed, filename: file
+            }),
+        )
+
+    def without_pending_file(self, filename: str) -> 'Files':
+        """Returns this with a file taken off the frontier: analyzed,
+        and its imports followed."""
+        return replace(self, pending=self.pending - {filename})
+
+    def with_digest(self, filename: str, digest: Digest) -> 'Files':
+        """Returns this with the digest of one read file recorded, so
+        a later question about the same bytes is answered without the
+        disk."""
+        return replace(
+            self,
+            digests=MappingProxyType({
+                **self.digests, filename: digest
+            }),
+        )
+
+    def needs_reanalyzing(self, file: File, *,
+                          digest: Digest) -> tuple[bool, 'Files']:
+        """Returns whether a file the previous iteration analyzed
+        cannot be reused -- its bytes changed, or a file it depends
+        on did, including one that can no longer be read at all --
+        and this with every digest read to answer recorded.
+
+        A dependency already read this iteration, reached or merely
+        digested, is checked against the digest recorded for it, so
+        answering never reads the same bytes twice.
+        """
+        if digest != file.digest:
+            return True, self
+
+        files = self
+
+        for filename, previous_digest in file.dependencies.items():
+            found = files.lookup(filename)
+            if found is not None:
+                if found.digest != previous_digest:
+                    return True, files
+                continue
+
+            current = files.digests.get(filename)
+            if current is None:
+                try:
+                    current = hashlib.sha256(_read(filename)).digest()
+                except OSError:
+                    return True, files
+                files = files.with_digest(filename, current)
+
+            if current != previous_digest:
+                return True, files
+
+        return False, files
+
+    def lookup_or_parse_filename(
+        self, filename: str
+    ) -> tuple[Optional[ParsedFile | File], 'Files']:
+        """Returns a file as this iteration has it -- looked up among
+        what is already read, verified against the previous iteration
+        when unchanged, and otherwise read and parsed, joining
+        `parsed` or `outside` by who contains it. `None` when it
+        cannot be read or will not parse.
+        """
+        found = self.lookup(filename)
+        if found is not None:
+            return found, self
+
+        files = self
+        source: Optional[bytes] = None
+
+        digest = files.digests.get(filename)
+        if digest is None:
+            try:
+                source = _read(filename)
+            except OSError:
+                return None, files
+            digest = hashlib.sha256(source).digest()
+            files = files.with_digest(filename, digest)
+
+        known = files.known.get(filename)
+        if known is not None:
+            reanalyze, files = files.needs_reanalyzing(known, digest=digest)
+            if not reanalyze:
+                return known, files.with_reused_known_file(known)
+
+        # Parsing needs the bytes, which a check that recorded only
+        # the digest did not keep.
+        if source is None:
+            try:
+                source = _read(filename)
+            except OSError:
+                return None, files
+            digest = hashlib.sha256(source).digest()
+            files = files.with_digest(filename, digest)
+
+        parsed = _parse(source, filename=filename, digest=digest)
+        if parsed is None:
+            return None, files
+
+        return parsed, files.with_parsed_file(parsed)
+
+    def lookup_or_parse_module(
+        self, module: str, *, visiting: frozenset[str] = frozenset()
+    ) -> tuple[Optional[ParsedFile | File], 'Files']:
+        """Returns the file a module names as this iteration has it,
+        and `None` when no searched root contains the module, the
+        module is generated -- its name alone says what a name from
+        one is -- or reading it would circle back to a file already
+        being read through. When it returns `None`, the files come
+        back as they were: nothing found means nothing joined.
+        """
+        filename = _try_find_file_of(module, roots=self.roots)
+
+        if filename is None or filename.endswith(GENERATED_SUFFIXES):
+            return None, self
+
+        if filename in visiting:
+            return None, self
+
+        return self.lookup_or_parse_filename(filename)
+
+    def imports(self, filename: str) -> Optional[Imports]:
+        """Returns what a file's imports bound, wherever this
+        iteration read the file."""
+        found = self.lookup(filename)
+        return found.imports if found is not None else None
+
+
+def _parse(source: bytes, *, filename: str,
+           digest: Digest) -> Optional[ParsedFile]:
+    """Returns what parsing one file said, and `None` when it will
+    not parse.
+
+    A file that will not parse is left unrecorded rather than recorded
+    as empty, so that the next iteration parses it again: half-written
+    is the normal state of a file somebody is typing into.
+    """
+    try:
+        module: ast.Module = ast.parse(source)
+    except SyntaxError:
+        return None
+
+    return ParsedFile(
+        filename=filename,
+        digest=digest,
+        imports=_imports(module),
+        module=module,
+    )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -293,23 +596,37 @@ class Call:
 
 @dataclass(frozen=True, kw_only=True)
 class Analysis:
-    """What analyzing one method's body has found so far.
+    """One file's analysis in flight: what it has found, what it has
+    read, and the method it is thinking in.
 
-    Immutable: carrying the analysis forward means holding the one a
-    method below returned, so what anybody else holds is never
-    changed under them.
+    Born when a file's analysis starts, finished into `Files` when
+    the file is done. Immutable: carrying the analysis forward means
+    keeping the one a method below returned, so nobody else's copy is
+    ever changed under them.
     """
 
-    # The state type the servicer this method is written in services,
-    # which is what `self.ref()` refers to.
-    state_type: str
+    # The file being analyzed, whose imports are what names resolve
+    # against. Moves while a chain of imports is followed, since the
+    # rest of a chain resolves against each followed file's own
+    # imports, and comes back when the chain answers.
+    filename: str
 
-    # What the file's imports bound each of its names to. The same
-    # for the whole method, so carried untouched.
-    imports: Imports
+    # The developer's files, read and grown as the analysis resolves
+    # names, and handed back to the iteration when the file is done.
+    files: Files
 
-    # The Reboot calls found, in the order met. What the analysis is
-    # for.
+    # The files the analysis's answers depend on, as read so far, by
+    # the digest each had. If any of them changes, the file needs
+    # analyzing again.
+    dependencies: Mapping[str, Digest]
+
+    # The state type the class being analyzed services, which is what
+    # `self.ref()` refers to. `None` outside a servicer.
+    state_type: Optional[str]
+
+    # The Reboot calls the method being analyzed makes, in the order
+    # met. Folded into the method's entry when the method is
+    # recorded.
     calls: tuple[Call, ...]
 
     # What was met that the analysis does not follow, spelled the way
@@ -317,18 +634,60 @@ class Analysis:
     # likely incomplete rather than left to trust them.
     unsupported: tuple[str, ...]
 
-    # What each name holds at the point the analysis has reached. A
+    # What each of the method's names is bound to at the point the
+    # analysis has reached. The working state the analysis thinks
+    # with, dropped when the method is recorded. A
     # `MappingProxyType`, so writing into it raises rather than
     # quietly leaking.
     locals: Mapping[str, Local]
 
     @classmethod
-    def create(cls, *, state_type: str, imports: Imports) -> 'Analysis':
-        """Returns the analysis everything starts from: nothing found,
-        nothing bound."""
+    def create(cls, *, filename: str, files: Files) -> 'Analysis':
+        """Returns the analysis a file starts from: nothing found,
+        nothing read, no method begun."""
         return cls(
-            state_type=state_type,
-            imports=imports,
+            filename=filename,
+            files=files,
+            dependencies=MappingProxyType({}),
+            state_type=None,
+            calls=(),
+            unsupported=(),
+            locals=MappingProxyType({}),
+        )
+
+    def imports(self) -> Imports:
+        """Returns what the method's file's imports bound."""
+        imports = self.files.imports(self.filename)
+        assert imports is not None
+        return imports
+
+    def with_dependency(
+        self, found: ParsedFile | File, *, files: Files
+    ) -> 'Analysis':
+        """Returns this analysis depending on one more file: the
+        digest it was read with recorded, and the files grown by
+        reading it carried forward."""
+        return replace(
+            self,
+            dependencies=MappingProxyType(
+                {
+                    **self.dependencies, found.filename: found.digest
+                }
+            ),
+            files=files,
+        )
+
+    def with_state_type(self, state_type: str) -> 'Analysis':
+        """Returns this analysis inside a class servicing a state
+        type: what `self.ref()` refers to until the class ends."""
+        return replace(self, state_type=state_type)
+
+    def with_method_reset(self) -> 'Analysis':
+        """Returns this analysis with the method reset -- its calls,
+        unsupported and locals cleared -- ready for the next
+        method."""
+        return replace(
+            self,
             calls=(),
             unsupported=(),
             locals=MappingProxyType({}),
@@ -357,10 +716,41 @@ class Analysis:
         )
 
 
-def _reboot_related(expression: ast.expr, *, analysis: Analysis) -> bool:
+def _state_type_if_servicer(
+    class_definition: ast.ClassDef,
+    *,
+    analysis: Analysis,
+) -> tuple[Optional[str], Analysis]:
+    """Returns the state type a class services, if it says so, and
+    the analysis carried forward, since answering may read files.
+
+    A servicer says it by what it inherits: `Account.Servicer`, or
+    `Account.singleton.Servicer` for a singleton, with `Account`
+    reached by any dotted name that refers to a state type.
+    """
+    for base in class_definition.bases:
+        match base:
+            case ast.Attribute(value=value, attr='Servicer'):
+                path = _path(value)
+                if path is None:
+                    continue
+                if len(path) > 1 and path[-1] == 'singleton':
+                    path = path[:-1]
+                state_type, analysis = analysis.imports(
+                ).try_resolve_state_type(path, analysis=analysis)
+                if state_type is not None:
+                    return state_type, analysis
+
+    return None, analysis
+
+
+def _reboot_related(expression: ast.expr, *,
+                    analysis: Analysis) -> tuple[bool, Analysis]:
     """Returns whether anything in an expression touches something
-    Reboot related: a `.ref` however it is reached, a name holding a
-    reference or the context, or a name that refers to a state type.
+    Reboot related -- a `.ref` however it is reached, a name holding
+    a reference or the context, or a name that refers to a state type
+    -- and the analysis carried forward, since answering may read
+    files.
 
     What ordinary Python does is never Reboot related, however little
     of it the analysis follows; this is what keeps the unsupported
@@ -369,15 +759,16 @@ def _reboot_related(expression: ast.expr, *, analysis: Analysis) -> bool:
     for node in ast.walk(expression):
         match node:
             case ast.Attribute(attr='ref'):
-                return True
+                return True, analysis
             case ast.Name(id=str(name)):
                 if name in analysis.locals:
-                    return True
-                state_type = analysis.imports.try_resolve_state_type([name])
+                    return True, analysis
+                state_type, analysis = analysis.imports(
+                ).try_resolve_state_type([name], analysis=analysis)
                 if state_type is not None:
-                    return True
+                    return True, analysis
 
-    return False
+    return False, analysis
 
 
 def _evaluate(expression: ast.expr, *,
@@ -395,7 +786,7 @@ def _evaluate(expression: ast.expr, *,
 
         case ast.Call(
             func=ast.Attribute(value=ast.Name(id='self'), attr='ref')
-        ):
+        ) if analysis.state_type is not None:
             # A servicer reaching the state it is servicing. Matched
             # before `Account.ref(id)` below, which would otherwise
             # match this too and find that `self` refers to no state
@@ -410,7 +801,8 @@ def _evaluate(expression: ast.expr, *,
             # is almost certainly a reference being lost.
             path = _path(receiver)
             if path is not None:
-                state_type = analysis.imports.try_resolve_state_type(path)
+                state_type, analysis = analysis.imports(
+                ).try_resolve_state_type(path, analysis=analysis)
                 if state_type is not None:
                     return Reference(state_type=state_type), analysis
 
@@ -422,7 +814,8 @@ def _evaluate(expression: ast.expr, *,
     # touches something Reboot related -- whatever it does with it is
     # not followed, so the calls are likely incomplete -- and left
     # alone when it is ordinary Python, which was never claimed.
-    if _reboot_related(expression, analysis=analysis):
+    related, analysis = _reboot_related(expression, analysis=analysis)
+    if related:
         analysis = analysis.with_unsupported(expression)
 
     return None, analysis
@@ -489,11 +882,10 @@ def _assign(
 def _analyze_method(
     method: ast.FunctionDef | ast.AsyncFunctionDef,
     *,
-    state_type: str,
-    imports: Imports,
+    analysis: Analysis,
 ) -> Analysis:
-    """Returns the Reboot calls a method's body makes, in the order
-    met.
+    """Returns the analysis carried through one method's body, the
+    Reboot calls it makes found in the order met.
 
     Statements are visited in the order written, saying what each
     name holds before moving to the next, so that when a call is met
@@ -513,8 +905,6 @@ def _analyze_method(
     reference and something else, and taking them together is what
     lets a reference reach a nested function that uses it.
     """
-    analysis = Analysis.create(state_type=state_type, imports=imports)
-
     # `self` first, then the context; a `@classmethod` takes `cls`
     # in its place, and a workflow or a task takes the context the
     # same way.
@@ -547,56 +937,56 @@ def _digest(node: ast.AST) -> Digest:
                                    include_attributes=False).encode()).digest()
 
 
-def _methods(class_definition: ast.ClassDef) -> list[ServicerInfo.Method]:
-    """Returns the methods a class defines, in the order written."""
-    methods = []
+def _analyze_file(filename: str, files: Files) -> Files:
+    """Returns the iteration carried past analyzing one `pending`
+    file: every class saying what it services recorded, every method
+    those classes define analyzed and recorded under them, and the
+    file finished into `analyzed` with the files the analysis read
+    depended on.
 
-    for node in class_definition.body:
-        match node:
-            case (
-                ast.FunctionDef(name=str(name)) |
-                ast.AsyncFunctionDef(name=str(name))
-            ):
-                methods.append(
-                    ServicerInfo.Method(name=name, digest=_digest(node))
-                )
-
-    return methods
-
-
-def _parse(source: bytes, *, digest: Digest, filename: str) -> Optional[File]:
-    """Returns what a file holds, and `None` when it will not parse.
-
-    A file that will not parse is left unrecorded rather than recorded
-    as empty, so that the next iteration parses it again: half-written
-    is the normal state of a file somebody is typing into.
+    One `Analysis` is carried through the whole file: the
+    dependencies it accumulates are the file's, while the method
+    resets as each one is recorded.
     """
-    try:
-        module: ast.Module = ast.parse(source)
-    except SyntaxError:
-        return None
+    parsed = files.parsed[filename]
 
-    imports = _imports(module)
+    analysis = Analysis.create(filename=filename, files=files)
 
-    servicers = []
+    servicers: list[ServicerInfo] = []
 
-    for node in ast.walk(module):
+    for node in ast.walk(parsed.module):
         match node:
             case ast.ClassDef():
-                state_type = _state_type_if_servicer(node, imports=imports)
-                if state_type is not None:
-                    servicers.append(
-                        ServicerInfo(
-                            state_type=state_type,
-                            file=filename,
-                            methods=_methods(node),
-                        )
-                    )
+                state_type, analysis = _state_type_if_servicer(
+                    node, analysis=analysis
+                )
+                if state_type is None:
+                    continue
+                servicer = ServicerInfo(state_type=state_type, file=filename)
+                analysis = analysis.with_state_type(state_type)
+                for statement in node.body:
+                    match statement:
+                        case (
+                            ast.FunctionDef(name=str(name)) |
+                            ast.AsyncFunctionDef(name=str(name))
+                        ):
+                            analysis = _analyze_method(
+                                statement, analysis=analysis
+                            )
+                            servicer.methods.append(
+                                ServicerInfo.Method(
+                                    name=name, digest=_digest(statement)
+                                )
+                            )
+                            # Calls and unsupported fold in here once
+                            # the proto has fields for them.
+                            analysis = analysis.with_method_reset()
+                servicers.append(servicer)
 
-    return File(
-        digest=digest,
-        may_load=imports.may_load,
-        servicers=tuple(servicers),
+    return analysis.files.with_analyzed_file(
+        filename,
+        dependencies=dict(analysis.dependencies),
+        servicers=servicers,
     )
 
 
@@ -628,10 +1018,9 @@ async def analyze(
     absent, however recently it changed, and one that has started
     being imported is parsed for the first time.
 
-    `known` is what a previous call returned, and spares this one from
-    parsing a file whose bytes have not changed since. Parsing is the
-    expensive part -- around fifty times what reading and hashing the
-    bytes costs -- and an edit changes one file.
+    `known` is what a previous call returned, and spares this one
+    from parsing and analyzing a file that has not changed since --
+    neither in its own bytes nor in any file it depends on.
 
     `roots` are the directories a module may be found under, which is
     both how a module name becomes a file and where the developer's
@@ -642,48 +1031,36 @@ async def analyze(
     if roots is None:
         roots = _roots(application)
 
-    if known is None:
-        known = {}
+    files = Files.create(roots=roots, known=known or {})
 
-    reachable: dict[str, File] = {}
+    _, files = files.lookup_or_parse_filename(application)
 
-    pending = [application]
+    while len(files.pending) > 0:
+        # Parsing and analyzing hold on to the interpreter for as
+        # long as they take, so a file at a time leaves the dashboard
+        # free to answer.
+        async for filename in cooperatively(files.pending):
+            match files.parsed.get(filename):
+                case ParsedFile():
+                    files = _analyze_file(filename, files)
+                case None:
+                    # Nothing to analyze: the file was kept because
+                    # neither its bytes nor any of its dependencies
+                    # changed, so the analysis it got when it last
+                    # changed still stands, in `analyzed` already.
+                    pass
 
-    while len(pending) > 0:
-        # What the last round of imports led to.
-        current, pending = pending, []
+            files = files.without_pending_file(filename)
 
-        # Parsing holds on to the interpreter for as long as it takes,
-        # so a file at a time leaves the dashboard free to answer.
-        async for filename in cooperatively(current):
-            if filename in reachable:
-                continue
+            # Following the file's imports is how the rest of the
+            # application is reached.
+            imports = files.imports(filename)
+            assert imports is not None
 
-            try:
-                source: bytes = _read(filename)
-            except OSError:
-                continue
+            for module in imports.may_load:
+                _, files = files.lookup_or_parse_module(module)
 
-            digest = hashlib.sha256(source).digest()
-
-            file = known.get(filename)
-
-            if file is None or file.digest != digest:
-                file = _parse(source, digest=digest, filename=filename)
-
-            if file is None:
-                continue
-
-            reachable[filename] = file
-
-            pending.extend(
-                filename for filename in (
-                    _try_find_file_of(module, roots=roots)
-                    for module in file.may_load
-                ) if filename is not None
-            )
-
-    return reachable
+    return dict(files.analyzed)
 
 
 async def watch(context: WorkflowContext, *, application: str) -> None:

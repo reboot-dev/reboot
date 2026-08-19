@@ -106,21 +106,28 @@ class AnalyzeTest(unittest.TestCase):
     what each name held when the body ended."""
 
     def _analyze(self, body: str) -> implementation_watcher.Analysis:
-        module = ast.parse(
-            SERVICER.format(state='Shop', module='shop').replace(
-                '    async def look(self, context, request):\n        pass',
-                '    async def look(self, context, request):\n' + body,
-            )
-        )
-        imports = implementation_watcher._imports(module)
+        source = SERVICER.format(state='Shop', module='shop').replace(
+            '    async def look(self, context, request):\n        pass',
+            '    async def look(self, context, request):\n' + body,
+        ).encode()
 
-        for node in ast.walk(module):
+        parsed = implementation_watcher._parse(
+            source, filename='servicer.py', digest=b''
+        )
+        assert parsed is not None
+
+        files = implementation_watcher.Files.create(roots=[], known={}
+                                                   ).with_parsed_file(parsed)
+
+        analysis = implementation_watcher.Analysis.create(
+            filename='servicer.py', files=files
+        ).with_state_type('shop.v1.Shop')
+
+        for node in ast.walk(parsed.module):
             match node:
                 case ast.AsyncFunctionDef(name='look'):
                     return implementation_watcher._analyze_method(
-                        node,
-                        state_type='shop.v1.Shop',
-                        imports=imports,
+                        node, analysis=analysis
                     )
 
         raise AssertionError('no method to analyze')
@@ -829,6 +836,79 @@ async def main():
                 ('shop.v1.Shop', str(self.directory / 'shop_servicer.py')),
             ]
         )
+
+    ###################################################################
+    # Followed to the state type however it is reached.
+
+    async def test_a_state_type_reexported_through_another_file(self) -> None:
+        self._write('exports.py', source='from shop.v1.shop_rbt import Shop\n')
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace(
+                'from shop.v1.shop_rbt import Shop',
+                'from exports import Shop',
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = _state_types_and_files(await analyze(application=application))
+
+        self.assertEqual(
+            found,
+            [('shop.v1.Shop', str(self.directory / 'shop_servicer.py'))],
+        )
+
+    async def test_a_changed_reexport_reresolves_its_dependents(self) -> None:
+        """The staleness the `followed` digests exist to close: what a
+        file's servicers say depends on the files resolving them read,
+        however unchanged its own bytes are."""
+        self._write('exports.py', source='from shop.v1.shop_rbt import Shop\n')
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace(
+                'from shop.v1.shop_rbt import Shop',
+                'from exports import Shop',
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        known = await analyze(application=application)
+        self.assertEqual(
+            _state_types_and_files(known),
+            [('shop.v1.Shop', str(self.directory / 'shop_servicer.py'))],
+        )
+
+        # `shop_servicer.py` is untouched; only what `Shop` refers to
+        # changes.
+        self._write(
+            'exports.py',
+            source='from shop.v1.depot_rbt import Depot as Shop\n',
+        )
+
+        found = _state_types_and_files(
+            await analyze(application=application, known=known)
+        )
+
+        self.assertEqual(
+            found,
+            [('shop.v1.Depot', str(self.directory / 'shop_servicer.py'))],
+        )
+
+    async def test_a_circular_import_resolves_to_nothing(self) -> None:
+        self._write('back.py', source='from forth import Shop\n')
+        self._write('forth.py', source='from back import Shop\n')
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace(
+                'from shop.v1.shop_rbt import Shop',
+                'from back import Shop',
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = _state_types_and_files(await analyze(application=application))
+
+        self.assertEqual(found, [])
 
     ###################################################################
     # What it finds no servicer for.
