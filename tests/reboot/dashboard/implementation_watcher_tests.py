@@ -437,6 +437,17 @@ class AnalyzeTest(unittest.TestCase):
             analysis.unsupported, ("Shop.ref('a').restock(request)",)
         )
 
+    async def test_an_unidentified_receiver_is_ambiguous(self) -> None:
+        analysis = await self._analyze(
+            '        await self.shops.restock(context)'
+        )
+        self.assertEqual(
+            [call.method for call in analysis.ambiguous],
+            ['restock'],
+        )
+        self.assertEqual(analysis.calls, ())
+        self.assertEqual(analysis.unsupported, ())
+
     async def test_an_ordinary_assignment_is_not_unsupported(self) -> None:
         analysis = await self._analyze('        total = request.a + request.b')
 
@@ -1014,6 +1025,24 @@ async def main():
 
         self.assertEqual(
             [call.method for call in found[0].methods[0].calls],
+            ['restock'],
+        )
+
+    async def test_the_ambiguous_calls_reach_their_entry(self) -> None:
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace(
+                '    async def look(self, context, request):\n        pass',
+                '    async def look(self, context, request):\n'
+                '        await self.shops.restock(context)',
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = servicers(await analyze(application=application))
+
+        self.assertEqual(
+            [call.method for call in found[0].methods[0].ambiguous],
             ['restock'],
         )
 

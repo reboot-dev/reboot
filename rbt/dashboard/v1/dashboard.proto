@@ -141,6 +141,12 @@ message ServicerInfo {
     // follow, spelled the way the developer wrote it. When this is
     // not empty the calls may be incomplete.
     repeated string unsupported = 4;
+
+    // Represents a call that only looks like a Reboot call. It
+    // hands the context first but the analysis could not identify
+    // the receiver, so the method name is recorded and the state
+    // type is left empty.
+    repeated Call ambiguous = 5;
   }
 
   // The state type it services, spelled as `StateTypeInfo.name`.

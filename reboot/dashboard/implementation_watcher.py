@@ -902,6 +902,11 @@ class Analysis:
     # recorded.
     calls: tuple[ServicerInfo.Method.Call, ...]
 
+    # The calls that only look like Reboot calls, made on receivers
+    # the analysis could not identify. Each records the method name
+    # with an empty state type.
+    ambiguous: tuple[ServicerInfo.Method.Call, ...]
+
     # What was met that the analysis does not follow, spelled the way
     # it was written, so whoever reads the calls can be told they are
     # likely incomplete rather than left to trust them.
@@ -931,6 +936,7 @@ class Analysis:
             state_type=None,
             helpers=frozenset(),
             calls=(),
+            ambiguous=(),
             unsupported=(),
             locals=MappingProxyType({}),
         )
@@ -962,6 +968,11 @@ class Analysis:
         entering and leaving a followed helper."""
         return replace(self, locals=MappingProxyType(dict(locals)))
 
+    def with_ambiguous(self, call: ServicerInfo.Method.Call) -> 'Analysis':
+        """Returns this analysis with one more call that only looks
+        like a Reboot call recorded."""
+        return replace(self, ambiguous=(*self.ambiguous, call))
+
     def with_helper(self, name: str) -> 'Analysis':
         """Returns this analysis with one more helper followed."""
         return replace(self, helpers=self.helpers | {name})
@@ -984,12 +995,13 @@ class Analysis:
 
     def with_method_reset(self) -> 'Analysis':
         """Returns this analysis with the method reset, its calls,
-        unsupported, locals and helpers cleared, ready for the next
-        method."""
+        ambiguous, unsupported, locals and helpers cleared, ready
+        for the next method."""
         return replace(
             self,
             helpers=frozenset(),
             calls=(),
+            ambiguous=(),
             unsupported=(),
             locals=MappingProxyType({}),
         )
@@ -1390,6 +1402,26 @@ async def _evaluate(
                                     analysis=analysis,
                                 )
 
+            if local is None and not (
+                isinstance(receiver, ast.Name) and receiver.id == 'self'
+            ):
+                handed_first, analysis = await _first_argument_is_the_context(
+                    arguments, analysis=analysis
+                )
+                if handed_first:
+                    # It hands the context first, so it looks like a
+                    # Reboot call, but the receiver cannot be
+                    # identified. The method name is worth keeping
+                    # even without the state type.
+                    analysis = analysis.with_ambiguous(
+                        ServicerInfo.Method.Call(
+                            state_type='',
+                            method=attribute,
+                            how=ServicerInfo.Method.Call.How.CALL,
+                        )
+                    )
+                    return None, analysis
+
         case ast.Name(id=str(name)) if name in analysis.locals:
             # `another = account`, holding whatever `account` holds.
             return analysis.locals[name], analysis
@@ -1629,6 +1661,7 @@ async def _analyze_file(filename: str, files: Files) -> Files:
                                     digest=_digest(statement),
                                     calls=analysis.calls,
                                     unsupported=analysis.unsupported,
+                                    ambiguous=analysis.ambiguous,
                                 )
                             )
                             analysis = analysis.with_method_reset()
