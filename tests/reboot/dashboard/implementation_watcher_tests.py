@@ -343,6 +343,25 @@ class AnalyzeTest(unittest.TestCase):
             ['restock', 'close'],
         )
 
+    async def test_a_modifier_passes_the_call_through(self) -> None:
+        analysis = await self._analyze(
+            "        await Shop.ref('a').idempotently('x').restock(context)"
+        )
+        self.assertEqual(
+            [(call.method, call.how) for call in analysis.calls],
+            [('restock', ServicerInfo.Method.Call.How.CALL)],
+        )
+
+    async def test_stacked_modifiers_pass_the_call_through(self) -> None:
+        analysis = await self._analyze(
+            "        shop = Shop.ref('a').per_workflow('x').always()\n"
+            '        await shop.reactively().restock(context)'
+        )
+        self.assertEqual(
+            [call.method for call in analysis.calls],
+            ['restock'],
+        )
+
     async def test_a_call_without_the_context_is_unsupported(self) -> None:
         analysis = await self._analyze(
             "        await Shop.ref('a').restock(request)"

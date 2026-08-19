@@ -784,6 +784,21 @@ def _parse(source: bytes, *, filename: str,
     )
 
 
+# Modifier methods return something the method can still be called
+# on. A call chain passes through them and what comes after one of
+# them names the method.
+MODIFIERS = frozenset(
+    {
+        'idempotently',
+        'per_workflow',
+        'per_iteration',
+        'always',
+        'reactively',
+        'until',
+    }
+)
+
+
 @dataclass(frozen=True, kw_only=True)
 class Reference:
     """A name holding a reference to one of the developer's state
@@ -1066,7 +1081,11 @@ async def _evaluate(expression: ast.expr, *,
             # names the method.
             local, analysis = await _evaluate(receiver, analysis=analysis)
             match local:
-                case Reference(state_type=state_type, how=how):
+                case Reference() as reference:
+                    if attribute in MODIFIERS:
+                        # A modifier. The chain passes through it
+                        # and what comes after names the method.
+                        return reference, analysis
                     handed, analysis = await _first_argument_is_the_context(
                         arguments, analysis=analysis
                     )
@@ -1076,9 +1095,9 @@ async def _evaluate(expression: ast.expr, *,
                     if handed:
                         analysis = analysis.with_call(
                             ServicerInfo.Method.Call(
-                                state_type=state_type,
+                                state_type=reference.state_type,
                                 method=attribute,
-                                how=how,
+                                how=reference.how,
                             )
                         )
                         return None, analysis
