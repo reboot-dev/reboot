@@ -1080,12 +1080,17 @@ async def _evaluate(
             # type.
             return Reference(state_type=analysis.state_type), analysis
 
-        case ast.Call(func=ast.Attribute(value=receiver, attr='ref')):
+        case ast.Call(
+            func=ast.Attribute(value=receiver, attr='ref' | 'forall')
+        ):
             # `Account.ref(id)`, or `rbt.Shop.ref(id)` through a
             # module, the one way to name an existing state -- unless
             # the name refers to no state type, which falls through
             # to be flagged below: a `.ref` on something unresolvable
             # is almost certainly a reference being lost.
+            # `Account.forall(ids)` names many existing states the
+            # way `ref` names one, so a call through it is a call on
+            # each of them.
             path = _path(receiver)
             if path is not None:
                 state_type, analysis = await analysis.imports(

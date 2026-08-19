@@ -401,6 +401,15 @@ class AnalyzeTest(unittest.TestCase):
         )
         self.assertEqual(analysis.unsupported, ())
 
+    async def test_a_call_through_forall(self) -> None:
+        analysis = await self._analyze(
+            '        await Shop.forall(ids).restock(context)'
+        )
+        self.assertEqual(
+            [(call.method, call.how) for call in analysis.calls],
+            [('restock', ServicerInfo.Method.Call.How.CALL)],
+        )
+
     async def test_a_call_without_the_context_is_unsupported(self) -> None:
         analysis = await self._analyze(
             "        await Shop.ref('a').restock(request)"
