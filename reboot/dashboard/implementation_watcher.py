@@ -43,8 +43,6 @@ from reboot.aio.cooperatively import cooperatively
 from reboot.cli.common.watch import file_watcher
 from typing import Optional
 
-GENERATED_SUFFIX = '_rbt'
-
 # Every file the developer might have written a servicer in, which is
 # the rule `rbt generate` and `rbt dev run` both use for source.
 SOURCE_GLOB = '**/*.py'
@@ -62,19 +60,13 @@ def _read(filename: str) -> bytes:
         return file.read()
 
 
-def _imports(
-    module: ast.Module
-) -> tuple[dict[str, tuple[str, str]], list[str]]:
-    """Returns every symbol a file imported -- keyed by the name the
-    file calls it, valued by the module it came from and its name
-    there, so `Account` -> (`bank.v1.account_rbt`, `Account`) -- and
-    beside it every module the file has imported.
+def _imports(module: ast.Module) -> list[str]:
+    """Returns every module a file has imported.
 
-    Symbols come from every import, wherever it is written. One inside
-    an `if` or a `try` binds its name just as one at the top of the
-    file does, and guarding an import is common enough to be worth
-    reading. `ast.walk` yields the shallowest first, so a name bound
-    at the top of the file wins over one bound inside something.
+    Modules come from every import, wherever it is written. One
+    inside an `if` or a `try` imports its module just as one at the
+    top of the file does, and guarding an import is common enough to
+    be worth reading.
 
     Since we cannot tell whether `y` in `from x import y` is a module
     of its own or a name defined in `x`, `x.y` is listed as a module
@@ -82,7 +74,6 @@ def _imports(
     file if a root holds one by that name, so `x.y` naming something
     that is not a module resolves to nothing and is dropped.
     """
-    symbols: dict[str, tuple[str, str]] = {}
     imported_modules: list[str] = []
 
     for node in ast.walk(module):
@@ -96,13 +87,9 @@ def _imports(
             ):
                 imported_modules.append(imported_module)
                 for alias in names:
-                    symbols.setdefault(
-                        alias.asname or alias.name,
-                        (imported_module, alias.name),
-                    )
                     imported_modules.append(f'{imported_module}.{alias.name}')
 
-    return symbols, imported_modules
+    return imported_modules
 
 
 def _resolve(imported_module: str, *, roots: list[str]) -> Optional[str]:
@@ -126,29 +113,41 @@ def _resolve(imported_module: str, *, roots: list[str]) -> Optional[str]:
     return None
 
 
-def _state_type_if_servicer(
-    class_definition: ast.ClassDef, *, symbols: dict[str, tuple[str, str]]
-) -> Optional[str]:
-    """Returns the state type a class services, if it says so.
+def _path(expression: ast.expr) -> Optional[list[str]]:
+    """Returns the dotted name an expression spells -- `rbt.Shop` as
+    `['rbt', 'Shop']` -- and `None` when it does not spell one."""
+    match expression:
+        case ast.Name(id=str(name)):
+            return [name]
+        case ast.Attribute(value=value, attr=str(attribute)):
+            prefix = _path(value)
+            if prefix is not None:
+                return prefix + [attribute]
 
-    A servicer says it by what it inherits: `Account.Servicer`, or
-    `Account.singleton.Servicer` for a singleton.
+    return None
+
+
+def _state_type_if_servicer(
+    class_definition: ast.ClassDef,
+) -> Optional[str]:
+    """Returns the state type a class services, spelled the way the
+    developer wrote it, and `None` when the class services nothing.
+
+    A servicer says it by what it inherits: any dotted name ending
+    in `.Servicer`, such as `Account.Servicer`, `rbt.Shop.Servicer`,
+    or `Account.singleton.Servicer` for a singleton. Which state
+    type the name in front refers to exactly takes type information,
+    so it is recorded as written.
     """
     for base in class_definition.bases:
         match base:
-            case (
-                ast.Attribute(value=ast.Name(id=name), attr='Servicer') |
-                ast.Attribute(
-                    value=ast.
-                    Attribute(value=ast.Name(id=name), attr='singleton'),
-                    attr='Servicer',
-                )
-            ):
-                match symbols.get(name):
-                    case (str(imported_module), str(attribute)
-                         ) if imported_module.endswith(GENERATED_SUFFIX):
-                        package = imported_module.rsplit('.', 1)[0]
-                        return f'{package}.{attribute}'
+            case ast.Attribute(value=value, attr='Servicer'):
+                path = _path(value)
+                if path is None:
+                    continue
+                if len(path) > 1 and path[-1] == 'singleton':
+                    path = path[:-1]
+                return '.'.join(path)
 
     return None
 
@@ -215,14 +214,14 @@ def _parse(source: bytes, *, digest: bytes, filename: str) -> Optional[File]:
     # First, and on its own: `ast.walk` is breadth-first, so a
     # top-level class comes out before an import nested in a `try`,
     # and every name must be known before any class is resolved.
-    symbols, imported_modules = _imports(module)
+    imported_modules = _imports(module)
 
     servicers = []
 
     for node in ast.walk(module):
         match node:
             case ast.ClassDef():
-                state_type = _state_type_if_servicer(node, symbols=symbols)
+                state_type = _state_type_if_servicer(node)
                 if state_type is not None:
                     servicers.append(
                         ServicerInfo(
