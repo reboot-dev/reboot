@@ -835,6 +835,15 @@ class Context:
 Local = Reference | Context
 
 
+@dataclass(frozen=True, kw_only=True)
+class Constructed:
+    """What a constructor call evaluates to. It is a pair of a
+    reference to the new state and the method's response."""
+
+    # The state type made, spelled as `StateTypeInfo.name`.
+    state_type: str
+
+
 def _statements(node: ast.AST) -> Iterator[ast.stmt]:
     """Returns every statement under a node, in the order written.
 
@@ -1047,13 +1056,15 @@ async def _first_argument_is_the_context(
     return False, analysis
 
 
-async def _evaluate(expression: ast.expr, *,
-                    analysis: Analysis) -> tuple[Optional[Local], Analysis]:
+async def _evaluate(
+    expression: ast.expr, *, analysis: Analysis
+) -> tuple[Optional[Local | Constructed], Analysis]:
     """Returns what an expression evaluates to, in the only terms the
-    analysis knows -- a reference to a state type, or the context --
-    and the analysis carried forward. `None` for the value, which is
-    most expressions, means neither, so nothing can be said about a
-    name it is assigned to or a call made on it.
+    analysis knows. Those are a reference to a state type, the
+    context, and what a constructor call makes. `None` for the
+    value, which is most expressions, means none of those, so
+    nothing can be said about a name it is assigned to or a call
+    made on it.
     """
     match expression:
         case ast.Await(value=value):
@@ -1086,6 +1097,31 @@ async def _evaluate(expression: ast.expr, *,
             func=ast.Attribute(value=receiver, attr=str(attribute)),
             args=arguments,
         ):
+            # A constructor is a method called on the state type
+            # itself with the context as the first argument. It
+            # makes the state and returns a reference to it along
+            # with the response.
+            path = _path(receiver)
+            if path is not None and len(arguments) > 0:
+                state_type, analysis = await analysis.imports(
+                ).try_resolve_state_type(path, analysis=analysis)
+                if state_type is not None:
+                    handed, analysis = await _first_argument_is_the_context(
+                        arguments, analysis=analysis
+                    )
+                    if handed:
+                        analysis = analysis.with_call(
+                            ServicerInfo.Method.Call(
+                                state_type=state_type,
+                                method=attribute,
+                                how=ServicerInfo.Method.Call.How.CONSTRUCT,
+                            )
+                        )
+                        return (
+                            Constructed(state_type=state_type),
+                            analysis,
+                        )
+
             # A call on a reference is a Reboot call. The reference
             # says which state type is called and the attribute
             # names the method.
@@ -1166,10 +1202,31 @@ async def _assign(
             targets = [assign.target]
             value = None
 
-    local: Optional[Local] = None
+    evaluated: Optional[Local | Constructed] = None
 
     if value is not None:
-        local, analysis = await _evaluate(value, analysis=analysis)
+        evaluated, analysis = await _evaluate(value, analysis=analysis)
+
+    match targets, evaluated:
+        case [ast.Tuple(elts=[ast.Name(id=str(first)), *rest])
+             ], Constructed(state_type=state_type):
+            # `shop, response = await Shop.open(context, 'a')`
+            # binds the first name to a reference to the new state.
+            # The other names get the response and are not tracked.
+            analysis = analysis.with_local(
+                first, Reference(state_type=state_type)
+            )
+            for element in rest:
+                for node in ast.walk(element):
+                    match node:
+                        case ast.Name(id=str(name)):
+                            analysis = analysis.with_local(name, None)
+            return analysis
+
+    # A name cannot be bound to the pair itself.
+    local: Optional[Local] = (
+        None if isinstance(evaluated, Constructed) else evaluated
+    )
 
     for target in targets:
         match target:

@@ -274,9 +274,9 @@ class AnalyzeTest(unittest.TestCase):
     async def test_a_state_type_used_some_other_way_is_unsupported(
         self
     ) -> None:
-        analysis = await self._analyze('        shop = Shop.open(context)')
+        analysis = await self._analyze('        shop = Shop.open(request)')
 
-        self.assertEqual(analysis.unsupported, ('Shop.open(context)',))
+        self.assertEqual(analysis.unsupported, ('Shop.open(request)',))
 
     async def test_the_context_reaching_an_unfollowed_call_is_unsupported(
         self
@@ -379,6 +379,27 @@ class AnalyzeTest(unittest.TestCase):
             [(call.method, call.how) for call in analysis.calls],
             [('restock', ServicerInfo.Method.Call.How.SPAWN)],
         )
+
+    async def test_a_constructor(self) -> None:
+        analysis = await self._analyze("        await Shop.open(context, 'a')")
+        self.assertEqual(
+            [(call.method, call.how) for call in analysis.calls],
+            [('open', ServicerInfo.Method.Call.How.CONSTRUCT)],
+        )
+
+    async def test_a_constructor_unpacked_binds_a_reference(self) -> None:
+        analysis = await self._analyze(
+            "        shop, _ = await Shop.open(context, 'a')\n"
+            '        await shop.restock(context)'
+        )
+        self.assertEqual(
+            [(call.method, call.how) for call in analysis.calls],
+            [
+                ('open', ServicerInfo.Method.Call.How.CONSTRUCT),
+                ('restock', ServicerInfo.Method.Call.How.CALL),
+            ],
+        )
+        self.assertEqual(analysis.unsupported, ())
 
     async def test_a_call_without_the_context_is_unsupported(self) -> None:
         analysis = await self._analyze(
