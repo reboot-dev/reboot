@@ -86,6 +86,13 @@ class Imports:
         # Its name there, which the local name may differ from.
         name: str
 
+    @dataclass(frozen=True, kw_only=True)
+    class Module:
+        """What `import x [as y]` binds a name to: module `x`
+        itself."""
+
+        module: str
+
     # By the name the file calls it. A top-level `Alias = Name` binds
     # the alias to whatever `Name` was bound to.
     bindings: Mapping[str, 'Import']
@@ -106,6 +113,12 @@ class Imports:
         match self.bindings.get(head):
             case Imports.Symbol(module=module, name=name) if not rest:
                 return module, name
+
+            case Imports.Module(module=module) if rest:
+                # A module alone is never more than a module, so a
+                # name bound to one refers to something only with
+                # more components.
+                return _join(module, *rest[:-1]), rest[-1]
 
         return None
 
@@ -157,7 +170,7 @@ class Imports:
 
 
 # What one import bound a name to.
-Import = Imports.Symbol
+Import = Imports.Symbol | Imports.Module
 
 
 def _imports(module: ast.Module) -> Imports:
@@ -175,7 +188,20 @@ def _imports(module: ast.Module) -> Imports:
     for node in ast.walk(module):
         match node:
             case ast.Import(names=names):
-                may_load.extend(alias.name for alias in names)
+                for alias in names:
+                    may_load.append(alias.name)
+                    if alias.asname is not None:
+                        bindings.setdefault(
+                            alias.asname,
+                            Imports.Module(module=alias.name),
+                        )
+                    else:
+                        # `import a.b` binds `a`, and `a.b.Shop` is
+                        # reached from it a component at a time.
+                        first = alias.name.split('.', 1)[0]
+                        bindings.setdefault(
+                            first, Imports.Module(module=first)
+                        )
 
             case ast.ImportFrom(module=str(from_module), level=0, names=names):
                 may_load.append(from_module)
