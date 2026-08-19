@@ -6,6 +6,10 @@ py_test(
     timeout = "long",
     srcs = [":agent_tests.py"],
     main = "agent_tests.py",
+    # This exercises the `pydantic-ai` integration against a mocked
+    # model (`FunctionModel`) on the in-process `Reboot()` test
+    # harness; neither has platform-dependent behavior.
+    tags = ["platform-independent"],
     deps = [
         requirement("mcp"),
         requirement("pydantic-ai-slim"),
