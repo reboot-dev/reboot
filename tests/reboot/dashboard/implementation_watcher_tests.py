@@ -973,6 +973,24 @@ async def main():
             ],
         )
 
+    async def test_a_state_type_star_imported(self) -> None:
+        self._write('exports.py', source='from shop.v1.shop_rbt import Shop\n')
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace(
+                'from shop.v1.shop_rbt import Shop',
+                'from exports import *',
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = _state_types_and_files(await analyze(application=application))
+
+        self.assertEqual(
+            found,
+            [('shop.v1.Shop', str(self.directory / 'shop_servicer.py'))],
+        )
+
     async def test_a_changed_reexport_reresolves_its_dependents(self) -> None:
         """The staleness the `followed` digests exist to close: what a
         file's servicers say depends on the files resolving them read,

@@ -98,6 +98,10 @@ class Imports:
     # the alias to whatever `Name` was bound to.
     bindings: Mapping[str, 'Import']
 
+    # The modules star-imported -- which bind no name, and so are
+    # searched, last to first, when no binding answers.
+    stars: tuple[str, ...]
+
     # Every module these imports may have Python load: `import a.b.c`
     # loads `a.b.c`; `from x import y` loads `x`, and `x.y` too when
     # `y` is a module of its own; a star import loads its module.
@@ -108,7 +112,9 @@ class Imports:
     def try_resolve_module(self,
                            path: Sequence[str]) -> Optional[tuple[str, str]]:
         """Returns the module a dotted name refers into and the name
-        it refers to there, and `None` when no binding answers."""
+        it refers to there, and `None` when no binding answers --
+        which leaves the star imports, whose files this cannot read.
+        """
         head, *rest = path
 
         match self.bindings.get(head):
@@ -148,6 +154,24 @@ class Imports:
         resolved = self.try_resolve_module(path)
 
         if resolved is None:
+            # The name may be any star-imported module's. The last
+            # star import wins in Python, so they are searched last
+            # to first -- each file's own imports answering for the
+            # names it may define.
+            for star in reversed(self.stars):
+                found, files = analysis.files.lookup_or_parse_module(
+                    star, visiting=visiting
+                )
+                if found is None:
+                    continue
+                analysis = analysis.with_dependency(found, files=files)
+                state_type, analysis = found.imports.try_resolve_state_type(
+                    path,
+                    analysis=analysis,
+                    visiting=visiting | {found.filename},
+                )
+                if state_type is not None:
+                    return state_type, analysis
             return None, analysis
 
         module, attribute = resolved
@@ -221,6 +245,7 @@ def _imports(
     import is relative to; without it relative imports bind nothing.
     """
     bindings: dict[str, Import] = {}
+    stars: list[str] = []
     may_load: list[str] = []
 
     for node in ast.walk(module):
@@ -283,6 +308,9 @@ def _imports(
                 may_load.append(base)
 
                 for alias in names:
+                    if alias.name == '*':
+                        stars.append(base)
+                        continue
                     bindings.setdefault(
                         alias.asname or alias.name,
                         Imports.Symbol(module=base, name=alias.name),
@@ -310,6 +338,7 @@ def _imports(
 
     return Imports(
         bindings=MappingProxyType(bindings),
+        stars=tuple(stars),
         may_load=tuple(may_load),
     )
 
