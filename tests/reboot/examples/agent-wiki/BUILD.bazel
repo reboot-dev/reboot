@@ -30,10 +30,11 @@ osx_env.update({
 
 sh_test_in_working_directory(
     name = "test",
-    # MacOS runners need the full Bazel "large" budget because
-    # `uv sync` cold-fetches the locked dependency tree (and
-    # possibly a managed Python interpreter) into the test
-    # sandbox, which exceeds the default "medium" 300s timeout.
+    # This example depends on the `pydantic-ai` stack on top of
+    # `reboot`, so a cold `uv sync` fetches a much bigger dependency
+    # tree (and possibly a managed Python interpreter) into the test
+    # sandbox than our other example tests do, which on a slow runner
+    # exceeds the default "medium" 300s timeout.
     size = "large",
     data = test_packages + [
         ":test_packages",
@@ -51,7 +52,16 @@ sh_test_in_working_directory(
     # In all our example tests, we initiate LocalEnvoy on the
     # default secure port 9991. We require 'exclusive' to not run
     # multiple tests, that use the same port, concurrently.
-    tags = ["exclusive"],
+    #
+    # The `uv sync`, `rbt generate`, `pytest` and `rbt dev run
+    # --terminate-after-health-check` steps are the same ones that
+    # `//tests/reboot/examples/chat-room:test` runs, and that test
+    # keeps running on MacOS; only the application code in between
+    # differs, so this adds no MacOS-specific coverage.
+    tags = [
+        "exclusive",
+        "platform-independent",
+    ],
     working_directory = "reboot/examples/agent-wiki/",
 )
 
@@ -79,5 +89,12 @@ sh_test_in_working_directory(
     ],
     env = frontend_env,
     script = "frontend/.tests/type_check.sh",
+    # `tsc` and the frontend bundler produce the same result on MacOS
+    # as on Linux, and the `rbt generate` and `npm install` steps on
+    # the way there are exercised on MacOS by
+    # `//tests/reboot/examples/chat-room:test` and
+    # `//tests/reboot/examples/chat-room-nodejs:test`, which keep
+    # running there.
+    tags = ["platform-independent"],
     working_directory = "reboot/examples/agent-wiki/",
 )

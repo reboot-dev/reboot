@@ -351,10 +351,19 @@ jobs:
         QUERY='tests(//tests/...)'
 
         # 2) Exclude these tags by default for MacOS.
+        #
+        # A test carries `platform-independent` when it exercises no
+        # behavior that could differ between Linux and MacOS, or when
+        # whatever platform-dependent behavior it does exercise is also
+        # exercised by a `medium`-or-smaller test that still runs here.
+        # Such a test spends time on our slowest and most expensive
+        # runners for signal that the Linux jobs — which keep running
+        # every test — already give us.
         QUERY="$QUERY \
         except attr(\"tags\",\"requires-docker\",//tests/...) \
         except attr(\"tags\",\"macos_not_supported\",//tests/...) \
         except attr(\"tags\",\"requires-linux-x86\",//tests/...) \
+        except attr(\"tags\",\"platform-independent\",//tests/...) \
         except attr(\"tags\",\"manual\",//tests/...)"
 
         # 3) If this is a PR labelled "reboot-release", also drop flaky
