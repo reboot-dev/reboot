@@ -792,6 +792,14 @@ async def watch(context: WorkflowContext, *, application: str) -> None:
             # made during an iteration resolves `event` rather than
             # arriving while nothing is listening. A watch is
             # consumed by one event, so it is re-entered for each.
+            #
+            # The arming is also why a save landing mid-iteration is
+            # safe. The iteration may record a torn snapshot -- one
+            # file read before the save and another after -- but the
+            # save's event is already waiting, so the next iteration
+            # begins at once, and any file kept against a stale
+            # dependency digest fails its check there and is analyzed
+            # again.
             async with watcher.watch(globs) as event:
                 known = await analyze(
                     application=application, roots=roots, known=known
