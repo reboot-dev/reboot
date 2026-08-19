@@ -53,16 +53,18 @@ def _schemas_of(models: list[type[Model]]) -> tuple[dict, dict]:
 
 
 def _models_of(type_obj) -> list[type[Model]]:
-    """Every model one state type mentions, state first."""
+    """Every model one state type mentions, state first.
+
+    A `UI` method draws no method row, but the model it takes is one
+    the developer wrote and is described like any other.
+    """
     models: list[type[Model]] = [type_obj.state]
 
     for spec in type_obj.methods.values():
-        # A `UI` method has no RPC to call, so there is nothing to
-        # put in a method row for it.
-        if not isinstance(spec, MethodModel):
-            continue
         if spec.request is not None:
             models.append(spec.request)
+        if not isinstance(spec, MethodModel):
+            continue
         if spec.response is not None:
             models.append(spec.response)
         models.extend(spec.errors)

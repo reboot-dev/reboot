@@ -3,6 +3,7 @@ import { RebootClientProvider } from "@reboot-dev/reboot-react";
 import { Presence } from "@reboot-dev/reboot-std-react/presence";
 import {
   FC,
+  Fragment,
   StrictMode,
   useCallback,
   useEffect,
@@ -12,10 +13,33 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
+import {
+  HashRouter,
+  Link,
+  NavLink,
+  Navigate,
+  Route,
+  Routes,
+  useParams,
+} from "react-router";
 import { v4 as uuidv4 } from "uuid";
 import { API_ID, PREFERENCES_ID, PRESENCE_ID } from "./constants";
-import type { Field, Method, Ref, StateType } from "./description";
-import { fieldsOf, parseDescription } from "./description";
+import type {
+  DataObject,
+  Field,
+  Method,
+  Ref,
+  Referrer,
+  StateType,
+} from "./description";
+import {
+  dataObjects,
+  fieldsOf,
+  namespaceOf,
+  parseDescription,
+  typeNameOf,
+} from "./description";
 
 // One subscriber per tab, for as long as the tab is open.
 const SUBSCRIBER_ID = uuidv4();
@@ -45,6 +69,10 @@ const DEFINITIONS: Record<string, string> = {
     "A durable data type. Each instance, named by an id, has fields " +
     "that Reboot persists for you. Methods are the way to read and " +
     "change them. You can have as many of these as you want.",
+  "data type":
+    "A type the developer wrote that Reboot does not persist: what a " +
+    "method takes, returns or raises, and anything those hold. It " +
+    "exists while a call is in flight.",
 };
 
 // The gap between a pill and its definition, matching the offset
@@ -140,24 +168,71 @@ const Description: FC<{ className: string; text: string }> = ({
   );
 };
 
-// A state type's namespace is its proto package: `bank.v1.Account`
-// lives in `bank.v1`, which is the developer's `api/bank/v1/`.
-const namespaceOf = (name: string): string =>
-  name.slice(0, name.lastIndexOf("."));
-
-const typeNameOf = (name: string): string =>
-  name.slice(name.lastIndexOf(".") + 1);
-
 // Standard-library types an application uses are real and worth being
 // able to inspect, but they aren't what the developer wrote, so they
 // start collapsed.
 const isStandardLibrary = (namespace: string): boolean =>
   namespace.startsWith("rbt.");
 
-const Namespace: FC<{ namespace: string; types: StateType[] }> = ({
-  namespace,
-  types,
-}) => {
+// The two indexes of the same API: the state types it declares, and
+// the types those declare in turn.
+const PAGES = ["state", "data"] as const;
+
+type Page = typeof PAGES[number];
+
+const PAGE_NAMES: Record<Page, string> = { state: "State", data: "Data" };
+
+// Where a type is addressed, on whichever page describes it. It is
+// both the route a link goes to and the `id` of the section it lands
+// on, so the two can never disagree.
+const pathOf = (page: Page, id: string): string => `/${page}/${id}`;
+
+// `NavLink` marks the page being read for us, including while an id
+// within it is addressed, and writes the `aria-current` that says so.
+const PageSelector: FC<{ counts: Record<Page, number> }> = ({ counts }) => (
+  <div className="page-selector">
+    {PAGES.map((name) => (
+      <NavLink
+        className={({ isActive }) =>
+          isActive ? "page-link current" : "page-link"
+        }
+        to={`/${name}`}
+        key={name}
+      >
+        <span className="nav-name">{PAGE_NAMES[name]}</span>
+        <span className="nav-count">{counts[name]}</span>
+      </NavLink>
+    ))}
+  </div>
+);
+
+// How wide the sidebar is until somebody drags it, and how far it
+// can be dragged. The minimum is what a namespace row needs to stay
+// readable; the maximum leaves the document its own half of a small
+// laptop screen. Plain numbers, which `Panel` reads as pixels.
+const NAV_WIDTH = { default: 250, min: 170, max: 520 };
+
+// The sidebar is the first panel of the shell, so that the border
+// between it and the document is a `Separator`: dragging it, keeping
+// it within bounds, moving it by keyboard and telling assistive
+// technology what it does are all that library's, not ours.
+
+// One row of the sidebar, whichever page it is indexing. Both pages
+// reduce to this before anything is drawn, so the sidebar is written
+// once rather than once per page.
+interface NavEntry {
+  id: string;
+  name: string;
+  namespace: string;
+  count: string;
+}
+
+const Namespace: FC<{
+  namespace: string;
+  entries: NavEntry[];
+  page: Page;
+  noun: string;
+}> = ({ namespace, entries, page, noun }) => {
   const [open, setOpen] = useState(!isStandardLibrary(namespace));
 
   return (
@@ -167,19 +242,19 @@ const Namespace: FC<{ namespace: string; types: StateType[] }> = ({
         onClick={() => setOpen(!open)}
         aria-expanded={open}
       >
-        <span className="caret">{open ? "▾" : "▸"}</span>
-        <span className="namespace-name">{namespace}</span>
-        <span className="nav-count">{countOf(types.length, "state type")}</span>
+        <span className="nav-name namespace-name">
+          <span className="caret">{open ? "▾" : "▸"}</span>
+          {namespace}
+        </span>
+        <span className="nav-count">{countOf(entries.length, noun)}</span>
       </button>
       {open && (
         <div className="namespace-types">
-          {types.map((stateType) => (
-            <a href={`#${stateType.name}`} key={stateType.name}>
-              <span className="nav-name">{typeNameOf(stateType.name)}</span>
-              <span className="nav-count">
-                {countOf(stateType.methods.length, "method")}
-              </span>
-            </a>
+          {entries.map((entry) => (
+            <Link to={pathOf(page, entry.id)} key={entry.id}>
+              <span className="nav-name">{entry.name}</span>
+              <span className="nav-count">{entry.count}</span>
+            </Link>
           ))}
         </div>
       )}
@@ -187,47 +262,137 @@ const Namespace: FC<{ namespace: string; types: StateType[] }> = ({
   );
 };
 
-// A type's fields, and the fields of any type they hold. Nesting is
-// what this page is for: a field whose type is another type is not a
-// dead end, it opens.
-const Fields: FC<{ fields: Field[]; depth?: number }> = ({
-  fields,
-  depth = 0,
-}) => (
-  <div className={depth === 0 ? "fields" : "fields nested"}>
-    {fields.map((field) => (
-      <div className="field-group" key={field.name}>
-        <div className="field">
-          <span className="field-name">{field.name}</span>
-          <span className="field-type">
-            {field.type}
-            {field.optional && <span className="optional">?</span>}
-          </span>
+// Grouped by the namespace each belongs to, the developer's own
+// first: the standard library is theirs to use but not theirs to
+// read.
+const byNamespace = (
+  entries: NavEntry[]
+): { namespace: string; entries: NavEntry[] }[] => {
+  const grouped = new Map<string, NavEntry[]>();
+  for (const entry of entries) {
+    const held = grouped.get(entry.namespace);
+    if (held === undefined) {
+      grouped.set(entry.namespace, [entry]);
+    } else {
+      held.push(entry);
+    }
+  }
+  return [...grouped.entries()]
+    .map(([namespace, entries]) => ({ namespace, entries }))
+    .sort((a, b) => {
+      const standard =
+        Number(isStandardLibrary(a.namespace)) -
+        Number(isStandardLibrary(b.namespace));
+      return standard !== 0 ? standard : a.namespace.localeCompare(b.namespace);
+    });
+};
+
+// A type's fields, one level deep, written the way its author would
+// write the type. A field whose type is another of the developer's
+// types names it and links to it rather than opening it here: the
+// same type is written out once, on the data page, and everything
+// that holds it points there.
+//
+// The `?` goes on the name rather than the type, which is where
+// TypeScript puts it and where anyone reading this shape expects it.
+const Fields: FC<{ fields: Field[] }> = ({ fields }) => (
+  <pre className="type-block">
+    <code>
+      {"{\n"}
+      {fields.map((field) => (
+        <Fragment key={field.name}>
+          {"  "}
+          <span className="key">{field.name}</span>
+          {field.optional && <span className="optional">?</span>}
+          {": "}
+          <TypeName type={field.type} link={field.link} />
+          {";"}
           {field.description !== undefined && (
-            <span className="field-description">{field.description}</span>
+            <span className="comment">{` // ${field.description}`}</span>
           )}
-        </div>
-        {field.children.length > 0 && (
-          <Fields fields={field.children} depth={depth + 1} />
-        )}
-      </div>
-    ))}
-  </div>
+          {"\n"}
+        </Fragment>
+      ))}
+      {"}"}
+    </code>
+  </pre>
 );
 
-// A request, response or error, named and opened.
-const TypeOf: FC<{ stateType: StateType; label: string; type: Ref }> = ({
-  stateType,
-  label,
-  type,
-}) => (
-  <div className="type">
-    <div className="type-name">
-      {label} <code>{type.$ref.replace("#/$defs/", "")}</code>
-    </div>
-    <Fields fields={fieldsOf(stateType, type)} />
-  </div>
+// A type as it is written in a row: a link when this dashboard has
+// something to show for it, and plain text when it does not, so that
+// `string` never looks clickable.
+const TypeName: FC<{ type: string; link?: string }> = ({ type, link }) =>
+  link === undefined ? (
+    <>{type}</>
+  ) : (
+    <Link className="type-link" to={pathOf("data", link)}>
+      {type}
+    </Link>
+  );
+
+// The keys a request or response carries, one level deep. A key
+// whose type is another of the developer's types names that type and
+// links to it rather than opening it here, so a signature stays one
+// line however deep what it carries goes.
+const Keys: FC<{ fields: Field[] }> = ({ fields }) => (
+  <>
+    {"{ "}
+    {fields.map((field, index) => (
+      <Fragment key={field.name}>
+        {index > 0 && ", "}
+        <span className="key">{field.name}</span>
+        {": "}
+        <TypeName type={field.type} link={field.link} />
+        {field.optional && <span className="optional">?</span>}
+      </Fragment>
+    ))}
+    {" }"}
+  </>
 );
+
+// What a method takes and what it gives back, as one line. The
+// errors go under it rather than in it: they are what a call can do
+// instead of returning, not part of what it returns.
+const Signature: FC<{ stateType: StateType; method: Method }> = ({
+  stateType,
+  method,
+}) => {
+  const namespace = namespaceOf(stateType.name);
+  const takes =
+    method.request === undefined ? [] : fieldsOf(stateType, method.request);
+  const returns =
+    method.response === undefined ? [] : fieldsOf(stateType, method.response);
+
+  return (
+    <div className="method-signature">
+      <div>
+        {"("}
+        {takes.length > 0 && <Keys fields={takes} />}
+        {") "}
+        <span className="arrow">→</span>{" "}
+        {returns.length > 0 ? (
+          <Keys fields={returns} />
+        ) : (
+          <span className="nothing">nothing</span>
+        )}
+      </div>
+      {method.errors.length > 0 && (
+        <div className="errors">
+          {"raises "}
+          {method.errors.map((error, index) => {
+            const name = error.$ref.replace("#/$defs/", "");
+            return (
+              <Fragment key={error.$ref}>
+                {index > 0 && ", "}
+                <TypeName type={name} link={`${namespace}.${name}`} />
+              </Fragment>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const Method: FC<{ stateType: StateType; method: Method }> = ({
   stateType,
@@ -276,34 +441,7 @@ const Method: FC<{ stateType: StateType; method: Method }> = ({
               text={method.description}
             />
           )}
-          <div className="method-types">
-            {method.request !== undefined ? (
-              <TypeOf
-                stateType={stateType}
-                label="takes"
-                type={method.request}
-              />
-            ) : (
-              <div className="type empty">takes nothing</div>
-            )}
-            {method.response !== undefined ? (
-              <TypeOf
-                stateType={stateType}
-                label="returns"
-                type={method.response}
-              />
-            ) : (
-              <div className="type empty">returns nothing</div>
-            )}
-            {method.errors.map((error) => (
-              <TypeOf
-                stateType={stateType}
-                label="raises"
-                type={error}
-                key={error.$ref}
-              />
-            ))}
-          </div>
+          <Signature stateType={stateType} method={method} />
         </div>
       </div>
     </div>
@@ -386,7 +524,7 @@ const StateType: FC<{
     <section
       ref={section}
       className={expanded ? "state-type is-expanded" : "state-type"}
-      id={stateType.name}
+      id={pathOf("state", stateType.name)}
     >
       <div>
         <Pill
@@ -398,6 +536,7 @@ const StateType: FC<{
       <div className="state-type-head">
         <div className="state-type-heading">
           <h2>{typeNameOf(stateType.name)}</h2>
+          <Anchor page="state" id={stateType.name} />
           <span className="summary-line">
             {countOf(fields.length, "field")} ·{" "}
             {countOf(stateType.methods.length, "method")}
@@ -407,7 +546,7 @@ const StateType: FC<{
           className="expand-button"
           onClick={onToggle}
           aria-expanded={expanded}
-          aria-controls={stateType.name}
+          aria-controls={pathOf("state", stateType.name)}
         >
           {/* Down to open, up to close: the caret points the way the
               detail is about to move. */}
@@ -457,10 +596,109 @@ const Banner: FC<{ suppressed: boolean; onToggle: () => void }> = ({
   </div>
 );
 
+// A link to the heading it sits beside, so that a type can be sent
+// to somebody rather than described over their shoulder. Clicking it
+// puts the address in the URL bar, which is where the reader will
+// copy it from.
+//
+// Hidden until the heading is hovered or it is tabbed to: it is an
+// affordance rather than something to read, and a column of headings
+// each trailing a `#` reads as punctuation.
+const Anchor: FC<{ page: Page; id: string }> = ({ page, id }) => (
+  <Link className="anchor" to={pathOf(page, id)} aria-label={`Link to ${id}`}>
+    #
+  </Link>
+);
+
+// One of the developer's types, on the data page. Always open: a
+// type shown one level deep is short enough that hiding it would
+// cost more than it saves.
+const DataObjectCard: FC<{
+  object: DataObject;
+  pageOf: (id: string) => Page;
+}> = ({ object, pageOf }) => (
+  <section className="state-type" id={pathOf("data", object.id)}>
+    <div>
+      <Pill
+        className="eyebrow"
+        label="data type"
+        meaning={DEFINITIONS["data type"]}
+      />
+    </div>
+    <div className="state-type-head">
+      <div className="state-type-heading">
+        <h2>{object.name}</h2>
+        <Anchor page="data" id={object.id} />
+        <span className="summary-line">
+          {countOf(object.fields.length, "field")}
+        </span>
+      </div>
+    </div>
+    <div className="file">{object.file}</div>
+    {object.description !== undefined && (
+      <Description
+        className="state-type-description"
+        text={object.description}
+      />
+    )}
+
+    <div className="eyebrow section">fields</div>
+    {object.fields.length === 0 ? (
+      <div className="empty">No fields.</div>
+    ) : (
+      <Fields fields={object.fields} />
+    )}
+
+    <div className="eyebrow section">used by</div>
+    {object.referrers.length === 0 ? (
+      <div className="empty">
+        Nothing holds this type. It is declared but unused.
+      </div>
+    ) : (
+      <div className="referrers">
+        {object.referrers.map((referrer: Referrer) => (
+          <Link
+            className="referrer"
+            to={pathOf(pageOf(referrer.id), referrer.id)}
+            key={referrer.label}
+          >
+            {referrer.label}
+          </Link>
+        ))}
+      </div>
+    )}
+  </section>
+);
+
 const Overview: FC<{
+  page: Page;
+  navWidth: number;
+  onNavResizing: (width: number) => void;
+  onNavResized: () => void;
   isExpanded: (name: string) => boolean;
   onToggle: (name: string) => void;
-}> = ({ isExpanded, onToggle }) => {
+}> = ({
+  page,
+  navWidth,
+  onNavResizing,
+  onNavResized,
+  isExpanded,
+  onToggle,
+}) => {
+  // `defaultSize` is read once, when the panel mounts, and the width
+  // the developer left is read from the application after that. So
+  // the panel is told again when it arrives, rather than mounted a
+  // second time, which would take the page's scroll with it.
+  const navPanel = usePanelRef();
+
+  useEffect(() => {
+    navPanel.current?.resize(navWidth);
+    // Only when the stored width changes, not while it is being
+    // dragged: the drag is already moving the panel.
+  }, [navWidth, navPanel]);
+
+  const { id: target } = useParams();
+
   // The dashboard's own state: what it read of the developer's API
   // files. Nothing here reaches the application, so the application
   // does not have to exist.
@@ -494,30 +732,44 @@ const Overview: FC<{
   // typing, and saying so beats showing nothing.
   const error = response?.error ?? "";
 
-  const namespaces = useMemo(() => {
-    const byNamespace = new Map<string, StateType[]>();
-    for (const stateType of stateTypes) {
-      const namespace = namespaceOf(stateType.name);
-      const types = byNamespace.get(namespace);
-      if (types === undefined) {
-        byNamespace.set(namespace, [stateType]);
-      } else {
-        types.push(stateType);
-      }
-    }
-    // The developer's own namespaces first; the standard library is
-    // theirs to use but not theirs to read.
-    return [...byNamespace.entries()]
-      .map(([namespace, types]) => ({ namespace, types }))
-      .sort((a, b) => {
-        const standard =
-          Number(isStandardLibrary(a.namespace)) -
-          Number(isStandardLibrary(b.namespace));
-        return standard !== 0
-          ? standard
-          : a.namespace.localeCompare(b.namespace);
-      });
+  const objects = useMemo(() => dataObjects(stateTypes), [stateTypes]);
+
+  // Which page holds a given id, so that a referrer points at the
+  // page that has something to show for it.
+  const pageOf = useMemo(() => {
+    const states = new Set(stateTypes.map((stateType) => stateType.name));
+    return (id: string): Page => (states.has(id) ? "state" : "data");
   }, [stateTypes]);
+
+  const entries: NavEntry[] = useMemo(
+    () =>
+      page === "state"
+        ? stateTypes.map((stateType) => ({
+            id: stateType.name,
+            name: typeNameOf(stateType.name),
+            namespace: namespaceOf(stateType.name),
+            count: countOf(stateType.methods.length, "method"),
+          }))
+        : objects.map((object) => ({
+            id: object.id,
+            name: object.name,
+            namespace: object.namespace,
+            count: countOf(object.fields.length, "field"),
+          })),
+    [page, stateTypes, objects]
+  );
+
+  const namespaces = useMemo(() => byNamespace(entries), [entries]);
+
+  // The browser scrolls to a hash it can find, and cannot find one on
+  // a page that was not showing when the hash changed. Once the page
+  // asked for has rendered, go there.
+  useEffect(() => {
+    if (target === undefined) {
+      return;
+    }
+    document.getElementById(pathOf(page, target))?.scrollIntoView();
+  }, [page, target, stateTypes, objects]);
 
   // Only before anything has ever been read; afterwards the last
   // shape is shown instead.
@@ -543,33 +795,85 @@ const Overview: FC<{
     );
   }
 
+  const counts: Record<Page, number> = {
+    state: stateTypes.length,
+    data: objects.length,
+  };
+
   return (
-    <div className="shell">
-      <nav>
-        <div className="eyebrow">namespaces</div>
-        {namespaces.map(({ namespace, types }) => (
-          <Namespace namespace={namespace} types={types} key={namespace} />
-        ))}
-      </nav>
-      <div className="pane">
-        <header>
-          <div className="eyebrow">application domain</div>
-          <h1>
-            {stateTypes.length} state types in {namespaces.length}{" "}
-            {namespaces.length === 1 ? "namespace" : "namespaces"}
-          </h1>
-        </header>
-        {error && <div className="error">{error}</div>}
-        {stateTypes.map((stateType) => (
-          <StateType
-            stateType={stateType}
-            expanded={isExpanded(stateType.name)}
-            onToggle={() => onToggle(stateType.name)}
-            key={stateType.name}
-          />
-        ))}
-      </div>
-    </div>
+    <Group
+      className="shell"
+      orientation="horizontal"
+      // Only a drag or a resize key, so that mounting with the stored
+      // width does not write it straight back.
+      onLayoutChanged={(_layout, { isUserInteraction }) => {
+        if (isUserInteraction) {
+          onNavResized();
+        }
+      }}
+    >
+      <Panel
+        className="nav-panel"
+        panelRef={navPanel}
+        defaultSize={navWidth}
+        minSize={NAV_WIDTH.min}
+        maxSize={NAV_WIDTH.max}
+        onResize={({ inPixels }) => onNavResizing(Math.round(inPixels))}
+      >
+        <nav>
+          <PageSelector counts={counts} />
+          <div className="eyebrow">namespaces</div>
+          {namespaces.map(({ namespace, entries }) => (
+            <Namespace
+              namespace={namespace}
+              page={page}
+              noun={page === "state" ? "state type" : "data type"}
+              entries={entries}
+              key={namespace}
+            />
+          ))}
+        </nav>
+      </Panel>
+      <Separator className="nav-resizer" />
+      <Panel className="pane-panel">
+        <div className="pane">
+          <header>
+            <div className="eyebrow">application domain</div>
+            <h1>
+              {page === "state"
+                ? `${countOf(stateTypes.length, "state type")} in ${countOf(
+                    namespaces.length,
+                    "namespace"
+                  )}`
+                : `${countOf(objects.length, "data type")} in ${countOf(
+                    namespaces.length,
+                    "namespace"
+                  )}`}
+            </h1>
+          </header>
+          {error && <div className="error">{error}</div>}
+          {page === "state" ? (
+            stateTypes.map((stateType) => (
+              <StateType
+                stateType={stateType}
+                expanded={isExpanded(stateType.name)}
+                onToggle={() => onToggle(stateType.name)}
+                key={stateType.name}
+              />
+            ))
+          ) : objects.length === 0 ? (
+            <div className="empty">
+              No data types. The state types declare no requests, responses or
+              errors yet.
+            </div>
+          ) : (
+            objects.map((object) => (
+              <DataObjectCard object={object} pageOf={pageOf} key={object.id} />
+            ))
+          )}
+        </div>
+      </Panel>
+    </Group>
   );
 };
 
@@ -578,9 +882,10 @@ const Overview: FC<{
 // this page's, so they survive the tab, the hot reload and the
 // `rbt dev run` they were made in.
 const App: FC = () => {
-  const { useGet, setSuppressOpenOnRestart, setExpanded } = usePreferences({
-    id: PREFERENCES_ID,
-  });
+  const { useGet, setSuppressOpenOnRestart, setExpanded, setNavWidth } =
+    usePreferences({
+      id: PREFERENCES_ID,
+    });
   const { response } = useGet();
 
   // Until the read lands, say what the CLI does when nothing has been
@@ -591,6 +896,20 @@ const App: FC = () => {
     () => new Set(response?.expandedStateTypes ?? []),
     [response?.expandedStateTypes]
   );
+
+  // What the sidebar is showing, which the panel reports as it is
+  // dragged and which is recorded when the drag ends. The stored
+  // width is what it starts from.
+  const navWidth = response?.navWidth ?? NAV_WIDTH.default;
+  const resizing = useRef(navWidth);
+
+  const onNavResizing = useCallback((width: number): void => {
+    resizing.current = width;
+  }, []);
+
+  const onNavResized = useCallback((): void => {
+    setNavWidth({ navWidth: resizing.current });
+  }, [setNavWidth]);
 
   // A click that has not yet come back from the application, standing
   // in for the read until it does. Without it a section would sit
@@ -631,7 +950,29 @@ const App: FC = () => {
           setSuppressOpenOnRestart({ suppressOpenOnRestart: !suppressed })
         }
       />
-      <Overview isExpanded={isExpanded} onToggle={onToggle} />
+      <HashRouter>
+        <Routes>
+          {PAGES.map((page) => (
+            <Route
+              path={`/${page}/:id?`}
+              element={
+                <Overview
+                  page={page}
+                  navWidth={navWidth}
+                  onNavResizing={onNavResizing}
+                  onNavResized={onNavResized}
+                  isExpanded={isExpanded}
+                  onToggle={onToggle}
+                />
+              }
+              key={page}
+            />
+          ))}
+          {/* Anything else, including nothing at all, is the state
+              page: it is what the dashboard opens on. */}
+          <Route path="*" element={<Navigate to="/state" replace />} />
+        </Routes>
+      </HashRouter>
     </div>
   );
 };
