@@ -74,5 +74,11 @@ sh_test_in_working_directory(
     ],
     env = frontend_env,
     script = "frontend/.tests/type_check.sh",
+    # `tsc` and the frontend bundler produce the same result on MacOS
+    # as on Linux, and the `rbt generate` and `npm install` steps on
+    # the way there are exercised on MacOS by the `medium`
+    # `//tests/reboot/examples/chat-room:test` and
+    # `//tests/reboot/examples/chat-room-nodejs:test`.
+    tags = ["platform-independent"],
     working_directory = "reboot/examples/chick-potle/",
 )

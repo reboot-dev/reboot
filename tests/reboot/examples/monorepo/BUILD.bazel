@@ -56,6 +56,15 @@ sh_test_in_working_directory(
     # In all our example tests, we initiate LocalEnvoy on the default
     # secure port 9991. We require 'exclusive' to not run multiple
     # tests, that use the same port, concurrently.
-    tags = ["exclusive"],
+    #
+    # `uv sync`, `rbt generate` and the in-process `pytest` harness
+    # are exercised on MacOS by the `medium`
+    # `//tests/reboot/examples/bank:test`; what is left here is
+    # `rbt generate` resolving paths from the sub-directories of a
+    # multi-application workspace, which is pure Python.
+    tags = [
+        "exclusive",
+        "platform-independent",
+    ],
     working_directory = "reboot/examples/monorepo/",
 )
