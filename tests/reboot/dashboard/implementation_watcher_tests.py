@@ -883,6 +883,74 @@ async def main():
             ['self.helper(context)'],
         )
 
+    async def test_a_helper_method_handed_the_context_is_followed(
+        self
+    ) -> None:
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace(
+                '    async def look(self, context, request):\n        pass',
+                '    async def look(self, context, request):\n'
+                '        await self.restock_everything(context)\n'
+                '\n'
+                '    async def restock_everything(self, context):\n'
+                "        await Shop.ref('a').restock(context)",
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = servicers(await analyze(application=application))
+
+        self.assertEqual(
+            [call.method for call in found[0].methods[0].calls],
+            ['restock'],
+        )
+
+    async def test_a_bare_helper_handed_the_context_is_followed(self) -> None:
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace(
+                '    async def look(self, context, request):\n        pass',
+                '    async def look(self, context, request):\n'
+                '        restock_everything(context)',
+            ) + (
+                '\n'
+                '\n'
+                'def restock_everything(context):\n'
+                "    Shop.ref('a').restock(context)\n"
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = servicers(await analyze(application=application))
+
+        self.assertEqual(
+            [call.method for call in found[0].methods[0].calls],
+            ['restock'],
+        )
+
+    async def test_a_helper_reaching_itself_still_terminates(self) -> None:
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace(
+                '    async def look(self, context, request):\n        pass',
+                '    async def look(self, context, request):\n'
+                '        await self.restock_everything(context)\n'
+                '\n'
+                '    async def restock_everything(self, context):\n'
+                '        await self.restock_everything(context)\n'
+                "        await Shop.ref('a').restock(context)",
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = servicers(await analyze(application=application))
+
+        self.assertEqual(
+            [call.method for call in found[0].methods[0].calls],
+            ['restock'],
+        )
+
     async def test_records_the_methods_a_servicer_defines(self) -> None:
         self._write('shop_servicer.py', source=SHOP)
         application = self._write('main.py', source=APPLICATION)

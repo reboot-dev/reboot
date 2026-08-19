@@ -897,6 +897,12 @@ class Analysis:
     # likely incomplete rather than left to trust them.
     unsupported: tuple[str, ...]
 
+    # The helpers this method's analysis has followed, by name. A
+    # helper is followed at most once, so the calls it makes are
+    # recorded once. The name is enough to tell helpers apart since
+    # one is only followed when its file defines the name once.
+    helpers: frozenset[str]
+
     # What each of the method's names is bound to at the point the
     # analysis has reached. The working state the analysis thinks
     # with, dropped when the method is recorded. A
@@ -913,6 +919,7 @@ class Analysis:
             files=files,
             dependencies=MappingProxyType({}),
             state_type=None,
+            helpers=frozenset(),
             calls=(),
             unsupported=(),
             locals=MappingProxyType({}),
@@ -940,6 +947,21 @@ class Analysis:
             files=files,
         )
 
+    def with_locals(self, locals: Mapping[str, Local]) -> 'Analysis':
+        """Returns this analysis with the names bound wholesale, for
+        entering and leaving a followed helper."""
+        return replace(self, locals=MappingProxyType(dict(locals)))
+
+    def with_helper(self, name: str) -> 'Analysis':
+        """Returns this analysis with one more helper followed."""
+        return replace(self, helpers=self.helpers | {name})
+
+    def module(self) -> ast.Module:
+        """Returns the syntax of the file being analyzed."""
+        found = self.files.lookup(self.filename)
+        assert isinstance(found, ParsedFile)
+        return found.module
+
     def with_call(self, call: ServicerInfo.Method.Call) -> 'Analysis':
         """Returns this analysis with one more Reboot call recorded,
         in the order met."""
@@ -951,11 +973,12 @@ class Analysis:
         return replace(self, state_type=state_type)
 
     def with_method_reset(self) -> 'Analysis':
-        """Returns this analysis with the method reset -- its calls,
-        unsupported and locals cleared -- ready for the next
+        """Returns this analysis with the method reset, its calls,
+        unsupported, locals and helpers cleared, ready for the next
         method."""
         return replace(
             self,
+            helpers=frozenset(),
             calls=(),
             unsupported=(),
             locals=MappingProxyType({}),
@@ -1039,6 +1062,95 @@ async def _reboot_related(expression: ast.expr, *,
     return False, analysis
 
 
+def _function_named(
+    name: str, *, module: ast.Module
+) -> Optional[ast.FunctionDef | ast.AsyncFunctionDef]:
+    """Returns the one function in a file with a name. `None` when
+    there is none or more than one, since a name spelled twice is
+    not worth guessing about."""
+    found = [
+        node for node in ast.walk(module)
+        if isinstance(node, (ast.FunctionDef,
+                             ast.AsyncFunctionDef)) and node.name == name
+    ]
+
+    if len(found) == 1:
+        return found[0]
+
+    return None
+
+
+async def _context_argument(
+    arguments: Sequence[ast.expr],
+    keywords: Sequence[ast.keyword],
+    *,
+    analysis: Analysis,
+) -> tuple[Optional[int | str], 'Analysis']:
+    """Returns where a call hands the context over. That is the
+    position of the first argument that is the context, or the name
+    of the first keyword that is, or `None`."""
+    for position, argument in enumerate(arguments):
+        value, analysis = await _evaluate(argument, analysis=analysis)
+        match value:
+            case Context():
+                return position, analysis
+
+    for keyword in keywords:
+        if keyword.arg is None:
+            continue
+        value, analysis = await _evaluate(keyword.value, analysis=analysis)
+        match value:
+            case Context():
+                return keyword.arg, analysis
+
+    return None, analysis
+
+
+def _parameter_for_the_context(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    handed: int | str,
+    *,
+    method: bool,
+) -> Optional[str]:
+    """Returns the name of the helper's parameter that receives the
+    context, and `None` when the helper has no such parameter. A
+    method's first parameter is `self`, so positions shift by one."""
+    parameters = function.args.posonlyargs + function.args.args
+
+    if isinstance(handed, str):
+        for parameter in parameters + function.args.kwonlyargs:
+            if parameter.arg == handed:
+                return handed
+        return None
+
+    position = handed + 1 if method else handed
+    if position < len(parameters):
+        return parameters[position].arg
+
+    return None
+
+
+async def _follow_helper(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    *,
+    context_parameter: str,
+    analysis: Analysis,
+) -> Analysis:
+    """Returns the analysis carried through a helper's body. The
+    helper's parameter that receives the context is bound to it and
+    the helper's names are kept apart from the caller's, so the
+    calls the helper makes are recorded for the calling method."""
+    saved_locals = analysis.locals
+
+    analysis = analysis.with_helper(function.name).with_locals(
+        {context_parameter: Context()}
+    )
+
+    analysis = await _analyze_statements(function, analysis=analysis)
+
+    return analysis.with_locals(saved_locals)
+
+
 async def _first_argument_is_the_context(
     arguments: Sequence[ast.expr], *, analysis: Analysis
 ) -> tuple[bool, Analysis]:
@@ -1099,8 +1211,35 @@ async def _evaluate(
                     return Reference(state_type=state_type), analysis
 
         case ast.Call(
+            func=ast.Name(id=str(function_name)),
+            args=arguments,
+            keywords=keywords,
+        ):
+            # A helper in the same file, handed the context, is
+            # followed so the calls it makes are recorded too.
+            handed, analysis = await _context_argument(
+                arguments, keywords, analysis=analysis
+            )
+            if handed is not None and function_name not in analysis.helpers:
+                function = _function_named(
+                    function_name, module=analysis.module()
+                )
+                if function is not None:
+                    parameter = _parameter_for_the_context(
+                        function, handed, method=False
+                    )
+                    if parameter is not None:
+                        analysis = await _follow_helper(
+                            function,
+                            context_parameter=parameter,
+                            analysis=analysis,
+                        )
+                        return None, analysis
+
+        case ast.Call(
             func=ast.Attribute(value=receiver, attr=str(attribute)),
             args=arguments,
+            keywords=keywords,
         ):
             # A constructor is a method called on the state type
             # itself with the context as the first argument. It
@@ -1172,6 +1311,33 @@ async def _evaluate(
                             )
                         )
                         return None, analysis
+
+            match receiver:
+                case ast.Name(id='self'):
+                    # A helper method in the same file, handed the
+                    # context, is followed so the calls it makes are
+                    # recorded too.
+                    handed, analysis = await _context_argument(
+                        arguments, keywords, analysis=analysis
+                    )
+                    if (
+                        handed is not None and
+                        attribute not in analysis.helpers
+                    ):
+                        function = _function_named(
+                            attribute, module=analysis.module()
+                        )
+                        if function is not None:
+                            parameter = _parameter_for_the_context(
+                                function, handed, method=True
+                            )
+                            if parameter is not None:
+                                analysis = await _follow_helper(
+                                    function,
+                                    context_parameter=parameter,
+                                    analysis=analysis,
+                                )
+                                return None, analysis
 
         case ast.Name(id=str(name)) if name in analysis.locals:
             # `another = account`, holding whatever `account` holds.
@@ -1301,7 +1467,17 @@ async def _analyze_method(
     if len(arguments) > 1 and arguments[0].arg in ('self', 'cls'):
         analysis = analysis.with_local(arguments[1].arg, Context())
 
-    for statement in _statements(method):
+    return await _analyze_statements(method, analysis=analysis)
+
+
+async def _analyze_statements(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    *,
+    analysis: Analysis,
+) -> Analysis:
+    """Returns the analysis carried through every statement under a
+    function, in the order written."""
+    for statement in _statements(function):
         match statement:
             case ast.Assign() | ast.AnnAssign() | ast.AugAssign():
                 analysis = await _assign(statement, analysis=analysis)
