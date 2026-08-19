@@ -39,6 +39,7 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        requirement("aiofiles"),
         ":constants_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
         "//reboot/aio:cooperatively_py",
