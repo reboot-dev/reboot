@@ -16,16 +16,16 @@ Following the imports rather than reading the list handed to
 behind a conditional import -- which have one thing in common: the
 file defining the servicer had to be imported for any of them to run.
 
-Where the walk stops is what makes this the developer's code rather
-than somebody else's. A module resolves only if a root holds it, so
-an import of an installed package leads nowhere, and no state type of
-theirs is waiting on one: their API files declare none of those.
+Where the walk of the imports stops is what makes this the
+developer's code rather than somebody else's. A module resolves to a
+file only if a root holds it, so an import of an installed package
+leads nowhere.
 
 Read rather than imported, because importing an application means
 having its generated code, its dependencies and its `sys.path`, and
 the dashboard is meant to work before any of that exists. A file at a
 time through `cooperatively`, so that the dashboard goes on answering
-while a large one is walked.
+while a large application is read.
 
 And driven by the filesystem, because that is what it is a function
 of: where a state type is implemented can only change when the
@@ -42,7 +42,11 @@ from reboot.aio.contexts import WorkflowContext
 from reboot.aio.cooperatively import cooperatively
 from reboot.cli.common.watch import file_watcher
 from types import MappingProxyType
-from typing import Iterator, Mapping, Optional
+from typing import Iterator, Mapping, Optional, Sequence
+
+# A SHA-256 digest -- of a file's bytes, or of a method's syntax --
+# saying whether what was digested has changed.
+Digest = bytes
 
 GENERATED_SUFFIX = '_rbt'
 
@@ -63,50 +67,106 @@ def _read(filename: str) -> bytes:
         return file.read()
 
 
-def _imports(
-    module: ast.Module
-) -> tuple[dict[str, tuple[str, str]], list[str]]:
-    """Returns every symbol a file imported -- keyed by the name the
-    file calls it, valued by the module it came from and its name
-    there, so `Account` -> (`bank.v1.account_rbt`, `Account`) -- and
-    beside it every module the file has imported.
+@dataclass(frozen=True, kw_only=True)
+class Imports:
+    """What a file's imports bound each of its names to."""
 
-    Symbols come from every import, wherever it is written. One inside
+    @dataclass(frozen=True, kw_only=True)
+    class Symbol:
+        """What `from x import y [as z]` binds a name to: `y` of
+        module `x` -- which may itself turn out to be a module."""
+
+        # The module it was imported from.
+        module: str
+
+        # Its name there, which the local name may differ from.
+        name: str
+
+    # By the name the file calls it.
+    bindings: Mapping[str, 'Import']
+
+    # Every module these imports may have Python load: `import a.b.c`
+    # loads `a.b.c`; `from x import y` loads `x`, and `x.y` too when
+    # `y` is a module of its own; a star import loads its module.
+    # Each is tried as a file under the roots, which is how the rest
+    # of the application's files are found.
+    may_load: tuple[str, ...]
+
+    def try_resolve_module(self,
+                           path: Sequence[str]) -> Optional[tuple[str, str]]:
+        """Returns the module a dotted name refers into and the name
+        it refers to there, and `None` when no binding answers."""
+        head, *rest = path
+
+        match self.bindings.get(head):
+            case Imports.Symbol(module=module, name=name) if not rest:
+                return module, name
+
+        return None
+
+    def try_resolve_state_type(self, path: Sequence[str]) -> Optional[str]:
+        """Returns the state type a dotted name refers to, if where
+        it was bound from is generated code."""
+        resolved = self.try_resolve_module(path)
+
+        if resolved is None:
+            return None
+
+        module, attribute = resolved
+
+        # The `_rbt` module name alone says what a name from one is:
+        # `Account` from `bank.v1.account_rbt` is `bank.v1.Account`.
+        if not module.endswith(GENERATED_SUFFIX):
+            return None
+
+        return f"{module.rsplit('.', 1)[0]}.{attribute}"
+
+
+# What one import bound a name to.
+Import = Imports.Symbol
+
+
+def _imports(module: ast.Module) -> Imports:
+    """Returns what a file's imports bound each of its names to.
+
+    Names come from every import, wherever it is written. One inside
     an `if` or a `try` binds its name just as one at the top of the
     file does, and guarding an import is common enough to be worth
     reading. `ast.walk` yields the shallowest first, so a name bound
     at the top of the file wins over one bound inside something.
-
-    Since we cannot tell whether `y` in `from x import y` is a module
-    of its own or a name defined in `x`, `x.y` is listed as a module
-    too. Adding that guess is safe because a module only becomes a
-    file if a root holds one by that name, so `x.y` naming something
-    that is not a module resolves to nothing and is dropped.
     """
-    symbols: dict[str, tuple[str, str]] = {}
-    imported_modules: list[str] = []
+    bindings: dict[str, Import] = {}
+    may_load: list[str] = []
 
     for node in ast.walk(module):
-        # A relative import names no module of its own, and
-        # `from . import x` has nowhere to be read from here.
         match node:
             case ast.Import(names=names):
-                imported_modules.extend(alias.name for alias in names)
-            case ast.ImportFrom(
-                module=str(imported_module), level=0, names=names
-            ):
-                imported_modules.append(imported_module)
+                may_load.extend(alias.name for alias in names)
+
+            case ast.ImportFrom(module=str(from_module), level=0, names=names):
+                may_load.append(from_module)
+
                 for alias in names:
-                    symbols.setdefault(
+                    bindings.setdefault(
                         alias.asname or alias.name,
-                        (imported_module, alias.name),
+                        Imports.Symbol(module=from_module, name=alias.name),
                     )
-                    imported_modules.append(f'{imported_module}.{alias.name}')
+                    # Since we cannot tell whether `y` in
+                    # `from x import y` is a module of its own or a
+                    # name defined in `x`, `x.y` may be loaded too.
+                    # The guess is safe: a module only becomes a file
+                    # if a root holds one by that name, so `x.y`
+                    # naming something that is not a module resolves
+                    # to nothing and is dropped.
+                    may_load.append(_join(from_module, alias.name))
 
-    return symbols, imported_modules
+    return Imports(
+        bindings=MappingProxyType(bindings),
+        may_load=tuple(may_load),
+    )
 
 
-def _resolve(imported_module: str, *, roots: list[str]) -> Optional[str]:
+def _try_find_file_of(module: str, *, roots: Sequence[str]) -> Optional[str]:
     """Returns the file a module names if one of `roots` contains it,
     and `None` otherwise.
 
@@ -114,7 +174,7 @@ def _resolve(imported_module: str, *, roots: list[str]) -> Optional[str]:
     packages live outside every root, so `import asyncio` resolves to
     nothing and there is nothing to read.
     """
-    relative = imported_module.replace('.', os.sep)
+    relative = module.replace('.', os.sep)
 
     for root in roots:
         for candidate in (
@@ -127,44 +187,59 @@ def _resolve(imported_module: str, *, roots: list[str]) -> Optional[str]:
     return None
 
 
-def _state_type_if_imported(
-    name: str, *, symbols: Mapping[str, tuple[str, str]]
-) -> Optional[str]:
-    """Returns the state type a name holds, if it was imported from
-    generated code.
-
-    A state type reaches the developer's code one way, as a name
-    imported from the module generated for its API file: `Account`
-    from `bank.v1.account_rbt` is `bank.v1.Account`.
-    """
-    match symbols.get(name):
-        case (str(imported_module),
-              str(attribute)) if imported_module.endswith(GENERATED_SUFFIX):
-            package = imported_module.rsplit('.', 1)[0]
-            return f'{package}.{attribute}'
+def _path(expression: ast.expr) -> Optional[list[str]]:
+    """Returns the dotted name an expression spells -- `rbt.Shop` as
+    `['rbt', 'Shop']` -- and `None` when it does not spell one."""
+    match expression:
+        case ast.Name(id=str(name)):
+            return [name]
+        case ast.Attribute(value=value, attr=str(attribute)):
+            prefix = _path(value)
+            if prefix is not None:
+                return prefix + [attribute]
 
     return None
 
 
+def _join(base: str, *parts: str) -> str:
+    """Returns a module extended by more components."""
+    return '.'.join([base, *parts])
+
+
+@dataclass(frozen=True, kw_only=True)
+class File:
+    """What one of the developer's files was found to hold."""
+
+    # Of the bytes the file held, saying whether parsing it again
+    # would say anything new.
+    digest: Digest
+
+    # Every module the file's imports may have Python load, to be
+    # followed if a root holds it.
+    may_load: tuple[str, ...]
+
+    # Every servicer the file defines.
+    servicers: tuple[ServicerInfo, ...]
+
+
 def _state_type_if_servicer(
-    class_definition: ast.ClassDef, *, symbols: dict[str, tuple[str, str]]
+    class_definition: ast.ClassDef, *, imports: Imports
 ) -> Optional[str]:
     """Returns the state type a class services, if it says so.
 
     A servicer says it by what it inherits: `Account.Servicer`, or
-    `Account.singleton.Servicer` for a singleton.
+    `Account.singleton.Servicer` for a singleton, with `Account`
+    reached by any dotted name that refers to a state type.
     """
     for base in class_definition.bases:
         match base:
-            case (
-                ast.Attribute(value=ast.Name(id=name), attr='Servicer') |
-                ast.Attribute(
-                    value=ast.
-                    Attribute(value=ast.Name(id=name), attr='singleton'),
-                    attr='Servicer',
-                )
-            ):
-                state_type = _state_type_if_imported(name, symbols=symbols)
+            case ast.Attribute(value=value, attr='Servicer'):
+                path = _path(value)
+                if path is None:
+                    continue
+                if len(path) > 1 and path[-1] == 'singleton':
+                    path = path[:-1]
+                state_type = imports.try_resolve_state_type(path)
                 if state_type is not None:
                     return state_type
 
@@ -229,9 +304,9 @@ class Analysis:
     # which is what `self.ref()` refers to.
     state_type: str
 
-    # What each imported name refers to, from `_imports`. The same
+    # What the file's imports bound each of its names to. The same
     # for the whole method, so carried untouched.
-    symbols: Mapping[str, tuple[str, str]]
+    imports: Imports
 
     # The Reboot calls found, in the order met. What the analysis is
     # for.
@@ -247,11 +322,23 @@ class Analysis:
     # quietly leaking.
     locals: Mapping[str, Local]
 
-    def bind(self, name: str, local: Optional[Local]) -> 'Analysis':
-        """Returns this analysis with `name` holding `local`, or
-        holding nothing when `local` is `None` -- which is how a name
-        assigned something the analysis cannot say stops being
-        held."""
+    @classmethod
+    def create(cls, *, state_type: str, imports: Imports) -> 'Analysis':
+        """Returns the analysis everything starts from: nothing found,
+        nothing bound."""
+        return cls(
+            state_type=state_type,
+            imports=imports,
+            calls=(),
+            unsupported=(),
+            locals=MappingProxyType({}),
+        )
+
+    def with_local(self, name: str, local: Optional[Local]) -> 'Analysis':
+        """Returns this analysis with `name` bound to `local`, or
+        bound to nothing when `local` is `None` -- which is how a
+        name assigned something the analysis cannot say stops being
+        bound."""
         locals = dict(self.locals)
 
         if local is None:
@@ -261,7 +348,7 @@ class Analysis:
 
         return replace(self, locals=MappingProxyType(locals))
 
-    def flag(self, unsupported: ast.AST) -> 'Analysis':
+    def with_unsupported(self, unsupported: ast.AST) -> 'Analysis':
         """Returns this analysis with a piece of syntax recorded as
         unsupported, spelled the way it was written."""
         return replace(
@@ -270,24 +357,10 @@ class Analysis:
         )
 
 
-def _analysis(
-    *, state_type: str, symbols: Mapping[str, tuple[str, str]]
-) -> Analysis:
-    """Returns the analysis everything starts from: nothing found,
-    nothing held."""
-    return Analysis(
-        state_type=state_type,
-        symbols=symbols,
-        calls=(),
-        unsupported=(),
-        locals=MappingProxyType({}),
-    )
-
-
 def _reboot_related(expression: ast.expr, *, analysis: Analysis) -> bool:
     """Returns whether anything in an expression touches something
     Reboot related: a `.ref` however it is reached, a name holding a
-    reference or the context, or a name imported as a state type.
+    reference or the context, or a name that refers to a state type.
 
     What ordinary Python does is never Reboot related, however little
     of it the analysis follows; this is what keeps the unsupported
@@ -300,9 +373,8 @@ def _reboot_related(expression: ast.expr, *, analysis: Analysis) -> bool:
             case ast.Name(id=str(name)):
                 if name in analysis.locals:
                     return True
-                if _state_type_if_imported(
-                    name, symbols=analysis.symbols
-                ) is not None:
+                state_type = analysis.imports.try_resolve_state_type([name])
+                if state_type is not None:
                     return True
 
     return False
@@ -326,21 +398,21 @@ def _evaluate(expression: ast.expr, *,
         ):
             # A servicer reaching the state it is servicing. Matched
             # before `Account.ref(id)` below, which would otherwise
-            # match this too and find that `self` names no state
+            # match this too and find that `self` refers to no state
             # type.
             return Reference(state_type=analysis.state_type), analysis
 
-        case ast.Call(func=ast.Attribute(value=ast.Name(id=name), attr='ref')):
-            # `Account.ref(id)`, the one way to name an existing
-            # state -- unless `name` is no state type, which falls
-            # through to be flagged below: a `.ref` on something
-            # unresolvable is almost certainly a reference being
-            # lost.
-            state_type = _state_type_if_imported(
-                name, symbols=analysis.symbols
-            )
-            if state_type is not None:
-                return Reference(state_type=state_type), analysis
+        case ast.Call(func=ast.Attribute(value=receiver, attr='ref')):
+            # `Account.ref(id)`, or `rbt.Shop.ref(id)` through a
+            # module, the one way to name an existing state -- unless
+            # the name refers to no state type, which falls through
+            # to be flagged below: a `.ref` on something unresolvable
+            # is almost certainly a reference being lost.
+            path = _path(receiver)
+            if path is not None:
+                state_type = analysis.imports.try_resolve_state_type(path)
+                if state_type is not None:
+                    return Reference(state_type=state_type), analysis
 
         case ast.Name(id=str(name)) if name in analysis.locals:
             # `another = account`, holding whatever `account` holds.
@@ -351,7 +423,7 @@ def _evaluate(expression: ast.expr, *,
     # not followed, so the calls are likely incomplete -- and left
     # alone when it is ordinary Python, which was never claimed.
     if _reboot_related(expression, analysis=analysis):
-        analysis = analysis.flag(expression)
+        analysis = analysis.with_unsupported(expression)
 
     return None, analysis
 
@@ -398,7 +470,7 @@ def _assign(
     for target in targets:
         match target:
             case ast.Name(id=str(name)):
-                analysis = analysis.bind(name, local)
+                analysis = analysis.with_local(name, local)
             case _:
                 # A target this cannot bind: unpacked into a tuple,
                 # stored on an attribute or a subscript. The names
@@ -408,17 +480,17 @@ def _assign(
                     match node:
                         case ast.Name(id=str(name)):
                             # `account` in `account, _ = ...`.
-                            analysis = analysis.bind(name, None)
-                analysis = analysis.flag(assign)
+                            analysis = analysis.with_local(name, None)
+                analysis = analysis.with_unsupported(assign)
 
     return analysis
 
 
-def _analyze(
+def _analyze_method(
     method: ast.FunctionDef | ast.AsyncFunctionDef,
     *,
     state_type: str,
-    symbols: dict[str, tuple[str, str]],
+    imports: Imports,
 ) -> Analysis:
     """Returns the Reboot calls a method's body makes, in the order
     met.
@@ -441,7 +513,7 @@ def _analyze(
     reference and something else, and taking them together is what
     lets a reference reach a nested function that uses it.
     """
-    analysis = _analysis(state_type=state_type, symbols=symbols)
+    analysis = Analysis.create(state_type=state_type, imports=imports)
 
     # `self` first, then the context; a `@classmethod` takes `cls`
     # in its place, and a workflow or a task takes the context the
@@ -449,7 +521,7 @@ def _analyze(
     arguments = method.args.posonlyargs + method.args.args
 
     if len(arguments) > 1 and arguments[0].arg in ('self', 'cls'):
-        analysis = analysis.bind(arguments[1].arg, Context())
+        analysis = analysis.with_local(arguments[1].arg, Context())
 
     for statement in _statements(method):
         # TODO: Record the calls this statement makes, through what
@@ -463,25 +535,7 @@ def _analyze(
     return analysis
 
 
-@dataclass(frozen=True, kw_only=True)
-class File:
-    """What one of the developer's files was found to hold."""
-
-    # Of the bytes the file held, saying whether parsing it again
-    # would say anything new. Not `st_mtime_ns`, which is only as fine
-    # as the kernel's coarse clock -- around ten milliseconds -- so a
-    # save landing in the same tick as a read leaves an mtime that
-    # says nothing happened.
-    digest: bytes
-
-    # Every module the file names, to be followed if a root holds it.
-    imported_modules: list[str]
-
-    # Every servicer the file defines.
-    servicers: list[ServicerInfo]
-
-
-def _digest(node: ast.AST) -> bytes:
+def _digest(node: ast.AST) -> Digest:
     """Returns a digest of what a piece of syntax says.
 
     The digest is computed using `ast.dump` without attributes so that
@@ -510,29 +564,26 @@ def _methods(class_definition: ast.ClassDef) -> list[ServicerInfo.Method]:
     return methods
 
 
-def _parse(source: bytes, *, digest: bytes, filename: str) -> Optional[File]:
+def _parse(source: bytes, *, digest: Digest, filename: str) -> Optional[File]:
     """Returns what a file holds, and `None` when it will not parse.
 
     A file that will not parse is left unrecorded rather than recorded
-    as empty, so that the next round parses it again: half-written is
-    the normal state of a file somebody is typing into.
+    as empty, so that the next iteration parses it again: half-written
+    is the normal state of a file somebody is typing into.
     """
     try:
         module: ast.Module = ast.parse(source)
     except SyntaxError:
         return None
 
-    # First, and on its own: `ast.walk` is breadth-first, so a
-    # top-level class comes out before an import nested in a `try`,
-    # and every name must be known before any class is resolved.
-    symbols, imported_modules = _imports(module)
+    imports = _imports(module)
 
     servicers = []
 
     for node in ast.walk(module):
         match node:
             case ast.ClassDef():
-                state_type = _state_type_if_servicer(node, symbols=symbols)
+                state_type = _state_type_if_servicer(node, imports=imports)
                 if state_type is not None:
                     servicers.append(
                         ServicerInfo(
@@ -544,12 +595,12 @@ def _parse(source: bytes, *, digest: bytes, filename: str) -> Optional[File]:
 
     return File(
         digest=digest,
-        imported_modules=imported_modules,
-        servicers=servicers,
+        may_load=imports.may_load,
+        servicers=tuple(servicers),
     )
 
 
-def servicers(files: dict[str, File]) -> list[ServicerInfo]:
+def servicers(files: Mapping[str, File]) -> list[ServicerInfo]:
     """Returns every servicer found, sorted by the state type it
     services and the file it is written in.
 
@@ -564,11 +615,11 @@ def servicers(files: dict[str, File]) -> list[ServicerInfo]:
     )
 
 
-async def files(
+async def analyze(
     *,
     application: str,
-    roots: Optional[list[str]] = None,
-    known: Optional[dict[str, File]] = None,
+    roots: Optional[Sequence[str]] = None,
+    known: Optional[Mapping[str, File]] = None,
 ) -> dict[str, File]:
     """Returns what each file the developer's application reaches
     holds, keyed by the file, spelled the way they would open it.
@@ -625,10 +676,12 @@ async def files(
 
             reachable[filename] = file
 
-            for imported_module in file.imported_modules:
-                resolved = _resolve(imported_module, roots=roots)
-                if resolved is not None:
-                    pending.append(resolved)
+            pending.extend(
+                filename for filename in (
+                    _try_find_file_of(module, roots=roots)
+                    for module in file.may_load
+                ) if filename is not None
+            )
 
     return reachable
 
@@ -645,19 +698,19 @@ async def watch(context: WorkflowContext, *, application: str) -> None:
     with file_watcher() as watcher:
         async for iteration in context.loop('Watch the application'):
             # The watch is armed before anything is read, so a save
-            # made during the walk resolves `event` rather than
-            # arriving while nothing is listening. A watch is consumed
-            # by one event, so it is re-entered for each.
+            # made during an iteration resolves `event` rather than
+            # arriving while nothing is listening. A watch is
+            # consumed by one event, so it is re-entered for each.
             async with watcher.watch(globs) as event:
-                known = await files(
+                known = await analyze(
                     application=application, roots=roots, known=known
                 )
 
                 found = servicers(known)
 
-                # Most edits change no servicer, and a write wakes every
-                # browser reading `Get`, so one is only worth making
-                # when the answer is different.
+                # Most edits change no servicer, and a write wakes
+                # every browser reading `Get`, so one is only worth
+                # making when the answer is different.
                 if found != recorded:
 
                     async def record(state) -> None:

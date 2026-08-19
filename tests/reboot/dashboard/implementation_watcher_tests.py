@@ -18,7 +18,7 @@ from reboot.dashboard.constants import (
     ENVVAR_RBT_APPLICATION,
     IMPLEMENTATION_ID,
 )
-from reboot.dashboard.implementation_watcher import File, files, servicers
+from reboot.dashboard.implementation_watcher import File, analyze, servicers
 from reboot.dashboard.main import application
 from typing import Mapping
 from unittest.mock import patch
@@ -112,15 +112,15 @@ class AnalyzeTest(unittest.TestCase):
                 '    async def look(self, context, request):\n' + body,
             )
         )
-        symbols, _ = implementation_watcher._imports(module)
+        imports = implementation_watcher._imports(module)
 
         for node in ast.walk(module):
             match node:
                 case ast.AsyncFunctionDef(name='look'):
-                    return implementation_watcher._analyze(
+                    return implementation_watcher._analyze_method(
                         node,
                         state_type='shop.v1.Shop',
-                        symbols=symbols,
+                        imports=imports,
                     )
 
         raise AssertionError('no method to analyze')
@@ -471,7 +471,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         self._write('shop_servicer.py', source=SHOP)
         application = self._write('main.py', source=APPLICATION)
 
-        found = _state_types_and_files(await files(application=application))
+        found = _state_types_and_files(await analyze(application=application))
 
         self.assertEqual(
             found,
@@ -490,7 +490,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                                        ),
         )
 
-        found = _state_types_and_files(await files(application=application))
+        found = _state_types_and_files(await analyze(application=application))
 
         self.assertEqual(
             found,
@@ -512,7 +512,7 @@ async def main():
 '''
         )
 
-        found = _state_types_and_files(await files(application=application))
+        found = _state_types_and_files(await analyze(application=application))
 
         self.assertEqual(
             found, [
@@ -542,7 +542,7 @@ async def main():
 '''
         )
 
-        found = _state_types_and_files(await files(application=application))
+        found = _state_types_and_files(await analyze(application=application))
 
         self.assertEqual(
             found,
@@ -566,7 +566,7 @@ async def main():
 '''
         )
 
-        found = _state_types_and_files(await files(application=application))
+        found = _state_types_and_files(await analyze(application=application))
 
         self.assertEqual(
             found,
@@ -593,7 +593,7 @@ async def main():
 '''
         )
 
-        found = _state_types_and_files(await files(application=application))
+        found = _state_types_and_files(await analyze(application=application))
 
         self.assertEqual(
             found,
@@ -614,7 +614,7 @@ async def main():
 '''
         )
 
-        found = _state_types_and_files(await files(application=application))
+        found = _state_types_and_files(await analyze(application=application))
 
         self.assertEqual(
             found,
@@ -646,14 +646,14 @@ async def main():
             )
 
             found = _state_types_and_files(
-                await files(application=application)
+                await analyze(application=application)
             )
 
             self.assertEqual(found, [])
 
             # Named as a root, the very same import leads there.
             found = _state_types_and_files(
-                await files(
+                await analyze(
                     application=application,
                     roots=[str(self.directory), elsewhere.name],
                 )
@@ -672,7 +672,7 @@ async def main():
         self._write('shop_servicer.py', source=SHOP)
         application = self._write('main.py', source=APPLICATION)
 
-        found = servicers(await files(application=application))
+        found = servicers(await analyze(application=application))
 
         self.assertEqual(
             [method.name for method in found[0].methods], ['look']
@@ -684,7 +684,7 @@ async def main():
         self._write('shop_servicer.py', source=SHOP)
         application = self._write('main.py', source=APPLICATION)
 
-        before = servicers(await files(application=application))
+        before = servicers(await analyze(application=application))
 
         self._write(
             'shop_servicer.py',
@@ -700,7 +700,7 @@ async def main():
             ),
         )
 
-        after = servicers(await files(application=application))
+        after = servicers(await analyze(application=application))
 
         self.assertEqual(
             [method.digest for method in after[0].methods],
@@ -713,14 +713,14 @@ async def main():
         self._write('shop_servicer.py', source=SHOP)
         application = self._write('main.py', source=APPLICATION)
 
-        before = servicers(await files(application=application))
+        before = servicers(await analyze(application=application))
 
         self._write(
             'shop_servicer.py',
             source=SHOP.replace('        pass', '        return None'),
         )
 
-        after = servicers(await files(application=application))
+        after = servicers(await analyze(application=application))
 
         self.assertNotEqual(
             after[0].methods[0].digest,
@@ -738,7 +738,7 @@ async def main():
         servicer = self._write('shop_servicer.py', source=SHOP)
         application = self._write('main.py', source=APPLICATION)
 
-        known = await files(application=application)
+        known = await analyze(application=application)
 
         Path(servicer).write_text(SHOP)
 
@@ -747,7 +747,7 @@ async def main():
             '_parse',
             wraps=implementation_watcher._parse,
         ) as parse:
-            await files(application=application, known=known)
+            await analyze(application=application, known=known)
 
         parse.assert_not_called()
 
@@ -760,13 +760,13 @@ async def main():
         application = self._write('main.py', source=APPLICATION)
 
         modified = os.stat(servicer).st_mtime_ns
-        known = await files(application=application)
+        known = await analyze(application=application)
 
         Path(servicer).write_text(DEPOT)
         os.utime(servicer, ns=(modified, modified))
 
         found = _state_types_and_files(
-            await files(application=application, known=known)
+            await analyze(application=application, known=known)
         )
 
         self.assertEqual(found, [('shop.v1.Depot', servicer)])
@@ -787,13 +787,13 @@ async def main():
             ),
         )
 
-        known = await files(application=application)
+        known = await analyze(application=application)
         self.assertEqual(len(servicers(known)), 2)
 
         self._write('main.py', source=APPLICATION)
 
         found = _state_types_and_files(
-            await files(application=application, known=known)
+            await analyze(application=application, known=known)
         )
 
         self.assertEqual(
@@ -807,7 +807,7 @@ async def main():
         self._write('shop_servicer.py', source=SHOP)
         application = self._write('main.py', source=APPLICATION)
 
-        known = await files(application=application)
+        known = await analyze(application=application)
 
         self._write('depot_servicer.py', source=DEPOT)
         self._write(
@@ -820,7 +820,7 @@ async def main():
         )
 
         found = _state_types_and_files(
-            await files(application=application, known=known)
+            await analyze(application=application, known=known)
         )
 
         self.assertEqual(
@@ -839,13 +839,13 @@ async def main():
         self._write('shop_servicer.py', source='class ShopServicer(')
         application = self._write('main.py', source=APPLICATION)
 
-        found = _state_types_and_files(await files(application=application))
+        found = _state_types_and_files(await analyze(application=application))
 
         self.assertEqual(found, [])
 
     async def test_an_application_that_is_not_there(self) -> None:
         found = _state_types_and_files(
-            await files(application=str(self.directory / 'nowhere.py'))
+            await analyze(application=str(self.directory / 'nowhere.py'))
         )
 
         self.assertEqual(found, [])
@@ -867,7 +867,7 @@ async def main():
 '''
         )
 
-        found = _state_types_and_files(await files(application=application))
+        found = _state_types_and_files(await analyze(application=application))
 
         self.assertEqual(
             found, [
@@ -887,7 +887,7 @@ class ShopServicer(SomethingElse):
         )
         application = self._write('main.py', source=APPLICATION)
 
-        found = _state_types_and_files(await files(application=application))
+        found = _state_types_and_files(await analyze(application=application))
 
         self.assertEqual(found, [])
 
