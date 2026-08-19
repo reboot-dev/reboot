@@ -1313,7 +1313,12 @@ async def watch(context: WorkflowContext, *, application: str) -> None:
     # developer's environment, so its own path is theirs. A name is
     # followed through these to the state type it refers to -- the
     # std library re-exports its state types from plain modules --
-    # but they are never analyzed or watched.
+    # but they are never analyzed or watched. A change to installed
+    # code, such as a `pip install` while the dashboard runs, is
+    # noticed on the next save under the roots, when the digests
+    # recorded for package files no longer match; watching the
+    # packages themselves would notice it immediately, and may be
+    # worth doing someday.
     packages = [path for path in sys.path if path and os.path.isdir(path)]
 
     recorded: Optional[list[ServicerInfo]] = None
@@ -1325,6 +1330,14 @@ async def watch(context: WorkflowContext, *, application: str) -> None:
             # made during an iteration resolves `event` rather than
             # arriving while nothing is listening. A watch is
             # consumed by one event, so it is re-entered for each.
+            #
+            # The arming is also why a save landing mid-iteration is
+            # safe. The iteration may record a torn snapshot -- one
+            # file read before the save and another after -- but the
+            # save's event is already waiting, so the next iteration
+            # begins at once, and any file kept against a stale
+            # dependency digest fails its check there and is analyzed
+            # again.
             async with watcher.watch(globs) as event:
                 known = await analyze(
                     application=application,
