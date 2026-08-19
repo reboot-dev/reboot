@@ -136,6 +136,11 @@ message ServicerInfo {
     // Represents every Reboot call the method makes, in the order
     // met.
     repeated Call calls = 3;
+
+    // Represents what the method does that the analysis could not
+    // follow, spelled the way the developer wrote it. When this is
+    // not empty the calls may be incomplete.
+    repeated string unsupported = 4;
   }
 
   // The state type it services, spelled as `StateTypeInfo.name`.

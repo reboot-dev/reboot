@@ -1368,10 +1368,9 @@ async def _analyze_file(filename: str, files: Files) -> Files:
                                     name=name,
                                     digest=_digest(statement),
                                     calls=analysis.calls,
+                                    unsupported=analysis.unsupported,
                                 )
                             )
-                            # Unsupported folds in here once the
-                            # proto has a field for it.
                             analysis = analysis.with_method_reset()
                 servicers.append(servicer)
 

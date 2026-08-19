@@ -841,6 +841,48 @@ async def main():
     ###################################################################
     # The methods each servicer defines.
 
+    async def test_the_calls_a_method_makes_reach_its_entry(self) -> None:
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace(
+                '    async def look(self, context, request):\n        pass',
+                '    async def look(self, context, request):\n'
+                "        await Shop.ref('a').restock(context)",
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = servicers(await analyze(application=application))
+
+        self.assertEqual(
+            list(found[0].methods[0].calls),
+            [
+                ServicerInfo.Method.Call(
+                    state_type='shop.v1.Shop',
+                    method='restock',
+                    how=ServicerInfo.Method.Call.How.CALL,
+                )
+            ],
+        )
+
+    async def test_the_unsupported_reaches_its_entry(self) -> None:
+        self._write(
+            'shop_servicer.py',
+            source=SHOP.replace(
+                '    async def look(self, context, request):\n        pass',
+                '    async def look(self, context, request):\n'
+                '        result = self.helper(context)',
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = servicers(await analyze(application=application))
+
+        self.assertEqual(
+            list(found[0].methods[0].unsupported),
+            ['self.helper(context)'],
+        )
+
     async def test_records_the_methods_a_servicer_defines(self) -> None:
         self._write('shop_servicer.py', source=SHOP)
         application = self._write('main.py', source=APPLICATION)
