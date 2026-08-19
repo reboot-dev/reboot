@@ -17,8 +17,9 @@ behind a conditional import -- which have one thing in common: the
 file defining the servicer had to be imported for any of them to run.
 
 Where following stops is what makes this the developer's code rather
-than somebody else's. A module resolves to a file only if a root
-holds it, so an import of an installed package leads nowhere.
+than somebody else's. A module resolves to a file only if a root or a
+package holds it, and a file a package holds is read for what its
+imports bound, and nothing else.
 
 Read rather than imported, because importing an application means
 having its generated code, its dependencies and its `sys.path`, and
@@ -34,6 +35,7 @@ this, and nothing else does.
 import ast
 import hashlib
 import os
+import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import ServicerInfo
@@ -70,6 +72,13 @@ def _roots(application: str) -> list[str]:
 def _read(filename: str) -> bytes:
     with open(filename, 'rb') as file:
         return file.read()
+
+
+def _is_file_within_directory(*, filename: str, directory: str) -> bool:
+    """Returns whether a file is inside a directory, by their
+    absolute paths, so the answer does not depend on how either was
+    spelled."""
+    return Path(filename).absolute().is_relative_to(Path(directory).absolute())
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -160,7 +169,7 @@ class Imports:
             # names it may define.
             for star in reversed(self.stars):
                 found, files = analysis.files.lookup_or_parse_module(
-                    star, visiting=visiting
+                    star, include_packages_in_roots=True, visiting=visiting
                 )
                 if found is None:
                     continue
@@ -196,7 +205,7 @@ class Imports:
             # name, so there is no answer.
             if os.sep in module:
                 module_path = Path(module).absolute()
-                for root in list(analysis.files.roots):
+                for root in [*analysis.files.roots, *analysis.files.packages]:
                     directory = Path(root).absolute()
                     if module_path.is_relative_to(directory):
                         dotted = '.'.join(
@@ -210,7 +219,7 @@ class Imports:
             return f"{module.rsplit('.', 1)[0]}.{attribute}", analysis
 
         found, files = analysis.files.lookup_or_parse_module(
-            module, visiting=visiting
+            module, include_packages_in_roots=True, visiting=visiting
         )
         if found is None:
             return None, analysis
@@ -454,12 +463,20 @@ class Files:
     # directory. What an iteration is allowed to analyze.
     roots: tuple[str, ...]
 
+    # Where installed code is found: `sys.path`. Followed for what a
+    # name refers to, never analyzed.
+    packages: tuple[str, ...]
+
     # What the previous iteration analyzed, so a file unchanged
     # since is neither parsed nor analyzed again.
     known: Mapping[str, File]
 
     # Parsed this iteration, not yet analyzed.
     parsed: Mapping[str, ParsedFile]
+
+    # Parsed this iteration from the packages: read for what their
+    # imports bound, and nothing else -- never analyzed.
+    parsed_from_packages: Mapping[str, ParsedFile]
 
     # Analyzed: this iteration, each servicer and method resolved
     # against bytes as they are on disk right now -- or a previous
@@ -480,14 +497,20 @@ class Files:
 
     @classmethod
     def create(
-        cls, *, roots: Sequence[str], known: Mapping[str, File]
+        cls,
+        *,
+        roots: Sequence[str],
+        packages: Sequence[str],
+        known: Mapping[str, File],
     ) -> 'Files':
         """Returns the files an iteration starts from: nothing
         parsed, nothing analyzed."""
         return cls(
             roots=tuple(roots),
+            packages=tuple(packages),
             known=MappingProxyType(dict(known)),
             parsed=MappingProxyType({}),
+            parsed_from_packages=MappingProxyType({}),
             analyzed=MappingProxyType({}),
             pending=frozenset(),
             digests=MappingProxyType({}),
@@ -495,19 +518,19 @@ class Files:
 
     def lookup(self, filename: str) -> Optional[ParsedFile | File]:
         """Returns what this iteration read for a file, wherever it
-        lives -- `analyzed` or `parsed` -- and `None` when
-        it has not read the file.
+        lives -- `analyzed`, `parsed` or `parsed_from_packages` --
+        and `None` when it has not read the file.
 
         By the file's absolute path, since a relative import spells
         a file one way and an absolute import another.
         """
-        for entries in (self.analyzed, self.parsed):
+        for entries in (self.analyzed, self.parsed, self.parsed_from_packages):
             entry = entries.get(filename)
             if entry is not None:
                 return entry
 
         absolute = Path(filename).absolute()
-        for entries in (self.analyzed, self.parsed):
+        for entries in (self.analyzed, self.parsed, self.parsed_from_packages):
             for entry in entries.values():
                 if Path(entry.filename).absolute() == absolute:
                     return entry
@@ -515,14 +538,31 @@ class Files:
         return None
 
     def with_parsed_file(self, parsed: ParsedFile) -> 'Files':
-        """Returns this with one more file parsed, into `parsed` and
-        onto the frontier."""
+        """Returns this with one more file parsed -- into `parsed`
+        and onto the frontier when a root holds it, into
+        `parsed_from_packages` otherwise."""
+        if any(
+            _is_file_within_directory(
+                filename=parsed.filename, directory=root
+            ) for root in self.roots
+        ):
+            return replace(
+                self,
+                parsed=MappingProxyType(
+                    {
+                        **self.parsed, parsed.filename: parsed
+                    }
+                ),
+                pending=self.pending | {parsed.filename},
+            )
+
         return replace(
             self,
-            parsed=MappingProxyType({
-                **self.parsed, parsed.filename: parsed
-            }),
-            pending=self.pending | {parsed.filename},
+            parsed_from_packages=MappingProxyType(
+                {
+                    **self.parsed_from_packages, parsed.filename: parsed
+                }
+            ),
         )
 
     def with_reused_known_file(self, file: File) -> 'Files':
@@ -626,8 +666,8 @@ class Files:
         """Returns a file as this iteration has it -- looked up among
         what is already read, verified against the previous iteration
         when unchanged, and otherwise read and parsed, joining
-        `parsed` or `outside` by who contains it. `None` when it
-        cannot be read or will not parse.
+        `parsed` or `parsed_from_packages` by who contains it.
+        `None` when it cannot be read or will not parse.
         """
         found = self.lookup(filename)
         if found is not None:
@@ -677,7 +717,11 @@ class Files:
         return parsed, files.with_parsed_file(parsed)
 
     def lookup_or_parse_module(
-        self, module: str, *, visiting: frozenset[str] = frozenset()
+        self,
+        module: str,
+        *,
+        include_packages_in_roots: bool = False,
+        visiting: frozenset[str] = frozenset(),
     ) -> tuple[Optional[ParsedFile | File], 'Files']:
         """Returns the file a module names as this iteration has it,
         and `None` when no searched root contains the module, the
@@ -685,8 +729,16 @@ class Files:
         one is -- or reading it would circle back to a file already
         being read through. When it returns `None`, the files come
         back as they were: nothing found means nothing joined.
+
+        With `include_packages_in_roots`, the packages are searched
+        after the roots, which is how a name is followed into
+        installed code.
         """
-        filename = _try_find_file_of(module, roots=self.roots)
+        roots: Sequence[str] = self.roots
+        if include_packages_in_roots:
+            roots = [*roots, *self.packages]
+
+        filename = _try_find_file_of(module, roots=roots)
 
         if filename is None or filename.endswith(GENERATED_SUFFIXES):
             return None, self
@@ -1187,6 +1239,7 @@ async def analyze(
     *,
     application: str,
     roots: Optional[Sequence[str]] = None,
+    packages: Optional[Sequence[str]] = None,
     known: Optional[Mapping[str, File]] = None,
 ) -> dict[str, File]:
     """Returns what each file the developer's application reaches
@@ -1204,12 +1257,16 @@ async def analyze(
     both how a module name becomes a file and where the developer's
     code is taken to end. It defaults to the application's own
     directory, which is what running the application puts first on its
-    path.
+    path. `packages` are directories installed code may be found
+    under; a name is followed through them to the state type it
+    refers to, but they are never analyzed.
     """
     if roots is None:
         roots = _roots(application)
 
-    files = Files.create(roots=roots, known=known or {})
+    files = Files.create(
+        roots=roots, packages=packages or [], known=known or {}
+    )
 
     _, files = files.lookup_or_parse_filename(application)
 
@@ -1247,6 +1304,13 @@ async def watch(context: WorkflowContext, *, application: str) -> None:
     roots = _roots(application)
     globs = [os.path.join(root, SOURCE_GLOB) for root in roots]
 
+    # Where installed code may be found: this process runs in the
+    # developer's environment, so its own path is theirs. A name is
+    # followed through these to the state type it refers to -- the
+    # std library re-exports its state types from plain modules --
+    # but they are never analyzed or watched.
+    packages = [path for path in sys.path if path and os.path.isdir(path)]
+
     recorded: Optional[list[ServicerInfo]] = None
     known: dict[str, File] = {}
 
@@ -1258,7 +1322,10 @@ async def watch(context: WorkflowContext, *, application: str) -> None:
             # consumed by one event, so it is re-entered for each.
             async with watcher.watch(globs) as event:
                 known = await analyze(
-                    application=application, roots=roots, known=known
+                    application=application,
+                    roots=roots,
+                    packages=packages,
+                    known=known,
                 )
 
                 found = servicers(known)

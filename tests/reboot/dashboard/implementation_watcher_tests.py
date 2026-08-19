@@ -116,8 +116,9 @@ class AnalyzeTest(unittest.TestCase):
         )
         assert parsed is not None
 
-        files = implementation_watcher.Files.create(roots=[], known={}
-                                                   ).with_parsed_file(parsed)
+        files = implementation_watcher.Files.create(
+            roots=[], packages=[], known={}
+        ).with_parsed_file(parsed)
 
         analysis = implementation_watcher.Analysis.create(
             filename='servicer.py', files=files
@@ -874,6 +875,72 @@ async def main():
             found,
             [('shop.v1.Shop', str(self.directory / 'shop_servicer.py'))],
         )
+
+    async def test_a_state_type_reexported_by_an_installed_package(
+        self
+    ) -> None:
+        """The way the std library offers its state types: a plain
+        module re-exporting them from generated code."""
+        installed = tempfile.TemporaryDirectory()
+        try:
+            (Path(installed.name) / 'maps.py').write_text(
+                'from rbt.std.collections.v1.sorted_map_rbt import '
+                'SortedMap\n'
+            )
+
+            self._write(
+                'shop_servicer.py',
+                source=SHOP.replace(
+                    'from shop.v1.shop_rbt import Shop',
+                    'from maps import SortedMap as Shop',
+                ),
+            )
+            application = self._write('main.py', source=APPLICATION)
+
+            found = _state_types_and_files(
+                await analyze(
+                    application=application,
+                    packages=[installed.name],
+                )
+            )
+
+            self.assertEqual(
+                found,
+                [
+                    (
+                        'rbt.std.collections.v1.SortedMap',
+                        str(self.directory / 'shop_servicer.py'),
+                    )
+                ],
+            )
+        finally:
+            installed.cleanup()
+
+    async def test_an_installed_package_is_never_scanned_for_servicers(
+        self
+    ) -> None:
+        """Followed for what a name refers to, and nothing else: a
+        servicer defined in one belongs to somebody else."""
+        installed = tempfile.TemporaryDirectory()
+        try:
+            (Path(installed.name) / 'maps.py').write_text(SHOP)
+
+            self._write(
+                'shop_servicer.py',
+                source='from maps import ShopServicer\n',
+            )
+            application = self._write('main.py', source=APPLICATION)
+
+            found = _state_types_and_files(
+                await analyze(
+                    application=application,
+                    packages=[installed.name],
+                )
+            )
+
+            self.assertEqual(found, [])
+        finally:
+            installed.cleanup()
 
     async def test_a_state_type_imported_through_a_module_alias(self) -> None:
         self._write(
