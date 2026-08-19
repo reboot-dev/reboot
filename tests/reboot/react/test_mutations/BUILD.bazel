@@ -51,6 +51,11 @@ js_reboot_react_library(
 # might want to revisit this).
 build_test(
     name = "test_build_no_mutations",
+    # Compiling generated TypeScript behaves the same on MacOS as on
+    # Linux, and generating a React client is exercised on MacOS by
+    # the `medium`
+    # `//tests/reboot/cli/generate:react_out_specified_tests_py`.
+    tags = ["platform-independent"],
     targets = [":test_js_reboot_react"],
 )
 

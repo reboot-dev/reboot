@@ -137,6 +137,13 @@ vitest_test(
     # from.
     env = {"REBOOT_WHL_FILE": "$(rootpath //reboot:reboot.dev)"},
     node_modules = "//:node_modules",
+    # The React client logic under test runs in `vitest` under
+    # `jsdom`, with no browser involved; the `chromium` `web_test`s in
+    # `//tests/reboot/react/...` carry `macos_not_supported`. The
+    # Reboot backend and LocalEnvoy that `rbt.up()` starts are
+    # exercised on MacOS by the `medium`
+    # `//tests/reboot/nodejs/reboot_web_test:test`.
+    tags = ["platform-independent"],
     visibility = ["//visibility:public"],
 )
 
@@ -155,6 +162,13 @@ vitest_test(
     # from.
     env = {"REBOOT_WHL_FILE": "$(rootpath //reboot:reboot.dev)"},
     node_modules = "//:node_modules",
+    # The React client logic under test runs in `vitest` under
+    # `jsdom`, with no browser involved; the `chromium` `web_test`s in
+    # `//tests/reboot/react/...` carry `macos_not_supported`. The
+    # Reboot backend and LocalEnvoy that `rbt.up()` starts are
+    # exercised on MacOS by the `medium`
+    # `//tests/reboot/nodejs/reboot_web_test:test`.
+    tags = ["platform-independent"],
     visibility = ["//visibility:public"],
 )
 
@@ -173,6 +187,13 @@ vitest_test(
     # from.
     env = {"REBOOT_WHL_FILE": "$(rootpath //reboot:reboot.dev)"},
     node_modules = "//:node_modules",
+    # The React client logic under test runs in `vitest` under
+    # `jsdom`, with no browser involved; the `chromium` `web_test`s in
+    # `//tests/reboot/react/...` carry `macos_not_supported`. The
+    # Reboot backend and LocalEnvoy that `rbt.up()` starts are
+    # exercised on MacOS by the `medium`
+    # `//tests/reboot/nodejs/reboot_web_test:test`.
+    tags = ["platform-independent"],
     visibility = ["//visibility:public"],
 )
 
