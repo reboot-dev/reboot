@@ -31,6 +31,8 @@ of: where a state type is implemented can only change when the
 developer's source changes, so an edit under the roots is what wakes
 this, and nothing else does.
 """
+import aiofiles
+import aiofiles.os
 import ast
 import hashlib
 import os
@@ -65,9 +67,9 @@ def _roots(application: str) -> list[str]:
     return [os.path.dirname(application)]
 
 
-def _read(filename: str) -> bytes:
-    with open(filename, 'rb') as file:
-        return file.read()
+async def _read(filename: str) -> bytes:
+    async with aiofiles.open(filename, 'rb') as file:
+        return await file.read()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -160,7 +162,8 @@ def _imports(
     return Imports(may_load=tuple(may_load))
 
 
-def _try_find_file_of(module: str, *, roots: Sequence[str]) -> Optional[str]:
+async def _try_find_file_of(module: str, *,
+                            roots: Sequence[str]) -> Optional[str]:
     """Returns the file a module names if one of `roots` contains it,
     and `None` otherwise.
 
@@ -184,7 +187,7 @@ def _try_find_file_of(module: str, *, roots: Sequence[str]) -> Optional[str]:
         ]
 
     for candidate in candidates:
-        if os.path.isfile(candidate):
+        if await aiofiles.os.path.isfile(candidate):
             return candidate
 
     return None
@@ -404,8 +407,8 @@ class Files:
             }),
         )
 
-    def needs_reanalyzing(self, file: File, *,
-                          digest: Digest) -> tuple[bool, 'Files']:
+    async def needs_reanalyzing(self, file: File, *,
+                                digest: Digest) -> tuple[bool, 'Files']:
         """Returns whether a file the previous iteration analyzed
         cannot be reused -- its bytes changed, or a file it depends
         on did, including one that can no longer be read at all --
@@ -430,7 +433,7 @@ class Files:
             current = files.digests.get(filename)
             if current is None:
                 try:
-                    current = hashlib.sha256(_read(filename)).digest()
+                    current = hashlib.sha256(await _read(filename)).digest()
                 except OSError:
                     return True, files
                 files = files.with_digest(filename, current)
@@ -440,7 +443,7 @@ class Files:
 
         return False, files
 
-    def lookup_or_parse_filename(
+    async def lookup_or_parse_filename(
         self, filename: str
     ) -> tuple[Optional[ParsedFile | File], 'Files']:
         """Returns a file as this iteration has it -- looked up among
@@ -458,7 +461,7 @@ class Files:
         digest = files.digests.get(filename)
         if digest is None:
             try:
-                source = _read(filename)
+                source = await _read(filename)
             except OSError:
                 return None, files
             digest = hashlib.sha256(source).digest()
@@ -475,7 +478,9 @@ class Files:
                     known = file
                     break
         if known is not None:
-            reanalyze, files = files.needs_reanalyzing(known, digest=digest)
+            reanalyze, files = await files.needs_reanalyzing(
+                known, digest=digest
+            )
             if not reanalyze:
                 return known, files.with_reused_known_file(known)
 
@@ -483,7 +488,7 @@ class Files:
         # the digest did not keep.
         if source is None:
             try:
-                source = _read(filename)
+                source = await _read(filename)
             except OSError:
                 return None, files
             digest = hashlib.sha256(source).digest()
@@ -495,7 +500,7 @@ class Files:
 
         return parsed, files.with_parsed_file(parsed)
 
-    def lookup_or_parse_module(
+    async def lookup_or_parse_module(
         self, module: str
     ) -> tuple[Optional[ParsedFile | File], 'Files']:
         """Returns the file a module names as this iteration has it,
@@ -504,12 +509,12 @@ class Files:
         the files come back as they were: nothing found means
         nothing joined.
         """
-        filename = _try_find_file_of(module, roots=self.roots)
+        filename = await _try_find_file_of(module, roots=self.roots)
 
         if filename is None or filename.endswith(GENERATED_SUFFIXES):
             return None, self
 
-        return self.lookup_or_parse_filename(filename)
+        return await self.lookup_or_parse_filename(filename)
 
     def imports(self, filename: str) -> Optional[Imports]:
         """Returns what a file's imports bound, wherever this
@@ -632,7 +637,9 @@ def _digest(node: ast.AST) -> Digest:
                                    include_attributes=False).encode()).digest()
 
 
-def _depend_on_imports(parsed: ParsedFile, *, analysis: Analysis) -> Analysis:
+async def _depend_on_imports(
+    parsed: ParsedFile, *, analysis: Analysis
+) -> Analysis:
     """Returns the analysis depending on the file behind every one
     of the file's imports: those are the files that can change what
     this one means. Each is read one hop, only for the digest
@@ -643,7 +650,7 @@ def _depend_on_imports(parsed: ParsedFile, *, analysis: Analysis) -> Analysis:
     used would narrow little, and it can be narrowed later if this
     proves too eager."""
     for module in dict.fromkeys(parsed.imports.may_load):
-        found, files = analysis.files.lookup_or_parse_module(module)
+        found, files = await analysis.files.lookup_or_parse_module(module)
         if found is None:
             continue
         analysis = analysis.with_dependency(found, files=files)
@@ -651,7 +658,7 @@ def _depend_on_imports(parsed: ParsedFile, *, analysis: Analysis) -> Analysis:
     return analysis
 
 
-def _analyze_file(filename: str, files: Files) -> Files:
+async def _analyze_file(filename: str, files: Files) -> Files:
     """Returns the iteration carried past analyzing one `pending`
     file: every class saying what it services recorded, every method
     those classes define analyzed and recorded under them, and the
@@ -666,7 +673,7 @@ def _analyze_file(filename: str, files: Files) -> Files:
 
     analysis = Analysis.create(filename=filename, files=files)
 
-    analysis = _depend_on_imports(parsed, analysis=analysis)
+    analysis = await _depend_on_imports(parsed, analysis=analysis)
 
     servicers: list[ServicerInfo] = []
 
@@ -740,7 +747,7 @@ async def analyze(
 
     files = Files.create(roots=roots, known=known or {})
 
-    _, files = files.lookup_or_parse_filename(application)
+    _, files = await files.lookup_or_parse_filename(application)
 
     while len(files.pending) > 0:
         # Parsing and analyzing hold on to the interpreter for as
@@ -749,7 +756,7 @@ async def analyze(
         async for filename in cooperatively(files.pending):
             match files.parsed.get(filename):
                 case ParsedFile():
-                    files = _analyze_file(filename, files)
+                    files = await _analyze_file(filename, files)
                 case None:
                     # Nothing to analyze: the file was kept because
                     # neither its bytes nor any of its dependencies
@@ -765,7 +772,7 @@ async def analyze(
             assert imports is not None
 
             for module in imports.may_load:
-                _, files = files.lookup_or_parse_module(module)
+                _, files = await files.lookup_or_parse_module(module)
 
     return dict(files.analyzed)
 
