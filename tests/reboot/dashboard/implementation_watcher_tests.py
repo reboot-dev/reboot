@@ -105,7 +105,7 @@ class AnalyzeTest(unittest.TestCase):
     Nothing records calls yet, so these observe the analysis through
     what each name held when the body ended."""
 
-    def _analyze(self, body: str) -> implementation_watcher.Analysis:
+    async def _analyze(self, body: str) -> implementation_watcher.Analysis:
         source = SERVICER.format(state='Shop', module='shop').replace(
             '    async def look(self, context, request):\n        pass',
             '    async def look(self, context, request):\n' + body,
@@ -127,23 +127,24 @@ class AnalyzeTest(unittest.TestCase):
         for node in ast.walk(parsed.module):
             match node:
                 case ast.AsyncFunctionDef(name='look'):
-                    return implementation_watcher._analyze_method(
+                    return await implementation_watcher._analyze_method(
                         node, analysis=analysis
                     )
 
         raise AssertionError('no method to analyze')
 
-    def _locals(self, body: str) -> Mapping[str, implementation_watcher.Local]:
-        return self._analyze(body).locals
+    async def _locals(self,
+                      body: str) -> Mapping[str, implementation_watcher.Local]:
+        return (await self._analyze(body)).locals
 
-    def test_the_context_is_the_parameter_after_self(self) -> None:
+    async def test_the_context_is_the_parameter_after_self(self) -> None:
         self.assertEqual(
-            self._locals('        pass'),
+            await self._locals('        pass'),
             {'context': implementation_watcher.Context()},
         )
 
-    def test_a_reference_to_another_state_type(self) -> None:
-        names = self._locals(
+    async def test_a_reference_to_another_state_type(self) -> None:
+        names = await self._locals(
             '        from shop.v1.depot_rbt import Depot\n'
             '        depot = Depot.ref(request.depot)'
         )
@@ -153,36 +154,36 @@ class AnalyzeTest(unittest.TestCase):
             implementation_watcher.Reference(state_type='shop.v1.Depot'),
         )
 
-    def test_a_reference_to_the_state_being_serviced(self) -> None:
-        names = self._locals('        shop = self.ref()')
+    async def test_a_reference_to_the_state_being_serviced(self) -> None:
+        names = await self._locals('        shop = self.ref()')
 
         self.assertEqual(
             names['shop'],
             implementation_watcher.Reference(state_type='shop.v1.Shop'),
         )
 
-    def test_a_name_holding_what_another_holds(self) -> None:
-        names = self._locals(
+    async def test_a_name_holding_what_another_holds(self) -> None:
+        names = await self._locals(
             '        shop = self.ref()\n'
             '        same = shop'
         )
 
         self.assertEqual(names['same'], names['shop'])
 
-    def test_a_name_assigned_something_it_cannot_follow(self) -> None:
+    async def test_a_name_assigned_something_it_cannot_follow(self) -> None:
         """Held until it is not: assigning over a reference with
         something unreadable stops it being a reference."""
-        names = self._locals(
+        names = await self._locals(
             '        shop = self.ref()\n'
             '        shop = whatever()'
         )
 
         self.assertNotIn('shop', names)
 
-    def test_a_name_bound_inside_a_block(self) -> None:
+    async def test_a_name_bound_inside_a_block(self) -> None:
         """Names are taken together rather than by scope, so one bound
         inside an `if` is held the same way."""
-        names = self._locals(
+        names = await self._locals(
             '        if request.wanted:\n'
             '            shop = self.ref()'
         )
@@ -192,17 +193,19 @@ class AnalyzeTest(unittest.TestCase):
             implementation_watcher.Reference(state_type='shop.v1.Shop'),
         )
 
-    def test_a_name_holding_nothing_it_can_say(self) -> None:
-        names = self._locals('        total = request.a + request.b')
+    async def test_a_name_holding_nothing_it_can_say(self) -> None:
+        names = await self._locals('        total = request.a + request.b')
 
         self.assertNotIn('total', names)
 
-    def test_an_assignment_it_cannot_bind_is_unsupported(self) -> None:
+    async def test_an_assignment_it_cannot_bind_is_unsupported(self) -> None:
         """Said as written, so a reader of the calls can be told they
         are likely incomplete and find why. Twice here: the context
         flows into a call that is not followed, and the unpacking is a
         target that cannot be bound."""
-        analysis = self._analyze('        account, _ = whatever(context)')
+        analysis = await self._analyze(
+            '        account, _ = whatever(context)'
+        )
 
         self.assertEqual(
             analysis.unsupported, (
@@ -211,26 +214,30 @@ class AnalyzeTest(unittest.TestCase):
             )
         )
 
-    def test_an_unbindable_target_stops_its_names_being_held(self) -> None:
+    async def test_an_unbindable_target_stops_its_names_being_held(
+        self
+    ) -> None:
         """`account` no longer holds the reference: whatever the
         unpacking gave it is not something this followed."""
-        analysis = self._analyze(
+        analysis = await self._analyze(
             '        account = self.ref()\n'
             '        account, _ = whatever(context)'
         )
 
         self.assertNotIn('account', analysis.locals)
 
-    def test_an_annotated_assignment_binds_the_same_way(self) -> None:
-        names = self._analyze('        shop: object = self.ref()').locals
+    async def test_an_annotated_assignment_binds_the_same_way(self) -> None:
+        names = (
+            await self._analyze('        shop: object = self.ref()')
+        ).locals
 
         self.assertEqual(
             names['shop'],
             implementation_watcher.Reference(state_type='shop.v1.Shop'),
         )
 
-    def test_a_bare_annotation_binds_nothing(self) -> None:
-        analysis = self._analyze(
+    async def test_a_bare_annotation_binds_nothing(self) -> None:
+        analysis = await self._analyze(
             '        shop = self.ref()\n'
             '        shop: object'
         )
@@ -241,10 +248,12 @@ class AnalyzeTest(unittest.TestCase):
         )
         self.assertEqual(analysis.unsupported, ())
 
-    def test_an_augmented_assignment_stops_a_name_being_held(self) -> None:
+    async def test_an_augmented_assignment_stops_a_name_being_held(
+        self
+    ) -> None:
         """`x += y` makes `x` hold something no name was ever bound
         to, whatever the two held."""
-        analysis = self._analyze(
+        analysis = await self._analyze(
             '        shop = self.ref()\n'
             '        shop += request.a'
         )
@@ -252,28 +261,34 @@ class AnalyzeTest(unittest.TestCase):
         self.assertNotIn('shop', analysis.locals)
         self.assertEqual(analysis.unsupported, ())
 
-    def test_a_ref_on_something_unresolvable_is_unsupported(self) -> None:
+    async def test_a_ref_on_something_unresolvable_is_unsupported(
+        self
+    ) -> None:
         """Almost certainly a reference being lost, however it was
         reached."""
-        analysis = self._analyze("        shop = stores.Shop.ref('a')")
+        analysis = await self._analyze("        shop = stores.Shop.ref('a')")
 
         self.assertEqual(analysis.unsupported, ("stores.Shop.ref('a')",))
         self.assertNotIn('shop', analysis.locals)
 
-    def test_a_state_type_used_some_other_way_is_unsupported(self) -> None:
-        analysis = self._analyze('        shop = Shop.open(context)')
+    async def test_a_state_type_used_some_other_way_is_unsupported(
+        self
+    ) -> None:
+        analysis = await self._analyze('        shop = Shop.open(context)')
 
         self.assertEqual(analysis.unsupported, ('Shop.open(context)',))
 
-    def test_the_context_reaching_an_unfollowed_call_is_unsupported(
+    async def test_the_context_reaching_an_unfollowed_call_is_unsupported(
         self
     ) -> None:
-        analysis = self._analyze('        result = self._helper(context)')
+        analysis = await self._analyze(
+            '        result = self._helper(context)'
+        )
 
         self.assertEqual(analysis.unsupported, ('self._helper(context)',))
 
-    def test_an_ordinary_assignment_is_not_unsupported(self) -> None:
-        analysis = self._analyze('        total = request.a + request.b')
+    async def test_an_ordinary_assignment_is_not_unsupported(self) -> None:
+        analysis = await self._analyze('        total = request.a + request.b')
 
         self.assertEqual(analysis.unsupported, ())
 
