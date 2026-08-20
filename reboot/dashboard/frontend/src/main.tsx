@@ -3,7 +3,7 @@ import { useOrderedMap } from "@reboot-dev/reboot-std-api/collections/ordered_ma
 import { RebootClientProvider } from "@reboot-dev/reboot-react";
 import { Presence } from "@reboot-dev/reboot-std-react/presence";
 import {
-  FC,
+  type FC,
   Fragment,
   StrictMode,
   useCallback,
