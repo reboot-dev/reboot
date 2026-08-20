@@ -29,6 +29,9 @@ from pydantic.json_schema import models_json_schema
 from reboot.api import API, MethodModel, Model
 from typing import Optional
 
+# The prefix of a `$ref` into a schema's `$defs`.
+DEFS = '#/$defs/'
+
 
 def _schemas_of(models: list[type[Model]]) -> tuple[dict, dict]:
     """The `$defs` for `models`, and a `$ref` to each by model.
@@ -44,7 +47,7 @@ def _schemas_of(models: list[type[Model]]) -> tuple[dict, dict]:
 
     refs, schema = models_json_schema(
         [(model, 'validation') for model in unique],
-        ref_template='#/$defs/{model}',
+        ref_template=f'{DEFS}{{model}}',
     )
 
     return schema.get('$defs', {}), {
@@ -123,10 +126,23 @@ def describe(api_directory: str, filename: str) -> list[dict]:
     for type_name, type_obj in api.get_types().items():
         definitions, refs = _schemas_of(_models_of(type_obj))
 
+        state = refs[type_obj.state]['$ref'].replace(DEFS, '')
+
         state_type: dict = {
             'name': f'{package}.{type_name}',
             'file': file,
             'state': refs[type_obj.state],
+            # Every type in `$defs` except the state itself: what the
+            # methods take, return or raise, and anything those hold.
+            # Ids are package-qualified, matching the message names
+            # `rbt generate` gives these types.
+            'data_types':
+                [
+                    {
+                        'id': f'{package}.{name}',
+                        'name': name
+                    } for name in definitions if name != state
+                ],
             'methods':
                 [
                     _describe_method(method_name, spec, refs)

@@ -10,16 +10,18 @@ being developed.
 import asyncio
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import API, Preferences
+from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from rbt.std.presence.v1.presence_rbt import Presence
 from reboot.aio.applications import Application
 from reboot.aio.external import InitializeContext
 from reboot.dashboard.constants import (
     API_ID,
+    CHANGELOG_ID,
     DASHBOARD_PATH,
     PREFERENCES_ID,
     PRESENCE_ID,
 )
-from reboot.dashboard.servicers import servicers
+from reboot.dashboard.servicers import libraries, servicers
 from starlette.staticfiles import StaticFiles
 
 # The built page, beside this module, which is the same arrangement
@@ -35,6 +37,7 @@ def application() -> Application:
     """The dashboard application, with its page mounted."""
     application = Application(
         servicers=servicers(),
+        libraries=libraries(),
         initialize=initialize,
     )
 
@@ -69,6 +72,11 @@ async def initialize(context: InitializeContext) -> None:
     # who is looking at a dashboard has an answer from the moment the
     # dashboard is up.
     await Presence.ref(PRESENCE_ID).Create(context)
+
+    # The changelog, empty, for the page that reads it from the
+    # moment it opens: a read of a state that does not exist is an
+    # abort the application logs about.
+    await OrderedMap.ref(CHANGELOG_ID).Create(context)
 
     # Idempotently, so that a restart of a named application finds
     # the `Watch` it already spawned rather than starting a second

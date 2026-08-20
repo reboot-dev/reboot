@@ -19,10 +19,6 @@ const objectsById = () =>
   new Map(dataObjects(parse()).map((object) => [object.id, object]));
 
 describe("the description the reader writes", () => {
-  it("is what this page expects", () => {
-    expect(() => parse()).not.toThrow();
-  });
-
   it("carries nested types rather than naming them", () => {
     const [shop] = parse();
 
@@ -38,6 +34,22 @@ describe("the description the reader writes", () => {
     // what it holds and links to it rather than opening it here.
     expect(items?.type).toBe("Item[]");
     expect(items?.link).toBe("shop.v1.Item");
+
+    // And a list of lists keeps both of its dimensions.
+    const shelves = fields.find((field) => field.name === "shelves");
+    expect(shelves?.type).toBe("Item[][]");
+    expect(shelves?.link).toBe("shop.v1.Item");
+  });
+
+  it("does not read a free-form map's title as a type", () => {
+    // Pydantic titles a `dict` field after the field itself, so
+    // `labels` carries `"title": "Labels"`. Printing that would name
+    // a type the developer never wrote and nothing can open.
+    const request = objectsById().get("shop.v1.StockRequest")!;
+    const labels = request.fields.find((field) => field.name === "labels")!;
+
+    expect(labels.type).toBe("Record<string, string>");
+    expect(labels.link).toBeUndefined();
   });
 
   it("makes an error's fields readable, not just its name", () => {
@@ -93,8 +105,11 @@ describe("the data objects the description carries", () => {
       objects.get("shop.v1.StockRequest")!.referrers.map((r) => r.label)
     ).toEqual(["Shop.stock (takes)", "Shop.remaining (takes)"]);
 
+    // Both of `StockResponse`'s fields that hold an `Item`, however
+    // deeply they hold it.
     expect(objects.get("shop.v1.Item")!.referrers.map((r) => r.label)).toEqual([
       "StockResponse.items",
+      "StockResponse.shelves",
     ]);
   });
 

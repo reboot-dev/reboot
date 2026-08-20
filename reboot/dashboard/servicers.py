@@ -1,9 +1,14 @@
 """Servicers for the developer dashboard application."""
 import os
+import reboot.std.collections.ordered_map.v1.ordered_map
 import reboot.std.presence.v1.presence
+from google.protobuf.json_format import MessageToDict, ParseDict
+from google.protobuf.struct_pb2 import Value
 from rbt.dashboard.v1.dashboard_pb2 import (
     APIGetRequest,
     APIGetResponse,
+    APIRecordChangesRequest,
+    APIRecordChangesResponse,
     APIUpdateRequest,
     APIUpdateResponse,
     PreferencesGetRequest,
@@ -16,11 +21,20 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     PreferencesSetSuppressOpenOnRestartResponse,
 )
 from rbt.dashboard.v1.dashboard_rbt import API, Preferences
-from reboot.aio.auth.authorizers import allow
-from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
+from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
+from reboot.aio.applications import Library
+from reboot.aio.auth.authorizers import allow, allow_if, is_app_internal
+from reboot.aio.contexts import (
+    ReaderContext,
+    TransactionContext,
+    WorkflowContext,
+    WriterContext,
+)
 from reboot.aio.servicers import Servicer
 from reboot.dashboard.api_watcher import watch
-from reboot.dashboard.constants import ENVVAR_RBT_API_DIRECTORY
+from reboot.dashboard.constants import CHANGELOG_ID, ENVVAR_RBT_API_DIRECTORY
+from reboot.std.item.v1.item import Item
+from reboot.uuidv7 import uuid7
 
 
 class APIServicer(API.Servicer):
@@ -41,6 +55,27 @@ class APIServicer(API.Servicer):
             ),
             error=self.state.error if self.state.HasField('error') else None,
         )
+
+    async def RecordChanges(
+        self,
+        context: TransactionContext,
+        request: APIRecordChangesRequest,
+    ) -> APIRecordChangesResponse:
+        """Records what changed, newest last."""
+        changes = MessageToDict(request.changes)
+
+        if len(changes) == 0:
+            return APIRecordChangesResponse()
+
+        await OrderedMap.ref(CHANGELOG_ID).Insert(
+            context,
+            entries={
+                str(uuid7()): Item(value=ParseDict(change, Value()))
+                for change in changes
+            },
+        )
+
+        return APIRecordChangesResponse()
 
     @classmethod
     async def Watch(
@@ -151,3 +186,26 @@ def servicers() -> list[type[Servicer]]:
         APIServicer,
         PreferencesServicer,
     ] + reboot.std.presence.v1.presence.servicers()
+
+
+def libraries() -> list[Library]:
+    """The standard library types the dashboard stores things in.
+
+    The history is read by the page rather than by anything in this
+    application, so the map it is kept in is readable from a browser.
+    Only readable: what the dashboard noticed is the dashboard's to
+    say, and a page saying it instead would be a page making it up.
+    """
+    return [
+        reboot.std.collections.ordered_map.v1.ordered_map.ordered_map_library(
+            OrderedMap.Authorizer(
+                search=allow(),
+                range=allow(),
+                reverse_range=allow(),
+                stringify=allow(),
+                create=allow_if(all=[is_app_internal]),
+                insert=allow_if(all=[is_app_internal]),
+                remove=allow_if(all=[is_app_internal]),
+            )
+        ),
+    ]
