@@ -1,7 +1,5 @@
 """Servicers for the developer dashboard application."""
 import os
-import reboot.std.collections.ordered_map.v1.ordered_map
-import reboot.std.presence.v1.presence
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Value
 from rbt.dashboard.v1.dashboard_pb2 import (
@@ -22,15 +20,13 @@ from rbt.dashboard.v1.dashboard_pb2 import (
 )
 from rbt.dashboard.v1.dashboard_rbt import API, Preferences
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
-from reboot.aio.applications import Library
-from reboot.aio.auth.authorizers import allow, allow_if, is_app_internal
+from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import (
     ReaderContext,
     TransactionContext,
     WorkflowContext,
     WriterContext,
 )
-from reboot.aio.servicers import Servicer
 from reboot.dashboard.api_watcher import watch
 from reboot.dashboard.constants import CHANGELOG_ID, ENVVAR_RBT_API_DIRECTORY
 from reboot.std.item.v1.item import Item
@@ -169,43 +165,3 @@ class PreferencesServicer(Preferences.Servicer):
     ) -> PreferencesSetNavWidthResponse:
         self.state.nav_width = request.nav_width
         return PreferencesSetNavWidthResponse()
-
-
-def servicers() -> list[type[Servicer]]:
-    """The servicers that back the dashboard's own state.
-
-    This state belongs to the dashboard rather than to the application
-    being developed, so it lives in its own application and its own
-    state store.
-
-    This is a library rather than something built into the application
-    below it, so that what these servicers are stays separate from what
-    ends up hosting them.
-    """
-    return [
-        APIServicer,
-        PreferencesServicer,
-    ] + reboot.std.presence.v1.presence.servicers()
-
-
-def libraries() -> list[Library]:
-    """The standard library types the dashboard stores things in.
-
-    The history is read by the page rather than by anything in this
-    application, so the map it is kept in is readable from a browser.
-    Only readable: what the dashboard noticed is the dashboard's to
-    say, and a page saying it instead would be a page making it up.
-    """
-    return [
-        reboot.std.collections.ordered_map.v1.ordered_map.ordered_map_library(
-            OrderedMap.Authorizer(
-                search=allow(),
-                range=allow(),
-                reverse_range=allow(),
-                stringify=allow(),
-                create=allow_if(all=[is_app_internal]),
-                insert=allow_if(all=[is_app_internal]),
-                remove=allow_if(all=[is_app_internal]),
-            )
-        ),
-    ]
