@@ -55,6 +55,12 @@ ts_project(
 
 js_reboot_test(
     name = "test",
+    # A Node test builds a Python virtualenv and `pip install`s the
+    # Reboot wheel into it before any of the test body runs. On the
+    # MacOS arm64 CI runner that alone has taken the whole 300s a
+    # `medium` test gets, killing the test before it started, so this
+    # one gets the 900s of a `large` test to work in.
+    size = "large",
     data = [
         ":test_ts",
     ],

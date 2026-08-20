@@ -1547,6 +1547,12 @@ class Lock:
       transaction. Passing `deadline=None` means wait forever or until
       the task is cancelled.
 
+    - A waiter that has given up, i.e., whose `deadline` elapsed or
+      whose task was cancelled, is dropped rather than granted (see
+      `_Waiter.abandoned()`). Granting to one would leave the lock
+      held by nobody, and every later acquire on the state it guards
+      would then fail or block forever.
+
     The lock is not `asyncio.Task` aware because it is meant to be
     used across multiple different calls on the same state, i.e.,
     across transactions. Instead, it tracks shared as a count and
@@ -1566,6 +1572,21 @@ class Lock:
             self.future: asyncio.Future[None] = (
                 asyncio.get_event_loop().create_future()
             )
+
+        def abandoned(self) -> bool:
+            """`True` once this waiter can no longer take the hold it
+            is queued for, because its acquire deadline elapsed or its
+            task was cancelled. It is still on the queue only because
+            it has not been resumed yet to remove itself. Granting to
+            it would mark the lock held with nobody left to release
+            it, leaving the state this lock guards unusable for the
+            life of the process, so such a waiter must be dropped.
+
+            A waiter that is granted is removed from the queue at the
+            same time its future is resolved, and nothing else
+            resolves a queued waiter's future, so a waiter that is
+            still queued and whose future is resolved has given up."""
+            return self.future.done()
 
     def __init__(self) -> None:
         # Number of shared holders.
@@ -1707,6 +1728,17 @@ class Lock:
         except ValueError:
             pass
 
+    def _remove_upgrader(self, waiter: Lock._Waiter) -> None:
+        """Empties the upgrade slot, but only while `waiter` is the
+        waiter occupying it. A waiter that has given up may already
+        have been dropped from the slot, and by the time it cleans up
+        after itself another holder may have registered an upgrade of
+        its own there. That one must be left in place: emptying the
+        slot would leave it registered nowhere, and a waiter nothing
+        holds a reference to is a waiter nothing can ever grant."""
+        if self._upgrader is waiter:
+            self._upgrader = None
+
     @overload
     async def _wait(
         self,
@@ -1765,7 +1797,7 @@ class Lock:
             await asyncio.wait_for(waiter.future, timeout=timeout)
         except asyncio.TimeoutError:
             if upgrade:
-                self._upgrader = None
+                self._remove_upgrader(waiter)
             else:
                 self._remove_waiter(waiter)
             raise SystemAborted(
@@ -1783,12 +1815,18 @@ class Lock:
                 waiter.future.done() and not waiter.future.cancelled() and
                 waiter.future.exception() is None
             ):
-                if mode == Lock.Mode.SHARED:
+                if upgrade:
+                    # An upgrade whose caller is interrupted leaves
+                    # that caller holding the shared hold it upgrades
+                    # from, so hand that back rather than releasing
+                    # the exclusive hold outright.
+                    self.downgrade()
+                elif mode == Lock.Mode.SHARED:
                     self.release_shared()
                 else:
                     self.release_exclusive()
             elif upgrade:
-                self._upgrader = None
+                self._remove_upgrader(waiter)
             else:
                 self._remove_waiter(waiter)
             raise
@@ -1811,15 +1849,21 @@ class Lock:
             # other remaining shared holders, bypassing any queued
             # exclusive waiters.
             assert released == Lock.Mode.SHARED
-            if self._shared == 1:
+            if self._upgrader.abandoned():
+                # The upgrader has given up, so forget it and grant as
+                # if it had never asked. It keeps the shared hold it
+                # upgrades from and releases that itself.
+                self._upgrader = None
+            elif self._shared == 1:
                 upgrader = self._upgrader
                 self._upgrader = None
                 self._shared = 0
                 self._exclusive = True
-                if not upgrader.future.done():
-                    upgrader.future.set_result(None)
-            # While we have an upgrader nothing else gets granted.
-            return
+                upgrader.future.set_result(None)
+                return
+            else:
+                # While we have an upgrader nothing else gets granted.
+                return
 
         # Nothing to do if we released a shared hold but still have
         # shared holders.
@@ -1833,6 +1877,11 @@ class Lock:
         # Grant waiters in FIFO ordering.
         while self._waiters:
             waiter = self._waiters[0]
+            if waiter.abandoned():
+                # Drop the waiter and try the next one rather than
+                # taking the lock on its behalf (see `abandoned()`).
+                self._waiters.pop(0)
+                continue
             if waiter.mode == Lock.Mode.EXCLUSIVE:
                 # We may have granted a shared waiter below if the
                 # _first_ waiter was not exclusive and thus we've now
@@ -1841,14 +1890,12 @@ class Lock:
                     return
                 self._waiters.pop(0)
                 self._exclusive = True
-                if not waiter.future.done():
-                    waiter.future.set_result(None)
+                waiter.future.set_result(None)
                 return
             # The mode is `Lock.Mode.SHARED`.
             self._waiters.pop(0)
             self._shared += 1
-            if not waiter.future.done():
-                waiter.future.set_result(None)
+            waiter.future.set_result(None)
             # Continue granting a cohort of shared waiters up until
             # the first exclusive waiter.
 
@@ -5357,13 +5404,43 @@ class SidecarStateManager(
         participants: Participants,
         coordinator_state_ref: Optional[StateRef],
     ):
-        """Aborts a transaction for which we are the coordinator: (1) cleans
-        up the "preparing" record that may be in the database; (2)
-        best-effort sends `Abort` RPCs to all participants; and (3)
-        resolves the `_coordinator_participants` future to `None` so
-        any participant "watch control loops" observe the abort, then
-        deletes the future entry.
+        """Aborts a transaction for which we are the coordinator: (1)
+        resolves the `_coordinator_participants` future to `None` and
+        drops its entry so any participant "watch control loops"
+        observe the abort; (2) cleans up the "preparing" record that
+        may be in the database; and (3) best-effort sends `Abort` RPCs
+        to all participants.
         """
+        # To indicate that the transaction has aborted we resolve the
+        # future to `None`, so a participant `Watch` that already passed
+        # the "is it still in the map" check and is awaiting the future
+        # observes the abort rather than finding itself still listed to
+        # commit. Both statements are synchronous and come before
+        # anything that can be interrupted, so from here on every
+        # watcher has an answer no matter where a cancellation lands.
+        #
+        # Answering before the database cleanup below lands is safe,
+        # because an abort is not something a coordinator records: its
+        # durable outcomes are "preparing" and "absent", and neither
+        # says a transaction committed. A coordinator only gets here
+        # while the transaction is not durably prepared -- either its
+        # `_transaction_coordinator_complete()` did not return, or it
+        # is re-preparing, which asserts as much -- so there is no
+        # committed outcome for an early answer to contradict. Should
+        # this process die before the cleanup lands, recovery finds
+        # "preparing" and re-prepares, the participants that have
+        # already aborted report that they never prepared, and the
+        # transaction aborts again.
+        #
+        # Not expecting the future to ever be cancelled, see:
+        # https://github.com/reboot-dev/mono/issues/3241
+        assert not self._coordinator_participants[transaction_id].cancelled()
+        self._coordinator_participants[transaction_id].set_result(None)
+
+        # Remove transaction so that participants "watch control loop"
+        # will determine that the transaction has aborted!
+        del self._coordinator_participants[transaction_id]
+
         # Clean up the "preparing" record that may be in the database
         # when the coordinator stored the transaction participants
         # (and `preparing=True`). The database write may or may not
@@ -5427,21 +5504,6 @@ class SidecarStateManager(
             abort(state_type, state_ref)
             for (state_type, state_ref) in participants.should_prepare()
         )
-
-        # To indicate that the transaction has aborted we resolve the
-        # future to `None`, so a participant `Watch` that already passed
-        # the "is it still in the map" check and is awaiting the future
-        # observes the abort rather than finding itself still listed to
-        # commit.
-        #
-        # Not expecting the future to ever be cancelled, see:
-        # https://github.com/reboot-dev/mono/issues/3241
-        assert not self._coordinator_participants[transaction_id].cancelled()
-        self._coordinator_participants[transaction_id].set_result(None)
-
-        # Remove transaction so that participants "watch control loop"
-        # will determine that the transaction has aborted!
-        del self._coordinator_participants[transaction_id]
 
     async def _transaction_participant_watch(
         self,
