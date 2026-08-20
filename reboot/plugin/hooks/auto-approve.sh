@@ -10,12 +10,12 @@
 #      Bash binaries (ls, cat, head, tail, find, wc, file, stat)
 #      aimed at a path under `$CLAUDE_PLUGIN_ROOT/skills/`.
 #
-#   2. The Reboot dev commands the `run` skill issues to bring an
-#      app up — `uv sync`, `npm install`, `npm run dev`,
+#   2. The Reboot dev commands issued by the `run` and `dashboard`
+#      skills: `uv sync`, `npm install`, `npm run dev`,
 #      `cloudflared tunnel …`, `uv run rbt dev run …`,
-#      `npx @mcpjam/inspector …` — but ONLY when they run inside a
-#      Reboot project tree (the working directory, or an ancestor,
-#      holds a `.rbtrc`).
+#      `uv run rbt dashboard …`, `npx @mcpjam/inspector …`. These
+#      are approved ONLY inside a Reboot project tree (the working
+#      directory, or an ancestor, holds a `.rbtrc`).
 #
 # Guards that hold for every case:
 #
@@ -281,6 +281,14 @@ case "$tool" in
                         # `run` skill — start the Reboot backend.
                         in_reboot_project "$effective_dir" || exit 1
                         args_all_flags "${trimmed#uv run rbt dev run}" \
+                            || exit 1
+                        approved=$((approved + 1))
+                        ;;
+                    'uv run rbt dashboard' | 'uv run rbt dashboard '*)
+                        # `dashboard` skill — start the developer
+                        # dashboard while an app is being built.
+                        in_reboot_project "$effective_dir" || exit 1
+                        args_all_flags "${trimmed#uv run rbt dashboard}" \
                             || exit 1
                         approved=$((approved + 1))
                         ;;
