@@ -11,12 +11,14 @@ all at once at the end, and so that one file which does not parse,
 the normal case while someone is typing, costs only its own types.
 """
 from google.protobuf.json_format import ParseDict
+from google.protobuf.struct_pb2 import Value
 from log.log import get_logger
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import API
 from reboot.aio.contexts import WorkflowContext
 from reboot.cli.common.watch import file_watcher
 from reboot.dashboard.api_reader import read
+from reboot.dashboard.changelog import changes
 from typing import Optional
 from watchdog.events import FileSystemEvent
 
@@ -127,14 +129,29 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
     descriptions = _Descriptions()
     updated: Optional[tuple] = None
 
-    async def update_if_changed(alias: str) -> None:
+    # The files that were on disk at startup and have not yet been
+    # read (without error). Each file's first good read is its
+    # baseline, so if broken at startup it still gets one once fixed:
+    # what it declares predates this dashboard, so it is shown but not
+    # recorded as a change.
+    unread = set(_files(directory))
+
+    async def update_if_changed(
+        alias: str,
+        *,
+        is_baseline: bool = False,
+    ) -> None:
         nonlocal updated
 
         current = (descriptions.state_types(), descriptions.error())
         if current == updated:
             return
+        before = [] if updated is None else updated[0]
         updated = current
         state_types, error = current
+
+        if not is_baseline:
+            await record(alias, before, state_types)
 
         async def update(state: API.State) -> None:
             ParseDict(state_types, state.state_types)
@@ -144,6 +161,29 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
                 state.error = error
 
         await API.ref().per_iteration(alias).write(context, update)
+
+    async def record(
+        alias: str,
+        before: list[dict],
+        after: list[dict],
+    ) -> None:
+        """Records what changed, for the changelog.
+
+        One call for the whole batch, so a save that touches several
+        types is one transaction. The alias names the file, so it is
+        the same every time the file is read; `per_iteration` adds
+        which read this is, making each a new call rather than a
+        replay of the first.
+        """
+        recorded = list(changes(before, after))
+
+        if len(recorded) == 0:
+            return
+
+        await API.ref().per_iteration(f'history {alias}').RecordChanges(
+            context,
+            changes=ParseDict(recorded, Value()),
+        )
 
     # Everything, once: the developer may have written the whole API
     # before the dashboard started. After this only what changes is
@@ -168,7 +208,15 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
                 for filename in sorted(pending):
                     state_types, error = await read(api_directory, filename)
                     descriptions.update(filename, state_types, error)
-                    await update_if_changed(f'read {filename}')
+
+                    is_baseline = error is None and filename in unread
+                    if is_baseline:
+                        unread.discard(filename)
+
+                    await update_if_changed(
+                        f'read {filename}',
+                        is_baseline=is_baseline,
+                    )
 
                 changed = await event
 

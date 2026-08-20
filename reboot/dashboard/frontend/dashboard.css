@@ -209,10 +209,25 @@ nav {
 .namespace,
 .namespace-types,
 .namespace-head,
-.page-selector,
 .page-link,
 nav a {
   display: contents;
+}
+
+/* Its own grid rather than the sidebar's. Sharing one would size the
+   counts against the namespace rows below, so the selector would sit
+   differently on a page with no namespaces to list, and would move
+   as they came and went. It is the one thing on the page that must
+   look the same everywhere. */
+/* The two cells stretch to one height rather than sitting on a
+   shared baseline: they carry the fill that says which page is
+   being read, and baselines would leave the smaller of them a pixel
+   short, which reads as an edge through the middle of the row. */
+.page-selector {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 1fr max-content;
+  align-items: stretch;
 }
 
 nav > .eyebrow {
@@ -319,6 +334,291 @@ nav a .nav-name {
    the cell's fill along with its text and split the row in two. */
 .page-link.current .nav-count {
   color: hsl(var(--primary-foreground) / 0.7);
+}
+
+/* Whether the page is still hearing from the application. A dot
+   rather than a banner: it is worth glancing at, not worth
+   interrupting for. */
+/* Above everything the sidebar lists, so it is not one of the rows
+   and does not have to line up with them. */
+.brand {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 10px 14px;
+}
+
+/* Small: it says whose this is, which only has to be read once. */
+.brand-logo {
+  display: block;
+  height: 16px;
+  width: auto;
+}
+
+.connection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+
+.connection-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.live .connection-dot {
+  background: hsl(146 60% 40%);
+}
+
+.offline .connection-dot {
+  background: hsl(var(--errors));
+}
+
+/* --- Changelog --- */
+
+/* That the page is watching, said where what it is watching for will
+   appear. */
+.listening {
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 0 58px 10px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  color: hsl(var(--muted-foreground));
+}
+
+/* The dots are there all along and revealed a character at a time,
+   so the line never changes width and nothing beside it moves. */
+.listening-dots {
+  display: inline-block;
+  width: 3ch;
+  overflow: hidden;
+  vertical-align: bottom;
+  animation: listening 1.2s steps(3, end) infinite;
+}
+
+@keyframes listening {
+  from {
+    width: 1ch;
+  }
+  to {
+    width: 4ch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .listening-dots {
+    animation: none;
+  }
+}
+
+/* One row per thing that happened, newest first, in columns so that
+   when, where, what kind, what happened and to what can each be read
+   down the page rather than found again in every row. */
+.changes {
+  display: grid;
+  /* Five columns sized to what they hold, and one that takes what is
+     left. That last one is therefore the only one narrowing the
+     window can take from, so it is given a floor: it wraps long
+     names anywhere, which without a minimum lets it collapse past a
+     word to a single character a line. */
+  grid-template-columns:
+    max-content max-content max-content max-content
+    max-content minmax(150px, 1fr);
+  /* The cells of a row stretch to one height rather than sitting on
+     a shared baseline: a pill is a taller box than a line of text,
+     and a baseline would leave its cell taller than its neighbours,
+     which shows up as a step in the row's hover fill. */
+  align-items: stretch;
+  /* No column gap: a row's hover fill is painted on its cells, and a
+     gap would cut it into stripes. The space between columns is the
+     cells' own padding. */
+  gap: 1px 0;
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 0 48px 24px;
+}
+
+/* `display: contents` so a row's cells are the grid's own items and
+   the columns are sized once down the page. */
+.change {
+  display: contents;
+}
+
+.change > * {
+  padding: 7px 10px;
+}
+
+/* Centred rather than flowed from the top, so a pill and a line of
+   text sit level in a row that a longer cell has made taller. Every
+   cell but the last, which holds running text: made a flex container
+   it would lay each word out as its own item, spaces and all. */
+.change > *:not(.change-moved) {
+  display: flex;
+  align-items: center;
+}
+
+.change:hover > * {
+  background: hsl(var(--card) / 0.7);
+}
+
+.change > *:first-child {
+  border-radius: 5px 0 0 5px;
+}
+
+.change > *:last-child {
+  border-radius: 0 5px 5px 0;
+}
+
+/* Narrow enough that squeezing the last column would wrap it to a
+   few characters a line, so the message moves under the row that
+   names it and takes the full width instead. The viewport stands in
+   for the pane because the pane cannot be asked its own width: no
+   container queries in every browser this has to run in. */
+@media (max-width: 1000px) {
+  .changes {
+    grid-template-columns:
+      max-content max-content max-content
+      max-content 1fr;
+    gap: 0;
+  }
+
+  /* Under its row, and carrying the space that separates one change
+     from the next. Rows with nothing to say still carry it, so the
+     rhythm does not depend on what happened. */
+  .change-moved {
+    grid-column: 1 / -1;
+    padding-top: 0;
+    padding-bottom: 18px;
+  }
+
+  /* A change is two rows now, so the fill is squared off between
+     them and rounded only around the outside. */
+  .change > *:first-child {
+    border-radius: 5px 0 0;
+  }
+
+  .change > *:nth-child(5) {
+    border-radius: 0 5px 0 0;
+  }
+
+  .change > *:last-child {
+    border-radius: 0 0 5px 5px;
+  }
+}
+
+/* Tighter than the cells around it: the two pills say one thing
+   between them, and the row's usual spacing reads as though they
+   belonged to different columns. */
+.change-pill-cell {
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+.change-when {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+
+/* Where it lives, ahead of what happened to it: the same shape the
+   rest of the dashboard reads in, namespace first. */
+.change-where {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+
+/* Both pills are one width so the two columns of them read as
+   columns rather than as ragged text. Squared off rather than round:
+   at this size a pill radius makes a lozenge, and there are two of
+   them side by side. */
+.change-pill {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: center;
+  min-width: 54px;
+}
+
+/* Which page it is on: two kinds, so two colours, but held well
+   away from the colours that say what happened. */
+.change-kind-state {
+  background: hsl(275 55% 55% / 0.12);
+  border-color: hsl(275 45% 55% / 0.35);
+  color: hsl(275 50% 42%);
+}
+
+.change-kind-data {
+  background: hsl(32 90% 55% / 0.14);
+  border-color: hsl(32 75% 50% / 0.38);
+  color: hsl(28 80% 35%);
+}
+
+.change-added {
+  background: hsl(166 47% 61% / 0.18);
+  border-color: hsl(166 40% 55% / 0.45);
+  color: hsl(166 55% 27%);
+}
+
+.change-changed {
+  background: hsl(211 72% 45% / 0.14);
+  border-color: hsl(211 60% 50% / 0.4);
+  color: hsl(211 72% 32%);
+}
+
+.change-removed {
+  background: hsl(0 62% 45% / 0.12);
+  border-color: hsl(0 62% 45% / 0.35);
+  color: hsl(var(--errors));
+}
+
+/* The type it happened to. Named plainly: what actually moved is
+   the next column, and that is what should be read first. */
+.change-name {
+  font-size: 12.5px;
+  color: hsl(var(--foreground));
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+a.change-name:hover {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* What moved inside it, which is what the row is actually about: the
+   largest thing in the row, with the name itself carrying the
+   weight. */
+.change-moved {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+  overflow-wrap: anywhere;
+}
+
+.moved-removed {
+  text-decoration: line-through;
+  text-decoration-color: hsl(var(--errors) / 0.6);
 }
 
 /* --- Document pane --- */

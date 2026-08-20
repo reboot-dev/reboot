@@ -64,7 +64,7 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stock['request'], {'$ref': '#/$defs/StockRequest'})
         self.assertEqual(
             list(_defs(shop, 'StockRequest')['properties']),
-            ['item', 'quantity'],
+            ['item', 'quantity', 'labels'],
         )
 
         # `stock` has a `description` and is not an MCP tool: prose
