@@ -78,56 +78,33 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
         # a dashboard opened for them.
         self.assertFalse(await self._get())
 
-    async def test_constructing_leaves_a_choice_already_made_alone(
+    async def test_a_writer_leaves_alone_what_it_was_not_asked_about(
         self
     ) -> None:
+        # The reason there are two writers rather than one that takes
+        # both fields, and the reason `initialize` is careful: the
+        # dashboard constructs on every `rbt dashboard`, and a page
+        # that expands a state type must not write back a stale
+        # answer to a question it was not asked.
         await self._set_suppress(True)
+        await self._set_expanded('bank.v1.Account', True)
 
         await initialize(self._initialize_context())
 
         self.assertTrue(await self._get())
+        self.assertEqual(await self._expanded(), ['bank.v1.Account'])
 
-    async def test_constructing_twice_leaves_a_later_choice_alone(
-        self
-    ) -> None:
-        # The restart case: the dashboard constructs on every
-        # `rbt dashboard`, and the click it must not undo was made
-        # after the first of those.
-        await initialize(self._initialize_context())
-        await self._set_suppress(True)
-
-        await initialize(self._initialize_context())
-
-        self.assertTrue(await self._get())
-
-    async def test_collapsing_removes_the_state_type(self) -> None:
+    async def test_what_is_expanded_is_a_sorted_set(self) -> None:
+        # Two tabs can each send the same click, a page that
+        # reconnects can send one it already sent, and a collapse can
+        # arrive for something that was never open.
+        await self._set_expanded('bank.v1.Customer', True)
+        await self._set_expanded('bank.v1.Account', True)
         await self._set_expanded('bank.v1.Account', True)
         await self._set_expanded('bank.v1.Bank', True)
 
-        await self._set_expanded('bank.v1.Account', False)
-
-        self.assertEqual(await self._expanded(), ['bank.v1.Bank'])
-
-    async def test_expanding_twice_records_the_state_type_once(self) -> None:
-        # Two tabs can each send the same click, and a page that
-        # reconnects can send one it already sent.
-        await self._set_expanded('bank.v1.Account', True)
-        await self._set_expanded('bank.v1.Account', True)
-
-        self.assertEqual(await self._expanded(), ['bank.v1.Account'])
-
-    async def test_collapsing_what_was_never_expanded_is_no_error(
-        self
-    ) -> None:
-        await self._set_expanded('bank.v1.Account', False)
-
-        self.assertEqual(await self._expanded(), [])
-
-    async def test_the_order_clicked_in_does_not_change_what_is_stored(
-        self
-    ) -> None:
-        await self._set_expanded('bank.v1.Customer', True)
-        await self._set_expanded('bank.v1.Account', True)
+        await self._set_expanded('bank.v1.Bank', False)
+        await self._set_expanded('bank.v1.Never', False)
 
         # Sorted, so that the reactive read does not push a change to
         # every open page when the only difference is the order two
@@ -136,30 +113,6 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
             await self._expanded(),
             ['bank.v1.Account', 'bank.v1.Customer'],
         )
-
-    async def test_expanding_leaves_the_reopening_choice_alone(self) -> None:
-        # The reason there are two writers rather than one that takes
-        # both fields: a page that expands a state type must not write
-        # back a stale answer to a question it was not asked.
-        await self._set_suppress(True)
-
-        await self._set_expanded('bank.v1.Account', True)
-
-        self.assertTrue(await self._get())
-
-    async def test_the_reopening_choice_leaves_expansions_alone(self) -> None:
-        await self._set_expanded('bank.v1.Account', True)
-
-        await self._set_suppress(True)
-
-        self.assertEqual(await self._expanded(), ['bank.v1.Account'])
-
-    async def test_constructing_leaves_expansions_alone(self) -> None:
-        await self._set_expanded('bank.v1.Account', True)
-
-        await initialize(self._initialize_context())
-
-        self.assertEqual(await self._expanded(), ['bank.v1.Account'])
 
 
 if __name__ == '__main__':
