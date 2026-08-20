@@ -144,14 +144,6 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
 
         browser.assert_called_once_with(self.dashboard_url)
 
-    async def test_forcing_opens_even_though_somebody_is_looking(self) -> None:
-        await self._view('a-tab-that-is-open')
-
-        with patch('webbrowser.open', return_value=True) as browser:
-            await _open_dashboard_once(dashboard_url=self.url, forced=True)
-
-        browser.assert_called_once_with(self.dashboard_url)
-
     async def test_does_not_open_when_the_developer_asked_it_not_to(
         self
     ) -> None:
@@ -175,26 +167,26 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('--open-dashboard', told.call_args.args[0])
         self.assertIn(self.dashboard_url, told.call_args.args[0])
 
-    async def test_forcing_opens_even_though_the_developer_asked_it_not_to(
-        self
-    ) -> None:
-        await self._suppress_reopening(True)
-
-        with patch('webbrowser.open', return_value=True) as browser:
-            await _open_dashboard_once(dashboard_url=self.url, forced=True)
-
-        browser.assert_called_once_with(self.dashboard_url)
-
-    async def test_opens_again_once_the_developer_has_asked_for_it_back(
-        self
-    ) -> None:
         # The second banner undoes the first, so a developer who
         # clicked once is not stuck with it.
-        await self._suppress_reopening(True)
         await self._suppress_reopening(False)
 
         with patch('webbrowser.open', return_value=True) as browser:
             await _open_dashboard_once(dashboard_url=self.url, forced=False)
+
+        browser.assert_called_once_with(self.dashboard_url)
+
+    async def test_forcing_opens_whatever_would_have_held_it_back(
+        self
+    ) -> None:
+        # Both of the things that stop an opening at once, so that
+        # `--open-dashboard` means what it says regardless of which
+        # one is in the way.
+        await self._view('a-tab-that-is-open')
+        await self._suppress_reopening(True)
+
+        with patch('webbrowser.open', return_value=True) as browser:
+            await _open_dashboard_once(dashboard_url=self.url, forced=True)
 
         browser.assert_called_once_with(self.dashboard_url)
 
