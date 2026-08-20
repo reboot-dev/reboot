@@ -13,6 +13,7 @@ from rbt.dashboard.v1.dashboard_rbt import API, Preferences
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from rbt.std.presence.v1.presence_rbt import Presence
 from reboot.aio.applications import Application
+from reboot.aio.auth.authorizers import allow, allow_if, is_app_internal
 from reboot.aio.external import InitializeContext
 from reboot.dashboard.constants import (
     API_ID,
@@ -21,7 +22,11 @@ from reboot.dashboard.constants import (
     PREFERENCES_ID,
     PRESENCE_ID,
 )
-from reboot.dashboard.servicers import libraries, servicers
+from reboot.dashboard.servicers import APIServicer, PreferencesServicer
+from reboot.std.collections.ordered_map.v1.ordered_map import (
+    ordered_map_library,
+)
+from reboot.std.presence.v1 import presence
 from starlette.staticfiles import StaticFiles
 
 # The built page, beside this module, which is the same arrangement
@@ -36,8 +41,26 @@ _DASHBOARD_DIRECTORY = Path(__file__).parent / 'dashboard'
 def application() -> Application:
     """The dashboard application, with its page mounted."""
     application = Application(
-        servicers=servicers(),
-        libraries=libraries(),
+        servicers=[
+            APIServicer,
+            PreferencesServicer,
+        ] + presence.servicers(),
+        libraries=[
+            ordered_map_library(
+                # The page reads the changelog straight from the
+                # browser; only the dashboard itself records what
+                # changed.
+                OrderedMap.Authorizer(
+                    search=allow(),
+                    range=allow(),
+                    reverse_range=allow(),
+                    stringify=allow(),
+                    create=allow_if(all=[is_app_internal]),
+                    insert=allow_if(all=[is_app_internal]),
+                    remove=allow_if(all=[is_app_internal]),
+                )
+            ),
+        ],
         initialize=initialize,
     )
 
