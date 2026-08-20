@@ -13,6 +13,7 @@ from log.log import get_logger
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
 from rbt.v1alpha1.application.application_pb2 import ExamplePrompt
+from reboot.aio.auth.native_redirect_uris import validate_native_redirect_uri
 from reboot.aio.auth.oauth_providers import OAuthProviderSelector
 from reboot.aio.auth.oauth_server import OAuthServer
 from reboot.aio.auth.token_verifiers import (
@@ -250,6 +251,7 @@ class Application:
         token_verifier: Optional[TokenVerifier] = None,
         oauth: Optional[OAuthProviderSelector] = None,
         allowed_origins: Optional[list[str]] = None,
+        native_redirect_uris: Optional[list[str]] = None,
         title: Optional[str] = None,
         description: Optional[str] = None,
         example_prompts: Optional[list[ExamplePrompt]] = None,
@@ -322,6 +324,49 @@ class Application:
               default-None case almost always means "the developer
               forgot", and we'd rather raise loudly than silently
               CORS-block every sign-in attempt in production.
+        :param native_redirect_uris: exact-match list of the redirect
+            URIs belonging to this application's own first-party
+            native apps — a mobile app's custom scheme (e.g.
+            `"myapp://redirect"`), or an `https://` App Link /
+            Universal Link. A native app cannot use the browser
+            sign-in flow (there is no page to redirect and no cookie
+            jar to hold the session), so it registers itself
+            dynamically (RFC 7591) and completes an ordinary
+            authorization-code flow with PKCE instead.
+
+            Registration proves nothing about who is registering, so
+            by default such a client is treated as third-party: the
+            user is shown a consent screen naming it, and the flow
+            only continues once they approve. That screen is what
+            stands between a user and an attacker who registers a
+            client with *their own* `redirect_uri`, sends the user an
+            `/__/oauth/authorize` link on this trusted origin, and
+            collects an access token for the user's identity once
+            they sign in. PKCE is no help there, because in that
+            attack the attacker is the registered client.
+
+            Listing a redirect URI here says it is yours, so a client
+            that registers only such URIs signs the user in directly,
+            with no consent screen — the same treatment the browser
+            SPA gets. It is safe for exactly one reason: an
+            authorization code issued for one of these URIs is
+            delivered to *your* app, so an attacker registering the
+            same URI gains nothing. Entries are therefore compared for
+            exact equality, and wildcards are refused.
+
+            Under `rbt dev run`, Expo's `exp://<host>/--/...`
+            development URIs are trusted automatically, because they
+            carry the development machine's address and port and so
+            have no stable spelling to list here.
+
+            Note that a custom scheme is claimed on a first-come basis
+            on some platforms, so a hostile app on the same device can
+            register `myapp://` too. PKCE contains that: the code it
+            intercepts is useless without the verifier, which never
+            leaves your app. An `https://` App Link / Universal Link,
+            which the operating system verifies against your domain,
+            avoids the race entirely and is the stronger choice where
+            you can use one.
         :param title: a human-readable name for the application.
             Defaults to `application_name()` if unset.
         :param description: a human-readable description of the
@@ -525,6 +570,25 @@ class Application:
                     "never carry them, so an entry with a path would "
                     "never match."
                 )
+        # Only meaningful alongside an OAuth server; without one there
+        # is no registration for the list to classify, so a lone
+        # `native_redirect_uris` is a config mistake worth surfacing
+        # rather than silently ignoring.
+        if native_redirect_uris is not None and oauth is None:
+            raise InputError(
+                reason=(
+                    "`Application(native_redirect_uris=...)` requires "
+                    "`oauth=...`: it marks which OAuth clients are "
+                    "your own first-party native apps, and without an "
+                    "OAuth provider this application has no OAuth "
+                    "clients."
+                ),
+            )
+        self._native_redirect_uris: list[str] = list(
+            native_redirect_uris or []
+        )
+        for redirect_uri in self._native_redirect_uris:
+            validate_native_redirect_uri(redirect_uri)
         self._title = title or application_name()
         self._description = description
         self._example_prompts = example_prompts or []
@@ -780,6 +844,7 @@ class Application:
                 authenticated=self._authenticated,
                 claims_changed=self._set_claims_if_exists,
                 allowed_origins=self._allowed_origins,
+                native_redirect_uris=self._native_redirect_uris,
             )
             self._oauth_server = oauth_server
             if self._token_verifier is not None:

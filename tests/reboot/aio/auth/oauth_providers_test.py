@@ -60,6 +60,9 @@ _HTTP_TIMEOUT_SECONDS = 30.0
 # Path of the consent endpoint the `/authorize` consent screen POSTs to.
 _CONSENT_PATH = "/__/oauth/consent"
 
+# Path of the token endpoint clients exchange authorization codes at.
+_TOKEN_PATH = "/__/oauth/token"
+
 
 def _extract_consent_token(consent_page_html: str) -> str:
     """Pull the signed consent token out of the consent page's hidden
@@ -1266,6 +1269,338 @@ class ConsentScreenTest(unittest.IsolatedAsyncioTestCase):
                 },
             )
             self.assertEqual(response.status_code, 400)
+
+
+class FirstPartyNativeClientTest(unittest.IsolatedAsyncioTestCase):
+    """A native app can't use the browser sign-in flow, so it registers
+    dynamically and is third-party by default — consent screen and all.
+    `Application(native_redirect_uris=...)` is the application declaring
+    which redirect URIs are its own apps', which lets those clients sign
+    the user in directly.
+    """
+
+    _NATIVE_REDIRECT_URI = "bankpydanticmobile://redirect"
+
+    async def asyncSetUp(self):
+        self.rbt = Reboot()
+        await self.rbt.start()
+
+    async def asyncTearDown(self):
+        await self.rbt.stop()
+
+    async def _up(self, *, native_redirect_uris: Optional[list[str]]) -> None:
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Development()),
+                native_redirect_uris=native_redirect_uris,
+            ),
+        )
+
+    async def _register(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        redirect_uris: list[str],
+    ) -> str:
+        response = await client.post(
+            self.rbt.http_localhost_url("/__/oauth/register"),
+            json={
+                "redirect_uris": redirect_uris,
+                "client_name": "Rebank Mobile",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        return response.json()["client_id"]
+
+    async def _authorize(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        client_id: str,
+        redirect_uri: str,
+    ) -> httpx.Response:
+        # A fixed PKCE pair (verifier "verifier"); which client the
+        # server treats as first-party doesn't depend on its value, but
+        # `/authorize` requires PKCE.
+        code_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(b"verifier").digest()
+        ).rstrip(b"=").decode()
+        return await client.get(
+            self.rbt.http_localhost_url("/__/oauth/authorize"),
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+                "state": "native-state",
+            },
+        )
+
+    async def test_listed_redirect_uri_skips_consent(self):
+        # The whole point: a client registering only a claimed redirect
+        # URI goes straight to the identity provider, exactly as the
+        # browser SPA does, with no consent screen in between.
+        await self._up(native_redirect_uris=[self._NATIVE_REDIRECT_URI])
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            client_id = await self._register(
+                client,
+                redirect_uris=[self._NATIVE_REDIRECT_URI],
+            )
+            response = await self._authorize(
+                client,
+                client_id=client_id,
+                redirect_uri=self._NATIVE_REDIRECT_URI,
+            )
+            self.assertEqual(response.status_code, 302, response.text)
+            self.assertIn("/__/oauth/dev-login", response.headers["location"])
+
+    async def test_unlisted_redirect_uri_still_sees_consent(self):
+        # An app that registers a redirect URI the application never
+        # claimed is exactly the attacker the consent screen exists
+        # for, so it gets one.
+        await self._up(native_redirect_uris=[self._NATIVE_REDIRECT_URI])
+        attacker_redirect_uri = "evilapp://redirect"
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            client_id = await self._register(
+                client,
+                redirect_uris=[attacker_redirect_uri],
+            )
+            response = await self._authorize(
+                client,
+                client_id=client_id,
+                redirect_uri=attacker_redirect_uri,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertIn("Do you trust", response.text)
+
+    async def test_one_unlisted_redirect_uri_forfeits_first_party(self):
+        # Registering a claimed URI alongside an unclaimed one must not
+        # buy first-party treatment: the client picks which of its
+        # registered URIs to use per request, so it could then have the
+        # authorization code delivered to the unclaimed one.
+        await self._up(native_redirect_uris=[self._NATIVE_REDIRECT_URI])
+        attacker_redirect_uri = "evilapp://redirect"
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            client_id = await self._register(
+                client,
+                redirect_uris=[
+                    self._NATIVE_REDIRECT_URI,
+                    attacker_redirect_uri,
+                ],
+            )
+            response = await self._authorize(
+                client,
+                client_id=client_id,
+                redirect_uri=attacker_redirect_uri,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertIn("Do you trust", response.text)
+
+    async def test_without_the_allow_list_every_client_sees_consent(self):
+        # The default is unchanged: with nothing claimed, the same
+        # registration that skips consent above does not.
+        await self._up(native_redirect_uris=None)
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            client_id = await self._register(
+                client,
+                redirect_uris=[self._NATIVE_REDIRECT_URI],
+            )
+            response = await self._authorize(
+                client,
+                client_id=client_id,
+                redirect_uri=self._NATIVE_REDIRECT_URI,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+    async def test_expo_redirect_uri_is_first_party_only_in_dev(self):
+        # Expo's development redirect URI carries the development
+        # machine's address, so it has no stable spelling to claim and
+        # is instead trusted by shape — but only under `rbt dev run`.
+        await self._up(native_redirect_uris=[])
+        expo_redirect_uri = "exp://192.168.1.7:8081/--/redirect"
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            with mock.patch.dict(os.environ, {ENVVAR_RBT_DEV: "true"}):
+                client_id = await self._register(
+                    client,
+                    redirect_uris=[expo_redirect_uri],
+                )
+                response = await self._authorize(
+                    client,
+                    client_id=client_id,
+                    redirect_uri=expo_redirect_uri,
+                )
+            self.assertEqual(response.status_code, 302, response.text)
+            self.assertIn("/__/oauth/dev-login", response.headers["location"])
+
+            # Outside dev the same registration is third-party. The
+            # first-party marker is decided at registration, so this
+            # registers again rather than reusing the `client_id`
+            # minted above.
+            client_id = await self._register(
+                client,
+                redirect_uris=[expo_redirect_uri],
+            )
+            response = await self._authorize(
+                client,
+                client_id=client_id,
+                redirect_uri=expo_redirect_uri,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+    async def test_whoami_resolves_default_ids_from_a_bearer(self):
+        # A native app holds its access token directly rather than in
+        # a cookie the backend can read, so `/whoami` also accepts it
+        # as a bearer. That is how the app learns which state ids are
+        # its user's without hardcoding the auto-construct state
+        # types.
+        await self._up(native_redirect_uris=[self._NATIVE_REDIRECT_URI])
+        base = self.rbt.http_localhost_url("")
+        code_verifier = "verifier"
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            client_id = await self._register(
+                client,
+                redirect_uris=[self._NATIVE_REDIRECT_URI],
+            )
+            # Sign in: `/authorize` goes straight to the dev-login
+            # page, whose per-identity link is the OAuth callback.
+            response = await self._authorize(
+                client,
+                client_id=client_id,
+                redirect_uri=self._NATIVE_REDIRECT_URI,
+            )
+            self.assertEqual(response.status_code, 302, response.text)
+            response = await client.get(response.headers["location"])
+            self.assertEqual(response.status_code, 200)
+            match = re.search(
+                r'href="([^"]*?code=Alice[^"]*?)"', response.text
+            )
+            assert match is not None
+            response = await client.get(html.unescape(match.group(1)))
+            self.assertEqual(response.status_code, 302)
+            code = httpx.URL(response.headers["location"]).params["code"]
+
+            # Exchange the authorization code for an access token.
+            response = await client.post(
+                base + _TOKEN_PATH,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "client_id": client_id,
+                    "redirect_uri": self._NATIVE_REDIRECT_URI,
+                    "code_verifier": code_verifier,
+                },
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            access_token = response.json()["access_token"]
+
+        # The bearer alone resolves the session. This runs on a fresh
+        # client because the OAuth callback above also set session
+        # cookies on `client`, which would have taken the cookie path
+        # and proved nothing.
+        async with httpx.AsyncClient(
+            timeout=_HTTP_TIMEOUT_SECONDS
+        ) as bearer_only_client:
+            response = await bearer_only_client.get(
+                base + "/__/oauth/whoami",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertNotIn("rbt_session", bearer_only_client.cookies)
+            body = response.json()
+            self.assertTrue(body["authenticated"])
+            user_id = body["user_id"]
+            self.assertTrue(user_id.startswith("dev-"))
+            self.assertEqual(body["access_token"], access_token)
+            # Every auto-construct state type resolves to this user.
+            self.assertNotEqual(body["default_ids"], {})
+            for state_id in body["default_ids"].values():
+                self.assertEqual(state_id, user_id)
+
+    async def test_whoami_refuses_a_bogus_bearer(self):
+        await self._up(native_redirect_uris=[])
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            response = await client.get(
+                self.rbt.http_localhost_url("/__/oauth/whoami"),
+                headers={"Authorization": "Bearer not-a-real-jwt"},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json(), {"authenticated": False})
+
+    async def test_localhost_redirect_uri_is_not_trusted_in_dev(self):
+        # MCP clients register localhost redirect URIs, so localhost
+        # must not be trusted by shape the way `allowed_origins`
+        # widens to it in development: a developer whose MCP client
+        # skipped consent locally would meet the screen for the first
+        # time in production.
+        await self._up(native_redirect_uris=[])
+        localhost_redirect_uri = "http://localhost:33418/oauth/callback"
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            with mock.patch.dict(os.environ, {ENVVAR_RBT_DEV: "true"}):
+                client_id = await self._register(
+                    client,
+                    redirect_uris=[localhost_redirect_uri],
+                )
+                response = await self._authorize(
+                    client,
+                    client_id=client_id,
+                    redirect_uri=localhost_redirect_uri,
+                )
+            self.assertEqual(response.status_code, 200, response.text)
+
+
+class NativeRedirectUrisValidationTest(unittest.TestCase):
+    """`Application(native_redirect_uris=...)` decides whose clients skip
+    the consent screen, so entries that could never mean what their
+    author intended are refused at construction rather than silently
+    never matching."""
+
+    def _application(self, native_redirect_uris: list[str]) -> Application:
+        return Application(
+            servicers=[UserServicer, CounterServicer],
+            oauth=OAuthProviderForTest(Development()),
+            native_redirect_uris=native_redirect_uris,
+        )
+
+    def test_accepts_custom_scheme_and_app_link(self):
+        self._application(
+            [
+                "bankpydanticmobile://redirect",
+                "https://app.example.com/redirect",
+            ]
+        )
+
+    def test_rejects_uri_without_a_scheme(self):
+        with self.assertRaises(ValueError) as context:
+            self._application(["redirect"])
+        self.assertIn("must be a full URI", str(context.exception))
+
+    def test_rejects_wildcard(self):
+        # A wildcard would hand authorization codes for real users to
+        # whatever matched it.
+        with self.assertRaises(ValueError) as context:
+            self._application(["myapp://*"])
+        self.assertIn("wildcard", str(context.exception))
+
+    def test_rejects_forbidden_scheme(self):
+        with self.assertRaises(ValueError) as context:
+            self._application(["javascript://redirect"])
+        self.assertIn("forbidden", str(context.exception))
+
+    def test_rejects_non_string_entry(self):
+        with self.assertRaises(ValueError) as context:
+            self._application([None])  # type: ignore[list-item]
+        self.assertIn("must be a list of strings", str(context.exception))
+
+    def test_requires_oauth(self):
+        # Without an OAuth server there are no clients to classify.
+        with self.assertRaises(InputError) as context:
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                native_redirect_uris=["myapp://redirect"],
+            )
+        self.assertIn("requires `oauth=...`", str(context.exception))
 
 
 class GoogleValidateTest(unittest.TestCase):

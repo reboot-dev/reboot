@@ -224,43 +224,107 @@ interface RebootAuthState {
 }
 
 /**
- * Returns a function that begins sign-in by redirecting the
- * browser to the Reboot OAuth server's `/__/oauth/start`. After
- * the IdP round-trip the user lands back at `returnTo` (defaults
- * to the current URL) with a session cookie set.
- *
- * Reads the backend URL from the surrounding `RebootClientProvider`
- * via `useRebootClient()`, so it points at the *backend* origin
- * even when the SPA is hosted on a different one — crucial for
- * cross-origin deployments where `window.location.origin` would
- * misdirect the flow at the Vite dev server.
+ * A signed-in session: a token to authenticate Reboot calls with, and
+ * when that token stops being valid.
  */
-export const useSignIn = (): ((returnTo?: string) => void) => {
-  const client = useRebootClient();
-  return (returnTo?: string) => {
-    const target = new URL("/__/oauth/start", client.url);
-    target.searchParams.set("return_to", returnTo ?? window.location.href);
-    window.location.href = target.toString();
-  };
+export interface RebootSession {
+  accessToken: string;
+  /** Unix epoch seconds at which `accessToken` expires. */
+  expiresAt?: number;
+}
+
+/**
+ * How a surface signs users in and keeps their session alive.
+ *
+ * `RebootClientProvider` drives the browser's cookie-backed OAuth
+ * flow unless it is given one of these. React Native has neither a
+ * page to redirect nor a cookie jar shared with the backend, so a
+ * native app passes `nativeAuth({...})` from
+ * `@reboot-dev/reboot-react/native`, which runs the
+ * authorization-code flow with PKCE instead. Either way the app
+ * itself uses `useSignIn()`, `useSignOut()`, and the generated
+ * `use<State>()` hooks, which behave identically on both.
+ *
+ * Every method may reject; `useSignIn()` and `useSignOut()` pass the
+ * rejection through to their caller.
+ */
+export interface RebootAuth {
+  /**
+   * Resume a session persisted by an earlier run, resolving to
+   * `undefined` when there is none to resume.
+   */
+  restore: () => Promise<RebootSession | undefined>;
+  /**
+   * Sign a user in, resolving to `undefined` when they declined or
+   * dismissed the flow.
+   */
+  signIn: () => Promise<RebootSession | undefined>;
+  /** Drop this device's session. */
+  signOut: () => Promise<void>;
+  /**
+   * Mint a fresh access token. Resolves to `"unauthenticated"` when
+   * the session is definitively over, so the app can re-render to
+   * its sign-in page; to `undefined` when the attempt failed for a
+   * reason that says nothing about the session, such as an
+   * unreachable backend, and is worth retrying.
+   */
+  refresh: () => Promise<RebootSession | "unauthenticated" | undefined>;
+}
+
+/**
+ * Builds a `RebootAuth` for a backend at `rebootUrl`, which
+ * `RebootClientProvider` supplies from its own `url`.
+ *
+ * Keep the factory itself referentially stable — a module-level
+ * constant rather than an expression in the JSX — so the provider
+ * doesn't rebuild the session machinery on every render.
+ */
+export type RebootAuthFactory = (rebootUrl: string) => RebootAuth;
+
+interface RebootSignInContextValue {
+  signIn: (returnTo?: string) => Promise<void>;
+  signOut: () => Promise<void>;
+}
+
+const RebootSignInContext = createContext<RebootSignInContextValue | undefined>(
+  undefined
+);
+
+const useRebootSignInContext = (): RebootSignInContextValue => {
+  const context = useContext(RebootSignInContext);
+  if (context === undefined) {
+    throw new Error(
+      "`useSignIn`/`useSignOut` must be used within a `RebootClientProvider`."
+    );
+  }
+  return context;
 };
 
 /**
- * Returns a function that signs the user out by clearing the
- * session cookies on the backend and reloading. Local sign-out
- * only.
+ * Returns a function that signs the user in.
  *
- * Like `useSignIn`, reads the backend URL from
- * `useRebootClient()` so the request lands on the backend origin.
+ * By default that means redirecting the browser to the Reboot OAuth
+ * server's `/__/oauth/start`; after the identity-provider round-trip
+ * the user lands back at `returnTo` (defaulting to the current URL)
+ * with a session cookie set. When the surrounding
+ * `RebootClientProvider` was given a `nativeAuth` of its own — as a
+ * native app does — sign-in runs that instead, and `returnTo` is
+ * ignored because there is no page to come back to.
+ *
+ * The backend URL comes from the surrounding provider rather than
+ * from `window.location`, so the flow lands on the *backend* origin
+ * even when the front end is served from a different one.
+ */
+export const useSignIn = (): ((returnTo?: string) => Promise<void>) => {
+  return useRebootSignInContext().signIn;
+};
+
+/**
+ * Returns a function that signs the user out on this device, leaving
+ * the identity provider's own session alone.
  */
 export const useSignOut = (): (() => Promise<void>) => {
-  const client = useRebootClient();
-  return async () => {
-    await fetch(new URL("/__/oauth/signout", client.url).toString(), {
-      method: "POST",
-      credentials: "include",
-    });
-    window.location.reload();
-  };
+  return useRebootSignInContext().signOut;
 };
 
 interface WhoamiResponse {
@@ -279,11 +343,23 @@ interface WhoamiResult {
 // `"retry"` means the probe failed without answering the signed-in
 // question (network error, 5xx, or a malformed body): the caller
 // should probe again rather than treat the user as signed out.
-async function fetchWhoami(rebootUrl: string): Promise<WhoamiResult | "retry"> {
+async function fetchWhoami(
+  rebootUrl: string,
+  // Sent as an `Authorization: Bearer` header when given. A native
+  // app has no cookie jar shared with the backend, so its own access
+  // token is the only thing that can identify the session — and what
+  // it needs answered is the `default_ids` map, which only the
+  // backend can compute.
+  bearerToken?: string
+): Promise<WhoamiResult | "retry"> {
   let response: Response;
   try {
     response = await fetch(new URL("/__/oauth/whoami", rebootUrl).toString(), {
       credentials: "include",
+      headers:
+        bearerToken === undefined
+          ? undefined
+          : { Authorization: `Bearer ${bearerToken}` },
     });
   } catch {
     return "retry";
@@ -395,6 +471,7 @@ interface RebootClientProviderWithClientProps {
   url?: undefined;
   mcpUiTitle?: string;
   token?: string;
+  nativeAuth?: RebootAuthFactory;
   client: RebootClient;
   offlineCacheEnabled?: boolean;
 }
@@ -404,6 +481,7 @@ interface RebootClientProviderWithURLProps {
   url: string;
   mcpUiTitle?: string;
   token?: string;
+  nativeAuth?: RebootAuthFactory;
   client?: undefined;
   offlineCacheEnabled?: boolean;
 }
@@ -413,6 +491,7 @@ interface RebootClientProviderAutoProps {
   url?: undefined;
   mcpUiTitle?: string;
   token?: string;
+  nativeAuth?: RebootAuthFactory;
   client?: undefined;
   offlineCacheEnabled?: boolean;
 }
@@ -427,6 +506,7 @@ export const RebootClientProvider = ({
   url: explicitUrl,
   mcpUiTitle: explicitUiTitle,
   token,
+  nativeAuth,
   client,
   offlineCacheEnabled = false,
 }: RebootClientProviderProps) => {
@@ -454,22 +534,56 @@ export const RebootClientProvider = ({
     [rebootUrl, offlineCacheEnabled, bearerToken]
   );
 
-  // 401-triggered refresh for the web surface, handed to generated
-  // hooks through `BearerRefreshContext` (the MCP connector provides
-  // its own, host-based implementation there). Coalesces concurrent
-  // callers into one `/__/oauth/refresh` round-trip; resolves to the
-  // fresh bearer, or `undefined` when no fresh bearer could be
-  // obtained. A terminal rejection also flips the auth state to
-  // signed out, so the UI reacts.
-  const refreshWebBearerPromise = useRef<Promise<string | undefined> | null>(
-    null
+  // The app's own sign-in machinery, when it brought some. Built once
+  // per backend URL, which is why the factory is documented as
+  // needing to be referentially stable.
+  const authDriver = useMemo(
+    () => (nativeAuth === undefined ? undefined : nativeAuth(rebootUrl)),
+    [nativeAuth, rebootUrl]
   );
-  const refreshWebBearerToken = useCallback((): Promise<string | undefined> => {
-    if (refreshWebBearerPromise.current !== null) {
-      return refreshWebBearerPromise.current;
+
+  // The access token the driver last handed us. Distinct from
+  // `bearerToken`, which the MCP connector and `/whoami` also write:
+  // this one is what says "the driver has a session", and so what
+  // decides whether there is anything to probe `/whoami` with.
+  const [sessionToken, setSessionToken] = useState<string | undefined>(
+    undefined
+  );
+
+  // 401-triggered refresh, handed to generated hooks through
+  // `BearerRefreshContext` (the MCP connector provides its own,
+  // host-based implementation there). Coalesces concurrent callers
+  // into one round-trip; resolves to the fresh bearer, or `undefined`
+  // when no fresh bearer could be obtained. Learning that the session
+  // is over also flips the auth state to signed out, so the UI
+  // reacts.
+  const refreshPromise = useRef<Promise<string | undefined> | null>(null);
+  const refreshBearerToken = useCallback((): Promise<string | undefined> => {
+    if (refreshPromise.current !== null) {
+      return refreshPromise.current;
     }
     const promise = (async () => {
       try {
+        if (authDriver !== undefined) {
+          const session = await authDriver.refresh();
+          if (session === "unauthenticated") {
+            setAuthState({ status: "unauthenticated" });
+            setBearerToken(undefined);
+            setSessionToken(undefined);
+            return undefined;
+          }
+          if (session === undefined) {
+            return undefined;
+          }
+          setBearerToken(session.accessToken);
+          setSessionToken(session.accessToken);
+          setAuthState((prev) =>
+            prev.status === "authenticated"
+              ? { ...prev, expiresAt: session.expiresAt }
+              : prev
+          );
+          return session.accessToken;
+        }
         const refreshed = await refreshBearer(rebootUrl, setBearerToken);
         if (refreshed === "unauthenticated") {
           setAuthState({ status: "unauthenticated" });
@@ -486,32 +600,103 @@ export const RebootClientProvider = ({
         );
         return refreshed.accessToken;
       } finally {
-        refreshWebBearerPromise.current = null;
+        refreshPromise.current = null;
       }
     })();
-    refreshWebBearerPromise.current = promise;
+    refreshPromise.current = promise;
     return promise;
-  }, [rebootUrl]);
+  }, [rebootUrl, authDriver]);
 
-  // In web mode: probe `/whoami` to learn the signed-in state,
-  // retrying with backoff while the backend can't answer, so user
-  // code can branch on the generated `useUser()` hook's
-  // `{ user, isLoading }` shape. In MCP mode the bearer is
-  // delivered by the host via tool results, so this probe doesn't
-  // run.
+  // Resume whatever session the driver persisted on an earlier run,
+  // so a returning user is signed in without touching the browser.
+  useEffect(() => {
+    if (mcpTitle) return;
+    if (authDriver === undefined) return;
+    let cancelled = false;
+    void (async () => {
+      let session: RebootSession | undefined = undefined;
+      try {
+        session = await authDriver.restore();
+      } catch (error) {
+        console.warn("[Reboot] could not restore a session:", error);
+      }
+      if (cancelled) return;
+      if (session === undefined) {
+        setAuthState({ status: "unauthenticated" });
+        return;
+      }
+      setBearerToken(session.accessToken);
+      setSessionToken(session.accessToken);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mcpTitle, authDriver]);
+
+  const signIn = useCallback(
+    async (returnTo?: string): Promise<void> => {
+      if (authDriver === undefined) {
+        const target = new URL("/__/oauth/start", rebootUrl);
+        target.searchParams.set("return_to", returnTo ?? window.location.href);
+        window.location.href = target.toString();
+        return;
+      }
+      const session = await authDriver.signIn();
+      if (session === undefined) {
+        // Dismissed or declined; leave the user where they were.
+        return;
+      }
+      setBearerToken(session.accessToken);
+      setSessionToken(session.accessToken);
+    },
+    [rebootUrl, authDriver]
+  );
+
+  const signOut = useCallback(async (): Promise<void> => {
+    if (authDriver === undefined) {
+      await fetch(new URL("/__/oauth/signout", rebootUrl).toString(), {
+        method: "POST",
+        credentials: "include",
+      });
+      window.location.reload();
+      return;
+    }
+    await authDriver.signOut();
+    setBearerToken(undefined);
+    setSessionToken(undefined);
+    setAuthState({ status: "unauthenticated" });
+  }, [rebootUrl, authDriver]);
+
+  const signInContextValue = useMemo<RebootSignInContextValue>(
+    () => ({ signIn, signOut }),
+    [signIn, signOut]
+  );
+
+  // Probe `/whoami` to learn the signed-in state, retrying with
+  // backoff while the backend can't answer, so user code can branch
+  // on the generated `useUser()` hook's `{ user, isLoading }` shape.
+  // It is `/whoami` that resolves the default state ids, so both
+  // surfaces go through it: the browser identifies its session with
+  // the cookie, a driver-backed app with the access token the driver
+  // gave us. In MCP mode the bearer and ids are delivered by the host
+  // via tool results, so this probe doesn't run.
   const [authState, setAuthState] = useState<RebootAuthState>({
     status: "loading",
   });
 
   useEffect(() => {
     if (mcpTitle) return;
+    // With a driver, there is nothing to identify a session with
+    // until it produces one; `restore`, `signIn`, and `signOut` set
+    // the state directly in the meantime.
+    if (authDriver !== undefined && sessionToken === undefined) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     // Exponential backoff for `"retry"` probe results, capped so an
     // extended backend outage keeps probing at a modest rate.
     let backoffMs = 1_000;
     const probe = async () => {
-      const result = await fetchWhoami(rebootUrl);
+      const result = await fetchWhoami(rebootUrl, sessionToken);
       if (cancelled) return;
       if (result === "retry") {
         // The signed-in question is unanswered; generated hooks
@@ -553,7 +738,7 @@ export const RebootClientProvider = ({
       cancelled = true;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [rebootUrl, mcpTitle]);
+  }, [rebootUrl, mcpTitle, authDriver, sessionToken]);
 
   // Proactive bearer refresh. The reactive-reads + mutations
   // path travels through the WebSocket multiplex carrying the
@@ -584,37 +769,18 @@ export const RebootClientProvider = ({
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => {
-      void refreshBearer(rebootUrl, setBearerToken).then((refreshed) => {
+      // `refreshBearerToken` already routes to the driver or to the
+      // cookie session, coalesces concurrent callers, and updates
+      // `expiresAt` on success — so re-arming this effect. It reports
+      // only "got one" or "didn't", which leaves one thing to do
+      // here: keep trying, since a failure may have been nothing
+      // worse than an unreachable backend, and the session may well
+      // still be alive.
+      void refreshBearerToken().then((accessToken) => {
         if (cancelled) return;
-        if (refreshed === "unauthenticated") {
-          // The refresh token itself was rejected — the session is
-          // over. The SPA observes a clean signed-out state and
-          // re-renders to its sign-in page. The framework's
-          // reactive readers will abort on the next tick (their
-          // cached JWT is stale), which is exactly what we want —
-          // the user sees the sign-in page rather than a frozen
-          // UI.
-          setAuthState({ status: "unauthenticated" });
-          setBearerToken(undefined);
-          return;
-        }
-        if (refreshed === null) {
-          // Transient failure (backend unreachable, 5xx): the
-          // session may well still be alive, so keep the
-          // authenticated UI up and retry until the backend
-          // answers one way or the other.
+        if (accessToken === undefined) {
           retryTimer = setTimeout(refresh, RETRY_MS);
-          return;
         }
-        // Re-arm: bump `expiresAt` and let this effect run again
-        // with the new deadline. Use the functional `setAuthState`
-        // so we don't have to thread the latest `authState` into
-        // the deps list.
-        setAuthState((prev) =>
-          prev.status === "authenticated"
-            ? { ...prev, expiresAt: refreshed.expiresAt }
-            : prev
-        );
       });
     };
     const timer = setTimeout(refresh, msUntilRefresh);
@@ -624,7 +790,7 @@ export const RebootClientProvider = ({
       clearTimeout(timer);
       if (retryTimer !== undefined) clearTimeout(retryTimer);
     };
-  }, [rebootUrl, mcpTitle, authState.status, authState.expiresAt]);
+  }, [mcpTitle, refreshBearerToken, authState.status, authState.expiresAt]);
 
   // Generated hooks (`useCounter()`, `usePing()`, …) read the
   // state-ID map through `useDefaultStateIds()` — surface-
@@ -658,29 +824,35 @@ export const RebootClientProvider = ({
   if (mcpTitle) {
     return (
       <RebootClientContext.Provider value={rebootClient}>
-        <Suspense
-          fallback={
-            <div style={{ padding: "1rem", opacity: 0.7 }}>Loading MCP...</div>
-          }
-        >
-          <LazyMcpConnector
-            appName={mcpTitle.uiTitle}
-            setBearerToken={setBearerToken}
+        <RebootSignInContext.Provider value={signInContextValue}>
+          <Suspense
+            fallback={
+              <div style={{ padding: "1rem", opacity: 0.7 }}>
+                Loading MCP...
+              </div>
+            }
           >
-            {children}
-          </LazyMcpConnector>
-        </Suspense>
+            <LazyMcpConnector
+              appName={mcpTitle.uiTitle}
+              setBearerToken={setBearerToken}
+            >
+              {children}
+            </LazyMcpConnector>
+          </Suspense>
+        </RebootSignInContext.Provider>
       </RebootClientContext.Provider>
     );
   }
 
   return (
     <RebootClientContext.Provider value={rebootClient}>
-      <BearerRefreshContext.Provider value={refreshWebBearerToken}>
-        <DefaultStateIdsContext.Provider value={stateIdsContextValue}>
-          {children}
-        </DefaultStateIdsContext.Provider>
-      </BearerRefreshContext.Provider>
+      <RebootSignInContext.Provider value={signInContextValue}>
+        <BearerRefreshContext.Provider value={refreshBearerToken}>
+          <DefaultStateIdsContext.Provider value={stateIdsContextValue}>
+            {children}
+          </DefaultStateIdsContext.Provider>
+        </BearerRefreshContext.Provider>
+      </RebootSignInContext.Provider>
     </RebootClientContext.Provider>
   );
 };

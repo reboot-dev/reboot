@@ -25,6 +25,7 @@ from reboot.aio.auth import (
     Auth,
 )
 from reboot.aio.auth.allowed_origins import is_allowed_origin
+from reboot.aio.auth.native_redirect_uris import is_first_party_redirect_uri
 from reboot.aio.auth.oauth_providers import (
     ClaimsChanged,
     OAuthProvider,
@@ -134,6 +135,19 @@ def signing_secret() -> bytes:
     return root_keys.derive_key(
         info=_SIGNING_INFO, version=root_keys.active_version()
     )
+
+
+def _bearer_token(request: Request) -> Optional[str]:
+    """The token from `request`'s `Authorization: Bearer <token>`
+    header, or `None` when there is no such header or it carries some
+    other scheme."""
+    header = request.headers.get("authorization")
+    if header is None:
+        return None
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return None
+    return token
 
 
 def _compute_code_challenge(code_verifier: str) -> str:
@@ -325,6 +339,7 @@ class OAuthServer:
                      Awaitable[None]]] = None,
         claims_changed: Optional[ClaimsChanged] = None,
         allowed_origins: Optional[Sequence[str]] = None,
+        native_redirect_uris: Optional[Sequence[str]] = None,
     ):
         """`authenticated`, if given, runs right after each fresh
         access token is minted for a user, receiving an app-internal
@@ -347,11 +362,20 @@ class OAuthServer:
         explicit allow-list (with `None` meaning it, like `oauth=`,
         was never set); browser-flow redirect targets are validated
         against the same trusted-origins set Envoy's CORS uses.
+
+        `native_redirect_uris` is
+        `Application(native_redirect_uris=...)`'s allow-list of the
+        redirect URIs belonging to the application's own first-party
+        native apps; a client registering only such URIs skips the
+        consent screen.
         """
         self._provider = provider
         self._protected_resources = protected_resources
         self._application_title = application_title
         self._allowed_origins: list[str] = list(allowed_origins or [])
+        self._native_redirect_uris: list[str] = list(
+            native_redirect_uris or []
+        )
         self._auto_construct_state_type_full_names: list[str] = list(
             auto_construct_state_type_full_names or []
         )
@@ -892,6 +916,23 @@ class OAuthServer:
             "type": "client",
             "redirect_uris": redirect_uris,
         }
+        # A client every one of whose redirect URIs the application
+        # claims as its own (`Application(native_redirect_uris=...)`)
+        # is a first-party native app, and `/authorize` signs its user
+        # in without a consent screen. Every URI must qualify: one
+        # unclaimed entry is enough for an authorization code to reach
+        # somebody else, and the client chooses per-request which of
+        # its registered URIs to use. The marker rides inside the
+        # signed `client_id`, so it is as unforgeable as the
+        # `redirect_uris` beside it, and it is recomputed on each
+        # registration rather than trusted from the request.
+        if all(
+            isinstance(redirect_uri, str) and is_first_party_redirect_uri(
+                redirect_uri,
+                native_redirect_uris=self._native_redirect_uris,
+            ) for redirect_uri in redirect_uris
+        ):
+            client_metadata["first_party"] = True
         # RFC 7591 client metadata we surface on the consent screen so a
         # user can recognize who's asking. Optional and
         # attacker-controlled (anyone can register), so they're shown
@@ -994,14 +1035,23 @@ class OAuthServer:
 
         mcp_state = params.get("state", "")
 
-        # The first-party browser client (minted by `/__/oauth/start`)
-        # skips the consent screen: it's server-minted with a fixed,
-        # same-origin `redirect_uri`, so the confused-deputy attack the
+        # Two kinds of client skip the consent screen, both of them the
+        # application's own. The browser client minted by
+        # `/__/oauth/start` is server-minted with a fixed, same-origin
+        # `redirect_uri`. A native client is one whose every registered
+        # redirect URI the application claimed via
+        # `Application(native_redirect_uris=...)`, checked at
+        # registration and carried in the signed `client_id`. Either
+        # way the authorization code can only land somewhere the
+        # application already trusts, so the confused-deputy attack the
         # consent screen guards against — an attacker registering a
         # client with their own `redirect_uri` — can't arise. Go
         # straight to the browser-flow behavior: reuse an existing
         # session if there is one, otherwise sign in at the IdP.
-        if client_data.get("type") == _BROWSER_CLIENT_TYPE:
+        if (
+            client_data.get("type") == _BROWSER_CLIENT_TYPE or
+            client_data.get("first_party") is True
+        ):
             existing_user_id = self._verify_session_cookie(request)
             if existing_user_id is not None:
                 return self._redirect_with_auth_code(
@@ -1852,14 +1902,22 @@ class OAuthServer:
     async def whoami(self, request: Request) -> JSONResponse:
         """GET /__/oauth/whoami
 
-        Lightweight initial-load probe for the SPA. Returns
+        Lightweight initial-load probe for a front end. Returns
         `{authenticated: true, user_id, access_token, default_ids}`
-        when `rbt_session` is present and valid, `{authenticated:
+        when the caller presents a valid session, `{authenticated:
         false}` otherwise. The `default_ids` map carries
         `{state_type_full_name: state_id}` for every auto-construct
         state type — same shape MCP delivers via tool results, so
-        generated React hooks can resolve without the SPA threading
-        the user_id through every call.
+        generated React hooks can resolve without the front end
+        threading the user_id through every call.
+
+        The session comes from the `rbt_session` cookie, or, failing
+        that, from an `Authorization: Bearer` access JWT. The bearer
+        form is what a native app uses: it holds its access token
+        directly (it signed in through the authorization-code flow
+        rather than the browser one, and has no cookie jar shared with
+        the backend), and this is how it learns its `default_ids`
+        without hardcoding which state types are auto-constructed.
 
         Why a server round-trip exists at all, rather than the SPA
         just reading the cookie from JavaScript: Reboot serves the
@@ -1883,16 +1941,22 @@ class OAuthServer:
         the response a JWT-exfiltration vector for any origin we
         let read it credentialed. That's the load-bearing reason
         `Application(allowed_origins=...)` is an exact-match
-        allow-list rather than a wildcard.
+        allow-list rather than a wildcard. The bearer branch adds
+        nothing to that exposure: it echoes back only the very token
+        the caller already had to present to reach it.
         """
-        decoded = self._decode_session_cookie(request)
+        # The cookie's value IS the access JWT, so either way the
+        # token we verify is the one we hand back — the front end's
+        # bearer and its session then expire in lockstep.
+        access_token = request.cookies.get(SESSION_COOKIE_NAME)
+        if access_token is None:
+            access_token = _bearer_token(request)
+        if access_token is None:
+            return JSONResponse({"authenticated": False})
+        decoded = self._verify_jwt(access_token, "access")
         user_id = decoded.get("sub", "") if decoded is not None else ""
         if decoded is None or not user_id:
             return JSONResponse({"authenticated": False})
-        # The cookie's value IS the access JWT — surface it inline
-        # so the SPA's bearer and the cookie expire in lockstep
-        # (the SPA's refresh path renews both at once).
-        access_token = request.cookies.get(SESSION_COOKIE_NAME)
         # `expires_at` lets the SPA's `RebootClientProvider`
         # schedule a `refreshBearer(...)` a few seconds before
         # the access JWT expires, so unary RPCs / WebSocket

@@ -177,6 +177,18 @@ until [ "$(adb shell getprop sys.boot_completed 2> /dev/null | tr -d '\r')" = "1
   sleep 1
 done
 
+# Skip Chrome's first-run screen. Signing in hands the OAuth
+# authorization URL to an in-app browser tab, which Chrome serves; on
+# an AVD where Chrome has never been opened, it answers that intent
+# with its `FirstRunActivity` ("Welcome to Chrome") rather than
+# loading the URL, and stays there — so the flow would wait for a page
+# that never renders. Chrome reads this file only for the app marked
+# as the debug app, hence both commands; the leading `chrome` stands
+# in for the program name, which it discards.
+chrome_flags="chrome --disable-fre --no-first-run --no-default-browser-check"
+adb shell "echo '${chrome_flags}' > /data/local/tmp/chrome-command-line"
+adb shell am set-debug-app --persistent com.android.chrome
+
 # Load the app via Expo Go, pointed at the backend on the emulator's
 # host alias (`10.0.2.2`). `expo start --android` installs Expo Go and
 # opens the project.
