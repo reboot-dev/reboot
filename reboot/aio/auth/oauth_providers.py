@@ -1118,6 +1118,17 @@ class Ory(RegisteredOAuthProvider):
         # `client_secret` — from a secret store / environment secret,
         # never a hard-coded literal.
         webhook_secret: Optional[str] = None,
+        # Base URL the browser is sent to for the OAuth2
+        # authorization request, for the case where the browser
+        # reaches Ory at a different origin than `domain`. In local
+        # development the browser reaches Ory through an `ory tunnel`
+        # (e.g. `http://localhost:4000`) so Ory's cookies are
+        # same-site with the app and the whole login flow shares one
+        # cookie jar; the server still uses `domain` for the
+        # server-to-server token exchange. A full base URL (scheme,
+        # host, optionally a port), no trailing path; defaults to
+        # `https://{domain}`.
+        browser_facing_url: Optional[str] = None,
     ):
         super().__init__(
             client_id=client_id,
@@ -1142,10 +1153,17 @@ class Ory(RegisteredOAuthProvider):
             )
         self._domain = _normalize_domain(domain)
         self._webhook_secret = webhook_secret
+        self._browser_facing_url = (
+            browser_facing_url.rstrip("/") if browser_facing_url else None
+        )
 
     @property
     def _authorization_endpoint(self) -> str:
-        return f"https://{self._domain}/oauth2/auth"
+        # The browser hits this one, so it honors `browser_facing_url`
+        # when the browser reaches Ory at a different origin than the
+        # server does.
+        base = self._browser_facing_url or f"https://{self._domain}"
+        return f"{base}/oauth2/auth"
 
     @property
     def _token_endpoint(self) -> str:
