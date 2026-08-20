@@ -34,12 +34,23 @@ py_binary(
 )
 
 py_library(
+    name = "changelog_py",
+    srcs = ["changelog.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":api_reader_py",
+    ],
+)
+
+py_library(
     name = "api_watcher_py",
     srcs = ["api_watcher.py"],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
         ":api_reader_py",
+        ":changelog_py",
         ":constants_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
         "//reboot/aio:external_py",
@@ -56,32 +67,31 @@ py_library(
         ":api_watcher_py",
         ":constants_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//rbt/std/collections/ordered_map/v1:ordered_map_py_reboot",
         "//reboot/aio:servicers_py",
+        "//reboot/std/collections/ordered_map/v1:ordered_map_py",
+        "//reboot/std/item/v1:item_py",
         "//reboot/std/presence/v1:presence_py",
     ],
 )
 
-# The page, its stylesheet and its bundle, served as three files by
-# the `StaticFiles` mount in `main.py`. Only the script's entry point
-# is rewritten: the one in the template, `./src/main.tsx`, is
-# what Vite serves in development and does not exist in a built page,
-# where `esbuild` produced `dashboard_bundle.js` instead. The
-# stylesheet is copied as it is, because `./dashboard.css` resolves
-# the same way in both. Every output must be *this* package's, because
-# the application serves them from beside its own module rather than
-# from a project root, and a `genrule` can only write within its own
-# package.
+# The dashboard page and its assets, laid out beside `main.py` for its
+# `StaticFiles` mount to serve. The `sed` points the page at the
+# `esbuild` bundle in place of `./src/main.tsx`, the entry point Vite
+# serves in development.
 genrule(
     name = "dashboard_dist",
     srcs = [
         "//reboot/dashboard/frontend:dashboard.css",
         "//reboot/dashboard/frontend:dashboard_bundle.js",
         "//reboot/dashboard/frontend:index.html",
+        "//reboot/dashboard/frontend:reboot-logo.svg",
     ],
     outs = [
         "dashboard/index.html",
         "dashboard/dashboard.css",
         "dashboard/dashboard_bundle.js",
+        "dashboard/reboot-logo.svg",
     ],
     cmd = "sed 's|\\./src/main\\.tsx|./dashboard_bundle.js|' " +
           "$(location //reboot/dashboard/frontend:index.html) " +
@@ -89,7 +99,9 @@ genrule(
           "cp $(location //reboot/dashboard/frontend:dashboard.css) " +
           "$(location dashboard/dashboard.css) && " +
           "cp $(location //reboot/dashboard/frontend:dashboard_bundle.js) " +
-          "$(location dashboard/dashboard_bundle.js)",
+          "$(location dashboard/dashboard_bundle.js) && " +
+          "cp $(location //reboot/dashboard/frontend:reboot-logo.svg) " +
+          "$(location dashboard/reboot-logo.svg)",
 )
 
 py_library(
@@ -105,6 +117,7 @@ py_library(
         ":constants_py",
         ":servicers_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//rbt/std/collections/ordered_map/v1:ordered_map_py_reboot",
         "//reboot/aio:applications_py",
         "//reboot/aio:external_py",
         "//reboot/aio:headers_py",
@@ -125,6 +138,7 @@ py_binary(
         ":constants_py",
         ":servicers_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//rbt/std/collections/ordered_map/v1:ordered_map_py_reboot",
         "//reboot/aio:applications_py",
         "//reboot/aio:external_py",
         "//reboot/aio:headers_py",

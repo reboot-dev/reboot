@@ -30,6 +30,10 @@ API_ID = 'api'
 # run` reads it.
 PREFERENCES_ID = 'preferences'
 
+# The `OrderedMap` of changes to the developer's API files, keyed by
+# uuidv7 so a reverse range is newest first.
+CHANGELOG_ID = 'changelog'
+
 # The directory the developer's API files are in, which
 # `rbt dashboard` takes as `--api-directory`. Separate from the
 # application's URL because the files are there long before anything

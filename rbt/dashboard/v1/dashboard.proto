@@ -43,19 +43,21 @@ message APIUpdateRequest {
 
 message APIUpdateResponse {}
 
+// What changed, as `changelog.py` describes it: a JSON array, one
+// entry per type added, changed or removed.
+message APIRecordChangesRequest {
+  google.protobuf.Value changes = 1;
+}
+
+message APIRecordChangesResponse {}
+
 message APIWatchRequest {}
 
 message APIWatchResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
-// What the developer has told the dashboard about opening dashboards.
-//
-// Kept here rather than in a file under their project because it is a
-// fact about their machine and their browser, not about their
-// application, and nothing about it belongs in their repository. It
-// survives a hot reload and an `rbt dev run` restart because the
-// dashboard application's state store does.
+// The developer's machine-local preferences for opening dashboards.
 message Preferences {
   option (rbt.v1alpha1.state) = {
   };
@@ -126,6 +128,14 @@ service APIMethods {
 
   rpc Update(APIUpdateRequest) returns (APIUpdateResponse) {
     option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Records what changed. Assigns each change its key, so a workflow
+  // retrying this call sends an identical request every attempt.
+  rpc RecordChanges(APIRecordChangesRequest)
+      returns (APIRecordChangesResponse) {
+    option (rbt.v1alpha1.method).transaction = {
     };
   }
 

@@ -19,6 +19,9 @@ class ShopState(Model):
 class StockRequest(Model):
     item: str = Field(tag=1)
     quantity: int = Field(tag=2)
+    # A free-form map, which Pydantic titles after the field rather
+    # than after any type: the page must not read that title as one.
+    labels: dict[str, str] = Field(tag=3, default_factory=dict)
 
 
 class Price(Model):
@@ -36,6 +39,9 @@ class Item(Model):
 class StockResponse(Model):
     remaining: int = Field(tag=1)
     items: list[Item] = Field(tag=2, default_factory=list)
+    # Two dimensions, so that how deep a list goes is read from the
+    # schema rather than assumed to be one.
+    shelves: list[list[Item]] = Field(tag=3, default_factory=list)
 
 
 class OutOfStockError(Model):

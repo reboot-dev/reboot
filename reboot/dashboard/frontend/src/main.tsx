@@ -1,4 +1,5 @@
 import { useAPI, usePreferences } from "@dashboard/dashboard_rbt_react";
+import { useOrderedMap } from "@reboot-dev/reboot-std-api/collections/ordered_map/v1/ordered_map_rbt_react";
 import { RebootClientProvider } from "@reboot-dev/reboot-react";
 import { Presence } from "@reboot-dev/reboot-std-react/presence";
 import {
@@ -24,7 +25,7 @@ import {
   useParams,
 } from "react-router";
 import { v4 as uuidv4 } from "uuid";
-import { API_ID, PREFERENCES_ID, PRESENCE_ID } from "./constants";
+import { API_ID, CHANGELOG_ID, PREFERENCES_ID, PRESENCE_ID } from "./constants";
 import type {
   DataObject,
   Field,
@@ -40,6 +41,8 @@ import {
   parseDescription,
   typeNameOf,
 } from "./description";
+import type { Change } from "./changelog";
+import { agoOf, changesOf } from "./changelog";
 
 // One subscriber per tab, for as long as the tab is open.
 const SUBSCRIBER_ID = uuidv4();
@@ -176,11 +179,17 @@ const isStandardLibrary = (namespace: string): boolean =>
 
 // The two indexes of the same API: the state types it declares, and
 // the types those declare in turn.
-const PAGES = ["state", "data"] as const;
+const PAGES = ["changelog", "data", "state"] as const;
 
 type Page = typeof PAGES[number];
 
-const PAGE_NAMES: Record<Page, string> = { state: "State", data: "Data" };
+const PAGE_NAMES: Record<Page, string> = {
+  changelog: "Changelog",
+  data: "Data Types",
+  state: "State Types",
+};
+
+const CHANGES_PER_PAGE = 100;
 
 // Where a type is addressed, on whichever page describes it. It is
 // both the route a link goes to and the `id` of the section it lands
@@ -216,6 +225,20 @@ const NAV_WIDTH = { default: 250, min: 170, max: 520 };
 // between it and the document is a `Separator`: dragging it, keeping
 // it within bounds, moving it by keyboard and telling assistive
 // technology what it does are all that library's, not ours.
+
+const RebootBrand: FC<{ live: boolean }> = ({ live }) => (
+  <div className="brand">
+    <img className="brand-logo" src="./reboot-logo.svg" alt="Reboot logo" />
+    <Connection live={live} />
+  </div>
+);
+
+const Connection: FC<{ live: boolean }> = ({ live }) => (
+  <div className={live ? "connection live" : "connection offline"}>
+    {live ? "live" : "offline"}
+    <span className="connection-dot" aria-hidden="true" />
+  </div>
+);
 
 // One row of the sidebar, whichever page it is indexing. Both pages
 // reduce to this before anything is drawn, so the sidebar is written
@@ -670,6 +693,110 @@ const DataObjectCard: FC<{
   </section>
 );
 
+const ChangeRow: FC<{ change: Change; now: Date }> = ({ change, now }) => (
+  <div className="change">
+    <time className="change-when" dateTime={change.at.toISOString()}>
+      {agoOf(change.at, now)}
+    </time>
+    <span className="change-where">{change.namespace}</span>
+    {/* Each pill sits in a cell rather than being one, so the cell
+        carries the row's spacing and hover fill and the pill carries
+        only its colour. */}
+    <span className="change-pill-cell">
+      <span className={`change-pill change-kind-${change.kind}`}>
+        {change.kind}
+      </span>
+    </span>
+    <span className="change-pill-cell">
+      <span className={`change-pill change-${change.change}`}>
+        {change.change}
+      </span>
+    </span>
+    {/* A removed type no longer has a page to link to. */}
+    {change.change === "removed" ? (
+      <span className="change-name">{change.name}</span>
+    ) : (
+      <Link className="change-name" to={pathOf(change.kind, change.id)}>
+        {change.name}
+      </Link>
+    )}
+    <span className="change-moved">
+      {change.moved?.map((moved, index) => (
+        <Fragment key={moved.name}>
+          {index > 0 && ", "}
+          {`${moved.part} `}
+          <span className={`moved moved-${moved.change}`}>{moved.name}</span>
+          {` ${moved.change}`}
+        </Fragment>
+      ))}
+    </span>
+  </div>
+);
+
+// What has happened to the developer's API files while this dashboard
+// has been up, newest first.
+//
+// A page at a time, because a day of editing is a lot of rows and
+// this is read from the top.
+const ChangelogPage: FC<{ onCount: (n: number) => void; live: boolean }> = ({
+  onCount,
+  live,
+}) => {
+  const { useReverseRange } = useOrderedMap({ id: CHANGELOG_ID });
+  const [pages, setPages] = useState(1);
+
+  const { response, isLoading, aborted } = useReverseRange({
+    // One more than is shown, to learn whether more exist.
+    limit: CHANGES_PER_PAGE * pages + 1,
+  });
+
+  // An abort means the map does not exist yet: nothing has been
+  // recorded, so the changelog is empty.
+  const entries = aborted !== undefined ? [] : response?.entries ?? [];
+  const changes = changesOf(entries);
+  const more = changes.length > CHANGES_PER_PAGE * pages;
+  const shown = more ? changes.slice(0, CHANGES_PER_PAGE * pages) : changes;
+
+  useEffect(() => onCount(shown.length), [shown.length, onCount]);
+
+  // Read once per render rather than per row, so every row on the
+  // page says "ago" from the same moment.
+  const now = new Date();
+
+  if (isLoading && shown.length === 0) {
+    return <div className="empty">Reading what has changed…</div>;
+  }
+
+  if (shown.length === 0) {
+    return (
+      <div className="empty">
+        Nothing has changed since this dashboard started. Edit an API file and
+        it will show up here.
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {live && (
+        <div className="listening">
+          Listening<span className="listening-dots">...</span>
+        </div>
+      )}
+      <div className="changes">
+        {shown.map((change) => (
+          <ChangeRow change={change} now={now} key={change.key} />
+        ))}
+      </div>
+      {more && (
+        <button className="expand-button" onClick={() => setPages(pages + 1)}>
+          Show older
+        </button>
+      )}
+    </>
+  );
+};
+
 const Overview: FC<{
   page: Page;
   navWidth: number;
@@ -705,31 +832,24 @@ const Overview: FC<{
   const { useGet } = useAPI({ id: API_ID });
   const { response, isLoading } = useGet();
 
+  // `isLoading` is the closest the client offers to a connection
+  // state: loading again, having loaded once, means it is retrying.
+  const live = !isLoading;
+
   // What the developer's API files declare. Those exist before the
   // application is generated, built or started, which is why they are
   // what this page shows.
   // The description travels as a `google.protobuf.Value`: the types
   // in it are Pydantic's own JSON Schema, which proto has no business
   // restating.
-  const read = useMemo(
+  const stateTypes: StateType[] = useMemo(
     () => parseDescription(response?.stateTypes?.toJson()),
     [response?.stateTypes]
   );
 
-  // Restarting `rbt dashboard` closes this page's connection for a
-  // few seconds. Keep the last shape that was read so the page stays
-  // readable across that.
-  const seen = useRef<StateType[]>([]);
-
-  if (read.length > 0) {
-    seen.current = read;
-  }
-
-  const stateTypes: StateType[] = read.length ? read : seen.current;
-
-  // Why the API files could not be read, shown beside the last shape
-  // that was: a half-written file is the normal case while someone is
-  // typing, and saying so beats showing nothing.
+  // Why any API file could not be read, which is routine while
+  // somebody is typing. Shown beside the types, which stay at
+  // whatever each file last declared.
   const error = response?.error ?? "";
 
   const objects = useMemo(() => dataObjects(stateTypes), [stateTypes]);
@@ -741,9 +861,13 @@ const Overview: FC<{
     return (id: string): Page => (states.has(id) ? "state" : "data");
   }, [stateTypes]);
 
+  // The changelog is one list rather than a set of namespaces, so the
+  // sidebar has nothing to index.
   const entries: NavEntry[] = useMemo(
     () =>
-      page === "state"
+      page === "changelog"
+        ? []
+        : page === "state"
         ? stateTypes.map((stateType) => ({
             id: stateType.name,
             name: typeNameOf(stateType.name),
@@ -760,6 +884,29 @@ const Overview: FC<{
   );
 
   const namespaces = useMemo(() => byNamespace(entries), [entries]);
+
+  // How many changes the changelog page is showing, reported up
+  // through `onCount` by the page, which is what reads the entries.
+  const [changes, setChanges] = useState(0);
+
+  // The small label over the heading, the first of the two lines
+  // above the list.
+  const eyebrow = page === "changelog" ? "history" : "application domain";
+
+  // A type page's heading says what its list holds, "3 state types
+  // in 2 namespaces"; the changelog's is just the page name.
+  const heading =
+    page === "changelog"
+      ? "Changelog"
+      : page === "state"
+      ? `${countOf(stateTypes.length, "state type")} in ${countOf(
+          namespaces.length,
+          "namespace"
+        )}`
+      : `${countOf(objects.length, "data type")} in ${countOf(
+          namespaces.length,
+          "namespace"
+        )}`;
 
   // The browser scrolls to a hash it can find, and cannot find one on
   // a page that was not showing when the hash changed. Once the page
@@ -798,6 +945,7 @@ const Overview: FC<{
   const counts: Record<Page, number> = {
     state: stateTypes.length,
     data: objects.length,
+    changelog: changes,
   };
 
   return (
@@ -821,8 +969,10 @@ const Overview: FC<{
         onResize={({ inPixels }) => onNavResizing(Math.round(inPixels))}
       >
         <nav>
+          <RebootBrand live={live} />
           <PageSelector counts={counts} />
-          <div className="eyebrow">namespaces</div>
+          {/* The changelog has none. */}
+          {namespaces.length > 0 && <div className="eyebrow">namespaces</div>}
           {namespaces.map(({ namespace, entries }) => (
             <Namespace
               namespace={namespace}
@@ -838,21 +988,13 @@ const Overview: FC<{
       <Panel className="pane-panel">
         <div className="pane">
           <header>
-            <div className="eyebrow">application domain</div>
-            <h1>
-              {page === "state"
-                ? `${countOf(stateTypes.length, "state type")} in ${countOf(
-                    namespaces.length,
-                    "namespace"
-                  )}`
-                : `${countOf(objects.length, "data type")} in ${countOf(
-                    namespaces.length,
-                    "namespace"
-                  )}`}
-            </h1>
+            <div className="eyebrow">{eyebrow}</div>
+            <h1>{heading}</h1>
           </header>
           {error && <div className="error">{error}</div>}
-          {page === "state" ? (
+          {page === "changelog" ? (
+            <ChangelogPage onCount={setChanges} live={live} />
+          ) : page === "state" ? (
             stateTypes.map((stateType) => (
               <StateType
                 stateType={stateType}
@@ -877,10 +1019,8 @@ const Overview: FC<{
   );
 };
 
-// Everything the developer has told this dashboard, in one place.
-// Both choices are the dashboard application's state rather than
-// this page's, so they survive the tab, the hot reload and the
-// `rbt dev run` they were made in.
+// The preferences are the dashboard application's state: every tab
+// shares them, and they outlive the tab they were set in.
 const App: FC = () => {
   const { useGet, setSuppressOpenOnRestart, setExpanded, setNavWidth } =
     usePreferences({
@@ -968,9 +1108,9 @@ const App: FC = () => {
               key={page}
             />
           ))}
-          {/* Anything else, including nothing at all, is the state
-              page: it is what the dashboard opens on. */}
-          <Route path="*" element={<Navigate to="/state" replace />} />
+          {/* The changelog is the landing page: what just changed is
+              what somebody coming back wants to know. */}
+          <Route path="*" element={<Navigate to="/changelog" replace />} />
         </Routes>
       </HashRouter>
     </div>
@@ -984,7 +1124,7 @@ if (root !== null) {
     <StrictMode>
       {/* No `url`: the page and its presence are served by the same
           application, so the client uses this page's origin. */}
-      <RebootClientProvider>
+      <RebootClientProvider offlineCacheEnabled={true}>
         <Presence id={PRESENCE_ID} subscriberId={SUBSCRIBER_ID}>
           <App />
         </Presence>

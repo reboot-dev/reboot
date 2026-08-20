@@ -53,6 +53,23 @@ _SHOP = {
     'state': {
         '$ref': '#/$defs/ShopState'
     },
+    # Named by the reader rather than worked out from `$defs`, so
+    # this fixture says what the reader would say.
+    'data_types':
+        [
+            {
+                'id': 'shop.v1.LookRequest',
+                'name': 'LookRequest'
+            },
+            {
+                'id': 'shop.v1.LookResponse',
+                'name': 'LookResponse'
+            },
+            {
+                'id': 'shop.v1.Shelf',
+                'name': 'Shelf'
+            },
+        ],
     'methods':
         [
             {
@@ -213,9 +230,12 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_describes_what_the_api_files_declare(self) -> None:
         # Nothing here is generated, built or serving: the page shows
-        # a state type because a file on disk declares one.
+        # a state type because a file on disk declares one. A
+        # half-written file is the normal case while someone is
+        # typing, so the error is here too: it says what went wrong
+        # without blanking the shape that was last read.
         def body(driver):
-            driver.get(f'{self.url}{DASHBOARD_PATH}/')
+            driver.get(f'{self.url}{DASHBOARD_PATH}/#/state')
             WebDriverWait(driver, 60).until(
                 expected_conditions.presence_of_element_located(
                     (By.CSS_SELECTOR, '[id="/state/shop.v1.Shop"]')
@@ -223,7 +243,12 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             )
             return driver.page_source
 
-        await self._record_state_types()
+        context = self.rbt.create_external_context(name=self.id())
+        await API.ref(API_ID).Update(
+            context,
+            state_types=ParseDict([_SHOP], Value()),
+            error='shop.py: SyntaxError: invalid syntax',
+        )
 
         page = await asyncio.to_thread(self._run, body)
 
@@ -244,33 +269,8 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('1 state type', page)
         self.assertIn('1 method', page)
 
-    async def test_says_why_a_file_could_not_be_read(self) -> None:
-        # A half-written file is the normal case while someone is
-        # typing, so the page says what went wrong while keeping the
-        # shape it last read beside it.
-        def body(driver):
-            driver.get(f'{self.url}{DASHBOARD_PATH}/')
-            WebDriverWait(driver, 60).until(
-                expected_conditions.presence_of_element_located(
-                    (By.CLASS_NAME, 'error')
-                )
-            )
-            return driver.page_source
-
-        context = self.rbt.create_external_context(name=self.id())
-        await API.ref(API_ID).Update(
-            context,
-            state_types=ParseDict([_SHOP], Value()),
-            error='shop.py: SyntaxError: invalid syntax',
-        )
-
-        page = await asyncio.to_thread(self._run, body)
-
+        # And the error is beside all of it rather than instead of it.
         self.assertIn('shop.py: SyntaxError: invalid syntax', page)
-
-        # The error does not blank the page: what was last read is
-        # still there to work against.
-        self.assertIn('shop.v1.Shop', page)
 
     # The two labels the banner's one link shows, which are also the
     # two things it does.
@@ -300,10 +300,12 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         response = await Preferences.ref(PREFERENCES_ID).Get(context)
         return response.suppress_open_on_restart
 
-    async def test_the_banner_turns_reopening_off(self) -> None:
+    async def test_the_banner_turns_reopening_off_and_back_on(self) -> None:
         # What the banner writes is exactly what `rbt dev run` reads
         # before deciding whether to open a dashboard, which is what
-        # `open_dashboard_tests` covers from the other side.
+        # `open_dashboard_tests` covers from the other side. Both ways
+        # round, because a developer who clicked once is not stuck
+        # with it: the page they load next offers the other choice.
 
         def body(driver):
             driver.get(f'{self.url}{DASHBOARD_PATH}/')
@@ -317,17 +319,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(await self._suppress_open_on_restart())
 
-    async def test_the_banner_turns_reopening_back_on(self) -> None:
-        # A developer who clicked once is not stuck with it: the page
-        # they load next offers the choice the other way round.
-
-        context = self.rbt.create_external_context(name=self.id())
-        await Preferences.ref(PREFERENCES_ID).SetSuppressOpenOnRestart(
-            context,
-            suppress_open_on_restart=True,
-        )
-
-        def body(driver):
+        def back_on(driver):
             driver.get(f'{self.url}{DASHBOARD_PATH}/')
             self._click_the_banner(
                 driver,
@@ -335,7 +327,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 becomes=self._TURN_OFF,
             )
 
-        await asyncio.to_thread(self._run, body)
+        await asyncio.to_thread(self._run, back_on)
 
         self.assertFalse(await self._suppress_open_on_restart())
 
@@ -387,13 +379,15 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         response = await Preferences.ref(PREFERENCES_ID).Get(context)
         return list(response.expanded_state_types)
 
-    async def test_expanding_a_state_type_opens_its_method_detail(
-        self
-    ) -> None:
+    async def test_a_state_type_stays_expanded_across_a_load(self) -> None:
+        # The click has to reach the application rather than the tab,
+        # which is the whole reason the choice lives in the dashboard
+        # application: it is what a previous `rbt dev run` left
+        # behind.
         await self._record_state_types()
 
         def body(driver):
-            driver.get(f'{self.url}{DASHBOARD_PATH}/')
+            driver.get(f'{self.url}{DASHBOARD_PATH}/#/state')
             self._click_to_expand(
                 driver,
                 showing=self._EXPAND,
@@ -416,25 +410,11 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
         await asyncio.to_thread(self._run, body)
 
-        # And the click reached the application, which is what makes
-        # it
-        # outlast the tab it was made in.
         self.assertEqual(await self._expanded_state_types(), ['shop.v1.Shop'])
 
-    async def test_a_state_type_expanded_earlier_is_open_on_load(self) -> None:
-        # The state a previous `rbt dev run` left behind, which is the
-        # whole reason the choice lives in the dashboard application.
-        await self._record_state_types()
-
-        context = self.rbt.create_external_context(name=self.id())
-        await Preferences.ref(PREFERENCES_ID).SetExpanded(
-            context,
-            state_type='shop.v1.Shop',
-            expanded=True,
-        )
-
-        def body(driver):
-            driver.get(f'{self.url}{DASHBOARD_PATH}/')
+        # A fresh page, which has only what the application remembers.
+        def reloaded(driver):
+            driver.get(f'{self.url}{DASHBOARD_PATH}/#/state')
             WebDriverWait(driver, 60).until(
                 expected_conditions.text_to_be_present_in_element(
                     (By.CLASS_NAME, 'expand-button'),
@@ -443,48 +423,17 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             )
             self._wait_for_detail(driver, opened=True)
 
-        await asyncio.to_thread(self._run, body)
+        await asyncio.to_thread(self._run, reloaded)
 
-    async def test_the_data_page_lists_types_that_are_not_state(self) -> None:
-        # `Shelf` is named by nothing: it is reached only as a field of
-        # `LookResponse`, which is what the data page is for.
-        await self._record_state_types()
-
-        def body(driver):
-            driver.get(f'{self.url}{DASHBOARD_PATH}/#/data')
-            WebDriverWait(driver, 60).until(
-                expected_conditions.presence_of_element_located(
-                    (By.CSS_SELECTOR, '[id="/data/shop.v1.Shelf"]')
-                )
-            )
-            # A row names the type it holds rather than calling it an
-            # object, and that name is what links to it.
-            held = driver.find_element(
-                By.CSS_SELECTOR,
-                '.type-block a[href="#/data/shop.v1.Shelf"]',
-            )
-            self.assertEqual(held.text, 'Shelf')
-            return driver.page_source
-
-        page = await asyncio.to_thread(self._run, body)
-
-        # Every type the file declares except the state type's own
-        # state, which is what the state page is.
-        self.assertIn('LookRequest', page)
-        self.assertIn('LookResponse', page)
-        self.assertIn('Where an item sits.', page)
-        self.assertNotIn('/data/shop.v1.ShopState', page)
-
-        # And what holds each, so the page reads in both directions.
-        self.assertIn('LookResponse.shelf', page)
-        self.assertIn('Shop.look (takes)', page)
-
-    async def test_a_deep_link_lands_on_the_type_it_names(self) -> None:
-        # The section's `id` is the route that addresses it, so the
-        # link reads as though the browser could scroll to it by
-        # itself. It cannot: on load nothing is rendered yet when the
-        # fragment is read, and in-app navigation goes through
-        # `pushState`, which does not scroll. The page does it.
+    async def test_a_deep_link_lands_on_a_type_that_nothing_names(
+        self
+    ) -> None:
+        # `Shelf` is named by nothing: it is reached only as a field
+        # of `LookResponse`, which is what the data page is for. The
+        # section's `id` is the route that addresses it, so the link
+        # reads as though the browser could scroll to it by itself. It
+        # cannot: on load nothing is rendered yet when the fragment is
+        # read. The page does it.
         await self._record_state_types()
 
         def body(driver):
@@ -497,6 +446,13 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                     (By.CSS_SELECTOR, '[id="/data/shop.v1.Shelf"]')
                 )
             )
+            # A row names the type it holds rather than calling it an
+            # object, and that name is what links to it.
+            held = driver.find_element(
+                By.CSS_SELECTOR,
+                '.type-block a[href="#/data/shop.v1.Shelf"]',
+            )
+            self.assertEqual(held.text, 'Shelf')
             return driver.execute_script(
                 'const pane = document.querySelector(".pane");'
                 'const shelf ='
@@ -506,6 +462,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 '  scrolled: pane.scrollTop,'
                 '  top: box.top,'
                 '  height: window.innerHeight,'
+                '  page: document.documentElement.outerHTML,'
                 '};'
             )
 
@@ -516,13 +473,26 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(landed['top'], 0)
         self.assertLess(landed['top'], landed['height'])
 
+        page = landed['page']
+
+        # Every type the file declares except the state type's own
+        # state, which is what the state page is.
+        self.assertIn('LookRequest', page)
+        self.assertIn('LookResponse', page)
+        self.assertIn('Where an item sits.', page)
+        self.assertNotIn('/data/shop.v1.ShopState', page)
+
+        # And what holds each, so the page reads in both directions.
+        self.assertIn('LookResponse.shelf', page)
+        self.assertIn('Shop.look (takes)', page)
+
     async def test_a_held_type_is_followed_to_the_data_page(self) -> None:
         # One level deep and a click away is the whole convention: a
         # field says what it holds, and following it lands on it.
         await self._record_state_types()
 
         def body(driver):
-            driver.get(f'{self.url}{DASHBOARD_PATH}/')
+            driver.get(f'{self.url}{DASHBOARD_PATH}/#/state')
             self._click_to_expand(
                 driver,
                 showing=self._EXPAND,
