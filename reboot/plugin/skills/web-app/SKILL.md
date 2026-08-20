@@ -519,37 +519,42 @@ Key differences from a `chat-app` layout:
    generate --web=web/src/api
    ```
 2. `uv sync`.
-3. Write the API definition (`api/<pkg>/v1/<name>.py`). Pydantic
+3. Start the developer dashboard — load the
+   [`dashboard` skill](../dashboard/SKILL.md) and follow it — so
+   the user can watch the API take shape while you write it. If it
+   fails to come up, say so in one sentence and keep building; do
+   not stop to debug it.
+4. Write the API definition (`api/<pkg>/v1/<name>.py`). Pydantic
    rules live in `python/references/api-pydantic.md`; method
    marker → context-type rules in
    `python/references/api-methods.md`. Do **not** add `mcp=Tool()`
    or `UI()` — those are chat-app only.
-4. `uv run rbt generate`. Don't read what it wrote: the signature
+5. `uv run rbt generate`. Don't read what it wrote: the signature
    your servicer must match is in `python/references/api-methods.md`
    ("The Servicer Signature Each Declaration Obliges").
-5. Write the servicer (`backend/src/servicers/<name>.py`) —
+6. Write the servicer (`backend/src/servicers/<name>.py`) —
    context-type patterns in `python/references/servicer-*.md`.
-6. Write `main.py` — `python/references/lifecycle-application-entry.md`.
-7. Initialize the React app at `web/` with your preferred tool
+7. Write `main.py` — `python/references/lifecycle-application-entry.md`.
+8. Initialize the React app at `web/` with your preferred tool
    (e.g. `npm create vite@latest web -- --template react-ts`) or
    a Reboot-provided template if one exists for plain web apps.
    Read [`references/react-client.md`](references/react-client.md)
    now — it has the `package.json` dependency set, the `dedupe`
    entry the Vite config needs, and `web/.env.development` with
    `VITE_REBOOT_URL`.
-8. `cd web && npm install` and add the Reboot React client
+9. `cd web && npm install` and add the Reboot React client
    package(s) per your project's `package.json`.
-9. `uv run rbt generate` again — the React bindings need
-   `node_modules` to resolve types correctly.
-10. Build the frontend from
+10. `uv run rbt generate` again — the React bindings need
+    `node_modules` to resolve types correctly.
+11. Build the frontend from
     [`references/react-client.md`](references/react-client.md): the
     provider and its `url`, the generated hook/mutator/error
     declarations, sign-in, and typed errors are all written out
     there. Write the calls from that reference and do **not** open
     `web/src/api/**/*_rbt_react.ts` to check them — it is tens of
     thousands of lines that then ride along on every later turn.
-11. `cd web && npm run build` (sanity check the bundle).
-12. **Write and run backend unit tests covering each user-facing
+12. `cd web && npm run build` (sanity check the bundle).
+13. **Write and run backend unit tests covering each user-facing
     user story before handing the app off.** Enumerate the user
     stories from the design — every action the user should be able
     to _do_ in the UI (e.g. "sign up and see my profile",
@@ -580,7 +585,7 @@ Key differences from a `chat-app` layout:
     proceed to the next step until every user-story test passes
     and mypy is green — together they are what catches
     contract bugs before the user opens the browser.
-13. Run the app — load the [`run` skill](../run/SKILL.md) and
+14. Run the app — load the [`run` skill](../run/SKILL.md) and
     follow it. It is the single canonical "start the app"
     procedure: it makes sure dependencies and secrets are in
     place, starts the backend and frontend dev server, waits for
