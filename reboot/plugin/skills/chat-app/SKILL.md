@@ -708,32 +708,37 @@ a worked set are in
    the `.mypy.ini` template lives in
    `python/references/lifecycle-project-setup.md`.
 2. `uv sync`.
-3. Write API definition (`api/<pkg>/v1/<name>.py`) — see
+3. Start the developer dashboard — load the
+   [`dashboard` skill](../dashboard/SKILL.md) and follow it — so
+   the user can watch the API take shape while you write it. If it
+   fails to come up, say so in one sentence and keep building; do
+   not stop to debug it.
+4. Write API definition (`api/<pkg>/v1/<name>.py`) — see
    [`references/api-method-types.md`](references/api-method-types.md)
    and [`references/api-state-shapes.md`](references/api-state-shapes.md);
    field-level pydantic rules in
    `python/references/api-pydantic.md`.
-4. `uv run rbt generate`. Don't read what it wrote: the signature
+5. `uv run rbt generate`. Don't read what it wrote: the signature
    your servicer must match is in `python/references/api-methods.md`
    ("The Servicer Signature Each Declaration Obliges").
-5. Write servicer (`backend/src/servicers/<name>.py`) — see
+6. Write servicer (`backend/src/servicers/<name>.py`) — see
    [`references/servicer-patterns.md`](references/servicer-patterns.md);
    context-type rules in `python/references/servicer-*.md`.
-6. Write `backend/src/example_prompts.py` (the wizard's example
+7. Write `backend/src/example_prompts.py` (the wizard's example
    prompts) and `main.py` (which imports them and passes
    `example_prompts=` to `Application`) — see
    [`references/project-shell.md`](references/project-shell.md) and
    `python/references/lifecycle-application-entry.md`.
-7. `npm create @reboot-dev/ui`.
-8. `cd frontend && npm install`.
-9. `uv run rbt generate` (React bindings need `node_modules`).
-10. Customize React UIs — see
+8. `npm create @reboot-dev/ui`.
+9. `cd frontend && npm install`.
+10. `uv run rbt generate` (React bindings need `node_modules`).
+11. Customize React UIs — see
     [`references/react-scaffolding.md`](references/react-scaffolding.md)
     for the `frontend/` shell and
     [`references/react-app-tsx.md`](references/react-app-tsx.md) for
     `App.tsx` patterns.
-11. `cd frontend && npm run build`.
-12. **Write and run backend unit tests covering each user-facing
+12. `cd frontend && npm run build`.
+13. **Write and run backend unit tests covering each user-facing
     user story before handing the app off.** Enumerate the user
     stories from the design — every action the user should be able
     to _do_ through the MCP tool surface (e.g. "create a new
@@ -758,7 +763,7 @@ a worked set are in
     proceed to the next step until every user-story test passes
     and mypy is green — together they are the gate that catches
     contract bugs before the user sees them in MCPJam.
-13. Run the app — load the [`run` skill](../run/SKILL.md) and
+14. Run the app — load the [`run` skill](../run/SKILL.md) and
     follow it. It is the single canonical "start the app"
     procedure: it detects the app type, makes sure dependencies
     and secrets are in place, and starts the backend and
