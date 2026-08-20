@@ -1642,6 +1642,38 @@ class OryDomainTest(unittest.TestCase):
             url.startswith("https://slug.projects.oryapis.com/oauth2/auth?")
         )
 
+    def test_browser_facing_url_overrides_only_the_authorize_host(self):
+        # `browser_facing_url` sends the browser to a different origin
+        # (e.g. a local `ory tunnel`) for the authorize redirect, while
+        # the server keeps reaching Ory at `domain` for the token
+        # exchange.
+        ory = Ory(
+            domain="slug.projects.oryapis.com",
+            client_id="id",
+            client_secret="s",
+            browser_facing_url="http://localhost:4000",
+        )
+        url = ory.authorization_url(
+            state="x", redirect_uri="http://localhost/cb"
+        )
+        self.assertTrue(url.startswith("http://localhost:4000/oauth2/auth?"))
+        self.assertEqual(
+            ory._token_endpoint,
+            "https://slug.projects.oryapis.com/oauth2/token",
+        )
+
+    def test_browser_facing_url_must_be_a_bare_origin(self):
+        # A path or a missing scheme would make `{url}/oauth2/auth` a
+        # nonsense endpoint, so those are rejected up front.
+        for bad in ("localhost:4000", "http://localhost:4000/foo"):
+            with self.assertRaises(InputError):
+                Ory(
+                    domain="slug.projects.oryapis.com",
+                    client_id="id",
+                    client_secret="s",
+                    browser_facing_url=bad,
+                )
+
 
 def _ory(**kwargs: Any) -> Ory:
     """An `Ory` with throwaway credentials, for tests that only

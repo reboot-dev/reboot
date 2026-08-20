@@ -115,6 +115,30 @@ def _normalize_domain(domain: Optional[str]) -> str:
     return host.strip("/")
 
 
+def _normalize_browser_facing_url(url: Optional[str]) -> Optional[str]:
+    """Validate an `Ory(browser_facing_url=...)` and reduce it to a
+    bare origin. Unlike `domain`, this is the browser's own address
+    for Ory (e.g. a local `ory tunnel`), so it must carry a scheme and
+    host — optionally a port — and no path, or `{url}/oauth2/auth`
+    would be a nonsense endpoint. Returns `None` for a missing value.
+    """
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if (
+        parsed.scheme not in ("http", "https") or not parsed.netloc or
+        parsed.path.strip("/") or parsed.query or parsed.fragment
+    ):
+        raise InputError(
+            reason=(
+                f"`Ory` got a `browser_facing_url={url!r}` that is not a "
+                "bare origin. Pass a scheme, host, and optional port with "
+                "no path, e.g. `http://localhost:4000`."
+            ),
+        )
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
 def _decoded_id_token(
     id_token: Optional[str],
 ) -> Optional[dict[str, Any]]:
@@ -1153,8 +1177,8 @@ class Ory(RegisteredOAuthProvider):
             )
         self._domain = _normalize_domain(domain)
         self._webhook_secret = webhook_secret
-        self._browser_facing_url = (
-            browser_facing_url.rstrip("/") if browser_facing_url else None
+        self._browser_facing_url = _normalize_browser_facing_url(
+            browser_facing_url
         )
 
     @property
