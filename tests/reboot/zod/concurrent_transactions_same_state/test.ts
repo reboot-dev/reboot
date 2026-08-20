@@ -25,7 +25,7 @@ const setUp = async () => {
 
   const context = rbt.createExternalContext("test");
 
-  await Counter.create(context, COUNTER_ID, {});
+  await Counter.factory.create(context, COUNTER_ID, {});
 
   return { rbt, context };
 };
@@ -47,7 +47,7 @@ test("Concurrent transactions on one state", async (t) => {
       (_, index) => `driver-${index}`
     );
     await Promise.all(
-      driverIds.map((driverId) => Counter.create(context, driverId, {}))
+      driverIds.map((driverId) => Counter.factory.create(context, driverId, {}))
     );
 
     rendezvous.reset(CONCURRENCY);
@@ -86,8 +86,8 @@ test("Concurrent transactions on one state", async (t) => {
       await rbt.stop();
     });
 
-    await Counter.create(context, "writing-driver", {});
-    await Counter.create(context, "touching-driver", {});
+    await Counter.factory.create(context, "writing-driver", {});
+    await Counter.factory.create(context, "touching-driver", {});
 
     parkedIncrementIsParticipant.reset();
     parkedIncrementMayWrite.reset();

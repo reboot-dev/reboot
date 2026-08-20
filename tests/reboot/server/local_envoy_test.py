@@ -195,7 +195,7 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
             name='test_server_filter',
             url=f"https://{endpoint}",
         )
-        await General.ConstructorWriter(context, 'foo')
+        await General.factory.ConstructorWriter(context, 'foo')
         seen_ids = set()
         for i in range(30):
             response = await General.ref('foo').Reader(context)
@@ -206,7 +206,9 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
         # across all servers.
         seen_ids = set()
         for state_id in string.ascii_lowercase:
-            _, response = await General.ConstructorWriter(context, state_id)
+            _, response = await General.factory.ConstructorWriter(
+                context, state_id
+            )
             server_id = response.content[SERVER_ID_HEADER]
             seen_ids.add((response.content["id"], server_id))
         self.assertEqual(
@@ -248,7 +250,9 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
         # for such states must route to the same server both via gRPC
         # calls (which send tagged state refs) and via HTTP calls with
         # human-readable state refs.
-        _, response = await General.ConstructorWriter(context, "foo:bar/baz")
+        _, response = await General.factory.ConstructorWriter(
+            context, "foo:bar/baz"
+        )
         id_server_pair = (
             response.content["id"],
             response.content[SERVER_ID_HEADER],
@@ -342,9 +346,11 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
         for i in range(30):
             state_id = f"foo-{i}"
 
-            general, construct_response = await General.ConstructorWriter(
-                context,
-                state_id,
+            general, construct_response = (
+                await General.factory.ConstructorWriter(
+                    context,
+                    state_id,
+                )
             )
 
             # If we make an HTTP request to the designated HTTP RPC endpoint using
@@ -416,7 +422,7 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         # Create a state to test with.
-        await General.ConstructorWriter(context, 'test_state')
+        await General.factory.ConstructorWriter(context, 'test_state')
 
         # Use h2 library to make a low-level HTTP/2 request
         # that can distinguish between headers and trailers.

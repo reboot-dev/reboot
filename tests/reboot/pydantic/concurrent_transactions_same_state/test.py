@@ -36,7 +36,7 @@ class ConcurrentTransactionsOnOneStateTest(unittest.IsolatedAsyncioTestCase):
             effect_validation=EffectValidation.DISABLED,
         )
         self.context = self.rbt.create_external_context(name=self.id())
-        await Counter.create(self.context, COUNTER_ID)
+        await Counter.factory.create(self.context, COUNTER_ID)
 
     async def asyncTearDown(self) -> None:
         await self.rbt.stop()
@@ -50,7 +50,7 @@ class ConcurrentTransactionsOnOneStateTest(unittest.IsolatedAsyncioTestCase):
         driver_ids = [f"driver-{index}" for index in range(CONCURRENCY)]
         await asyncio.gather(
             *(
-                Counter.create(self.context, driver_id)
+                Counter.factory.create(self.context, driver_id)
                 for driver_id in driver_ids
             )
         )
@@ -88,8 +88,8 @@ class ConcurrentTransactionsOnOneStateTest(unittest.IsolatedAsyncioTestCase):
         set up, step 3 writes into something nothing else reads, and
         the increment is lost with no error reported anywhere.
         """
-        await Counter.create(self.context, "writing-driver")
-        await Counter.create(self.context, "touching-driver")
+        await Counter.factory.create(self.context, "writing-driver")
+        await Counter.factory.create(self.context, "touching-driver")
 
         parked_increment_is_participant.clear()
         parked_increment_may_write.clear()

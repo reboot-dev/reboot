@@ -149,7 +149,7 @@ exactly one of them — the step that needs it.
   `self.state_id`); `self.ref().schedule(...)`.
 - `python/references/rpc-calls.md` — kwargs, not Request wrappers.
 - `python/references/rpc-constructor-calls.md` —
-  `Service.create(context, id)` semantics.
+  `Service.factory.create(context, id)` semantics.
 - `python/references/servicer-workflow.md` — only when you declared
   a `Workflow`, and then top to bottom: the `@classmethod` /
   `WorkflowContext` declaration shape, the call-classification
@@ -158,7 +158,7 @@ exactly one of them — the step that needs it.
   `until` / `until_changes`, and workflow exit semantics.
 - [`references/servicer-patterns.md`](references/servicer-patterns.md)
   — the chat-app servicer shapes: `UserServicer` calling
-  `<X>.create(context)`, a Workflow Servicer with `MyType.ref()`
+  `<X>.factory.create(context)`, a Workflow Servicer with `MyType.ref()`
   (no-arg) magic, inline writers via
   `.per_workflow("alias").write(context, fn)` /
   `.per_iteration("alias").write(...)` / `.always().write(...)`,
@@ -400,7 +400,7 @@ Before writing code, analyze the user's request:
 
 3. **User methods**: How does the AI create instances of application
    types? Each gets a `Transaction` on `User` that calls
-   `<Type>.create(context)`, then registers the new ID in the
+   `<Type>.factory.create(context)`, then registers the new ID in the
    appropriate container (Shape B or C above).
 4. **State shape (per type)**: Fields, types — lists, nested
    objects, primitives. Each gets `Field(tag=N)`. **Nested `Model`
@@ -508,7 +508,7 @@ that warn you are accreting concerns, and the split pattern, are in
 
 Full pydantic shape in
 [`references/api-method-types.md`](references/api-method-types.md);
-the `UserServicer` + `<X>.create(context)` pattern in
+the `UserServicer` + `<X>.factory.create(context)` pattern in
 [`references/servicer-patterns.md`](references/servicer-patterns.md).
 
 ### Tool Exposure Control

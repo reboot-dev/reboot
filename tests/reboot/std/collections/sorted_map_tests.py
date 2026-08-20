@@ -518,7 +518,7 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         sorted_map, context = self.map()
-        consumer, _ = await General.ConstructorWriter(context)
+        consumer, _ = await General.factory.ConstructorWriter(context)
 
         expected_entries_before = {"2": b""}
         expected_entries_after = {"1": b"", "2": b"", "3": b""}
@@ -584,7 +584,7 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         sorted_map, context = self.map()
-        consumer, _ = await General.ConstructorWriter(context)
+        consumer, _ = await General.factory.ConstructorWriter(context)
 
         expected_entries_before = {"2": b""}
 

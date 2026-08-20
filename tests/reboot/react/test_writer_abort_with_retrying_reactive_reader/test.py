@@ -35,7 +35,7 @@ async def test(context: ExternalContext, uri: str):
 
     state_id = 'actor-test-132'
 
-    test, _ = await Test.idempotently(f"Create '{state_id}'").Create(
+    test, _ = await Test.factory.idempotently(f"Create '{state_id}'").Create(
         context,
         state_id,
     )

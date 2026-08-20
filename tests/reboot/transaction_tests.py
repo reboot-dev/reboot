@@ -110,7 +110,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         await bank.SignUp(
             context,
@@ -156,7 +156,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         await bank.SignUp(
             context,
@@ -223,7 +223,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             await bank.SignUp(context, account_id='jonathan')
 
@@ -256,7 +256,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             with self.assertRaises(Bank.SignUpAborted):
                 await bank.SignUp(context, account_id='jonathan')
@@ -299,7 +299,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             with self.assertRaises(Bank.SignUpAborted):
                 await bank.SignUp(context, account_id='jonathan')
@@ -391,7 +391,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             # Confirm that the relevant Bank and Account instances are running
             # in different servers. Note that this isn't necessarily
@@ -486,7 +486,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             # Confirm that the relevant Bank and Account instances are running
             # in different servers. Note that this isn't necessarily
@@ -603,7 +603,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             # Confirm that `Bank` and `Account` are on different
             # servers so we can restart just the participant.
@@ -662,7 +662,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             await bank.SignUp(context, account_id='jonathan')
 
@@ -713,7 +713,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             await bank.SignUp(context, account_id='jonathan')
 
@@ -773,7 +773,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             )
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             # Confirm that the relevant Bank and Account instances are running
             # in different servers. Note that this isn't necessarily
@@ -907,7 +907,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             )
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
             await bank.SignUp(
                 context, account_id=alice_account_ref.id, initial_deposit=100
             )
@@ -1054,7 +1054,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             )
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             # Bank and Account on different servers (the existing
             # recovery tests rely on this and we want the same
@@ -1166,7 +1166,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             )
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             # Confirm that `Bank` and `Account` are on different
             # servers so we exercise cross-server recovery.
@@ -1263,7 +1263,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             )
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             bank_server_id, account_server_id = await self.rbt.unique_servers(
                 bank._state_ref,
@@ -1394,7 +1394,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             # Create the account using the transactional method `SignUp`.
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             await bank.SignUp(
                 context, account_id=account_name, initial_deposit=10
@@ -1468,7 +1468,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             with self.assertRaises(Bank.SignUpAborted) as aborted:
                 await bank.SignUp(context, account_id='jonathan')
@@ -1651,7 +1651,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             bank_initialized = True
 
@@ -1736,7 +1736,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             await bank.SignUp(context, account_id='jonathan')
 
@@ -1815,7 +1815,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             with self.assertRaises(Bank.SignUpAborted) as aborted:
                 await bank.SignUp(context, account_id='jonathan')
@@ -1835,7 +1835,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         await bank.SignUp(context, account_id='jonathan')
 
@@ -1860,7 +1860,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         await bank.SignUp(context, account_id='jonathan')
 
@@ -1890,7 +1890,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         await bank.SignUp(context, account_id='catcher')
         await bank.SignUp(context, account_id='thrower')
@@ -1918,7 +1918,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         await bank.SignUp(context, account_id='jonathan')
 
@@ -1945,7 +1945,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         await bank.SignUp(context, account_id='jonathan')
 
@@ -1967,7 +1967,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         await bank.SignUp(context, account_id='jonathan')
 
@@ -2033,7 +2033,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         await bank.SignUp(context, account_id='jonathan', initial_deposit=7)
 
@@ -2077,7 +2077,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         # Opens 'inherited' (balance 10), then via a nested transaction
         # that does NOT touch 'inherited' calls a deeper nested
@@ -2145,7 +2145,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             await bank.SignUp(
                 context, account_id='retainacct', initial_deposit=10
@@ -2253,7 +2253,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
             root_task = asyncio.create_task(
                 bank.TestPrepareWaitForNestedAbortRollback(
@@ -2359,7 +2359,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             type(aborted.exception.error), errors_pb2.StateNotConstructed
         )
 
-        await Bank.Create(context, SINGLETON_BANK_ID)
+        await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
     async def test_transactional_constructor(self):
         """Tests that we can call a transactional constructor, and that aborting
@@ -2398,7 +2398,9 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
 
         # Successfully create, and confirm that we can see the state.
-        item1, _ = await General.ConstructorTransaction(context, "item1")
+        item1, _ = await General.factory.ConstructorTransaction(
+            context, "item1"
+        )
         self.assertEqual(
             {"yep": "it ran"}, dict((await item1.Reader(context)).content)
         )
@@ -2407,7 +2409,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(
             General.ConstructorTransactionAborted
         ) as ct_aborted:
-            await General.ConstructorTransaction(
+            await General.factory.ConstructorTransaction(
                 context,
                 "item2",
                 content={"abort": "True"},
@@ -2454,7 +2456,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         )
         context = self.rbt.create_external_context(name=self.id())
 
-        item, _ = await General.ConstructorTransaction(context, "item")
+        item, _ = await General.factory.ConstructorTransaction(context, "item")
 
         # The actor must be constructed: reading it must succeed rather
         # than abort with `StateNotConstructed`.
@@ -2470,7 +2472,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         # A nested transaction (`Bank.Transfer`) on the same `Bank`
         # state as the parent transaction, also modifying accounts
@@ -2603,7 +2605,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             entries={"bar": b"bar"},
         )
 
-        general, _ = await General.ConstructorWriter(context)
+        general, _ = await General.factory.ConstructorWriter(context)
 
         # We first call `General.Transaction` for a nonexistent key, which
         # will cause its `SortedMap.Get` call to fail, and therefore cause the
@@ -2649,7 +2651,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         # Create a bank and an account to test with.
         context = self.rbt.create_external_context(name=self.id())
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
         await bank.SignUp(context, account_id='test-account')
 
         # Now use raw gRPC to call a transaction method, so we can check
@@ -2695,7 +2697,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         # Create a bank to test with.
         context = self.rbt.create_external_context(name=self.id())
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         # Now use raw gRPC to call a transaction method that will fail,
         # so we can check the trailing metadata.
