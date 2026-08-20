@@ -2,9 +2,10 @@ import asyncio
 from chat.v1.channel_rbt import Channel
 from chatbot.v1.chatbot_rbt import Chatbot
 from reboot.aio.applications import Application
+from reboot.aio.auth.authorizers import allow
 from reboot.std.collections.queue.v1.queue import QueueServicer
 from reboot.std.index.v1 import index
-from reboot.std.presence.v1 import presence
+from reboot.std.presence.v1.presence import presence_library
 from reboot.std.pubsub.v1.pubsub import PubSubServicer
 from servicers.channel import ChannelServicer
 from servicers.chatbot import ChatbotServicer
@@ -42,7 +43,8 @@ async def main():
             ChatbotServicer,
             QueueServicer,
             PubSubServicer,
-        ] + index.servicers() + presence.servicers(),
+        ] + index.servicers(),
+        libraries=[presence_library(authorizer=allow())],
         initialize=initialize,
     ).run()
 

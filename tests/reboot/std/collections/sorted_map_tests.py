@@ -726,6 +726,30 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         #         https://github.com/reboot-dev/mono/pull/4601#issuecomment-2989091840
         self.assertEqual(type(aborted.exception.error), PermissionDenied)
 
+    async def test_overriding_authorization_rule(self) -> None:
+        """
+        Override library authorization with an AuthorizationRule.
+        """
+        await self.rbt.up(
+            Application(
+                servicers=[SortedMapConsumer],
+                libraries=[sorted_map_library(allow())],
+            ),
+            local_envoy=True,
+            local_envoy_tls=True,  # For TLS/SSL test coverage.
+        )
+
+        # Expect to be able to insert even with `app_internal=False`.
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}-external",
+            app_internal=False,
+        )
+        sorted_map = SortedMap.ref(self.id())
+        await sorted_map.insert(
+            context,
+            entries={"a": b"1"},
+        )
+
     async def test_servicers_back_compat(self) -> None:
         """
         Test that we can start up `Application` with its `servicers()`.
