@@ -16,3 +16,8 @@ reboot/std/node_modules/
 reboot/std/react/node_modules/
 reboot/web/node_modules/
 tests/reboot/node_modules/
+
+# What `reboot/nodejs`'s install scripts leave behind whenever
+# `pnpm install` runs; nothing in them is built with Bazel.
+reboot/nodejs/python/
+reboot/nodejs/build/

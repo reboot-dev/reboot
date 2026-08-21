@@ -43,6 +43,8 @@ import {
 } from "./description";
 import type { Change } from "./changelog";
 import { agoOf, changesOf } from "./changelog";
+import { SYNTHETIC_PACKAGES } from "./callgraph";
+import { GraphPage } from "./graph";
 
 // One subscriber per tab, for as long as the tab is open.
 const SUBSCRIBER_ID = uuidv4();
@@ -179,12 +181,13 @@ const isStandardLibrary = (namespace: string): boolean =>
 
 // The two indexes of the same API: the state types it declares, and
 // the types those declare in turn.
-const PAGES = ["changelog", "data", "state"] as const;
+const PAGES = ["changelog", "graph", "data", "state"] as const;
 
 type Page = typeof PAGES[number];
 
 const PAGE_NAMES: Record<Page, string> = {
   changelog: "Changelog",
+  graph: "Call Graph",
   data: "Data Types",
   state: "State Types",
 };
@@ -780,7 +783,7 @@ const ChangelogPage: FC<{ onCount: (n: number) => void; live: boolean }> = ({
     <>
       {live && (
         <div className="listening">
-          Listening<span className="listening-dots">...</span>
+          Watching for changes<span className="listening-dots">...</span>
         </div>
       )}
       <div className="changes">
@@ -865,7 +868,7 @@ const Overview: FC<{
   // sidebar has nothing to index.
   const entries: NavEntry[] = useMemo(
     () =>
-      page === "changelog"
+      page === "changelog" || page === "graph"
         ? []
         : page === "state"
         ? stateTypes.map((stateType) => ({
@@ -891,13 +894,20 @@ const Overview: FC<{
 
   // The small label over the heading, the first of the two lines
   // above the list.
-  const eyebrow = page === "changelog" ? "history" : "application domain";
+  const eyebrow =
+    page === "changelog"
+      ? "development history"
+      : page === "graph"
+      ? "application structure"
+      : "application domain";
 
   // A type page's heading says what its list holds, "3 state types
   // in 2 namespaces"; the changelog's is just the page name.
   const heading =
     page === "changelog"
       ? "Changelog"
+      : page === "graph"
+      ? `${countOf(SYNTHETIC_PACKAGES.length, "package")} calling each other`
       : page === "state"
       ? `${countOf(stateTypes.length, "state type")} in ${countOf(
           namespaces.length,
@@ -919,8 +929,10 @@ const Overview: FC<{
   }, [page, target, stateTypes, objects]);
 
   // Only before anything has ever been read; afterwards the last
-  // shape is shown instead.
-  if (isLoading && stateTypes.length === 0) {
+  // shape is shown instead. The graph page is exempt while it draws
+  // synthetic data: it has something to show before any API is
+  // read. (Once the analysis lands, it will wait like the others.)
+  if (page !== "graph" && isLoading && stateTypes.length === 0) {
     return (
       <main>
         <h1>Reboot application</h1>
@@ -929,7 +941,7 @@ const Overview: FC<{
     );
   }
 
-  if (stateTypes.length === 0) {
+  if (page !== "graph" && stateTypes.length === 0) {
     return (
       <main>
         <h1>Reboot application</h1>
@@ -946,6 +958,7 @@ const Overview: FC<{
     state: stateTypes.length,
     data: objects.length,
     changelog: changes,
+    graph: SYNTHETIC_PACKAGES.length,
   };
 
   return (
@@ -986,7 +999,7 @@ const Overview: FC<{
       </Panel>
       <Separator className="nav-resizer" />
       <Panel className="pane-panel">
-        <div className="pane">
+        <div className={page === "graph" ? "pane graph-pane" : "pane"}>
           <header>
             <div className="eyebrow">{eyebrow}</div>
             <h1>{heading}</h1>
@@ -994,6 +1007,8 @@ const Overview: FC<{
           {error && <div className="error">{error}</div>}
           {page === "changelog" ? (
             <ChangelogPage onCount={setChanges} live={live} />
+          ) : page === "graph" ? (
+            <GraphPage packages={SYNTHETIC_PACKAGES} />
           ) : page === "state" ? (
             stateTypes.map((stateType) => (
               <StateType

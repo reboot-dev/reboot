@@ -55,3 +55,11 @@ examples/*
 
 # Modules installed for node builds.
 node_modules/
+
+# What `reboot/nodejs`'s install scripts leave behind whenever
+# `pnpm install` runs: a downloaded standalone Python, the
+# `node-gyp` build of the native addon, and the C-compiler smoke
+# test's output.
+/reboot/nodejs/python/
+/reboot/nodejs/build/
+/reboot/nodejs/a.out

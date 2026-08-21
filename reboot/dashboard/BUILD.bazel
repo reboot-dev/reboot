@@ -86,12 +86,14 @@ genrule(
         "//reboot/dashboard/frontend:dashboard_bundle.js",
         "//reboot/dashboard/frontend:index.html",
         "//reboot/dashboard/frontend:reboot-logo.svg",
+        "//reboot/dashboard/frontend:xyflow.css",
     ],
     outs = [
         "dashboard/index.html",
         "dashboard/dashboard.css",
         "dashboard/dashboard_bundle.js",
         "dashboard/reboot-logo.svg",
+        "dashboard/xyflow.css",
     ],
     cmd = "sed 's|\\./src/main\\.tsx|./dashboard_bundle.js|' " +
           "$(location //reboot/dashboard/frontend:index.html) " +
@@ -101,7 +103,9 @@ genrule(
           "cp $(location //reboot/dashboard/frontend:dashboard_bundle.js) " +
           "$(location dashboard/dashboard_bundle.js) && " +
           "cp $(location //reboot/dashboard/frontend:reboot-logo.svg) " +
-          "$(location dashboard/reboot-logo.svg)",
+          "$(location dashboard/reboot-logo.svg) && " +
+          "cp $(location //reboot/dashboard/frontend:xyflow.css) " +
+          "$(location dashboard/xyflow.css)",
 )
 
 py_library(

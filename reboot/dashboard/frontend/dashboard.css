@@ -1203,3 +1203,455 @@ header h1 {
   color: hsl(var(--foreground));
   border-color: hsl(240 5.9% 78%);
 }
+
+/* --- Call graph --- */
+
+/* The graph owns the rest of the pane below the header, and the
+   pane stops scrolling: panning the canvas is the graph's own
+   gesture, and a scrollbar would fight it. */
+.pane.graph-pane {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* As a flex item the header's auto margins would shrink it to its
+   words and centre those; at full width it is the same 840px column
+   the other pages put their heading in. */
+.pane.graph-pane > header {
+  width: 100%;
+}
+
+.graph-canvas {
+  flex: 1;
+  min-height: 0;
+  border-top: 1px solid hsl(var(--border));
+}
+
+.react-flow {
+  background: hsl(var(--background));
+}
+
+/* Nodes aren't draggable, so a drag anywhere on them pans the graph:
+   they wear the pane's hand (open, or closed while panning) rather
+   than xyflow's default arrow. What's clickable says so below. */
+.graph-canvas .react-flow__node {
+  cursor: inherit;
+}
+
+/* The dots read as a drafting surface against the parchment
+   background without competing with the edges. */
+.react-flow__background {
+  color: hsl(240 6% 78%);
+}
+
+/* Fading is how a click narrows the graph: everything that is not
+   the chosen method or one of its calls steps back but stays
+   where it was, so what remains is read in place. */
+.react-flow__node,
+.react-flow__edge {
+  transition: opacity 160ms ease;
+}
+
+.react-flow__node.graph-faded {
+  opacity: 0.15;
+}
+
+.react-flow__edge.graph-faded {
+  opacity: 0.1;
+}
+
+/* The handles are landing points for edges, not things to grab. */
+.graph-port {
+  opacity: 0;
+  pointer-events: none;
+  border: none;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* A collapsed package: one box wearing the sidebar's colour, since
+   like the sidebar it is an index of what can be opened. */
+.graph-canvas .react-flow__node-package {
+  cursor: pointer;
+}
+
+.graph-package {
+  width: 100%;
+  height: 100%;
+  padding: 12px 16px;
+  background: hsl(var(--sidebar));
+  border: 1px solid hsl(var(--border-strong));
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px hsl(240 10% 40% / 0.08);
+}
+
+.graph-package:hover {
+  border-color: hsl(var(--primary) / 0.5);
+}
+
+.graph-package-name {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 13px;
+  font-weight: 650;
+  color: hsl(var(--foreground));
+}
+
+.graph-package-counts {
+  margin-top: 2px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 9.5px;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+
+.graph-package-hint {
+  margin-top: 6px;
+  font-size: 9px;
+  font-style: italic;
+  color: hsl(var(--muted-foreground) / 0.8);
+}
+
+/* An expanded package: the same box grown into a region whose
+   state types are nodes of their own. */
+.graph-group {
+  width: 100%;
+  height: 100%;
+  background: hsl(var(--sidebar) / 0.5);
+  border: 1px solid hsl(var(--border-strong));
+  border-radius: 10px;
+}
+
+.graph-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+}
+
+.graph-group-name {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: hsl(var(--foreground));
+}
+
+.graph-group-collapse {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 9.5px;
+  color: hsl(var(--muted-foreground));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.graph-group-collapse:hover {
+  color: hsl(var(--foreground));
+}
+
+/* A state type inside an expanded package: a card like the method
+   cards elsewhere, with one row per method. */
+.graph-state-type {
+  width: 100%;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px hsl(240 10% 40% / 0.1);
+  overflow: hidden;
+}
+
+.graph-state-type-head {
+  position: relative;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid hsl(var(--border-soft));
+  font-size: 12.5px;
+  font-weight: 650;
+  color: hsl(var(--foreground));
+}
+
+/* One method, one row: its kind's colour on the dot, its name, and
+   an edge landing on its left or leaving on its right. The colours
+   are the ones the kind pills wear on the state types page. */
+.graph-method {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 12px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+}
+
+/* Each kind's colour twice: the hue its dot and edges wear, and a
+   darker cut for text at small sizes, matching the kind pills'
+   text elsewhere on the dashboard. */
+.graph-kind-reader {
+  --kind: 166 55% 35%;
+  --kind-text: 166 55% 27%;
+}
+
+.graph-kind-writer {
+  --kind: 211 72% 45%;
+  --kind-text: 211 72% 32%;
+}
+
+.graph-kind-transaction {
+  --kind: 275 50% 50%;
+  --kind-text: 275 50% 38%;
+}
+
+.graph-kind-workflow {
+  --kind: 36 85% 42%;
+  --kind-text: 28 80% 33%;
+}
+
+.graph-method:hover {
+  background: hsl(var(--kind) / 0.08);
+}
+
+.graph-method.selected {
+  background: hsl(var(--kind) / 0.16);
+  font-weight: 650;
+}
+
+.graph-method-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: hsl(var(--kind));
+}
+
+/* A workflow's dot is a ring: like its dotted edges, it is drawn
+   in outline because it runs past the call that started it. */
+.graph-kind-workflow .graph-method-dot {
+  background: transparent;
+  border: 1.5px solid hsl(var(--kind));
+}
+
+.graph-method-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A factory: this is the method that brings the state into
+   existence, which is what a `constructs` edge lands on. */
+.graph-method-factory {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: hsl(211 72% 26%);
+  color: hsl(0 0% 100%);
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+/* The analysis lost sight of this method's context: it was handed
+   to a helper, where calls may hide. The title says which. */
+.graph-method-ambiguous {
+  flex: none;
+  margin-left: auto;
+  width: 13px;
+  height: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid hsl(var(--border-strong));
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  font-size: 8.5px;
+  cursor: help;
+}
+
+/* A chosen method's edge labels are drawn in the viewport portal,
+   whose layer sits above the nodes that by default paint over
+   labels: those few are being read, and must not tuck behind a
+   card. The rest stay in the label layer under the nodes. Inert to
+   the pointer, so nothing is stolen from the node under them. */
+.react-flow__viewport-portal {
+  z-index: 11;
+  pointer-events: none;
+}
+
+/* What an edge says about itself, floated at its midpoint: a small
+   solid pill so the word reads over whatever the edge crosses. The
+   text is a darker cut of the edge's colour, set inline; the border
+   takes a wash of the same colour through `currentColor`. */
+.graph-edge-label {
+  position: absolute;
+  padding: 1.5px 7px;
+  border-radius: 999px;
+  background: hsl(var(--card));
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  box-shadow: 0 1px 2px hsl(240 10% 40% / 0.1);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+/* Every box at once, in the canvas's other top corner: text
+   buttons in a card like the legend's, each greyed while it would
+   change nothing. */
+.graph-actions {
+  display: flex;
+  gap: 12px;
+  padding: 8px 12px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px hsl(240 10% 40% / 0.1);
+}
+
+.graph-actions button {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  color: hsl(var(--muted-foreground));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.graph-actions button:hover {
+  color: hsl(var(--foreground));
+}
+
+.graph-actions button:disabled {
+  color: hsl(var(--muted-foreground) / 0.5);
+  text-decoration: none;
+  cursor: default;
+}
+
+/* The legend, in the canvas's corner: what the colours, line
+   styles and badges say. A card like the nodes, opaque so nothing
+   of the graph shows through and reads as part of it. */
+.graph-legend {
+  width: 208px;
+  padding: 10px 12px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px hsl(240 10% 40% / 0.1);
+}
+
+/* The title is the toggle: a marker in the eyebrow's own colour that
+   turns to point at the rows it reveals. Closed, the card shrinks to
+   the title alone. */
+.graph-legend > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.graph-legend > summary::-webkit-details-marker {
+  display: none;
+}
+
+.graph-legend > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  border-left: 5px solid currentColor;
+  transition: transform 120ms ease;
+}
+
+.graph-legend[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-legend > summary::before {
+    transition: none;
+  }
+}
+
+.graph-legend[open] > summary {
+  padding-bottom: 6px;
+}
+
+.graph-legend:not([open]) {
+  width: auto;
+}
+
+.graph-legend > summary:hover {
+  color: hsl(var(--foreground));
+}
+
+.graph-legend-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 0;
+  border-top: 1px solid hsl(var(--border-soft));
+}
+
+.graph-legend-rows:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.graph-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  color: hsl(var(--foreground));
+}
+
+.graph-legend-line {
+  flex: none;
+  width: 30px;
+  height: 8px;
+  color: hsl(211 25% 60%);
+}
+
+/* In a method row the mark floats to the right edge; in the legend
+   it sits in the sample column like everything else. */
+.graph-legend .graph-method-ambiguous {
+  margin-left: 0;
+}
+
+/* A definition for a mark inside the canvas, rendered outside it at
+   the mark's screen position: shown whenever it exists, above and
+   centred on the mark, over everything. */
+.graph-tip {
+  position: fixed;
+  bottom: auto;
+  transform: translate(-50%, calc(-100% - 8px));
+  opacity: 1;
+  visibility: visible;
+  z-index: 1000;
+}
+
+/* The legend sits against the canvas's right edge, which clips
+   whatever leaves it, so its definition opens leftward from the
+   row's right edge rather than centred. */
+.graph-legend .definition {
+  left: auto;
+  right: 0;
+  transform: none;
+}
