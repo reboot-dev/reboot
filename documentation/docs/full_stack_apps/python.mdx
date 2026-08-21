@@ -144,10 +144,12 @@ ChatRoomMethods = Methods(
     messages=Reader(
         request=None,
         response=MessagesResponse,
+        description="Every message posted to the room so far.",
     ),
     send=Writer(
         request=SendRequest,
         response=None,
+        description="Post one message to the room.",
     ),
 )
 

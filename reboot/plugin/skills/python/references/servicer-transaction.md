@@ -37,6 +37,8 @@ async def transfer(
 transfer=Transaction(
     request=TransferRequest,
     response=None,
+    description="Move funds between two accounts, both sides landing "
+    "together or neither.",
     mcp=None,
 ),
 ```

@@ -1,0 +1,180 @@
+syntax = "proto3";
+
+package rbt.dashboard.v1;
+
+import "google/protobuf/struct.proto";
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+// What the dashboard application has read of the developer's API
+// files, so that a browser can read it without reaching the
+// application itself.
+message API {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  // The state types the developer's API files declare, which exist
+  // before the application does. A JSON array: each state type
+  // carries its methods and a `$defs` of every type they mention,
+  // referred to by `$ref`. `Value` because the types are Pydantic's
+  // own JSON Schema, which is recursive and open-ended, and describing
+  // it in proto would mean owning a second copy of a mapping Pydantic
+  // already has.
+  google.protobuf.Value state_types = 1;
+
+  // Why the API files could not be read, if they could not be. A
+  // half-written file is the normal case while someone is typing, and
+  // saying so beats showing nothing.
+  optional string error = 2;
+}
+
+message APIGetRequest {}
+
+message APIGetResponse {
+  google.protobuf.Value state_types = 1;
+  optional string error = 2;
+}
+
+message APIUpdateRequest {
+  google.protobuf.Value state_types = 1;
+  optional string error = 2;
+}
+
+message APIUpdateResponse {}
+
+// What changed, as `changelog.py` describes it: a JSON array, one
+// entry per type added, changed or removed.
+message APIRecordChangesRequest {
+  google.protobuf.Value changes = 1;
+}
+
+message APIRecordChangesResponse {}
+
+message APIWatchRequest {}
+
+message APIWatchResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+// The developer's machine-local preferences for opening dashboards.
+message Preferences {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  // Whether the developer has asked `rbt dev run` to stop opening a
+  // dashboard by itself. Recorded as the exception rather than as
+  // the rule, so that somebody who has never chosen gets a dashboard
+  // opened when nobody is looking at one.
+  //
+  // `--open-dashboard` opens one whatever this says.
+  bool suppress_open_on_restart = 1;
+
+  // The state types whose methods the developer has opened on the
+  // dashboard, by fully qualified name such as `bank.v1.Account`.
+  // Held as the set that is open rather than the set that is closed,
+  // so that somebody who has clicked nothing gets a page where every
+  // state type shows its methods but none of their detail.
+  //
+  // Kept sorted, so that clicking two state types open in one order
+  // and then the other stores the same thing both times.
+  repeated string expanded_state_types = 2;
+
+  // How wide the developer has dragged the sidebar, in CSS pixels.
+  // Optional, so that never having dragged it is a different answer
+  // than having dragged it to whatever the default happens to be:
+  // the page picks the default, and can change it, until somebody
+  // has an opinion.
+  optional uint32 nav_width = 3;
+}
+
+message PreferencesGetRequest {}
+
+message PreferencesGetResponse {
+  bool suppress_open_on_restart = 1;
+  repeated string expanded_state_types = 2;
+  optional uint32 nav_width = 3;
+}
+
+message PreferencesSetSuppressOpenOnRestartRequest {
+  bool suppress_open_on_restart = 1;
+}
+
+message PreferencesSetSuppressOpenOnRestartResponse {}
+
+message PreferencesSetExpandedRequest {
+  // The fully qualified name of one state type, spelled the way the
+  // description spells it.
+  string state_type = 1;
+
+  bool expanded = 2;
+}
+
+message PreferencesSetExpandedResponse {}
+
+message PreferencesSetNavWidthRequest {
+  uint32 nav_width = 1;
+}
+
+message PreferencesSetNavWidthResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+service APIMethods {
+  rpc Get(APIGetRequest) returns (APIGetResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc Update(APIUpdateRequest) returns (APIUpdateResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Records what changed. Assigns each change its key, so a workflow
+  // retrying this call sends an identical request every attempt.
+  rpc RecordChanges(APIRecordChangesRequest)
+      returns (APIRecordChangesResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Watches the developer's API files for as long as the dashboard
+  // application runs, reading each one that changes.
+  rpc Watch(APIWatchRequest) returns (APIWatchResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+service PreferencesMethods {
+  rpc Get(PreferencesGetRequest) returns (PreferencesGetResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc SetSuppressOpenOnRestart(PreferencesSetSuppressOpenOnRestartRequest)
+      returns (PreferencesSetSuppressOpenOnRestartResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // One state type per call rather than the whole set, so that two
+  // tabs opening two different state types at the same moment do not
+  // each write back a set that predates the other's click.
+  rpc SetExpanded(PreferencesSetExpandedRequest)
+      returns (PreferencesSetExpandedResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Its own writer, like the two above, so that recording a drag
+  // never writes back the rest of what this state holds.
+  rpc SetNavWidth(PreferencesSetNavWidthRequest)
+      returns (PreferencesSetNavWidthResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}

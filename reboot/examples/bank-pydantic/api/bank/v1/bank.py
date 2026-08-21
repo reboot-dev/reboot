@@ -53,6 +53,7 @@ BankMethods = Methods(
         request=None,
         response=None,
         factory=True,
+        description="Bring the bank into existence with no customers.",
         mcp=None,
     ),
     sign_up=Transaction(

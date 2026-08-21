@@ -110,6 +110,8 @@ api = API(
                 request=CreateOrderRequest,
                 response=None,
                 factory=True,
+                description="Start the order. Called when "
+                "the customer begins, not by the AI.",
                 mcp=None,
             ),
             get_menu=Reader(

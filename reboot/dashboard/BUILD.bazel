@@ -1,0 +1,148 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "constants_py",
+    srcs = ["constants.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "api_reader_py",
+    srcs = ["api_reader.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//reboot:api_py",
+    ],
+)
+
+# The reader as a command, so a `genrule` can produce a description
+# for the test that holds `api_reader.py` and `description.ts` to the
+# same shape. `main()` writes the description to stdout.
+py_binary(
+    name = "api_reader",
+    srcs = ["api_reader.py"],
+    main = "api_reader.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//reboot:api_py",
+    ],
+)
+
+py_library(
+    name = "changelog_py",
+    srcs = ["changelog.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":api_reader_py",
+    ],
+)
+
+py_library(
+    name = "api_watcher_py",
+    srcs = ["api_watcher.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":api_reader_py",
+        ":changelog_py",
+        ":constants_py",
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//reboot/aio:external_py",
+        "//reboot/cli/common:watch_py",
+    ],
+)
+
+py_library(
+    name = "servicers_py",
+    srcs = ["servicers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":api_watcher_py",
+        ":constants_py",
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//rbt/std/collections/ordered_map/v1:ordered_map_py_reboot",
+        "//reboot/aio:servicers_py",
+        "//reboot/std/collections/ordered_map/v1:ordered_map_py",
+        "//reboot/std/item/v1:item_py",
+        "//reboot/std/presence/v1:presence_py",
+    ],
+)
+
+# The dashboard page and its assets, laid out beside `main.py` for its
+# `StaticFiles` mount to serve. The `sed` points the page at the
+# `esbuild` bundle in place of `./src/main.tsx`, the entry point Vite
+# serves in development.
+genrule(
+    name = "dashboard_dist",
+    srcs = [
+        "//reboot/dashboard/frontend:dashboard.css",
+        "//reboot/dashboard/frontend:dashboard_bundle.js",
+        "//reboot/dashboard/frontend:index.html",
+        "//reboot/dashboard/frontend:reboot-logo.svg",
+    ],
+    outs = [
+        "dashboard/index.html",
+        "dashboard/dashboard.css",
+        "dashboard/dashboard_bundle.js",
+        "dashboard/reboot-logo.svg",
+    ],
+    cmd = "sed 's|\\./src/main\\.tsx|./dashboard_bundle.js|' " +
+          "$(location //reboot/dashboard/frontend:index.html) " +
+          "> $(location dashboard/index.html) && " +
+          "cp $(location //reboot/dashboard/frontend:dashboard.css) " +
+          "$(location dashboard/dashboard.css) && " +
+          "cp $(location //reboot/dashboard/frontend:dashboard_bundle.js) " +
+          "$(location dashboard/dashboard_bundle.js) && " +
+          "cp $(location //reboot/dashboard/frontend:reboot-logo.svg) " +
+          "$(location dashboard/reboot-logo.svg)",
+)
+
+py_library(
+    name = "main_py",
+    srcs = ["main.py"],
+    data = [
+        ":dashboard_dist",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":api_watcher_py",
+        ":constants_py",
+        ":servicers_py",
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//rbt/std/collections/ordered_map/v1:ordered_map_py_reboot",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:headers_py",
+        "//reboot/aio/backoff:python",
+        requirement("starlette"),
+    ],
+)
+
+py_binary(
+    name = "main",
+    srcs = ["main.py"],
+    data = [
+        ":dashboard_dist",
+    ],
+    main = "main.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":constants_py",
+        ":servicers_py",
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//rbt/std/collections/ordered_map/v1:ordered_map_py_reboot",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:headers_py",
+        "//reboot/aio/backoff:python",
+        requirement("starlette"),
+    ],
+)

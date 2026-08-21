@@ -516,6 +516,7 @@ py_library(
         ":python_thirdparty",
         "//reboot/aio:python",
         "//reboot/cli:main_py",
+        "//reboot/dashboard:main_py",
         "//reboot/mcp:python",
         "//reboot/nodejs:python",
         "@com_github_reboot_dev_reboot//protoc_gen_mypy_plugin:protoc-gen-mypy",

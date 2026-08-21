@@ -119,12 +119,16 @@ api = API(
             # converts and delegates to the logic behind
             # `deposit_cents`.
             deposit=Writer(
-                request=DepositRequest, response=None, mcp=None,
+                request=DepositRequest, response=None,
+                description="Add funds, in dollars. Superseded by "
+                "`deposit_cents`.",
+                mcp=None,
             ),
             # New method with the corrected request shape
             # (`amount_cents: int`).
             deposit_cents=Writer(
                 request=DepositCentsRequest, response=None,
+                description="Add funds, in whole cents.",
                 mcp=None,
             ),
         ),

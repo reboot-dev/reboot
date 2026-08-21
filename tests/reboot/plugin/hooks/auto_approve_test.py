@@ -2,8 +2,9 @@
 
 The hook auto-approves two categories of tool call: (1) safe
 read-only calls on this plugin's own skill files, and (2) the Reboot
-dev commands the `run` skill issues (`uv sync`, `npm install`, `npm
-run dev`, `cloudflared tunnel …`, `uv run rbt dev run …`,
+dev commands issued by the `run` and `dashboard` skills (`uv sync`,
+`npm install`, `npm run dev`, `cloudflared tunnel …`,
+`uv run rbt dev run …`, `uv run rbt dashboard …`,
 `npx @mcpjam/inspector …`) when they run inside a Reboot project.
 These tests encode the edge cases observed during plugin development
 (legitimate reads, look-alike paths, traversal attempts, command
@@ -689,6 +690,34 @@ REBOOT_DEV_CASES: list[tuple[str, str, Where, Decision]] = [
         "uv run rbt dev run --no-chaos --env-file=.env",
         Where.PROJECT,
         Decision.APPROVE,
+    ),
+    (
+        # `dashboard` skill — start the developer dashboard while an
+        # app is being built.
+        "dev: uv run rbt dashboard",
+        "uv run rbt dashboard --api-directory=api",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        "dev: uv run rbt dashboard with a --port",
+        "uv run rbt dashboard --api-directory=api --port=9872",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        # The space-separated spelling leaves `api` as a bare word
+        # rather than part of a flag, so the hook must defer.
+        "dev: uv run rbt dashboard with a positional argument",
+        "uv run rbt dashboard --api-directory api",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        "dev: uv run rbt dashboard outside a Reboot project",
+        "uv run rbt dashboard --api-directory=api",
+        Where.NON_PROJECT,
+        Decision.REJECT,
     ),
     (
         # `run` skill starts the Cloudflare quick tunnel right

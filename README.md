@@ -68,6 +68,7 @@ api = API(
                 request=None,
                 response=CreateCounterResponse,
                 description="Create a new Counter.",
+                mcp=Tool(),
             ),
         ),
     ),
@@ -84,6 +85,8 @@ api = API(
                 request=None,
                 response=None,
                 factory=True,
+                description="Create the counter at zero.",
+                mcp=None,
             ),
             get=Reader(
                 request=None,

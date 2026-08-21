@@ -157,7 +157,6 @@ class ProtoMcpOptions:
     tool: bool
     resource: bool
     name: Optional[str]
-    description: Optional[str]
     title: Optional[str]
 
 
@@ -167,6 +166,7 @@ class ProtoMethodOptions:
     constructor: bool
     state_streaming: bool
     has_errors: bool
+    description: Optional[str]
     mcp: Optional[ProtoMcpOptions]
 
 
@@ -898,16 +898,28 @@ class RebootProtocPlugin(ProtocPlugin):
                 tool=mcp.tool,
                 resource=mcp.resource,
                 name=mcp.name if mcp.HasField('name') else None,
-                description=mcp.description
-                if mcp.HasField('description') else None,
                 title=mcp.title if mcp.HasField('title') else None,
             )
+
+        description: Optional[str] = None
+        if method_options.HasField('description'):
+            description = method_options.description
+        elif (
+            method_options.HasField('mcp') and
+            method_options.mcp.HasField('description')
+        ):
+            # An application that was created before
+            # `MethodOptions.description` will have the deprecated
+            # `mcp` description, which is permitted for backward
+            # compatibility.
+            description = method_options.mcp.description
 
         return ProtoMethodOptions(
             kind=kind,
             constructor=self._is_method_constructor(method),
             state_streaming=state_streaming,
             has_errors=len(method_options.errors) > 0,
+            description=description,
             mcp=mcp_options,
         )
 

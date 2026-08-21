@@ -53,8 +53,9 @@ message McpMethodOptions {
   optional bool resource = 2;
   // Custom name for the tool/resource (defaults to method name).
   optional string name = 3;
-  // Description for the tool/resource.
-  optional string description = 4;
+  // Deprecated: write `MethodOptions.description` instead. Read as a
+  // fallback when it is the only description present.
+  optional string description = 4 [deprecated = true];
   // Display title for the tool/resource.
   optional string title = 5;
 }
@@ -102,6 +103,9 @@ message MethodOptions {
 
   // MCP options for exposing this method as a tool or resource.
   optional McpMethodOptions mcp = 9;
+
+  // What this method does, in the author's own words.
+  optional string description = 10;
 }
 
 extend google.protobuf.MethodOptions {
@@ -159,6 +163,12 @@ message StateOptions {
   // `RBT_VALIDATE_TRUSTED_EFFECTS` is set. See
   // https://github.com/reboot-dev/mono/issues/4499.
   bool trusted_effects = 4;
+
+  // What the state type does, in the author's own words. Worth
+  // writing about the parts a reader cannot derive, such as what it
+  // is the consistency boundary for, rather than restating the
+  // methods listed beside it.
+  optional string description = 5;
 }
 
 extend google.protobuf.MessageOptions {

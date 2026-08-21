@@ -72,28 +72,35 @@ AccountMethods = Methods(
     balance=Reader(
         request=None,
         response=BalanceResponse,
+        description="The funds currently available to withdraw.",
         mcp=None,
     ),
     deposit=Writer(
         request=DepositRequest,
         response=None,
+        description="Add funds. Any amount is accepted.",
         mcp=None,
     ),
     withdraw=Writer(
         request=WithdrawRequest,
         response=None,
         errors=[OverdraftError],
+        description="Take funds out, or raise `OverdraftError` if the "
+        "balance would go negative.",
         mcp=None,
     ),
     open=Writer(
         request=None,
         response=None,
         factory=True,
+        description="Bring the account into existence with a zero "
+        "balance.",
         mcp=None,
     ),
     interest=Writer(
         request=None,
         response=None,
+        description="Credit one period's interest at the current rate.",
         mcp=None,
     ),
 )
@@ -103,6 +110,8 @@ api = API(
     Account=Type(
         state=AccountState,
         methods=AccountMethods,
+        description="One customer's money, and the consistency "
+        "boundary for every change to it.",
     ),
 )
 ```
@@ -118,7 +127,8 @@ api = API(
 
 Attach typed errors via `errors=[ErrorModel, ...]`. Mark a method as a
 constructor with `factory=True` (only valid on `Writer` and
-`Transaction`, see below).
+`Transaction`, see below). Say what the method does with
+`description="..."`; see `api-methods.md`.
 
 ### `factory=True` Only Works on `Writer` and `Transaction`
 
@@ -166,10 +176,28 @@ mcp
 
 ```python
 # All four factories — same shape:
-balance=Reader(request=None, response=BalanceResponse, mcp=None),
-deposit=Writer(request=DepositRequest, response=None, mcp=None),
-transfer=Transaction(request=TransferRequest, response=None, mcp=None),
-autoplay=Workflow(request=None, response=None, mcp=None),
+balance=Reader(
+    request=None, response=BalanceResponse,
+    description="The funds currently available to withdraw.",
+    mcp=None,
+),
+deposit=Writer(
+    request=DepositRequest, response=None,
+    description="Add funds. Any amount is accepted.",
+    mcp=None,
+),
+transfer=Transaction(
+    request=TransferRequest, response=None,
+    description="Move funds between two accounts, both sides landing "
+    "together or neither.",
+    mcp=None,
+),
+autoplay=Workflow(
+    request=None, response=None,
+    description="Play the game out to a result without a human taking "
+    "turns.",
+    mcp=None,
+),
 ```
 
 Workflows in particular get caught by this — they're rarely
@@ -316,6 +344,29 @@ with `<Name>.Servicer`, `<Name>.ref(id)`, and request/response messages
 nested as attributes (`Account.BalanceResponse`, `Account.DepositRequest`,
 etc.).
 
+### `Type(description=...)` Says What the State Type Is For
+
+`Type` takes an optional `description=`, shown by the dev dashboard
+beside the state type's name and file:
+
+```python
+api = API(
+    Account=Type(
+        state=AccountState,
+        methods=AccountMethods,
+        description="One customer's money, and the consistency "
+        "boundary every balance change is serialized on.",
+    ),
+)
+```
+
+A state type is the sum of its state and its methods, and its name
+alone rarely says what it is _for_. Write about the part a reader
+cannot derive from the fields and methods listed beside it: what it
+is the consistency boundary for, what one instance corresponds to,
+how its ID is chosen. Restating them adds nothing. Per-method
+descriptions are separate; see `api-methods.md`.
+
 ### Generated Request/Response Names Come From the **Method Name**
 
 The codegen names the nested attributes after the **method name** in
@@ -346,6 +397,7 @@ api = API(
             create_checkers_game=Transaction(
                 request=None,
                 response=CreateCheckersGameResponse,
+                description="Start a checkers game, returning its id.",
                 mcp=Tool(),
             ),
         ),

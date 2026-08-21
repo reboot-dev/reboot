@@ -1086,6 +1086,8 @@ function removeLocalhostWarning() {
 
 function maybeScheduleLocalhostWarning({ url }: { url: string }) {
   if (
+    // Only show the warning while developing.
+    process.env.NODE_ENV !== "development" ||
     // Only show the warning for localhost (development).
     !(url.includes("localhost") || url.includes("127.0.0.1")) ||
     // Only show the warning if it's not already scheduled or active.

@@ -50,16 +50,23 @@ from reboot.api import (
 
 AccountMethods = Methods(
     balance=Reader(
-        request=None, response=BalanceResponse, mcp=None,
+        request=None, response=BalanceResponse,
+        description="The funds currently available to withdraw.",
+        mcp=None,
     ),
     deposit=Writer(
-        request=DepositRequest, response=None, mcp=None,
+        request=DepositRequest, response=None,
+        description="Add funds. Any amount is accepted.",
+        mcp=None,
     ),
 )
 
 BankMethods = Methods(
     transfer=Transaction(
-        request=TransferRequest, response=TransferResponse, mcp=None,
+        request=TransferRequest, response=TransferResponse,
+        description="Move funds between two accounts, both sides "
+        "landing together or neither.",
+        mcp=None,
     ),
 )
 ```
@@ -90,10 +97,20 @@ snake_case. So
 
 ```python
 add_task=Transaction(
-    request=AddTaskRequest, response=AddTaskResponse, mcp=None,
+    request=AddTaskRequest, response=AddTaskResponse,
+    description="Append one task, returning the id it was given.",
+    mcp=None,
 ),
-lists=Reader(request=None, response=ListsResponse, mcp=None),
-ensure=Transaction(request=None, response=None, mcp=None),
+lists=Reader(
+    request=None, response=ListsResponse,
+    description="Every list this user owns.",
+    mcp=None,
+),
+ensure=Transaction(
+    request=None, response=None,
+    description="Create the user's default list if they have none.",
+    mcp=None,
+),
 ```
 
 obliges exactly:
@@ -134,6 +151,7 @@ open=Writer(
     request=OpenRequest,
     response=None,
     factory=True,
+    description="Bring the account into existence with a zero balance.",
     mcp=None,
 ),
 ```
@@ -171,11 +189,42 @@ withdraw=Writer(
     request=WithdrawRequest,
     response=None,
     errors=[OverdraftError],
+    description="Take funds out, or raise `OverdraftError` if the "
+    "balance would go negative.",
     mcp=None,
 ),
 ```
 
 See `api-errors.md` for raising and catching them.
+
+## `description=` Says What the Method Does
+
+All four method kinds take an optional `description=`:
+
+```python
+balance=Reader(
+    request=None,
+    response=BalanceResponse,
+    description="The funds currently available to withdraw.",
+    mcp=None,
+),
+withdraw=Writer(
+    request=WithdrawRequest,
+    response=None,
+    errors=[OverdraftError],
+    description="Take funds out, or raise `OverdraftError` if the "
+    "balance would go negative.",
+    mcp=Tool(),
+),
+```
+
+The dev dashboard shows it, and `mcp=Tool()` methods use it as the
+tool's description. Write what a caller cannot derive from the
+signature: the precondition, the side effect, the unit, which error it
+raises and when.
+
+A state type takes one too, via `Type(description=...)`; see
+`api-pydantic.md`.
 
 ## Every Factory Takes `mcp=`
 

@@ -1,0 +1,131 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@fremtind_rules_vitest//vitest:defs.bzl", "vitest_test")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tests/reboot/react:py_web_test_suite_env.bzl", "py_web_test_suite_env")
+
+py_test(
+    name = "api_reader_tests_py",
+    srcs = ["api_reader_tests.py"],
+    data = glob(["api/**"]),
+    main = "api_reader_tests.py",
+    deps = [
+        "//reboot/dashboard:api_reader_py",
+    ],
+)
+
+py_test(
+    name = "api_watcher_tests_py",
+    srcs = ["api_watcher_tests.py"],
+    main = "api_watcher_tests.py",
+    deps = [
+        "//reboot/aio:tests_py",
+        "//reboot/dashboard:api_watcher_py",
+        "//reboot/dashboard:main_py",
+    ],
+)
+
+py_web_test_suite_env(
+    name = "dashboard_tests_py",
+    srcs = ["dashboard_tests.py"],
+    browsers = [
+        "@io_bazel_rules_webtesting//browsers:chromium-local",
+    ],
+    main = "dashboard_tests.py",
+    py_test_tags = [
+        "macos_not_supported",
+        "requires-linux-x86",
+    ],
+    tags = [
+        "macos_not_supported",
+        "requires-linux-x86",
+    ],
+    deps = [
+        "//reboot/aio:tests_py",
+        "//reboot/dashboard:api_watcher_py",
+        "//reboot/dashboard:main_py",
+        "//reboot/std/presence/v1:presence_py",
+        "@io_bazel_rules_webtesting//testing/web",
+    ],
+)
+
+py_test(
+    name = "preferences_tests_py",
+    srcs = ["preferences_tests.py"],
+    main = "preferences_tests.py",
+    deps = [
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//reboot/aio:tests_py",
+        "//reboot/dashboard:main_py",
+    ],
+)
+
+py_test(
+    name = "open_dashboard_tests_py",
+    srcs = ["open_dashboard_tests.py"],
+    main = "open_dashboard_tests.py",
+    deps = [
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//rbt/std/presence/subscriber/v1:subscriber_py_reboot",
+        "//rbt/std/presence/v1:presence_py_reboot",
+        "//reboot/aio:tests_py",
+        "//reboot/cli/commands:dev_py",
+        "//reboot/dashboard:main_py",
+    ],
+)
+
+# `api_reader.py` writes the description and `description.ts` reads
+# it. It travels as JSON, so no generated type holds the two
+# languages to the same shape; this does. The real reader runs over
+# the API files beside this test, and the page's own Zod schema
+# parses what it wrote.
+# Emitted as TypeScript rather than JSON so that it is simply a
+# source of the test below, with no file for it to find at runtime.
+genrule(
+    name = "described",
+    srcs = glob(["api/**"]),
+    outs = ["described.ts"],
+    # Run from this package with a relative `api`, the way
+    # `rbt dashboard --api-directory=api` does, so that the `file` each
+    # state type carries reads the way it does in a real dashboard.
+    cmd = "OUT=$$PWD/$@ && " +
+          "READER=$$PWD/$(location //reboot/dashboard:api_reader) && " +
+          "cd $$(dirname $(location api/shop/v1/shop.py))/../../.. && " +
+          "echo 'export default ' > $$OUT && " +
+          "$$READER api shop/v1/shop.py >> $$OUT",
+    tools = ["//reboot/dashboard:api_reader"],
+)
+
+ts_project(
+    name = "description_test_ts",
+    srcs = [
+        "description.test.ts",
+        ":described.ts",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "esnext",
+            "moduleResolution": "bundler",
+            "skipLibCheck": True,
+            "target": "es2020",
+        },
+    },
+    deps = [
+        "//:node_modules/@stoplight/json-schema-tree",
+        "//:node_modules/zod",
+        "//reboot/dashboard/frontend:dashboard_ts",
+        "//reboot/std/vitest:vitest_ts",
+    ],
+)
+
+vitest_test(
+    name = "description_test",
+    config = "vitest.config.mjs",
+    data = [
+        "package.json",
+        ":description_test_ts",
+    ],
+    node_modules = "//:node_modules",
+    visibility = ["//visibility:public"],
+)

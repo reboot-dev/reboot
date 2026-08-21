@@ -19,6 +19,7 @@
         "./skills/chat-app",
         "./skills/web-app",
         "./skills/run",
+        "./skills/dashboard",
         "./skills/deploy",
         "./skills/inspect",
         "./skills/python",
