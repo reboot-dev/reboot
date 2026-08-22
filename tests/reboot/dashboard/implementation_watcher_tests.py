@@ -174,6 +174,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             application=application,
             roots=roots,
             known=known or {},
+            generated_directory=self.generated,
         )
 
         analyzed = await analyze(

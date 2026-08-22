@@ -142,17 +142,6 @@ message FileInfo {
   map<string, Dependency> dependencies = 2;
 }
 
-// Represents when a file of generated code was last written, how
-// big it is and which inode it is, which is enough to say whether
-// `rbt generate` wrote since this was recorded.
-message GeneratedFileInfo {
-  int64 modified_ns = 1;
-
-  int64 size = 2;
-
-  uint64 inode = 3;
-}
-
 // What the dashboard application has read of the developer's
 // application: which of their files implements each state type.
 //
@@ -184,12 +173,6 @@ message Implementation {
   // that changed since this was written is simply parsed again,
   // which its digest says.
   map<string, FileInfo> files = 3;
-
-  // Represents every file of generated code as last scanned, keyed
-  // by its path. A restart compares a fresh scan against these to
-  // tell whether `rbt generate` wrote while the dashboard was down,
-  // which is a change every analysis in `files` leaned on.
-  map<string, GeneratedFileInfo> generated_files = 4;
 }
 
 message ImplementationGetRequest {}

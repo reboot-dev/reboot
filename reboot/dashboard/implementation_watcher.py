@@ -76,9 +76,10 @@ Digest = bytes
 # records and what a restart reconstitutes from are one message.
 Dependency = FileInfo.Dependency
 
-# Suffixes of the files `rbt generate` writes. Named so that a chain
-# of imports is never followed into generated code by reading it --
-# the `_rbt` module name alone says what a name from one is.
+# Suffixes of the files `rbt generate` writes. Walked, digested and
+# carried like any other file, so that a change to one reanalyzes
+# exactly the files whose analyses leaned on it; never analyzed for
+# servicers themselves, since the generator writes none.
 GENERATED_SUFFIXES = ('_rbt.py', '_pb2.py', '_pb2_grpc.py')
 
 # Every file the developer might have written a servicer in, which is
@@ -532,11 +533,6 @@ class Files:
                 module,
                 roots=files.roots,
             )
-            if (
-                filename is not None and
-                filename.name.endswith(GENERATED_SUFFIXES)
-            ):
-                filename = None
             if filename is not None:
                 filename = filename.resolve()
             files = replace(
@@ -645,38 +641,20 @@ def extract_and_sort_servicers(
     )
 
 
-async def _generated_files(
-    directory: Path,
-) -> Mapping[Path, tuple[int, int, int]]:
-    """Returns every file of generated code under a directory, by
-    when it was last written, how big it is and which inode it is,
-    which is enough to say whether `rbt generate` wrote since it was
-    last asked."""
+async def _any_generated_file(directory: Path) -> bool:
+    """Returns whether `rbt generate` has written anything under a
+    directory, which is all deciding `generated` takes: changes to
+    the generated files themselves are seen by the walk, which reads
+    and digests them like any other file."""
 
-    def scan() -> dict[Path, tuple[int, int, int]]:
-        found: dict[Path, tuple[int, int, int]] = {}
-        for path in directory.glob(SOURCE_GLOB):
-            if not path.name.endswith(GENERATED_SUFFIXES):
-                continue
-            try:
-                status = path.stat()
-            except OSError:
-                continue
-            found[path] = (
-                # All three are needed: mtimes tick coarsely
-                # (milliseconds or worse), so a rewrite landing within
-                # one tick of the last look keeps the same mtime and
-                # only a size or inode change shows it, and a
-                # generator writes a new file and renames it into
-                # place, so even a same-size rewrite is a new inode.
-                status.st_mtime_ns,
-                status.st_size,
-                status.st_ino,
-            )
-        return found
+    def scan() -> bool:
+        return any(
+            path.name.endswith(GENERATED_SUFFIXES)
+            for path in directory.glob(SOURCE_GLOB)
+        )
 
-    # Globbing and statting wait on the disk so to not block the event
-    # loop we use a thread.
+    # Globbing waits on the disk so to not block the event loop we
+    # use a thread.
     return await asyncio.to_thread(scan)
 
 
@@ -703,24 +681,12 @@ def _reconstitute_known(
     }
 
 
-def _reconstitute_generated_files(
-    state: ImplementationState,
-) -> dict[Path, tuple[int, int, int]]:
-    """Returns the generated files' fingerprints a previous run
-    recorded, so that a restart can tell whether `rbt generate`
-    wrote while the dashboard was down, which is a change every
-    reconstituted analysis leaned on."""
-    return {
-        Path(filename): (file.modified_ns, file.size, file.inode)
-        for filename, file in state.generated_files.items()
-    }
-
-
 async def walk(
     *,
     application: Path,
     roots: Optional[Sequence[Path]] = None,
     known: Optional[Mapping[Path, AnalyzedFile]] = None,
+    generated_directory: Optional[Path] = None,
 ) -> tuple[dict[Path, AnalyzedFile], Mapping[Path, ParsedFile]]:
     """Returns the developer's files read for one iteration, as two
     maps keyed by resolved path: `unchanged`, the files whose
@@ -749,6 +715,11 @@ async def walk(
     code is taken to end. It defaults to the application's own
     directory, which is what running the application puts first on its
     path.
+
+    `generated_directory` joins the roots when it is named, so that
+    the generated files are walked, digested and carried like any
+    other file and a change to one reanalyzes exactly the files
+    whose analyses leaned on it.
     """
     application = application.resolve()
 
@@ -756,7 +727,10 @@ async def walk(
         roots = _roots(application)
 
     files = Files.create(
-        roots=roots,
+        roots=(
+            [*roots, generated_directory]
+            if generated_directory is not None else roots
+        ),
         known=known or {},
     )
 
@@ -936,8 +910,7 @@ async def watch(
     # analyzed again.
     state = await Implementation.ref().always().read(context)
     known = _reconstitute_known(state)
-    generated_files: Mapping[Path, tuple[
-        int, int, int]] = _reconstitute_generated_files(state)
+    generated = state.generated
 
     with file_watcher() as watcher:
         async for iteration in context.loop('Watch the application'):
@@ -956,22 +929,16 @@ async def watch(
             async with watcher.watch(globs) as event:
                 # No directory and an empty directory contain the
                 # same generated files: none.
-                generated_files_now = (
-                    await _generated_files(generated_directory)
-                    if generated_directory is not None else {}
+                generated_now = (
+                    generated_directory is not None and
+                    await _any_generated_file(generated_directory)
                 )
-
-                # Every carried analysis leaned on the generated
-                # code, which no `dependencies` record, so any
-                # change to it means everything is walked and
-                # analyzed again.
-                if generated_files_now != generated_files:
-                    known = {}
 
                 unchanged, parsed = await walk(
                     application=application,
                     roots=roots,
                     known=known,
+                    generated_directory=generated_directory,
                 )
 
                 # A fresh pyright for every analysis, so that it
@@ -1024,22 +991,20 @@ async def watch(
                     # another file, which is the very thing the
                     # dashboard shows.
                     servicers_now != servicers or
-                    # Generated code was written or deleted, which
-                    # can flip whether the dashboard suggests
-                    # running `rbt generate`, and which refreshes
-                    # the recorded fingerprints, which are how a
-                    # restart tells whether `rbt generate` ran while
-                    # the dashboard was down. The previous
-                    # iteration's scan is what is compared, which is
-                    # why `generated_files` is only assigned below,
-                    # after this comparison.
-                    generated_files_now != generated_files
+                    # `rbt generate` wrote for the first time, or
+                    # its output was deleted, which flips whether
+                    # the dashboard suggests running it. Changes to
+                    # the generated files themselves need nothing
+                    # here: the walk reads and digests them like any
+                    # other file, so their digests decide exactly
+                    # what is reanalyzed.
+                    generated_now != generated
                 ):
 
                     async def record(state) -> None:
                         del state.servicers[:]
                         state.servicers.extend(servicers_now)
-                        state.generated = len(generated_files_now) > 0
+                        state.generated = generated_now
 
                         # The walked files as of this write. One that
                         # changes after it is simply parsed again by
@@ -1055,17 +1020,6 @@ async def watch(
                                     dependency
                                 )
 
-                        state.generated_files.clear()
-                        for path, (
-                            modified_ns,
-                            size,
-                            inode,
-                        ) in generated_files_now.items():
-                            generated_file = (state.generated_files[str(path)])
-                            generated_file.modified_ns = modified_ns
-                            generated_file.size = size
-                            generated_file.inode = inode
-
                     await Implementation.ref().per_iteration(
                         'Record the servicers'
                     ).write(context, record)
@@ -1073,8 +1027,7 @@ async def watch(
                     # After the write, so that what is remembered is
                     # what was recorded.
                     servicers = servicers_now
-
-                generated_files = generated_files_now
+                    generated = generated_now
 
                 # `event` resolves when a `.py` file matching `globs`
                 # (so under the roots or the generated directory), is
