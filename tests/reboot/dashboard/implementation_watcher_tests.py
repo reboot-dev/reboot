@@ -3,23 +3,12 @@
 The API files say which state types exist, so a state type appearing
 is what sets the dashboard looking for the file that implements it.
 """
-import os
 import tempfile
 import unittest
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_pb2 import ServicerInfo
-from rbt.dashboard.v1.dashboard_rbt import API, Implementation
-from reboot.aio.tests import Reboot
-from reboot.dashboard import implementation_watcher
-from reboot.dashboard.constants import (
-    API_ID,
-    ENVVAR_RBT_API_DIRECTORY,
-    ENVVAR_RBT_APPLICATION,
-    IMPLEMENTATION_ID,
-)
-from reboot.dashboard.implementation_watcher import File, analyze, servicers
-from reboot.dashboard.main import application
-from unittest.mock import patch
+from reboot.dashboard.implementation_watcher import AnalyzedFile, analyze, walk
+from reboot.dashboard.pyright import Pyright
+from typing import Optional
 
 API_FILE = '''
 from reboot.api import API, Field, Methods, Model, Reader, Type
@@ -79,6 +68,55 @@ class {state}Servicer({state}.singleton.Servicer):
 SHOP = SERVICER.format(state='Shop', module='shop')
 DEPOT = SINGLETON.format(state='Depot', module='depot')
 
+# The shape of a generated module, as far as resolving a state type
+# needs: the state type's class and its servicer bases carrying the
+# state type's name as `__state_type_name__`, and the `Servicer`
+# aliases a servicer's base leads through.
+GENERATED = '''
+from typing import TypeAlias
+
+
+def StateTypeName(name):
+    return name
+
+
+class {state}BaseServicer:
+
+    __state_type_name__ = StateTypeName('shop.v1.{state}')
+
+
+class {state}Servicer({state}BaseServicer):
+    pass
+
+
+class {state}SingletonServicer({state}BaseServicer):
+    pass
+
+
+class {state}Singleton:
+
+    Servicer: TypeAlias = {state}SingletonServicer
+
+
+class {state}:
+
+    __state_type_name__ = StateTypeName('shop.v1.{state}')
+
+    Servicer: TypeAlias = {state}Servicer
+
+    singleton: TypeAlias = {state}Singleton
+'''
+
+
+def _write_generated(directory: Path) -> None:
+    """Writes what `rbt generate` would: the generated modules the
+    fixtures import their state types from."""
+    for module, state in (('shop', 'Shop'), ('depot', 'Depot')):
+        path = directory / 'shop' / 'v1' / f'{module}_rbt.py'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(GENERATED.format(state=state))
+
+
 APPLICATION = '''
 from shop_servicer import ShopServicer
 from reboot.aio.applications import Application
@@ -89,423 +127,66 @@ async def main():
 '''
 
 
-def _state_types_and_files(files: dict[str, File]) -> list[tuple[str, str]]:
-    """Returns every servicer as the state type it services and the
-    file it is written in."""
-    return [
-        (servicer.state_type, servicer.file) for servicer in servicers(files)
-    ]
-
-
-class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
-
-    async def asyncSetUp(self) -> None:
-        # Both are read when the application comes up, so they have to
-        # exist and be named first.
-        self._api = tempfile.TemporaryDirectory()
-        self._source = tempfile.TemporaryDirectory()
-        self.api = Path(self._api.name)
-        self.source = Path(self._source.name)
-
-        (self.source / 'shop_servicer.py').write_text(
-            SERVICER.format(state='Shop', module='shop')
-        )
-        (self.source / 'main.py').write_text(APPLICATION)
-
-        self._environment = patch.dict(
-            os.environ,
-            {
-                ENVVAR_RBT_API_DIRECTORY: str(self.api),
-                ENVVAR_RBT_APPLICATION: str(self.source / 'main.py'),
-            },
-        )
-        self._environment.start()
-
-        self.rbt = Reboot()
-        await self.rbt.start()
-        await self.rbt.up(application(), local_envoy=True)
-
-    async def asyncTearDown(self) -> None:
-        await self.rbt.stop()
-        self._environment.stop()
-        self._source.cleanup()
-        self._api.cleanup()
-
-    def _declare(
-        self,
-        name: str,
-        *,
-        state: str,
-        description: str = 'None',
-    ) -> None:
-        path = self.api / 'shop' / 'v1' / f'{name}.py'
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            API_FILE.format(
-                state=state,
-                description='None'
-                if description == 'None' else repr(description),
-            )
-        )
-
-    async def _servicers(self, *, satisfied):
-        """Returns the servicers recorded against each state type
-        once they satisfy, reading again whenever they change.
-
-        A list per state type, because two classes servicing one is
-        two entries rather than anything the recording adjudicates.
-        """
-        context = self.rbt.create_external_context(name=self.id())
-
-        async for response in Implementation.ref(IMPLEMENTATION_ID
-                                                ).reactively().Get(context):
-            found: dict[str, list[ServicerInfo]] = {}
-
-            for servicer in response.servicers:
-                found.setdefault(servicer.state_type, []).append(servicer)
-
-            if satisfied(found):
-                return found
-
-        raise AssertionError('never satisfied')
-
-    async def test_records_the_servicer_it_finds(self) -> None:
-        found = await self._servicers(satisfied=lambda found: 'Shop' in found)
-
-        self.assertEqual(
-            [servicer.file for servicer in found['Shop']],
-            [str(self.source / 'shop_servicer.py')],
-        )
-
-    async def test_the_methods_reach_the_state(self) -> None:
-        """What the browser will join against what the API files say
-        each state type declares."""
-        found = await self._servicers(satisfied=lambda found: 'Shop' in found)
-
-        self.assertEqual(
-            [method.name for method in found['Shop'][0].methods],
-            ['look'],
-        )
-
-    async def test_a_state_type_nothing_services(self) -> None:
-        """A state type nothing services is one with no entry, which
-        is how a reader tells it apart from one a servicer was found
-        for."""
-        self._declare('depot', state='Depot')
-
-        found = await self._servicers(satisfied=lambda found: 'Shop' in found)
-
-        self.assertNotIn('Depot', found)
-
-    async def test_a_state_type_two_classes_service(self) -> None:
-        """Both files are recorded against it, rather than one being
-        chosen between them."""
-        (self.source / 'other_servicer.py').write_text(SHOP)
-        (self.source / 'main.py').write_text(
-            APPLICATION.replace(
-                'from shop_servicer import ShopServicer',
-                'from other_servicer import ShopServicer as Other\n'
-                'from shop_servicer import ShopServicer',
-            )
-        )
-
-        found = await self._servicers(
-            satisfied=lambda found: len(found.get('Shop', [])) == 2
-        )
-
-        self.assertEqual(
-            [servicer.file for servicer in found['Shop']], [
-                str(self.source / 'other_servicer.py'),
-                str(self.source / 'shop_servicer.py'),
-            ]
-        )
-
-    async def test_a_servicer_written_after_the_dashboard_started(
-        self
-    ) -> None:
-        """The application is watched, so a servicer written while the
-        dashboard runs is found without a restart."""
-        await self._servicers(satisfied=lambda found: 'Shop' in found)
-
-        (self.source / 'depot_servicer.py').write_text(DEPOT)
-        (self.source / 'main.py').write_text(
-            APPLICATION.replace(
-                'from shop_servicer import ShopServicer',
-                'from depot_servicer import DepotServicer\n'
-                'from shop_servicer import ShopServicer',
-            )
-        )
-
-        found = await self._servicers(satisfied=lambda found: 'Depot' in found)
-
-        self.assertEqual(
-            [servicer.file for servicer in found['Depot']],
-            [str(self.source / 'depot_servicer.py')],
-        )
-
-    async def test_what_is_declared_and_what_implements_it_are_separate(
-        self
-    ) -> None:
-        """Read from different places by different workflows, and so
-        recorded without either waiting on the other."""
-        self._declare('shop', state='Shop')
-
-        found = await self._servicers(satisfied=lambda found: 'Shop' in found)
-        self.assertEqual(
-            [servicer.file for servicer in found['Shop']],
-            [str(self.source / 'shop_servicer.py')],
-        )
-
-        context = self.rbt.create_external_context(name=self.id())
-
-        async for response in API.ref(API_ID).reactively().Get(context):
-            if any(
-                state_type.name == 'shop.v1.Shop'
-                for state_type in response.state_types
-            ):
-                return
-
-        raise AssertionError("'shop.v1.Shop' was never declared")
-
-
 class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
     """Which file implements which state type."""
 
-    def setUp(self) -> None:
+    async def asyncSetUp(self) -> None:
         self._directory = tempfile.TemporaryDirectory()
-        self.directory = Path(self._directory.name)
+        # Resolved because the maps under test key files by resolved
+        # path, and a temporary directory may sit behind a symlink.
+        self.directory = Path(self._directory.name).resolve()
+        self._generated_directory = tempfile.TemporaryDirectory()
+        self.generated = Path(self._generated_directory.name).resolve()
+        _write_generated(self.generated)
 
-    def tearDown(self) -> None:
+        # An installed package's state type: its `_rbt` module is
+        # resolvable but not under the generated directory.
+        (self.directory /
+         'sorted_rbt.py').write_text(GENERATED.format(state='Sorted'))
+
+        self.pyright = Pyright()
+        await self.pyright.start(
+            root=self.directory,
+            paths=[self.directory, self.generated],
+        )
+
+    async def asyncTearDown(self) -> None:
+        await self.pyright.stop()
+        self._generated_directory.cleanup()
         self._directory.cleanup()
 
-    def _write(self, name: str, *, source: str) -> str:
+    def _write(self, name: str, *, source: str) -> Path:
         path = self.directory / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(source)
-        return str(path)
+        return path
 
-    async def test_finds_the_file_a_state_type_is_implemented_in(self) -> None:
-        self._write('shop_servicer.py', source=SHOP)
-        application = self._write('main.py', source=APPLICATION)
-
-        found = _state_types_and_files(await analyze(application=application))
-
-        self.assertEqual(
-            found,
-            [('Shop', str(self.directory / 'shop_servicer.py'))],
+    async def _analyze(
+        self,
+        application: Path,
+        known: Optional[dict[Path, AnalyzedFile]] = None,
+        roots: Optional[list[Path]] = None,
+    ) -> dict[Path, AnalyzedFile]:
+        """Returns the analysis of an application, asked of the one
+        pyright the test runs; the walk syncs it every file it
+        parses."""
+        unchanged, parsed = await walk(
+            application=application,
+            roots=roots,
+            known=known or {},
         )
 
-    async def test_a_singleton_says_what_it_services_the_same_way(
-        self
-    ) -> None:
-        self._write('depot_servicer.py', source=DEPOT)
-        application = self._write(
-            'main.py',
-            source=APPLICATION.replace('shop_servicer',
-                                       'depot_servicer').replace(
-                                           'ShopServicer', 'DepotServicer'
-                                       ),
+        analyzed = await analyze(
+            parsed=parsed,
+            pyright=self.pyright,
+            generated_directory=self.generated,
         )
 
-        found = _state_types_and_files(await analyze(application=application))
+        # Which files this iteration parsed, for asserting that a
+        # file was or was not reanalyzed.
+        self.parsed = parsed
 
-        self.assertEqual(
-            found,
-            [('Depot', str(self.directory / 'depot_servicer.py'))],
-        )
-
-    async def test_several_state_types_in_one_file(self) -> None:
-        """A file is named after at most one of the state types it
-        implements, which is why the application is what says."""
-        self._write('servicers.py', source=SHOP + DEPOT)
-        application = self._write(
-            'main.py', source='''
-from servicers import DepotServicer, ShopServicer
-from reboot.aio.applications import Application
-
-
-async def main():
-    await Application(servicers=[ShopServicer, DepotServicer]).run()
-'''
-        )
-
-        found = _state_types_and_files(await analyze(application=application))
-
-        self.assertEqual(
-            found, [
-                ('Depot', str(self.directory / 'servicers.py')),
-                ('Shop', str(self.directory / 'servicers.py')),
-            ]
-        )
-
-    ###################################################################
-    # Reached however the application reaches it.
-
-    async def test_an_application_that_does_not_spell_out_its_servicers(
-        self
-    ) -> None:
-        """Only running it would say what `servicers()` returns -- but
-        its module had to be imported for it to be callable at all,
-        which is enough."""
-        self._write('servicers.py', source=SHOP)
-        application = self._write(
-            'main.py', source='''
-from servicers import servicers
-from reboot.aio.applications import Application
-
-
-async def main():
-    await Application(servicers=servicers()).run()
-'''
-        )
-
-        found = _state_types_and_files(await analyze(application=application))
-
-        self.assertEqual(
-            found,
-            [('Shop', str(self.directory / 'servicers.py'))],
-        )
-
-    async def test_a_servicer_reached_through_another_module(self) -> None:
-        """Imported by something imported by the application."""
-        self._write('shop_servicer.py', source=SHOP)
-        self._write(
-            'servicers.py', source='from shop_servicer import ShopServicer\n'
-        )
-        application = self._write(
-            'main.py', source='''
-from servicers import ShopServicer
-from reboot.aio.applications import Application
-
-
-async def main():
-    await Application(servicers=[ShopServicer]).run()
-'''
-        )
-
-        found = _state_types_and_files(await analyze(application=application))
-
-        self.assertEqual(
-            found,
-            [('Shop', str(self.directory / 'shop_servicer.py'))],
-        )
-
-    async def test_an_import_that_is_not_at_the_top_of_the_file(self) -> None:
-        """Guarding an import is common; it binds its name just the
-        same."""
-        self._write('shop_servicer.py', source=SHOP)
-        application = self._write(
-            'main.py', source='''
-import os
-from reboot.aio.applications import Application
-
-if os.environ.get('LEGACY'):
-    from legacy_servicer import ShopServicer
-else:
-    from shop_servicer import ShopServicer
-
-
-async def main():
-    await Application(servicers=[ShopServicer]).run()
-'''
-        )
-
-        found = _state_types_and_files(await analyze(application=application))
-
-        self.assertEqual(
-            found,
-            [('Shop', str(self.directory / 'shop_servicer.py'))],
-        )
-
-    async def test_a_servicer_in_a_package(self) -> None:
-        self._write('servicers/__init__.py', source='')
-        self._write('servicers/shop.py', source=SHOP)
-        application = self._write(
-            'main.py', source='''
-from servicers.shop import ShopServicer
-from reboot.aio.applications import Application
-
-
-async def main():
-    await Application(servicers=[ShopServicer]).run()
-'''
-        )
-
-        found = _state_types_and_files(await analyze(application=application))
-
-        self.assertEqual(
-            found,
-            [('Shop', str(self.directory / 'servicers' / 'shop.py'))],
-        )
-
-    ###################################################################
-    # Where the walk stops.
-
-    async def test_an_import_of_somebody_elses_package_leads_nowhere(
-        self
-    ) -> None:
-        """A module no root holds is not the developer's code. Reading
-        it is not the dashboard's business, and no state type of theirs
-        is waiting for it."""
-        elsewhere = tempfile.TemporaryDirectory()
-        try:
-            (Path(elsewhere.name) / 'library.py').write_text(SHOP)
-
-            application = self._write(
-                'main.py', source='''
-from library import ShopServicer
-from reboot.aio.applications import Application
-
-
-async def main():
-    await Application(servicers=[ShopServicer]).run()
-'''
-            )
-
-            found = _state_types_and_files(
-                await analyze(application=application)
-            )
-
-            self.assertEqual(found, [])
-
-            # Named as a root, the very same import leads there.
-            found = _state_types_and_files(
-                await analyze(
-                    application=application,
-                    roots=[str(self.directory), elsewhere.name],
-                )
-            )
-            self.assertEqual(
-                found,
-                [('Shop', str(Path(elsewhere.name) / 'library.py'))],
-            )
-        finally:
-            elsewhere.cleanup()
-
-    ###################################################################
-    # The methods each servicer defines.
-
-    async def test_any_dotted_base_ending_in_servicer_counts(self) -> None:
-        self._write(
-            'shop_servicer.py',
-            source=SHOP.replace(
-                'class ShopServicer(Shop.Servicer):',
-                'class ShopServicer(stores.things.Shop.Servicer):',
-            ),
-        )
-        application = self._write('main.py', source=APPLICATION)
-
-        found = _state_types_and_files(await analyze(application=application))
-
-        self.assertEqual(
-            found,
-            [
-                (
-                    'stores.things.Shop',
-                    str(self.directory / 'shop_servicer.py'),
-                )
-            ],
-        )
+        return {**unchanged, **analyzed}
 
     async def test_every_import_is_a_dependency(self) -> None:
         helper = self._write('helper.py', source='VALUE = 1\n')
@@ -515,260 +196,203 @@ async def main():
         )
         application = self._write('main.py', source=APPLICATION)
 
-        found = await analyze(application=application)
-
-        self.assertIn(str(helper), found[str(servicer)].dependencies)
-
-    async def test_records_the_methods_a_servicer_defines(self) -> None:
-        self._write('shop_servicer.py', source=SHOP)
-        application = self._write('main.py', source=APPLICATION)
-
-        found = servicers(await analyze(application=application))
+        found = await self._analyze(application)
 
         self.assertEqual(
-            [method.name for method in found[0].methods], ['look']
+            found[servicer].dependencies['helper'].filename,
+            helper,
         )
 
-    async def test_a_method_reformatted_digests_the_same(self) -> None:
-        """The digest is over what the method says, so laying it out
-        differently or writing a comment in it is not a change."""
-        self._write('shop_servicer.py', source=SHOP)
-        application = self._write('main.py', source=APPLICATION)
-
-        before = servicers(await analyze(application=application))
-
-        self._write(
-            'shop_servicer.py',
-            source=SHOP.replace(
-                'async def look(self, context, request):\n        pass',
-                'async def look(\n'
-                '        self,\n'
-                '        context,\n'
-                '        request,\n'
-                '    ):\n'
-                '        # Nothing to look up yet.\n'
-                '        pass',
-            ),
+    async def test_files_importing_each_other(self) -> None:
+        """A cycle of imports ends where it began: each file records
+        the other as a dependency, by its digest."""
+        one = self._write(
+            'one.py',
+            source='import two\n' + SHOP,
+        )
+        two = self._write('two.py', source='import one\n')
+        application = self._write(
+            'main.py',
+            source=APPLICATION.replace('shop_servicer', 'one'),
         )
 
-        after = servicers(await analyze(application=application))
+        found = await self._analyze(application)
 
-        self.assertEqual(
-            [method.digest for method in after[0].methods],
-            [method.digest for method in before[0].methods],
-        )
+        self.assertEqual(found[one].dependencies['two'].filename, two)
+        self.assertEqual(found[two].dependencies['one'].filename, one)
 
-    async def test_a_method_whose_body_changes_digests_differently(
-        self
+    async def test_a_change_reaching_a_cycle_reanalyzes_its_members(
+        self,
     ) -> None:
-        self._write('shop_servicer.py', source=SHOP)
-        application = self._write('main.py', source=APPLICATION)
-
-        before = servicers(await analyze(application=application))
-
-        self._write(
-            'shop_servicer.py',
-            source=SHOP.replace('        pass', '        return None'),
+        """A file in a cycle of imports is parsed again when the
+        cycle reaches a change, even though its own bytes are
+        unchanged."""
+        one = self._write(
+            'one.py',
+            source='import two\nimport helper\n' + SHOP,
+        )
+        two = self._write('two.py', source='import one\n')
+        self._write('helper.py', source='VALUE = 1\n')
+        application = self._write(
+            'main.py',
+            source=APPLICATION.replace('shop_servicer', 'one'),
         )
 
-        after = servicers(await analyze(application=application))
+        known = await self._analyze(application)
 
-        self.assertNotEqual(
-            after[0].methods[0].digest,
-            before[0].methods[0].digest,
-        )
+        self._write('helper.py', source='VALUE = 2\n')
 
-    ###################################################################
-    # Parse again only what has changed.
+        await self._analyze(application, known=known)
+
+        self.assertIn(one, self.parsed)
+        self.assertIn(two, self.parsed)
 
     async def test_a_file_written_with_the_same_bytes_is_not_parsed_again(
-        self
+        self,
     ) -> None:
         """Identical bytes are nothing to parse, which is only
         observable as the parsing not happening."""
         servicer = self._write('shop_servicer.py', source=SHOP)
         application = self._write('main.py', source=APPLICATION)
 
-        known = await analyze(application=application)
+        known = await self._analyze(application)
 
-        Path(servicer).write_text(SHOP)
+        servicer.write_text(SHOP)
 
-        with patch.object(
-            implementation_watcher,
-            '_parse',
-            wraps=implementation_watcher._parse,
-        ) as parse:
-            await analyze(application=application, known=known)
+        await self._analyze(application, known=known)
 
-        parse.assert_not_called()
+        self.assertEqual({}, dict(self.parsed))
 
-    async def test_a_file_written_with_other_bytes_is_parsed_again(
-        self
+    async def test_a_dependency_that_stops_parsing_then_parses_again(
+        self,
     ) -> None:
-        """Even with the mtime it was read with put back, which is
-        what a save landing in the same clock tick leaves behind."""
-        servicer = self._write('shop_servicer.py', source=SHOP)
+        """A dependency saved half-written reanalyzes its dependents
+        once, against exactly the broken bytes; the save that makes
+        it parse again reanalyzes them again."""
+        helper = self._write('helper.py', source='VALUE = 1\n')
+        servicer = self._write(
+            'shop_servicer.py',
+            source=SHOP + '\nimport helper\n',
+        )
         application = self._write('main.py', source=APPLICATION)
 
-        modified = os.stat(servicer).st_mtime_ns
-        known = await analyze(application=application)
+        known = await self._analyze(application)
 
-        Path(servicer).write_text(DEPOT)
-        os.utime(servicer, ns=(modified, modified))
+        self._write('helper.py', source='def broken(:\n')
 
-        found = _state_types_and_files(
-            await analyze(application=application, known=known)
-        )
+        known = await self._analyze(application, known=known)
 
-        self.assertEqual(found, [('Depot', servicer)])
+        # The dependent was reanalyzed and records the dependency as
+        # broken, by the digest of the broken bytes; the broken file
+        # itself was analyzed as nothing.
+        self.assertIn(servicer, known)
+        self.assertNotIn(helper, known)
+        self.assertIsNotNone(known[servicer].dependencies['helper'].digest)
 
-    async def test_a_servicer_that_stops_being_imported_is_dropped(
-        self
+        self._write('helper.py', source='VALUE = 2\n')
+
+        await self._analyze(application, known=known)
+
+        self.assertIn(servicer, self.parsed)
+
+    async def test_a_dependency_still_broken_the_same_way_is_no_change(
+        self,
     ) -> None:
-        """However recently it changed: what the application reaches
-        is what it registers."""
-        self._write('shop_servicer.py', source=SHOP)
-        self._write('depot_servicer.py', source=DEPOT)
-        application = self._write(
-            'main.py',
-            source=APPLICATION.replace(
-                'from shop_servicer import ShopServicer',
-                'from depot_servicer import DepotServicer\n'
-                'from shop_servicer import ShopServicer',
-            ),
+        """A dependent analyzed against a dependency's exact broken
+        bytes stays decided while those bytes stay."""
+        self._write('helper.py', source='VALUE = 1\n')
+        servicer = self._write(
+            'shop_servicer.py',
+            source=SHOP + '\nimport helper\n',
         )
+        application = self._write('main.py', source=APPLICATION)
 
-        known = await analyze(application=application)
-        self.assertEqual(len(servicers(known)), 2)
+        known = await self._analyze(application)
 
-        self._write('main.py', source=APPLICATION)
+        self._write('helper.py', source='def broken(:\n')
 
-        found = _state_types_and_files(
-            await analyze(application=application, known=known)
-        )
+        known = await self._analyze(application, known=known)
 
-        self.assertEqual(
-            found,
-            [('Shop', str(self.directory / 'shop_servicer.py'))],
-        )
+        await self._analyze(application, known=known)
 
-    async def test_a_servicer_that_starts_being_imported_is_found(
-        self
+        self.assertNotIn(servicer, self.parsed)
+
+    async def test_a_deleted_dependency_settles_until_it_returns(
+        self,
     ) -> None:
-        self._write('shop_servicer.py', source=SHOP)
-        application = self._write('main.py', source=APPLICATION)
-
-        known = await analyze(application=application)
-
-        self._write('depot_servicer.py', source=DEPOT)
-        self._write(
-            'main.py',
-            source=APPLICATION.replace(
-                'from shop_servicer import ShopServicer',
-                'from depot_servicer import DepotServicer\n'
-                'from shop_servicer import ShopServicer',
-            ),
-        )
-
-        found = _state_types_and_files(
-            await analyze(application=application, known=known)
-        )
-
-        self.assertEqual(
-            found, [
-                ('Depot', str(self.directory / 'depot_servicer.py')),
-                ('Shop', str(self.directory / 'shop_servicer.py')),
-            ]
-        )
-
-    ###################################################################
-    # Followed to the state type however it is reached.
-
-    async def test_a_servicer_reached_through_a_relative_import(self) -> None:
-        self._write('package/__init__.py', source='')
-        self._write('package/shop_servicer.py', source=SHOP)
-        self._write(
-            'package/servicers.py',
-            source='from .shop_servicer import ShopServicer\n',
-        )
-        application = self._write(
-            'main.py',
-            source=APPLICATION.replace(
-                'from shop_servicer import ShopServicer',
-                'from package.servicers import ShopServicer',
-            ),
-        )
-
-        found = _state_types_and_files(await analyze(application=application))
-
-        self.assertEqual(
-            found,
-            [(
-                'Shop',
-                str(self.directory / 'package' / 'shop_servicer.py'),
-            )],
-        )
-
-    ###################################################################
-    # What it finds no servicer for.
-
-    async def test_a_file_that_will_not_parse(self) -> None:
-        """Its servicers go unfound, because which state types they
-        service is precisely what went unread."""
-        self._write('shop_servicer.py', source='class ShopServicer(')
-        application = self._write('main.py', source=APPLICATION)
-
-        found = _state_types_and_files(await analyze(application=application))
-
-        self.assertEqual(found, [])
-
-    async def test_an_application_that_is_not_there(self) -> None:
-        found = _state_types_and_files(
-            await analyze(application=str(self.directory / 'nowhere.py'))
-        )
-
-        self.assertEqual(found, [])
-
-    async def test_two_classes_servicing_the_same_state_type(self) -> None:
-        """Both are recorded, rather than one being chosen between
-        them: which one runs is not something this can see."""
-        self._write('shop_servicer.py', source=SHOP)
-        self._write('other_servicer.py', source=SHOP)
-        application = self._write(
-            'main.py', source='''
-from other_servicer import ShopServicer as Other
-from shop_servicer import ShopServicer
-from reboot.aio.applications import Application
-
-
-async def main():
-    await Application(servicers=[ShopServicer]).run()
-'''
-        )
-
-        found = _state_types_and_files(await analyze(application=application))
-
-        self.assertEqual(
-            found, [
-                ('Shop', str(self.directory / 'other_servicer.py')),
-                ('Shop', str(self.directory / 'shop_servicer.py')),
-            ]
-        )
-
-    async def test_a_class_that_services_nothing(self) -> None:
-        """A class whose base names no generated module is not one
-        this recognizes as a servicer."""
-        self._write(
-            'shop_servicer.py', source='''
-class ShopServicer(SomethingElse):
-    pass
-'''
+        """A deleted dependency reanalyzes its dependents once,
+        recording it as absent; staying absent is then no change,
+        and the file returning reanalyzes them again."""
+        helper = self._write('helper.py', source='VALUE = 1\n')
+        servicer = self._write(
+            'shop_servicer.py',
+            source=SHOP + '\nimport helper\n',
         )
         application = self._write('main.py', source=APPLICATION)
 
-        found = _state_types_and_files(await analyze(application=application))
+        known = await self._analyze(application)
 
-        self.assertEqual(found, [])
+        helper.unlink()
+
+        known = await self._analyze(application, known=known)
+
+        # The dependent was reanalyzed and records the module as
+        # resolving to nothing.
+        self.assertIn(servicer, known)
+        self.assertNotIn(helper, known)
+        self.assertIsNone(known[servicer].dependencies['helper'].filename)
+
+        known = await self._analyze(application, known=known)
+
+        self.assertNotIn(servicer, self.parsed)
+
+        self._write('helper.py', source='VALUE = 2\n')
+
+        await self._analyze(application, known=known)
+
+        self.assertIn(servicer, self.parsed)
+
+    async def test_an_import_that_starts_resolving_reanalyzes(
+        self,
+    ) -> None:
+        """An import written before the file it names exists records
+        the module as resolving to nothing; the file being created
+        reanalyzes the importer."""
+        servicer = self._write(
+            'shop_servicer.py',
+            source=SHOP + '\nimport helper\n',
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        known = await self._analyze(application)
+
+        self.assertIsNone(known[servicer].dependencies['helper'].filename)
+
+        self._write('helper.py', source='VALUE = 1\n')
+
+        known = await self._analyze(application, known=known)
+
+        self.assertIn(servicer, self.parsed)
+
+    async def test_a_change_two_imports_away_reanalyzes(self) -> None:
+        """The analysis of a file leaned on everything in the closure
+        of its imports, so a change anywhere down the chain parses
+        the file again."""
+        self._write('helper.py', source='import deeper\n')
+        self._write('deeper.py', source='VALUE = 1\n')
+        servicer = self._write(
+            'shop_servicer.py',
+            source=SHOP + '\nimport helper\n',
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        known = await self._analyze(application)
+
+        self._write('deeper.py', source='VALUE = 2\n')
+
+        await self._analyze(application, known=known)
+
+        self.assertIn(servicer, self.parsed)
 
 
 if __name__ == '__main__':

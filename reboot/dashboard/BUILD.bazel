@@ -1,3 +1,4 @@
+load("@npm//:pyright/package_json.bzl", pyright_bin = "bin")
 load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
@@ -34,6 +35,13 @@ py_library(
 )
 
 py_library(
+    name = "pyright_py",
+    srcs = ["pyright.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "implementation_watcher_py",
     srcs = ["implementation_watcher.py"],
     srcs_version = "PY3",
@@ -41,6 +49,7 @@ py_library(
     deps = [
         requirement("aiofiles"),
         ":constants_py",
+        ":pyright_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
         "//reboot/aio:cooperatively_py",
         "//reboot/aio:external_py",
@@ -133,4 +142,9 @@ py_binary(
         "//reboot/aio/backoff:python",
         requirement("starlette"),
     ],
+)
+
+pyright_bin.pyright_langserver_binary(
+    name = "pyright_langserver",
+    visibility = ["//tests/reboot/dashboard:__pkg__"],
 )

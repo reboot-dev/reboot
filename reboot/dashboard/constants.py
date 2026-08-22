@@ -48,6 +48,13 @@ ENVVAR_RBT_API_DIRECTORY = 'RBT_API_DIRECTORY'
 # which case no implementation is looked for.
 ENVVAR_RBT_APPLICATION = 'RBT_APPLICATION'
 
+# The directory `rbt generate` writes Python code into, as the
+# `.rbtrc` spells it with `--python=`. The generated code is where
+# the state types are defined, which is what typing the developer's
+# implementation needs. Unset when the developer named none, in which
+# case nothing can be typed.
+ENVVAR_RBT_GENERATED_DIRECTORY = 'RBT_GENERATED_DIRECTORY'
+
 # The `Presence` state the dashboard page subscribes to, recording who
 # is looking at a dashboard right now. `rbt dev run` reads it to decide
 # whether to open one.

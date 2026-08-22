@@ -103,6 +103,12 @@ message ServicerInfo {
   // open it, e.g. "backend/src/account_servicer.py".
   string file = 2;
 
+  // Represents the line its class is written on, counting from one.
+  uint32 line = 4;
+
+  // Represents the column its class starts at, counting from zero.
+  uint32 character = 5;
+
   // Represents every method it defines, in the order they are
   // written, which is the order somebody reading the file meets them.
   repeated Method methods = 3;
@@ -125,12 +131,20 @@ message Implementation {
   // servicing it, which is for whoever reads this to make of what
   // they will.
   repeated ServicerInfo servicers = 1;
+
+  // Whether `rbt generate` has written the application's generated
+  // code, which is where the state types the servicers service are
+  // defined. A servicer only joins the list above once its state
+  // type is defined there, so while this is false the dashboard
+  // suggests running `rbt generate`.
+  bool generated = 2;
 }
 
 message ImplementationGetRequest {}
 
 message ImplementationGetResponse {
   repeated ServicerInfo servicers = 1;
+  bool generated = 2;
 }
 
 message ImplementationWatchRequest {}

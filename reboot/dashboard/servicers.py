@@ -1,6 +1,7 @@
 """Servicers for the developer dashboard application."""
 import os
 import reboot.std.presence.v1.presence
+from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import (
     APIGetRequest,
     APIGetResponse,
@@ -21,6 +22,7 @@ from reboot.dashboard import api_watcher, implementation_watcher
 from reboot.dashboard.constants import (
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
+    ENVVAR_RBT_GENERATED_DIRECTORY,
 )
 
 
@@ -89,7 +91,10 @@ class ImplementationServicer(Implementation.Servicer):
         context: ReaderContext,
         request: Implementation.GetRequest,
     ) -> Implementation.GetResponse:
-        return Implementation.GetResponse(servicers=self.state.servicers)
+        return Implementation.GetResponse(
+            servicers=self.state.servicers,
+            generated=self.state.generated,
+        )
 
     @classmethod
     async def Watch(
@@ -106,10 +111,16 @@ class ImplementationServicer(Implementation.Servicer):
         case for a Node.js application.
         """
         application = os.environ.get(ENVVAR_RBT_APPLICATION)
+        generated_directory = os.environ.get(ENVVAR_RBT_GENERATED_DIRECTORY)
 
         if application is not None:
             await implementation_watcher.watch(
-                context, application=application
+                context,
+                application=Path(application),
+                generated_directory=(
+                    Path(generated_directory)
+                    if generated_directory is not None else None
+                ),
             )
 
         return Implementation.WatchResponse()
