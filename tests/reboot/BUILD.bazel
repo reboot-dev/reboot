@@ -889,7 +889,10 @@ py_test(
     ],
 )
 
-exports_files(["index.html.j2"])
+exports_files([
+    "greeter_rbt.golden.py",
+    "index.html.j2",
+])
 
 js_reboot_web_library(
     name = "greeter_web_ts_reboot",
