@@ -114,6 +114,45 @@ message ServicerInfo {
   repeated Method methods = 3;
 }
 
+// What analyzing one of the developer's files leaned on: the digest
+// of its bytes and what each of its imports observed. What a
+// restarted dashboard reconstitutes its knowledge from, so that only
+// files that changed while it was down are parsed and analyzed
+// again.
+message FileInfo {
+  // Represents what one import observed when the file was analyzed.
+  message Dependency {
+    // Represents the file the module resolved to, by its resolved
+    // path. Absent when the module resolved to no file: outside the
+    // roots, generated, or not existing at all.
+    optional string filename = 1;
+
+    // Represents a digest of the bytes `filename` was read with.
+    // Absent when there were no usable bytes: `filename` is absent,
+    // or the file could not be read.
+    optional bytes digest = 2;
+  }
+
+  // Represents a digest of the file's own bytes, saying whether the
+  // file changed since it was analyzed.
+  bytes digest = 1;
+
+  // Represents what each import observed, keyed by the module as
+  // the import spells it.
+  map<string, Dependency> dependencies = 2;
+}
+
+// Represents when a file of generated code was last written, how
+// big it is and which inode it is, which is enough to say whether
+// `rbt generate` wrote since this was recorded.
+message GeneratedFileInfo {
+  int64 modified_ns = 1;
+
+  int64 size = 2;
+
+  uint64 inode = 3;
+}
+
 // What the dashboard application has read of the developer's
 // application: which of their files implements each state type.
 //
@@ -138,6 +177,19 @@ message Implementation {
   // type is defined there, so while this is false the dashboard
   // suggests running `rbt generate`.
   bool generated = 2;
+
+  // Represents every file the walk analyzed, keyed by its resolved
+  // path, as of the last write. A restarted dashboard starts from
+  // these rather than parsing and analyzing every file again; one
+  // that changed since this was written is simply parsed again,
+  // which its digest says.
+  map<string, FileInfo> files = 3;
+
+  // Represents every file of generated code as last scanned, keyed
+  // by its path. A restart compares a fresh scan against these to
+  // tell whether `rbt generate` wrote while the dashboard was down,
+  // which is a change every analysis in `files` leaned on.
+  map<string, GeneratedFileInfo> generated_files = 4;
 }
 
 message ImplementationGetRequest {}

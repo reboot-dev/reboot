@@ -53,6 +53,9 @@ import os
 import tokenize
 from dataclasses import dataclass, replace
 from pathlib import Path
+from rbt.dashboard.v1.dashboard_pb2 import FileInfo
+from rbt.dashboard.v1.dashboard_pb2 import \
+    Implementation as ImplementationState
 from rbt.dashboard.v1.dashboard_pb2 import ServicerInfo
 from rbt.dashboard.v1.dashboard_rbt import Implementation
 from reboot.aio.contexts import WorkflowContext
@@ -65,6 +68,13 @@ from typing import Mapping, Optional, Sequence
 # A SHA-256 digest -- of a file's bytes, or of a method's syntax --
 # saying whether what was digested has changed.
 Digest = bytes
+
+# What one of a file's imports observed when the file was analyzed:
+# which file the module resolved to, by its resolved path as a
+# string, and the digest of its bytes, each absent when there was
+# none. Aliased from where it is defined so that what an iteration
+# records and what a restart reconstitutes from are one message.
+Dependency = FileInfo.Dependency
 
 # Suffixes of the files `rbt generate` writes. Named so that a chain
 # of imports is never followed into generated code by reading it --
@@ -213,24 +223,6 @@ def _join(base: str, *parts: str) -> str:
     if os.sep in base:
         return os.path.join(base, *parts)
     return '.'.join([base, *parts])
-
-
-@dataclass(frozen=True, kw_only=True)
-class Dependency:
-    """What one of a file's imports observed when the file was
-    analyzed."""
-
-    # The file the module resolved to, or `None` when no file could be
-    # found or it was outside the roots (e.g., installed or
-    # generated). Note that we don't look for files outside of the
-    # roots so failing to find a file doesn't necessarily mean that
-    # the file is outside of the roots, it might be that the file just
-    # hasn't been crated yet but will be shortly.
-    filename: Optional[Path]
-
-    # The digest of the bytes `filename` was read with, or `None` if
-    # `filename` is `None` or the file could not be read.
-    digest: Optional[Digest]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -420,7 +412,7 @@ class Files:
         # same walk that placed the dependency in `known`, and any
         # change since moved the dependency to `parsed`.
         assert (
-            filename is None or filename != dependency.filename or
+            filename is None or str(filename) != dependency.filename or
             filename not in self.unchanged or
             self.unchanged[filename].digest == dependency.digest
         )
@@ -558,18 +550,20 @@ class Files:
             )
 
         filename = files.resolutions[module]
-        digest: Optional[Digest] = None
+        dependency = Dependency()
         if filename is not None:
             # Found a file, recurse.
             digest, files = await files.lookup_or_parse_filename(filename)
+            dependency.filename = str(filename)
+            if digest is not None:
+                dependency.digest = digest
 
         return replace(
             files,
             dependencies=MappingProxyType(
                 {
                     **files.dependencies,
-                    module:
-                        Dependency(filename=filename, digest=digest),
+                    module: dependency,
                 }
             ),
         )
@@ -686,6 +680,42 @@ async def _generated_files(
     return await asyncio.to_thread(scan)
 
 
+def _reconstitute_known(
+    state: ImplementationState,
+) -> dict[Path, AnalyzedFile]:
+    """Returns the analyzed files a previous run recorded, joined
+    back together from the state: each `FileInfo` with the servicers
+    recorded for its file. What a restarted watch starts from, so
+    that only files that changed while the dashboard was down are
+    parsed and analyzed again."""
+    servicers: dict[str, list[ServicerInfo]] = {}
+    for servicer in state.servicers:
+        servicers.setdefault(servicer.file, []).append(servicer)
+
+    return {
+        Path(filename):
+            AnalyzedFile(
+                filename=Path(filename),
+                digest=file.digest,
+                dependencies=MappingProxyType(dict(file.dependencies)),
+                servicers=tuple(servicers.get(filename, [])),
+            ) for filename, file in state.files.items()
+    }
+
+
+def _reconstitute_generated_files(
+    state: ImplementationState,
+) -> dict[Path, tuple[int, int, int]]:
+    """Returns the generated files' fingerprints a previous run
+    recorded, so that a restart can tell whether `rbt generate`
+    wrote while the dashboard was down, which is a change every
+    reconstituted analysis leaned on."""
+    return {
+        Path(filename): (file.modified_ns, file.size, file.inode)
+        for filename, file in state.generated_files.items()
+    }
+
+
 async def walk(
     *,
     application: Path,
@@ -756,9 +786,9 @@ async def walk(
         # breaks after finding a single reason that an unchanged file
         # needs to be reanalyzed.
         for dependency in file.dependencies.values():
-            if dependency.filename is not None:
+            if dependency.HasField('filename'):
                 dependents.setdefault(
-                    dependency.filename,
+                    Path(dependency.filename),
                     [],
                 ).append(filename)
 
@@ -900,8 +930,14 @@ async def watch(
     # stored servicers. Initializing to `None` ensures we'll always do
     # at least one write when this workflow is resumed.
     servicers: Optional[list[ServicerInfo]] = None
-    known: dict[Path, AnalyzedFile] = {}
-    generated_files: Mapping[Path, tuple[int, int, int]] = {}
+
+    # What a previous run recorded: starting from it, only files
+    # that changed while the dashboard was down are parsed and
+    # analyzed again.
+    state = await Implementation.ref().always().read(context)
+    known = _reconstitute_known(state)
+    generated_files: Mapping[Path, tuple[
+        int, int, int]] = _reconstitute_generated_files(state)
 
     with file_watcher() as watcher:
         async for iteration in context.loop('Watch the application'):
@@ -988,20 +1024,47 @@ async def watch(
                     # another file, which is the very thing the
                     # dashboard shows.
                     servicers_now != servicers or
-                    # Generated code appeared for the first time or
-                    # was deleted, which flips whether the dashboard
-                    # suggests running `rbt generate`. The previous
-                    # iteration's flag comes from its scan, which is
+                    # Generated code was written or deleted, which
+                    # can flip whether the dashboard suggests
+                    # running `rbt generate`, and which refreshes
+                    # the recorded fingerprints, which are how a
+                    # restart tells whether `rbt generate` ran while
+                    # the dashboard was down. The previous
+                    # iteration's scan is what is compared, which is
                     # why `generated_files` is only assigned below,
                     # after this comparison.
-                    (len(generated_files_now) > 0)
-                    != (len(generated_files) > 0)
+                    generated_files_now != generated_files
                 ):
 
                     async def record(state) -> None:
                         del state.servicers[:]
                         state.servicers.extend(servicers_now)
                         state.generated = len(generated_files_now) > 0
+
+                        # The walked files as of this write. One that
+                        # changes after it is simply parsed again by
+                        # a restarted walk, which its digest says.
+                        state.files.clear()
+                        for filename, file in known.items():
+                            file_info = state.files[str(filename)]
+                            file_info.digest = file.digest
+                            for module, dependency in (
+                                file.dependencies.items()
+                            ):
+                                file_info.dependencies[module].CopyFrom(
+                                    dependency
+                                )
+
+                        state.generated_files.clear()
+                        for path, (
+                            modified_ns,
+                            size,
+                            inode,
+                        ) in generated_files_now.items():
+                            generated_file = (state.generated_files[str(path)])
+                            generated_file.modified_ns = modified_ns
+                            generated_file.size = size
+                            generated_file.inode = inode
 
                     await Implementation.ref().per_iteration(
                         'Record the servicers'

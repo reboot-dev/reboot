@@ -200,7 +200,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             found[servicer].dependencies['helper'].filename,
-            helper,
+            str(helper),
         )
 
     async def test_files_importing_each_other(self) -> None:
@@ -218,8 +218,14 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
         found = await self._analyze(application)
 
-        self.assertEqual(found[one].dependencies['two'].filename, two)
-        self.assertEqual(found[two].dependencies['one'].filename, one)
+        self.assertEqual(
+            found[one].dependencies['two'].filename,
+            str(two),
+        )
+        self.assertEqual(
+            found[two].dependencies['one'].filename,
+            str(one),
+        )
 
     async def test_a_change_reaching_a_cycle_reanalyzes_its_members(
         self,
@@ -287,7 +293,9 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         # itself was analyzed as nothing.
         self.assertIn(servicer, known)
         self.assertNotIn(helper, known)
-        self.assertIsNotNone(known[servicer].dependencies['helper'].digest)
+        self.assertTrue(
+            known[servicer].dependencies['helper'].HasField('digest')
+        )
 
         self._write('helper.py', source='VALUE = 2\n')
 
@@ -340,7 +348,9 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         # resolving to nothing.
         self.assertIn(servicer, known)
         self.assertNotIn(helper, known)
-        self.assertIsNone(known[servicer].dependencies['helper'].filename)
+        self.assertFalse(
+            known[servicer].dependencies['helper'].HasField('filename')
+        )
 
         known = await self._analyze(application, known=known)
 
@@ -366,7 +376,9 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
         known = await self._analyze(application)
 
-        self.assertIsNone(known[servicer].dependencies['helper'].filename)
+        self.assertFalse(
+            known[servicer].dependencies['helper'].HasField('filename')
+        )
 
         self._write('helper.py', source='VALUE = 1\n')
 
