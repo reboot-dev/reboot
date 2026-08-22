@@ -2,6 +2,7 @@
 import os
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Value
+from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import (
     APIGetRequest,
     APIGetResponse,
@@ -32,6 +33,7 @@ from reboot.dashboard.constants import (
     CHANGELOG_ID,
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
+    ENVVAR_RBT_GENERATED_DIRECTORY,
 )
 from reboot.std.item.v1.item import Item
 from reboot.uuidv7 import uuid7
@@ -126,7 +128,10 @@ class ImplementationServicer(Implementation.Servicer):
         context: ReaderContext,
         request: Implementation.GetRequest,
     ) -> Implementation.GetResponse:
-        return Implementation.GetResponse(servicers=self.state.servicers)
+        return Implementation.GetResponse(
+            servicers=self.state.servicers,
+            needs_generate=self.state.needs_generate,
+        )
 
     @classmethod
     async def Watch(
@@ -143,10 +148,16 @@ class ImplementationServicer(Implementation.Servicer):
         case for a Node.js application.
         """
         application = os.environ.get(ENVVAR_RBT_APPLICATION)
+        generated_directory = os.environ.get(ENVVAR_RBT_GENERATED_DIRECTORY)
 
         if application is not None:
             await implementation_watcher.watch(
-                context, application=application
+                context,
+                application=Path(application),
+                generated_directory=(
+                    Path(generated_directory)
+                    if generated_directory is not None else None
+                ),
             )
 
         return Implementation.WatchResponse()

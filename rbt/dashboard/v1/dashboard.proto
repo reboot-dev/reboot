@@ -169,9 +169,57 @@ message ServicerInfo {
   // open it, e.g. "backend/src/account_servicer.py".
   string file = 2;
 
+  // Represents the line its class is written on, counting from one.
+  uint32 line = 4;
+
+  // Represents the column its class starts at, counting from zero.
+  uint32 character = 5;
+
   // Represents every method it defines, in the order they are
   // written, which is the order somebody reading the file meets them.
   repeated Method methods = 3;
+}
+
+// What analyzing one of the developer's files used: the digest
+// of its bytes and what each of its imports observed. What a
+// restarted dashboard reconstitutes its knowledge from, so that only
+// files that changed while it was down are parsed and analyzed
+// again.
+message FileInfo {
+  // Represents a file depended on: which file, with which bytes.
+  message Dependency {
+    // Represents the file, e.g. "backend/api/shop/v1/shop_rbt.py".
+    // Relative to the working directory for a file under it,
+    // absolute for any other file, so that the spelling stays true
+    // when the project directory is moved. For a dependency an
+    // import observed, absent when there was no file at the
+    // import's possible module path: it names code outside the
+    // roots, or code that does not exist yet.
+    optional string filename = 1;
+
+    // Represents a digest of the bytes `filename` was read with.
+    // Absent when there were no usable bytes: `filename` is absent,
+    // or the file could not be read.
+    optional bytes digest = 2;
+  }
+
+  // Represents a digest of the file's own bytes, saying whether the
+  // file changed since it was analyzed.
+  bytes digest = 1;
+
+  // Represents what each import observed, keyed by possible module
+  // path: e.g. "shop/v1/shop_rbt" for
+  // `import shop.v1.shop_rbt`, "./backend/db" for a relative import
+  // written in `backend`, and "shop/v1/shop_rbt/Shop" for the
+  // chance that an imported name is a module of its own.
+  map<string, Dependency> dependencies = 2;
+
+  // Represents the files outside every root -- the application's
+  // directory and the generated directory -- that this file's
+  // analysis read, e.g. an installed package's `_rbt` module. The
+  // walk never finds these, so each is digested directly at the
+  // end of a walk, and a change reanalyzes this file.
+  repeated Dependency external = 3;
 }
 
 // What the dashboard application has read of the developer's
@@ -191,12 +239,28 @@ message Implementation {
   // servicing it, which is for whoever reads this to make of what
   // they will.
   repeated ServicerInfo servicers = 1;
+
+  // Whether some analyzed file imports generated code that has no
+  // file yet. Generated code is where the state types the servicers
+  // service are defined, and a servicer only joins the list above
+  // once its state type is defined, so while this is true the
+  // dashboard suggests running `rbt generate`.
+  bool needs_generate = 2;
+
+  // Represents every file the walk analyzed, keyed by its path,
+  // relative to the working directory for a file under it and
+  // absolute otherwise, as of the last write. A restarted dashboard starts from
+  // these rather than parsing and analyzing every file again; one
+  // that changed since this was written is simply parsed again,
+  // which its digest says.
+  map<string, FileInfo> files = 3;
 }
 
 message ImplementationGetRequest {}
 
 message ImplementationGetResponse {
   repeated ServicerInfo servicers = 1;
+  bool needs_generate = 2;
 }
 
 message ImplementationWatchRequest {}

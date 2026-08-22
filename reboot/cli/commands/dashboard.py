@@ -24,6 +24,7 @@ from reboot.dashboard.constants import (
     DEFAULT_DASHBOARD_PORT,
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
+    ENVVAR_RBT_GENERATED_DIRECTORY,
 )
 from reboot.settings import (
     ENVVAR_RBT_DEV,
@@ -107,6 +108,23 @@ def _application(parser: ArgumentParser) -> Optional[str]:
     return None
 
 
+def _generated_directory(parser: ArgumentParser) -> Optional[str]:
+    """Returns the directory `rbt generate` writes Python code into,
+    which is where its `--python=` flag points, and `None` when it
+    points nowhere.
+
+    Read rather than asked for again, for the same reason as the
+    application. `None` is what an application with no generated
+    Python looks like, such as a Node.js one.
+    """
+    for argument in parser.dot_rc_arguments('generate'):
+        name, separator, value = argument.partition('=')
+        if name == '--python' and separator == '=':
+            return value
+
+    return None
+
+
 def _dashboard_env(
     args,
     parser: ArgumentParser,
@@ -114,6 +132,7 @@ def _dashboard_env(
     port: int,
     api_directory: str,
     application: Optional[str],
+    generated_directory: Optional[str],
 ) -> dict[str, str]:
     """The environment for the dashboard application.
 
@@ -171,6 +190,14 @@ def _dashboard_env(
     composed.pop(ENVVAR_RBT_APPLICATION, None)
     if application is not None:
         composed[ENVVAR_RBT_APPLICATION] = application
+
+    # Where the developer's generated Python is, spelled the same way
+    # and for the same reason. Left out when the developer named no
+    # `--python` directory, which is what tells the dashboard there is
+    # nothing to type the implementation with.
+    composed.pop(ENVVAR_RBT_GENERATED_DIRECTORY, None)
+    if generated_directory is not None:
+        composed[ENVVAR_RBT_GENERATED_DIRECTORY] = generated_directory
 
     composed[ENVVAR_RBT_NAME] = DASHBOARD_STATE_DIRECTORY_NAME
 
@@ -270,6 +297,7 @@ async def dashboard(
             port=port,
             api_directory=_api_directory(parser),
             application=_application(parser),
+            generated_directory=_generated_directory(parser),
         )
 
         terminal.info(
