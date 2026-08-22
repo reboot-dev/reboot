@@ -62,10 +62,10 @@ class _Synced:
 class Pyright:
     """One running pyright language server, answering questions.
 
-    `start` it once, `sync` every file's text as the file is read,
-    and ask with `type_at` and `definition_at` about the files that
-    were synced. Positions are given the way `ast` gives them: lines
-    from one, columns from zero.
+    `start` it, `sync` the text of any file that will be asked
+    about, and ask with `type_at` and `definition_at`. Positions are
+    given the way `ast` gives them: lines from one, columns from
+    zero.
     """
 
     def __init__(self) -> None:

@@ -704,12 +704,10 @@ async def walk(
     and one that has started being imported is parsed for the first
     time.
 
-    Everything is read here, before anything is asked of pyright, and
-    each `ParsedFile` carries the text it was parsed from, so that
-    the analysis can be about exactly the snapshot this walk parsed
-    -- every file of it, however the files change on disk in between.
-    A file that stopped existing is the one thing the walk never
-    meets, so whoever watches has to discard its synced text itself.
+    Everything is read here, before anything is asked of pyright,
+    and each `ParsedFile` carries the text it was parsed from, so
+    that whatever the analysis asks pyright about a file, it can
+    sync first and ask about exactly the text this walk parsed.
 
     `known` is what a previous iteration's analysis returned, and
     spares the walk from parsing a file that has not changed since --
@@ -862,13 +860,6 @@ async def analyze(
     a `_rbt` module anywhere else belongs to an installed package,
     and `None` means no `_rbt` module is the developer's own.
     """
-    # Every parsed file's text is synced first, in this one place, so
-    # that every question below is answered about exactly the text
-    # the walk parsed. The `unchanged` files need nothing: pyright
-    # kept their text from whichever iteration parsed them.
-    for filename, file in parsed.items():
-        await pyright.sync(filename=filename, text=file.text)
-
     analysis = Analysis(parsed=parsed, pyright=pyright)
 
     analyzed: dict[Path, AnalyzedFile] = {}
@@ -911,10 +902,6 @@ async def watch(
     servicers: Optional[list[ServicerInfo]] = None
     known: dict[Path, AnalyzedFile] = {}
     generated_files: Mapping[Path, tuple[int, int, int]] = {}
-    pyright: Optional[Pyright] = None
-    # We track the current working directory so if it is moved we can
-    # restart Pyright so it has the correct paths.
-    cwd: Optional[Path] = None
 
     with file_watcher() as watcher:
         async for iteration in context.loop('Watch the application'):
@@ -938,45 +925,11 @@ async def watch(
                     if generated_directory is not None else {}
                 )
 
-                if (
-                    # First time.
-                    pyright is None or
-                    # The working directory has been moved, e.g. `mv
-                    # /home/dev/app /home/dev/app-2`: pyright's root
-                    # and every absolute path in `known` still say
-                    # `/home/dev/app`, a directory that no longer
-                    # exists. So we stop pyright and start a fresh
-                    # one, rooted at `/home/dev/app-2` and reset
-                    # `known` so that every file is walked and
-                    # analyzed again under `/home/dev/app-2`.
-                    Path.cwd() != cwd or
-                    # Pyright answers from the text `Pyright.sync`
-                    # sent it for the developer's own files, but nobody
-                    # ever syncs generated code, so to resolve an
-                    # import into it pyright reads the file from disk,
-                    # once, and keeps answering from that first read.
-                    # `rbt generate` rewriting the file goes unseen, so
-                    # any change to the generated files gets a fresh
-                    # pyright, which reads everything anew. Everything
-                    # analyzed with the old pyright's answers is
-                    # forgotten with it.
-                    generated_files_now != generated_files
-                ):
-                    if pyright is not None:
-                        await pyright.stop()
-                    pyright = Pyright()
-                    # Rooted where the dashboard runs, which is the
-                    # developer's working directory, the one both the
-                    # application and the generated directory may be
-                    # given as relative to.
-                    cwd = Path.cwd()
-                    await pyright.start(
-                        root=cwd,
-                        paths=(
-                            [*roots, generated_directory] if
-                            generated_directory is not None else list(roots)
-                        ),
-                    )
+                # Every carried analysis leaned on the generated
+                # code, which no `dependencies` record, so any
+                # change to it means everything is walked and
+                # analyzed again.
+                if generated_files_now != generated_files:
                     known = {}
 
                 unchanged, parsed = await walk(
@@ -985,21 +938,44 @@ async def watch(
                     known=known,
                 )
 
-                # A file synced with pyright stays synced until it
-                # leaves both `unchanged` and `parsed`: one that was
-                # deleted, is no longer imported, or will not parse
-                # right now. Discarded, pyright answers about it
-                # from whatever the disk actually has.
-                for filename in (
-                    known.keys() - unchanged.keys() - parsed.keys()
-                ):
-                    await pyright.discard(filename=filename)
-
-                analyzed = await analyze(
-                    parsed=parsed,
-                    pyright=pyright,
-                    generated_directory=generated_directory,
+                # A fresh pyright for every analysis, so that it
+                # reads every file the way the disk has it right
+                # now: generated code, installed packages and the
+                # developer's own files alike, with nothing
+                # remembered from an earlier iteration to go stale.
+                # Rooted where the dashboard runs, which is the
+                # developer's working directory, the one both the
+                # application and the generated directory may be
+                # given as relative to; a moved working directory
+                # is re-rooted here by the next iteration.
+                #
+                # TODO: keep one pyright running across iterations
+                # and send `workspace/didChangeWatchedFiles` built
+                # from the generated files' fingerprint diff
+                # instead of starting anew, sparing the start and
+                # the cold analysis per iteration. That first takes
+                # verifying that pyright does not ignore
+                # notifications for files it never registered
+                # watchers over, and accounting for the working
+                # directory moving, which today is handled by every
+                # iteration's fresh start being rooted at the
+                # current directory and would again take a restart.
+                pyright = Pyright()
+                await pyright.start(
+                    root=Path.cwd(),
+                    paths=(
+                        [*roots, generated_directory]
+                        if generated_directory is not None else list(roots)
+                    ),
                 )
+                try:
+                    analyzed = await analyze(
+                        parsed=parsed,
+                        pyright=pyright,
+                        generated_directory=generated_directory,
+                    )
+                finally:
+                    await pyright.stop()
 
                 known = {**unchanged, **analyzed}
 
@@ -1048,8 +1024,8 @@ async def watch(
                 # and waits here on whatever change comes next, not on
                 # the change the original run woke to. That is safe
                 # because the event is only a wake-up: every decision
-                # above, what to parse, what to discard, what to
-                # record, is made by reading the disk when the
-                # iteration runs, so an iteration woken at a different
-                # moment records what is true at that moment.
+                # above, what to parse, what to record, is made by
+                # reading the disk when the iteration runs, so an
+                # iteration woken at a different moment records what
+                # is true at that moment.
                 await event
