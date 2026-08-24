@@ -171,6 +171,10 @@ message ServicerInfo {
         // A constructor, called on the state type itself, which
         // both makes the state and returns a reference to it.
         CONSTRUCT = 2;
+        // Reached through `.schedule(when=...)`.
+        SCHEDULE = 3;
+        // Reached through `.spawn(when=...)`.
+        SPAWN = 4;
       }
 
       // Represents the state type called, spelled as

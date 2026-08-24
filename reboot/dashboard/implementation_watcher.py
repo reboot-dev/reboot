@@ -755,9 +755,11 @@ class MethodDefinition:
     # The method name, spelled as the developer calls it, e.g. `look`.
     name: str
 
-    # Whether the stub is a constructor, written on the state
-    # type's own class rather than on its `WeakReference`.
-    constructor: bool
+    # How a call defined here is reached, which is where the stub
+    # is written: e.g. `CONSTRUCT` for one on the state type's own
+    # class, and `SCHEDULE` for one inside its
+    # `WeakReference._Schedule`.
+    how: 'Call.How.ValueType'
 
 
 Definition = (
@@ -832,13 +834,17 @@ def _definitions(syntax: ast.Module) -> Mapping[int, Definition]:
 
                 # The state type's class defines the constructor
                 # stubs, e.g.
-                # `async def Create(__cls__, __context__, ...)`,
-                # and its `WeakReference`, the class of a reference
-                # to it, defines the method stubs a reference is
-                # called with, one def per overload. Either is told
-                # apart from the machinery around it, such as `ref`
-                # and `schedule`, by the `__context__` parameter
-                # only the generator's stubs take second.
+                # `async def Create(__cls__, __context__, ...)`;
+                # its `WeakReference`, the class of a reference to
+                # it, defines the method stubs a reference is
+                # called with, one def per overload; and the
+                # `_Schedule`, `_SelfSchedule` and `_Spawn` classes inside
+                # the `WeakReference` define the same stubs as
+                # reached through `.schedule(when=...)`. Every stub
+                # is told apart from the machinery around it, such
+                # as `ref` and `schedule` themselves, by the
+                # `__context__` parameter only the generator's
+                # stubs take second.
                 for inner in statement.body:
                     match inner:
                         case (ast.FunctionDef() | ast.AsyncFunctionDef()
@@ -846,7 +852,7 @@ def _definitions(syntax: ast.Module) -> Mapping[int, Definition]:
                             definitions[inner.lineno] = MethodDefinition(
                                 state_type=state_type,
                                 name=inner.name,
-                                constructor=True,
+                                how=Call.How.CONSTRUCT,
                             )
 
                         case ast.ClassDef(name='WeakReference'):
@@ -860,9 +866,38 @@ def _definitions(syntax: ast.Module) -> Mapping[int, Definition]:
                                             MethodDefinition(
                                                 state_type=state_type,
                                                 name=node.name,
-                                                constructor=False,
+                                                how=Call.How.CALL,
                                             )
                                         )
+
+                                    case ast.ClassDef(
+                                        name='_Schedule' | '_SelfSchedule' |
+                                        '_Spawn'
+                                    ):
+                                        how = (
+                                            Call.How.SPAWN if node.name
+                                            == '_Spawn' else Call.How.SCHEDULE
+                                        )
+                                        for scheduled in node.body:
+                                            match scheduled:
+                                                case (
+                                                    ast.FunctionDef() |
+                                                    ast.AsyncFunctionDef()
+                                                ) if (
+                                                    _takes_context_second(
+                                                        scheduled
+                                                    )
+                                                ):
+                                                    definitions[
+                                                        scheduled.lineno] = (
+                                                            MethodDefinition(
+                                                                state_type=
+                                                                state_type,
+                                                                name=scheduled.
+                                                                name,
+                                                                how=how,
+                                                            )
+                                                        )
 
     return MappingProxyType(definitions)
 
@@ -1076,18 +1111,9 @@ async def _analyze_method(
             case MethodDefinition(
                 state_type=state_type,
                 name=name,
-                constructor=constructor,
+                how=how,
             ):
-                calls.append(
-                    Call(
-                        state_type=state_type,
-                        method=name,
-                        how=(
-                            Call.How.CONSTRUCT
-                            if constructor else Call.How.CALL
-                        ),
-                    )
-                )
+                calls.append(Call(state_type=state_type, method=name, how=how))
 
     return calls, analysis
 
