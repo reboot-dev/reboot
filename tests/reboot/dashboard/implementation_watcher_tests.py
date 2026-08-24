@@ -134,12 +134,36 @@ class {state}:
 
     class WeakReference:
 
+        class _Schedule:
+
+            async def look(
+                __this__,
+                __context__,
+                request=None,
+            ):
+                pass
+
+        class _Spawn:
+
+            async def look(
+                __this__,
+                __context__,
+                request=None,
+            ):
+                pass
+
         async def look(
             __this__,
             __context__,
             request=None,
         ):
             pass
+
+        def schedule(self, when=None) -> '{state}.WeakReference._Schedule':
+            return {state}.WeakReference._Schedule()
+
+        def spawn(self, when=None) -> '{state}.WeakReference._Spawn':
+            return {state}.WeakReference._Spawn()
 
     @classmethod
     def ref(cls, state_id) -> '{state}.WeakReference':
@@ -409,50 +433,58 @@ class GoldenDefinitionsTest(unittest.TestCase):
 
     def test_the_golden_module_defines_exactly_its_methods(self) -> None:
         """The `MethodDefinition`s of the golden `_rbt` module are
-        exactly the methods `greeter.proto` declares, so a template
-        change that hides method stubs (under reporting) or lets
-        the `WeakReference`'s own machinery in (over reporting)
-        breaks this test rather than only the dashboard."""
+        exactly the methods `greeter.proto` declares, reached each
+        way the analysis supports, so a template change that hides
+        method stubs (under reporting) or lets the machinery around
+        them in (over reporting) breaks this test rather than only
+        the dashboard."""
         golden = Path(__file__).parent.parent / 'greeter_rbt.golden.py'
 
+        all_definitions = _definitions(ast.parse(golden.read_text()))
+
         definitions = [
-            definition for definition in
-            _definitions(ast.parse(golden.read_text())).values()
+            definition for definition in all_definitions.values()
             if isinstance(definition, MethodDefinition)
         ]
 
+        methods = {
+            'ConstructAndStoreRecursiveMessage',
+            'DangerousFields',
+            'FailWithAborted',
+            'FailWithException',
+            'GetWholeState',
+            'Greet',
+            'ReadRecursiveMessage',
+            'SetAdjective',
+            'StoreRecursiveMessage',
+            'TestLongRunningFetch',
+            'TestLongRunningWriter',
+            'TransactionSetAdjective',
+            'TryToConstructContext',
+            'TryToConstructExternalContext',
+            'Workflow',
+        }
+
+        names_by_how: dict[int, set[str]] = {}
+        for definition in definitions:
+            names_by_how.setdefault(
+                definition.how,
+                set(),
+            ).add(definition.name)
+
+        Call = ServicerInfo.Method.Call
         self.assertEqual(
-            {definition.name for definition in definitions},
+            names_by_how,
             {
-                'ConstructAndStoreRecursiveMessage',
-                'Create',
-                'DangerousFields',
-                'FailWithAborted',
-                'FailWithException',
-                'GetWholeState',
-                'Greet',
-                'ReadRecursiveMessage',
-                'SetAdjective',
-                'StoreRecursiveMessage',
-                'TestLongRunningFetch',
-                'TestLongRunningWriter',
-                'TransactionSetAdjective',
-                'TryToConstructContext',
-                'TryToConstructExternalContext',
-                'Workflow',
+                Call.How.CALL: methods,
+                Call.How.SCHEDULE: methods,
+                Call.How.SPAWN: methods,
+                Call.How.CONSTRUCT: {'Create'},
             },
         )
         self.assertEqual(
             {definition.state_type for definition in definitions},
             {'tests.reboot.Greeter'},
-        )
-        self.assertEqual(
-            {
-                definition.name
-                for definition in definitions
-                if definition.constructor
-            },
-            {'Create'},
         )
 
 
@@ -559,6 +591,8 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 '        await depot.look(context)\n'
                 "        await Shop.ref('s').look(context)\n"
                 "        await Depot.make(context, 'd')\n"
+                '        await depot.schedule().look(context)\n'
+                '        await depot.spawn().look(context)\n'
             ),
         )
         application = self._write('main.py', source=APPLICATION)
@@ -577,6 +611,8 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 ('shop.v1.Depot', 'look', Call.How.CALL),
                 ('shop.v1.Shop', 'look', Call.How.CALL),
                 ('shop.v1.Depot', 'make', Call.How.CONSTRUCT),
+                ('shop.v1.Depot', 'look', Call.How.SCHEDULE),
+                ('shop.v1.Depot', 'look', Call.How.SPAWN),
             ],
         )
 
@@ -1228,6 +1264,9 @@ class GreeterServicer(Greeter.Servicer):
         await me.SetAdjective(context)
         await self.ref().Greet(context)
         await Greeter.Create(context)
+        await greeter.schedule().SetAdjective(context)
+        await me.schedule().Greet(context)
+        await me.spawn().SetAdjective(context)
 '''
         )
         application = self._write(
@@ -1254,6 +1293,9 @@ class GreeterServicer(Greeter.Servicer):
                 ('tests.reboot.Greeter', 'SetAdjective', Call.How.CALL),
                 ('tests.reboot.Greeter', 'Greet', Call.How.CALL),
                 ('tests.reboot.Greeter', 'Create', Call.How.CONSTRUCT),
+                ('tests.reboot.Greeter', 'SetAdjective', Call.How.SCHEDULE),
+                ('tests.reboot.Greeter', 'Greet', Call.How.SCHEDULE),
+                ('tests.reboot.Greeter', 'SetAdjective', Call.How.SPAWN),
             ],
         )
 
