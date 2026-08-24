@@ -13,8 +13,7 @@ from log.log import get_logger
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
 from rbt.v1alpha1.application.application_pb2 import ExamplePrompt
-from reboot.aio.auth.native_redirect_uris import validate_redirect_uris
-from reboot.aio.auth.oauth_providers import OAuthProviderSelector
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_server import OAuthServer
 from reboot.aio.auth.token_verifiers import (
     CompoundTokenVerifier,
@@ -67,7 +66,6 @@ from reboot.version import REBOOT_VERSION
 from reboot.versioning import version_less_than
 from starlette.staticfiles import StaticFiles
 from typing import Any, Awaitable, Callable, Mapping, NoReturn, Optional
-from urllib.parse import urlparse
 
 logger = get_logger(__name__)
 
@@ -249,9 +247,13 @@ class Application:
                                       Awaitable[None]]] = None,
         initialize_bearer_token: Optional[str] = None,
         token_verifier: Optional[TokenVerifier] = None,
-        oauth: Optional[OAuthProviderSelector] = None,
-        allowed_origins: Optional[list[str]] = None,
-        native_redirect_uris: Optional[list[str]] = None,
+        oauth: Optional[OAuth] = None,
+        # Superseded by the corresponding `OAuth` fields. Bound
+        # here only so that an application that has not applied
+        # the migration is told where the option went, rather
+        # than meeting a bare `TypeError`.
+        allowed_origins: Any = None,
+        native_redirect_uris: Any = None,
         title: Optional[str] = None,
         description: Optional[str] = None,
         example_prompts: Optional[list[ExamplePrompt]] = None,
@@ -284,89 +286,13 @@ class Application:
             falling through. The MCP endpoint (`/mcp`) accepts only
             Reboot-minted access JWTs; tokens verified by this
             verifier authenticate Reboot RPCs, not `/mcp`.
-        :param oauth: an `OAuthProviderSelector` (e.g.
-            `OAuthProviderByEnvironment(dev=Development(),
-            prod=Google(...))`) that chooses the OAuth provider for
-            authenticating users. Works for both MCP chat clients
-            and browser SPAs. Resolved (and a `TokenVerifier` created
-            automatically) whenever it is set, even for an app with
-            nothing to auto-construct. May be combined with
-            `token_verifier`; see there for the ordering semantics.
-        :param allowed_origins: exact-match list of HTTP origins
-            (`scheme://host[:port]`, e.g.
-            `"https://app.example.com"`) that browsers are allowed
-            to talk to this backend from when the request needs to
-            carry credentials (the OAuth session cookie or, post
-            sign-in, the bearer JWT minted by `/__/oauth/whoami`).
-            The backend's own origin is always trusted on top of
-            this list, so same-origin browser clients work no matter
-            what; `allowed_origins` only ever *widens* trust to
-            additional, cross-origin SPAs. An explicit empty list
-            (`[]`) means *no* cross-origin credentialed traffic; only
-            same-origin browser clients can sign in or call RPCs. An
-            app with neither `oauth=...`
-            nor `allowed_origins` keeps serving permissive CORS (any
-            origin): without browser credentials there is nothing an
-            allow-list would protect.
-
-            Two environment-driven defaults sit on top of this:
-
-            - **Dev (`rbt dev run`)**: `http://localhost(:*)?` and
-              `http://127.0.0.1(:*)?` are allowed automatically, so
-              a Vite/webpack/parcel dev server on any port works
-              without ceremony.
-
-            - **Prod with `oauth=...`**: omitting `allowed_origins`
-              entirely (leaving it at the default `None`) is a
-              hard error at construction time. Pass `[]` explicitly
-              to opt into same-origin-only browser auth; pass the
-              SPA's real origin to enable cross-origin sign-in. The
-              default-None case almost always means "the developer
-              forgot", and we'd rather raise loudly than silently
-              CORS-block every sign-in attempt in production.
-        :param native_redirect_uris: exact-match list of the redirect
-            URIs belonging to this application's own first-party
-            native apps — a mobile app's custom scheme (e.g.
-            `"myapp://redirect"`), or an `https://` App Link /
-            Universal Link. A native app cannot use the browser
-            sign-in flow (there is no page to redirect and no cookie
-            jar to hold the session), so it registers itself
-            dynamically (RFC 7591) and completes an ordinary
-            authorization-code flow with PKCE instead.
-
-            Registration proves nothing about who is registering, so
-            by default such a client is treated as third-party: the
-            user is shown a consent screen naming it, and the flow
-            only continues once they approve. That screen is what
-            stands between a user and an attacker who registers a
-            client with *their own* `redirect_uri`, sends the user an
-            `/__/oauth/authorize` link on this trusted origin, and
-            collects an access token for the user's identity once
-            they sign in. PKCE is no help there, because in that
-            attack the attacker is the registered client.
-
-            Listing a redirect URI here says it is yours, so a client
-            that registers only such URIs signs the user in directly,
-            with no consent screen — the same treatment the browser
-            SPA gets. It is safe for exactly one reason: an
-            authorization code issued for one of these URIs is
-            delivered to *your* app, so an attacker registering the
-            same URI gains nothing. Entries are therefore compared for
-            exact equality, and wildcards are refused.
-
-            Under `rbt dev run`, Expo's `exp://<host>/--/...`
-            development URIs are trusted automatically, because they
-            carry the development machine's address and port and so
-            have no stable spelling to list here.
-
-            Note that a custom scheme is claimed on a first-come basis
-            on some platforms, so a hostile app on the same device can
-            register `myapp://` too. PKCE contains that: the code it
-            intercepts is useless without the verifier, which never
-            leaves your app. An `https://` App Link / Universal Link,
-            which the operating system verifies against your domain,
-            avoids the race entirely and is the stronger choice where
-            you can use one.
+        :param oauth: an `OAuth` describing how users sign in:
+            the provider that identifies them, the browser
+            origins allowed to carry credentials, and the
+            redirect URIs whose clients skip the consent screen.
+            See `OAuth` for what each of those means. May be
+            combined with `token_verifier`; see there for the
+            ordering semantics.
         :param title: a human-readable name for the application.
             Defaults to `application_name()` if unset.
         :param description: a human-readable description of the
@@ -378,12 +304,33 @@ class Application:
         transaction and ensure that the transaction has finished before
         serving any other calls on the servicers.
         """
-        # NOTE: `oauth` is an `OAuthProviderSelector`, resolved lazily
-        # in `_mount_oauth` whenever it is configured, mounting the
-        # OAuth server even for an app with nothing to auto-construct.
-        # An app with a `User`-typed auto-construct servicer but no
-        # `oauth=` fails to start: a `token_verifier=` authenticates
+        # NOTE: `oauth.provider` is an `OAuthProviderSelector`,
+        # resolved lazily in `_mount_oauth` whenever it is
+        # configured, mounting the OAuth server even for an app
+        # with nothing to auto-construct. An app with a
+        # `User`-typed auto-construct servicer but no `oauth=`
+        # fails to start: a `token_verifier=` authenticates
         # requests but never auto-constructs those users.
+
+        if allowed_origins is not None:
+            raise InputError(
+                reason=(
+                    "`Application(allowed_origins=...)` is now "
+                    "`OAuth(allowed_origins=...)`: pass it inside the "
+                    "`oauth=` argument, e.g. `Application(oauth=OAuth("
+                    "provider=..., allowed_origins=[...]))`."
+                ),
+            )
+        if native_redirect_uris is not None:
+            raise InputError(
+                reason=(
+                    "`Application(native_redirect_uris=...)` is now "
+                    "`OAuth(skip_consent_for_redirect_uris=...)`: pass "
+                    "it inside the `oauth=` argument, e.g. "
+                    "`Application(oauth=OAuth(provider=..., "
+                    "skip_consent_for_redirect_uris=[...]))`."
+                ),
+            )
 
         # Get all libraries including required dependent libraries.
         if libraries is not None:
@@ -489,16 +436,17 @@ class Application:
         # gap is caught before `rbt cloud up`.
         if (
             oauth is not None and
-            oauth.requires_allowed_origins_in_production() and
-            allowed_origins is None
+            oauth.provider.requires_allowed_origins_in_production() and
+            oauth.allowed_origins is None
         ):
             if not running_rbt_dev():
                 raise InputError(
                     reason=(
-                        "`Application(oauth=...)` requires "
-                        "`allowed_origins=[...]` to be set explicitly "
-                        "in production. List the SPA's origin (e.g. "
-                        "`['https://app.example.com']`), or pass an "
+                        "`OAuth` requires `allowed_origins=[...]` to "
+                        "be set explicitly in production. List the "
+                        "SPA's origin (e.g. "
+                        "`OAuth(..., allowed_origins=["
+                        "'https://app.example.com'])`), or pass an "
                         "empty list `allowed_origins=[]` to opt into "
                         "same-origin-only browser auth. The default "
                         "(`None`) is forbidden in production because "
@@ -508,88 +456,35 @@ class Application:
                         "(`rbt dev run`) the default is honored — "
                         "`http://localhost(:*)?` is allowed "
                         "automatically. See the "
-                        "`Application.allowed_origins` docstring for "
-                        "the JWT-exfiltration argument behind the "
+                        "`OAuth.allowed_origins` docstring for the "
+                        "JWT-exfiltration argument behind the "
                         "exact-match requirement."
                     ),
                 )
             logger.warning(
                 "`Application(oauth=...)` is running without "
-                "`allowed_origins=[...]`. Under `rbt dev run` that "
-                "works — `http://localhost(:*)?` is allowed "
+                "`OAuth(allowed_origins=[...])`. Under `rbt dev run` "
+                "that works — `http://localhost(:*)?` is allowed "
                 "automatically — but the same configuration will fail "
                 "to deploy to production. Before `rbt cloud up`, list "
-                "the SPA's origin (e.g. `['https://app.example.com']`), "
-                "or pass an empty list `allowed_origins=[]` to opt "
-                "into same-origin-only browser auth."
+                "the SPA's origin (e.g. "
+                "`OAuth(..., allowed_origins=["
+                "'https://app.example.com'])`), or pass an empty "
+                "list `allowed_origins=[]` to opt into "
+                "same-origin-only browser auth."
             )
         # `None` — kept distinct from an empty list — means the
-        # application has no credentialed browser traffic to protect
-        # (neither `oauth=` nor `allowed_origins`), and CORS stays
-        # permissive. Once the app has either, the exact-match
+        # application has no credentialed browser traffic to
+        # protect (no `oauth=`), and CORS stays permissive. Once
+        # the application has an `OAuth`, its exact-match
         # allow-list (possibly empty) applies.
-        self._allowed_origins: Optional[list[str]] = (
-            None if allowed_origins is None and oauth is None else
-            list(allowed_origins or [])
-        )
-        # Light validation: surface obvious typos at construction
-        # rather than waiting for a browser to silently fail a CORS
-        # preflight at runtime.
-        for origin in self._allowed_origins or []:
-            if not isinstance(origin, str):
-                raise ValueError(
-                    "`allowed_origins` must be a list of strings; "
-                    f"got entry of type {type(origin).__name__}"
-                )
-            if not (
-                origin.startswith("http://") or origin.startswith("https://")
-            ):
-                raise ValueError(
-                    f"`allowed_origins` entry {origin!r} must be a full "
-                    "origin starting with 'http://' or 'https://' (e.g. "
-                    "'https://app.example.com'); paths, wildcards, and "
-                    "bare hostnames are not accepted"
-                )
-            if origin.endswith("/"):
-                raise ValueError(
-                    f"`allowed_origins` entry {origin!r} must not have "
-                    "a trailing slash (CORS `Origin` headers never carry "
-                    "one)"
-                )
-            # Reject anything beyond `scheme://host[:port]` — a path,
-            # query, or fragment would slip past validation but never
-            # match the browser's `Origin: scheme://host[:port]` header
-            # at Envoy's exact-match CORS filter, producing a silent
-            # cross-origin block with no diagnostic.
-            parsed = urlparse(origin)
-            if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
-                raise ValueError(
-                    f"`allowed_origins` entry {origin!r} must be just "
-                    "an origin (`scheme://host[:port]`) — no path, "
-                    "query string, or fragment. CORS `Origin` headers "
-                    "never carry them, so an entry with a path would "
-                    "never match."
-                )
-        # Only meaningful alongside an OAuth server; without one there
-        # is no registration for the list to classify, so a lone
-        # `native_redirect_uris` is a config mistake worth surfacing
-        # rather than silently ignoring.
-        if native_redirect_uris is not None and oauth is None:
-            raise InputError(
-                reason=(
-                    "`Application(native_redirect_uris=...)` requires "
-                    "`oauth=...`: it marks which OAuth clients are "
-                    "your own first-party native apps, and without an "
-                    "OAuth provider this application has no OAuth "
-                    "clients."
-                ),
+        self._allowed_origins: Optional[list[str]] = None
+        self._skip_consent_for_redirect_uris: list[str] = []
+        if oauth is not None:
+            self._allowed_origins = list(oauth.allowed_origins or [])
+            self._skip_consent_for_redirect_uris = list(
+                oauth.skip_consent_for_redirect_uris
             )
-        self._native_redirect_uris: list[str] = list(
-            native_redirect_uris or []
-        )
-        validate_redirect_uris(
-            self._native_redirect_uris, "native_redirect_uris"
-        )
         self._title = title or application_name()
         self._description = description
         self._example_prompts = example_prompts or []
@@ -742,7 +637,7 @@ class Application:
             # environment, so resolve it here too: a selector with no
             # provider for this environment (e.g. `prod=None`) fails
             # the config pod with the selector's actionable message.
-            self._oauth.get()
+            self._oauth.provider.get()
 
     def _require_oauth_for_auto_construct(self) -> None:
         """Fail fast if the application has auto-construct servicers but
@@ -768,8 +663,8 @@ class Application:
                 "construct. A `token_verifier=` authenticates requests but "
                 "never auto-constructs, so it can't take the place of `oauth=` "
                 "here. Configure `oauth=...`, e.g. "
-                "`Application(oauth=OAuthProviderByEnvironment(dev=..., "
-                "prod=...))`."
+                "`Application(oauth=OAuth(provider="
+                "OAuthProviderByEnvironment(dev=..., prod=...)))`."
             )
         )
 
@@ -828,7 +723,7 @@ class Application:
         # nothing for the current environment (e.g. a prod arm left
         # unset).
         if self._oauth is not None:
-            provider = self._oauth.get()
+            provider = self._oauth.provider.get()
             # A provider that stores the identity provider's tokens
             # (`store_tokens=True`) persists them via the `oauth`
             # library (which encrypts them via `ciphertext`); require
@@ -845,7 +740,9 @@ class Application:
                 authenticated=self._authenticated,
                 claims_changed=self._set_claims_if_exists,
                 allowed_origins=self._allowed_origins,
-                native_redirect_uris=self._native_redirect_uris,
+                skip_consent_for_redirect_uris=(
+                    self._skip_consent_for_redirect_uris
+                ),
             )
             self._oauth_server = oauth_server
             if self._token_verifier is not None:

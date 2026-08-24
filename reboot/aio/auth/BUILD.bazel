@@ -61,12 +61,23 @@ py_library(
 )
 
 py_library(
-    name = "native_redirect_uris_py",
-    srcs = ["native_redirect_uris.py"],
+    name = "redirect_uris_py",
+    srcs = ["redirect_uris.py"],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
         "//reboot:run_environments_py",
+    ],
+)
+
+py_library(
+    name = "oauth_py",
+    srcs = ["oauth.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":oauth_providers_py",
+        ":redirect_uris_py",
     ],
 )
 
@@ -100,8 +111,8 @@ py_library(
     deps = [
         ":__init___py",
         ":allowed_origins_py",
-        ":native_redirect_uris_py",
         ":oauth_providers_py",
+        ":redirect_uris_py",
         ":token_verifiers_py",
         "//reboot:settings_py",
         "//reboot/aio:http_py",
@@ -120,9 +131,10 @@ py_library(
         ":__init___py",
         ":admin_auth_py",
         ":authorizers_py",
-        ":native_redirect_uris_py",
         ":oauth_providers_py",
+        ":oauth_py",
         ":oauth_server_py",
+        ":redirect_uris_py",
         ":token_verifiers_py",
     ],
 )

@@ -1,28 +1,29 @@
-"""The set of native redirect URIs an application claims as its own.
+"""The redirect URIs an application signs users in to without asking
+them to approve the client first.
 
-A mobile or desktop app signs in through the same OAuth authorization
-server as an MCP client does, registering itself dynamically (RFC 7591)
-and receiving the authorization code at a redirect URI of its own —
-typically a custom scheme like `myapp://redirect`. Nothing about that
-registration proves who registered, so by default the user is asked to
-vouch for the client on the consent screen before the flow continues.
+A client that Reboot has not met before registers itself dynamically
+(RFC 7591) and receives the authorization code at a redirect URI of
+its own — a mobile app's custom scheme like `myapp://redirect`, or an
+MCP client's URL. Nothing about that registration proves who
+registered, so by default the user is asked to vouch for the client on
+the consent screen before the flow continues.
 
 Listing a redirect URI here is the application developer stating that
-it belongs to their own first-party app, which lets sign-in skip that
-question.
+they already trust whoever receives a code there, which lets sign-in
+skip that question.
 """
 
 import re
 from reboot.run_environments import running_rbt_dev
 from typing import Sequence
 
-# Full-string regexes for the native redirect URIs that are trusted
-# automatically under `rbt dev run`. Expo (React Native's toolchain)
-# serves a project from the development machine, so the redirect URI it
-# hands the app carries that machine's address and a port — both of
-# which change with the machine, the network, and the run. There is no
-# stable string for a developer to put in
-# `Application(native_redirect_uris=...)`, so we match the shape
+# Full-string regexes for the redirect URIs that skip the consent
+# screen automatically under `rbt dev run`. Expo (React Native's
+# toolchain) serves a project from the development machine, so the
+# redirect URI it hands the app carries that machine's address and a
+# port — both of which change with the machine, the network, and the
+# run. There is no stable string for a developer to put in
+# `OAuth(skip_consent_for_redirect_uris=...)`, so we match the shape
 # instead, and only in local development.
 #
 # Deliberately specific to Expo's scheme rather than covering localhost
@@ -82,17 +83,18 @@ def validate_redirect_uris(
             )
 
 
-def is_first_party_redirect_uri(
+def skips_consent(
     redirect_uri: str,
     *,
-    native_redirect_uris: Sequence[str],
+    skip_consent_for_redirect_uris: Sequence[str],
 ) -> bool:
-    """Whether `redirect_uri` belongs to one of the application's own
-    first-party native apps: an exact match against the explicit
-    allow-list `native_redirect_uris`, or — under `rbt dev run` — a
+    """Whether a client receiving its authorization code at
+    `redirect_uri` signs users in without a consent screen: an exact
+    match against the explicit allow-list
+    `skip_consent_for_redirect_uris`, or — under `rbt dev run` — a
     development redirect URI whose shape only a local toolchain
     produces."""
-    if redirect_uri in native_redirect_uris:
+    if redirect_uri in skip_consent_for_redirect_uris:
         return True
     if running_rbt_dev():
         return any(

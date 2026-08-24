@@ -2,6 +2,7 @@ import time
 import unittest
 from reboot.aio.aborted import Aborted
 from reboot.aio.applications import Application
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import Development
 from reboot.aio.tests import OAuthProviderForTest, Reboot
 from reboot.ping.ping import CounterServicer, UserServicer
@@ -21,7 +22,7 @@ class OAuthTokenVerifierRejectionTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=OAuthProviderForTest(Development()),
+                oauth=OAuth(provider=OAuthProviderForTest(Development())),
             ),
         )
 

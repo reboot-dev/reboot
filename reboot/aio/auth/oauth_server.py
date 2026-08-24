@@ -25,7 +25,6 @@ from reboot.aio.auth import (
     Auth,
 )
 from reboot.aio.auth.allowed_origins import is_allowed_origin
-from reboot.aio.auth.native_redirect_uris import is_first_party_redirect_uri
 from reboot.aio.auth.oauth_providers import (
     ClaimsChanged,
     OAuthProvider,
@@ -33,6 +32,7 @@ from reboot.aio.auth.oauth_providers import (
     UserId,
     origin_from_request,
 )
+from reboot.aio.auth.redirect_uris import skips_consent
 from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
 from reboot.aio.contexts import ReaderContext
 from reboot.aio.external import ExternalContext
@@ -339,7 +339,7 @@ class OAuthServer:
                      Awaitable[None]]] = None,
         claims_changed: Optional[ClaimsChanged] = None,
         allowed_origins: Optional[Sequence[str]] = None,
-        native_redirect_uris: Optional[Sequence[str]] = None,
+        skip_consent_for_redirect_uris: Optional[Sequence[str]] = None,
     ):
         """`authenticated`, if given, runs right after each fresh
         access token is minted for a user, receiving an app-internal
@@ -363,18 +363,18 @@ class OAuthServer:
         was never set); browser-flow redirect targets are validated
         against the same trusted-origins set Envoy's CORS uses.
 
-        `native_redirect_uris` is
-        `Application(native_redirect_uris=...)`'s allow-list of the
-        redirect URIs belonging to the application's own first-party
-        native apps; a client registering only such URIs skips the
+        `skip_consent_for_redirect_uris` is
+        `OAuth(skip_consent_for_redirect_uris=...)`'s allow-list of
+        the redirect URIs whose clients the application already
+        trusts; a client registering only such URIs skips the
         consent screen.
         """
         self._provider = provider
         self._protected_resources = protected_resources
         self._application_title = application_title
         self._allowed_origins: list[str] = list(allowed_origins or [])
-        self._native_redirect_uris: list[str] = list(
-            native_redirect_uris or []
+        self._skip_consent_for_redirect_uris: list[str] = list(
+            skip_consent_for_redirect_uris or []
         )
         self._auto_construct_state_type_full_names: list[str] = list(
             auto_construct_state_type_full_names or []
@@ -917,21 +917,27 @@ class OAuthServer:
             "redirect_uris": redirect_uris,
         }
         # A client every one of whose redirect URIs the application
-        # claims as its own (`Application(native_redirect_uris=...)`)
-        # is a first-party native app, and `/authorize` signs its user
-        # in without a consent screen. Every URI must qualify: one
-        # unclaimed entry is enough for an authorization code to reach
-        # somebody else, and the client chooses per-request which of
-        # its registered URIs to use. The marker rides inside the
-        # signed `client_id`, so it is as unforgeable as the
-        # `redirect_uris` beside it, and it is recomputed on each
-        # registration rather than trusted from the request.
+        # already trusts (`OAuth(skip_consent_for_redirect_uris=...)`)
+        # signs its user in without a consent screen. Every URI must
+        # qualify: one unclaimed entry is enough for an authorization
+        # code to reach somebody else, and the client chooses
+        # per-request which of its registered URIs to use. The marker
+        # rides inside the signed `client_id`, so it is as
+        # unforgeable as the `redirect_uris` beside it, and it is
+        # recomputed on each registration rather than trusted from
+        # the request.
         if all(
-            isinstance(redirect_uri, str) and is_first_party_redirect_uri(
+            isinstance(redirect_uri, str) and skips_consent(
                 redirect_uri,
-                native_redirect_uris=self._native_redirect_uris,
+                skip_consent_for_redirect_uris=(
+                    self._skip_consent_for_redirect_uris
+                ),
             ) for redirect_uri in redirect_uris
         ):
+            # Spelled `first_party` because it is baked into every
+            # `client_id` already signed and handed out; the
+            # allow-list that decides it is
+            # `skip_consent_for_redirect_uris`.
             client_metadata["first_party"] = True
         # RFC 7591 client metadata we surface on the consent screen so a
         # user can recognize who's asking. Optional and
@@ -1040,7 +1046,7 @@ class OAuthServer:
         # `/__/oauth/start` is server-minted with a fixed, same-origin
         # `redirect_uri`. A native client is one whose every registered
         # redirect URI the application claimed via
-        # `Application(native_redirect_uris=...)`, checked at
+        # `OAuth(skip_consent_for_redirect_uris=...)`, checked at
         # registration and carried in the signed `client_id`. Either
         # way the authorization code can only land somewhere the
         # application already trusts, so the confused-deputy attack the

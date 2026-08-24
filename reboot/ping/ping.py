@@ -7,6 +7,7 @@ from datetime import timedelta
 from rbt.v1alpha1.errors_pb2 import Ok, PermissionDenied, Unauthenticated
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow, allow_if, is_app_internal
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import (
     Development,
     OAuthProviderByEnvironment,
@@ -300,19 +301,22 @@ async def main():
         # We choose to not call the initialization method
         # `initialize`, to exercise that that is allowed.
         initialize=start_periodic_ping,
-        oauth=OAuthProviderByEnvironment(
-            dev=dev_oauth,
-            # "Production" for this application is our local Reboot
-            # clusters; that's still a development environment.
-            prod=dev_oauth,
+        oauth=OAuth(
+            provider=OAuthProviderByEnvironment(
+                dev=dev_oauth,
+                # "Production" for this application is our local Reboot
+                # clusters; that's still a development environment.
+                prod=dev_oauth,
+            ),
+            # An example trusted browser origin, permitted to make
+            # credentialed cross-origin calls (carrying the
+            # `rbt_session` cookie) to this backend. It's here to
+            # support
+            # `//tests/infrastructure/clusters/local:cluster_tests_py`,
+            # which asserts that a Kubernetes deploy of this app turns
+            # it into an exact-match Envoy CORS policy.
+            allowed_origins=["https://app.example.com"],
         ),
-        # An example trusted browser origin, permitted to make
-        # credentialed cross-origin calls (carrying the `rbt_session`
-        # cookie) to this backend. It's here to support
-        # `//tests/infrastructure/clusters/local:cluster_tests_py`,
-        # which asserts that a Kubernetes deploy of this app turns it
-        # into an exact-match Envoy CORS policy.
-        allowed_origins=["https://app.example.com"],
     )
     await application.run()
 

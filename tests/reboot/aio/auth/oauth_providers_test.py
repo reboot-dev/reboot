@@ -13,6 +13,7 @@ from mcp.client.streamable_http import streamable_http_client
 from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager, OAuthTokens
 from reboot.aio.aborted import Aborted
 from reboot.aio.applications import Application
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import (
     Anonymous,
     Auth0,
@@ -110,7 +111,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=OAuthProviderForTest(Development()),
+                oauth=OAuth(provider=OAuthProviderForTest(Development())),
             ),
         )
 
@@ -259,7 +260,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=OAuthProviderForTest(Development()),
+                oauth=OAuth(provider=OAuthProviderForTest(Development())),
             ),
         )
 
@@ -399,15 +400,17 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         ("phishing aid": no tokens leak, but trust transfers).
         Same-origin relative paths are accepted unconditionally;
         absolute URLs are accepted only when their origin is trusted
-        (listed in `Application(allowed_origins=...)`, the backend's
+        (listed in `OAuth(allowed_origins=...)`, the backend's
         own origin, or localhost under `rbt dev run`); everything
         else is 400.
         """
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=OAuthProviderForTest(Development()),
-                allowed_origins=["https://spa.example"],
+                oauth=OAuth(
+                    provider=OAuthProviderForTest(Development()),
+                    allowed_origins=["https://spa.example"],
+                ),
             ),
         )
         start_url = self.rbt.http_localhost_url("/__/oauth/start")
@@ -497,8 +500,10 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=OAuthProviderForTest(Development()),
-                allowed_origins=["https://spa.example"],
+                oauth=OAuth(
+                    provider=OAuthProviderForTest(Development()),
+                    allowed_origins=["https://spa.example"],
+                ),
             ),
         )
         signout_url = self.rbt.http_localhost_url("/__/oauth/signout")
@@ -531,8 +536,10 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=OAuthProviderForTest(Development()),
-                allowed_origins=["https://spa.example"],
+                oauth=OAuth(
+                    provider=OAuthProviderForTest(Development()),
+                    allowed_origins=["https://spa.example"],
+                ),
             ),
         )
         refresh_url = self.rbt.http_localhost_url("/__/oauth/refresh")
@@ -571,7 +578,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=OAuthProviderForTest(Development()),
+                oauth=OAuth(provider=OAuthProviderForTest(Development())),
             ),
         )
         finish_url = self.rbt.http_localhost_url("/__/oauth/finish")
@@ -616,7 +623,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=OAuthProviderForTest(Development()),
+                oauth=OAuth(provider=OAuthProviderForTest(Development())),
             ),
         )
 
@@ -750,7 +757,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=OAuthProviderForTest(Development()),
+                oauth=OAuth(provider=OAuthProviderForTest(Development())),
             ),
         )
 
@@ -844,7 +851,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=OAuthProviderForTest(Development()),
+                oauth=OAuth(provider=OAuthProviderForTest(Development())),
             ),
         )
 
@@ -892,7 +899,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=OAuthProviderForTest(Development()),
+                oauth=OAuth(provider=OAuthProviderForTest(Development())),
             ),
         )
         result = await Development(
@@ -988,14 +995,17 @@ class UserWithoutOAuthTest(unittest.IsolatedAsyncioTestCase):
         """
         application = Application(
             servicers=[UserServicer, CounterServicer],
-            oauth=OAuthProviderByEnvironment(
-                dev=Development(),
-                prod=None,
+            oauth=OAuth(
+                provider=OAuthProviderByEnvironment(
+                    dev=Development(),
+                    prod=None,
+                ),
+                # Same-origin-only browser auth: this test
+                # exercises selector resolution, and `oauth=`
+                # requires an explicit `allowed_origins` choice
+                # outside `rbt dev run`.
+                allowed_origins=[],
             ),
-            # Same-origin-only browser auth: this test exercises
-            # selector resolution, and `oauth=` requires an explicit
-            # `allowed_origins` choice outside `rbt dev run`.
-            allowed_origins=[],
         )
         with mock.patch(
             "reboot.aio.auth.oauth_providers.running_rbt_dev",
@@ -1038,7 +1048,9 @@ class ConsentScreenTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=OAuthProviderForTest(provider or Anonymous()),
+                oauth=OAuth(
+                    provider=OAuthProviderForTest(provider or Anonymous())
+                ),
                 title=title,
             ),
         )
@@ -1274,12 +1286,12 @@ class ConsentScreenTest(unittest.IsolatedAsyncioTestCase):
 class FirstPartyNativeClientTest(unittest.IsolatedAsyncioTestCase):
     """A native app can't use the browser sign-in flow, so it registers
     dynamically and is third-party by default — consent screen and all.
-    `Application(native_redirect_uris=...)` is the application declaring
-    which redirect URIs are its own apps', which lets those clients sign
-    the user in directly.
+    `OAuth(skip_consent_for_redirect_uris=...)` is the application
+    declaring which redirect URIs it already trusts, which lets those
+    clients sign the user in directly.
     """
 
-    _NATIVE_REDIRECT_URI = "bankpydanticmobile://redirect"
+    _SKIP_CONSENT_REDIRECT_URI = "bankpydanticmobile://redirect"
 
     async def asyncSetUp(self):
         self.rbt = Reboot()
@@ -1288,12 +1300,20 @@ class FirstPartyNativeClientTest(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.rbt.stop()
 
-    async def _up(self, *, native_redirect_uris: Optional[list[str]]) -> None:
+    async def _up(
+        self,
+        *,
+        skip_consent_for_redirect_uris: Optional[list[str]],
+    ) -> None:
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=OAuthProviderForTest(Development()),
-                native_redirect_uris=native_redirect_uris,
+                oauth=OAuth(
+                    provider=OAuthProviderForTest(Development()),
+                    skip_consent_for_redirect_uris=(
+                        skip_consent_for_redirect_uris or []
+                    ),
+                ),
             ),
         )
 
@@ -1342,16 +1362,18 @@ class FirstPartyNativeClientTest(unittest.IsolatedAsyncioTestCase):
         # The whole point: a client registering only a claimed redirect
         # URI goes straight to the identity provider, exactly as the
         # browser SPA does, with no consent screen in between.
-        await self._up(native_redirect_uris=[self._NATIVE_REDIRECT_URI])
+        await self._up(
+            skip_consent_for_redirect_uris=[self._SKIP_CONSENT_REDIRECT_URI]
+        )
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             client_id = await self._register(
                 client,
-                redirect_uris=[self._NATIVE_REDIRECT_URI],
+                redirect_uris=[self._SKIP_CONSENT_REDIRECT_URI],
             )
             response = await self._authorize(
                 client,
                 client_id=client_id,
-                redirect_uri=self._NATIVE_REDIRECT_URI,
+                redirect_uri=self._SKIP_CONSENT_REDIRECT_URI,
             )
             self.assertEqual(response.status_code, 302, response.text)
             self.assertIn("/__/oauth/dev-login", response.headers["location"])
@@ -1360,7 +1382,9 @@ class FirstPartyNativeClientTest(unittest.IsolatedAsyncioTestCase):
         # An app that registers a redirect URI the application never
         # claimed is exactly the attacker the consent screen exists
         # for, so it gets one.
-        await self._up(native_redirect_uris=[self._NATIVE_REDIRECT_URI])
+        await self._up(
+            skip_consent_for_redirect_uris=[self._SKIP_CONSENT_REDIRECT_URI]
+        )
         attacker_redirect_uri = "evilapp://redirect"
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             client_id = await self._register(
@@ -1380,13 +1404,15 @@ class FirstPartyNativeClientTest(unittest.IsolatedAsyncioTestCase):
         # buy first-party treatment: the client picks which of its
         # registered URIs to use per request, so it could then have the
         # authorization code delivered to the unclaimed one.
-        await self._up(native_redirect_uris=[self._NATIVE_REDIRECT_URI])
+        await self._up(
+            skip_consent_for_redirect_uris=[self._SKIP_CONSENT_REDIRECT_URI]
+        )
         attacker_redirect_uri = "evilapp://redirect"
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             client_id = await self._register(
                 client,
                 redirect_uris=[
-                    self._NATIVE_REDIRECT_URI,
+                    self._SKIP_CONSENT_REDIRECT_URI,
                     attacker_redirect_uri,
                 ],
             )
@@ -1401,16 +1427,16 @@ class FirstPartyNativeClientTest(unittest.IsolatedAsyncioTestCase):
     async def test_without_the_allow_list_every_client_sees_consent(self):
         # The default is unchanged: with nothing claimed, the same
         # registration that skips consent above does not.
-        await self._up(native_redirect_uris=None)
+        await self._up(skip_consent_for_redirect_uris=None)
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             client_id = await self._register(
                 client,
-                redirect_uris=[self._NATIVE_REDIRECT_URI],
+                redirect_uris=[self._SKIP_CONSENT_REDIRECT_URI],
             )
             response = await self._authorize(
                 client,
                 client_id=client_id,
-                redirect_uri=self._NATIVE_REDIRECT_URI,
+                redirect_uri=self._SKIP_CONSENT_REDIRECT_URI,
             )
             self.assertEqual(response.status_code, 200, response.text)
 
@@ -1418,7 +1444,7 @@ class FirstPartyNativeClientTest(unittest.IsolatedAsyncioTestCase):
         # Expo's development redirect URI carries the development
         # machine's address, so it has no stable spelling to claim and
         # is instead trusted by shape — but only under `rbt dev run`.
-        await self._up(native_redirect_uris=[])
+        await self._up(skip_consent_for_redirect_uris=[])
         expo_redirect_uri = "exp://192.168.1.7:8081/--/redirect"
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             with mock.patch.dict(os.environ, {ENVVAR_RBT_DEV: "true"}):
@@ -1455,20 +1481,22 @@ class FirstPartyNativeClientTest(unittest.IsolatedAsyncioTestCase):
         # as a bearer. That is how the app learns which state ids are
         # its user's without hardcoding the auto-construct state
         # types.
-        await self._up(native_redirect_uris=[self._NATIVE_REDIRECT_URI])
+        await self._up(
+            skip_consent_for_redirect_uris=[self._SKIP_CONSENT_REDIRECT_URI]
+        )
         base = self.rbt.http_localhost_url("")
         code_verifier = "verifier"
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             client_id = await self._register(
                 client,
-                redirect_uris=[self._NATIVE_REDIRECT_URI],
+                redirect_uris=[self._SKIP_CONSENT_REDIRECT_URI],
             )
             # Sign in: `/authorize` goes straight to the dev-login
             # page, whose per-identity link is the OAuth callback.
             response = await self._authorize(
                 client,
                 client_id=client_id,
-                redirect_uri=self._NATIVE_REDIRECT_URI,
+                redirect_uri=self._SKIP_CONSENT_REDIRECT_URI,
             )
             self.assertEqual(response.status_code, 302, response.text)
             response = await client.get(response.headers["location"])
@@ -1488,7 +1516,7 @@ class FirstPartyNativeClientTest(unittest.IsolatedAsyncioTestCase):
                     "grant_type": "authorization_code",
                     "code": code,
                     "client_id": client_id,
-                    "redirect_uri": self._NATIVE_REDIRECT_URI,
+                    "redirect_uri": self._SKIP_CONSENT_REDIRECT_URI,
                     "code_verifier": code_verifier,
                 },
             )
@@ -1519,7 +1547,7 @@ class FirstPartyNativeClientTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(state_id, user_id)
 
     async def test_whoami_refuses_a_bogus_bearer(self):
-        await self._up(native_redirect_uris=[])
+        await self._up(skip_consent_for_redirect_uris=[])
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             response = await client.get(
                 self.rbt.http_localhost_url("/__/oauth/whoami"),
@@ -1534,7 +1562,7 @@ class FirstPartyNativeClientTest(unittest.IsolatedAsyncioTestCase):
         # widens to it in development: a developer whose MCP client
         # skipped consent locally would meet the screen for the first
         # time in production.
-        await self._up(native_redirect_uris=[])
+        await self._up(skip_consent_for_redirect_uris=[])
         localhost_redirect_uri = "http://localhost:33418/oauth/callback"
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             with mock.patch.dict(os.environ, {ENVVAR_RBT_DEV: "true"}):
@@ -1550,21 +1578,23 @@ class FirstPartyNativeClientTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code, 200, response.text)
 
 
-class NativeRedirectUrisValidationTest(unittest.TestCase):
-    """`Application(native_redirect_uris=...)` decides whose clients skip
-    the consent screen, so entries that could never mean what their
-    author intended are refused at construction rather than silently
-    never matching."""
+class SkipConsentForRedirectUrisValidationTest(unittest.TestCase):
+    """`OAuth(skip_consent_for_redirect_uris=...)` decides whose
+    clients skip the consent screen, so entries that could never mean
+    what their author intended are refused at construction rather than
+    silently never matching."""
 
-    def _application(self, native_redirect_uris: list[str]) -> Application:
-        return Application(
-            servicers=[UserServicer, CounterServicer],
-            oauth=OAuthProviderForTest(Development()),
-            native_redirect_uris=native_redirect_uris,
+    def _oauth(
+        self,
+        skip_consent_for_redirect_uris: list[str],
+    ) -> OAuth:
+        return OAuth(
+            provider=OAuthProviderForTest(Development()),
+            skip_consent_for_redirect_uris=skip_consent_for_redirect_uris,
         )
 
     def test_accepts_custom_scheme_and_app_link(self):
-        self._application(
+        self._oauth(
             [
                 "bankpydanticmobile://redirect",
                 "https://app.example.com/redirect",
@@ -1573,34 +1603,118 @@ class NativeRedirectUrisValidationTest(unittest.TestCase):
 
     def test_rejects_uri_without_a_scheme(self):
         with self.assertRaises(ValueError) as context:
-            self._application(["redirect"])
+            self._oauth(["redirect"])
         self.assertIn("must be a full URI", str(context.exception))
 
     def test_rejects_wildcard(self):
         # A wildcard would hand authorization codes for real users to
         # whatever matched it.
         with self.assertRaises(ValueError) as context:
-            self._application(["myapp://*"])
+            self._oauth(["myapp://*"])
         self.assertIn("wildcard", str(context.exception))
 
     def test_rejects_forbidden_scheme(self):
         with self.assertRaises(ValueError) as context:
-            self._application(["javascript://redirect"])
+            self._oauth(["javascript://redirect"])
         self.assertIn("forbidden", str(context.exception))
 
     def test_rejects_non_string_entry(self):
         with self.assertRaises(ValueError) as context:
-            self._application([None])  # type: ignore[list-item]
+            self._oauth([None])  # type: ignore[list-item]
         self.assertIn("must be a list of strings", str(context.exception))
 
-    def test_requires_oauth(self):
-        # Without an OAuth server there are no clients to classify.
+
+class AllowedOriginsValidationTest(unittest.TestCase):
+    """`OAuth(allowed_origins=...)` entries are matched exactly against
+    the browser's `Origin` header at Envoy's CORS filter, so an entry
+    that could never match one is refused at construction rather than
+    silently blocking every cross-origin request it was meant to
+    allow."""
+
+    def _oauth(self, allowed_origins: list[str]) -> OAuth:
+        return OAuth(
+            provider=OAuthProviderForTest(Development()),
+            allowed_origins=allowed_origins,
+        )
+
+    def test_accepts_origins_with_and_without_a_port(self):
+        self._oauth(["https://app.example.com", "http://localhost:3000"])
+
+    def test_accepts_an_empty_list(self):
+        # Same-origin-only browser auth is an explicit, valid choice.
+        self._oauth([])
+
+    def test_rejects_origin_without_a_scheme(self):
+        with self.assertRaises(ValueError) as context:
+            self._oauth(["app.example.com"])
+        self.assertIn("must be a full origin", str(context.exception))
+
+    def test_rejects_trailing_slash(self):
+        # An `Origin` header never carries one, so this would never
+        # match.
+        with self.assertRaises(ValueError) as context:
+            self._oauth(["https://app.example.com/"])
+        self.assertIn("trailing slash", str(context.exception))
+
+    def test_rejects_origin_with_a_path(self):
+        with self.assertRaises(ValueError) as context:
+            self._oauth(["https://app.example.com/app"])
+        self.assertIn("must be just", str(context.exception))
+
+    def test_rejects_origin_with_query_or_fragment(self):
+        for origin in (
+            "https://app.example.com?a=b",
+            "https://app.example.com#frag",
+        ):
+            with self.assertRaises(ValueError) as context:
+                self._oauth([origin])
+            self.assertIn("must be just", str(context.exception))
+
+    def test_rejects_non_string_entry(self):
+        with self.assertRaises(ValueError) as context:
+            self._oauth([None])  # type: ignore[list-item]
+        self.assertIn("must be a list of strings", str(context.exception))
+
+
+class OAuthIsImmutableTest(unittest.TestCase):
+    """`OAuth` is frozen, so an application's trusted origins can't be
+    widened through a reference the caller kept."""
+
+    def test_sequences_are_copied_and_hashable(self):
+        origins = ["https://app.example.com"]
+        oauth = OAuth(
+            provider=OAuthProviderForTest(Development()),
+            allowed_origins=origins,
+        )
+        origins.append("https://evil.example")
+        self.assertEqual(oauth.allowed_origins, ("https://app.example.com",))
+        # A frozen dataclass advertises `__hash__`; holding tuples is
+        # what makes that promise true.
+        hash(oauth)
+
+
+class RemovedApplicationParametersTest(unittest.TestCase):
+    """The OAuth options moved onto `OAuth`, so an application still
+    passing them to `Application` is told where they went."""
+
+    def test_allowed_origins_names_its_replacement(self):
+        with self.assertRaises(InputError) as context:
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                allowed_origins=["https://app.example.com"],
+            )
+        self.assertIn("`OAuth(allowed_origins=...)`", str(context.exception))
+
+    def test_native_redirect_uris_names_its_replacement(self):
         with self.assertRaises(InputError) as context:
             Application(
                 servicers=[UserServicer, CounterServicer],
                 native_redirect_uris=["myapp://redirect"],
             )
-        self.assertIn("requires `oauth=...`", str(context.exception))
+        self.assertIn(
+            "`OAuth(skip_consent_for_redirect_uris=...)`",
+            str(context.exception),
+        )
 
 
 class GoogleValidateTest(unittest.TestCase):
@@ -2245,13 +2359,15 @@ class OryWebhookTest(unittest.IsolatedAsyncioTestCase):
                     AutoConstructUserServicer,
                     AutoConstructProfileServicer,
                 ],
-                oauth=OAuthProviderForTest(
-                    Ory(
-                        domain="slug.projects.oryapis.com",
-                        client_id="id",
-                        client_secret="secret",
-                        claims=["email", "email_verified"],
-                        webhook_secret=webhook_secret,
+                oauth=OAuth(
+                    provider=OAuthProviderForTest(
+                        Ory(
+                            domain="slug.projects.oryapis.com",
+                            client_id="id",
+                            client_secret="secret",
+                            claims=["email", "email_verified"],
+                            webhook_secret=webhook_secret,
+                        )
                     )
                 ),
             )
@@ -2892,7 +3008,9 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
                     ciphertext_library(),
                     ordered_map_library()
                 ],
-                oauth=OAuthProviderForTest(_FakeStoringProvider()),
+                oauth=OAuth(
+                    provider=OAuthProviderForTest(_FakeStoringProvider())
+                ),
             ),
         )
         context = self.rbt.create_external_context(
@@ -2970,7 +3088,7 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
                     ciphertext_library(),
                     ordered_map_library()
                 ],
-                oauth=OAuthProviderForTest(provider),
+                oauth=OAuth(provider=OAuthProviderForTest(provider)),
             ),
         )
 
@@ -3004,7 +3122,7 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
                     ciphertext_library(),
                     ordered_map_library()
                 ],
-                oauth=OAuthProviderForTest(provider),
+                oauth=OAuth(provider=OAuthProviderForTest(provider)),
             ),
         )
 
@@ -3272,7 +3390,7 @@ class ClaimsDeliveryTest(unittest.IsolatedAsyncioTestCase):
                     AutoConstructUserServicer,
                     AutoConstructProfileServicer,
                 ],
-                oauth=OAuthProviderForTest(self.provider),
+                oauth=OAuth(provider=OAuthProviderForTest(self.provider)),
             ),
         )
 

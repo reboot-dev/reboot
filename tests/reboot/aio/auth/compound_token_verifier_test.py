@@ -3,6 +3,7 @@ import unittest
 from rbt.v1alpha1.errors_pb2 import Unauthenticated
 from reboot.aio.applications import Application
 from reboot.aio.auth import Auth
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import Development
 from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
 from reboot.aio.contexts import ReaderContext
@@ -40,7 +41,7 @@ class CompoundTokenVerifierTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=OAuthProviderForTest(Development()),
+                oauth=OAuth(provider=OAuthProviderForTest(Development())),
                 token_verifier=_BearerIsUserIdForTest(),
             ),
         )

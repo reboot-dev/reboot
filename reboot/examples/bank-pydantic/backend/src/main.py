@@ -6,6 +6,7 @@ from constants import SINGLETON_BANK_ID
 from customer_servicer import CustomerServicer
 from example_prompts import example_prompts
 from reboot.aio.applications import Application
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import (
     Development,
     OAuthProviderByEnvironment,
@@ -30,22 +31,26 @@ async def main():
         ],
         # The `User` type is auto-constructed per authenticated user,
         # which requires an OAuth provider to identify users.
-        oauth=OAuthProviderByEnvironment(
-            dev=Development(),
-            # TODO: set a real provider (e.g. `Google(...)`) before
-            # production; `prod=None` makes a production deployment fail
-            # to start until one is chosen.
-            prod=None,
+        oauth=OAuth(
+            provider=OAuthProviderByEnvironment(
+                dev=Development(),
+                # TODO: set a real provider (e.g. `Google(...)`) before
+                # production; `prod=None` makes a production deployment
+                # fail to start until one is chosen.
+                prod=None,
+            ),
+            # The redirect URI of our own mobile app (see
+            # `frontend/mobile/`), whose users Reboot signs in without
+            # a consent screen. Without this the mobile app would be
+            # treated like any other dynamically registered client and
+            # its users would have to approve a consent screen first.
+            # Expo's development redirect URI skips consent
+            # automatically under `rbt dev run`, so this entry is what
+            # a standalone build needs.
+            skip_consent_for_redirect_uris=[
+                "bankpydanticmobile://redirect",
+            ],
         ),
-        # The redirect URI of our own mobile app (see
-        # `frontend/mobile/`), which tells Reboot that a client
-        # registering it is first-party and can sign a user in
-        # directly. Without this the mobile app would be treated like
-        # any other dynamically registered client and its users would
-        # have to approve a consent screen first. Expo's development
-        # redirect URI is trusted automatically under `rbt dev run`,
-        # so this entry is what a standalone build needs.
-        native_redirect_uris=["bankpydanticmobile://redirect"],
         # Include `SortedMap` library.
         libraries=[sorted_map_library()],
         initialize=initialize,

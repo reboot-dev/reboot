@@ -35,6 +35,9 @@ def __getattr__(name: str) -> Any:
     if name == "OAuthTokens":
         from reboot.aio.auth.oauth_providers import OAuthTokens
         return OAuthTokens
+    if name == "OAuth":
+        from reboot.aio.auth.oauth import OAuth
+        return OAuth
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
