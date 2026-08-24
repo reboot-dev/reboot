@@ -1982,13 +1982,10 @@ Napi::Value Service_constructor(const Napi::CallbackInfo& info) {
   py::object* py_service =
       RunCallbackOnPythonEventLoop([&rbt_module, &node_adaptor, &id]() {
         py::object py_module = py::module::import(rbt_module.c_str());
-        py::object py_schedule_type =
-            py_module.attr(node_adaptor.c_str()).attr("_Schedule");
         return new py::object(py_module.attr(node_adaptor.c_str())(
             // The call will stay within the same application.
             "application_id"_a = py::none(),
-            "state_id"_a = id,
-            "schedule_type"_a = py_schedule_type));
+            "state_id"_a = id));
       });
 
   Napi::External<py::object> js_external_service =

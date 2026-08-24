@@ -15294,7 +15294,7 @@ class PingBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         self,
         *,
         bearer_token: IMPORT_typing.Optional[str] = None,
-    ) -> Ping.WeakReference[Ping.WeakReference._WriterSchedule]:
+    ) -> Ping._SelfWeakReference:
         context = IMPORT_reboot_aio_contexts.Context.get()
 
         if context is None:
@@ -15303,12 +15303,11 @@ class PingBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 'are you using this class without Reboot?'
             )
 
-        return Ping.WeakReference(
+        return Ping._SelfWeakReference(
             # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
             # For now this always stays within the application that creates the context.
             application_id=None,
             state_id=context._state_ref.id,
-            schedule_type=Ping.WeakReference._WriterSchedule,
             # If the user didn't specify a bearer token we may still end up using the app-internal bearer token,
             # but that's decided at the time of the call.
             bearer_token=bearer_token,
@@ -16400,7 +16399,7 @@ class PongBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         self,
         *,
         bearer_token: IMPORT_typing.Optional[str] = None,
-    ) -> Pong.WeakReference[Pong.WeakReference._WriterSchedule]:
+    ) -> Pong._SelfWeakReference:
         context = IMPORT_reboot_aio_contexts.Context.get()
 
         if context is None:
@@ -16409,12 +16408,11 @@ class PongBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 'are you using this class without Reboot?'
             )
 
-        return Pong.WeakReference(
+        return Pong._SelfWeakReference(
             # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
             # For now this always stays within the application that creates the context.
             application_id=None,
             state_id=context._state_ref.id,
-            schedule_type=Pong.WeakReference._WriterSchedule,
             # If the user didn't specify a bearer token we may still end up using the app-internal bearer token,
             # but that's decided at the time of the call.
             bearer_token=bearer_token,
@@ -17435,7 +17433,7 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         self,
         *,
         bearer_token: IMPORT_typing.Optional[str] = None,
-    ) -> User.WeakReference[User.WeakReference._WriterSchedule]:
+    ) -> User._SelfWeakReference:
         context = IMPORT_reboot_aio_contexts.Context.get()
 
         if context is None:
@@ -17444,12 +17442,11 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 'are you using this class without Reboot?'
             )
 
-        return User.WeakReference(
+        return User._SelfWeakReference(
             # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
             # For now this always stays within the application that creates the context.
             application_id=None,
             state_id=context._state_ref.id,
-            schedule_type=User.WeakReference._WriterSchedule,
             # If the user didn't specify a bearer token we may still end up using the app-internal bearer token,
             # but that's decided at the time of the call.
             bearer_token=bearer_token,
@@ -18895,7 +18892,7 @@ class CounterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         self,
         *,
         bearer_token: IMPORT_typing.Optional[str] = None,
-    ) -> Counter.WeakReference[Counter.WeakReference._WriterSchedule]:
+    ) -> Counter._SelfWeakReference:
         context = IMPORT_reboot_aio_contexts.Context.get()
 
         if context is None:
@@ -18904,12 +18901,11 @@ class CounterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 'are you using this class without Reboot?'
             )
 
-        return Counter.WeakReference(
+        return Counter._SelfWeakReference(
             # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
             # For now this always stays within the application that creates the context.
             application_id=None,
             state_id=context._state_ref.id,
-            schedule_type=Counter.WeakReference._WriterSchedule,
             # If the user didn't specify a bearer token we may still end up using the app-internal bearer token,
             # but that's decided at the time of the call.
             bearer_token=bearer_token,
@@ -19987,8 +19983,6 @@ def ensure_has_timezone(
         return IMPORT_reboot_time_DateTimeWithTimeZone.from_datetime(when)
     return when
 
-Ping_ScheduleTypeVar = IMPORT_typing.TypeVar('Ping_ScheduleTypeVar', 'Ping.WeakReference._Schedule', 'Ping.WeakReference._WriterSchedule')
-Ping_IdempotentlyScheduleTypeVar = IMPORT_typing.TypeVar('Ping_IdempotentlyScheduleTypeVar', 'Ping.WeakReference._Schedule', 'Ping.WeakReference._WriterSchedule')
 
 Ping_UntilCallableType = IMPORT_typing.TypeVar('Ping_UntilCallableType')
 
@@ -21128,9 +21122,7 @@ class Ping:
             return False
 
 
-    class WeakReference(IMPORT_typing.Generic[Ping_ScheduleTypeVar]):
-
-        _schedule_type: type[Ping_ScheduleTypeVar]
+    class WeakReference:
 
         def __init__(
             self,
@@ -21138,7 +21130,6 @@ class Ping:
             application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId],
             state_id: IMPORT_reboot_aio_types.StateId,
             *,
-            schedule_type: type[Ping_ScheduleTypeVar],
             bearer_token: IMPORT_typing.Optional[str] = None,
             servicer: IMPORT_typing.Optional[PingBaseServicer] = None,
         ):
@@ -21147,7 +21138,6 @@ class Ping:
               Ping.__state_type_name__,
               state_id,
             )
-            self._schedule_type = schedule_type
             self._idempotency_manager: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.IdempotencyManager] = None
             self._reader_stub: IMPORT_typing.Optional[PingReaderStub] = None
             self._writer_stub: IMPORT_typing.Optional[PingWriterStub] = None
@@ -21543,14 +21533,14 @@ class Ping:
                 bearer_token=self._bearer_token,
             )
 
-        class _Idempotently(IMPORT_typing.Generic[Ping_IdempotentlyScheduleTypeVar]):
+        class _Idempotently:
 
-            _weak_reference: Ping.WeakReference[Ping_IdempotentlyScheduleTypeVar]
+            _weak_reference: Ping.WeakReference
 
             def __init__(
                 self,
                 *,
-                weak_reference: Ping.WeakReference[Ping_IdempotentlyScheduleTypeVar],
+                weak_reference: Ping.WeakReference,
                 idempotency: IMPORT_reboot_aio_idempotency.Idempotency,
             ):
                 self._weak_reference = weak_reference
@@ -21560,8 +21550,8 @@ class Ping:
                 self,
                 *,
                 when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
-            ) -> Ping_IdempotentlyScheduleTypeVar:
-                return self._weak_reference._schedule_type(
+            ) -> Ping.WeakReference._Schedule:
+                return Ping.WeakReference._Schedule(
                     self._weak_reference._application_id,
                     self._weak_reference._tasks,
                     when=when,
@@ -21797,12 +21787,26 @@ class Ping:
             # the new code.
             num_pings = NumPings
 
+        class _SelfIdempotently(_Idempotently):
+
+            def schedule(
+                self,
+                *,
+                when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
+            ) -> Ping.WeakReference._SelfSchedule:
+                return Ping.WeakReference._SelfSchedule(
+                    self._weak_reference._application_id,
+                    self._weak_reference._tasks,
+                    when=when,
+                    idempotency=self._idempotency,
+                )
+
         @IMPORT_typing.overload
-        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Ping.WeakReference._Idempotently[Ping_ScheduleTypeVar]:
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Ping.WeakReference._Idempotently:
             ...
 
         @IMPORT_typing.overload
-        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Ping.WeakReference._Idempotently[Ping_ScheduleTypeVar]:
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Ping.WeakReference._Idempotently:
             ...
 
         def idempotently(
@@ -21811,7 +21815,7 @@ class Ping:
             *,
             key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
             how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
-        ) -> Ping.WeakReference._Idempotently[Ping_ScheduleTypeVar]:
+        ) -> Ping.WeakReference._Idempotently:
             return Ping.WeakReference._Idempotently(
                 weak_reference=self,
                 idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
@@ -21999,8 +22003,8 @@ class Ping:
             self,
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
-        ) -> Ping_ScheduleTypeVar:
-            return self._schedule_type(self._application_id, self._tasks, when=when)
+        ) -> Ping.WeakReference._Schedule:
+            return Ping.WeakReference._Schedule(self._application_id, self._tasks, when=when)
 
         class _Schedule:
 
@@ -22245,10 +22249,10 @@ class Ping:
         # prevent a writer from doing a `Foo.ref()` and trying to
         # schedule. However, we want to allow a writer to schedule
         # when we are constructing a `WeakReference` from
-        # `self.ref()` so instead we return a `_WriterSchedule` to
+        # `self.ref()` so instead we return a `_SelfSchedule` to
         # provide type safety that allows a `WriterContext` to
         # schedule (for itself).
-        class _WriterSchedule:
+        class _SelfSchedule(_Schedule):
 
             def __init__(
                 self,
@@ -23080,6 +23084,39 @@ class Ping:
         # the new code.
         num_pings = NumPings
 
+    class _SelfWeakReference(WeakReference):
+
+        def schedule(
+            self,
+            *,
+            when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
+        ) -> Ping.WeakReference._SelfSchedule:
+            return Ping.WeakReference._SelfSchedule(self._application_id, self._tasks, when=when)
+
+        @IMPORT_typing.overload
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Ping.WeakReference._SelfIdempotently:
+            ...
+
+        @IMPORT_typing.overload
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Ping.WeakReference._SelfIdempotently:
+            ...
+
+        def idempotently(
+            self,
+            alias: IMPORT_typing.Optional[str] = None,
+            *,
+            key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
+            how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
+        ) -> Ping.WeakReference._SelfIdempotently:
+            return Ping.WeakReference._SelfIdempotently(
+                weak_reference=self,
+                idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
+                    alias=alias,
+                    key=key,
+                    how=how,
+                )
+            )
+
     class _Forall:
 
         _ids: IMPORT_typing.Iterable[str]
@@ -23185,7 +23222,7 @@ class Ping:
         state_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId] = None,
         *,
         bearer_token: IMPORT_typing.Optional[str] = None,
-    ) -> Ping.WeakReference[Ping.WeakReference._Schedule] | Ping.WeakReference[Ping.WeakReference._WriterSchedule]:
+    ) -> Ping.WeakReference:
         # We support calling `Ping.ref()` with
         # no `state_id` __only__ inside a workflow to be able to call an
         # inline writer, inline reader or other method call, since
@@ -23213,12 +23250,11 @@ class Ping:
                     'are you using this class without Reboot?'
                 )
 
-            return Ping.WeakReference(
+            return Ping._SelfWeakReference(
                 # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
                 # For now this always stays within the application that creates the context.
                 application_id=None,
                 state_id=context._state_ref.id,
-                schedule_type=Ping.WeakReference._WriterSchedule,
                 # If the user didn't specify a bearer token we may still end up using the app-internal bearer token,
                 # but that's decided at the time of the call.
                 bearer_token=bearer_token,
@@ -23230,7 +23266,6 @@ class Ping:
             # For now this always stays within the application that creates the context.
             application_id=None,
             state_id=state_id,
-            schedule_type=Ping.WeakReference._Schedule,
             bearer_token=bearer_token,
         )
 
@@ -23290,8 +23325,6 @@ class Ping:
         _idempotency: IMPORT_reboot_aio_idempotency.Idempotency
 
 
-Pong_ScheduleTypeVar = IMPORT_typing.TypeVar('Pong_ScheduleTypeVar', 'Pong.WeakReference._Schedule', 'Pong.WeakReference._WriterSchedule')
-Pong_IdempotentlyScheduleTypeVar = IMPORT_typing.TypeVar('Pong_IdempotentlyScheduleTypeVar', 'Pong.WeakReference._Schedule', 'Pong.WeakReference._WriterSchedule')
 
 Pong_UntilCallableType = IMPORT_typing.TypeVar('Pong_UntilCallableType')
 
@@ -23874,9 +23907,7 @@ class Pong:
             return False
 
 
-    class WeakReference(IMPORT_typing.Generic[Pong_ScheduleTypeVar]):
-
-        _schedule_type: type[Pong_ScheduleTypeVar]
+    class WeakReference:
 
         def __init__(
             self,
@@ -23884,7 +23915,6 @@ class Pong:
             application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId],
             state_id: IMPORT_reboot_aio_types.StateId,
             *,
-            schedule_type: type[Pong_ScheduleTypeVar],
             bearer_token: IMPORT_typing.Optional[str] = None,
             servicer: IMPORT_typing.Optional[PongBaseServicer] = None,
         ):
@@ -23893,7 +23923,6 @@ class Pong:
               Pong.__state_type_name__,
               state_id,
             )
-            self._schedule_type = schedule_type
             self._idempotency_manager: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.IdempotencyManager] = None
             self._reader_stub: IMPORT_typing.Optional[PongReaderStub] = None
             self._writer_stub: IMPORT_typing.Optional[PongWriterStub] = None
@@ -24154,14 +24183,14 @@ class Pong:
                 bearer_token=self._bearer_token,
             )
 
-        class _Idempotently(IMPORT_typing.Generic[Pong_IdempotentlyScheduleTypeVar]):
+        class _Idempotently:
 
-            _weak_reference: Pong.WeakReference[Pong_IdempotentlyScheduleTypeVar]
+            _weak_reference: Pong.WeakReference
 
             def __init__(
                 self,
                 *,
-                weak_reference: Pong.WeakReference[Pong_IdempotentlyScheduleTypeVar],
+                weak_reference: Pong.WeakReference,
                 idempotency: IMPORT_reboot_aio_idempotency.Idempotency,
             ):
                 self._weak_reference = weak_reference
@@ -24171,8 +24200,8 @@ class Pong:
                 self,
                 *,
                 when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
-            ) -> Pong_IdempotentlyScheduleTypeVar:
-                return self._weak_reference._schedule_type(
+            ) -> Pong.WeakReference._Schedule:
+                return Pong.WeakReference._Schedule(
                     self._weak_reference._application_id,
                     self._weak_reference._tasks,
                     when=when,
@@ -24292,12 +24321,26 @@ class Pong:
             # the new code.
             num_pongs = NumPongs
 
+        class _SelfIdempotently(_Idempotently):
+
+            def schedule(
+                self,
+                *,
+                when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
+            ) -> Pong.WeakReference._SelfSchedule:
+                return Pong.WeakReference._SelfSchedule(
+                    self._weak_reference._application_id,
+                    self._weak_reference._tasks,
+                    when=when,
+                    idempotency=self._idempotency,
+                )
+
         @IMPORT_typing.overload
-        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Pong.WeakReference._Idempotently[Pong_ScheduleTypeVar]:
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Pong.WeakReference._Idempotently:
             ...
 
         @IMPORT_typing.overload
-        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Pong.WeakReference._Idempotently[Pong_ScheduleTypeVar]:
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Pong.WeakReference._Idempotently:
             ...
 
         def idempotently(
@@ -24306,7 +24349,7 @@ class Pong:
             *,
             key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
             how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
-        ) -> Pong.WeakReference._Idempotently[Pong_ScheduleTypeVar]:
+        ) -> Pong.WeakReference._Idempotently:
             return Pong.WeakReference._Idempotently(
                 weak_reference=self,
                 idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
@@ -24457,8 +24500,8 @@ class Pong:
             self,
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
-        ) -> Pong_ScheduleTypeVar:
-            return self._schedule_type(self._application_id, self._tasks, when=when)
+        ) -> Pong.WeakReference._Schedule:
+            return Pong.WeakReference._Schedule(self._application_id, self._tasks, when=when)
 
         class _Schedule:
 
@@ -24569,10 +24612,10 @@ class Pong:
         # prevent a writer from doing a `Foo.ref()` and trying to
         # schedule. However, we want to allow a writer to schedule
         # when we are constructing a `WeakReference` from
-        # `self.ref()` so instead we return a `_WriterSchedule` to
+        # `self.ref()` so instead we return a `_SelfSchedule` to
         # provide type safety that allows a `WriterContext` to
         # schedule (for itself).
-        class _WriterSchedule:
+        class _SelfSchedule(_Schedule):
 
             def __init__(
                 self,
@@ -24970,6 +25013,39 @@ class Pong:
         # the new code.
         num_pongs = NumPongs
 
+    class _SelfWeakReference(WeakReference):
+
+        def schedule(
+            self,
+            *,
+            when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
+        ) -> Pong.WeakReference._SelfSchedule:
+            return Pong.WeakReference._SelfSchedule(self._application_id, self._tasks, when=when)
+
+        @IMPORT_typing.overload
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Pong.WeakReference._SelfIdempotently:
+            ...
+
+        @IMPORT_typing.overload
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Pong.WeakReference._SelfIdempotently:
+            ...
+
+        def idempotently(
+            self,
+            alias: IMPORT_typing.Optional[str] = None,
+            *,
+            key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
+            how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
+        ) -> Pong.WeakReference._SelfIdempotently:
+            return Pong.WeakReference._SelfIdempotently(
+                weak_reference=self,
+                idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
+                    alias=alias,
+                    key=key,
+                    how=how,
+                )
+            )
+
     class _Forall:
 
         _ids: IMPORT_typing.Iterable[str]
@@ -25046,7 +25122,7 @@ class Pong:
         state_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId] = None,
         *,
         bearer_token: IMPORT_typing.Optional[str] = None,
-    ) -> Pong.WeakReference[Pong.WeakReference._Schedule] | Pong.WeakReference[Pong.WeakReference._WriterSchedule]:
+    ) -> Pong.WeakReference:
         # We support calling `Pong.ref()` with
         # no `state_id` __only__ inside a workflow to be able to call an
         # inline writer, inline reader or other method call, since
@@ -25074,12 +25150,11 @@ class Pong:
                     'are you using this class without Reboot?'
                 )
 
-            return Pong.WeakReference(
+            return Pong._SelfWeakReference(
                 # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
                 # For now this always stays within the application that creates the context.
                 application_id=None,
                 state_id=context._state_ref.id,
-                schedule_type=Pong.WeakReference._WriterSchedule,
                 # If the user didn't specify a bearer token we may still end up using the app-internal bearer token,
                 # but that's decided at the time of the call.
                 bearer_token=bearer_token,
@@ -25091,7 +25166,6 @@ class Pong:
             # For now this always stays within the application that creates the context.
             application_id=None,
             state_id=state_id,
-            schedule_type=Pong.WeakReference._Schedule,
             bearer_token=bearer_token,
         )
 
@@ -25151,8 +25225,6 @@ class Pong:
         _idempotency: IMPORT_reboot_aio_idempotency.Idempotency
 
 
-User_ScheduleTypeVar = IMPORT_typing.TypeVar('User_ScheduleTypeVar', 'User.WeakReference._Schedule', 'User.WeakReference._WriterSchedule')
-User_IdempotentlyScheduleTypeVar = IMPORT_typing.TypeVar('User_IdempotentlyScheduleTypeVar', 'User.WeakReference._Schedule', 'User.WeakReference._WriterSchedule')
 
 User_UntilCallableType = IMPORT_typing.TypeVar('User_UntilCallableType')
 
@@ -26571,9 +26643,7 @@ class User:
             return False
 
 
-    class WeakReference(IMPORT_typing.Generic[User_ScheduleTypeVar]):
-
-        _schedule_type: type[User_ScheduleTypeVar]
+    class WeakReference:
 
         def __init__(
             self,
@@ -26581,7 +26651,6 @@ class User:
             application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId],
             state_id: IMPORT_reboot_aio_types.StateId,
             *,
-            schedule_type: type[User_ScheduleTypeVar],
             bearer_token: IMPORT_typing.Optional[str] = None,
             servicer: IMPORT_typing.Optional[UserBaseServicer] = None,
         ):
@@ -26590,7 +26659,6 @@ class User:
               User.__state_type_name__,
               state_id,
             )
-            self._schedule_type = schedule_type
             self._idempotency_manager: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.IdempotencyManager] = None
             self._reader_stub: IMPORT_typing.Optional[UserReaderStub] = None
             self._writer_stub: IMPORT_typing.Optional[UserWriterStub] = None
@@ -26986,14 +27054,14 @@ class User:
                 bearer_token=self._bearer_token,
             )
 
-        class _Idempotently(IMPORT_typing.Generic[User_IdempotentlyScheduleTypeVar]):
+        class _Idempotently:
 
-            _weak_reference: User.WeakReference[User_IdempotentlyScheduleTypeVar]
+            _weak_reference: User.WeakReference
 
             def __init__(
                 self,
                 *,
-                weak_reference: User.WeakReference[User_IdempotentlyScheduleTypeVar],
+                weak_reference: User.WeakReference,
                 idempotency: IMPORT_reboot_aio_idempotency.Idempotency,
             ):
                 self._weak_reference = weak_reference
@@ -27003,8 +27071,8 @@ class User:
                 self,
                 *,
                 when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
-            ) -> User_IdempotentlyScheduleTypeVar:
-                return self._weak_reference._schedule_type(
+            ) -> User.WeakReference._Schedule:
+                return User.WeakReference._Schedule(
                     self._weak_reference._application_id,
                     self._weak_reference._tasks,
                     when=when,
@@ -27262,12 +27330,26 @@ class User:
             # the new code.
             set_claims = SetClaims
 
+        class _SelfIdempotently(_Idempotently):
+
+            def schedule(
+                self,
+                *,
+                when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
+            ) -> User.WeakReference._SelfSchedule:
+                return User.WeakReference._SelfSchedule(
+                    self._weak_reference._application_id,
+                    self._weak_reference._tasks,
+                    when=when,
+                    idempotency=self._idempotency,
+                )
+
         @IMPORT_typing.overload
-        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> User.WeakReference._Idempotently[User_ScheduleTypeVar]:
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> User.WeakReference._Idempotently:
             ...
 
         @IMPORT_typing.overload
-        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> User.WeakReference._Idempotently[User_ScheduleTypeVar]:
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> User.WeakReference._Idempotently:
             ...
 
         def idempotently(
@@ -27276,7 +27358,7 @@ class User:
             *,
             key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
             how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
-        ) -> User.WeakReference._Idempotently[User_ScheduleTypeVar]:
+        ) -> User.WeakReference._Idempotently:
             return User.WeakReference._Idempotently(
                 weak_reference=self,
                 idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
@@ -27464,8 +27546,8 @@ class User:
             self,
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
-        ) -> User_ScheduleTypeVar:
-            return self._schedule_type(self._application_id, self._tasks, when=when)
+        ) -> User.WeakReference._Schedule:
+            return User.WeakReference._Schedule(self._application_id, self._tasks, when=when)
 
         class _Schedule:
 
@@ -27748,10 +27830,10 @@ class User:
         # prevent a writer from doing a `Foo.ref()` and trying to
         # schedule. However, we want to allow a writer to schedule
         # when we are constructing a `WeakReference` from
-        # `self.ref()` so instead we return a `_WriterSchedule` to
+        # `self.ref()` so instead we return a `_SelfSchedule` to
         # provide type safety that allows a `WriterContext` to
         # schedule (for itself).
-        class _WriterSchedule:
+        class _SelfSchedule(_Schedule):
 
             def __init__(
                 self,
@@ -28715,6 +28797,39 @@ class User:
         # the new code.
         set_claims = SetClaims
 
+    class _SelfWeakReference(WeakReference):
+
+        def schedule(
+            self,
+            *,
+            when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
+        ) -> User.WeakReference._SelfSchedule:
+            return User.WeakReference._SelfSchedule(self._application_id, self._tasks, when=when)
+
+        @IMPORT_typing.overload
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> User.WeakReference._SelfIdempotently:
+            ...
+
+        @IMPORT_typing.overload
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> User.WeakReference._SelfIdempotently:
+            ...
+
+        def idempotently(
+            self,
+            alias: IMPORT_typing.Optional[str] = None,
+            *,
+            key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
+            how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
+        ) -> User.WeakReference._SelfIdempotently:
+            return User.WeakReference._SelfIdempotently(
+                weak_reference=self,
+                idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
+                    alias=alias,
+                    key=key,
+                    how=how,
+                )
+            )
+
     class _Forall:
 
         _ids: IMPORT_typing.Iterable[str]
@@ -28941,7 +29056,7 @@ class User:
         state_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId] = None,
         *,
         bearer_token: IMPORT_typing.Optional[str] = None,
-    ) -> User.WeakReference[User.WeakReference._Schedule] | User.WeakReference[User.WeakReference._WriterSchedule]:
+    ) -> User.WeakReference:
         # We support calling `User.ref()` with
         # no `state_id` __only__ inside a workflow to be able to call an
         # inline writer, inline reader or other method call, since
@@ -28969,12 +29084,11 @@ class User:
                     'are you using this class without Reboot?'
                 )
 
-            return User.WeakReference(
+            return User._SelfWeakReference(
                 # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
                 # For now this always stays within the application that creates the context.
                 application_id=None,
                 state_id=context._state_ref.id,
-                schedule_type=User.WeakReference._WriterSchedule,
                 # If the user didn't specify a bearer token we may still end up using the app-internal bearer token,
                 # but that's decided at the time of the call.
                 bearer_token=bearer_token,
@@ -28986,7 +29100,6 @@ class User:
             # For now this always stays within the application that creates the context.
             application_id=None,
             state_id=state_id,
-            schedule_type=User.WeakReference._Schedule,
             bearer_token=bearer_token,
         )
 
@@ -29168,8 +29281,6 @@ class User:
         # the new code.
         create = Create
 
-Counter_ScheduleTypeVar = IMPORT_typing.TypeVar('Counter_ScheduleTypeVar', 'Counter.WeakReference._Schedule', 'Counter.WeakReference._WriterSchedule')
-Counter_IdempotentlyScheduleTypeVar = IMPORT_typing.TypeVar('Counter_IdempotentlyScheduleTypeVar', 'Counter.WeakReference._Schedule', 'Counter.WeakReference._WriterSchedule')
 
 Counter_UntilCallableType = IMPORT_typing.TypeVar('Counter_UntilCallableType')
 
@@ -30312,9 +30423,7 @@ class Counter:
             return False
 
 
-    class WeakReference(IMPORT_typing.Generic[Counter_ScheduleTypeVar]):
-
-        _schedule_type: type[Counter_ScheduleTypeVar]
+    class WeakReference:
 
         def __init__(
             self,
@@ -30322,7 +30431,6 @@ class Counter:
             application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId],
             state_id: IMPORT_reboot_aio_types.StateId,
             *,
-            schedule_type: type[Counter_ScheduleTypeVar],
             bearer_token: IMPORT_typing.Optional[str] = None,
             servicer: IMPORT_typing.Optional[CounterBaseServicer] = None,
         ):
@@ -30331,7 +30439,6 @@ class Counter:
               Counter.__state_type_name__,
               state_id,
             )
-            self._schedule_type = schedule_type
             self._idempotency_manager: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.IdempotencyManager] = None
             self._reader_stub: IMPORT_typing.Optional[CounterReaderStub] = None
             self._writer_stub: IMPORT_typing.Optional[CounterWriterStub] = None
@@ -30727,14 +30834,14 @@ class Counter:
                 bearer_token=self._bearer_token,
             )
 
-        class _Idempotently(IMPORT_typing.Generic[Counter_IdempotentlyScheduleTypeVar]):
+        class _Idempotently:
 
-            _weak_reference: Counter.WeakReference[Counter_IdempotentlyScheduleTypeVar]
+            _weak_reference: Counter.WeakReference
 
             def __init__(
                 self,
                 *,
-                weak_reference: Counter.WeakReference[Counter_IdempotentlyScheduleTypeVar],
+                weak_reference: Counter.WeakReference,
                 idempotency: IMPORT_reboot_aio_idempotency.Idempotency,
             ):
                 self._weak_reference = weak_reference
@@ -30744,8 +30851,8 @@ class Counter:
                 self,
                 *,
                 when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
-            ) -> Counter_IdempotentlyScheduleTypeVar:
-                return self._weak_reference._schedule_type(
+            ) -> Counter.WeakReference._Schedule:
+                return Counter.WeakReference._Schedule(
                     self._weak_reference._application_id,
                     self._weak_reference._tasks,
                     when=when,
@@ -30891,12 +30998,26 @@ class Counter:
             # the new code.
             description = Description
 
+        class _SelfIdempotently(_Idempotently):
+
+            def schedule(
+                self,
+                *,
+                when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
+            ) -> Counter.WeakReference._SelfSchedule:
+                return Counter.WeakReference._SelfSchedule(
+                    self._weak_reference._application_id,
+                    self._weak_reference._tasks,
+                    when=when,
+                    idempotency=self._idempotency,
+                )
+
         @IMPORT_typing.overload
-        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Counter.WeakReference._Idempotently[Counter_ScheduleTypeVar]:
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Counter.WeakReference._Idempotently:
             ...
 
         @IMPORT_typing.overload
-        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Counter.WeakReference._Idempotently[Counter_ScheduleTypeVar]:
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Counter.WeakReference._Idempotently:
             ...
 
         def idempotently(
@@ -30905,7 +31026,7 @@ class Counter:
             *,
             key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
             how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
-        ) -> Counter.WeakReference._Idempotently[Counter_ScheduleTypeVar]:
+        ) -> Counter.WeakReference._Idempotently:
             return Counter.WeakReference._Idempotently(
                 weak_reference=self,
                 idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
@@ -31093,8 +31214,8 @@ class Counter:
             self,
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
-        ) -> Counter_ScheduleTypeVar:
-            return self._schedule_type(self._application_id, self._tasks, when=when)
+        ) -> Counter.WeakReference._Schedule:
+            return Counter.WeakReference._Schedule(self._application_id, self._tasks, when=when)
 
         class _Schedule:
 
@@ -31249,10 +31370,10 @@ class Counter:
         # prevent a writer from doing a `Foo.ref()` and trying to
         # schedule. However, we want to allow a writer to schedule
         # when we are constructing a `WeakReference` from
-        # `self.ref()` so instead we return a `_WriterSchedule` to
+        # `self.ref()` so instead we return a `_SelfSchedule` to
         # provide type safety that allows a `WriterContext` to
         # schedule (for itself).
-        class _WriterSchedule:
+        class _SelfSchedule(_Schedule):
 
             def __init__(
                 self,
@@ -31803,6 +31924,39 @@ class Counter:
         # the new code.
         description = Description
 
+    class _SelfWeakReference(WeakReference):
+
+        def schedule(
+            self,
+            *,
+            when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
+        ) -> Counter.WeakReference._SelfSchedule:
+            return Counter.WeakReference._SelfSchedule(self._application_id, self._tasks, when=when)
+
+        @IMPORT_typing.overload
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Counter.WeakReference._SelfIdempotently:
+            ...
+
+        @IMPORT_typing.overload
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Counter.WeakReference._SelfIdempotently:
+            ...
+
+        def idempotently(
+            self,
+            alias: IMPORT_typing.Optional[str] = None,
+            *,
+            key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
+            how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
+        ) -> Counter.WeakReference._SelfIdempotently:
+            return Counter.WeakReference._SelfIdempotently(
+                weak_reference=self,
+                idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
+                    alias=alias,
+                    key=key,
+                    how=how,
+                )
+            )
+
     class _Forall:
 
         _ids: IMPORT_typing.Iterable[str]
@@ -31908,7 +32062,7 @@ class Counter:
         state_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId] = None,
         *,
         bearer_token: IMPORT_typing.Optional[str] = None,
-    ) -> Counter.WeakReference[Counter.WeakReference._Schedule] | Counter.WeakReference[Counter.WeakReference._WriterSchedule]:
+    ) -> Counter.WeakReference:
         # We support calling `Counter.ref()` with
         # no `state_id` __only__ inside a workflow to be able to call an
         # inline writer, inline reader or other method call, since
@@ -31936,12 +32090,11 @@ class Counter:
                     'are you using this class without Reboot?'
                 )
 
-            return Counter.WeakReference(
+            return Counter._SelfWeakReference(
                 # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
                 # For now this always stays within the application that creates the context.
                 application_id=None,
                 state_id=context._state_ref.id,
-                schedule_type=Counter.WeakReference._WriterSchedule,
                 # If the user didn't specify a bearer token we may still end up using the app-internal bearer token,
                 # but that's decided at the time of the call.
                 bearer_token=bearer_token,
@@ -31953,7 +32106,6 @@ class Counter:
             # For now this always stays within the application that creates the context.
             application_id=None,
             state_id=state_id,
-            schedule_type=Counter.WeakReference._Schedule,
             bearer_token=bearer_token,
         )
 
@@ -32280,7 +32432,7 @@ class Counter:
 # Used by Node.js WeakReference implementations to access Python code and
 # vice-versa. Relevant to clients.
 
-class PingWeakReferenceNodeAdaptor(Ping.WeakReference[Ping.WeakReference._Schedule]):
+class PingWeakReferenceNodeAdaptor(Ping.WeakReference):
 
     async def _call(  # type: ignore[override]
         self,
@@ -32557,7 +32709,7 @@ class PingWeakReferenceNodeAdaptor(Ping.WeakReference[Ping.WeakReference._Schedu
             json_request=json_request,
         )
 
-class PongWeakReferenceNodeAdaptor(Pong.WeakReference[Pong.WeakReference._Schedule]):
+class PongWeakReferenceNodeAdaptor(Pong.WeakReference):
 
     async def _call(  # type: ignore[override]
         self,
@@ -32834,7 +32986,7 @@ class PongWeakReferenceNodeAdaptor(Pong.WeakReference[Pong.WeakReference._Schedu
             json_request=json_request,
         )
 
-class UserWeakReferenceNodeAdaptor(User.WeakReference[User.WeakReference._Schedule]):
+class UserWeakReferenceNodeAdaptor(User.WeakReference):
 
     async def _call(  # type: ignore[override]
         self,
@@ -33111,7 +33263,7 @@ class UserWeakReferenceNodeAdaptor(User.WeakReference[User.WeakReference._Schedu
             json_request=json_request,
         )
 
-class CounterWeakReferenceNodeAdaptor(Counter.WeakReference[Counter.WeakReference._Schedule]):
+class CounterWeakReferenceNodeAdaptor(Counter.WeakReference):
 
     async def _call(  # type: ignore[override]
         self,
