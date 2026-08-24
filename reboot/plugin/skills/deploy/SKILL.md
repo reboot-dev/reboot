@@ -17,7 +17,7 @@ SPA) is published to a **static host** — this skill uses
 Cloudflare Pages — and served from the user's **own domain**. The
 two halves talk cross-origin: the SPA calls the backend's
 `https://<application-id>.<cell>.rbt.cloud:9991` URL directly, and
-the backend allows that via `Application(allowed_origins=[...])`.
+the backend allows that via `OAuth(allowed_origins=[...])`.
 
 > This skill **deploys** an app; it does not build or modify one
 > beyond production configuration. To build, see the
@@ -87,8 +87,10 @@ frontend's origin is in the app's allow-list:
 ```python
 application = Application(
     ...,
-    oauth=...,
-    allowed_origins=["https://app.example.com"],
+    oauth=OAuth(
+        provider=...,
+        allowed_origins=["https://app.example.com"],
+    ),
 )
 ```
 

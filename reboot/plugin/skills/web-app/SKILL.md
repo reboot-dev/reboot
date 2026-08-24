@@ -67,7 +67,7 @@ scheduling, stdlib actors, errors, auth predicates, testing) are
 ## Auth in Web Apps
 
 Web apps wire identity via
-`Application(oauth=OAuthProviderByEnvironment(dev=Development(), prod=Google(...)))`
+`Application(oauth=OAuth(provider=OAuthProviderByEnvironment(dev=Development(), prod=Google(...))))`
 — the same parameter MCP chat apps use. Reboot mounts its
 built-in OAuth Authorization Server at `/__/oauth/*` and brokers
 sign-in against the configured upstream IdP. Browser sessions
@@ -101,7 +101,7 @@ from reboot.aio.auth.oauth_providers import (
 Recommended sequence:
 
 1. **Early development (no provider chosen yet):** configure
-   `oauth=OAuthProviderByEnvironment(dev=Development(), prod=None)`.
+   `oauth=OAuth(provider=OAuthProviderByEnvironment(dev=Development(), prod=None))`.
    `Development()` is a built-in fake account picker that lets
    you sign in as any identity at `/__/oauth/start`; `prod=None`
    fails fast at startup if you accidentally `rbt serve` without

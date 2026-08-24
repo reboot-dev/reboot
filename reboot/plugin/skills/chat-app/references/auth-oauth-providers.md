@@ -211,15 +211,20 @@ from reboot.aio.auth.oauth_providers import (
     Google,
     OAuthProviderByEnvironment,
 )
+from reboot.aio.auth.oauth import OAuth
 
 async def main():
     await Application(
         servicers=[UserServicer, CounterServicer],
-        oauth=OAuthProviderByEnvironment(
-            dev=Development(),
-            prod=Google(
-                client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
-                client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"),
+        oauth=OAuth(
+            provider=OAuthProviderByEnvironment(
+                dev=Development(),
+                prod=Google(
+                    client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
+                    client_secret=os.environ.get(
+                        "GOOGLE_OAUTH_CLIENT_SECRET"
+                    ),
+                ),
             ),
         ),
     ).run()

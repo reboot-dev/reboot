@@ -145,14 +145,17 @@ For OAuth provider credentials specifically, the
 read them from `os.environ` and pass them in:
 
 ```python
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import Google
 
 async def main():
     await Application(
         servicers=[UserServicer, CounterServicer],
-        oauth=Google(
-            client_id=os.environ["GOOGLE_OAUTH_CLIENT_ID"],
-            client_secret=os.environ["GOOGLE_OAUTH_CLIENT_SECRET"],
+        oauth=OAuth(
+            provider=Google(
+                client_id=os.environ["GOOGLE_OAUTH_CLIENT_ID"],
+                client_secret=os.environ["GOOGLE_OAUTH_CLIENT_SECRET"],
+            ),
         ),
     ).run()
 ```

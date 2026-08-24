@@ -64,9 +64,8 @@ export interface NativeAuthOptions {
    * own custom scheme (`myapp://redirect`) or a verified App Link.
    * Under Expo, `AuthSession.makeRedirectUri({ scheme, path })`.
    *
-   * List this in `Application(native_redirect_uris=[...])` so Reboot
-   * recognizes the app as first-party and signs users in without a
-   * consent screen.
+   * List this in `OAuth(skip_consent_for_redirect_uris=[...])` so
+   * Reboot signs users in without a consent screen.
    */
   redirectUri: string;
   /**
@@ -81,9 +80,9 @@ export interface NativeAuthOptions {
   storage: NativeAuthStorage;
   /**
    * A human-readable name for this app. Shown on the consent screen,
-   * which first-party apps never reach — so this only matters if the
-   * app's `redirectUri` is not among the backend's
-   * `native_redirect_uris`.
+   * which this app never reaches when its `redirectUri` is among the
+   * backend's `skip_consent_for_redirect_uris` — so this only
+   * matters when it is not.
    */
   clientName?: string;
   /**
@@ -529,8 +528,8 @@ export interface ExpoAuthOptions {
  *
  * The redirect URI comes from `Linking`, which derives it from the
  * `scheme` in `app.json` — so list `<scheme>://redirect` in
- * `Application(native_redirect_uris=[...])` to have Reboot recognize
- * the app as first-party and sign users in without a consent screen.
+ * `OAuth(skip_consent_for_redirect_uris=[...])` to have Reboot sign
+ * users in without a consent screen.
  *
  * Hold the result in a module-level constant rather than building it
  * inline in JSX: the provider rebuilds its session machinery whenever

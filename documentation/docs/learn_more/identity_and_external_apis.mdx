@@ -33,6 +33,7 @@ so the provider can depend on the run environment:
 
 ```py
 import os
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import (
     Development,
     Google,
@@ -42,11 +43,15 @@ from reboot.aio.auth.oauth_providers import (
 async def main():
     await Application(
         servicers=[UserServicer],
-        oauth=OAuthProviderByEnvironment(
-            dev=Development(),
-            prod=Google(
-                client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
-                client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"),
+        oauth=OAuth(
+            provider=OAuthProviderByEnvironment(
+                dev=Development(),
+                prod=Google(
+                    client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
+                    client_secret=os.environ.get(
+                        "GOOGLE_OAUTH_CLIENT_SECRET"
+                    ),
+                ),
             ),
         ),
     ).run()
@@ -138,11 +143,13 @@ calls need (on top of the base identity scope the provider always
 requests) and `store_tokens=True`:
 
 ```py
-oauth=OAuthProviderByEnvironment(
-    # `Development()` issues no tokens, so to exercise the
-    # provider's API locally use the real provider in `dev=` too.
-    dev=_google(),
-    prod=_google(),
+oauth=OAuth(
+    provider=OAuthProviderByEnvironment(
+        # `Development()` issues no tokens, so to exercise the
+        # provider's API locally use the real provider in `dev=` too.
+        dev=_google(),
+        prod=_google(),
+    ),
 )
 
 def _google() -> Google:

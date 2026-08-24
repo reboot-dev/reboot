@@ -41,7 +41,7 @@ const REBOOT_URL =
 //
 // `Linking` derives the redirect URI from the `scheme` in `app.json`,
 // and `backend/src/main.py` lists that URI in
-// `Application(native_redirect_uris=[...])` — which is what lets
+// `OAuth(skip_consent_for_redirect_uris=[...])` — which is what lets
 // Reboot sign users in with no consent screen.
 //
 // Built once at module scope, not inline in the JSX below:
