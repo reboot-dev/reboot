@@ -352,18 +352,18 @@ jobs:
 
         # 2) Exclude these tags by default for MacOS.
         #
-        # A test carries `platform-independent` when it exercises no
-        # behavior that could differ between Linux and MacOS, or when
-        # whatever platform-dependent behavior it does exercise is also
-        # exercised by a `medium`-or-smaller test that still runs here.
-        # Such a test spends time on our slowest and most expensive
-        # runners for signal that the Linux jobs — which keep running
-        # every test — already give us.
+        # `macos-nightly-only` marks the tests whose MacOS results we
+        # are content to have once a day instead of on every pull
+        # request. They are among our slowest, and MacOS is our
+        # slowest and most expensive runner, so here — on the critical
+        # path of every merge — they cost more than they are worth.
+        # They keep running on Linux in this same run, and on MacOS in
+        # `.github/workflows/macos_nightly.yml`.
         QUERY="$QUERY \
         except attr(\"tags\",\"requires-docker\",//tests/...) \
         except attr(\"tags\",\"macos_not_supported\",//tests/...) \
         except attr(\"tags\",\"requires-linux-x86\",//tests/...) \
-        except attr(\"tags\",\"platform-independent\",//tests/...) \
+        except attr(\"tags\",\"macos-nightly-only\",//tests/...) \
         except attr(\"tags\",\"manual\",//tests/...)"
 
         # 3) If this is a PR labelled "reboot-release", also drop flaky

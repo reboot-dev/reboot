@@ -46,15 +46,9 @@ sh_test_in_working_directory(
     # In all our example tests, we initiate LocalEnvoy on the
     # default secure port 9991. We require 'exclusive' to not run
     # multiple tests, that use the same port, concurrently.
-    #
-    # The `uv sync`, `rbt generate`, `pytest` and `rbt dev run
-    # --terminate-after-health-check` steps are the same ones that
-    # `//tests/reboot/examples/chat-room:test` runs, and that test
-    # keeps running on MacOS; only the application code in between
-    # differs, so this adds no MacOS-specific coverage.
     tags = [
         "exclusive",
-        "platform-independent",
+        "macos-nightly-only",
     ],
     working_directory = "reboot/examples/agent-wiki/",
 )
@@ -83,12 +77,6 @@ sh_test_in_working_directory(
     ],
     env = frontend_env,
     script = "frontend/.tests/type_check.sh",
-    # `tsc` and the frontend bundler produce the same result on MacOS
-    # as on Linux, and the `rbt generate` and `npm install` steps on
-    # the way there are exercised on MacOS by
-    # `//tests/reboot/examples/chat-room:test` and
-    # `//tests/reboot/examples/chat-room-nodejs:test`, which keep
-    # running there.
-    tags = ["platform-independent"],
+    tags = ["macos-nightly-only"],
     working_directory = "reboot/examples/agent-wiki/",
 )

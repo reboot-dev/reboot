@@ -47,15 +47,9 @@ sh_test_in_working_directory(
     # Additionally, in all our example tests, we initiate LocalEnvoy on the
     # default secure port 9991. We require 'exclusive' to not run multiple
     # tests, that use the same port, concurrently.
-    #
-    # `.tests/test.sh` here is identical to the one that
-    # `//tests/reboot/examples/prosemirror:test` runs on MacOS;
-    # only the schema style (zod instead of `.proto`) and the
-    # generated client that follows from it differ, which is
-    # codegen rather than platform behavior.
     tags = [
         "exclusive",
-        "platform-independent",
+        "macos-nightly-only",
     ],
     working_directory = "reboot/examples/prosemirror-zod",
 )

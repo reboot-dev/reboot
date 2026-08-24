@@ -166,15 +166,9 @@ sh_test_in_working_directory(
     # from are copied into the test sandbox; the script `cd`s into
     # `frontend/mobile/` itself.
     script = "frontend/mobile/.tests/react_native_test.sh",
-    # `npx tsc --noEmit` produces the same result on MacOS as on
-    # Linux; generating the mobile client is exercised on MacOS by
-    # `//tests/reboot/cli/generate:mobile_out_specified_tests_py`,
-    # and installing the locally built Reboot npm packages by
-    # `//tests/reboot/examples/chat-room-nodejs:test`; both keep
-    # running there.
     tags = [
         "exclusive",
-        "platform-independent",
+        "macos-nightly-only",
     ],
     working_directory = "reboot/examples/chat-room/",
 )
@@ -214,12 +208,6 @@ sh_test_in_working_directory(
     ],
     env = frontend_env,
     script = "frontend/.tests/type_check.sh",
-    # `tsc` and the frontend bundler produce the same result on MacOS
-    # as on Linux, and the `rbt generate` and `npm install` steps on
-    # the way there are exercised on MacOS by
-    # `//tests/reboot/examples/chat-room:test` and
-    # `//tests/reboot/examples/chat-room-nodejs:test`, which keep
-    # running there.
-    tags = ["platform-independent"],
+    tags = ["macos-nightly-only"],
     working_directory = "reboot/examples/chat-room/",
 )

@@ -7,12 +7,7 @@ py_test(
     size = "large",
     srcs = [":ordered_map_tests.py"],
     main = "ordered_map_tests.py",
-    # This exercises the `OrderedMap` B-tree logic on top of the
-    # in-process `Reboot()` test harness, neither of which behaves
-    # differently on MacOS; the storage engine underneath is
-    # exercised on MacOS by `//tests/reboot/server:database_tests`
-    # and `//tests/reboot:state_manager_tests_py`.
-    tags = ["platform-independent"],
+    tags = ["macos-nightly-only"],
     deps = [
         "//rbt/std/item/v1:item_py_reboot",
         "//reboot:protobuf_py",

@@ -1131,13 +1131,38 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(lock.is_exclusive_locked())
         lock.release_shared()
 
+    async def test_upgrade_deadline_raises_unavailable(self) -> None:
+        lock = Lock()
+        # Two shared holders, so the upgrade has to queue, and nothing
+        # releases while it waits, so it runs out its deadline.
+        await lock.acquire_shared(deadline=None)
+        await lock.acquire_shared(deadline=None)
+        with self.assertRaises(SystemAborted) as aborted:
+            await lock.upgrade(deadline=timedelta(seconds=0.05))
+        self.assertEqual(type(aborted.exception.error), Unavailable)
+        # An upgrade that fails leaves its caller holding the shared
+        # hold it was upgrading from.
+        self.assertTrue(lock.is_shared_locked())
+        self.assertFalse(lock.is_exclusive_locked())
+        # It also leaves the upgrade slot free, so a second attempt
+        # gets as far as waiting out a deadline of its own rather than
+        # being turned away because somebody is already upgrading.
+        with self.assertRaises(SystemAborted) as aborted:
+            await lock.upgrade(deadline=timedelta(seconds=0.05))
+        assert aborted.exception.message is not None
+        self.assertIn("Timed out waiting", aborted.exception.message)
+        lock.release_shared()
+        lock.release_shared()
+        self.assertFalse(lock.is_locked())
+
     async def test_cancelled_exclusive_waiter_leaves_lock_free(self) -> None:
-        """A queued exclusive waiter whose task is cancelled before it
-        is granted must not be handed the exclusive hold. Its acquire
-        can only raise from here on, so nothing will ever release that
-        hold: the lock would stay held by nobody for the life of the
-        process, and every later acquire on this state would fail or
-        block forever."""
+        """A queued exclusive waiter whose task is cancelled can still
+        be handed the exclusive hold, because the release that grants
+        it can land before the waiter is resumed. Its acquire can only
+        raise from here on, so it has to hand that hold back on its
+        way out: nothing else ever will, and a lock held by nobody
+        stays that way for the life of the process, failing or
+        blocking every later acquire on the state it guards."""
         lock = Lock()
         await lock.acquire_shared(deadline=None)
 
@@ -1170,10 +1195,11 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         lock.release_exclusive()
 
     async def test_cancelled_shared_waiter_leaves_lock_free(self) -> None:
-        """The shared counterpart: a cancelled shared waiter must not
-        be counted as a holder. It would be counted for the life of
-        the process, blocking every later exclusive acquire and every
-        upgrade on this state forever."""
+        """The shared counterpart: a cancelled shared waiter that is
+        counted as a holder on its way out has to hand that back just
+        the same. A shared hold nobody releases is counted for the
+        life of the process, blocking every later exclusive acquire
+        and every upgrade on this state forever."""
         lock = Lock()
         await lock.acquire_exclusive(deadline=None)
 
@@ -1195,9 +1221,10 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         lock.release_exclusive()
 
     async def test_cancelled_upgrader_leaves_lock_shared(self) -> None:
-        """A cancelled upgrader must not be handed the exclusive hold
-        either, which would wedge the lock exclusively forever. It
-        keeps the shared hold it was upgrading from."""
+        """A cancelled upgrader that is handed the exclusive hold has
+        to give it back too, or the lock is wedged exclusively
+        forever. What it gives back is the shared hold it was
+        upgrading from, which its caller still believes it holds."""
         lock = Lock()
         # Two shared holders, so the upgrade has to queue.
         await lock.acquire_shared(deadline=None)
@@ -1257,21 +1284,19 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         lock.release_shared()
         self.assertFalse(lock.is_locked())
 
-    async def test_cancelled_upgrader_leaves_a_later_upgrade_alone(
+    async def test_cancelled_upgrader_lets_the_next_waiter_through(
         self,
     ) -> None:
-        """A cancelled upgrader is dropped from the upgrade slot as
-        soon as a release notices it, which frees the slot for another
-        holder to register an upgrade of its own. When the cancelled
-        one is resumed to clean up after itself it must leave that
-        later upgrade in place: emptying the slot would leave the
-        later upgrade registered nowhere, so nothing could ever grant
-        it and its caller would wait out its whole acquire deadline
-        for a hold that was free the entire time."""
+        """Handing a hold back is not the end of a cancelled waiter's
+        obligations: the hold has to reach whoever is queued behind
+        it. A cancelled upgrader gives back a shared hold rather than
+        an exclusive one, so the release that carries it onwards is
+        the `downgrade()`, and what it has to carry is every waiter a
+        shared holder is compatible with."""
         lock = Lock()
         # A shared hold each for this test, the cancelled upgrader and
-        # the later upgrader, so that neither upgrade is ever the sole
-        # holder and both have to queue.
+        # the later upgrader, so that the upgrade this test cancels
+        # has to queue rather than being granted on the spot.
         await lock.acquire_shared(deadline=None)
 
         async def cancelled_upgrader() -> None:
@@ -1290,11 +1315,12 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0)
 
         async def later_upgrader() -> None:
-            await lock.acquire_shared(deadline=None)
-            # A deadline rather than `None`, so that an upgrade left
-            # registered nowhere fails this test rather than hanging
-            # the suite. The upgrade is granted while the cancelled
-            # upgrader unwinds, well within it.
+            # A deadline rather than `None`, so that a hold that never
+            # reaches this waiter fails this test rather than hanging
+            # the suite. The shared hold is granted while the cancelled
+            # upgrader unwinds and the upgrade right after it, both
+            # well within these.
+            await lock.acquire_shared(deadline=timedelta(seconds=5))
             await lock.upgrade(deadline=timedelta(seconds=5))
             lock.release_exclusive()
 
@@ -1305,30 +1331,32 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         # own continuation last, on a first in, first out queue.
         later_task = asyncio.create_task(later_upgrader())
         cancelled_task.cancel()
-        # Releasing notices the cancelled upgrade and empties the
-        # slot, leaving it free for the later upgrader to claim.
+        # Leaves the cancelled upgrader the sole shared holder, which
+        # is exactly the condition under which its upgrade is granted
+        # -- cancelled or not, it has not been resumed to say so.
         lock.release_shared()
 
-        # Runs the later upgrader, which takes a shared hold and
-        # registers its upgrade in the free slot, and then the
-        # cancelled upgrader, which cleans up and hands back its own
-        # shared hold, leaving the later upgrade the only reason this
-        # lock is still held.
+        # Runs the later upgrader, which queues for a shared hold
+        # behind the exclusive one the cancelled upgrader now holds,
+        # and then the cancelled upgrader, which downgrades -- which
+        # is what grants that queued shared hold -- and then hands
+        # back its own, leaving the later upgrader the only holder.
         await asyncio.sleep(0)
 
         with self.assertRaises(asyncio.CancelledError):
             await cancelled_task
 
-        # The later upgrade was granted as the cancelled upgrader
-        # unwound, so this returns rather than timing out.
+        # The later upgrader was carried through by the cancelled
+        # one's unwinding, so this returns rather than timing out.
         await later_task
         self.assertFalse(lock.is_locked())
 
     async def test_waiter_queued_behind_a_cancelled_one_is_granted(
         self,
     ) -> None:
-        """Dropping a cancelled waiter lets whoever queued behind it
-        through, rather than stalling the rest of the queue."""
+        """A cancelled waiter at the head of the queue does not stall
+        the waiters behind it: they are granted alongside it, and the
+        hold it hands back on its way out is its own."""
         lock = Lock()
         await lock.acquire_exclusive(deadline=None)
 
