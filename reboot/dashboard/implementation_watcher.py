@@ -767,11 +767,14 @@ Definition = (
     MethodDefinition
 )
 
-# How a call whose stub is defined in each class nested inside a
-# `WeakReference` is reached: through `.schedule(when=...)`,
-# `.spawn(when=...)`, or, for `.idempotently(...)`, a plain call
-# made idempotent.
+# How a call whose stub is defined in each class the generator
+# nests inside a `WeakReference` or the state type's class is
+# reached: through `.schedule(when=...)`, `.spawn(when=...)`, or
+# `.forall(ids)`; for `.idempotently(...)`, a plain call or a
+# construction made idempotent.
 HOWS_BY_CLASS_NAME = {
+    '_ConstructIdempotently': Call.How.CONSTRUCT,
+    '_Forall': Call.How.FORALL,
     '_Idempotently': Call.How.CALL,
     '_Schedule': Call.How.SCHEDULE,
     '_SelfIdempotently': Call.How.CALL,
@@ -868,7 +871,8 @@ def _definitions(syntax: ast.Module) -> Mapping[int, Definition]:
                                 how=Call.How.CONSTRUCT,
                             )
 
-                        case ast.ClassDef(name='_ConstructIdempotently'):
+                        case ast.ClassDef(
+                        ) if (inner.name in HOWS_BY_CLASS_NAME):
                             for node in inner.body:
                                 match node:
                                     case (
@@ -879,7 +883,8 @@ def _definitions(syntax: ast.Module) -> Mapping[int, Definition]:
                                             MethodDefinition(
                                                 state_type=state_type,
                                                 name=node.name,
-                                                how=Call.How.CONSTRUCT,
+                                                how=HOWS_BY_CLASS_NAME[
+                                                    inner.name],
                                             )
                                         )
 
