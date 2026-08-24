@@ -13,7 +13,7 @@ from log.log import get_logger
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
 from rbt.v1alpha1.application.application_pb2 import ExamplePrompt
-from reboot.aio.auth.native_redirect_uris import validate_native_redirect_uri
+from reboot.aio.auth.native_redirect_uris import validate_redirect_uris
 from reboot.aio.auth.oauth_providers import OAuthProviderSelector
 from reboot.aio.auth.oauth_server import OAuthServer
 from reboot.aio.auth.token_verifiers import (
@@ -587,8 +587,9 @@ class Application:
         self._native_redirect_uris: list[str] = list(
             native_redirect_uris or []
         )
-        for redirect_uri in self._native_redirect_uris:
-            validate_native_redirect_uri(redirect_uri)
+        validate_redirect_uris(
+            self._native_redirect_uris, "native_redirect_uris"
+        )
         self._title = title or application_name()
         self._description = description
         self._example_prompts = example_prompts or []

@@ -43,37 +43,43 @@ _FORBIDDEN_SCHEMES = frozenset(["javascript", "data", "vbscript", "file"])
 _SCHEME_REGEX = r"[a-zA-Z][a-zA-Z0-9+.\-]*"
 
 
-def validate_native_redirect_uri(redirect_uri: object) -> None:
-    """Raise `ValueError` if `redirect_uri` is not usable as an entry of
-    `Application(native_redirect_uris=...)`."""
-    if not isinstance(redirect_uri, str):
-        raise ValueError(
-            "`native_redirect_uris` must be a list of strings; got "
-            f"entry of type {type(redirect_uri).__name__}"
-        )
-    match = re.match(f"({_SCHEME_REGEX}):", redirect_uri)
-    if match is None:
-        raise ValueError(
-            f"`native_redirect_uris` entry {redirect_uri!r} must be a "
-            "full URI beginning with a scheme, e.g. "
-            "'myapp://redirect' for a custom-scheme app link or "
-            "'https://app.example.com/redirect' for a verified "
-            "App Link / Universal Link"
-        )
-    scheme = match.group(1).lower()
-    if scheme in _FORBIDDEN_SCHEMES:
-        raise ValueError(
-            f"`native_redirect_uris` entry {redirect_uri!r} uses the "
-            f"forbidden '{scheme}' scheme"
-        )
-    if "*" in redirect_uri:
-        raise ValueError(
-            f"`native_redirect_uris` entry {redirect_uri!r} must not "
-            "contain a wildcard: entries are compared for exact "
-            "equality against the `redirect_uri` a client registers, "
-            "because that URI is where an authorization code for one "
-            "of your users is delivered"
-        )
+def validate_redirect_uris(
+    redirect_uris: Sequence[str],
+    field_name: str,
+) -> None:
+    """Raise `ValueError` if any entry of `redirect_uris` is not usable
+    as a redirect URI that an application claims as its own.
+    `field_name` is the name of the parameter the list came from, used
+    to point the error at what the developer wrote."""
+    for redirect_uri in redirect_uris:
+        if not isinstance(redirect_uri, str):
+            raise ValueError(
+                f"`{field_name}` must be a list of strings; got entry "
+                f"of type {type(redirect_uri).__name__}"
+            )
+        match = re.match(f"({_SCHEME_REGEX}):", redirect_uri)
+        if match is None:
+            raise ValueError(
+                f"`{field_name}` entry {redirect_uri!r} must be a full "
+                "URI beginning with a scheme, e.g. 'myapp://redirect' "
+                "for a custom-scheme app link or "
+                "'https://app.example.com/redirect' for a verified "
+                "App Link / Universal Link"
+            )
+        scheme = match.group(1).lower()
+        if scheme in _FORBIDDEN_SCHEMES:
+            raise ValueError(
+                f"`{field_name}` entry {redirect_uri!r} uses the "
+                f"forbidden '{scheme}' scheme"
+            )
+        if "*" in redirect_uri:
+            raise ValueError(
+                f"`{field_name}` entry {redirect_uri!r} must not "
+                "contain a wildcard: entries are compared for exact "
+                "equality against the `redirect_uri` a client "
+                "registers, because that URI is where an authorization "
+                "code for one of your users is delivered"
+            )
 
 
 def is_first_party_redirect_uri(
