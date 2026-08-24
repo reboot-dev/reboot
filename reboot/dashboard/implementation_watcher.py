@@ -76,6 +76,12 @@ Digest = bytes
 # from are one message.
 Dependency = FileInfo.Dependency
 
+# One Reboot call a method's implementation makes: which state type,
+# which method, and how the call is reached. Aliased from where it
+# is defined so that what an analysis records and what a reader
+# reads are one message.
+Call = ServicerInfo.Method.Call
+
 # Suffixes of the files `rbt generate` writes. Walked, digested and
 # carried like any other file, so that a change to one reanalyzes
 # exactly the files that used it when they were analyzed; never
@@ -734,8 +740,23 @@ class ServicerDefinition:
 
 # What a line defining a class may be, as far as finding state
 # types takes.
+@dataclass(frozen=True, kw_only=True)
+class MethodDefinition:
+    """A line defining a method of a state type's `WeakReference`,
+    the class of a reference to the state type: what a call made
+    through any reference is defined by."""
+
+    # The state type, spelled as `StateTypeInfo.name`, e.g.
+    # `shop.v1.Shop`.
+    state_type: str
+
+    # The method name, spelled as the developer calls it, e.g. `look`.
+    name: str
+
+
 Definition = (
-    StateTypeDefinition | BaseServicerDefinition | ServicerDefinition
+    StateTypeDefinition | BaseServicerDefinition | ServicerDefinition |
+    MethodDefinition
 )
 
 
@@ -790,6 +811,32 @@ def _definitions(syntax: ast.Module) -> Mapping[int, Definition]:
                 definitions[statement.lineno] = StateTypeDefinition(
                     state_type=state_type,
                 )
+
+                # The state type's `WeakReference` is the class of
+                # a reference to it, defining the methods a
+                # reference is called with, one def per overload. A
+                # method is told apart from the reference's own
+                # machinery, such as `schedule`, by the
+                # `__context__` parameter only the generator's
+                # method stubs take second.
+                for inner in statement.body:
+                    match inner:
+                        case ast.ClassDef(name='WeakReference'):
+                            for node in inner.body:
+                                match node:
+                                    case (
+                                        ast.FunctionDef() |
+                                        ast.AsyncFunctionDef()
+                                    ) if (
+                                        len(node.args.args) >= 2 and
+                                        node.args.args[1].arg == '__context__'
+                                    ):
+                                        definitions[node.lineno] = (
+                                            MethodDefinition(
+                                                state_type=state_type,
+                                                name=node.name,
+                                            )
+                                        )
 
     return MappingProxyType(definitions)
 
@@ -963,6 +1010,49 @@ async def _definition_at(
     return await analysis.definition_at(location)
 
 
+async def _analyze_method(
+    method: ast.FunctionDef | ast.AsyncFunctionDef,
+    *,
+    filename: Path,
+    analysis: Analysis,
+) -> tuple[list[Call], Analysis]:
+    """Returns the Reboot calls a method's implementation makes:
+    every call whose own definition pyright places at a method of a
+    state type's `WeakReference`, which is where the generator
+    defines what a reference is called with. However the reference
+    was come by, taken with `ref`, held in a variable, or received
+    from elsewhere, the called method's definition is the same, so
+    one question decides.
+    """
+    calls: list[Call] = []
+
+    for node in ast.walk(method):
+        match node:
+            case ast.Call(func=ast.Attribute() as attribute):
+                pass
+            case _:
+                continue
+
+        line, character = _position_at_last_character(attribute)
+
+        location = await analysis.pyright.definition_at(
+            filename=filename,
+            line=line,
+            character=character,
+            text=analysis.parsed[filename].text,
+        )
+        if location is None:
+            continue
+
+        definition, analysis = await analysis.definition_at(location)
+
+        match definition:
+            case MethodDefinition(state_type=state_type, name=name):
+                calls.append(Call(state_type=state_type, method=name))
+
+    return calls, analysis
+
+
 async def _analyze_class(
     class_definition: ast.ClassDef,
     *,
@@ -1029,10 +1119,16 @@ async def _analyze_class(
                     ast.FunctionDef(name=str(name)) |
                     ast.AsyncFunctionDef(name=str(name))
                 ):
+                    calls, analysis = await _analyze_method(
+                        statement,
+                        filename=filename,
+                        analysis=analysis,
+                    )
                     servicer.methods.append(
                         ServicerInfo.Method(
                             name=name,
                             digest=_digest(statement),
+                            calls=calls,
                         )
                     )
 
