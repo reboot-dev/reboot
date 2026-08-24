@@ -152,6 +152,15 @@ class {state}:
             ):
                 pass
 
+        class _Idempotently:
+
+            async def look(
+                __this__,
+                __context__,
+                request=None,
+            ):
+                pass
+
         async def look(
             __this__,
             __context__,
@@ -165,6 +174,9 @@ class {state}:
         def spawn(self, when=None) -> '{state}.WeakReference._Spawn':
             return {state}.WeakReference._Spawn()
 
+        def idempotently(self, alias=None) -> '{state}.WeakReference._Idempotently':
+            return {state}.WeakReference._Idempotently()
+
     @classmethod
     def ref(cls, state_id) -> '{state}.WeakReference':
         return {state}.WeakReference()
@@ -176,6 +188,19 @@ class {state}:
         state_id=None,
     ):
         pass
+
+    class _ConstructIdempotently:
+
+        async def make(
+            __this__,
+            __context__,
+            state_id=None,
+        ):
+            pass
+
+    @classmethod
+    def idempotently(cls, alias=None) -> '{state}._ConstructIdempotently':
+        return {state}._ConstructIdempotently()
 '''
 
 
@@ -593,6 +618,8 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 "        await Depot.make(context, 'd')\n"
                 '        await depot.schedule().look(context)\n'
                 '        await depot.spawn().look(context)\n'
+                "        await depot.idempotently('i').look(context)\n"
+                "        await Depot.idempotently('i').make(context)\n"
             ),
         )
         application = self._write('main.py', source=APPLICATION)
@@ -613,6 +640,8 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 ('shop.v1.Depot', 'make', Call.How.CONSTRUCT),
                 ('shop.v1.Depot', 'look', Call.How.SCHEDULE),
                 ('shop.v1.Depot', 'look', Call.How.SPAWN),
+                ('shop.v1.Depot', 'look', Call.How.CALL),
+                ('shop.v1.Depot', 'make', Call.How.CONSTRUCT),
             ],
         )
 
@@ -1267,6 +1296,10 @@ class GreeterServicer(Greeter.Servicer):
         await greeter.schedule().SetAdjective(context)
         await me.schedule().Greet(context)
         await me.spawn().SetAdjective(context)
+        await me.idempotently('i').Greet(context)
+        await Greeter.idempotently('i').Create(context)
+        await me.per_workflow().Greet(context)
+        await Greeter.per_workflow().Create(context)
 '''
         )
         application = self._write(
@@ -1296,6 +1329,10 @@ class GreeterServicer(Greeter.Servicer):
                 ('tests.reboot.Greeter', 'SetAdjective', Call.How.SCHEDULE),
                 ('tests.reboot.Greeter', 'Greet', Call.How.SCHEDULE),
                 ('tests.reboot.Greeter', 'SetAdjective', Call.How.SPAWN),
+                ('tests.reboot.Greeter', 'Greet', Call.How.CALL),
+                ('tests.reboot.Greeter', 'Create', Call.How.CONSTRUCT),
+                ('tests.reboot.Greeter', 'Greet', Call.How.CALL),
+                ('tests.reboot.Greeter', 'Create', Call.How.CONSTRUCT),
             ],
         )
 

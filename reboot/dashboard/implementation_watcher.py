@@ -767,6 +767,18 @@ Definition = (
     MethodDefinition
 )
 
+# How a call whose stub is defined in each class nested inside a
+# `WeakReference` is reached: through `.schedule(when=...)`,
+# `.spawn(when=...)`, or, for `.idempotently(...)`, a plain call
+# made idempotent.
+HOWS_BY_CLASS_NAME = {
+    '_Idempotently': Call.How.CALL,
+    '_Schedule': Call.How.SCHEDULE,
+    '_SelfIdempotently': Call.How.CALL,
+    '_SelfSchedule': Call.How.SCHEDULE,
+    '_Spawn': Call.How.SPAWN,
+}
+
 
 def _takes_context_second(
     method: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -838,9 +850,10 @@ def _definitions(syntax: ast.Module) -> Mapping[int, Definition]:
                 # its `WeakReference`, the class of a reference to
                 # it, defines the method stubs a reference is
                 # called with, one def per overload; and the
-                # `_Schedule`, `_SelfSchedule` and `_Spawn` classes inside
-                # the `WeakReference` define the same stubs as
-                # reached through `.schedule(when=...)`. Every stub
+                # classes inside the `WeakReference` named in
+                # `HOWS_BY_CLASS_NAME` define the same stubs as
+                # reached each way, `_ConstructIdempotently` the
+                # constructors made idempotent. Every stub
                 # is told apart from the machinery around it, such
                 # as `ref` and `schedule` themselves, by the
                 # `__context__` parameter only the generator's
@@ -854,6 +867,21 @@ def _definitions(syntax: ast.Module) -> Mapping[int, Definition]:
                                 name=inner.name,
                                 how=Call.How.CONSTRUCT,
                             )
+
+                        case ast.ClassDef(name='_ConstructIdempotently'):
+                            for node in inner.body:
+                                match node:
+                                    case (
+                                        ast.FunctionDef() |
+                                        ast.AsyncFunctionDef()
+                                    ) if _takes_context_second(node):
+                                        definitions[node.lineno] = (
+                                            MethodDefinition(
+                                                state_type=state_type,
+                                                name=node.name,
+                                                how=Call.How.CONSTRUCT,
+                                            )
+                                        )
 
                         case ast.ClassDef(name='WeakReference'):
                             for node in inner.body:
@@ -871,13 +899,8 @@ def _definitions(syntax: ast.Module) -> Mapping[int, Definition]:
                                         )
 
                                     case ast.ClassDef(
-                                        name='_Schedule' | '_SelfSchedule' |
-                                        '_Spawn'
-                                    ):
-                                        how = (
-                                            Call.How.SPAWN if node.name
-                                            == '_Spawn' else Call.How.SCHEDULE
-                                        )
+                                    ) if (node.name in HOWS_BY_CLASS_NAME):
+                                        how = HOWS_BY_CLASS_NAME[node.name]
                                         for scheduled in node.body:
                                             match scheduled:
                                                 case (
