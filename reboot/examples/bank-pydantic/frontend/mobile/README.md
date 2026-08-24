@@ -16,13 +16,30 @@ become tappable "chip" pickers, since React Native has no native
 
 ## Signing in
 
-Like the web front end, this app requires signing in, and it reaches
-the same OAuth server with the same `useSignIn()`, `useSignOut()`, and
-generated `useUser()` hooks. What differs is only how the sign-in
-itself runs: the browser-redirect flow needs a `window.location` to
-redirect and a cookie jar to hold the session, neither of which React
-Native has. So `App.tsx` hands `RebootClientProvider` a
-`nativeAuth({...})` from `@reboot-dev/reboot-react/native`:
+Like the web front end, this app requires signing in, and it uses the
+same `useSignIn()`, `useSignOut()`, and generated `useUser()` hooks
+against the same OAuth server. To sign in from React Native, give
+`RebootClientProvider` a `nativeAuth`; Reboot takes care of the OAuth
+flow, and everything above the provider is written exactly as it is
+for the web.
+
+`@reboot-dev/reboot-react/native` offers two ways to build one:
+
+- **`expoAuth({ WebBrowser, SecureStore, Linking })`** — for an Expo
+  app, as here. Pass the module namespaces of
+  [`expo-web-browser`](https://docs.expo.dev/versions/latest/sdk/webbrowser/),
+  [`expo-secure-store`](https://docs.expo.dev/versions/latest/sdk/securestore/),
+  and
+  [`expo-linking`](https://docs.expo.dev/versions/latest/sdk/linking/)
+  straight through; `expoAuth` fills in everything else, including
+  what `npm run web` needs to run the same app in a browser.
+- **`nativeAuth({...})`** — for a bare React Native app, which
+  supplies its own equivalents of those three. The
+  `NativeAuthOptions` type in
+  [`@reboot-dev/reboot-react/native`](../../../../react/native/index.ts)
+  lists what to pass.
+
+`App.tsx` uses the Expo one:
 
 ```tsx
 const auth = expoAuth({ WebBrowser, SecureStore, Linking });
@@ -30,46 +47,16 @@ const auth = expoAuth({ WebBrowser, SecureStore, Linking });
 <RebootClientProvider url={REBOOT_URL} nativeAuth={auth}>
 ```
 
-Reboot then runs the standard authorization-code flow with PKCE that
-native apps use — discovery, client registration, PKCE, the token
-exchange, and refreshing the access token before it expires — and
-everything above `RebootClientProvider` is written exactly as it is
-for the web.
+The redirect URI the app signs in with comes from `Linking`, which
+derives it from the `scheme` in `app.json`.
 
-The three modules passed in are the things React Native has no
-standard answer for: a browser to run the flow in
-([`expo-web-browser`](https://docs.expo.dev/versions/latest/sdk/webbrowser/)),
-the device keychain to keep the refresh token in
-([`expo-secure-store`](https://docs.expo.dev/versions/latest/sdk/securestore/)),
-and the URL builder that turns `app.json`'s `scheme` into the redirect
-URI ([`expo-linking`](https://docs.expo.dev/versions/latest/sdk/linking/)).
-Passing them rather than having Reboot import them keeps
-`@reboot-dev/reboot-react` free of any dependency on a particular
-React Native toolchain — a bare React Native app supplies its own
-equivalents to `nativeAuth` instead — and lets this app's own
-type-checker confirm its installed Expo version matches what Reboot
-expects.
-
-`expoAuth` also handles the two things the web bundle of this app
-needs: `expo-secure-store` doesn't exist there, so the session falls
-back to `sessionStorage`, and the OAuth flow runs in a popup that has
-to hand its result back to the window that opened it.
-
-The app registers itself with the OAuth server dynamically, and the
-backend recognizes it as first-party because
-`backend/src/main.py` claims its redirect URI through
-`Application(native_redirect_uris=[...])` — so the user goes straight
-to the identity provider with no consent screen in between. Expo Go's
-`exp://` development redirect URI is trusted automatically under `rbt
-dev run`, so a `npm start` / `npm run ios` / `npm run android` run
-needs no configuration.
-
-Running the app in a browser (`npm run web`) is the exception: its
-redirect URI is an ordinary `http://localhost:<port>/redirect`, which
-is indistinguishable from the redirect URI an MCP client registers, so
-Reboot does not trust it by shape and the sign-in shows a consent
-screen. That is a quirk of running a mobile app in a browser, not of
-the mobile flow; the real web front end is `frontend/web/`.
+The app registers itself with the OAuth server dynamically, and
+`backend/src/main.py` lists its redirect URI in
+`OAuth(skip_consent_for_redirect_uris=[...])` — so the user goes
+straight to the identity provider with no consent screen in between.
+Expo Go's `exp://` development redirect URI skips consent
+automatically under `rbt dev run`, so a `npm start` / `npm run ios` /
+`npm run android` run needs no configuration.
 
 ## React Native compatibility
 
