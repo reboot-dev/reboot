@@ -144,6 +144,14 @@ class {state}:
     @classmethod
     def ref(cls, state_id) -> '{state}.WeakReference':
         return {state}.WeakReference()
+
+    @classmethod
+    async def make(
+        __cls__,
+        __context__,
+        state_id=None,
+    ):
+        pass
 '''
 
 
@@ -417,6 +425,7 @@ class GoldenDefinitionsTest(unittest.TestCase):
             {definition.name for definition in definitions},
             {
                 'ConstructAndStoreRecursiveMessage',
+                'Create',
                 'DangerousFields',
                 'FailWithAborted',
                 'FailWithException',
@@ -436,6 +445,14 @@ class GoldenDefinitionsTest(unittest.TestCase):
         self.assertEqual(
             {definition.state_type for definition in definitions},
             {'tests.reboot.Greeter'},
+        )
+        self.assertEqual(
+            {
+                definition.name
+                for definition in definitions
+                if definition.constructor
+            },
+            {'Create'},
         )
 
 
@@ -541,6 +558,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 "        depot = Depot.ref('d')\n"
                 '        await depot.look(context)\n'
                 "        await Shop.ref('s').look(context)\n"
+                "        await Depot.make(context, 'd')\n"
             ),
         )
         application = self._write('main.py', source=APPLICATION)
@@ -549,11 +567,16 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
         [found_servicer] = found[servicer].servicers
         [method] = found_servicer.methods
+        Call = ServicerInfo.Method.Call
         self.assertEqual(
-            [(call.state_type, call.method) for call in method.calls],
             [
-                ('shop.v1.Depot', 'look'),
-                ('shop.v1.Shop', 'look'),
+                (call.state_type, call.method, call.how)
+                for call in method.calls
+            ],
+            [
+                ('shop.v1.Depot', 'look', Call.How.CALL),
+                ('shop.v1.Shop', 'look', Call.How.CALL),
+                ('shop.v1.Depot', 'make', Call.How.CONSTRUCT),
             ],
         )
 
@@ -1204,6 +1227,7 @@ class GreeterServicer(Greeter.Servicer):
         await Greeter.ref('g').SetAdjective(context)
         await me.SetAdjective(context)
         await self.ref().Greet(context)
+        await Greeter.Create(context)
 '''
         )
         application = self._write(
@@ -1218,13 +1242,18 @@ class GreeterServicer(Greeter.Servicer):
 
         [found_servicer] = found[servicer].servicers
         [method] = found_servicer.methods
+        Call = ServicerInfo.Method.Call
         self.assertEqual(
-            [(call.state_type, call.method) for call in method.calls],
             [
-                ('tests.reboot.Greeter', 'Greet'),
-                ('tests.reboot.Greeter', 'SetAdjective'),
-                ('tests.reboot.Greeter', 'SetAdjective'),
-                ('tests.reboot.Greeter', 'Greet'),
+                (call.state_type, call.method, call.how)
+                for call in method.calls
+            ],
+            [
+                ('tests.reboot.Greeter', 'Greet', Call.How.CALL),
+                ('tests.reboot.Greeter', 'SetAdjective', Call.How.CALL),
+                ('tests.reboot.Greeter', 'SetAdjective', Call.How.CALL),
+                ('tests.reboot.Greeter', 'Greet', Call.How.CALL),
+                ('tests.reboot.Greeter', 'Create', Call.How.CONSTRUCT),
             ],
         )
 
