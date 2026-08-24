@@ -25,6 +25,13 @@ on:
         required: false
         type: string
         default: "UTC"
+    outputs:
+      failed-targets:
+        description: >-
+          Whatever the `run` script wrote to `failed-targets` in
+          `$GITHUB_OUTPUT`, by convention one Bazel target per line.
+          Empty unless the script writes it.
+        value: ${{ jobs.run.outputs.failed-targets }}
   workflow_dispatch:
     inputs:
       runs-on:
@@ -78,6 +85,8 @@ jobs:
     name: Build Reboot for MacOS
     needs: [check-runner, check-secrets]
     runs-on: ${{ inputs.runs-on }}
+    outputs:
+      failed-targets: ${{ steps.commands.outputs.failed-targets }}
     env:
       # Disable the automatic update of Homebrew and the after install
       # cleanup to save a bunch of time.
@@ -248,6 +257,7 @@ jobs:
           echo $GCP_REMOTE_CACHE_CREDENTIALS_BASE64 | base64 --decode > $GOOGLE_APPLICATION_CREDENTIALS
 
       - name: Run commands
+        id: commands
         run: |
           # 'pip' installs 'mypy' at /opt/homebrew/bin/mypy, but we need to
           # access it from 'sh_test', so we need to provide binaries for the

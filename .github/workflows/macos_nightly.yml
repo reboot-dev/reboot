@@ -1,0 +1,182 @@
+name: Nightly MacOS Tests
+
+# The tests tagged `macos-nightly-only`, once a day, against `main`.
+# Their MacOS results come from here rather than from every pull
+# request, where our slowest and most expensive runners sit on the
+# critical path of a merge.
+on:
+  schedule:
+    # An hour when pull request traffic is low, so that the nightly is
+    # not competing with pull requests for the MacOS runners it needs.
+    - cron: "0 7 * * *"
+  # Manual trigger, so a maintainer can have the full MacOS set run
+  # now rather than tomorrow.
+  workflow_dispatch:
+
+concurrency:
+  # One nightly at a time. A run still going when the next one comes
+  # around is the interesting one, so it gets to finish.
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  new-code:
+    name: Check for new code
+    runs-on: depot-ubuntu-24.04
+    outputs:
+      found: ${{ steps.commits.outputs.found }}
+    steps:
+      - name: Look for commits since the last nightly
+        id: commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -eu
+          if [ "$EVENT_NAME" != "schedule" ]; then
+            echo "Started by hand, so running whatever main has done."
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          LATEST=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" \
+            --jq .commit.committer.date)
+          # 25 hours rather than 24, so that a nightly starting a
+          # little late cannot step over a commit that landed a little
+          # early. Both timestamps are UTC ISO 8601, which sorts
+          # lexicographically.
+          CUTOFF=$(date -u -d '25 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          echo "Latest commit on main: $LATEST (cutoff $CUTOFF)"
+          if [ "$LATEST" \< "$CUTOFF" ]; then
+            echo "Nothing new to test."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    name: Test on MacOS
+    needs: new-code
+    if: ${{ needs.new-code.outputs.found == 'true' }}
+    uses: ./.github/workflows/reboot_macos_environment.yml
+    secrets: inherit
+    with:
+      runs-on: depot-macos-15
+      run: |
+        # Fail if any part of this workflow fails.
+        set -eux
+
+        # 1) Build up the base query: the tests whose MacOS results
+        # this workflow is responsible for.
+        QUERY='attr("tags","macos-nightly-only",tests(//tests/...))'
+
+        # 2) Exclude the tags that cannot run on MacOS at all.
+        QUERY="$QUERY \
+        except attr(\"tags\",\"requires-docker\",//tests/...) \
+        except attr(\"tags\",\"macos_not_supported\",//tests/...) \
+        except attr(\"tags\",\"requires-linux-x86\",//tests/...) \
+        except attr(\"tags\",\"manual\",//tests/...)"
+
+        # 3) Build test targets first so that test execution doesn't
+        # compete with compilation for I/O.
+        echo "▶ bazel query: $QUERY"
+        TARGETS=$(bazel query "$QUERY")
+        echo "$TARGETS" | xargs bazel build
+
+        # 4) Run tests; all build artifacts are cached so this only
+        # executes tests. Keep the output, and keep going on failure,
+        # so that step 5 can say which targets failed.
+        set +e
+        echo "$TARGETS" | xargs bazel test 2>&1 | tee bazel-test.log
+        returncode=${PIPESTATUS[1]}
+        set -e
+
+        # 5) Bazel ends with one line per target that did not pass,
+        # e.g. `//tests/reboot/examples/bank:test  FAILED in 12.3s`.
+        # Hand those to the job that mails the report, then finish
+        # with the status the tests actually had.
+        FAILED=$(grep -oE '^//[^ ]+ +(FAILED|TIMEOUT)' bazel-test.log \
+          | awk '{print $1}' | sort -u)
+        {
+          echo "failed-targets<<END_OF_TARGETS"
+          echo "$FAILED"
+          echo "END_OF_TARGETS"
+        } >> "$GITHUB_OUTPUT"
+        exit "$returncode"
+
+  report:
+    name: Report the result
+    needs: [new-code, test]
+    if: ${{ always() && needs.new-code.outputs.found == 'true' }}
+    runs-on: depot-ubuntu-24.04
+    # Puts `MAILGUN_API_KEY` out of reach of everything but this job:
+    # the secret lives on this environment, and the environment accepts
+    # `main` only. `build_and_test.yml` runs fork pull requests' own
+    # code with `secrets: inherit`, so repository-wide is too wide for
+    # a credential that can send mail as `reboot.dev`.
+    environment: nightly
+    env:
+      # The Mailgun domain the report is sent from, which is ordinary
+      # public information; the credential that goes with it is the
+      # `MAILGUN_API_KEY` secret.
+      MAILGUN_DOMAIN: reboot.dev
+    steps:
+      - name: Compose the report
+        id: compose
+        env:
+          RESULT: ${{ needs.test.result }}
+          FAILED_TARGETS: ${{ needs.test.outputs.failed-targets }}
+        run: |
+          set -eu
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          RUN_URL="$RUN_URL/actions/runs/$GITHUB_RUN_ID"
+          {
+            echo "subject=Nightly MacOS tests: $RESULT"
+            echo "body<<END_OF_BODY"
+            echo "Result: $RESULT"
+            echo "Repository: $GITHUB_REPOSITORY"
+            echo "Branch: main"
+            echo "Run: $RUN_URL"
+            if [ -n "${FAILED_TARGETS//[[:space:]]/}" ]; then
+              echo ""
+              echo "Targets that did not pass:"
+              echo "$FAILED_TARGETS" | sed '/^[[:space:]]*$/d; s/^/  /'
+            elif [ "$RESULT" != "success" ]; then
+              echo ""
+              echo "No target list: the run did not get as far as"
+              echo "reporting one. The log above is where to look."
+            fi
+            echo "END_OF_BODY"
+          } >> "$GITHUB_OUTPUT"
+          echo "$RUN_URL is $RESULT"
+
+      - name: Email the report
+        env:
+          MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
+          REPORT_TO: ${{ vars.NIGHTLY_REPORT_TO }}
+          SUBJECT: ${{ steps.compose.outputs.subject }}
+          BODY: ${{ steps.compose.outputs.body }}
+        run: |
+          set -eu
+          if [ -z "$MAILGUN_API_KEY" ] || [ -z "$REPORT_TO" ]; then
+            echo "Mail wants the MAILGUN_API_KEY secret and the"
+            echo "NIGHTLY_REPORT_TO variable; with either one missing"
+            echo "the step above is the whole of the report."
+            exit 0
+          fi
+          # The credential goes to `curl` on stdin rather than in an
+          # argument, which keeps it out of the process list.
+          printf 'user = "api:%s"\n' "$MAILGUN_API_KEY" \
+            | curl -sS --config - --fail-with-body --max-time 30 \
+              "https://api.mailgun.net/v3/$MAILGUN_DOMAIN/messages" \
+              -F from="Reboot CI <ci@$MAILGUN_DOMAIN>" \
+              -F to="$REPORT_TO" \
+              -F subject="$SUBJECT" \
+              -F text="$BODY"
+
+      # A red nightly should show in the Actions tab as well as in
+      # whatever inbox the mail landed in.
+      - name: Fail if the tests failed
+        if: ${{ needs.test.result != 'success' }}
+        run: |
+          echo "Nightly MacOS tests concluded: ${{ needs.test.result }}"
+          exit 1
