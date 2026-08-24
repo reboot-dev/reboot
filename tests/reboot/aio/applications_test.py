@@ -3,6 +3,7 @@ import unittest
 from log.log import get_logger
 from reboot.aio.applications import Application
 from reboot.aio.auth import Auth
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import (
     Development,
     OAuthProviderByEnvironment,
@@ -161,9 +162,11 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(InputError) as context:
             Application(
                 servicers=[_StubUserA],
-                oauth=OAuthProviderByEnvironment(
-                    dev=Development(),
-                    prod=Development(),
+                oauth=OAuth(
+                    provider=OAuthProviderByEnvironment(
+                        dev=Development(),
+                        prod=Development(),
+                    )
                 ),
             )
         self.assertIn(
@@ -174,11 +177,13 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         # An explicit empty list satisfies the requirement.
         Application(
             servicers=[_StubUserA],
-            oauth=OAuthProviderByEnvironment(
-                dev=Development(),
-                prod=Development(),
+            oauth=OAuth(
+                provider=OAuthProviderByEnvironment(
+                    dev=Development(),
+                    prod=Development(),
+                ),
+                allowed_origins=[],
             ),
-            allowed_origins=[],
         )
 
         # The unit-test selector doesn't require an allow-list at all
@@ -186,7 +191,7 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         # so ordinary tests don't have to pass `allowed_origins`.
         Application(
             servicers=[_StubUserA],
-            oauth=OAuthProviderForTest(Development()),
+            oauth=OAuth(provider=OAuthProviderForTest(Development())),
         )
 
     async def test_oauth_without_allowed_origins_warns_in_dev(
@@ -207,9 +212,11 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
             with self.assertLogs(applications_logger, level='WARNING') as logs:
                 Application(
                     servicers=[_StubUserA],
-                    oauth=OAuthProviderByEnvironment(
-                        dev=Development(),
-                        prod=Development(),
+                    oauth=OAuth(
+                        provider=OAuthProviderByEnvironment(
+                            dev=Development(),
+                            prod=Development(),
+                        )
                     ),
                 )
             self.assertTrue(
@@ -227,15 +234,17 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
             with self.assertNoLogs(applications_logger, level='WARNING'):
                 Application(
                     servicers=[_StubUserA],
-                    oauth=OAuthProviderByEnvironment(
-                        dev=Development(),
-                        prod=Development(),
+                    oauth=OAuth(
+                        provider=OAuthProviderByEnvironment(
+                            dev=Development(),
+                            prod=Development(),
+                        ),
+                        allowed_origins=[],
                     ),
-                    allowed_origins=[],
                 )
                 Application(
                     servicers=[_StubUserA],
-                    oauth=OAuthProviderForTest(Development()),
+                    oauth=OAuth(provider=OAuthProviderForTest(Development())),
                 )
                 Application(servicers=[_StubUserA])
 
@@ -255,7 +264,7 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=OAuthProviderForTest(Development()),
+                oauth=OAuth(provider=OAuthProviderForTest(Development())),
                 token_verifier=_BearerIsUserIdForTest(),
             ),
         )

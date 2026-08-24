@@ -18,6 +18,7 @@ import os
 import sys
 import unittest
 from reboot.aio.applications import Application
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import (
     Development,
     OAuthProviderByEnvironment,
@@ -113,9 +114,11 @@ class PingStandaloneSpaTest(unittest.IsolatedAsyncioTestCase):
                 UserServicer,
                 CounterServicer,
             ],
-            oauth=OAuthProviderByEnvironment(
-                dev=dev_oauth,
-                prod=dev_oauth,
+            oauth=OAuth(
+                provider=OAuthProviderByEnvironment(
+                    dev=dev_oauth,
+                    prod=dev_oauth,
+                )
             ),
         )
 
@@ -179,9 +182,11 @@ class PingStandaloneSpaTest(unittest.IsolatedAsyncioTestCase):
                 UserServicer,
                 CounterServicer,
             ],
-            oauth=OAuthProviderByEnvironment(
-                dev=dev_oauth,
-                prod=dev_oauth,
+            oauth=OAuth(
+                provider=OAuthProviderByEnvironment(
+                    dev=dev_oauth,
+                    prod=dev_oauth,
+                )
             ),
         )
 

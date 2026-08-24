@@ -36,8 +36,8 @@ py_library(
         "//reboot:run_environments_py",
         "//reboot:version_py",
         "//reboot:versioning_py",
-        "//reboot/aio/auth:native_redirect_uris_py",
         "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:oauth_py",
         "//reboot/aio/auth:oauth_server_py",
         "//reboot/aio/auth:token_verifiers_py",
         "//reboot/aio/internals:contextvars_py",
@@ -514,6 +514,7 @@ py_library(
         ":reboot_py",
         ":servicers_py",
         "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:oauth_py",
         "//reboot/aio/auth:oauth_server_py",
     ],
 )

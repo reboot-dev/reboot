@@ -4,6 +4,7 @@ import reboot.aio.reboot
 import secrets
 import unittest
 from reboot.aio.applications import Application, NodeApplication
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import (
     ExchangeResult,
     OAuthProvider,
@@ -49,8 +50,9 @@ class OAuthProviderForTest(OAuthProviderSelector):
         return self._provider
 
     def requires_allowed_origins_in_production(self) -> bool:
-        # Unit tests aren't a production deployment; they pick their
-        # `allowed_origins` per test via `Application(allowed_origins=...)`.
+        # Unit tests aren't a production deployment; they pick
+        # their `allowed_origins` per test via
+        # `OAuth(allowed_origins=...)`.
         return False
 
 
@@ -364,7 +366,7 @@ class Reboot(reboot.aio.reboot.Reboot):
         if allowed_origins is not None:
             raise ValueError(
                 "Not expecting 'allowed_origins'; set it via "
-                "`Application(allowed_origins=...)`"
+                "`OAuth(allowed_origins=...)`"
             )
 
         if revision is not None:
@@ -403,7 +405,9 @@ class Reboot(reboot.aio.reboot.Reboot):
             application._oauth is None and
             not isinstance(application, NodeApplication)
         ):
-            application._oauth = OAuthProviderForTest(FakeOnly())
+            application._oauth = OAuth(
+                provider=OAuthProviderForTest(FakeOnly())
+            )
 
         # Mount the OAuth server and MCP factory now, at serve time —
         # the production serve path does this in `Application.run()`,

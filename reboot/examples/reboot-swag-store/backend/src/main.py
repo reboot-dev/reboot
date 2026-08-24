@@ -3,6 +3,7 @@ import logging
 from constants import COUPON_BOOK_ID
 from dotenv import load_dotenv
 from reboot.aio.applications import Application
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import (
     Development,
     OAuthProviderByEnvironment,
@@ -38,12 +39,14 @@ async def main() -> None:
             CartServicer,
             OrderServicer,
         ],
-        oauth=OAuthProviderByEnvironment(
-            dev=Development(),
-            # TODO: set a real provider (e.g. `Google(...)`) before
-            # production; `prod=None` makes a production deployment fail
-            # to start until one is chosen.
-            prod=None,
+        oauth=OAuth(
+            provider=OAuthProviderByEnvironment(
+                dev=Development(),
+                # TODO: set a real provider (e.g. `Google(...)`) before
+                # production; `prod=None` makes a production deployment fail
+                # to start until one is chosen.
+                prod=None,
+            )
         ),
         initialize=initialize,
     )
