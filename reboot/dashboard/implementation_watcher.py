@@ -780,6 +780,7 @@ HOWS_BY_CLASS_NAME = {
     '_SelfIdempotently': Call.How.CALL,
     '_SelfSchedule': Call.How.SCHEDULE,
     '_Spawn': Call.How.SPAWN,
+    '_Until': Call.How.UNTIL,
 }
 
 
