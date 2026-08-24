@@ -66,6 +66,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 port=DEFAULT_DASHBOARD_PORT,
                 api_directory=dashboard._api_directory(parser),
                 application=dashboard._application(parser),
+                generated_directory=dashboard._generated_directory(parser),
             )
 
             self.assertEqual(env['RBT_APPLICATION'], 'backend/src/main.py')
@@ -82,6 +83,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 port=DEFAULT_DASHBOARD_PORT,
                 api_directory=dashboard._api_directory(parser),
                 application=dashboard._application(parser),
+                generated_directory=dashboard._generated_directory(parser),
             )
 
             self.assertNotIn('RBT_APPLICATION', env)
@@ -121,6 +123,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                     port=DEFAULT_DASHBOARD_PORT,
                     api_directory=dashboard._api_directory(parser),
                     application=dashboard._application(parser),
+                    generated_directory=dashboard._generated_directory(parser),
                 )
 
             self.assertEqual(env['RBT_NAME'], 'dashboard')
@@ -164,6 +167,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                     port=DEFAULT_DASHBOARD_PORT,
                     api_directory=dashboard._api_directory(parser),
                     application=dashboard._application(parser),
+                    generated_directory=dashboard._generated_directory(parser),
                 )
 
             self.assertNotEqual(env['REBOOT_CRYPTO_ROOT_KEYS'], 'v1:theirs')
@@ -176,6 +180,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 port=DEFAULT_DASHBOARD_PORT,
                 api_directory=dashboard._api_directory(parser),
                 application=dashboard._application(parser),
+                generated_directory=dashboard._generated_directory(parser),
             )
             self.assertEqual(
                 env['REBOOT_CRYPTO_ROOT_KEYS'],
@@ -192,6 +197,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 port=DEFAULT_DASHBOARD_PORT,
                 api_directory=dashboard._api_directory(parser),
                 application=dashboard._application(parser),
+                generated_directory=dashboard._generated_directory(parser),
             )
 
             # As the developer spelled it, so files can be shown as

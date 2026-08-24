@@ -14976,7 +14976,7 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         self,
         *,
         bearer_token: IMPORT_typing.Optional[str] = None,
-    ) -> Greeter.WeakReference[Greeter.WeakReference._WriterSchedule]:
+    ) -> Greeter._SelfWeakReference:
         context = IMPORT_reboot_aio_contexts.Context.get()
 
         if context is None:
@@ -14985,12 +14985,11 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 'are you using this class without Reboot?'
             )
 
-        return Greeter.WeakReference(
+        return Greeter._SelfWeakReference(
             # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
             # For now this always stays within the application that creates the context.
             application_id=None,
             state_id=context._state_ref.id,
-            schedule_type=Greeter.WeakReference._WriterSchedule,
             # If the user didn't specify a bearer token we may still end up using the app-internal bearer token,
             # but that's decided at the time of the call.
             bearer_token=bearer_token,
@@ -17745,8 +17744,6 @@ def ensure_has_timezone(
         return IMPORT_reboot_time_DateTimeWithTimeZone.from_datetime(when)
     return when
 
-Greeter_ScheduleTypeVar = IMPORT_typing.TypeVar('Greeter_ScheduleTypeVar', 'Greeter.WeakReference._Schedule', 'Greeter.WeakReference._WriterSchedule')
-Greeter_IdempotentlyScheduleTypeVar = IMPORT_typing.TypeVar('Greeter_IdempotentlyScheduleTypeVar', 'Greeter.WeakReference._Schedule', 'Greeter.WeakReference._WriterSchedule')
 
 Greeter_UntilCallableType = IMPORT_typing.TypeVar('Greeter_UntilCallableType')
 
@@ -21485,9 +21482,7 @@ class Greeter:
             return False
 
 
-    class WeakReference(IMPORT_typing.Generic[Greeter_ScheduleTypeVar]):
-
-        _schedule_type: type[Greeter_ScheduleTypeVar]
+    class WeakReference:
 
         def __init__(
             self,
@@ -21495,7 +21490,6 @@ class Greeter:
             application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId],
             state_id: IMPORT_reboot_aio_types.StateId,
             *,
-            schedule_type: type[Greeter_ScheduleTypeVar],
             bearer_token: IMPORT_typing.Optional[str] = None,
             servicer: IMPORT_typing.Optional[GreeterBaseServicer] = None,
         ):
@@ -21504,7 +21498,6 @@ class Greeter:
               Greeter.__state_type_name__,
               state_id,
             )
-            self._schedule_type = schedule_type
             self._idempotency_manager: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.IdempotencyManager] = None
             self._reader_stub: IMPORT_typing.Optional[GreeterReaderStub] = None
             self._writer_stub: IMPORT_typing.Optional[GreeterWriterStub] = None
@@ -23014,14 +23007,14 @@ class Greeter:
                 bearer_token=self._bearer_token,
             )
 
-        class _Idempotently(IMPORT_typing.Generic[Greeter_IdempotentlyScheduleTypeVar]):
+        class _Idempotently:
 
-            _weak_reference: Greeter.WeakReference[Greeter_IdempotentlyScheduleTypeVar]
+            _weak_reference: Greeter.WeakReference
 
             def __init__(
                 self,
                 *,
-                weak_reference: Greeter.WeakReference[Greeter_IdempotentlyScheduleTypeVar],
+                weak_reference: Greeter.WeakReference,
                 idempotency: IMPORT_reboot_aio_idempotency.Idempotency,
             ):
                 self._weak_reference = weak_reference
@@ -23031,8 +23024,8 @@ class Greeter:
                 self,
                 *,
                 when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
-            ) -> Greeter_IdempotentlyScheduleTypeVar:
-                return self._weak_reference._schedule_type(
+            ) -> Greeter.WeakReference._Schedule:
+                return Greeter.WeakReference._Schedule(
                     self._weak_reference._application_id,
                     self._weak_reference._tasks,
                     when=when,
@@ -24164,12 +24157,26 @@ class Greeter:
             # the new code.
             construct_and_store_recursive_message = ConstructAndStoreRecursiveMessage
 
+        class _SelfIdempotently(_Idempotently):
+
+            def schedule(
+                self,
+                *,
+                when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
+            ) -> Greeter.WeakReference._SelfSchedule:
+                return Greeter.WeakReference._SelfSchedule(
+                    self._weak_reference._application_id,
+                    self._weak_reference._tasks,
+                    when=when,
+                    idempotency=self._idempotency,
+                )
+
         @IMPORT_typing.overload
-        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Greeter.WeakReference._Idempotently[Greeter_ScheduleTypeVar]:
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Greeter.WeakReference._Idempotently:
             ...
 
         @IMPORT_typing.overload
-        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Greeter.WeakReference._Idempotently[Greeter_ScheduleTypeVar]:
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Greeter.WeakReference._Idempotently:
             ...
 
         def idempotently(
@@ -24178,7 +24185,7 @@ class Greeter:
             *,
             key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
             how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
-        ) -> Greeter.WeakReference._Idempotently[Greeter_ScheduleTypeVar]:
+        ) -> Greeter.WeakReference._Idempotently:
             return Greeter.WeakReference._Idempotently(
                 weak_reference=self,
                 idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
@@ -24860,8 +24867,8 @@ class Greeter:
             self,
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
-        ) -> Greeter_ScheduleTypeVar:
-            return self._schedule_type(self._application_id, self._tasks, when=when)
+        ) -> Greeter.WeakReference._Schedule:
+            return Greeter.WeakReference._Schedule(self._application_id, self._tasks, when=when)
 
         class _Schedule:
 
@@ -26186,10 +26193,10 @@ class Greeter:
         # prevent a writer from doing a `Foo.ref()` and trying to
         # schedule. However, we want to allow a writer to schedule
         # when we are constructing a `WeakReference` from
-        # `self.ref()` so instead we return a `_WriterSchedule` to
+        # `self.ref()` so instead we return a `_SelfSchedule` to
         # provide type safety that allows a `WriterContext` to
         # schedule (for itself).
-        class _WriterSchedule:
+        class _SelfSchedule(_Schedule):
 
             def __init__(
                 self,
@@ -30578,6 +30585,39 @@ class Greeter:
         # the new code.
         construct_and_store_recursive_message = ConstructAndStoreRecursiveMessage
 
+    class _SelfWeakReference(WeakReference):
+
+        def schedule(
+            self,
+            *,
+            when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
+        ) -> Greeter.WeakReference._SelfSchedule:
+            return Greeter.WeakReference._SelfSchedule(self._application_id, self._tasks, when=when)
+
+        @IMPORT_typing.overload
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Greeter.WeakReference._SelfIdempotently:
+            ...
+
+        @IMPORT_typing.overload
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Greeter.WeakReference._SelfIdempotently:
+            ...
+
+        def idempotently(
+            self,
+            alias: IMPORT_typing.Optional[str] = None,
+            *,
+            key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
+            how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
+        ) -> Greeter.WeakReference._SelfIdempotently:
+            return Greeter.WeakReference._SelfIdempotently(
+                weak_reference=self,
+                idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
+                    alias=alias,
+                    key=key,
+                    how=how,
+                )
+            )
+
     class _Forall:
 
         _ids: IMPORT_typing.Iterable[str]
@@ -31664,7 +31704,7 @@ class Greeter:
         state_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId] = None,
         *,
         bearer_token: IMPORT_typing.Optional[str] = None,
-    ) -> Greeter.WeakReference[Greeter.WeakReference._Schedule] | Greeter.WeakReference[Greeter.WeakReference._WriterSchedule]:
+    ) -> Greeter.WeakReference:
         # We support calling `Greeter.ref()` with
         # no `state_id` __only__ inside a workflow to be able to call an
         # inline writer, inline reader or other method call, since
@@ -31692,12 +31732,11 @@ class Greeter:
                     'are you using this class without Reboot?'
                 )
 
-            return Greeter.WeakReference(
+            return Greeter._SelfWeakReference(
                 # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
                 # For now this always stays within the application that creates the context.
                 application_id=None,
                 state_id=context._state_ref.id,
-                schedule_type=Greeter.WeakReference._WriterSchedule,
                 # If the user didn't specify a bearer token we may still end up using the app-internal bearer token,
                 # but that's decided at the time of the call.
                 bearer_token=bearer_token,
@@ -31709,7 +31748,6 @@ class Greeter:
             # For now this always stays within the application that creates the context.
             application_id=None,
             state_id=state_id,
-            schedule_type=Greeter.WeakReference._Schedule,
             bearer_token=bearer_token,
         )
 
@@ -34039,7 +34077,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 # Used by Node.js WeakReference implementations to access Python code and
 # vice-versa. Relevant to clients.
 
-class GreeterWeakReferenceNodeAdaptor(Greeter.WeakReference[Greeter.WeakReference._Schedule]):
+class GreeterWeakReferenceNodeAdaptor(Greeter.WeakReference):
 
     async def _call(  # type: ignore[override]
         self,

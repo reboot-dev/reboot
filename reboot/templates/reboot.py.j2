@@ -3213,7 +3213,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         self,
         *,
         bearer_token: IMPORT_typing.Optional[str] = None,
-    ) -> {{ state.proto.name }}.WeakReference[{{ state.proto.name }}.WeakReference._WriterSchedule]:
+    ) -> {{ state.proto.name }}._SelfWeakReference:
         context = IMPORT_reboot_aio_contexts.Context.get()
 
         if context is None:
@@ -3222,12 +3222,11 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 'are you using this class without Reboot?'
             )
 
-        return {{ state.proto.name }}.WeakReference(
+        return {{ state.proto.name }}._SelfWeakReference(
             # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
             # For now this always stays within the application that creates the context.
             application_id=None,
             state_id=context._state_ref.id,
-            schedule_type={{ state.proto.name }}.WeakReference._WriterSchedule,
             # If the user didn't specify a bearer token we may still end up using the app-internal bearer token,
             # but that's decided at the time of the call.
             bearer_token=bearer_token,
@@ -4551,8 +4550,6 @@ def ensure_has_timezone(
     return when
 
 {% for client in clients %}
-{{ client.proto.state_name }}_ScheduleTypeVar = IMPORT_typing.TypeVar('{{ client.proto.state_name }}_ScheduleTypeVar', '{{ client.proto.state_name }}.WeakReference._Schedule', '{{ client.proto.state_name }}.WeakReference._WriterSchedule')
-{{ client.proto.state_name }}_IdempotentlyScheduleTypeVar = IMPORT_typing.TypeVar('{{ client.proto.state_name }}_IdempotentlyScheduleTypeVar', '{{ client.proto.state_name }}.WeakReference._Schedule', '{{ client.proto.state_name }}.WeakReference._WriterSchedule')
 
 {{ client.proto.state_name }}_UntilCallableType = IMPORT_typing.TypeVar('{{ client.proto.state_name }}_UntilCallableType')
 
@@ -4991,9 +4988,7 @@ class {{ client.proto.state_name }}:
     {% endfor %}
     {% endfor %}
 
-    class WeakReference(IMPORT_typing.Generic[{{ client.proto.state_name }}_ScheduleTypeVar]):
-
-        _schedule_type: type[{{ client.proto.state_name }}_ScheduleTypeVar]
+    class WeakReference:
 
         def __init__(
             self,
@@ -5001,7 +4996,6 @@ class {{ client.proto.state_name }}:
             application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId],
             state_id: IMPORT_reboot_aio_types.StateId,
             *,
-            schedule_type: type[{{ client.proto.state_name }}_ScheduleTypeVar],
             bearer_token: IMPORT_typing.Optional[str] = None,
             {% if client.state is not none %}
             servicer: IMPORT_typing.Optional[{{ client.proto.state_name }}BaseServicer] = None,
@@ -5012,7 +5006,6 @@ class {{ client.proto.state_name }}:
               {{ client.proto.state_name }}.__state_type_name__,
               state_id,
             )
-            self._schedule_type = schedule_type
             self._idempotency_manager: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.IdempotencyManager] = None
             self._reader_stub: IMPORT_typing.Optional[{{ client.proto.state_name }}ReaderStub] = None
             self._writer_stub: IMPORT_typing.Optional[{{ client.proto.state_name }}WriterStub] = None
@@ -5356,14 +5349,14 @@ class {{ client.proto.state_name }}:
                 bearer_token=self._bearer_token,
             )
 
-        class _Idempotently(IMPORT_typing.Generic[{{ client.proto.state_name }}_IdempotentlyScheduleTypeVar]):
+        class _Idempotently:
 
-            _weak_reference: {{ client.proto.state_name }}.WeakReference[{{ client.proto.state_name }}_IdempotentlyScheduleTypeVar]
+            _weak_reference: {{ client.proto.state_name }}.WeakReference
 
             def __init__(
                 self,
                 *,
-                weak_reference: {{ client.proto.state_name }}.WeakReference[{{ client.proto.state_name }}_IdempotentlyScheduleTypeVar],
+                weak_reference: {{ client.proto.state_name }}.WeakReference,
                 idempotency: IMPORT_reboot_aio_idempotency.Idempotency,
             ):
                 self._weak_reference = weak_reference
@@ -5373,8 +5366,8 @@ class {{ client.proto.state_name }}:
                 self,
                 *,
                 when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
-            ) -> {{ client.proto.state_name }}_IdempotentlyScheduleTypeVar:
-                return self._weak_reference._schedule_type(
+            ) -> {{ client.proto.state_name }}.WeakReference._Schedule:
+                return {{ client.proto.state_name }}.WeakReference._Schedule(
                     self._weak_reference._application_id,
                     self._weak_reference._tasks,
                     when=when,
@@ -5680,12 +5673,26 @@ class {{ client.proto.state_name }}:
             {% endfor %}
             {% endfor %}
 
+        class _SelfIdempotently(_Idempotently):
+
+            def schedule(
+                self,
+                *,
+                when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
+            ) -> {{ client.proto.state_name }}.WeakReference._SelfSchedule:
+                return {{ client.proto.state_name }}.WeakReference._SelfSchedule(
+                    self._weak_reference._application_id,
+                    self._weak_reference._tasks,
+                    when=when,
+                    idempotency=self._idempotency,
+                )
+
         @IMPORT_typing.overload
-        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> {{ client.proto.state_name }}.WeakReference._Idempotently[{{ client.proto.state_name }}_ScheduleTypeVar]:
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> {{ client.proto.state_name }}.WeakReference._Idempotently:
             ...
 
         @IMPORT_typing.overload
-        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> {{ client.proto.state_name }}.WeakReference._Idempotently[{{ client.proto.state_name }}_ScheduleTypeVar]:
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> {{ client.proto.state_name }}.WeakReference._Idempotently:
             ...
 
         def idempotently(
@@ -5694,7 +5701,7 @@ class {{ client.proto.state_name }}:
             *,
             key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
             how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
-        ) -> {{ client.proto.state_name }}.WeakReference._Idempotently[{{ client.proto.state_name }}_ScheduleTypeVar]:
+        ) -> {{ client.proto.state_name }}.WeakReference._Idempotently:
             return {{ client.proto.state_name }}.WeakReference._Idempotently(
                 weak_reference=self,
                 idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
@@ -5926,8 +5933,8 @@ class {{ client.proto.state_name }}:
             self,
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
-        ) -> {{ client.proto.state_name }}_ScheduleTypeVar:
-            return self._schedule_type(self._application_id, self._tasks, when=when)
+        ) -> {{ client.proto.state_name }}.WeakReference._Schedule:
+            return {{ client.proto.state_name }}.WeakReference._Schedule(self._application_id, self._tasks, when=when)
 
         class _Schedule:
 
@@ -6076,10 +6083,10 @@ class {{ client.proto.state_name }}:
         # prevent a writer from doing a `Foo.ref()` and trying to
         # schedule. However, we want to allow a writer to schedule
         # when we are constructing a `WeakReference` from
-        # `self.ref()` so instead we return a `_WriterSchedule` to
+        # `self.ref()` so instead we return a `_SelfSchedule` to
         # provide type safety that allows a `WriterContext` to
         # schedule (for itself).
-        class _WriterSchedule:
+        class _SelfSchedule(_Schedule):
 
             def __init__(
                 self,
@@ -6909,6 +6916,39 @@ class {{ client.proto.state_name }}:
         {% endfor %}
         {% endfor %}
 
+    class _SelfWeakReference(WeakReference):
+
+        def schedule(
+            self,
+            *,
+            when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
+        ) -> {{ client.proto.state_name }}.WeakReference._SelfSchedule:
+            return {{ client.proto.state_name }}.WeakReference._SelfSchedule(self._application_id, self._tasks, when=when)
+
+        @IMPORT_typing.overload
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> {{ client.proto.state_name }}.WeakReference._SelfIdempotently:
+            ...
+
+        @IMPORT_typing.overload
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> {{ client.proto.state_name }}.WeakReference._SelfIdempotently:
+            ...
+
+        def idempotently(
+            self,
+            alias: IMPORT_typing.Optional[str] = None,
+            *,
+            key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
+            how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
+        ) -> {{ client.proto.state_name }}.WeakReference._SelfIdempotently:
+            return {{ client.proto.state_name }}.WeakReference._SelfIdempotently(
+                weak_reference=self,
+                idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
+                    alias=alias,
+                    key=key,
+                    how=how,
+                )
+            )
+
     class _Forall:
 
         _ids: IMPORT_typing.Iterable[str]
@@ -7065,7 +7105,7 @@ class {{ client.proto.state_name }}:
         {% endif %}
         *,
         bearer_token: IMPORT_typing.Optional[str] = None,
-    ) -> {{ client.proto.state_name }}.WeakReference[{{ client.proto.state_name }}.WeakReference._Schedule] | {{ client.proto.state_name }}.WeakReference[{{ client.proto.state_name }}.WeakReference._WriterSchedule]:
+    ) -> {{ client.proto.state_name }}.WeakReference:
         # We support calling `{{ client.proto.state_name }}.ref()` with
         # no `state_id` __only__ inside a workflow to be able to call an
         # inline writer, inline reader or other method call, since
@@ -7098,12 +7138,11 @@ class {{ client.proto.state_name }}:
                 )
             {% endif %}
 
-            return {{ client.proto.state_name }}.WeakReference(
+            return {{ client.proto.state_name }}._SelfWeakReference(
                 # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
                 # For now this always stays within the application that creates the context.
                 application_id=None,
                 state_id=context._state_ref.id,
-                schedule_type={{ client.proto.state_name }}.WeakReference._WriterSchedule,
                 # If the user didn't specify a bearer token we may still end up using the app-internal bearer token,
                 # but that's decided at the time of the call.
                 bearer_token=bearer_token,
@@ -7117,7 +7156,6 @@ class {{ client.proto.state_name }}:
             # For now this always stays within the application that creates the context.
             application_id=None,
             state_id=state_id,
-            schedule_type={{ client.proto.state_name }}.WeakReference._Schedule,
             bearer_token=bearer_token,
         )
 
@@ -8061,7 +8099,7 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
 # vice-versa. Relevant to clients.
 
 {% for client in clients %}
-class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.state_name }}.WeakReference[{{ client.proto.state_name }}.WeakReference._Schedule]):
+class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.state_name }}.WeakReference):
 
     async def _call(  # type: ignore[override]
         self,

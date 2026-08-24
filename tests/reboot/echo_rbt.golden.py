@@ -13837,7 +13837,7 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         self,
         *,
         bearer_token: IMPORT_typing.Optional[str] = None,
-    ) -> Echo.WeakReference[Echo.WeakReference._WriterSchedule]:
+    ) -> Echo._SelfWeakReference:
         context = IMPORT_reboot_aio_contexts.Context.get()
 
         if context is None:
@@ -13846,12 +13846,11 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 'are you using this class without Reboot?'
             )
 
-        return Echo.WeakReference(
+        return Echo._SelfWeakReference(
             # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
             # For now this always stays within the application that creates the context.
             application_id=None,
             state_id=context._state_ref.id,
-            schedule_type=Echo.WeakReference._WriterSchedule,
             # If the user didn't specify a bearer token we may still end up using the app-internal bearer token,
             # but that's decided at the time of the call.
             bearer_token=bearer_token,
@@ -16632,8 +16631,6 @@ def ensure_has_timezone(
         return IMPORT_reboot_time_DateTimeWithTimeZone.from_datetime(when)
     return when
 
-Echo_ScheduleTypeVar = IMPORT_typing.TypeVar('Echo_ScheduleTypeVar', 'Echo.WeakReference._Schedule', 'Echo.WeakReference._WriterSchedule')
-Echo_IdempotentlyScheduleTypeVar = IMPORT_typing.TypeVar('Echo_IdempotentlyScheduleTypeVar', 'Echo.WeakReference._Schedule', 'Echo.WeakReference._WriterSchedule')
 
 Echo_UntilCallableType = IMPORT_typing.TypeVar('Echo_UntilCallableType')
 
@@ -20604,9 +20601,7 @@ class Echo:
             return False
 
 
-    class WeakReference(IMPORT_typing.Generic[Echo_ScheduleTypeVar]):
-
-        _schedule_type: type[Echo_ScheduleTypeVar]
+    class WeakReference:
 
         def __init__(
             self,
@@ -20614,7 +20609,6 @@ class Echo:
             application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId],
             state_id: IMPORT_reboot_aio_types.StateId,
             *,
-            schedule_type: type[Echo_ScheduleTypeVar],
             bearer_token: IMPORT_typing.Optional[str] = None,
             servicer: IMPORT_typing.Optional[EchoBaseServicer] = None,
         ):
@@ -20623,7 +20617,6 @@ class Echo:
               Echo.__state_type_name__,
               state_id,
             )
-            self._schedule_type = schedule_type
             self._idempotency_manager: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.IdempotencyManager] = None
             self._reader_stub: IMPORT_typing.Optional[EchoReaderStub] = None
             self._writer_stub: IMPORT_typing.Optional[EchoWriterStub] = None
@@ -21097,14 +21090,14 @@ class Echo:
                 bearer_token=self._bearer_token,
             )
 
-        class _Idempotently(IMPORT_typing.Generic[Echo_IdempotentlyScheduleTypeVar]):
+        class _Idempotently:
 
-            _weak_reference: Echo.WeakReference[Echo_IdempotentlyScheduleTypeVar]
+            _weak_reference: Echo.WeakReference
 
             def __init__(
                 self,
                 *,
-                weak_reference: Echo.WeakReference[Echo_IdempotentlyScheduleTypeVar],
+                weak_reference: Echo.WeakReference,
                 idempotency: IMPORT_reboot_aio_idempotency.Idempotency,
             ):
                 self._weak_reference = weak_reference
@@ -21114,8 +21107,8 @@ class Echo:
                 self,
                 *,
                 when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
-            ) -> Echo_IdempotentlyScheduleTypeVar:
-                return self._weak_reference._schedule_type(
+            ) -> Echo.WeakReference._Schedule:
+                return Echo.WeakReference._Schedule(
                     self._weak_reference._application_id,
                     self._weak_reference._tasks,
                     when=when,
@@ -22293,12 +22286,26 @@ class Echo:
             # the new code.
             failing_workflow = FailingWorkflow
 
+        class _SelfIdempotently(_Idempotently):
+
+            def schedule(
+                self,
+                *,
+                when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
+            ) -> Echo.WeakReference._SelfSchedule:
+                return Echo.WeakReference._SelfSchedule(
+                    self._weak_reference._application_id,
+                    self._weak_reference._tasks,
+                    when=when,
+                    idempotency=self._idempotency,
+                )
+
         @IMPORT_typing.overload
-        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Echo.WeakReference._Idempotently[Echo_ScheduleTypeVar]:
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Echo.WeakReference._Idempotently:
             ...
 
         @IMPORT_typing.overload
-        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Echo.WeakReference._Idempotently[Echo_ScheduleTypeVar]:
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Echo.WeakReference._Idempotently:
             ...
 
         def idempotently(
@@ -22307,7 +22314,7 @@ class Echo:
             *,
             key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
             how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
-        ) -> Echo.WeakReference._Idempotently[Echo_ScheduleTypeVar]:
+        ) -> Echo.WeakReference._Idempotently:
             return Echo.WeakReference._Idempotently(
                 weak_reference=self,
                 idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
@@ -22565,8 +22572,8 @@ class Echo:
             self,
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
-        ) -> Echo_ScheduleTypeVar:
-            return self._schedule_type(self._application_id, self._tasks, when=when)
+        ) -> Echo.WeakReference._Schedule:
+            return Echo.WeakReference._Schedule(self._application_id, self._tasks, when=when)
 
         class _Schedule:
 
@@ -23835,10 +23842,10 @@ class Echo:
         # prevent a writer from doing a `Foo.ref()` and trying to
         # schedule. However, we want to allow a writer to schedule
         # when we are constructing a `WeakReference` from
-        # `self.ref()` so instead we return a `_WriterSchedule` to
+        # `self.ref()` so instead we return a `_SelfSchedule` to
         # provide type safety that allows a `WriterContext` to
         # schedule (for itself).
-        class _WriterSchedule:
+        class _SelfSchedule(_Schedule):
 
             def __init__(
                 self,
@@ -28080,6 +28087,39 @@ class Echo:
         # the new code.
         failing_workflow = FailingWorkflow
 
+    class _SelfWeakReference(WeakReference):
+
+        def schedule(
+            self,
+            *,
+            when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
+        ) -> Echo.WeakReference._SelfSchedule:
+            return Echo.WeakReference._SelfSchedule(self._application_id, self._tasks, when=when)
+
+        @IMPORT_typing.overload
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Echo.WeakReference._SelfIdempotently:
+            ...
+
+        @IMPORT_typing.overload
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Echo.WeakReference._SelfIdempotently:
+            ...
+
+        def idempotently(
+            self,
+            alias: IMPORT_typing.Optional[str] = None,
+            *,
+            key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
+            how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
+        ) -> Echo.WeakReference._SelfIdempotently:
+            return Echo.WeakReference._SelfIdempotently(
+                weak_reference=self,
+                idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
+                    alias=alias,
+                    key=key,
+                    how=how,
+                )
+            )
+
     class _Forall:
 
         _ids: IMPORT_typing.Iterable[str]
@@ -28678,7 +28718,7 @@ class Echo:
         state_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId] = None,
         *,
         bearer_token: IMPORT_typing.Optional[str] = None,
-    ) -> Echo.WeakReference[Echo.WeakReference._Schedule] | Echo.WeakReference[Echo.WeakReference._WriterSchedule]:
+    ) -> Echo.WeakReference:
         # We support calling `Echo.ref()` with
         # no `state_id` __only__ inside a workflow to be able to call an
         # inline writer, inline reader or other method call, since
@@ -28706,12 +28746,11 @@ class Echo:
                     'are you using this class without Reboot?'
                 )
 
-            return Echo.WeakReference(
+            return Echo._SelfWeakReference(
                 # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
                 # For now this always stays within the application that creates the context.
                 application_id=None,
                 state_id=context._state_ref.id,
-                schedule_type=Echo.WeakReference._WriterSchedule,
                 # If the user didn't specify a bearer token we may still end up using the app-internal bearer token,
                 # but that's decided at the time of the call.
                 bearer_token=bearer_token,
@@ -28723,7 +28762,6 @@ class Echo:
             # For now this always stays within the application that creates the context.
             application_id=None,
             state_id=state_id,
-            schedule_type=Echo.WeakReference._Schedule,
             bearer_token=bearer_token,
         )
 
@@ -30611,7 +30649,7 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
 # Used by Node.js WeakReference implementations to access Python code and
 # vice-versa. Relevant to clients.
 
-class EchoWeakReferenceNodeAdaptor(Echo.WeakReference[Echo.WeakReference._Schedule]):
+class EchoWeakReferenceNodeAdaptor(Echo.WeakReference):
 
     async def _call(  # type: ignore[override]
         self,
