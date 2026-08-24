@@ -548,8 +548,9 @@ there stands primarily for **identity** — it determines who
 `context.auth.user_id` says the caller is, and in an MCP app that
 principal is the user. There's no middle ground: either every user
 signs in through this OAuth flow, or the app has no per-user auth at
-all. The slot takes an `OAuthProviderSelector`. The typical shape is
-`oauth=OAuthProviderByEnvironment(dev=Development(), prod=Google(...))`:
+all. The slot takes an `OAuth`, whose `provider` is an
+`OAuthProviderSelector`. The typical shape is
+`oauth=OAuth(provider=OAuthProviderByEnvironment(dev=Development(), prod=Google(...)))`:
 under `rbt dev` you get `Development()` — a real provider that shows a
 fake account picker and issues every caller a verified, stable
 `dev-{hash}` `context.auth.user_id`, no external IdP — while every other

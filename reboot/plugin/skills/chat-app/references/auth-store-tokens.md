@@ -37,6 +37,7 @@ persist them encrypted.
 ```python
 import os
 from reboot.aio.applications import Application
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import (
     Google,
     OAuthProviderByEnvironment,
@@ -73,11 +74,14 @@ async def main() -> None:
         # `ordered_map`. Without all three the app fails fast at startup.
         libraries=[oauth_library(), ciphertext_library(),
                    ordered_map_library()],
-        oauth=OAuthProviderByEnvironment(
-            # The calendar needs a real provider token even in local dev
-            # (`Development()` issues none), so both arms are `Google`.
-            dev=_google(),
-            prod=_google(),
+        oauth=OAuth(
+            provider=OAuthProviderByEnvironment(
+                # The calendar needs a real provider token even in
+                # local dev (`Development()` issues none), so both
+                # arms are `Google`.
+                dev=_google(),
+                prod=_google(),
+            ),
         ),
     )
     await application.run()

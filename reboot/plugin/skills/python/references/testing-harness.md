@@ -188,8 +188,8 @@ in.
   without a bearer token is fine.
 - **Tests of an OAuth sign-in flow itself** (e.g. of a custom
   `OAuthProvider`): the one exception — pass that provider
-  explicitly, via `oauth=OAuthProviderForTest(<provider>)` from
-  `reboot.aio.tests`.
+  explicitly, via `oauth=OAuth(provider=OAuthProviderForTest( <provider>))` — `OAuthProviderForTest` from `reboot.aio.tests`,
+  `OAuth` from `reboot.aio.auth.oauth`.
 
 ## App-Internal-Only Methods
 

@@ -110,11 +110,11 @@ page to redirect and no cookie jar to hold the session — so it passes
 `RebootClientProvider`, and Reboot runs the standard
 authorization-code flow with PKCE that native apps use instead,
 keeping the resulting tokens in the device keychain. Because
-`backend/src/main.py` claims the app's redirect URI through
-`Application(native_redirect_uris=...)`, Reboot recognizes it as a
-first-party app and signs the user straight in, with no consent
-screen — the same treatment the web app gets. A client that registers
-some *other* redirect URI still gets one.
+`backend/src/main.py` lists the app's redirect URI in
+`OAuth(skip_consent_for_redirect_uris=...)`, Reboot signs the user
+straight in, with no consent screen — the same treatment the web app
+gets. A client that registers some *other* redirect URI still gets
+one.
 
 #### MCP
 

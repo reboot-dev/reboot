@@ -132,11 +132,13 @@ provider won't work until it is. This is the same hand-off
 `auth-oauth-providers.md` describes for the shipped providers:
 
 ```python
-oauth=OAuthProviderByEnvironment(
-    dev=Development(),
-    prod=MyIdP(
-        client_id=os.environ.get("MY_IDP_CLIENT_ID"),
-        client_secret=os.environ.get("MY_IDP_CLIENT_SECRET"),
+oauth=OAuth(
+    provider=OAuthProviderByEnvironment(
+        dev=Development(),
+        prod=MyIdP(
+            client_id=os.environ.get("MY_IDP_CLIENT_ID"),
+            client_secret=os.environ.get("MY_IDP_CLIENT_SECRET"),
+        ),
     ),
 )
 ```
