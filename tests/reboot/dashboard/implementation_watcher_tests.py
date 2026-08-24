@@ -3,6 +3,7 @@
 The API files say which state types exist, so a state type appearing
 is what sets the dashboard looking for the file that implements it.
 """
+import ast
 import hashlib
 import os
 import tempfile
@@ -22,7 +23,9 @@ from reboot.dashboard.constants import (
 )
 from reboot.dashboard.implementation_watcher import (
     AnalyzedFile,
+    MethodDefinition,
     _analyze,
+    _definitions,
     _reconstitute_known,
     _walk,
     extract_and_sort_servicers,
@@ -90,10 +93,11 @@ class {state}Servicer({state}.singleton.Servicer):
 SHOP = SERVICER.format(state='Shop', module='shop')
 DEPOT = SINGLETON.format(state='Depot', module='depot')
 
-# The shape of a generated module, as far as resolving a state type
-# needs: the state type's class and its servicer bases carrying the
-# state type's name as `__state_type_name__`, and the `Servicer`
-# aliases a servicer's base leads through.
+# The shape of a generated module, as far as the analysis needs:
+# the state type's class and its servicer bases carrying the state
+# type's name as `__state_type_name__`, the `Servicer` aliases a
+# servicer's base leads through, and the `WeakReference` defining
+# the methods a reference is called with.
 GENERATED = '''
 from typing import TypeAlias
 
@@ -127,6 +131,19 @@ class {state}:
     Servicer: TypeAlias = {state}Servicer
 
     singleton: TypeAlias = {state}Singleton
+
+    class WeakReference:
+
+        async def look(
+            __this__,
+            __context__,
+            request=None,
+        ):
+            pass
+
+    @classmethod
+    def ref(cls, state_id) -> '{state}.WeakReference':
+        return {state}.WeakReference()
 '''
 
 
@@ -379,6 +396,49 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class GoldenDefinitionsTest(unittest.TestCase):
+    """What `_definitions` reads off the generator's real output."""
+
+    def test_the_golden_module_defines_exactly_its_methods(self) -> None:
+        """The `MethodDefinition`s of the golden `_rbt` module are
+        exactly the methods `greeter.proto` declares, so a template
+        change that hides method stubs (under reporting) or lets
+        the `WeakReference`'s own machinery in (over reporting)
+        breaks this test rather than only the dashboard."""
+        golden = Path(__file__).parent.parent / 'greeter_rbt.golden.py'
+
+        definitions = [
+            definition for definition in
+            _definitions(ast.parse(golden.read_text())).values()
+            if isinstance(definition, MethodDefinition)
+        ]
+
+        self.assertEqual(
+            {definition.name for definition in definitions},
+            {
+                'ConstructAndStoreRecursiveMessage',
+                'DangerousFields',
+                'FailWithAborted',
+                'FailWithException',
+                'GetWholeState',
+                'Greet',
+                'ReadRecursiveMessage',
+                'SetAdjective',
+                'StoreRecursiveMessage',
+                'TestLongRunningFetch',
+                'TestLongRunningWriter',
+                'TransactionSetAdjective',
+                'TryToConstructContext',
+                'TryToConstructExternalContext',
+                'Workflow',
+            },
+        )
+        self.assertEqual(
+            {definition.state_type for definition in definitions},
+            {'tests.reboot.Greeter'},
+        )
+
+
 class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
     """Which file implements which state type."""
 
@@ -462,6 +522,40 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         self.parsed = parsed
 
         return {**unchanged, **analyzed}
+
+    async def test_a_method_records_the_calls_it_makes(self) -> None:
+        """A call is recorded when its definition lands on a method
+        of a state type's `WeakReference`, however the reference is
+        held: taken with `ref` inline, or kept in a variable
+        first."""
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'from shop.v1.depot_rbt import Depot\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                "        depot = Depot.ref('d')\n"
+                '        await depot.look(context)\n'
+                "        await Shop.ref('s').look(context)\n"
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        [found_servicer] = found[servicer].servicers
+        [method] = found_servicer.methods
+        self.assertEqual(
+            [(call.state_type, call.method) for call in method.calls],
+            [
+                ('shop.v1.Depot', 'look'),
+                ('shop.v1.Shop', 'look'),
+            ],
+        )
 
     async def test_a_base_from_a_function_return_type_is_resolved(
         self,
@@ -1085,6 +1179,53 @@ class GreeterServicer(Greeter.Servicer):
         self.assertEqual(
             found,
             [('tests.reboot.Greeter', str(servicer))],
+        )
+
+    async def test_a_call_through_the_generators_real_output(
+        self,
+    ) -> None:
+        """Calls resolved against the golden `_rbt` module the
+        generator actually wrote, however the reference is held:
+        taken with `ref` inline or into a variable, or the
+        servicer's own through `self.ref()`. A template change to
+        the `WeakReference` spellings breaks this test rather than
+        only the dashboard."""
+        servicer = self._write(
+            'greeter_servicer.py', source='''
+from tests.reboot.greeter_rbt import Greeter
+
+
+class GreeterServicer(Greeter.Servicer):
+
+    async def create(self, context, request):
+        greeter = Greeter.ref('g')
+        me = self.ref()
+        await greeter.Greet(context)
+        await Greeter.ref('g').SetAdjective(context)
+        await me.SetAdjective(context)
+        await self.ref().Greet(context)
+'''
+        )
+        application = self._write(
+            'main.py',
+            source=APPLICATION.replace(
+                'shop_servicer',
+                'greeter_servicer',
+            ).replace('ShopServicer', 'GreeterServicer'),
+        )
+
+        found = await self._analyze(application)
+
+        [found_servicer] = found[servicer].servicers
+        [method] = found_servicer.methods
+        self.assertEqual(
+            [(call.state_type, call.method) for call in method.calls],
+            [
+                ('tests.reboot.Greeter', 'Greet'),
+                ('tests.reboot.Greeter', 'SetAdjective'),
+                ('tests.reboot.Greeter', 'SetAdjective'),
+                ('tests.reboot.Greeter', 'Greet'),
+            ],
         )
 
     async def test_a_state_type_that_is_not_generated_yet(self) -> None:
