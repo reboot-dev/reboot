@@ -1105,25 +1105,35 @@ async def _analyze_method(
     *,
     filename: Path,
     analysis: Analysis,
-) -> tuple[list[Call], Analysis]:
-    """Returns the Reboot calls a method's implementation makes:
-    every call whose own definition pyright places at a method of a
-    state type's `WeakReference`, which is where the generator
-    defines what a reference is called with. However the reference
-    was come by, taken with `ref`, held in a variable, or received
-    from elsewhere, the called method's definition is the same, so
-    one question decides.
+) -> tuple[list[Call], list[str], Analysis]:
+    """Returns the Reboot calls a method's implementation makes and
+    the calls it makes that are ambiguous.
+
+    A Reboot call is one whose own definition pyright places at a
+    method stub of a state type. However the reference was come by,
+    taken with `ref`, held in a variable, or received from
+    elsewhere, the called method's definition is the same, so one
+    question decides.
+
+    An ambiguous call is one with no Reboot definition at all: its
+    definition is somewhere in code the generator did not write, or
+    nowhere pyright can say. It may be a helper that itself makes
+    Reboot calls, which a future analysis follows, and it may be
+    nothing of Reboot's. A call whose definition is the generator's
+    own machinery, such as the `ref` or `schedule` inside a chain,
+    is neither: a Reboot definition that names no method.
     """
     calls: list[Call] = []
+    ambiguous: list[str] = []
 
     for node in ast.walk(method):
         match node:
-            case ast.Call(func=ast.Attribute() as attribute):
+            case ast.Call(func=(ast.Attribute() | ast.Name()) as callee):
                 pass
             case _:
                 continue
 
-        line, character = _position_at_last_character(attribute)
+        line, character = _position_at_last_character(callee)
 
         location = await analysis.pyright.definition_at(
             filename=filename,
@@ -1132,6 +1142,11 @@ async def _analyze_method(
             text=analysis.parsed[filename].text,
         )
         if location is None:
+            ambiguous.append(ast.unparse(callee))
+            continue
+
+        if not location.filename.name.endswith('_rbt.py'):
+            ambiguous.append(ast.unparse(callee))
             continue
 
         definition, analysis = await analysis.definition_at(location)
@@ -1144,7 +1159,7 @@ async def _analyze_method(
             ):
                 calls.append(Call(state_type=state_type, method=name, how=how))
 
-    return calls, analysis
+    return calls, ambiguous, analysis
 
 
 async def _analyze_class(
@@ -1213,7 +1228,7 @@ async def _analyze_class(
                     ast.FunctionDef(name=str(name)) |
                     ast.AsyncFunctionDef(name=str(name))
                 ):
-                    calls, analysis = await _analyze_method(
+                    calls, ambiguous, analysis = await _analyze_method(
                         statement,
                         filename=filename,
                         analysis=analysis,
@@ -1223,6 +1238,7 @@ async def _analyze_class(
                             name=name,
                             digest=_digest(statement),
                             calls=calls,
+                            ambiguous=ambiguous,
                         )
                     )
 

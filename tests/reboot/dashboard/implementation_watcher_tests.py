@@ -646,14 +646,19 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_method_records_the_calls_it_makes(self) -> None:
         """A call is recorded when its definition lands on a method
-        of a state type's `WeakReference`, however the reference is
-        held: taken with `ref` inline, or kept in a variable
-        first."""
+        stub of a state type, however the reference is held; a call
+        with no Reboot definition at all is recorded as ambiguous;
+        and a call into the generator's machinery, such as the
+        `ref` inside a chain, is neither."""
         servicer = self._write(
             'shop_servicer.py',
             source=(
                 'from shop.v1.depot_rbt import Depot\n'
                 'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                'def helper(context):\n'
+                '    pass\n'
                 '\n'
                 '\n'
                 'class ShopServicer(Shop.Servicer):\n'
@@ -669,6 +674,8 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 "        await Depot.idempotently('i').make(context)\n"
                 "        await Depot.forall(['a']).look(context)\n"
                 "        await depot.until('u').look(context)\n"
+                '        helper(context)\n'
+                '        self.notify(context)\n'
             ),
         )
         application = self._write('main.py', source=APPLICATION)
@@ -694,6 +701,10 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 ('shop.v1.Depot', 'look', Call.How.FORALL),
                 ('shop.v1.Depot', 'look', Call.How.UNTIL),
             ],
+        )
+        self.assertEqual(
+            list(method.ambiguous),
+            ['helper', 'self.notify'],
         )
 
     async def test_a_base_from_a_function_return_type_is_resolved(
@@ -1390,6 +1401,7 @@ class GreeterServicer(Greeter.Servicer):
                 ('tests.reboot.Greeter', 'Greet', Call.How.UNTIL),
             ],
         )
+        self.assertEqual(list(method.ambiguous), [])
 
     async def test_a_state_type_that_is_not_generated_yet(self) -> None:
         """A name pyright cannot resolve services nothing yet: its
