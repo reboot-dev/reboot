@@ -196,6 +196,13 @@ message ServicerInfo {
     // Represents every Reboot call the method's implementation
     // makes.
     repeated Call calls = 3;
+
+    // Represents every call the analysis could not resolve to a
+    // Reboot definition: possibly a helper that itself makes
+    // Reboot calls, to be followed by a future analysis, and
+    // possibly nothing of Reboot's. Spelled the way `ast.unparse`
+    // writes the callee, e.g. "self._transfer".
+    repeated string ambiguous = 4;
   }
 
   // The state type it services, spelled as `StateTypeInfo.name`.
