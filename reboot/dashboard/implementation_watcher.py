@@ -742,9 +742,11 @@ class ServicerDefinition:
 # types takes.
 @dataclass(frozen=True, kw_only=True)
 class MethodDefinition:
-    """A line defining a method of a state type's `WeakReference`,
-    the class of a reference to the state type: what a call made
-    through any reference is defined by."""
+    """A line defining a method stub of a state type: on its
+    `WeakReference`, the class of a reference to it, or on the
+    state type's own class, where the generator writes the
+    constructors. What a call made through any reference, or a
+    construction, is defined by."""
 
     # The state type, spelled as `StateTypeInfo.name`, e.g.
     # `shop.v1.Shop`.
@@ -753,11 +755,27 @@ class MethodDefinition:
     # The method name, spelled as the developer calls it, e.g. `look`.
     name: str
 
+    # Whether the stub is a constructor, written on the state
+    # type's own class rather than on its `WeakReference`.
+    constructor: bool
+
 
 Definition = (
     StateTypeDefinition | BaseServicerDefinition | ServicerDefinition |
     MethodDefinition
 )
+
+
+def _takes_context_second(
+    method: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    """Returns whether a def takes `__context__` as its second
+    parameter, the spelling only the generator's method stubs use:
+    e.g. `Greet(__this__, __context__, ...)` does, and the
+    machinery around the stubs, such as `schedule(self, when=...)`,
+    does not."""
+    arguments = method.args.args
+    return len(arguments) >= 2 and arguments[1].arg == '__context__'
 
 
 def _definitions(syntax: ast.Module) -> Mapping[int, Definition]:
@@ -812,29 +830,37 @@ def _definitions(syntax: ast.Module) -> Mapping[int, Definition]:
                     state_type=state_type,
                 )
 
-                # The state type's `WeakReference` is the class of
-                # a reference to it, defining the methods a
-                # reference is called with, one def per overload. A
-                # method is told apart from the reference's own
-                # machinery, such as `schedule`, by the
-                # `__context__` parameter only the generator's
-                # method stubs take second.
+                # The state type's class defines the constructor
+                # stubs, e.g.
+                # `async def Create(__cls__, __context__, ...)`,
+                # and its `WeakReference`, the class of a reference
+                # to it, defines the method stubs a reference is
+                # called with, one def per overload. Either is told
+                # apart from the machinery around it, such as `ref`
+                # and `schedule`, by the `__context__` parameter
+                # only the generator's stubs take second.
                 for inner in statement.body:
                     match inner:
+                        case (ast.FunctionDef() | ast.AsyncFunctionDef()
+                             ) if _takes_context_second(inner):
+                            definitions[inner.lineno] = MethodDefinition(
+                                state_type=state_type,
+                                name=inner.name,
+                                constructor=True,
+                            )
+
                         case ast.ClassDef(name='WeakReference'):
                             for node in inner.body:
                                 match node:
                                     case (
                                         ast.FunctionDef() |
                                         ast.AsyncFunctionDef()
-                                    ) if (
-                                        len(node.args.args) >= 2 and
-                                        node.args.args[1].arg == '__context__'
-                                    ):
+                                    ) if _takes_context_second(node):
                                         definitions[node.lineno] = (
                                             MethodDefinition(
                                                 state_type=state_type,
                                                 name=node.name,
+                                                constructor=False,
                                             )
                                         )
 
@@ -1047,8 +1073,21 @@ async def _analyze_method(
         definition, analysis = await analysis.definition_at(location)
 
         match definition:
-            case MethodDefinition(state_type=state_type, name=name):
-                calls.append(Call(state_type=state_type, method=name))
+            case MethodDefinition(
+                state_type=state_type,
+                name=name,
+                constructor=constructor,
+            ):
+                calls.append(
+                    Call(
+                        state_type=state_type,
+                        method=name,
+                        how=(
+                            Call.How.CONSTRUCT
+                            if constructor else Call.How.CALL
+                        ),
+                    )
+                )
 
     return calls, analysis
 

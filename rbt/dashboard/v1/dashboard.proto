@@ -163,12 +163,24 @@ message ServicerInfo {
 
     // Represents one Reboot call the method's implementation makes.
     message Call {
+      // Represents how the call is reached.
+      enum How {
+        UNKNOWN = 0;
+        // A plain method call on a reference.
+        CALL = 1;
+        // A constructor, called on the state type itself, which
+        // both makes the state and returns a reference to it.
+        CONSTRUCT = 2;
+      }
+
       // Represents the state type called, spelled as
       // `StateTypeInfo.name`.
       string state_type = 1;
 
       // Represents the method called, spelled as `MethodInfo.name`.
       string method = 2;
+
+      How how = 3;
     }
 
     // Represents every Reboot call the method's implementation
