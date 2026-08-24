@@ -178,6 +178,9 @@ message ServicerInfo {
         // Reached through `.forall(ids)`, calling every one of the
         // state type's states.
         FORALL = 5;
+        // Reached through `.until(alias)`, awaited until what the
+        // method reads satisfies a condition.
+        UNTIL = 6;
       }
 
       // Represents the state type called, spelled as

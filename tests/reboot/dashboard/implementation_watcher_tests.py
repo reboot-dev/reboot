@@ -161,6 +161,15 @@ class {state}:
             ):
                 pass
 
+        class _Until:
+
+            async def look(
+                __this__,
+                __context__,
+                request=None,
+            ):
+                pass
+
         async def look(
             __this__,
             __context__,
@@ -176,6 +185,9 @@ class {state}:
 
         def idempotently(self, alias=None) -> '{state}.WeakReference._Idempotently':
             return {state}.WeakReference._Idempotently()
+
+        def until(self, alias) -> '{state}.WeakReference._Until':
+            return {state}.WeakReference._Until()
 
     @classmethod
     def ref(cls, state_id) -> '{state}.WeakReference':
@@ -525,6 +537,20 @@ class GoldenDefinitionsTest(unittest.TestCase):
                 # out.
                 Call.How.FORALL:
                     methods - {'Workflow'},
+                # Awaiting until a condition holds only makes sense
+                # for what can be read, so `until` carries only the
+                # reader methods.
+                Call.How.UNTIL:
+                    {
+                        'FailWithAborted',
+                        'FailWithException',
+                        'GetWholeState',
+                        'Greet',
+                        'ReadRecursiveMessage',
+                        'TestLongRunningFetch',
+                        'TryToConstructContext',
+                        'TryToConstructExternalContext',
+                    },
                 Call.How.CONSTRUCT: {'Create'},
             },
         )
@@ -642,6 +668,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 "        await depot.idempotently('i').look(context)\n"
                 "        await Depot.idempotently('i').make(context)\n"
                 "        await Depot.forall(['a']).look(context)\n"
+                "        await depot.until('u').look(context)\n"
             ),
         )
         application = self._write('main.py', source=APPLICATION)
@@ -665,6 +692,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 ('shop.v1.Depot', 'look', Call.How.CALL),
                 ('shop.v1.Depot', 'make', Call.How.CONSTRUCT),
                 ('shop.v1.Depot', 'look', Call.How.FORALL),
+                ('shop.v1.Depot', 'look', Call.How.UNTIL),
             ],
         )
 
@@ -1324,6 +1352,7 @@ class GreeterServicer(Greeter.Servicer):
         await me.per_workflow().Greet(context)
         await Greeter.per_workflow().Create(context)
         await Greeter.forall(['g']).SetAdjective(context)
+        await me.until('u').Greet(context)
 '''
         )
         application = self._write(
@@ -1358,6 +1387,7 @@ class GreeterServicer(Greeter.Servicer):
                 ('tests.reboot.Greeter', 'Greet', Call.How.CALL),
                 ('tests.reboot.Greeter', 'Create', Call.How.CONSTRUCT),
                 ('tests.reboot.Greeter', 'SetAdjective', Call.How.FORALL),
+                ('tests.reboot.Greeter', 'Greet', Call.How.UNTIL),
             ],
         )
 
