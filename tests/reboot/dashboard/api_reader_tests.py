@@ -4,119 +4,111 @@ This is what lets the dashboard show state types before anything has
 been built: `rbt generate` has not run, no servicer exists, and there
 is no process to ask. Only the file the developer wrote.
 """
+import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
-from reboot.dashboard.api_reader import read
+from rbt.dashboard.v1.dashboard_pb2 import Method, StateType
+from reboot.dashboard.api_reader import read_api_file
 
 API_DIRECTORY = str(Path(__file__).parent / 'api')
 
 
-def _by_name(state_types: list[dict]) -> dict[str, dict]:
-    return {state_type['name']: state_type for state_type in state_types}
+def _state_types_by_name(state_types: list[StateType]) -> dict[str, StateType]:
+    return {state_type.name: state_type for state_type in state_types}
 
 
-def _defs(state_type: dict, name: str) -> dict:
-    return state_type['$defs'][name]
+def _schema_of_data_type(state_type: StateType, name: str) -> dict:
+    """The JSON Schema of the data type called `name`."""
+    for data_type in state_type.data_types:
+        if data_type.name == name:
+            return json.loads(data_type.schema)
+    raise AssertionError(f"No data type '{name}' in {state_type.name}")
 
 
-def _method(state_type: dict, name: str) -> dict:
-    for method in state_type['methods']:
-        if method['name'] == name:
+def _method_named(state_type: StateType, name: str) -> Method:
+    for method in state_type.methods:
+        if method.name == name:
             return method
-    raise AssertionError(f"No method '{name}' in {state_type['name']}")
+    raise AssertionError(f"No method '{name}' in {state_type.name}")
 
 
 class APIReaderTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_describes_a_state_type_and_its_methods(self) -> None:
-        state_types, error = await read(API_DIRECTORY, 'shop/v1/shop.py')
+        state_types, error = await read_api_file(
+            API_DIRECTORY, 'shop/v1/shop.py'
+        )
 
         self.assertIsNone(error)
 
-        shop = _by_name(state_types)['shop.v1.Shop']
+        shop = _state_types_by_name(state_types)['shop.v1.Shop']
 
-        # The file the developer wrote, spelled from where the
-        # dashboard was started: the API directory as given, then the
-        # path inside it.
+        # The API directory as given, then the path inside it.
         self.assertEqual(
-            shop['file'],
+            shop.file,
             os.path.join(API_DIRECTORY, 'shop/v1/shop.py'),
         )
 
         self.assertEqual(
-            shop['description'],
+            shop.description,
             'A shop, and the stock it has to sell.',
         )
 
-        # The state is a `$ref` into this state type's own `$defs`.
-        self.assertEqual(shop['state'], {'$ref': '#/$defs/ShopState'})
+        # `properties` keeps the order the fields were declared in.
         self.assertEqual(
-            list(_defs(shop, 'ShopState')['properties']),
+            list(json.loads(shop.state_schema)['properties']),
             ['name', 'open'],
         )
 
-        # The methods come from the file, with the names and kinds
-        # their author wrote.
-        stock = _method(shop, 'stock')
-        self.assertEqual(stock['kind'], 'transaction')
-        self.assertEqual(stock['request'], {'$ref': '#/$defs/StockRequest'})
+        # Methods keep the names their author gave them, and name what
+        # they take and return in `data_types`.
+        stock = _method_named(shop, 'stock')
+        self.assertEqual(stock.kind, Method.Kind.TRANSACTION)
+        self.assertEqual(stock.request, 'StockRequest')
         self.assertEqual(
-            list(_defs(shop, 'StockRequest')['properties']),
+            list(_schema_of_data_type(shop, 'StockRequest')['properties']),
             ['item', 'quantity', 'labels'],
         )
 
-        # `stock` has a `description` and is not an MCP tool: prose
-        # reaches the page whether or not its author also exposed the
-        # method to MCP.
-        self.assertEqual(stock['description'], 'Add stock of an item.')
-        self.assertFalse(stock['mcp'])
+        self.assertEqual(stock.description, 'Add stock of an item.')
+        self.assertFalse(stock.mcp)
 
-        remaining = _method(shop, 'remaining')
-        self.assertEqual(remaining['kind'], 'reader')
+        remaining = _method_named(shop, 'remaining')
+        self.assertEqual(remaining.kind, Method.Kind.READER)
+        self.assertEqual(remaining.response, 'StockResponse')
+        self.assertTrue(remaining.mcp)
         self.assertEqual(
-            remaining['response'],
-            {'$ref': '#/$defs/StockResponse'},
-        )
-        self.assertTrue(remaining['mcp'])
-        self.assertEqual(
-            remaining['description'],
+            remaining.description,
             'How much of an item is left.',
         )
 
-        # An error is a `$ref` like anything else, so what it holds
-        # can be read rather than only its name.
+        # An error is a data type like a request, so its fields can be
+        # read.
+        self.assertEqual(list(remaining.errors), ['OutOfStockError'])
         self.assertEqual(
-            remaining['errors'],
-            [{
-                '$ref': '#/$defs/OutOfStockError'
-            }],
-        )
-        self.assertEqual(
-            list(_defs(shop, 'OutOfStockError')['properties']),
+            list(_schema_of_data_type(shop, 'OutOfStockError')['properties']),
             ['item'],
         )
 
-        # A factory constructs the state, and takes and returns
-        # nothing.
-        create = _method(shop, 'create')
-        self.assertTrue(create['factory'])
-        self.assertNotIn('request', create)
-        self.assertNotIn('response', create)
+        create = _method_named(shop, 'create')
+        self.assertTrue(create.factory)
+        self.assertFalse(create.HasField('request'))
+        self.assertFalse(create.HasField('response'))
 
     async def test_a_nested_type_is_followed_rather_than_named(self) -> None:
-        # The whole point: a type that holds another type is not a
-        # dead end. `StockResponse.items` is a list of `Item`, whose
-        # `price` is an `Optional[Price]`, and every one of those is
-        # in `$defs` to be read.
-        state_types, error = await read(API_DIRECTORY, 'shop/v1/shop.py')
+        # `StockResponse.items` is a list of `Item`, whose `price` is an
+        # `Optional[Price]`; `data_types` describes every one of them.
+        state_types, error = await read_api_file(
+            API_DIRECTORY, 'shop/v1/shop.py'
+        )
 
         self.assertIsNone(error)
-        shop = _by_name(state_types)['shop.v1.Shop']
+        shop = _state_types_by_name(state_types)['shop.v1.Shop']
 
         self.assertEqual(
-            _defs(shop, 'StockResponse')['properties']['items'],
+            _schema_of_data_type(shop, 'StockResponse')['properties']['items'],
             {
                 'items': {
                     '$ref': '#/$defs/Item'
@@ -127,9 +119,9 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        # `Optional[X]` is spelled as a union with null.
+        # Pydantic writes `Optional[X]` as a union with null.
         self.assertEqual(
-            _defs(shop, 'Item')['properties']['price']['anyOf'],
+            _schema_of_data_type(shop, 'Item')['properties']['price']['anyOf'],
             [{
                 '$ref': '#/$defs/Price'
             }, {
@@ -138,35 +130,35 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(
-            list(_defs(shop, 'Price')['properties']),
+            list(_schema_of_data_type(shop, 'Price')['properties']),
             ['currency', 'cents'],
         )
 
-        # A model's docstring describes it, so prose the author
-        # already wrote reaches the page.
+        # A model's docstring is its schema's description.
         self.assertEqual(
-            _defs(shop, 'Item')['description'],
+            _schema_of_data_type(shop, 'Item')['description'],
             'One thing the shop sells.',
         )
 
     async def test_a_file_with_no_api_describes_nothing(self) -> None:
-        # A directory holds shared code as well as APIs, and reading a
-        # module that declares no `api` is not an error.
-        state_types, error = await read(API_DIRECTORY, 'shop/v1/helper.py')
+        state_types, error = await read_api_file(
+            API_DIRECTORY, 'shop/v1/helper.py'
+        )
 
         self.assertIsNone(error)
         self.assertEqual(state_types, [])
 
     async def test_a_file_that_does_not_parse_reports_why(self) -> None:
-        # Half-written files are the normal case while someone is
-        # typing. The reader has to survive them and say what is
-        # wrong, because that message is what the developer needs.
+        # A half-written file is the normal case while someone is
+        # typing; the message is what the developer needs.
         with tempfile.TemporaryDirectory() as directory:
             os.makedirs(os.path.join(directory, 'shop', 'v1'))
             Path(os.path.join(directory, 'shop', 'v1', 'shop.py')
                 ).write_text('from reboot.api import API\napi = API(\n')
 
-            state_types, error = await read(directory, 'shop/v1/shop.py')
+            state_types, error = await read_api_file(
+                directory, 'shop/v1/shop.py'
+            )
 
             self.assertEqual(state_types, [])
             assert error is not None
@@ -175,11 +167,9 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
     async def test_reading_does_not_write_to_the_developer_s_tree(
         self
     ) -> None:
-        # Reading walks the API object in memory and leaves the
-        # developer's tree exactly as it was.
         before = sorted(os.listdir(os.path.join(API_DIRECTORY, 'shop', 'v1')))
 
-        await read(API_DIRECTORY, 'shop/v1/shop.py')
+        await read_api_file(API_DIRECTORY, 'shop/v1/shop.py')
 
         self.assertEqual(
             before,

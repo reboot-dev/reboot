@@ -86,7 +86,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
             suppress_open_on_restart=suppress,
         )
 
-    async def _viewers(self) -> list[str]:
+    async def _viewer_ids(self) -> list[str]:
         context = self.rbt.create_external_context(name=self.id())
         try:
             response = await Presence.ref(PRESENCE_ID).List(context)
@@ -95,7 +95,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
             return []
 
     async def test_opens_when_nobody_is_looking(self) -> None:
-        self.assertEqual(await self._viewers(), [])
+        self.assertEqual(await self._viewer_ids(), [])
 
         with patch('webbrowser.open', return_value=True) as browser:
             await _open_dashboard_once(dashboard_url=self.url, forced=False)
@@ -106,7 +106,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_does_not_open_when_somebody_is_looking(self) -> None:
         await self._view('a-tab-that-is-open')
-        self.assertEqual(await self._viewers(), ['a-tab-that-is-open'])
+        self.assertEqual(await self._viewer_ids(), ['a-tab-that-is-open'])
 
         with patch('webbrowser.open', return_value=True) as browser:
             with patch('reboot.cli.common.terminal.info') as told:
@@ -136,7 +136,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         # untoggling and `Watch` then dropping the subscriber, so wait
         # for the list rather than assuming the cancellation was
         # enough.
-        while await self._viewers() != []:
+        while await self._viewer_ids() != []:
             await asyncio.sleep(0.1)
 
         with patch('webbrowser.open', return_value=True) as browser:

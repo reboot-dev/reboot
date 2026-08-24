@@ -461,7 +461,7 @@ nav a .nav-name {
    text sit level in a row that a longer cell has made taller. Every
    cell but the last, which holds running text: made a flex container
    it would lay each word out as its own item, spaces and all. */
-.change > *:not(.change-moved) {
+.change > *:not(.change-changed-parts) {
   display: flex;
   align-items: center;
 }
@@ -494,7 +494,7 @@ nav a .nav-name {
   /* Under its row, and carrying the space that separates one change
      from the next. Rows with nothing to say still carry it, so the
      rhythm does not depend on what happened. */
-  .change-moved {
+  .change-changed-parts {
     grid-column: 1 / -1;
     padding-top: 0;
     padding-bottom: 18px;
@@ -590,7 +590,7 @@ nav a .nav-name {
   color: hsl(var(--errors));
 }
 
-/* The type it happened to. Named plainly: what actually moved is
+/* The type it happened to. Named plainly: what actually changed is
    the next column, and that is what should be read first. */
 .change-name {
   font-size: 12.5px;
@@ -605,10 +605,10 @@ a.change-name:hover {
   text-underline-offset: 2px;
 }
 
-/* What moved inside it, which is what the row is actually about: the
+/* What changed inside it, which is what the row is actually about: the
    largest thing in the row, with the name itself carrying the
    weight. */
-.change-moved {
+.change-changed-parts {
   font-family: ui-monospace, Menlo, monospace;
   font-size: 12.5px;
   font-weight: 700;
@@ -616,7 +616,7 @@ a.change-name:hover {
   overflow-wrap: anywhere;
 }
 
-.moved-removed {
+.changed-part-removed {
   text-decoration: line-through;
   text-decoration-color: hsl(var(--errors) / 0.6);
 }

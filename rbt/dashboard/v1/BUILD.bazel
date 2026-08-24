@@ -37,7 +37,6 @@ js_proto_library(
         # the `proto_libraries` here.
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
         "@com_google_protobuf//:descriptor_proto",
-        "@com_google_protobuf//:struct_proto",
     ],
     visibility = ["//visibility:public"],
 )
@@ -64,7 +63,6 @@ js_reboot_react_library(
         ":dashboard_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
         "@com_google_protobuf//:descriptor_proto",
-        "@com_google_protobuf//:struct_proto",
     ],
     visibility = ["//visibility:public"],
 )

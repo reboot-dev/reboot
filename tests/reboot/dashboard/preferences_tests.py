@@ -41,12 +41,12 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-    async def _get(self) -> bool:
+    async def _read_preferences(self) -> bool:
         context = self.rbt.create_external_context(name=self.id())
         response = await Preferences.ref(PREFERENCES_ID).Get(context)
         return response.suppress_open_on_restart
 
-    async def _set_suppress(self, suppress: bool) -> None:
+    async def _set_suppress_open_on_restart(self, suppress: bool) -> None:
         """Makes the choice the dashboard's banner makes."""
         context = self.rbt.create_external_context(name=self.id())
         await Preferences.ref(PREFERENCES_ID).SetSuppressOpenOnRestart(
@@ -54,7 +54,7 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
             suppress_open_on_restart=suppress,
         )
 
-    async def _expanded(self) -> list[str]:
+    async def _read_expanded_state_types(self) -> list[str]:
         context = self.rbt.create_external_context(name=self.id())
         response = await Preferences.ref(PREFERENCES_ID).Get(context)
         return list(response.expanded_state_types)
@@ -76,7 +76,7 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
         #
         # False, so that somebody who has never clicked the banner gets
         # a dashboard opened for them.
-        self.assertFalse(await self._get())
+        self.assertFalse(await self._read_preferences())
 
     async def test_a_writer_leaves_alone_what_it_was_not_asked_about(
         self
@@ -86,13 +86,15 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
         # dashboard constructs on every `rbt dashboard`, and a page
         # that expands a state type must not write back a stale
         # answer to a question it was not asked.
-        await self._set_suppress(True)
+        await self._set_suppress_open_on_restart(True)
         await self._set_expanded('bank.v1.Account', True)
 
         await initialize(self._initialize_context())
 
-        self.assertTrue(await self._get())
-        self.assertEqual(await self._expanded(), ['bank.v1.Account'])
+        self.assertTrue(await self._read_preferences())
+        self.assertEqual(
+            await self._read_expanded_state_types(), ['bank.v1.Account']
+        )
 
     async def test_what_is_expanded_is_a_sorted_set(self) -> None:
         # Two tabs can each send the same click, a page that
@@ -110,7 +112,7 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
         # every open page when the only difference is the order two
         # clicks happened to arrive in.
         self.assertEqual(
-            await self._expanded(),
+            await self._read_expanded_state_types(),
             ['bank.v1.Account', 'bank.v1.Customer'],
         )
 

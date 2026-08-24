@@ -2,10 +2,11 @@
 
 Run as a subprocess:
 
-    python -m reboot.dashboard.api_reader <api-directory> \
+    python -m reboot.dashboard.api_reader <api-directory> \\
         <file-relative-to-it>
 
-and it writes a JSON list of state types to stdout, or a message to
+and it writes the state types the file declares to stdout, as a JSON
+list of `rbt.dashboard.v1.StateType` in proto JSON, or a message to
 stderr and a non-zero exit if the file cannot be read.
 
 A subprocess for two reasons. Reading a Pydantic API means importing
@@ -14,30 +15,31 @@ edits. And it derives a module path from a relative filename, so it
 needs a working directory and `sys.path` that the dashboard should not
 adopt.
 
-Types are Pydantic's own JSON Schema rather than anything spelled
-here, so a nested type is followed rather than named: a state type
-carries a `$defs` of everything its methods mention, and its state,
-requests, responses and errors are `$ref`s into it. Scoped per state
-type, so two files declaring the same name do not collide.
+Pydantic writes the JSON Schema of every model a state type mentions,
+however deeply nested; the reader names them and marks which one is
+the state.
 """
 import asyncio
 import importlib
 import json
 import os
 import sys
+from google.protobuf.json_format import MessageToDict, ParseDict
 from pydantic.json_schema import models_json_schema
+from rbt.dashboard.v1.dashboard_pb2 import DataType, Method, StateType
 from reboot.api import API, MethodModel, Model
 from typing import Optional
 
-# The prefix of a `$ref` into a schema's `$defs`.
+# The prefix of a schema's reference to a sibling model.
 DEFS = '#/$defs/'
 
 
-def _schemas_of(models: list[type[Model]]) -> tuple[dict, dict]:
-    """The `$defs` for `models`, and a `$ref` to each by model.
+def _schemas_of_models(models: list[type[Model]]) -> tuple[dict, dict]:
+    """The JSON Schema of each of `models` and of every model those
+    contain, keyed by name, and each model's name.
 
-    One call for the whole state type, so a type two of its methods
-    both mention is described once.
+    One call for the whole state type, so a model two methods mention
+    is described once and references between models resolve.
     """
     if len(models) == 0:
         return {}, {}
@@ -51,12 +53,13 @@ def _schemas_of(models: list[type[Model]]) -> tuple[dict, dict]:
     )
 
     return schema.get('$defs', {}), {
-        model: refs[(model, 'validation')] for model in unique
+        model: refs[(model, 'validation')]['$ref'].replace(DEFS, '')
+        for model in unique
     }
 
 
-def _models_of(type_obj) -> list[type[Model]]:
-    """Every model one state type mentions, state first.
+def _models_of_type(type_obj) -> list[type[Model]]:
+    """Every model the state type or its methods name, state first.
 
     A `UI` method draws no method row, but the model it takes is one
     the developer wrote and is described like any other.
@@ -75,26 +78,57 @@ def _models_of(type_obj) -> list[type[Model]]:
     return models
 
 
-def _describe_method(method_name: str, spec: MethodModel, refs: dict) -> dict:
-    method: dict = {
-        'name': method_name,
-        'kind': spec.kind.value,
-        'factory': spec.factory,
-        'mcp': spec.mcp is not None,
-        'errors': [refs[error] for error in spec.errors],
-    }
+def _method_from_spec(
+    method_name: str,
+    spec: MethodModel,
+    names: dict,
+) -> Method:
+    method = Method(
+        name=method_name,
+        kind=Method.Kind.Value(spec.kind.value.upper()),
+        factory=spec.factory,
+        mcp=spec.mcp is not None,
+        errors=[names[error] for error in spec.errors],
+    )
 
     if spec.request is not None:
-        method['request'] = refs[spec.request]
+        method.request = names[spec.request]
     if spec.response is not None:
-        method['response'] = refs[spec.response]
+        method.response = names[spec.response]
     if spec.description is not None:
-        method['description'] = spec.description
+        method.description = spec.description
 
     return method
 
 
-def describe(api_directory: str, filename: str) -> list[dict]:
+def _state_type_from_type(name: str, file: str, type_obj) -> StateType:
+    schemas, names = _schemas_of_models(_models_of_type(type_obj))
+
+    state = names[type_obj.state]
+
+    state_type = StateType(
+        name=name,
+        file=file,
+        state_schema=json.dumps(schemas[state]),
+        methods=[
+            _method_from_spec(method_name, spec, names)
+            for method_name, spec in type_obj.methods.items()
+            if isinstance(spec, MethodModel)
+        ],
+        data_types=[
+            DataType(name=model_name, schema=json.dumps(schema))
+            for model_name, schema in schemas.items()
+            if model_name != state
+        ],
+    )
+
+    if type_obj.description is not None:
+        state_type.description = type_obj.description
+
+    return state_type
+
+
+def state_types_in_file(api_directory: str, filename: str) -> list[StateType]:
     """Describes the state types declared in one API file.
 
     State type names are qualified by the file's directory, the way
@@ -116,59 +150,26 @@ def describe(api_directory: str, filename: str) -> list[dict]:
 
     api = getattr(module, 'api', None)
     if not isinstance(api, API):
-        # Not every file in the directory declares an API; one
-        # holding shared code simply has nothing to describe.
+        # A file containing shared code declares no `api`.
         return []
 
     package = os.path.dirname(filename).replace(os.sep, '.')
 
-    described = []
-    for type_name, type_obj in api.get_types().items():
-        definitions, refs = _schemas_of(_models_of(type_obj))
-
-        state = refs[type_obj.state]['$ref'].replace(DEFS, '')
-
-        state_type: dict = {
-            'name': f'{package}.{type_name}',
-            'file': file,
-            'state': refs[type_obj.state],
-            # Every type in `$defs` except the state itself: what the
-            # methods take, return or raise, and anything those hold.
-            # Ids are package-qualified, matching the message names
-            # `rbt generate` gives these types.
-            'data_types':
-                [
-                    {
-                        'id': f'{package}.{name}',
-                        'name': name
-                    } for name in definitions if name != state
-                ],
-            'methods':
-                [
-                    _describe_method(method_name, spec, refs)
-                    for method_name, spec in type_obj.methods.items()
-                    if isinstance(spec, MethodModel)
-                ],
-            '$defs': definitions,
-        }
-
-        if type_obj.description is not None:
-            state_type['description'] = type_obj.description
-
-        described.append(state_type)
-
-    return described
+    return [
+        _state_type_from_type(f'{package}.{type_name}', file, type_obj)
+        for type_name, type_obj in api.get_types().items()
+    ]
 
 
-async def read(
+async def read_api_file(
     api_directory: str,
     filename: str,
-) -> tuple[list[dict], Optional[str]]:
+) -> tuple[list[StateType], Optional[str]]:
     """Describes one API file in a subprocess.
 
     Returns the state types it declares, and a message when it could
     not be read. A half-written file is the normal case while someone
-    is typing, and is worth showing rather than hiding.
+    is typing.
     """
     process = await asyncio.create_subprocess_exec(
         sys.executable,
@@ -180,12 +181,9 @@ async def read(
         filename,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        # Reading an API file imports it, and an import writes
-        # `__pycache__` beside the source, inside the directory
-        # being watched, so the write is itself a change, and every
-        # edit costs a second pass over every file. It also leaves
-        # bytecode in the developer's tree that nothing else put
-        # there.
+        # Importing an API file would write `__pycache__` beside it,
+        # inside the watched directory, and the watcher would read
+        # every file again for that write.
         env={
             **os.environ, 'PYTHONDONTWRITEBYTECODE': '1'
         },
@@ -196,9 +194,13 @@ async def read(
         return [], errors.decode().strip()
 
     try:
-        return json.loads(out), None
+        described = json.loads(out)
     except json.JSONDecodeError as e:
         return [], f'Could not read the description: {e}'
+
+    return [
+        ParseDict(state_type, StateType()) for state_type in described
+    ], None
 
 
 def main() -> int:
@@ -207,16 +209,29 @@ def main() -> int:
         return 2
 
     try:
-        print(json.dumps(describe(sys.argv[1], sys.argv[2])))
+        state_types = state_types_in_file(sys.argv[1], sys.argv[2])
     except SystemExit:
-        # A malformed API can reach `fail()` inside `reboot.api`,
-        # which raises this after printing why. Being a subprocess,
-        # that is a message for the dashboard rather than the end of
-        # it.
+        # `fail()` inside `reboot.api` prints why a malformed API is
+        # malformed, then raises this. The dashboard shows that
+        # message; the subprocess exit is not an error of its own.
         return 1
     except Exception as e:
         print(f'{type(e).__name__}: {e}', file=sys.stderr)
         return 1
+
+    print(
+        json.dumps(
+            [
+                # Empty repeated fields print as `[]`, matching the
+                # generated TypeScript types, whose repeated fields
+                # are always arrays.
+                MessageToDict(
+                    state_type,
+                    always_print_fields_with_no_presence=True,
+                ) for state_type in state_types
+            ]
+        )
+    )
 
     return 0
 

@@ -2,51 +2,137 @@ syntax = "proto3";
 
 package rbt.dashboard.v1;
 
-import "google/protobuf/struct.proto";
 import "rbt/v1alpha1/options.proto";
 
 ////////////////////////////////////////////////////////////////////////
 
-// What the dashboard application has read of the developer's API
-// files, so that a browser can read it without reaching the
-// application itself.
+// What the dashboard has read from the developer's API files.
 message API {
   option (rbt.v1alpha1.state) = {
   };
 
-  // The state types the developer's API files declare, which exist
-  // before the application does. A JSON array: each state type
-  // carries its methods and a `$defs` of every type they mention,
-  // referred to by `$ref`. `Value` because the types are Pydantic's
-  // own JSON Schema, which is recursive and open-ended, and describing
-  // it in proto would mean owning a second copy of a mapping Pydantic
-  // already has.
-  google.protobuf.Value state_types = 1;
+  repeated StateType state_types = 1;
 
   // Why the API files could not be read, if they could not be. A
-  // half-written file is the normal case while someone is typing, and
-  // saying so beats showing nothing.
+  // half-written file is the normal cause while someone is typing.
   optional string error = 2;
+}
+
+message StateType {
+  // Fully qualified by the file's directory: `shop/v1/shop.py`
+  // declaring `Shop` yields `shop.v1.Shop`.
+  string name = 1;
+
+  // The path including the directory passed to `--api-directory`.
+  string file = 2;
+
+  optional string description = 3;
+
+  repeated Method methods = 4;
+
+  // JSON Schema of the state model, as JSON text so that `properties`
+  // stays in the order the developer declared the fields.
+  string state_schema = 5;
+
+  // The request, response and error models of the methods, and
+  // anything those contain, however deeply nested. Every name a
+  // `Method` or a `$ref` in this state type uses is the `name` of
+  // exactly one entry in this list. Another state type's list may
+  // contain a different model under the same name.
+  repeated DataType data_types = 6;
+}
+
+message Method {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    READER = 1;
+    WRITER = 2;
+    TRANSACTION = 3;
+    WORKFLOW = 4;
+  }
+
+  string name = 1;
+
+  Kind kind = 2;
+
+  bool factory = 3;
+
+  // Whether the application exposes the method as an MCP tool.
+  bool mcp = 4;
+
+  // Names of entries in the enclosing state type's `data_types`.
+  // Absent when the method takes or returns nothing.
+  optional string request = 5;
+  optional string response = 6;
+  repeated string errors = 7;
+
+  optional string description = 8;
+}
+
+// A model that is not a state model: a request, a response, an
+// error, or anything those contain, however deeply nested.
+message DataType {
+  string name = 1;
+
+  // Pydantic's JSON Schema for the model, as JSON text. A reference
+  // to a sibling is spelled `#/$defs/<name>`, `<name>` being that
+  // sibling's `name`.
+  string schema = 2;
 }
 
 message APIGetRequest {}
 
 message APIGetResponse {
-  google.protobuf.Value state_types = 1;
+  repeated StateType state_types = 1;
   optional string error = 2;
 }
 
 message APIUpdateRequest {
-  google.protobuf.Value state_types = 1;
+  repeated StateType state_types = 1;
   optional string error = 2;
 }
 
 message APIUpdateResponse {}
 
-// What changed, as `changelog.py` describes it: a JSON array, one
-// entry per type added, changed or removed.
+// One type that was added, changed or removed, as `changelog.py`
+// records it.
+//
+// `kind`, `change` and `part` keep their lowercase spellings: entries
+// recorded before these messages existed persist in the changelog
+// with those words, and the page uses the values directly as CSS
+// class names and routes.
+message Change {
+  // The type's page id, such as `shop.v1.Shop`.
+  string id = 1;
+
+  // `state` or `data`: which page shows the type.
+  string kind = 2;
+
+  string name = 3;
+  string namespace = 4;
+  string file = 5;
+
+  // `added`, `changed` or `removed`.
+  string change = 6;
+
+  // Set only when `change` is `changed`: which of the type's parts
+  // were added, changed or removed.
+  repeated ChangedPart changed_parts = 7;
+}
+
+// One part of a changed type, and what happened to it.
+message ChangedPart {
+  string name = 1;
+
+  // `added`, `changed` or `removed`.
+  string change = 2;
+
+  // `method`, `property` or `state`.
+  string part = 3;
+}
+
 message APIRecordChangesRequest {
-  google.protobuf.Value changes = 1;
+  repeated Change changes = 1;
 }
 
 message APIRecordChangesResponse {}
@@ -57,34 +143,29 @@ message APIWatchResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
-// The developer's machine-local preferences for opening dashboards.
+// The developer's machine-local dashboard preferences.
 message Preferences {
   option (rbt.v1alpha1.state) = {
   };
 
   // Whether the developer has asked `rbt dev run` to stop opening a
-  // dashboard by itself. Recorded as the exception rather than as
-  // the rule, so that somebody who has never chosen gets a dashboard
-  // opened when nobody is looking at one.
+  // dashboard by itself. False, the default, means `rbt dev run`
+  // opens a dashboard when none is already open.
   //
-  // `--open-dashboard` opens one whatever this says.
+  // `--open-dashboard` opens one even when this is true.
   bool suppress_open_on_restart = 1;
 
-  // The state types whose methods the developer has opened on the
+  // The state types whose methods the developer has expanded on the
   // dashboard, by fully qualified name such as `bank.v1.Account`.
-  // Held as the set that is open rather than the set that is closed,
-  // so that somebody who has clicked nothing gets a page where every
-  // state type shows its methods but none of their detail.
-  //
-  // Kept sorted, so that clicking two state types open in one order
-  // and then the other stores the same thing both times.
+  // A collapsed state type shows its methods; an expanded one also
+  // shows their detail. SetExpanded keeps this sorted, so that the
+  // same set of state types is stored the same way whatever order
+  // they were expanded in.
   repeated string expanded_state_types = 2;
 
   // How wide the developer has dragged the sidebar, in CSS pixels.
-  // Optional, so that never having dragged it is a different answer
-  // than having dragged it to whatever the default happens to be:
-  // the page picks the default, and can change it, until somebody
-  // has an opinion.
+  // Unset until the developer drags it; until then the page picks
+  // the width, and may change what it picks.
   optional uint32 nav_width = 3;
 }
 
@@ -103,8 +184,8 @@ message PreferencesSetSuppressOpenOnRestartRequest {
 message PreferencesSetSuppressOpenOnRestartResponse {}
 
 message PreferencesSetExpandedRequest {
-  // The fully qualified name of one state type, spelled the way the
-  // description spells it.
+  // The fully qualified name of one state type, spelled the way
+  // `StateType.name` spells it: e.g., `shop.v1.Shop`.
   string state_type = 1;
 
   bool expanded = 2;
@@ -131,7 +212,7 @@ service APIMethods {
     };
   }
 
-  // Records what changed. Assigns each change its key, so a workflow
+  // RecordChanges assigns each change its key, so that a workflow
   // retrying this call sends an identical request every attempt.
   rpc RecordChanges(APIRecordChangesRequest)
       returns (APIRecordChangesResponse) {
@@ -161,9 +242,8 @@ service PreferencesMethods {
     };
   }
 
-  // One state type per call rather than the whole set, so that two
-  // tabs opening two different state types at the same moment do not
-  // each write back a set that predates the other's click.
+  // Takes one state type so that two tabs toggling different state
+  // types at the same moment do not overwrite each other's change.
   rpc SetExpanded(PreferencesSetExpandedRequest)
       returns (PreferencesSetExpandedResponse) {
     option (rbt.v1alpha1.method).writer = {
@@ -171,7 +251,7 @@ service PreferencesMethods {
   }
 
   // Its own writer, like the two above, so that recording a drag
-  // never writes back the rest of what this state holds.
+  // never writes back the rest of this state.
   rpc SetNavWidth(PreferencesSetNavWidthRequest)
       returns (PreferencesSetNavWidthResponse) {
     option (rbt.v1alpha1.method).writer = {

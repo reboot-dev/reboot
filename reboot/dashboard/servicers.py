@@ -45,10 +45,7 @@ class APIServicer(API.Servicer):
         request: APIGetRequest,
     ) -> APIGetResponse:
         return APIGetResponse(
-            state_types=(
-                self.state.state_types
-                if self.state.HasField('state_types') else None
-            ),
+            state_types=self.state.state_types,
             error=self.state.error if self.state.HasField('error') else None,
         )
 
@@ -58,16 +55,16 @@ class APIServicer(API.Servicer):
         request: APIRecordChangesRequest,
     ) -> APIRecordChangesResponse:
         """Records what changed, newest last."""
-        changes = MessageToDict(request.changes)
-
-        if len(changes) == 0:
+        if len(request.changes) == 0:
             return APIRecordChangesResponse()
 
         await OrderedMap.ref(CHANGELOG_ID).Insert(
             context,
             entries={
-                str(uuid7()): Item(value=ParseDict(change, Value()))
-                for change in changes
+                # As a `Value`, since the map's items are `Value`s.
+                str(uuid7()):
+                    Item(value=ParseDict(MessageToDict(change), Value()))
+                for change in request.changes
             },
         )
 
@@ -97,10 +94,8 @@ class APIServicer(API.Servicer):
         context: WriterContext,
         request: APIUpdateRequest,
     ) -> APIUpdateResponse:
-        if request.HasField('state_types'):
-            self.state.state_types.CopyFrom(request.state_types)
-        else:
-            self.state.ClearField('state_types')
+        del self.state.state_types[:]
+        self.state.state_types.extend(request.state_types)
         if request.HasField('error'):
             self.state.error = request.error
         else:
