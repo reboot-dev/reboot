@@ -165,6 +165,16 @@ appId: host.exp.exponent
 - tapOn:
     id: "transfer-amount-input"
 - inputText: "100"
+# Scroll to the `Label` before tapping it, as for every other control
+# in this form. The soft keyboard that opened on the tap above shortens
+# the scroll viewport by roughly half, and this field sits low enough
+# in the form that the `Label` right above it falls outside what is
+# left — unlike `initial-deposit-label`, which is near the top of the
+# page and stays on screen throughout.
+- scrollUntilVisible:
+    element:
+      id: "transfer-amount-label"
+    direction: DOWN
 - tapOn:
     id: "transfer-amount-label"
 - waitForAnimationToEnd
