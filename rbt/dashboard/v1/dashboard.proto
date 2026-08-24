@@ -175,6 +175,9 @@ message ServicerInfo {
         SCHEDULE = 3;
         // Reached through `.spawn(when=...)`.
         SPAWN = 4;
+        // Reached through `.forall(ids)`, calling every one of the
+        // state type's states.
+        FORALL = 5;
       }
 
       // Represents the state type called, spelled as

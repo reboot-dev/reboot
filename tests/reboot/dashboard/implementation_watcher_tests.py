@@ -201,6 +201,19 @@ class {state}:
     @classmethod
     def idempotently(cls, alias=None) -> '{state}._ConstructIdempotently':
         return {state}._ConstructIdempotently()
+
+    class _Forall:
+
+        async def look(
+            __this__,
+            __context__,
+            request=None,
+        ):
+            pass
+
+    @classmethod
+    def forall(cls, ids) -> '{state}._Forall':
+        return {state}._Forall()
 '''
 
 
@@ -501,9 +514,17 @@ class GoldenDefinitionsTest(unittest.TestCase):
         self.assertEqual(
             names_by_how,
             {
-                Call.How.CALL: methods,
-                Call.How.SCHEDULE: methods,
-                Call.How.SPAWN: methods,
+                Call.How.CALL:
+                    methods,
+                Call.How.SCHEDULE:
+                    methods,
+                Call.How.SPAWN:
+                    methods,
+                # A workflow is scheduled, never called across all
+                # of a state type's states, so `forall` leaves it
+                # out.
+                Call.How.FORALL:
+                    methods - {'Workflow'},
                 Call.How.CONSTRUCT: {'Create'},
             },
         )
@@ -620,6 +641,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 '        await depot.spawn().look(context)\n'
                 "        await depot.idempotently('i').look(context)\n"
                 "        await Depot.idempotently('i').make(context)\n"
+                "        await Depot.forall(['a']).look(context)\n"
             ),
         )
         application = self._write('main.py', source=APPLICATION)
@@ -642,6 +664,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 ('shop.v1.Depot', 'look', Call.How.SPAWN),
                 ('shop.v1.Depot', 'look', Call.How.CALL),
                 ('shop.v1.Depot', 'make', Call.How.CONSTRUCT),
+                ('shop.v1.Depot', 'look', Call.How.FORALL),
             ],
         )
 
@@ -1300,6 +1323,7 @@ class GreeterServicer(Greeter.Servicer):
         await Greeter.idempotently('i').Create(context)
         await me.per_workflow().Greet(context)
         await Greeter.per_workflow().Create(context)
+        await Greeter.forall(['g']).SetAdjective(context)
 '''
         )
         application = self._write(
@@ -1333,6 +1357,7 @@ class GreeterServicer(Greeter.Servicer):
                 ('tests.reboot.Greeter', 'Create', Call.How.CONSTRUCT),
                 ('tests.reboot.Greeter', 'Greet', Call.How.CALL),
                 ('tests.reboot.Greeter', 'Create', Call.How.CONSTRUCT),
+                ('tests.reboot.Greeter', 'SetAdjective', Call.How.FORALL),
             ],
         )
 
