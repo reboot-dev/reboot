@@ -27,29 +27,28 @@ import {
 import { v4 as uuidv4 } from "uuid";
 import { API_ID, CHANGELOG_ID, PREFERENCES_ID, PRESENCE_ID } from "./constants";
 import type {
-  DataObject,
+  LinkedDataType,
   Field,
   Method,
-  Ref,
   Referrer,
   StateType,
-} from "./description";
+} from "./link_fields_to_data_types";
 import {
-  dataObjects,
-  fieldsOf,
-  namespaceOf,
-  parseDescription,
-  typeNameOf,
-} from "./description";
+  linkDataTypes,
+  fieldsOfDataType,
+  labelOfKind,
+  namespaceOfTypeName,
+  fieldsOfState,
+  shortNameOfTypeName,
+} from "./link_fields_to_data_types";
 import type { Change } from "./changelog";
-import { agoOf, changesOf } from "./changelog";
+import { timeAgo, changesInEntries } from "./changelog";
 
 // One subscriber per tab, for as long as the tab is open.
 const SUBSCRIBER_ID = uuidv4();
 
-// What each pill means, for somebody meeting Reboot for the first
-// time. A pill whose word is not here, such as a kind this page
-// does not know, simply gets no mark and no tooltip.
+// What each pill means, written for a reader new to Reboot. A pill
+// whose label is not here gets no mark and no tooltip.
 const DEFINITIONS: Record<string, string> = {
   reader:
     "Reads state without changing it, so any number can safely " +
@@ -74,21 +73,21 @@ const DEFINITIONS: Record<string, string> = {
     "change them. You can have as many of these as you want.",
   "data type":
     "A type the developer wrote that Reboot does not persist: what a " +
-    "method takes, returns or raises, and anything those hold. It " +
+    "method takes, returns or raises, and anything those contain. It " +
     "exists while a call is in flight.",
 };
 
-// The gap between a pill and its definition, matching the offset
-// `.definition` is placed at.
+// The gap between a pill and its definition. It must equal the `8px`
+// that `.definition` in dashboard.css offsets the definition by.
 const DEFINITION_GAP = 8;
 
-// A pill, with its definition a hover away when it has one. The
-// small mark is what says there is something to hover.
+// A pill that shows its definition on hover, when it has one. The
+// mark on the pill tells the reader a definition exists.
 //
-// The definition opens above the pill, where it does not cover the
-// row being read, unless the pane has been scrolled to leave no room
-// above: the pane clips whatever leaves it, so a pill against its top
-// edge would show nothing at all. Then it opens downward instead.
+// The definition opens above the pill so it does not cover the row
+// the reader is on. The pane clips content outside it, so when the
+// pane is scrolled and there is no room above, the definition opens
+// below the pill instead.
 const Pill: FC<{ className: string; label: string; meaning?: string }> = ({
   className,
   label,
@@ -97,11 +96,9 @@ const Pill: FC<{ className: string; label: string; meaning?: string }> = ({
   const pill = useRef<HTMLSpanElement>(null);
   const [below, setBelow] = useState(false);
 
-  // Measured on the way in rather than on every scroll, since where
-  // it opens only matters at the moment it opens. The definition is
-  // hidden by `visibility`, so it has a height to read while closed;
-  // and the room is measured from the pill rather than from the
-  // definition, whose own position is what this decides.
+  // The CSS hides the closed definition with `visibility`, so its
+  // height is readable before it opens. The pill's position does not
+  // depend on `below`, so measure the room from the pill.
   const place = useCallback(() => {
     const pane = pill.current?.closest(".pane");
     const definition = pill.current?.querySelector(".definition");
@@ -139,17 +136,19 @@ const Pill: FC<{ className: string; label: string; meaning?: string }> = ({
   );
 };
 
-const Kind: FC<{ kind: string }> = ({ kind }) => (
-  <Pill
-    className={`kind kind-${kind}`}
-    label={kind}
-    meaning={DEFINITIONS[kind]}
-  />
-);
+const Kind: FC<{ kind: Method["kind"] }> = ({ kind }) => {
+  const label = labelOfKind(kind);
+  return (
+    <Pill
+      className={`kind kind-${label}`}
+      label={label}
+      meaning={DEFINITIONS[label]}
+    />
+  );
+};
 
-// A description, with the spans its author wrote in `backticks`
-// rendered as code rather than shown with their backticks. An
-// unpaired backtick is kept as text, since it opens nothing.
+// Renders a description, with the spans its author wrote in
+// `backticks` as code.
 const Description: FC<{ className: string; text: string }> = ({
   className,
   text,
@@ -171,14 +170,14 @@ const Description: FC<{ className: string; text: string }> = ({
   );
 };
 
-// Standard-library types an application uses are real and worth being
-// able to inspect, but they aren't what the developer wrote, so they
-// start collapsed.
+// Standard-library types are not what the developer wrote, so the
+// page starts them collapsed.
 const isStandardLibrary = (namespace: string): boolean =>
   namespace.startsWith("rbt.");
 
-// The two indexes of the same API: the state types it declares, and
-// the types those declare in turn.
+// Each page indexes the same API: `changelog` is its history, `state`
+// is the state types it declares, and `data` is the types those
+// declare in turn.
 const PAGES = ["changelog", "data", "state"] as const;
 
 type Page = typeof PAGES[number];
@@ -191,13 +190,12 @@ const PAGE_NAMES: Record<Page, string> = {
 
 const CHANGES_PER_PAGE = 100;
 
-// Where a type is addressed, on whichever page describes it. It is
-// both the route a link goes to and the `id` of the section it lands
-// on, so the two can never disagree.
-const pathOf = (page: Page, id: string): string => `/${page}/${id}`;
+// Both the route a link to a type goes to and the `id` of the section
+// it lands on, so the two can never disagree.
+const pathOfTypeOnPage = (page: Page, id: string): string => `/${page}/${id}`;
 
-// `NavLink` marks the page being read for us, including while an id
-// within it is addressed, and writes the `aria-current` that says so.
+// `NavLink` is active when the route is this page or an id within it
+// (a `pathOfTypeOnPage` route), and sets `aria-current` itself.
 const PageSelector: FC<{ counts: Record<Page, number> }> = ({ counts }) => (
   <div className="page-selector">
     {PAGES.map((name) => (
@@ -215,16 +213,15 @@ const PageSelector: FC<{ counts: Record<Page, number> }> = ({ counts }) => (
   </div>
 );
 
-// How wide the sidebar is until somebody drags it, and how far it
-// can be dragged. The minimum is what a namespace row needs to stay
-// readable; the maximum leaves the document its own half of a small
-// laptop screen. Plain numbers, which `Panel` reads as pixels.
+// Pixels, which is how `Panel` reads plain numbers. The minimum is the
+// narrowest width at which a namespace row stays readable; the maximum
+// leaves the document half of a small laptop screen.
 const NAV_WIDTH = { default: 250, min: 170, max: 520 };
 
-// The sidebar is the first panel of the shell, so that the border
-// between it and the document is a `Separator`: dragging it, keeping
-// it within bounds, moving it by keyboard and telling assistive
-// technology what it does are all that library's, not ours.
+// The sidebar is the first panel of the shell so that the border
+// between it and the document is a `Separator`, which the library
+// drags, keeps within bounds, moves by keyboard and describes to
+// assistive technology.
 
 const RebootBrand: FC<{ live: boolean }> = ({ live }) => (
   <div className="brand">
@@ -240,9 +237,8 @@ const Connection: FC<{ live: boolean }> = ({ live }) => (
   </div>
 );
 
-// One row of the sidebar, whichever page it is indexing. Both pages
-// reduce to this before anything is drawn, so the sidebar is written
-// once rather than once per page.
+// One row of the sidebar. The state and data pages each map their
+// types to this, so one sidebar renders either page's list.
 interface NavEntry {
   id: string;
   name: string;
@@ -269,12 +265,12 @@ const Namespace: FC<{
           <span className="caret">{open ? "▾" : "▸"}</span>
           {namespace}
         </span>
-        <span className="nav-count">{countOf(entries.length, noun)}</span>
+        <span className="nav-count">{countWithNoun(entries.length, noun)}</span>
       </button>
       {open && (
         <div className="namespace-types">
           {entries.map((entry) => (
-            <Link to={pathOf(page, entry.id)} key={entry.id}>
+            <Link to={pathOfTypeOnPage(page, entry.id)} key={entry.id}>
               <span className="nav-name">{entry.name}</span>
               <span className="nav-count">{entry.count}</span>
             </Link>
@@ -285,19 +281,19 @@ const Namespace: FC<{
   );
 };
 
-// Grouped by the namespace each belongs to, the developer's own
-// first: the standard library is theirs to use but not theirs to
-// read.
-const byNamespace = (
+// The developer's namespaces sort before the standard library's: the
+// developer wrote their own types and only references the standard
+// ones.
+const groupByNamespace = (
   entries: NavEntry[]
 ): { namespace: string; entries: NavEntry[] }[] => {
   const grouped = new Map<string, NavEntry[]>();
   for (const entry of entries) {
-    const held = grouped.get(entry.namespace);
-    if (held === undefined) {
+    const group = grouped.get(entry.namespace);
+    if (group === undefined) {
       grouped.set(entry.namespace, [entry]);
     } else {
-      held.push(entry);
+      group.push(entry);
     }
   }
   return [...grouped.entries()]
@@ -310,14 +306,10 @@ const byNamespace = (
     });
 };
 
-// A type's fields, one level deep, written the way its author would
-// write the type. A field whose type is another of the developer's
-// types names it and links to it rather than opening it here: the
-// same type is written out once, on the data page, and everything
-// that holds it points there.
-//
-// The `?` goes on the name rather than the type, which is where
-// TypeScript puts it and where anyone reading this shape expects it.
+// A type's fields, one level deep, as a TypeScript type literal. A
+// field whose type is another of the developer's types names it and
+// links to it: each type is written out once, on the data page, and
+// every field that contains it points there.
 const Fields: FC<{ fields: Field[] }> = ({ fields }) => (
   <pre className="type-block">
     <code>
@@ -341,22 +333,20 @@ const Fields: FC<{ fields: Field[] }> = ({ fields }) => (
   </pre>
 );
 
-// A type as it is written in a row: a link when this dashboard has
-// something to show for it, and plain text when it does not, so that
-// `string` never looks clickable.
+// A type as it appears in a row: a link to its page when it has one,
+// plain text (for `string` and the other built-ins) when it does not.
 const TypeName: FC<{ type: string; link?: string }> = ({ type, link }) =>
   link === undefined ? (
     <>{type}</>
   ) : (
-    <Link className="type-link" to={pathOf("data", link)}>
+    <Link className="type-link" to={pathOfTypeOnPage("data", link)}>
       {type}
     </Link>
   );
 
-// The keys a request or response carries, one level deep. A key
-// whose type is another of the developer's types names that type and
-// links to it rather than opening it here, so a signature stays one
-// line however deep what it carries goes.
+// The keys of a request or response, one level deep: a key whose type
+// is one of the developer's types names and links to that type, so a
+// signature stays one line no matter how deeply the types nest.
 const Keys: FC<{ fields: Field[] }> = ({ fields }) => (
   <>
     {"{ "}
@@ -373,18 +363,19 @@ const Keys: FC<{ fields: Field[] }> = ({ fields }) => (
   </>
 );
 
-// What a method takes and what it gives back, as one line. The
-// errors go under it rather than in it: they are what a call can do
-// instead of returning, not part of what it returns.
 const Signature: FC<{ stateType: StateType; method: Method }> = ({
   stateType,
   method,
 }) => {
-  const namespace = namespaceOf(stateType.name);
+  const namespace = namespaceOfTypeName(stateType.name);
   const takes =
-    method.request === undefined ? [] : fieldsOf(stateType, method.request);
+    method.request === undefined
+      ? []
+      : fieldsOfDataType(stateType, method.request);
   const returns =
-    method.response === undefined ? [] : fieldsOf(stateType, method.response);
+    method.response === undefined
+      ? []
+      : fieldsOfDataType(stateType, method.response);
 
   return (
     <div className="method-signature">
@@ -402,15 +393,12 @@ const Signature: FC<{ stateType: StateType; method: Method }> = ({
       {method.errors.length > 0 && (
         <div className="errors">
           {"raises "}
-          {method.errors.map((error, index) => {
-            const name = error.$ref.replace("#/$defs/", "");
-            return (
-              <Fragment key={error.$ref}>
-                {index > 0 && ", "}
-                <TypeName type={name} link={`${namespace}.${name}`} />
-              </Fragment>
-            );
-          })}
+          {method.errors.map((name, index) => (
+            <Fragment key={name}>
+              {index > 0 && ", "}
+              <TypeName type={name} link={`${namespace}.${name}`} />
+            </Fragment>
+          ))}
         </div>
       )}
     </div>
@@ -426,15 +414,10 @@ const Method: FC<{ stateType: StateType; method: Method }> = ({
       <div className="method-head">
         <div className="method-title">
           <span className="method-name">{method.name}</span>
-          {/* The kind first, and always: every method has one, so it
-              lands in the same place in every row and the eye can run
-              down the column. The tags after it are the exceptions. */}
+          {/* The kind comes before the tags because every method has
+              one, so it sits in the same column in every row. The tags
+              are optional. */}
           <Kind kind={method.kind} />
-          {/* One cell for whichever tags a method has, rather than a
-              column each: both are optional, so a column each would
-              make every method with neither hold that width open
-              as dead space. A method that is both a factory and
-              an MCP tool draws both, side by side. */}
           <span className="tags">
             {method.factory && (
               <Pill
@@ -453,9 +436,9 @@ const Method: FC<{ stateType: StateType; method: Method }> = ({
           </span>
         </div>
       </div>
-      {/* What the method's own row grows to show. Kept mounted while
-          the section is closed, because the animation that opens it
-          is a CSS transition on this element rather than a mount. */}
+      {/* The detail that opening the section reveals. The page renders
+          it while the section is closed too: opening is a CSS
+          transition on this element, not a mount. */}
       <div className="method-detail">
         <div className="method-detail-inner">
           {method.description !== undefined && (
@@ -471,22 +454,20 @@ const Method: FC<{ stateType: StateType; method: Method }> = ({
   );
 };
 
-const countOf = (n: number, noun: string): string =>
+const countWithNoun = (n: number, noun: string): string =>
   `${n} ${n === 1 ? noun : `${noun}s`}`;
 
-// Horizontal only, and deliberately. A pill's sideways move, between
-// the column it shares while closed and its own row while open, is a
-// layout change that CSS cannot transition, so it is animated here:
-// measure where each pill was, let the layout happen, animate it from
-// there. Its vertical move is not ours to animate. The detail growing
-// is what pushes the methods below it down, and that already animates
-// over the same 240ms, so translating them as well would move them
-// twice and they would appear to fly in from above or below.
+// Horizontal only. Closed, every method's pills share one column;
+// open, each sits in its own row. CSS cannot transition that layout
+// change, so this hook animates it: it records each pill's
+// `offsetLeft` on every render and, on a toggle, translates the pill
+// from its old position to its new one. Vertical movement comes from
+// the `.method-detail` transition in dashboard.css, whose duration
+// and easing SLIDE_MS and SLIDE_EASING match.
 //
-// `offsetLeft` rather than `getBoundingClientRect()` because it is a
-// layout position and ignores transforms: a render that lands while a
-// pill is mid-slide reads where it is going rather than where it
-// momentarily is, so the next toggle starts from the truth.
+// `offsetLeft` ignores transforms, so a render that lands while a
+// pill is mid-slide measures where the pill will end up, and the next
+// toggle starts from there.
 const SLIDE_MS = 240;
 const SLIDE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 
@@ -495,25 +476,20 @@ const useSlidingPills = (expanded: boolean) => {
   const before = useRef(new WeakMap<HTMLElement, number>());
   const wasExpanded = useRef(expanded);
 
-  // No dependency list: every render re-measures, so the positions
-  // this animates from are the ones on screen rather than the ones
-  // from the last toggle, which a window resize would have moved.
+  // Runs after every render so the positions the slide starts from are
+  // the ones on screen, not the ones measured at the last toggle, which
+  // a window resize would have moved since.
   useLayoutEffect(() => {
     const pills = section.current?.querySelectorAll<HTMLElement>(".kind, .tag");
     if (pills === undefined) {
       return;
     }
 
-    // Only opening or closing moves them; other renders just leave
-    // fresh measurements behind for the next one that does.
     const toggled = wasExpanded.current !== expanded;
     wasExpanded.current = expanded;
 
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    // `forEach` rather than `for...of`: a `NodeList`'s iterator is
-    // typed as `Node`, which has no box to measure, while its
-    // `forEach` keeps the element type the selector asked for.
     pills.forEach((pill) => {
       const was = before.current.get(pill);
       const now = pill.offsetLeft;
@@ -539,15 +515,15 @@ const StateType: FC<{
   onToggle: () => void;
 }> = ({ stateType, expanded, onToggle }) => {
   const section = useSlidingPills(expanded);
-  const fields = fieldsOf(stateType, stateType.state);
+  const fields = fieldsOfState(stateType);
 
   return (
-    // Every method's detail opens and closes off this one class, so a
-    // section is one transition rather than one per method.
+    // The stylesheet opens and closes every method's detail from this
+    // class, so the whole section is one transition.
     <section
       ref={section}
       className={expanded ? "state-type is-expanded" : "state-type"}
-      id={pathOf("state", stateType.name)}
+      id={pathOfTypeOnPage("state", stateType.name)}
     >
       <div>
         <Pill
@@ -558,21 +534,21 @@ const StateType: FC<{
       </div>
       <div className="state-type-head">
         <div className="state-type-heading">
-          <h2>{typeNameOf(stateType.name)}</h2>
+          <h2>{shortNameOfTypeName(stateType.name)}</h2>
           <Anchor page="state" id={stateType.name} />
           <span className="summary-line">
-            {countOf(fields.length, "field")} ·{" "}
-            {countOf(stateType.methods.length, "method")}
+            {countWithNoun(fields.length, "field")} ·{" "}
+            {countWithNoun(stateType.methods.length, "method")}
           </span>
         </div>
         <button
           className="expand-button"
           onClick={onToggle}
           aria-expanded={expanded}
-          aria-controls={pathOf("state", stateType.name)}
+          aria-controls={pathOfTypeOnPage("state", stateType.name)}
         >
-          {/* Down to open, up to close: the caret points the way the
-              detail is about to move. */}
+          {/* The caret points in the direction the details move on click:
+              down when they expand, up when they collapse. */}
           <span className="caret">{expanded ? "▴" : "▾"}</span>
           {expanded ? "Hide details" : "Expand details"}
         </button>
@@ -604,8 +580,7 @@ const StateType: FC<{
   );
 };
 
-// Whether `rbt dev run` may open a dashboard by itself, and the one
-// click that changes the answer.
+// The toggle for whether `rbt dev run` opens the dashboard by itself.
 const Banner: FC<{ suppressed: boolean; onToggle: () => void }> = ({
   suppressed,
   onToggle,
@@ -619,28 +594,33 @@ const Banner: FC<{ suppressed: boolean; onToggle: () => void }> = ({
   </div>
 );
 
-// A link to the heading it sits beside, so that a type can be sent
-// to somebody rather than described over their shoulder. Clicking it
-// puts the address in the URL bar, which is where the reader will
-// copy it from.
+// A link to the heading beside it, so the reader can share a URL to a
+// type. Clicking it puts the address in the URL bar, where the reader
+// copies it from.
 //
-// Hidden until the heading is hovered or it is tabbed to: it is an
-// affordance rather than something to read, and a column of headings
-// each trailing a `#` reads as punctuation.
+// The CSS hides it until the heading is hovered or the link is tabbed
+// to: a column of headings each trailing a `#` reads as punctuation.
 const Anchor: FC<{ page: Page; id: string }> = ({ page, id }) => (
-  <Link className="anchor" to={pathOf(page, id)} aria-label={`Link to ${id}`}>
+  <Link
+    className="anchor"
+    to={pathOfTypeOnPage(page, id)}
+    aria-label={`Link to ${id}`}
+  >
     #
   </Link>
 );
 
-// One of the developer's types, on the data page. Always open: a
-// type shown one level deep is short enough that hiding it would
-// cost more than it saves.
-const DataObjectCard: FC<{
-  object: DataObject;
-  pageOf: (id: string) => Page;
-}> = ({ object, pageOf }) => (
-  <section className="state-type" id={pathOf("data", object.id)}>
+// Unlike a StateTypeCard, never collapsed: a type shown one level
+// deep is short enough that a collapse control would save little
+// space.
+const LinkedDataTypeCard: FC<{
+  linkedDataType: LinkedDataType;
+  pageOfTypeId: (id: string) => Page;
+}> = ({ linkedDataType, pageOfTypeId }) => (
+  <section
+    className="state-type"
+    id={pathOfTypeOnPage("data", linkedDataType.id)}
+  >
     <div>
       <Pill
         className="eyebrow"
@@ -650,39 +630,39 @@ const DataObjectCard: FC<{
     </div>
     <div className="state-type-head">
       <div className="state-type-heading">
-        <h2>{object.name}</h2>
-        <Anchor page="data" id={object.id} />
+        <h2>{linkedDataType.name}</h2>
+        <Anchor page="data" id={linkedDataType.id} />
         <span className="summary-line">
-          {countOf(object.fields.length, "field")}
+          {countWithNoun(linkedDataType.fields.length, "field")}
         </span>
       </div>
     </div>
-    <div className="file">{object.file}</div>
-    {object.description !== undefined && (
+    <div className="file">{linkedDataType.file}</div>
+    {linkedDataType.description !== undefined && (
       <Description
         className="state-type-description"
-        text={object.description}
+        text={linkedDataType.description}
       />
     )}
 
     <div className="eyebrow section">fields</div>
-    {object.fields.length === 0 ? (
+    {linkedDataType.fields.length === 0 ? (
       <div className="empty">No fields.</div>
     ) : (
-      <Fields fields={object.fields} />
+      <Fields fields={linkedDataType.fields} />
     )}
 
     <div className="eyebrow section">used by</div>
-    {object.referrers.length === 0 ? (
+    {linkedDataType.referrers.length === 0 ? (
       <div className="empty">
-        Nothing holds this type. It is declared but unused.
+        Nothing contains this type. It is declared but unused.
       </div>
     ) : (
       <div className="referrers">
-        {object.referrers.map((referrer: Referrer) => (
+        {linkedDataType.referrers.map((referrer: Referrer) => (
           <Link
             className="referrer"
-            to={pathOf(pageOf(referrer.id), referrer.id)}
+            to={pathOfTypeOnPage(pageOfTypeId(referrer.id), referrer.id)}
             key={referrer.label}
           >
             {referrer.label}
@@ -693,51 +673,62 @@ const DataObjectCard: FC<{
   </section>
 );
 
-const ChangeRow: FC<{ change: Change; now: Date }> = ({ change, now }) => (
-  <div className="change">
-    <time className="change-when" dateTime={change.at.toISOString()}>
-      {agoOf(change.at, now)}
-    </time>
-    <span className="change-where">{change.namespace}</span>
-    {/* Each pill sits in a cell rather than being one, so the cell
-        carries the row's spacing and hover fill and the pill carries
-        only its colour. */}
-    <span className="change-pill-cell">
-      <span className={`change-pill change-kind-${change.kind}`}>
-        {change.kind}
-      </span>
-    </span>
-    <span className="change-pill-cell">
-      <span className={`change-pill change-${change.change}`}>
-        {change.change}
-      </span>
-    </span>
-    {/* A removed type no longer has a page to link to. */}
-    {change.change === "removed" ? (
-      <span className="change-name">{change.name}</span>
-    ) : (
-      <Link className="change-name" to={pathOf(change.kind, change.id)}>
-        {change.name}
-      </Link>
-    )}
-    <span className="change-moved">
-      {change.moved?.map((moved, index) => (
-        <Fragment key={moved.name}>
-          {index > 0 && ", "}
-          {`${moved.part} `}
-          <span className={`moved moved-${moved.change}`}>{moved.name}</span>
-          {` ${moved.change}`}
-        </Fragment>
-      ))}
-    </span>
-  </div>
-);
+// The page a change links to: none once the type is removed, and
+// none for a `kind` this page does not know.
+const pageOfChange = (change: Change): Page | undefined =>
+  change.change === "removed"
+    ? undefined
+    : change.kind === "state" || change.kind === "data"
+    ? change.kind
+    : undefined;
 
-// What has happened to the developer's API files while this dashboard
-// has been up, newest first.
-//
-// A page at a time, because a day of editing is a lot of rows and
-// this is read from the top.
+const ChangeRow: FC<{ change: Change; now: Date }> = ({ change, now }) => {
+  const page = pageOfChange(change);
+  return (
+    <div className="change">
+      <time className="change-when" dateTime={change.at.toISOString()}>
+        {timeAgo(change.at, now)}
+      </time>
+      <span className="change-where">{change.namespace}</span>
+      {/* The wrapper, not the pill, is the grid cell: the row's padding
+        and hover fill apply to it, and the pill's background covers
+        only the pill. */}
+      <span className="change-pill-cell">
+        <span className={`change-pill change-kind-${change.kind}`}>
+          {change.kind}
+        </span>
+      </span>
+      <span className="change-pill-cell">
+        <span className={`change-pill change-${change.change}`}>
+          {change.change}
+        </span>
+      </span>
+      {page === undefined ? (
+        <span className="change-name">{change.name}</span>
+      ) : (
+        <Link className="change-name" to={pathOfTypeOnPage(page, change.id)}>
+          {change.name}
+        </Link>
+      )}
+      <span className="change-changed-parts">
+        {change.changedParts?.map((changedPart, index) => (
+          <Fragment key={changedPart.name}>
+            {index > 0 && ", "}
+            {`${changedPart.part} `}
+            <span className={`changed-part changed-part-${changedPart.change}`}>
+              {changedPart.name}
+            </span>
+            {` ${changedPart.change}`}
+          </Fragment>
+        ))}
+      </span>
+    </div>
+  );
+};
+
+// Changes to the developer's API files since this dashboard started,
+// newest first. Paged, because a day of editing produces many rows
+// and the reader starts at the top.
 const ChangelogPage: FC<{ onCount: (n: number) => void; live: boolean }> = ({
   onCount,
   live,
@@ -750,17 +741,16 @@ const ChangelogPage: FC<{ onCount: (n: number) => void; live: boolean }> = ({
     limit: CHANGES_PER_PAGE * pages + 1,
   });
 
-  // An abort means the map does not exist yet: nothing has been
-  // recorded, so the changelog is empty.
+  // The read aborts when the map does not exist, and it does not exist
+  // until the first change is recorded.
   const entries = aborted !== undefined ? [] : response?.entries ?? [];
-  const changes = changesOf(entries);
+  const changes = changesInEntries(entries);
   const more = changes.length > CHANGES_PER_PAGE * pages;
   const shown = more ? changes.slice(0, CHANGES_PER_PAGE * pages) : changes;
 
   useEffect(() => onCount(shown.length), [shown.length, onCount]);
 
-  // Read once per render rather than per row, so every row on the
-  // page says "ago" from the same moment.
+  // Every row on the page measures "ago" from this same moment.
   const now = new Date();
 
   if (isLoading && shown.length === 0) {
@@ -812,51 +802,51 @@ const Overview: FC<{
   isExpanded,
   onToggle,
 }) => {
-  // `defaultSize` is read once, when the panel mounts, and the width
-  // the developer left is read from the application after that. So
-  // the panel is told again when it arrives, rather than mounted a
-  // second time, which would take the page's scroll with it.
+  // `Panel` reads `defaultSize` once, when it mounts, and the stored
+  // width arrives from the application later. The effect below resizes
+  // the panel through its ref when that width arrives.
   const navPanel = usePanelRef();
 
   useEffect(() => {
     navPanel.current?.resize(navWidth);
-    // Only when the stored width changes, not while it is being
-    // dragged: the drag is already moving the panel.
+    // Runs only when the stored width changes, not while the developer
+    // drags: the drag already moves the panel.
   }, [navWidth, navPanel]);
 
   const { id: target } = useParams();
 
   // The dashboard's own state: what it read of the developer's API
-  // files. Nothing here reaches the application, so the application
-  // does not have to exist.
+  // files. Nothing here calls the developer's application, so the
+  // application does not have to exist.
   const { useGet } = useAPI({ id: API_ID });
   const { response, isLoading } = useGet();
 
-  // `isLoading` is the closest the client offers to a connection
-  // state: loading again, having loaded once, means it is retrying.
+  // The client exposes no connection state. `isLoading` is the
+  // nearest: once it has loaded, loading again means the client is
+  // retrying.
   const live = !isLoading;
 
-  // What the developer's API files declare. Those exist before the
-  // application is generated, built or started, which is why they are
-  // what this page shows.
-  // The description travels as a `google.protobuf.Value`: the types
-  // in it are Pydantic's own JSON Schema, which proto has no business
-  // restating.
+  // The state types the developer's API files declare, which exist
+  // before the application is generated, built or started, so this
+  // page can show them without an application.
   const stateTypes: StateType[] = useMemo(
-    () => parseDescription(response?.stateTypes?.toJson()),
+    () => response?.stateTypes ?? [],
     [response?.stateTypes]
   );
 
-  // Why any API file could not be read, which is routine while
-  // somebody is typing. Shown beside the types, which stay at
-  // whatever each file last declared.
+  // Why any API file could not be read, which is routine while the
+  // developer is typing. The page shows it beside the types, which
+  // stay at whatever each file last declared.
   const error = response?.error ?? "";
 
-  const objects = useMemo(() => dataObjects(stateTypes), [stateTypes]);
+  const linkedDataTypes = useMemo(
+    () => linkDataTypes(stateTypes),
+    [stateTypes]
+  );
 
-  // Which page holds a given id, so that a referrer points at the
-  // page that has something to show for it.
-  const pageOf = useMemo(() => {
+  // A referrer is either a state type or a data type, and its link
+  // must open the page that lists it.
+  const pageOfTypeId = useMemo(() => {
     const states = new Set(stateTypes.map((stateType) => stateType.name));
     return (id: string): Page => (states.has(id) ? "state" : "data");
   }, [stateTypes]);
@@ -870,56 +860,52 @@ const Overview: FC<{
         : page === "state"
         ? stateTypes.map((stateType) => ({
             id: stateType.name,
-            name: typeNameOf(stateType.name),
-            namespace: namespaceOf(stateType.name),
-            count: countOf(stateType.methods.length, "method"),
+            name: shortNameOfTypeName(stateType.name),
+            namespace: namespaceOfTypeName(stateType.name),
+            count: countWithNoun(stateType.methods.length, "method"),
           }))
-        : objects.map((object) => ({
-            id: object.id,
-            name: object.name,
-            namespace: object.namespace,
-            count: countOf(object.fields.length, "field"),
+        : linkedDataTypes.map((linkedDataType) => ({
+            id: linkedDataType.id,
+            name: linkedDataType.name,
+            namespace: linkedDataType.namespace,
+            count: countWithNoun(linkedDataType.fields.length, "field"),
           })),
-    [page, stateTypes, objects]
+    [page, stateTypes, linkedDataTypes]
   );
 
-  const namespaces = useMemo(() => byNamespace(entries), [entries]);
+  const namespaces = useMemo(() => groupByNamespace(entries), [entries]);
 
-  // How many changes the changelog page is showing, reported up
-  // through `onCount` by the page, which is what reads the entries.
+  // How many changes the changelog page is showing. The page reports
+  // it through `onCount`, since the page is what reads the entries.
   const [changes, setChanges] = useState(0);
 
-  // The small label over the heading, the first of the two lines
-  // above the list.
   const eyebrow = page === "changelog" ? "history" : "application domain";
 
-  // A type page's heading says what its list holds, "3 state types
-  // in 2 namespaces"; the changelog's is just the page name.
   const heading =
     page === "changelog"
       ? "Changelog"
       : page === "state"
-      ? `${countOf(stateTypes.length, "state type")} in ${countOf(
+      ? `${countWithNoun(stateTypes.length, "state type")} in ${countWithNoun(
           namespaces.length,
           "namespace"
         )}`
-      : `${countOf(objects.length, "data type")} in ${countOf(
-          namespaces.length,
-          "namespace"
-        )}`;
+      : `${countWithNoun(
+          linkedDataTypes.length,
+          "data type"
+        )} in ${countWithNoun(namespaces.length, "namespace")}`;
 
-  // The browser scrolls to a hash it can find, and cannot find one on
-  // a page that was not showing when the hash changed. Once the page
-  // asked for has rendered, go there.
+  // The browser scrolls to the element the URL hash names only if it
+  // exists when the hash changes, and it does not exist on a page that
+  // was not showing then. Once that page has rendered, scroll to it.
   useEffect(() => {
     if (target === undefined) {
       return;
     }
-    document.getElementById(pathOf(page, target))?.scrollIntoView();
-  }, [page, target, stateTypes, objects]);
+    document.getElementById(pathOfTypeOnPage(page, target))?.scrollIntoView();
+  }, [page, target, stateTypes, linkedDataTypes]);
 
-  // Only before anything has ever been read; afterwards the last
-  // shape is shown instead.
+  // Only until the first read; while reloading, `response` keeps the
+  // types last read, so the page shows those instead.
   if (isLoading && stateTypes.length === 0) {
     return (
       <main>
@@ -944,7 +930,7 @@ const Overview: FC<{
 
   const counts: Record<Page, number> = {
     state: stateTypes.length,
-    data: objects.length,
+    data: linkedDataTypes.length,
     changelog: changes,
   };
 
@@ -952,8 +938,8 @@ const Overview: FC<{
     <Group
       className="shell"
       orientation="horizontal"
-      // Only a drag or a resize key, so that mounting with the stored
-      // width does not write it straight back.
+      // The layout also changes when the panel mounts with the stored
+      // width; only a drag or a resize key writes the width back.
       onLayoutChanged={(_layout, { isUserInteraction }) => {
         if (isUserInteraction) {
           onNavResized();
@@ -1003,14 +989,18 @@ const Overview: FC<{
                 key={stateType.name}
               />
             ))
-          ) : objects.length === 0 ? (
+          ) : linkedDataTypes.length === 0 ? (
             <div className="empty">
               No data types. The state types declare no requests, responses or
               errors yet.
             </div>
           ) : (
-            objects.map((object) => (
-              <DataObjectCard object={object} pageOf={pageOf} key={object.id} />
+            linkedDataTypes.map((linkedDataType) => (
+              <LinkedDataTypeCard
+                linkedDataType={linkedDataType}
+                pageOfTypeId={pageOfTypeId}
+                key={linkedDataType.id}
+              />
             ))
           )}
         </div>
@@ -1020,7 +1010,8 @@ const Overview: FC<{
 };
 
 // The preferences are the dashboard application's state: every tab
-// shares them, and they outlive the tab they were set in.
+// reads the same ones, and they persist after the tab that set them
+// closes.
 const App: FC = () => {
   const { useGet, setSuppressOpenOnRestart, setExpanded, setNavWidth } =
     usePreferences({
@@ -1028,8 +1019,8 @@ const App: FC = () => {
     });
   const { response } = useGet();
 
-  // Until the read lands, say what the CLI does when nothing has been
-  // written, which is the same thing it does on a false field.
+  // Before the read returns, the page treats the preference as the
+  // CLI treats an unwritten one: as false.
   const suppressed = response?.suppressOpenOnRestart ?? false;
 
   const stored = useMemo(
@@ -1037,9 +1028,6 @@ const App: FC = () => {
     [response?.expandedStateTypes]
   );
 
-  // What the sidebar is showing, which the panel reports as it is
-  // dragged and which is recorded when the drag ends. The stored
-  // width is what it starts from.
   const navWidth = response?.navWidth ?? NAV_WIDTH.default;
   const resizing = useRef(navWidth);
 
@@ -1051,14 +1039,14 @@ const App: FC = () => {
     setNavWidth({ navWidth: resizing.current });
   }, [setNavWidth]);
 
-  // A click that has not yet come back from the application, standing
-  // in for the read until it does. Without it a section would sit
-  // still for a whole round trip after being clicked, which reads as
-  // a dead button rather than as a slow one.
+  // The expanded state of each click that the read does not yet
+  // reflect; it overrides the stored value so the section responds
+  // to the click before the round trip completes.
   const [clicked, setClicked] = useState(new Map<string, boolean>());
 
-  // Drop each stand-in once the read agrees with it, so that a later
-  // change from another tab is followed rather than held off forever.
+  // Drop each stand-in once the read agrees with it. isExpanded prefers
+  // the stand-in, so a stale one would hide a later change from another
+  // tab.
   useEffect(() => {
     setClicked((clicked) => {
       const waiting = new Map(
@@ -1108,8 +1096,8 @@ const App: FC = () => {
               key={page}
             />
           ))}
-          {/* The changelog is the landing page: what just changed is
-              what somebody coming back wants to know. */}
+          {/* A developer returning to the dashboard wants to know what
+              just changed. */}
           <Route path="*" element={<Navigate to="/changelog" replace />} />
         </Routes>
       </HashRouter>
@@ -1122,8 +1110,8 @@ const root = document.getElementById("root");
 if (root !== null) {
   createRoot(root).render(
     <StrictMode>
-      {/* No `url`: the page and its presence are served by the same
-          application, so the client uses this page's origin. */}
+      {/* No `url`: the application that serves this page also serves
+          Presence, so the client defaults to this page's origin. */}
       <RebootClientProvider offlineCacheEnabled={true}>
         <Presence id={PRESENCE_ID} subscriberId={SUBSCRIBER_ID}>
           <App />

@@ -11,14 +11,15 @@ ts_project(
     srcs = [
         "src/changelog.ts",
         "src/constants.ts",
-        "src/description.ts",
+        "src/link_fields_to_data_types.ts",
         "src/main.tsx",
     ],
     declaration = True,
     tsconfig = ":tsconfig",
-    # `description.ts` is what the contract test parses with.
+    # The contract test imports `link_fields_to_data_types.ts`.
     visibility = ["//tests/reboot/dashboard:__pkg__"],
     deps = [
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@reboot-dev/reboot-react",
         "//:node_modules/@reboot-dev/reboot-std",
         "//:node_modules/@reboot-dev/reboot-std-api",
@@ -30,14 +31,12 @@ ts_project(
         "//:node_modules/react-resizable-panels",
         "//:node_modules/react-router",
         "//:node_modules/uuid",
-        "//:node_modules/zod",
         "//rbt/dashboard/v1:dashboard_js_reboot_react",
         "//rbt/std/collections/ordered_map/v1:ordered_map_js_reboot_react",
     ],
 )
 
-# The `tsconfig` is passed so the bundle uses the automatic JSX
-# runtime; without it the bundle crashes with `React is not defined`.
+# `tsconfig` makes esbuild use the automatic JSX runtime.
 esbuild(
     name = "dashboard_bundle",
     srcs = [

@@ -51,11 +51,9 @@ api = API({state}=Type(state={state}State, methods={state}Methods))
 '''
 
 
-def _read(response) -> list[dict]:
+def _state_types_in(response) -> list[dict]:
     """The state types the description carries, as JSON."""
-    if not response.HasField('state_types'):
-        return []
-    return MessageToDict(response.state_types)
+    return [MessageToDict(state_type) for state_type in response.state_types]
 
 
 class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
@@ -76,7 +74,7 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         self.rbt = Reboot()
         await self.rbt.start()
 
-    async def _up(self) -> None:
+    async def _start_dashboard(self) -> None:
         """Brings the dashboard up.
 
         Called by each test rather than in setup, so a test can write
@@ -91,12 +89,12 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         self._environment.stop()
         self._directory.cleanup()
 
-    def _write(self, directory: Path, name: str, state: str) -> None:
+    def _write_api_file(self, directory: Path, name: str, state: str) -> None:
         path = directory / 'shop' / 'v1' / f'{name}.py'
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(SHOP.format(state=state))
 
-    async def _wait_for(self, satisfied):
+    async def _wait_for_api(self, satisfied):
         while True:
             context = self.rbt.create_external_context(name=self.id())
             try:
@@ -107,7 +105,7 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
                 pass
             await asyncio.sleep(0.1)
 
-    async def _history(self) -> list[dict]:
+    async def _changelog_entries(self) -> list[dict]:
         """What the dashboard has noticed, newest first."""
         context = self.rbt.create_external_context(name=self.id())
         try:
@@ -121,12 +119,12 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         return [MessageToDict(entry.value) for entry in response.entries]
 
     async def test_what_was_already_on_disk_is_not_history(self) -> None:
-        self._write(self.directory, 'shop', 'Shop')
+        self._write_api_file(self.directory, 'shop', 'Shop')
 
-        await self._up()
-        await self._wait_for(lambda api: len(_read(api)) == 1)
+        await self._start_dashboard()
+        await self._wait_for_api(lambda api: len(_state_types_in(api)) == 1)
 
-        self.assertEqual(await self._history(), [])
+        self.assertEqual(await self._changelog_entries(), [])
 
     async def test_fixing_a_file_broken_at_startup_is_not_history(
         self
@@ -139,35 +137,35 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('this is not python(')
 
-        await self._up()
+        await self._start_dashboard()
 
         # The dashboard says why rather than showing nothing.
-        await self._wait_for(lambda api: api.HasField('error'))
+        await self._wait_for_api(lambda api: api.HasField('error'))
 
-        self._write(self.directory, 'shop', 'Shop')
-        await self._wait_for(lambda api: len(_read(api)) == 1)
+        self._write_api_file(self.directory, 'shop', 'Shop')
+        await self._wait_for_api(lambda api: len(_state_types_in(api)) == 1)
 
         # Long enough that a change would have been recorded by now.
         await asyncio.sleep(2)
 
-        self.assertEqual(await self._history(), [])
+        self.assertEqual(await self._changelog_entries(), [])
 
     async def test_a_type_added_after_startup_is_history(self) -> None:
-        self._write(self.directory, 'shop', 'Shop')
+        self._write_api_file(self.directory, 'shop', 'Shop')
 
-        await self._up()
-        await self._wait_for(lambda api: len(_read(api)) == 1)
+        await self._start_dashboard()
+        await self._wait_for_api(lambda api: len(_state_types_in(api)) == 1)
 
         # A second file, written while the dashboard is watching. Both
         # declare the same request and response types in the same
         # package, so those are not new; the state type is.
-        self._write(self.directory, 'depot', 'Depot')
-        await self._wait_for(lambda api: len(_read(api)) == 2)
+        self._write_api_file(self.directory, 'depot', 'Depot')
+        await self._wait_for_api(lambda api: len(_state_types_in(api)) == 2)
 
-        while len(await self._history()) == 0:
+        while len(await self._changelog_entries()) == 0:
             await asyncio.sleep(0.1)
 
-        [change] = await self._history()
+        [change] = await self._changelog_entries()
 
         self.assertEqual(change['id'], 'shop.v1.Depot')
         self.assertEqual(change['change'], 'added')
@@ -180,31 +178,31 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         # save is a different change recorded under the same alias.
         # Reboot rejects an alias reused with a different request, so
         # the keys the changes are stored under cannot be part of it.
-        self._write(self.directory, 'shop', 'Shop')
+        self._write_api_file(self.directory, 'shop', 'Shop')
 
-        await self._up()
-        await self._wait_for(lambda api: len(_read(api)) == 1)
+        await self._start_dashboard()
+        await self._wait_for_api(lambda api: len(_state_types_in(api)) == 1)
 
-        self._write(self.directory, 'shop', 'Bazaar')
-        await self._wait_for(
-            lambda api: [state['name'] for state in _read(api)] ==
+        self._write_api_file(self.directory, 'shop', 'Bazaar')
+        await self._wait_for_api(
+            lambda api: [state['name'] for state in _state_types_in(api)] ==
             ['shop.v1.Bazaar']
         )
 
-        self._write(self.directory, 'shop', 'Emporium')
-        await self._wait_for(
-            lambda api: [state['name'] for state in _read(api)] ==
+        self._write_api_file(self.directory, 'shop', 'Emporium')
+        await self._wait_for_api(
+            lambda api: [state['name'] for state in _state_types_in(api)] ==
             ['shop.v1.Emporium']
         )
 
-        while len(await self._history()) < 4:
+        while len(await self._changelog_entries()) < 4:
             await asyncio.sleep(0.1)
 
         # Each save added a state type and removed the one before it.
         self.assertEqual(
             sorted(
                 (change['id'], change['change'])
-                for change in await self._history()
+                for change in await self._changelog_entries()
             ),
             [
                 ('shop.v1.Bazaar', 'added'),
@@ -214,14 +212,14 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-    async def test_a_change_says_which_parts_moved(self) -> None:
+    async def test_a_change_says_which_parts_changed(self) -> None:
         # What changed in a type is the second question anybody asks,
-        # so a change names the methods and fields that moved and
+        # so a change names the methods and fields that changed and
         # which way each of them went.
-        self._write(self.directory, 'shop', 'Shop')
+        self._write_api_file(self.directory, 'shop', 'Shop')
 
-        await self._up()
-        await self._wait_for(lambda api: len(_read(api)) == 1)
+        await self._start_dashboard()
+        await self._wait_for_api(lambda api: len(_state_types_in(api)) == 1)
 
         # The same state type, with a second method.
         path = self.directory / 'shop' / 'v1' / 'shop.py'
@@ -238,15 +236,15 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        while len(await self._history()) == 0:
+        while len(await self._changelog_entries()) == 0:
             await asyncio.sleep(0.1)
 
-        [change] = await self._history()
+        [change] = await self._changelog_entries()
 
         self.assertEqual(change['id'], 'shop.v1.Shop')
         self.assertEqual(change['change'], 'changed')
         self.assertEqual(
-            change['moved'],
+            change['changedParts'],
             [{
                 'name': 'stock',
                 'change': 'added',
@@ -255,20 +253,20 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_a_file_deleted_is_history(self) -> None:
-        self._write(self.directory, 'shop', 'Shop')
-        self._write(self.directory, 'depot', 'Depot')
+        self._write_api_file(self.directory, 'shop', 'Shop')
+        self._write_api_file(self.directory, 'depot', 'Depot')
 
-        await self._up()
-        await self._wait_for(lambda api: len(_read(api)) == 2)
+        await self._start_dashboard()
+        await self._wait_for_api(lambda api: len(_state_types_in(api)) == 2)
 
         (self.directory / 'shop' / 'v1' / 'depot.py').unlink()
 
-        await self._wait_for(lambda api: len(_read(api)) == 1)
+        await self._wait_for_api(lambda api: len(_state_types_in(api)) == 1)
 
-        while len(await self._history()) == 0:
+        while len(await self._changelog_entries()) == 0:
             await asyncio.sleep(0.1)
 
-        [change] = await self._history()
+        [change] = await self._changelog_entries()
 
         self.assertEqual(change['id'], 'shop.v1.Depot')
         self.assertEqual(change['change'], 'removed')

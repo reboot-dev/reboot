@@ -73,20 +73,18 @@ py_test(
     ],
 )
 
-# `api_reader.py` writes the description and `description.ts` reads
-# it. It travels as JSON, so no generated type holds the two
-# languages to the same shape; this does. The real reader runs over
-# the API files beside this test, and the page's own Zod schema
-# parses what it wrote.
-# Emitted as TypeScript rather than JSON so that it is simply a
-# source of the test below, with no file for it to find at runtime.
+# `api_reader.py` writes the state types and
+# `link_fields_to_data_types.ts` walks them. This runs the real reader
+# over the API files in this package so the test below walks real
+# output the way the page does. The output is a TypeScript module so
+# that it is a source of the test, with no file to read at runtime.
 genrule(
-    name = "described",
+    name = "state_types",
     srcs = glob(["api/**"]),
-    outs = ["described.ts"],
+    outs = ["state_types.ts"],
     # Run from this package with a relative `api`, the way
-    # `rbt dashboard --api-directory=api` does, so that the `file` each
-    # state type carries reads the way it does in a real dashboard.
+    # `rbt dashboard --api-directory=api` does, so that each state
+    # type's `file` is `api/shop/v1/shop.py` as in a real dashboard.
     cmd = "OUT=$$PWD/$@ && " +
           "READER=$$PWD/$(location //reboot/dashboard:api_reader) && " +
           "cd $$(dirname $(location api/shop/v1/shop.py))/../../.. && " +
@@ -96,10 +94,10 @@ genrule(
 )
 
 ts_project(
-    name = "description_test_ts",
+    name = "link_fields_to_data_types_test_ts",
     srcs = [
-        "description.test.ts",
-        ":described.ts",
+        "link_fields_to_data_types.test.ts",
+        ":state_types.ts",
     ],
     declaration = True,
     tsconfig = {
@@ -113,18 +111,17 @@ ts_project(
     },
     deps = [
         "//:node_modules/@stoplight/json-schema-tree",
-        "//:node_modules/zod",
         "//reboot/dashboard/frontend:dashboard_ts",
         "//reboot/std/vitest:vitest_ts",
     ],
 )
 
 vitest_test(
-    name = "description_test",
+    name = "link_fields_to_data_types_test",
     config = "vitest.config.mjs",
     data = [
         "package.json",
-        ":description_test_ts",
+        ":link_fields_to_data_types_test_ts",
     ],
     node_modules = "//:node_modules",
     visibility = ["//visibility:public"],

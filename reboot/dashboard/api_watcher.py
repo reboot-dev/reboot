@@ -1,51 +1,42 @@
 """Watches the developer's API files and updates what they declare.
 
-The dashboard may start before the application exists. In an agentic
+The dashboard may start before the application exists: in an agentic
 flow the API files are written first, then generated code, then
-servicers, then a build, then a running process, so asking the
-application would say nothing for minutes. Reading the files says
-something immediately, and says more with each file that lands.
+servicers, then a build, then a running process. So the watcher reads
+the files themselves.
 
-Per file, so that state types appear as they are written rather than
-all at once at the end, and so that one file which does not parse,
-the normal case while someone is typing, costs only its own types.
+It reads per file, so that state types appear as each file is
+written, and so that a file which does not parse, the normal case
+while someone is typing, loses only its own types.
 """
-from google.protobuf.json_format import ParseDict
-from google.protobuf.struct_pb2 import Value
 from log.log import get_logger
 from pathlib import Path
+from rbt.dashboard.v1.dashboard_pb2 import StateType
 from rbt.dashboard.v1.dashboard_rbt import API
 from reboot.aio.contexts import WorkflowContext
 from reboot.cli.common.watch import file_watcher
-from reboot.dashboard.api_reader import read
-from reboot.dashboard.changelog import changes
+from reboot.dashboard.api_reader import read_api_file
+from reboot.dashboard.changelog import changes_between
 from typing import Optional
 from watchdog.events import FileSystemEvent
 
 logger = get_logger(__name__)
 
-# Only Pydantic APIs can be read so far. `.proto` and `.ts` are the
-# other two forms `rbt generate` accepts; both are static parses and
-# neither is written yet.
 API_GLOB = '**/*.py'
 
-# Suffixes of the files `rbt generate` writes, which it therefore
-# skips on the way back in. The same three appear in
-# `reboot/cli/commands/generate.py`, which decides what to generate
-# from, and in `reboot/cli/commands/dev.py`, which decides what to
-# watch. Keep the three lists in step.
+# Suffixes of the files `rbt generate` writes, so it skips them
+# when reading sources. `reboot/cli/commands/generate.py` (what to
+# generate from) and `reboot/cli/commands/dev.py` (what to watch)
+# list the same three; change all three lists together.
 GENERATED_SUFFIXES = ('_rbt.py', '_pb2.py', '_pb2_grpc.py')
 
 
-def _files(api_directory: Path) -> list[str]:
+def _api_files(api_directory: Path) -> list[str]:
     """Every candidate API file, relative to `api_directory`.
 
-    Every `.py` the developer wrote, which is the rule `rbt generate`
-    uses. Whether one of them declares an API is answered by reading
-    it: an API is a Python object, built when the module executes, so
-    no amount of looking at the text settles it. A file that declares
-    none costs one subprocess and describes nothing, and `rbt dev run`
-    is already importing all of these on every save to regenerate.
+    Candidate, because an API is a Python object, built when the
+    module executes, so only reading a file tells whether it declares
+    one.
     """
     return sorted(
         str(path.relative_to(api_directory))
@@ -54,22 +45,22 @@ def _files(api_directory: Path) -> list[str]:
     )
 
 
-class _Descriptions:
+class _StateTypesByFile:
     """What each file last declared, and what went wrong reading it.
 
-    Keyed by file so that a file which stops parsing keeps the types
-    it last had: blanking the dashboard on every keystroke would make
-    it unreadable exactly while it is being used.
+    A file that fails to parse keeps the state types from its last
+    successful read, so the dashboard keeps showing them while the
+    developer edits the file.
     """
 
     def __init__(self) -> None:
-        self._state_types: dict[str, list[dict]] = {}
+        self._state_types: dict[str, list[StateType]] = {}
         self._errors: dict[str, str] = {}
 
-    def update(
+    def set_file(
         self,
         filename: str,
-        state_types: list[dict],
+        state_types: list[StateType],
         error: Optional[str],
     ) -> None:
         if error is None:
@@ -78,8 +69,9 @@ class _Descriptions:
         else:
             self._errors[filename] = error
 
-    def retain(self, filenames: set[str]) -> None:
-        """Forgets files that are no longer there."""
+    def keep_only(self, filenames: set[str]) -> None:
+        """Drops the types and errors of every file not in `filenames`,
+        the files that currently exist."""
         for stored in list(self._state_types):
             if stored not in filenames:
                 del self._state_types[stored]
@@ -87,15 +79,13 @@ class _Descriptions:
             if stored not in filenames:
                 del self._errors[stored]
 
-    def state_types(self) -> list[dict]:
+    def state_types(self) -> list[StateType]:
         described = []
         for filename in sorted(self._state_types):
             described.extend(self._state_types[filename])
         return described
 
     def error(self) -> Optional[str]:
-        """Why the files that failed to read failed, or `None` if none
-        did."""
         if not self._errors:
             return None
         return '\n'.join(
@@ -107,10 +97,9 @@ class _Descriptions:
 def _event_filenames(event: FileSystemEvent, directory: Path) -> set[str]:
     """The filenames an event names, relative to `directory`.
 
-    Both of its paths, because a rename reports where the file went as
-    well as where it was. A path that is not under the directory is
-    left out, and an event that names nothing under it is the caller's
-    signal that it could not place the event at all.
+    A rename reports where the file went as well as where it was, so
+    both paths count. An empty result means neither path is under the
+    directory, and the caller responds by reading every file.
     """
     filenames = set()
     for path in (event.src_path, event.dest_path):
@@ -124,26 +113,29 @@ def _event_filenames(event: FileSystemEvent, directory: Path) -> set[str]:
 
 
 async def watch(context: WorkflowContext, *, api_directory: str) -> None:
-    """Updates what the API files declare, for as long as this runs."""
+    """Keeps the API state matching what the API files declare, until
+    cancelled."""
     directory = Path(api_directory).resolve()
-    descriptions = _Descriptions()
+    state_types_by_file = _StateTypesByFile()
     updated: Optional[tuple] = None
 
-    # The files that were on disk at startup and have not yet been
-    # read (without error). Each file's first good read is its
-    # baseline, so if broken at startup it still gets one once fixed:
-    # what it declares predates this dashboard, so it is shown but not
-    # recorded as a change.
-    unread = set(_files(directory))
+    # Files on disk at startup that the watcher has not yet read
+    # without error. A file's first good read is its baseline, even if
+    # it was broken at startup and fixed later: what it declares
+    # predates this dashboard, so the page shows it but the changelog
+    # does not record it as a change.
+    unread = set(_api_files(directory))
 
-    async def update_if_changed(
+    async def write_state_if_changed(
         alias: str,
         *,
         is_baseline: bool = False,
     ) -> None:
         nonlocal updated
 
-        current = (descriptions.state_types(), descriptions.error())
+        current = (
+            state_types_by_file.state_types(), state_types_by_file.error()
+        )
         if current == updated:
             return
         before = [] if updated is None else updated[0]
@@ -151,79 +143,81 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
         state_types, error = current
 
         if not is_baseline:
-            await record(alias, before, state_types)
+            await record_changes(alias, before, state_types)
 
-        async def update(state: API.State) -> None:
-            ParseDict(state_types, state.state_types)
+        async def write_state(state: API.State) -> None:
+            del state.state_types[:]
+            state.state_types.extend(state_types)
             if error is None:
                 state.ClearField('error')
             else:
                 state.error = error
 
-        await API.ref().per_iteration(alias).write(context, update)
+        await API.ref().per_iteration(alias).write(context, write_state)
 
-    async def record(
+    async def record_changes(
         alias: str,
-        before: list[dict],
-        after: list[dict],
+        before: list[StateType],
+        after: list[StateType],
     ) -> None:
         """Records what changed, for the changelog.
 
-        One call for the whole batch, so a save that touches several
-        types is one transaction. The alias names the file, so it is
-        the same every time the file is read; `per_iteration` adds
-        which read this is, making each a new call rather than a
+        One call records the whole batch, so a save that touches
+        several types is one transaction. The alias names the file and
+        so repeats every time the file is read; `per_iteration` adds
+        which read this is, so each read is a new call rather than a
         replay of the first.
         """
-        recorded = list(changes(before, after))
+        recorded = list(changes_between(before, after))
 
         if len(recorded) == 0:
             return
 
         await API.ref().per_iteration(f'history {alias}').RecordChanges(
             context,
-            changes=ParseDict(recorded, Value()),
+            changes=recorded,
         )
 
-    # Everything, once: the developer may have written the whole API
-    # before the dashboard started. After this only what changes is
-    # read again.
-    previous_listing = set(_files(directory))
+    # The first iteration reads every file: the developer may have
+    # written the whole API before the dashboard started.
+    previous_listing = set(_api_files(directory))
     pending = set(previous_listing)
 
     with file_watcher() as watcher:
         async for iteration in context.loop('read what changed'):
-            # The watch is armed before anything is read, so a save
-            # made during a read is not missed: it resolves `event`
-            # rather than arriving while nothing is listening. A watch
-            # is consumed by one event, so it is re-entered for each,
-            # the same shape `rbt dev run` uses.
+            # The loop opens the watch before it reads anything, so a
+            # save made during a read resolves `event` instead of
+            # firing between watches, where nothing would notice it.
+            # A watch resolves once, so each iteration opens a new one,
+            # as `rbt dev run` does.
             async with watcher.watch(
                 [API_GLOB],
                 root_dir=str(directory),
             ) as event:
-                # Updating after each file rather than after the
-                # batch is what makes the types appear as they are
-                # written.
+                # The page updates after each file so the types appear
+                # as the developer writes them.
                 for filename in sorted(pending):
-                    state_types, error = await read(api_directory, filename)
-                    descriptions.update(filename, state_types, error)
+                    state_types, error = await read_api_file(
+                        api_directory, filename
+                    )
+                    state_types_by_file.set_file(filename, state_types, error)
 
                     is_baseline = error is None and filename in unread
                     if is_baseline:
                         unread.discard(filename)
 
-                    await update_if_changed(
+                    await write_state_if_changed(
                         f'read {filename}',
                         is_baseline=is_baseline,
                     )
 
                 changed = await event
 
-            # A listing is a glob and no file reads, so it is taken on
-            # every change: it is what notices a file added or deleted,
-            # which an event naming one path cannot.
-            filenames = set(_files(directory))
+            # The watcher lists the directory on every change because a
+            # listing is one glob with no file reads, and it is what
+            # notices a file added or deleted, which an event naming
+            # one path cannot.
+            filenames = set(_api_files(directory))
             event_filenames = _event_filenames(changed, directory)
             pending = (
                 (filenames - previous_listing) | (event_filenames & filenames)
@@ -231,12 +225,12 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
             previous_listing = filenames
 
             if not event_filenames:
-                # The glob only matches `.py` under this directory, so
-                # an event that names nothing under it means its paths
-                # did not resolve the way this one did. Read every file
-                # rather than let the page go quietly stale on a
-                # mismatch this cannot see.
+                # The watch only fires for `.py` files under this
+                # directory, so an event naming nothing under it means
+                # the watcher reported paths that do not resolve to
+                # `directory`. The watcher cannot tell which file
+                # changed, so it reads every file.
                 pending = filenames
 
-            descriptions.retain(filenames)
-            await update_if_changed('retain')
+            state_types_by_file.keep_only(filenames)
+            await write_state_if_changed('retain')

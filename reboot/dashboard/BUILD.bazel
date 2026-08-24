@@ -19,9 +19,9 @@ py_library(
     ],
 )
 
-# The reader as a command, so a `genrule` can produce a description
-# for the test that holds `api_reader.py` and `description.ts` to the
-# same shape. `main()` writes the description to stdout.
+# `main()` writes the state types to stdout, so a `genrule` can run
+# the reader over an API and hand its output to the test that checks
+# `link_fields_to_data_types.ts` walks what `api_reader.py` writes.
 py_binary(
     name = "api_reader",
     srcs = ["api_reader.py"],
@@ -39,7 +39,7 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
-        ":api_reader_py",
+        "//rbt/dashboard/v1:dashboard_py_reboot",
     ],
 )
 
