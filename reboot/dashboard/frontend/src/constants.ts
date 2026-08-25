@@ -4,3 +4,4 @@ export const PRESENCE_ID = "dashboard";
 export const API_ID = "api";
 export const PREFERENCES_ID = "preferences";
 export const CHANGELOG_ID = "changelog";
+export const IMPLEMENTATION_ID = "implementation";

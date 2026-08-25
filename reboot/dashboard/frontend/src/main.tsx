@@ -1,4 +1,8 @@
-import { useAPI, usePreferences } from "@dashboard/dashboard_rbt_react";
+import {
+  useAPI,
+  useImplementation,
+  usePreferences,
+} from "../../../../rbt/dashboard/v1/dashboard_rbt_react";
 import { useOrderedMap } from "@reboot-dev/reboot-std-api/collections/ordered_map/v1/ordered_map_rbt_react";
 import { RebootClientProvider } from "@reboot-dev/reboot-react";
 import { Presence } from "@reboot-dev/reboot-std-react/presence";
@@ -25,7 +29,13 @@ import {
   useParams,
 } from "react-router";
 import { v4 as uuidv4 } from "uuid";
-import { API_ID, CHANGELOG_ID, PREFERENCES_ID, PRESENCE_ID } from "./constants";
+import {
+  API_ID,
+  CHANGELOG_ID,
+  IMPLEMENTATION_ID,
+  PREFERENCES_ID,
+  PRESENCE_ID,
+} from "./constants";
 import type {
   LinkedDataType,
   Field,
@@ -43,6 +53,8 @@ import {
 } from "./link_fields_to_data_types";
 import type { Change } from "./changelog";
 import { timeAgo, changesInEntries } from "./changelog";
+import { joinStateTypes } from "./callgraph";
+import { GraphPage } from "./graph";
 
 // One subscriber per tab, for as long as the tab is open.
 const SUBSCRIBER_ID = uuidv4();
@@ -176,9 +188,10 @@ const isStandardLibrary = (namespace: string): boolean =>
   namespace.startsWith("rbt.");
 
 // Each page indexes the same API: `changelog` is its history, `state`
-// is the state types it declares, and `data` is the types those
-// declare in turn.
-const PAGES = ["changelog", "data", "state"] as const;
+// is the state types it declares, `data` is the types those declare
+// in turn, and `graph` is the calls the state types' implementations
+// make to each other.
+const PAGES = ["changelog", "data", "state", "graph"] as const;
 
 type Page = typeof PAGES[number];
 
@@ -186,6 +199,7 @@ const PAGE_NAMES: Record<Page, string> = {
   changelog: "Changelog",
   data: "Data Types",
   state: "State Types",
+  graph: "Call Graph",
 };
 
 const CHANGES_PER_PAGE = 100;
@@ -839,6 +853,25 @@ const Overview: FC<{
   // stay at whatever each file last declared.
   const error = response?.error ?? "";
 
+  // What the dashboard read of the developer's application: the
+  // Reboot calls each servicer's methods make. Nothing until the
+  // analysis has run, and for a Node.js application, which it does
+  // not read.
+  const { useGet: useGetImplementation } = useImplementation({
+    id: IMPLEMENTATION_ID,
+  });
+  const { response: implementation } = useGetImplementation();
+
+  const servicers = useMemo(
+    () => implementation?.servicers ?? [],
+    [implementation?.servicers]
+  );
+
+  const graphStateTypes = useMemo(
+    () => joinStateTypes(stateTypes, servicers),
+    [stateTypes, servicers]
+  );
+
   const linkedDataTypes = useMemo(
     () => linkDataTypes(stateTypes),
     [stateTypes]
@@ -851,11 +884,11 @@ const Overview: FC<{
     return (id: string): Page => (states.has(id) ? "state" : "data");
   }, [stateTypes]);
 
-  // The changelog is one list rather than a set of namespaces, so the
-  // sidebar has nothing to index.
+  // The changelog is one list rather than a set of namespaces, and
+  // the graph is one canvas, so the sidebar has nothing to index.
   const entries: NavEntry[] = useMemo(
     () =>
-      page === "changelog"
+      page === "changelog" || page === "graph"
         ? []
         : page === "state"
         ? stateTypes.map((stateType) => ({
@@ -879,11 +912,19 @@ const Overview: FC<{
   // it through `onCount`, since the page is what reads the entries.
   const [changes, setChanges] = useState(0);
 
+  // How many calls the graph page is drawing, reported the same way.
+  const [calls, setCalls] = useState(0);
+
   const eyebrow = page === "changelog" ? "history" : "application domain";
 
   const heading =
     page === "changelog"
       ? "Changelog"
+      : page === "graph"
+      ? `${countWithNoun(calls, "call")} between ${countWithNoun(
+          graphStateTypes.length,
+          "state type"
+        )}`
       : page === "state"
       ? `${countWithNoun(stateTypes.length, "state type")} in ${countWithNoun(
           namespaces.length,
@@ -932,6 +973,7 @@ const Overview: FC<{
     state: stateTypes.length,
     data: linkedDataTypes.length,
     changelog: changes,
+    graph: calls,
   };
 
   return (
@@ -972,7 +1014,7 @@ const Overview: FC<{
       </Panel>
       <Separator className="nav-resizer" />
       <Panel className="pane-panel">
-        <div className="pane">
+        <div className={page === "graph" ? "pane graph-pane" : "pane"}>
           <header>
             <div className="eyebrow">{eyebrow}</div>
             <h1>{heading}</h1>
@@ -980,6 +1022,23 @@ const Overview: FC<{
           {error && <div className="error">{error}</div>}
           {page === "changelog" ? (
             <ChangelogPage onCount={setChanges} live={live} />
+          ) : page === "graph" ? (
+            <>
+              {implementation?.needsGenerate ? (
+                <p className="graph-note muted">
+                  Your application imports generated code that does not exist
+                  yet, so its calls cannot be read. Run{" "}
+                  <code>rbt generate</code>.
+                </p>
+              ) : implementation !== undefined && servicers.length === 0 ? (
+                <p className="graph-note muted">
+                  No servicers found, so no calls are drawn. The dashboard reads
+                  the Python application your <code>.rbtrc</code> names with{" "}
+                  <code>dev run --application=</code>.
+                </p>
+              ) : null}
+              <GraphPage stateTypes={graphStateTypes} onCount={setCalls} />
+            </>
           ) : page === "state" ? (
             stateTypes.map((stateType) => (
               <StateType

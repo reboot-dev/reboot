@@ -13,7 +13,7 @@ import type { PlainMessage } from "@bufbuild/protobuf";
 import type {
   Change as ChangeMessage,
   ChangedPart as ChangedPartMessage,
-} from "@dashboard/dashboard_pb";
+} from "../../../../rbt/dashboard/v1/dashboard_pb";
 
 export type ChangedPart = PlainMessage<ChangedPartMessage>;
 

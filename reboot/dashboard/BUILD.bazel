@@ -66,10 +66,6 @@ py_library(
     srcs = ["pyright.py"],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
-    deps = [
-        requirement("nodejs-wheel-binaries"),
-        requirement("pyright"),
-    ],
 )
 
 py_library(
@@ -120,10 +116,12 @@ py_library(
 # The dashboard page and its assets, laid out beside `main.py` for its
 # `StaticFiles` mount to serve. The `sed` points the page at the
 # `esbuild` bundle in place of `./src/main.tsx`, the entry point Vite
-# serves in development.
+# serves in development. React Flow's stylesheet is copied out of its
+# package under the name the page links it by.
 genrule(
     name = "dashboard_dist",
     srcs = [
+        "//:node_modules/@xyflow/react/dir",
         "//reboot/dashboard/frontend:dashboard.css",
         "//reboot/dashboard/frontend:dashboard_bundle.js",
         "//reboot/dashboard/frontend:index.html",
@@ -134,6 +132,7 @@ genrule(
         "dashboard/dashboard.css",
         "dashboard/dashboard_bundle.js",
         "dashboard/reboot-logo.svg",
+        "dashboard/xyflow-react.css",
     ],
     cmd = "sed 's|\\./src/main\\.tsx|./dashboard_bundle.js|' " +
           "$(location //reboot/dashboard/frontend:index.html) " +
@@ -143,7 +142,9 @@ genrule(
           "cp $(location //reboot/dashboard/frontend:dashboard_bundle.js) " +
           "$(location dashboard/dashboard_bundle.js) && " +
           "cp $(location //reboot/dashboard/frontend:reboot-logo.svg) " +
-          "$(location dashboard/reboot-logo.svg)",
+          "$(location dashboard/reboot-logo.svg) && " +
+          "cp $(location //:node_modules/@xyflow/react/dir)/dist/style.css " +
+          "$(location dashboard/xyflow-react.css)",
 )
 
 py_library(

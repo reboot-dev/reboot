@@ -15,7 +15,7 @@ import type {
   Method as MethodMessage,
   Method_Kind,
   StateType as StateTypeMessage,
-} from "@dashboard/dashboard_pb";
+} from "../../../../rbt/dashboard/v1/dashboard_pb";
 
 // Type aliases rather than re-exports: the generated `Method` and
 // `StateType` are classes, whose names bind a value even under

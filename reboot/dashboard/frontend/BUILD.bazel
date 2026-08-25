@@ -9,8 +9,10 @@ ts_config(
 ts_project(
     name = "dashboard_ts",
     srcs = [
+        "src/callgraph.ts",
         "src/changelog.ts",
         "src/constants.ts",
+        "src/graph.tsx",
         "src/link_fields_to_data_types.ts",
         "src/main.tsx",
     ],
@@ -26,6 +28,8 @@ ts_project(
         "//:node_modules/@reboot-dev/reboot-std-react",
         "//:node_modules/@reboot-dev/reboot-web",
         "//:node_modules/@stoplight/json-schema-tree",
+        "//:node_modules/@xyflow/react",
+        "//:node_modules/elkjs",
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/react-resizable-panels",

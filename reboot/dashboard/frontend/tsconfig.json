@@ -7,12 +7,6 @@
     "skipLibCheck": true,
     // So the contract test can import `description.ts` by name.
     "declaration": true,
-    "verbatimModuleSyntax": true,
-    "baseUrl": ".",
-    "paths": {
-      // The generated bindings for the dashboard's own state, which
-      // `dashboard_js_reboot_react` emits beside its proto.
-      "@dashboard/*": ["../../../rbt/dashboard/v1/*"]
-    }
+    "verbatimModuleSyntax": true
   }
 }
