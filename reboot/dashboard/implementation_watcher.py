@@ -1145,6 +1145,11 @@ async def _analyze_method(
             ambiguous.append(ast.unparse(callee))
             continue
 
+        # Nothing in the standard library takes a context, so a call
+        # into it can neither be nor reach a Reboot call.
+        if location.standard_library:
+            continue
+
         if not location.filename.name.endswith('_rbt.py'):
             ambiguous.append(ast.unparse(callee))
             continue

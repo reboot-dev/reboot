@@ -40,6 +40,20 @@ class Location:
     # how `ast` counts.
     line: int
 
+    @property
+    def standard_library(self) -> bool:
+        """Whether the definition is in the standard library, builtins
+        included.
+
+        Pyright answers for those out of the typeshed stubs bundled
+        with it, under `typeshed-fallback/stdlib`, so that is where a
+        definition of `print` or `asyncio.sleep` lands.
+        """
+        parts = self.filename.parts
+        return 'typeshed-fallback' in parts and parts[
+            parts.index('typeshed-fallback') +
+            1:parts.index('typeshed-fallback') + 2] == ('stdlib',)
+
 
 @dataclass(frozen=True, kw_only=True)
 class _Synced:
