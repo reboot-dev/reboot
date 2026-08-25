@@ -23,8 +23,9 @@ class extends: a servicer is a class with a base whose type is
 defined in a file `rbt generate` wrote, and the state type is the
 name the generator writes there as `__state_type_name__`. Until
 `rbt generate` has written it, the base resolves to nothing, and the
-servicer waits unrecorded; `needs_generate` is what tells the
-dashboard to suggest running it.
+servicer waits unrecorded; the generated directory is listed beside
+the servicers, so that whoever reads both can tell a state type with
+nothing generated for it.
 
 Where following stops is what makes this the developer's code rather
 than somebody else's. A module resolves to a file only if a root
@@ -46,11 +47,13 @@ this, and nothing else does.
 import aiofiles
 import aiofiles.os
 import ast
+import asyncio
 import hashlib
 import io
 import os
 import tokenize
 from dataclasses import dataclass, replace
+from google.protobuf.timestamp_pb2 import Timestamp
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import File
 from rbt.dashboard.v1.dashboard_pb2 import \
@@ -92,6 +95,14 @@ GENERATED_SUFFIXES = ('_rbt.py', '_pb2.py', '_pb2_grpc.py')
 # Every file the developer might have written a servicer in, which is
 # the rule `rbt generate` and `rbt dev run` both use for source.
 SOURCE_GLOB = '**/*.py'
+
+
+def _modified_at(path: Path) -> Timestamp:
+    """Returns when a file was last modified, as the filesystem
+    records it, to the nanosecond."""
+    modified = Timestamp()
+    modified.FromNanoseconds(path.stat().st_mtime_ns)
+    return modified
 
 
 def _standardized_path(filename: Path) -> Path:
@@ -1492,23 +1503,6 @@ def extract_and_sort_servicers(
     )
 
 
-def _resolves_externally(
-    module_path: str,
-    external: Sequence[Dependency],
-) -> bool:
-    """Returns whether a possible module path names one of the
-    external files an analysis read, e.g. `shop/v1/ext_rbt` for an
-    installed `/.../site-packages/shop/v1/ext_rbt.py`: the file is
-    the module path completed with `.py` or `/__init__.py` under
-    some directory."""
-    return any(
-        dependency.filename.endswith(os.sep + module_path +
-                                     '.py') or dependency.filename.
-        endswith(os.sep + module_path + os.sep + '__init__.py')
-        for dependency in external
-    )
-
-
 def _reconstitute_known(
     state: ImplementationState,
 ) -> dict[Path, AnalyzedFile]:
@@ -1760,6 +1754,29 @@ async def _analyze(
     return analyzed
 
 
+async def _list_generated(
+    generated_directory: Optional[Path],
+) -> Mapping[str, Timestamp]:
+    """Returns every Python file under the generated directory, keyed
+    by its path relative to it the way `rbt generate` names its
+    outputs, e.g. `shop/v1/shop_rbt.py`, with the time it was last
+    modified, and nothing for no directory. Listed off the event
+    loop, since a large directory takes a while to walk and stat."""
+    if generated_directory is None:
+        return MappingProxyType({})
+
+    def listing() -> Mapping[str, Timestamp]:
+        generated: dict[str, Timestamp] = {}
+        for path in generated_directory.glob(SOURCE_GLOB):
+            if not path.is_file():
+                continue
+            generated[path.relative_to(generated_directory).as_posix()
+                     ] = _modified_at(path)
+        return MappingProxyType(generated)
+
+    return await asyncio.to_thread(listing)
+
+
 async def watch(
     context: WorkflowContext,
     *,
@@ -1787,7 +1804,8 @@ async def watch(
     # walked and digested like the developer's own.
     roots = [application.parent]
     if generated_directory is not None:
-        roots.append(_standardized_path(generated_directory))
+        generated_directory = _standardized_path(generated_directory)
+        roots.append(generated_directory)
 
     globs = [str(root / SOURCE_GLOB) for root in roots]
 
@@ -1797,6 +1815,7 @@ async def watch(
     # the state already records writes nothing.
     state = await Implementation.ref().always().read(context)
     known = _reconstitute_known(state)
+    generated: Mapping[str, Timestamp] = state.generated
 
     with file_watcher() as watcher:
         async for iteration in context.loop('Watch the application'):
@@ -1870,58 +1889,34 @@ async def watch(
 
                 known_now = {**unchanged, **analyzed}
 
-                # Everything the state records, the servicers,
-                # `needs_generate` and the files, is derived from
-                # the analyzed files, so comparing those is
-                # comparing all of it. A write wakes every browser
-                # reading `Get`, so one is only made when they
-                # differ.
-                if known_now != known:
+                generated_now = await _list_generated(generated_directory)
+
+                # Everything else the state records, the servicers
+                # and the files, is derived from the analyzed files,
+                # so comparing those and the listing is comparing
+                # all of it. A write wakes every browser reading
+                # `Get`, so one is only made when they differ.
+                if known_now != known or generated_now != generated:
                     servicers = extract_and_sort_servicers(known_now)
 
                     # The file messages the write below records,
-                    # built, along with `needs_generate`, before the
-                    # write so that the state is not held open while
-                    # the files are iterated. `needs_generate` is
-                    # whether some file imports generated code that
-                    # has no file: a dependency whose possible
-                    # module path ends the way `rbt generate` names
-                    # modules, recorded with no file at it, which is
-                    # what tells the dashboard to suggest running
-                    # `rbt generate`.
-                    suffixes = tuple(
-                        suffix.removesuffix('.py')
-                        for suffix in GENERATED_SUFFIXES
-                    )
-                    needs_generate = False
-                    files: dict[str, File] = {}
-                    for filename, file in known_now.items():
-                        if not needs_generate:
-                            # Check if we need an `rbt generate` by
-                            # seeing if this file depends on any thing
-                            # that appears to be generated that we
-                            # could not resolve under the roots or
-                            # among the external files its analysis
-                            # read.
-                            needs_generate = any(
-                                not dependency.HasField('filename') and os.path
-                                .basename(module_path).endswith(suffixes) and
-                                not _resolves_externally(
-                                    module_path,
-                                    file.external,
-                                ) for module_path, dependency in
-                                file.dependencies.items()
-                            )
-                        files[str(filename)] = File(
-                            digest=file.digest,
-                            dependencies=file.dependencies,
-                            external=file.external,
-                        )
+                    # built before the write so that the state is
+                    # not held open while the files are iterated.
+                    files = {
+                        str(filename):
+                            File(
+                                digest=file.digest,
+                                dependencies=file.dependencies,
+                                external=file.external,
+                            ) for filename, file in known_now.items()
+                    }
 
                     async def record(state) -> None:
                         del state.servicers[:]
                         state.servicers.extend(servicers)
-                        state.needs_generate = needs_generate
+                        state.generated.clear()
+                        for filename, modified in generated_now.items():
+                            state.generated[filename].CopyFrom(modified)
 
                         # A file that changes after this write is
                         # simply parsed again by a restarted walk,
@@ -1935,6 +1930,7 @@ async def watch(
                     ).write(context, record)
 
                     known = known_now
+                    generated = generated_now
 
                 # `event` resolves when a `.py` file matching `globs`
                 # (so under the roots or the generated directory), is
