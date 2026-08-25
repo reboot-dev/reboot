@@ -19,9 +19,14 @@ class OAuth:
         authenticating users. Works for both MCP chat clients and
         browser SPAs. Resolved (and a `TokenVerifier` created
         automatically) whenever it is set, even for an app with
-        nothing to auto-construct. May be combined with
-        `Application(token_verifier=...)`; see there for the ordering
-        semantics.
+        nothing to auto-construct.
+
+        May be combined with `Application(token_verifier=...)`: this
+        provider's verifier runs first, an expired Reboot-minted token
+        is rejected without falling through, and any token not
+        recognizably Reboot-minted falls through to that verifier.
+        Tokens it accepts authenticate Reboot RPCs but not `/mcp`,
+        which takes Reboot-minted access tokens only.
     :param allowed_origins: exact-match list of HTTP origins
         (`scheme://host[:port]`, e.g. `"https://app.example.com"`)
         that browsers are allowed to talk to this backend from when

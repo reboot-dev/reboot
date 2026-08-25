@@ -8,51 +8,77 @@ still passed as `oauth=`. `native_redirect_uris` is renamed to
 list the redirect URIs whose clients sign a user in without a consent
 screen.
 
-In every file that constructs `Application(...)` with any of those
-three parameters:
+Passing any of the three to `Application(...)` now raises
+`TypeError`, so an application that uses them will not start until
+this is applied.
 
-1. Add the import:
+Find the call sites:
 
-   ```python
-   from reboot.aio.auth.oauth import OAuth
-   ```
+```sh
+grep -rn "oauth=\|allowed_origins=\|native_redirect_uris=" backend/
+```
 
-2. Wrap the `oauth=` value in `OAuth(provider=...)` and move
-   `allowed_origins=` and `native_redirect_uris=` inside it, renaming
-   the latter.
+An `Application(...)` that passes none of the three needs no change.
 
-   Before:
+### 1. Add the import
 
-   ```python
-   Application(
-       servicers=[...],
-       oauth=OAuthProviderByEnvironment(
-           dev=Development(),
-           prod=Google(...),
-       ),
-       allowed_origins=["https://app.example.com"],
-       native_redirect_uris=["myapp://redirect"],
-   )
-   ```
+In every file that constructs an `Application(...)` with any of the
+three:
 
-   After:
+```python
+from reboot.aio.auth.oauth import OAuth
+```
 
-   ```python
-   Application(
-       servicers=[...],
-       oauth=OAuth(
-           provider=OAuthProviderByEnvironment(
-               dev=Development(),
-               prod=Google(...),
-           ),
-           allowed_origins=["https://app.example.com"],
-           skip_consent_for_redirect_uris=["myapp://redirect"],
-       ),
-   )
-   ```
+### 2. Move the three options inside `oauth=OAuth(...)`
 
-An `Application(...)` passing none of the three needs no change.
+Wrap the old `oauth=` value as `provider=`, move `allowed_origins=`
+across unchanged, and move `native_redirect_uris=` across under its
+new name.
 
-Note that `allowed_origins` now requires an OAuth provider beside it:
-an application that passed `allowed_origins=[...]` with no `oauth=`
-must now pass `oauth=OAuth(provider=..., allowed_origins=[...])`.
+Before:
+
+```python
+Application(
+    servicers=[...],
+    oauth=OAuthProviderByEnvironment(
+        dev=Development(),
+        prod=Google(...),
+    ),
+    allowed_origins=["https://app.example.com"],
+    native_redirect_uris=["myapp://redirect"],
+)
+```
+
+After:
+
+```python
+Application(
+    servicers=[...],
+    oauth=OAuth(
+        provider=OAuthProviderByEnvironment(
+            dev=Development(),
+            prod=Google(...),
+        ),
+        allowed_origins=["https://app.example.com"],
+        skip_consent_for_redirect_uris=["myapp://redirect"],
+    ),
+)
+```
+
+An application that passed only `oauth=` moves only that one field:
+`oauth=OAuth(provider=<the old value>)`.
+
+### 3. Stop if `allowed_origins` appears without `oauth=`
+
+`allowed_origins` now requires a provider beside it, so an
+application that restricted its origins while authenticating with
+`token_verifier=` alone has no direct translation.
+
+Do **not** resolve this by deleting `allowed_origins`: that silently
+widens the application back to permissive CORS, which is a change to
+who may make credentialed browser requests to the backend. Do not
+invent a provider either.
+
+Report it to the developer instead, quoting the call site, and let
+them choose between adopting an OAuth provider and accepting
+permissive CORS.

@@ -1693,30 +1693,6 @@ class OAuthIsImmutableTest(unittest.TestCase):
         hash(oauth)
 
 
-class RemovedApplicationParametersTest(unittest.TestCase):
-    """The OAuth options moved onto `OAuth`, so an application still
-    passing them to `Application` is told where they went."""
-
-    def test_allowed_origins_names_its_replacement(self):
-        with self.assertRaises(InputError) as context:
-            Application(
-                servicers=[UserServicer, CounterServicer],
-                allowed_origins=["https://app.example.com"],
-            )
-        self.assertIn("`OAuth(allowed_origins=...)`", str(context.exception))
-
-    def test_native_redirect_uris_names_its_replacement(self):
-        with self.assertRaises(InputError) as context:
-            Application(
-                servicers=[UserServicer, CounterServicer],
-                native_redirect_uris=["myapp://redirect"],
-            )
-        self.assertIn(
-            "`OAuth(skip_consent_for_redirect_uris=...)`",
-            str(context.exception),
-        )
-
-
 class GoogleValidateTest(unittest.TestCase):
     """
     `Google.validate()` (inherited from `RegisteredOAuthProvider`)

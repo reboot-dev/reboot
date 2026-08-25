@@ -248,12 +248,6 @@ class Application:
         initialize_bearer_token: Optional[str] = None,
         token_verifier: Optional[TokenVerifier] = None,
         oauth: Optional[OAuth] = None,
-        # Superseded by the corresponding `OAuth` fields. Bound
-        # here only so that an application that has not applied
-        # the migration is told where the option went, rather
-        # than meeting a bare `TypeError`.
-        allowed_origins: Any = None,
-        native_redirect_uris: Any = None,
         title: Optional[str] = None,
         description: Optional[str] = None,
         example_prompts: Optional[list[ExamplePrompt]] = None,
@@ -280,10 +274,14 @@ class Application:
             application. May be combined with `oauth`: the OAuth
             server's verifier runs first, and any token it has no
             opinion on (i.e. anything that is not a Reboot-minted
-            access JWT) falls through to this verifier. A
-            Reboot-minted access JWT that fails verification (e.g.
-            one that has expired) is rejected outright, without
-            falling through. The MCP endpoint (`/mcp`) accepts only
+            access JWT) falls through to this verifier. An expired
+            Reboot-minted token is the one case rejected outright,
+            without falling through: expiry is only detectable once a
+            signature has already verified as Reboot's, so it is the
+            only token the OAuth server can authoritatively call its
+            own. A Reboot-signed token that is not an access token
+            (a refresh token, say) falls through like any other.
+            The MCP endpoint (`/mcp`) accepts only
             Reboot-minted access JWTs; tokens verified by this
             verifier authenticate Reboot RPCs, not `/mcp`.
         :param oauth: an `OAuth` describing how users sign in:
@@ -311,26 +309,6 @@ class Application:
         # `User`-typed auto-construct servicer but no `oauth=`
         # fails to start: a `token_verifier=` authenticates
         # requests but never auto-constructs those users.
-
-        if allowed_origins is not None:
-            raise InputError(
-                reason=(
-                    "`Application(allowed_origins=...)` is now "
-                    "`OAuth(allowed_origins=...)`: pass it inside the "
-                    "`oauth=` argument, e.g. `Application(oauth=OAuth("
-                    "provider=..., allowed_origins=[...]))`."
-                ),
-            )
-        if native_redirect_uris is not None:
-            raise InputError(
-                reason=(
-                    "`Application(native_redirect_uris=...)` is now "
-                    "`OAuth(skip_consent_for_redirect_uris=...)`: pass "
-                    "it inside the `oauth=` argument, e.g. "
-                    "`Application(oauth=OAuth(provider=..., "
-                    "skip_consent_for_redirect_uris=[...]))`."
-                ),
-            )
 
         # Get all libraries including required dependent libraries.
         if libraries is not None:
