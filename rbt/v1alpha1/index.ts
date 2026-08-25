@@ -979,20 +979,28 @@ type StateId = string;
 type StateRef = string;
 type StateTypeName = string;
 
-// Corresponds to encodings in `reboot.aio.types`.
+// The characters a state ID may not contain.
+//
+// NOTE: this is a copy of `ILLEGAL_STATE_ID_CHARACTERS` in
+// `public/reboot/aio/types.py`; keep the two lists in sync.
+const ILLEGAL_STATE_ID_CHARACTERS = "\0\n\\";
+
+// Corresponds to encodings in `reboot.aio.types`, plus the
+// percent-encoding that carries a state ref inside a URL path.
 export function stateIdToRef(stateType: StateTypeName, id: StateId): StateRef {
   // This is the earliest time we can validate the state ID given to us by the
   // user; do it now, so that any stack trace is as short as possible.
-  validateASCII(id, "state ID", 1, 128);
+  validateASCII(id, "state ID", 1, 128, ILLEGAL_STATE_ID_CHARACTERS);
 
+  // A `/` separates the components of a colocated state ref, so a `/`
+  // within a single ID is escaped to a `\` first, matching
+  // `_state_id_encode` in `public/reboot/aio/types.py`.
   const escapedKey = id.replace(/\//g, "\\");
 
-  // Need to encode backslashes, because the TypeScript built-in 'URL'
-  // class will escape back any backslashes to forward slashes.
-  // We can't escape a forward slash with '%2F' currently, because we
-  // use forward slashes in the collocations.
-  // See more at public/reboot/aio/types.py.
-  const encoded = escapedKey.replace(/\\/g, "%5C");
+  // A state ref is interpolated into a URL path, so percent-encode the
+  // whole ID rather than only the characters the `URL` class is known
+  // to mangle.
+  const encoded = encodeURIComponent(escapedKey);
   return `${stateType}:${encoded}`;
 }
 
@@ -1001,7 +1009,8 @@ function validateASCII(
   s: string,
   fieldDescription: string,
   lengthMin: number = 0,
-  lengthMax?: number
+  lengthMax?: number,
+  illegalCharacters: string = ""
 ) {
   if (s.length < lengthMin) {
     throw new Error(
@@ -1024,6 +1033,17 @@ function validateASCII(
         `${fieldDescription} must be ASCII; given value '${s}' is not ASCII`
       );
     }
+  }
+
+  const found = [...s].filter((character) =>
+    illegalCharacters.includes(character)
+  );
+  if (found.length > 0) {
+    throw new Error(
+      `${fieldDescription} must not contain any of ` +
+        `${JSON.stringify(illegalCharacters)}; given value ` +
+        `${JSON.stringify(s)} contains ${JSON.stringify(found.join(""))}`
+    );
   }
 }
 

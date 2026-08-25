@@ -1,0 +1,37 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@fremtind_rules_vitest//vitest:defs.bzl", "vitest_test")
+
+ts_project(
+    name = "state_id_to_ref_test_ts",
+    srcs = [
+        "state_id_to_ref.test.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "skipLibCheck": True,
+            "target": "es2020",
+        },
+    },
+    deps = [
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//reboot/std/vitest:vitest_ts",
+    ],
+)
+
+vitest_test(
+    name = "test",
+    config = "vitest.config.mjs",
+    data = [
+        "package.json",
+        ":state_id_to_ref_test_ts",
+    ],
+    node_modules = "//:node_modules",
+    visibility = ["//visibility:public"],
+)
+
+exports_files(["package.json"])
