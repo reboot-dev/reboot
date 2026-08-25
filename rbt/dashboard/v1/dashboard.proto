@@ -145,7 +145,7 @@ message APIWatchResponse {}
 
 // One servicer found in the developer's application, and the state
 // type it services.
-message ServicerInfo {
+message Servicer {
   // Represents one method a servicer defines, and what analyzing it
   // found.
   message Method {
@@ -184,10 +184,10 @@ message ServicerInfo {
       }
 
       // Represents the state type called, spelled as
-      // `StateTypeInfo.name`.
+      // `StateType.name`.
       string state_type = 1;
 
-      // Represents the method called, spelled as `MethodInfo.name`.
+      // Represents the method called, spelled as `Method.name`.
       string method = 2;
 
       How how = 3;
@@ -205,7 +205,7 @@ message ServicerInfo {
     repeated string ambiguous = 4;
   }
 
-  // The state type it services, spelled as `StateTypeInfo.name`.
+  // The state type it services, spelled as `StateType.name`.
   string state_type = 1;
 
   // The file it is written in, spelled the way the developer would
@@ -228,7 +228,7 @@ message ServicerInfo {
 // restarted dashboard reconstitutes its knowledge from, so that only
 // files that changed while it was down are parsed and analyzed
 // again.
-message FileInfo {
+message File {
   // Represents a file depended on: which file, with which bytes.
   message Dependency {
     // Represents the file, e.g. "backend/api/shop/v1/shop_rbt.py".
@@ -281,7 +281,7 @@ message Implementation {
   // written, is all of them. A state type with two is two classes
   // servicing it, which is for whoever reads this to make of what
   // they will.
-  repeated ServicerInfo servicers = 1;
+  repeated Servicer servicers = 1;
 
   // Whether some analyzed file imports generated code that has no
   // file yet. Generated code is where the state types the servicers
@@ -296,13 +296,13 @@ message Implementation {
   // these rather than parsing and analyzing every file again; one
   // that changed since this was written is simply parsed again,
   // which its digest says.
-  map<string, FileInfo> files = 3;
+  map<string, File> files = 3;
 }
 
 message ImplementationGetRequest {}
 
 message ImplementationGetResponse {
-  repeated ServicerInfo servicers = 1;
+  repeated Servicer servicers = 1;
   bool needs_generate = 2;
 }
 

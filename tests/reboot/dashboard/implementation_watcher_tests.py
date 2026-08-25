@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import \
     Implementation as ImplementationState
-from rbt.dashboard.v1.dashboard_pb2 import ServicerInfo
+from rbt.dashboard.v1.dashboard_pb2 import Servicer
 from rbt.dashboard.v1.dashboard_rbt import API, Implementation
 from reboot.aio.tests import Reboot
 from reboot.dashboard.constants import (
@@ -319,7 +319,7 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         async for response in Implementation.ref(IMPLEMENTATION_ID
                                                 ).reactively().Get(context):
-            found: dict[str, list[ServicerInfo]] = {}
+            found: dict[str, list[Servicer]] = {}
 
             for servicer in response.servicers:
                 found.setdefault(servicer.state_type, []).append(servicer)
@@ -522,7 +522,7 @@ class GoldenDefinitionsTest(unittest.TestCase):
                 set(),
             ).add(definition.name)
 
-        Call = ServicerInfo.Method.Call
+        Call = Servicer.Method.Call
         self.assertEqual(
             names_by_how,
             {
@@ -693,7 +693,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
         [found_servicer] = found[servicer].servicers
         method, notify = found_servicer.methods
-        Call = ServicerInfo.Method.Call
+        Call = Servicer.Method.Call
         self.assertEqual(
             [
                 (call.state_type, call.method, call.how)
@@ -760,7 +760,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
         [found_servicer] = found[servicer].servicers
         [method] = found_servicer.methods
-        Call = ServicerInfo.Method.Call
+        Call = Servicer.Method.Call
         self.assertEqual(
             [
                 (call.state_type, call.method, call.how)
@@ -801,7 +801,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
         [found_servicer] = found[servicer].servicers
         [method] = found_servicer.methods
-        Call = ServicerInfo.Method.Call
+        Call = Servicer.Method.Call
         self.assertEqual(
             [
                 (call.state_type, call.method, call.how)
@@ -853,7 +853,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
         [found_servicer] = found[servicer].servicers
         [method] = found_servicer.methods
-        Call = ServicerInfo.Method.Call
+        Call = Servicer.Method.Call
         self.assertEqual(
             [
                 (call.state_type, call.method, call.how)
@@ -901,7 +901,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
         [found_servicer] = found[servicer].servicers
         [method] = found_servicer.methods
-        Call = ServicerInfo.Method.Call
+        Call = Servicer.Method.Call
         self.assertEqual(
             [
                 (call.state_type, call.method, call.how)
@@ -1597,7 +1597,7 @@ class GreeterServicer(Greeter.Servicer):
 
         [found_servicer] = found[servicer].servicers
         [method] = found_servicer.methods
-        Call = ServicerInfo.Method.Call
+        Call = Servicer.Method.Call
         self.assertEqual(
             [
                 (call.state_type, call.method, call.how)

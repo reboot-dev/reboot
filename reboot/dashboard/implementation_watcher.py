@@ -52,10 +52,10 @@ import os
 import tokenize
 from dataclasses import dataclass, replace
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_pb2 import FileInfo
+from rbt.dashboard.v1.dashboard_pb2 import File
 from rbt.dashboard.v1.dashboard_pb2 import \
     Implementation as ImplementationState
-from rbt.dashboard.v1.dashboard_pb2 import ServicerInfo
+from rbt.dashboard.v1.dashboard_pb2 import Servicer
 from rbt.dashboard.v1.dashboard_rbt import Implementation
 from reboot.aio.contexts import WorkflowContext
 from reboot.aio.cooperatively import cooperatively
@@ -74,13 +74,13 @@ Digest = bytes
 # absent when there was no file. Aliased from where it is defined so
 # that what an iteration records and what a restart reconstitutes
 # from are one message.
-Dependency = FileInfo.Dependency
+Dependency = File.Dependency
 
 # One Reboot call a method's implementation makes: which state type,
 # which method, and how the call is reached. Aliased from where it
 # is defined so that what an analysis records and what a reader
 # reads are one message.
-Call = ServicerInfo.Method.Call
+Call = Servicer.Method.Call
 
 # Suffixes of the files `rbt generate` writes. Walked, digested and
 # carried like any other file, so that a change to one reanalyzes
@@ -330,7 +330,7 @@ class AnalyzedFile:
 
     # Every servicer the file defines, resolved: which state type each
     # services and the calls each method makes.
-    servicers: tuple[ServicerInfo, ...]
+    servicers: tuple[Servicer, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -686,7 +686,7 @@ def _digest(node: ast.AST) -> Digest:
 
 def _try_find_state_type_name(class_definition: ast.ClassDef) -> Optional[str]:
     """Returns the state type a class of generated code belongs to,
-    spelled as `StateTypeInfo.name`, which the generator writes into
+    spelled as `StateType.name`, which the generator writes into
     the class as `__state_type_name__`, and `None` for a class
     without one. E.g. `'shop.v1.Shop'` for a class containing
     `__state_type_name__ = StateTypeName('shop.v1.Shop')`."""
@@ -710,7 +710,7 @@ class StateTypeDefinition:
     after the state type, e.g. the generator's `class Shop:` for
     `shop.v1.Shop`."""
 
-    # The state type, spelled as `StateTypeInfo.name`, e.g.
+    # The state type, spelled as `StateType.name`, e.g.
     # `shop.v1.Shop`.
     state_type: str
 
@@ -722,7 +722,7 @@ class BaseServicerDefinition:
     the state type, e.g. the generator's
     `class ShopBaseServicer:`."""
 
-    # The state type, spelled as `StateTypeInfo.name`, e.g.
+    # The state type, spelled as `StateType.name`, e.g.
     # `shop.v1.Shop`.
     state_type: str
 
@@ -733,7 +733,7 @@ class ServicerDefinition:
     comes through a base defined in the same module, e.g. the
     generator's `class ShopServicer(ShopBaseServicer):`."""
 
-    # The state type, spelled as `StateTypeInfo.name`, e.g.
+    # The state type, spelled as `StateType.name`, e.g.
     # `shop.v1.Shop`.
     state_type: str
 
@@ -748,7 +748,7 @@ class MethodDefinition:
     constructors. What a call made through any reference, or a
     construction, is defined by."""
 
-    # The state type, spelled as `StateTypeInfo.name`, e.g.
+    # The state type, spelled as `StateType.name`, e.g.
     # `shop.v1.Shop`.
     state_type: str
 
@@ -1338,7 +1338,7 @@ async def _analyze_class(
     *,
     filename: Path,
     analysis: Analysis,
-) -> tuple[Optional[ServicerInfo], Analysis]:
+) -> tuple[Optional[Servicer], Analysis]:
     """Returns the servicer a class is, and `None` when it is not
     one.
 
@@ -1386,7 +1386,7 @@ async def _analyze_class(
         if not isinstance(definition, ServicerDefinition):
             continue
 
-        servicer = ServicerInfo(
+        servicer = Servicer(
             state_type=definition.state_type,
             file=str(filename),
             line=class_definition.lineno,
@@ -1407,7 +1407,7 @@ async def _analyze_class(
                         visited=frozenset(),
                     )
                     servicer.methods.append(
-                        ServicerInfo.Method(
+                        Servicer.Method(
                             name=name,
                             digest=_digest(statement),
                             calls=calls,
@@ -1445,7 +1445,7 @@ async def _analyze_file(
     # analyzing this one file read.
     analysis = replace(analysis, external=MappingProxyType({}))
 
-    servicers: list[ServicerInfo] = []
+    servicers: list[Servicer] = []
 
     for node in ast.walk(parsed.syntax):
         match node:
@@ -1477,7 +1477,7 @@ async def _analyze_file(
 
 def extract_and_sort_servicers(
     files: Mapping[Path, AnalyzedFile],
-) -> list[ServicerInfo]:
+) -> list[Servicer]:
     """Returns every servicer found, sorted by the state type it
     services and the file it is written in.
 
@@ -1513,11 +1513,11 @@ def _reconstitute_known(
     state: ImplementationState,
 ) -> dict[Path, AnalyzedFile]:
     """Returns the analyzed files a previous run recorded, joined
-    back together from the state: each `FileInfo` with the servicers
+    back together from the state: each `File` with the servicers
     recorded for its file. What a restarted watch starts from, so
     that only files that changed while the dashboard was down are
     parsed and analyzed again."""
-    servicers: dict[str, list[ServicerInfo]] = {}
+    servicers: dict[str, list[Servicer]] = {}
     for servicer in state.servicers:
         servicers.setdefault(servicer.file, []).append(servicer)
 
@@ -1894,7 +1894,7 @@ async def watch(
                         for suffix in GENERATED_SUFFIXES
                     )
                     needs_generate = False
-                    files: dict[str, FileInfo] = {}
+                    files: dict[str, File] = {}
                     for filename, file in known_now.items():
                         if not needs_generate:
                             # Check if we need an `rbt generate` by
@@ -1912,7 +1912,7 @@ async def watch(
                                 ) for module_path, dependency in
                                 file.dependencies.items()
                             )
-                        files[str(filename)] = FileInfo(
+                        files[str(filename)] = File(
                             digest=file.digest,
                             dependencies=file.dependencies,
                             external=file.external,
