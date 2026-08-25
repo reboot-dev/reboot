@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package rbt.dashboard.v1;
 
+import "google/protobuf/timestamp.proto";
 import "rbt/v1alpha1/options.proto";
 
 ////////////////////////////////////////////////////////////////////////
@@ -283,13 +284,6 @@ message Implementation {
   // they will.
   repeated Servicer servicers = 1;
 
-  // Whether some analyzed file imports generated code that has no
-  // file yet. Generated code is where the state types the servicers
-  // service are defined, and a servicer only joins the list above
-  // once its state type is defined, so while this is true the
-  // dashboard suggests running `rbt generate`.
-  bool needs_generate = 2;
-
   // Represents every file the walk analyzed, keyed by its path,
   // relative to the working directory for a file under it and
   // absolute otherwise, as of the last write. A restarted dashboard starts from
@@ -297,13 +291,25 @@ message Implementation {
   // that changed since this was written is simply parsed again,
   // which its digest says.
   map<string, File> files = 3;
+
+  // Represents every Python file in the generated directory, keyed
+  // by its path relative to it the way `rbt generate` names its
+  // outputs, e.g. "shop/v1/shop_rbt.py", with the time it was last
+  // modified, as of the last write. A listing rather than what the
+  // walk reached, since a generated module nothing imports yet is
+  // still generated. Empty when no generated directory was named.
+  //
+  // Against `API.files`, this says whether generated code is
+  // missing or older than the API files, which is what suggests
+  // running `rbt generate`.
+  map<string, google.protobuf.Timestamp> generated = 4;
 }
 
 message ImplementationGetRequest {}
 
 message ImplementationGetResponse {
   repeated Servicer servicers = 1;
-  bool needs_generate = 2;
+  map<string, google.protobuf.Timestamp> generated = 2;
 }
 
 message ImplementationWatchRequest {}

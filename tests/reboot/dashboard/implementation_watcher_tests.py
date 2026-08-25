@@ -26,6 +26,7 @@ from reboot.dashboard.implementation_watcher import (
     MethodDefinition,
     _analyze,
     _generated_definitions,
+    _modified_at,
     _reconstitute_known,
     _walk,
     extract_and_sort_servicers,
@@ -459,22 +460,48 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_generate_running_while_the_dashboard_runs(self) -> None:
         """`rbt generate` writing its code is what ties the waiting
-        servicers to their state types, and `needs_generate` is what
-        tells the dashboard to suggest running it."""
+        servicers to their state types, and the generated directory
+        is listed whole, imported or not, so that a reader can tell
+        a state type nothing has been generated for."""
+        # A file in the generated directory that defines nothing, so
+        # that the listing says an iteration has run before anything
+        # is generated.
+        (self.generated / 'shop' /
+         '__init__.py').parent.mkdir(parents=True, exist_ok=True)
+        (self.generated / 'shop' / '__init__.py').write_text('')
+
         response = await self._implementation(
-            satisfied=lambda response: response.needs_generate
+            satisfied=lambda response: len(response.generated) > 0
         )
         self.assertEqual(list(response.servicers), [])
+        self.assertEqual(
+            dict(response.generated),
+            {
+                'shop/__init__.py':
+                    _modified_at(self.generated / 'shop' / '__init__.py'),
+            },
+        )
 
         self._generate()
 
         response = await self._implementation(
-            satisfied=lambda response: not response.needs_generate and
-            len(response.servicers) > 0
+            satisfied=lambda response: len(response.servicers) > 0
         )
         self.assertEqual(
             [servicer.state_type for servicer in response.servicers],
             ['shop.v1.Shop'],
+        )
+        # `depot_rbt.py` is written too, and imported by nothing.
+        self.assertEqual(
+            dict(response.generated),
+            {
+                filename: _modified_at(self.generated / filename)
+                for filename in (
+                    'shop/__init__.py',
+                    'shop/v1/depot_rbt.py',
+                    'shop/v1/shop_rbt.py',
+                )
+            },
         )
 
 

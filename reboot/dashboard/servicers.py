@@ -130,7 +130,7 @@ class ImplementationServicer(Implementation.Servicer):
     ) -> Implementation.GetResponse:
         return Implementation.GetResponse(
             servicers=self.state.servicers,
-            needs_generate=self.state.needs_generate,
+            generated=self.state.generated,
         )
 
     @classmethod
