@@ -25,7 +25,7 @@ from reboot.dashboard.implementation_watcher import (
     AnalyzedFile,
     MethodDefinition,
     _analyze,
-    _definitions,
+    _generated_definitions,
     _reconstitute_known,
     _walk,
     extract_and_sort_servicers,
@@ -479,7 +479,7 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
 
 
 class GoldenDefinitionsTest(unittest.TestCase):
-    """What `_definitions` reads off the generator's real output."""
+    """What `_generated_definitions` reads off the generator's real output."""
 
     def test_the_golden_module_defines_exactly_its_methods(self) -> None:
         """The `MethodDefinition`s of the golden `_rbt` module are
@@ -490,7 +490,7 @@ class GoldenDefinitionsTest(unittest.TestCase):
         the dashboard."""
         golden = Path(__file__).parent.parent / 'greeter_rbt.golden.py'
 
-        all_definitions = _definitions(ast.parse(golden.read_text()))
+        all_definitions = _generated_definitions(ast.parse(golden.read_text()))
 
         definitions = [
             definition for definition in all_definitions.values()
@@ -647,10 +647,11 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
     async def test_a_method_records_the_calls_it_makes(self) -> None:
         """A call is recorded when its definition lands on a method
         stub of a state type, however the reference is held; a call
-        with no Reboot definition at all is recorded as ambiguous;
-        and a call into the generator's machinery, such as the
-        `ref` inside a chain, or into the standard library, is
-        neither."""
+        defined by a function or method of the developer's own is
+        followed, and what that makes is recorded flat; a call with
+        no definition pyright can say is recorded as ambiguous; and
+        a call into the generator's machinery, such as the `ref`
+        inside a chain, or into the standard library, is neither."""
         servicer = self._write(
             'shop_servicer.py',
             source=(
@@ -660,7 +661,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 '\n'
                 '\n'
                 'def helper(context):\n'
-                '    pass\n'
+                "    return Depot.ref('h').look(context)\n"
                 '\n'
                 '\n'
                 'class ShopServicer(Shop.Servicer):\n'
@@ -678,8 +679,128 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 "        await depot.until('u').look(context)\n"
                 '        helper(context)\n'
                 '        self.notify(context)\n'
+                '        undefined(context)\n'
                 '        print(len(request.ids))\n'
                 '        await asyncio.sleep(0)\n'
+                '\n'
+                '    async def notify(self, context):\n'
+                "        await Shop.ref('n').look(context)\n"
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        [found_servicer] = found[servicer].servicers
+        method, notify = found_servicer.methods
+        Call = ServicerInfo.Method.Call
+        self.assertEqual(
+            [
+                (call.state_type, call.method, call.how)
+                for call in method.calls
+            ],
+            [
+                # First the two followed calls: `ast.walk` is
+                # breadth-first, and `helper(context)` is a call
+                # one level shallower than an awaited one.
+                # Through `helper`.
+                ('shop.v1.Depot', 'look', Call.How.CALL),
+                # Through `self.notify`.
+                ('shop.v1.Shop', 'look', Call.How.CALL),
+                ('shop.v1.Depot', 'look', Call.How.CALL),
+                ('shop.v1.Shop', 'look', Call.How.CALL),
+                ('shop.v1.Depot', 'make', Call.How.CONSTRUCT),
+                ('shop.v1.Depot', 'look', Call.How.SCHEDULE),
+                ('shop.v1.Depot', 'look', Call.How.SPAWN),
+                ('shop.v1.Depot', 'look', Call.How.CALL),
+                ('shop.v1.Depot', 'make', Call.How.CONSTRUCT),
+                ('shop.v1.Depot', 'look', Call.How.FORALL),
+                ('shop.v1.Depot', 'look', Call.How.UNTIL),
+            ],
+        )
+        self.assertEqual(list(method.ambiguous), ['undefined'])
+        self.assertEqual(
+            [
+                (call.state_type, call.method, call.how)
+                for call in notify.calls
+            ],
+            [('shop.v1.Shop', 'look', Call.How.CALL)],
+        )
+
+    async def test_a_helper_in_another_file_is_followed(self) -> None:
+        """A call defined in another of the developer's files is
+        followed there, and the file, an import, is a dependency the
+        way any import is."""
+        helpers = self._write(
+            'helpers.py',
+            source=(
+                'from shop.v1.depot_rbt import Depot\n'
+                '\n'
+                '\n'
+                'async def restock(context, id):\n'
+                "    await Depot.ref(id).look(context)\n"
+            ),
+        )
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'from helpers import restock\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                "        await restock(context, 'd')\n"
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        [found_servicer] = found[servicer].servicers
+        [method] = found_servicer.methods
+        Call = ServicerInfo.Method.Call
+        self.assertEqual(
+            [
+                (call.state_type, call.method, call.how)
+                for call in method.calls
+            ],
+            [('shop.v1.Depot', 'look', Call.How.CALL)],
+        )
+        self.assertEqual(list(method.ambiguous), [])
+        self.assertIn('helpers', found[servicer].dependencies)
+        self.assertEqual(found[servicer].external, ())
+        del helpers
+
+    async def test_helpers_calling_each_other_are_followed_once(
+        self,
+    ) -> None:
+        """Functions calling each other, a method calling itself
+        among them, are each followed once, and every Reboot call
+        on the way is recorded once."""
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'from shop.v1.depot_rbt import Depot\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                'async def ping(context):\n'
+                "    await Depot.ref('p').look(context)\n"
+                '    await pong(context)\n'
+                '\n'
+                '\n'
+                'async def pong(context):\n'
+                "    await Shop.ref('p').look(context)\n"
+                '    await ping(context)\n'
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                '        await ping(context)\n'
+                '        await self.look(context, request)\n'
             ),
         )
         application = self._write('main.py', source=APPLICATION)
@@ -697,18 +818,68 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             [
                 ('shop.v1.Depot', 'look', Call.How.CALL),
                 ('shop.v1.Shop', 'look', Call.How.CALL),
-                ('shop.v1.Depot', 'make', Call.How.CONSTRUCT),
-                ('shop.v1.Depot', 'look', Call.How.SCHEDULE),
-                ('shop.v1.Depot', 'look', Call.How.SPAWN),
-                ('shop.v1.Depot', 'look', Call.How.CALL),
-                ('shop.v1.Depot', 'make', Call.How.CONSTRUCT),
-                ('shop.v1.Depot', 'look', Call.How.FORALL),
-                ('shop.v1.Depot', 'look', Call.How.UNTIL),
             ],
         )
+        self.assertEqual(list(method.ambiguous), [])
+
+    async def test_an_installed_helper_is_followed_and_recorded(
+        self,
+    ) -> None:
+        """A call defined in an installed package, outside every
+        root, is followed there, since a package may make Reboot
+        calls of its own with a context it is handed, and the file
+        is recorded in `external` the way an installed `_rbt` module
+        is."""
+        installed = self.installed / 'shop' / 'v1' / 'helpers.py'
+        installed.write_text(
+            'from shop.v1.ext_rbt import Ext\n'
+            '\n'
+            '\n'
+            'async def restock(context, id):\n'
+            "    await Ext.ref(id).look(context)\n"
+        )
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'from shop.v1.helpers import restock\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                "        await restock(context, 'd')\n"
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        [found_servicer] = found[servicer].servicers
+        [method] = found_servicer.methods
+        Call = ServicerInfo.Method.Call
         self.assertEqual(
-            list(method.ambiguous),
-            ['helper', 'self.notify'],
+            [
+                (call.state_type, call.method, call.how)
+                for call in method.calls
+            ],
+            [('shop.v1.Ext', 'look', Call.How.CALL)],
+        )
+        self.assertEqual(list(method.ambiguous), [])
+        self.assertEqual(
+            {
+                dependency.filename: dependency.digest
+                for dependency in found[servicer].external
+            },
+            {
+                str(installed):
+                    hashlib.sha256(installed.read_bytes()).digest(),
+                str(self.installed / 'shop' / 'v1' / 'ext_rbt.py'):
+                    hashlib.sha256(
+                        (self.installed / 'shop' / 'v1' /
+                         'ext_rbt.py').read_bytes()
+                    ).digest(),
+            },
         )
 
     async def test_a_base_from_a_function_return_type_is_resolved(
