@@ -762,7 +762,7 @@ class MethodDefinition:
     how: 'Call.How.ValueType'
 
 
-Definition = (
+GeneratedDefinition = (
     StateTypeDefinition | BaseServicerDefinition | ServicerDefinition |
     MethodDefinition
 )
@@ -796,7 +796,9 @@ def _takes_context_second(
     return len(arguments) >= 2 and arguments[1].arg == '__context__'
 
 
-def _definitions(syntax: ast.Module) -> Mapping[int, Definition]:
+def _generated_definitions(
+    syntax: ast.Module,
+) -> Mapping[int, GeneratedDefinition]:
     """Returns what each line of a `_rbt` module defines: a class
     carrying a state type defines it, as the state type's own
     class, a servicer base, or a servicer. A line defining anything
@@ -807,7 +809,7 @@ def _definitions(syntax: ast.Module) -> Mapping[int, Definition]:
     generator writes: a servicer base is written above the
     servicers extending it, so a servicer's base is already known
     when the servicer is met."""
-    definitions: dict[int, Definition] = {}
+    definitions: dict[int, GeneratedDefinition] = {}
 
     # The servicer bases met so far, by class name, which is where
     # a servicer's base leads.
@@ -937,13 +939,70 @@ class GeneratedFile:
 
     # What each line of the module defines, empty when the file
     # could not be read or would not parse.
-    definitions: Mapping[int, Definition]
+    definitions: Mapping[int, GeneratedDefinition]
 
     # The dependency each file whose analysis reads this module
     # records in its `external`: present only for a module outside
     # every root, which the walk never finds or digests, and always
     # carrying a digest of bytes actually read.
     external: Optional[Dependency]
+
+
+@dataclass(frozen=True, kw_only=True)
+class HelperDefinition:
+    """A line defining a function or method in code the generator
+    did not write: the developer's own, or an installed package's.
+    What a call that is not a Reboot call may be defined by, and
+    whose body may make Reboot calls of its own."""
+
+    # The file the function is defined in, in the spelling
+    # `_standardized_path` returns.
+    filename: Path
+
+    # The decoded text of that file, for syncing with pyright before
+    # the analysis asks about the function's body.
+    text: str
+
+    # The function's syntax, which is what analyzing it walks.
+    syntax: ast.FunctionDef | ast.AsyncFunctionDef
+
+
+@dataclass(frozen=True, kw_only=True)
+class HelperFile:
+    """What reading one module the generator did not write during
+    an analysis said."""
+
+    # What each line of the module defines, empty when the file
+    # could not be read or would not parse.
+    definitions: Mapping[int, HelperDefinition]
+
+    # The dependency each file whose analysis reads this module
+    # records in its `external`: present only for a module outside
+    # every root, which the walk never finds or digests, and always
+    # carrying a digest of bytes actually read.
+    external: Optional[Dependency]
+
+
+def _helper_definitions(
+    filename: Path,
+    parse: Parse,
+) -> Mapping[int, HelperDefinition]:
+    """Returns what each line of a module the generator did not write
+    defines: every function and method, wherever it is nested, by
+    the line its `def` is on, which is the line pyright places its
+    definition at. A line defining anything else has no entry."""
+    return MappingProxyType(
+        {
+            node.lineno:
+                HelperDefinition(
+                    filename=filename,
+                    text=parse.text,
+                    syntax=node,
+                )
+            for node in ast.walk(parse.syntax)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+    )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -973,6 +1032,11 @@ class Analysis:
     # most once per analysis.
     reads: Mapping[Path, GeneratedFile]
 
+    # Every module the generator did not write read so far, keyed
+    # by the spelling `_standardized_path` returns: read, parsed and
+    # indexed at most once per analysis.
+    helpers: Mapping[Path, HelperFile]
+
     # The dependencies on files outside every root read since the
     # map was last emptied, keyed by filename in the spelling
     # `_standardized_path` returns. Emptied by `_analyze_file` for
@@ -980,18 +1044,64 @@ class Analysis:
     # that one file read.
     external: Mapping[str, Dependency]
 
-    async def definition_at(
+    async def _parse(
+        self,
+        filename: Path,
+    ) -> tuple[Optional[Parse], Optional[Dependency]]:
+        """Returns a file parsed, and the dependency a file whose
+        analysis read it records when it is outside every root. The
+        parse comes from the walk when the walk reached the file,
+        and from the disk otherwise; it is `None` for a file that
+        could not be read or would not parse, and the dependency is
+        `None` for a file under a root, or one that could not be
+        read, since a dependency always carries a digest of bytes
+        actually read."""
+        parsed = self.parsed.get(filename)
+        if parsed is not None:
+            return Parse(text=parsed.text, syntax=parsed.syntax), None
+
+        try:
+            source = await _read(filename)
+        except OSError:
+            return None, None
+
+        external: Optional[Dependency] = None
+        if not any(filename.is_relative_to(root) for root in self.roots):
+            external = Dependency(
+                filename=str(filename),
+                digest=hashlib.sha256(source).digest(),
+            )
+
+        return Parse.from_bytes(source), external
+
+    def _with_external_dependency(
+        self,
+        dependency: Optional[Dependency],
+    ) -> 'Analysis':
+        """Returns the analysis with a dependency joined to
+        `external`, and unchanged for `None`. Joined on every read,
+        cached or not, because several files being analyzed may all
+        read the one file, and each records the dependency."""
+        if dependency is None:
+            return self
+        return replace(
+            self,
+            external=MappingProxyType(
+                {
+                    **self.external,
+                    dependency.filename: dependency,
+                }
+            ),
+        )
+
+    async def generated_definition_at(
         self,
         location: Location,
-    ) -> tuple[Optional[Definition], 'Analysis']:
+    ) -> tuple[Optional[GeneratedDefinition], 'Analysis']:
         """Returns what a `_rbt` module defines at a location, and
         `None` for a location anywhere else, since state types are
         defined by nothing but the generator's code. The module is
-        read, parsed and indexed at most once per analysis: from
-        the walk's parse when the walk reached the file, and from
-        the disk otherwise. Reading a module outside every root
-        joins `external` on every call, cached or not, so that each
-        file whose analysis read it records the dependency."""
+        read, parsed and indexed at most once per analysis."""
         analysis = self
 
         # The only definitions we return are those in generated
@@ -1008,39 +1118,14 @@ class Analysis:
 
         read = analysis.reads.get(filename)
         if read is None:
-            parsed = analysis.parsed.get(filename)
-            if parsed is not None:
-                read = GeneratedFile(
-                    definitions=_definitions(parsed.syntax),
-                    external=None,
-                )
-            else:
-                digest: Optional[Digest] = None
-                syntax: Optional[ast.Module] = None
-                try:
-                    source = await _read(filename)
-                except OSError:
-                    source = None
-                if source is not None:
-                    digest = hashlib.sha256(source).digest()
-                    parse = Parse.from_bytes(source)
-                    if parse is not None:
-                        syntax = parse.syntax
-                external: Optional[Dependency] = None
-                if digest is not None and not any(
-                    filename.is_relative_to(root) for root in analysis.roots
-                ):
-                    external = Dependency(
-                        filename=str(filename),
-                        digest=digest,
-                    )
-                read = GeneratedFile(
-                    definitions=(
-                        _definitions(syntax)
-                        if syntax is not None else MappingProxyType({})
-                    ),
-                    external=external,
-                )
+            parse, external = await analysis._parse(filename)
+            read = GeneratedFile(
+                definitions=(
+                    _generated_definitions(parse.syntax)
+                    if parse is not None else MappingProxyType({})
+                ),
+                external=external,
+            )
             analysis = replace(
                 analysis,
                 reads=MappingProxyType({
@@ -1049,31 +1134,61 @@ class Analysis:
                 }),
             )
 
-        if read.external is not None:
-            # NOTE need to add this every time not just the first time
-            # we read the file because multiple files that we analyze
-            # may all depend on this external file.
+        analysis = analysis._with_external_dependency(read.external)
+
+        return read.definitions.get(location.line), analysis
+
+    async def helper_definition_at(
+        self,
+        location: Location,
+    ) -> tuple[Optional[HelperDefinition], 'Analysis']:
+        """Returns the function a module the generator did not write
+        defines at a location, and `None` for a location that
+        defines no function, or that is in a stub, whose functions
+        have no bodies to follow. The module is read, parsed and
+        indexed at most once per analysis."""
+        analysis = self
+
+        if location.filename.suffix != '.py':
+            return None, analysis
+
+        # Standardized because pyright spells its locations
+        # absolutely, while everything here is keyed by the
+        # spelling `_standardized_path` returns.
+        filename = _standardized_path(location.filename)
+
+        helper = analysis.helpers.get(filename)
+        if helper is None:
+            parse, external = await analysis._parse(filename)
+            helper = HelperFile(
+                definitions=(
+                    _helper_definitions(filename, parse)
+                    if parse is not None else MappingProxyType({})
+                ),
+                external=external,
+            )
             analysis = replace(
                 analysis,
-                external=MappingProxyType(
+                helpers=MappingProxyType(
                     {
-                        **analysis.external,
-                        read.external.filename:
-                            read.external,
+                        **analysis.helpers,
+                        filename: helper,
                     }
                 ),
             )
 
-        return read.definitions.get(location.line), analysis
+        analysis = analysis._with_external_dependency(helper.external)
+
+        return helper.definitions.get(location.line), analysis
 
 
-async def _definition_at(
+async def _generated_definition_at(
     filename: Path,
     line: int,
     character: int,
     *,
     analysis: Analysis,
-) -> tuple[Optional[Definition], Analysis]:
+) -> tuple[Optional[GeneratedDefinition], Analysis]:
     """Returns the definition the type of the expression at a position
     resolves to, when that class carries a state type, and `None`
     otherwise.
@@ -1097,17 +1212,20 @@ async def _definition_at(
         # missing silently.
         return None, analysis
 
-    return await analysis.definition_at(location)
+    return await analysis.generated_definition_at(location)
 
 
-async def _analyze_method(
-    method: ast.FunctionDef | ast.AsyncFunctionDef,
+async def _analyze_function(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
     *,
     filename: Path,
+    text: str,
     analysis: Analysis,
+    visited: frozenset[tuple[Path, int]],
 ) -> tuple[list[Call], list[str], Analysis]:
-    """Returns the Reboot calls a method's implementation makes and
-    the calls it makes that are ambiguous.
+    """Returns the Reboot calls a function's body makes, itself or
+    through the functions it calls, and the calls it makes that are
+    ambiguous.
 
     A Reboot call is one whose own definition pyright places at a
     method stub of a state type. However the reference was come by,
@@ -1115,18 +1233,27 @@ async def _analyze_method(
     elsewhere, the called method's definition is the same, so one
     question decides.
 
-    An ambiguous call is one with no Reboot definition at all: its
-    definition is somewhere in code the generator did not write, or
-    nowhere pyright can say. It may be a helper that itself makes
-    Reboot calls, which a future analysis follows, and it may be
-    nothing of Reboot's. A call whose definition is the generator's
-    own machinery, such as the `ref` or `schedule` inside a chain,
-    is neither: a Reboot definition that names no method.
+    A call defined by a function the generator did not write, the
+    developer's own or an installed package's, is followed: that
+    function's body is analyzed the same way and its calls are the
+    caller's, flattened, with no record of the function they came
+    through. Whether a context reaches the function is never asked,
+    since each Reboot call is recognized at its own call site, so a
+    context that arrives inside a dataclass or a closure is followed
+    like one passed directly. `visited` is every function on the
+    way here, by file and line, so that functions calling each
+    other are followed once.
+
+    An ambiguous call is one with no definition pyright can say, or
+    one whose definition is no function: a stub's, which has no body
+    to follow, or a class's. A call whose definition is the
+    generator's own machinery, such as the `ref` or `schedule`
+    inside a chain, or the standard library's, is neither.
     """
     calls: list[Call] = []
     ambiguous: list[str] = []
 
-    for node in ast.walk(method):
+    for node in ast.walk(function):
         match node:
             case ast.Call(func=(ast.Attribute() | ast.Name()) as callee):
                 pass
@@ -1139,7 +1266,7 @@ async def _analyze_method(
             filename=filename,
             line=line,
             character=character,
-            text=analysis.parsed[filename].text,
+            text=text,
         )
         if location is None:
             ambiguous.append(ast.unparse(callee))
@@ -1150,19 +1277,40 @@ async def _analyze_method(
         if location.standard_library:
             continue
 
-        if not location.filename.name.endswith('_rbt.py'):
+        if location.filename.name.endswith('_rbt.py'):
+            definition, analysis = await analysis.generated_definition_at(
+                location
+            )
+
+            match definition:
+                case MethodDefinition(
+                    state_type=state_type,
+                    name=name,
+                    how=how,
+                ):
+                    calls.append(
+                        Call(state_type=state_type, method=name, how=how)
+                    )
+            continue
+
+        helper, analysis = await analysis.helper_definition_at(location)
+        if helper is None:
             ambiguous.append(ast.unparse(callee))
             continue
 
-        definition, analysis = await analysis.definition_at(location)
+        key = (helper.filename, helper.syntax.lineno)
+        if key in visited:
+            continue
 
-        match definition:
-            case MethodDefinition(
-                state_type=state_type,
-                name=name,
-                how=how,
-            ):
-                calls.append(Call(state_type=state_type, method=name, how=how))
+        helper_calls, helper_ambiguous, analysis = await _analyze_function(
+            helper.syntax,
+            filename=helper.filename,
+            text=helper.text,
+            analysis=analysis,
+            visited=visited | {key},
+        )
+        calls.extend(helper_calls)
+        ambiguous.extend(helper_ambiguous)
 
     return calls, ambiguous, analysis
 
@@ -1200,7 +1348,7 @@ async def _analyze_class(
         # Try to resolve the base class to a Reboot specific
         # definition, or `None` if it couldn't be resolved or is not
         # Reboot specific.
-        definition, analysis = await _definition_at(
+        definition, analysis = await _generated_definition_at(
             filename,
             line,
             character,
@@ -1233,10 +1381,12 @@ async def _analyze_class(
                     ast.FunctionDef(name=str(name)) |
                     ast.AsyncFunctionDef(name=str(name))
                 ):
-                    calls, ambiguous, analysis = await _analyze_method(
+                    calls, ambiguous, analysis = await _analyze_function(
                         statement,
                         filename=filename,
+                        text=analysis.parsed[filename].text,
                         analysis=analysis,
+                        visited=frozenset({(filename, statement.lineno)}),
                     )
                     servicer.methods.append(
                         ServicerInfo.Method(
@@ -1575,6 +1725,7 @@ async def _analyze(
         pyright=pyright,
         roots=tuple(roots),
         reads=MappingProxyType({}),
+        helpers=MappingProxyType({}),
         external=MappingProxyType({}),
     )
 
