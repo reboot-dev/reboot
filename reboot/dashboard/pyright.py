@@ -17,15 +17,10 @@ import hashlib
 import itertools
 import json
 import os
-import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
-
-# Where the `pyright-langserver` executable is, when somebody such as
-# a Bazel test has to say exactly which one to run. Without it the
-# executable is taken from the `PATH`.
-ENVVAR_RBT_PYRIGHT_LANGSERVER = 'RBT_PYRIGHT_LANGSERVER'
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -104,18 +99,15 @@ class Pyright:
     ) -> None:
         """Starts the server over `root`, resolving imports through
         `paths`, such as the directory `rbt generate` writes to."""
-        executable = os.environ.get(ENVVAR_RBT_PYRIGHT_LANGSERVER
-                                   ) or shutil.which('pyright-langserver')
-
-        if executable is None:
-            raise FileNotFoundError(
-                'Could not find `pyright-langserver`. Install pyright, '
-                'such as with `npm install pyright`, or point '
-                f'`{ENVVAR_RBT_PYRIGHT_LANGSERVER}` at it.'
-            )
-
+        # The `pyright` package's own language server entry point,
+        # run with the interpreter `reboot` is installed into, so
+        # that nothing depends on the `PATH`; the package, a
+        # dependency of `reboot`, brings the server and, through its
+        # `[nodejs]` extra, the Node it runs on.
         self._process = await asyncio.create_subprocess_exec(
-            executable,
+            sys.executable,
+            '-m',
+            'pyright.langserver',
             '--stdio',
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,

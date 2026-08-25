@@ -28,15 +28,8 @@ py_test(
     name = "implementation_watcher_tests_py",
     srcs = ["implementation_watcher_tests.py"],
     data = [
-        "//reboot/dashboard:pyright_langserver",
         "//tests/reboot:greeter_rbt.golden.py",
     ],
-    env = {
-        # What the `js_binary` launcher wants set when it is run
-        # outside of a build action.
-        "BAZEL_BINDIR": ".",
-        "RBT_PYRIGHT_LANGSERVER": "$(rootpath //reboot/dashboard:pyright_langserver)",
-    },
     main = "implementation_watcher_tests.py",
     deps = [
         "//reboot/aio:tests_py",

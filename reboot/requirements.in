@@ -42,4 +42,5 @@ uvicorn==0.34.0 # Latest as of 2025/03/30.
 pydantic>=2.7.4 # To be version compatibable with projects like `langchain`.
 bitarray==3.8.0 # Latest as of 2025/12/14.
 pydantic-ai-slim==1.87.0 # Latest as of 2026/04/24.
+pyright[nodejs]==1.1.411 # Latest as of 2026/08/25; `[nodejs]` brings its own Node.
 typing-extensions>=4.15.0 # Latest as of 2026/04/27.
