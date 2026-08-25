@@ -822,6 +822,21 @@ mypy-protobuf==3.6.0 \
     --hash=sha256:02f242eb3409f66889f2b1a3aa58356ec4d909cdd0f93115622e9e70366eca3c \
     --hash=sha256:56176e4d569070e7350ea620262478b49b7efceba4103d468448f1d21492fd6c
     # via -r reboot/requirements.in
+nodeenv==1.10.0 \
+    --hash=sha256:5bb13e3eed2923615535339b3c620e76779af4cb4c6a90deccc9e36b274d3827 \
+    --hash=sha256:996c191ad80897d076bdfba80a41994c2b47c68e224c542b48feba42ba00f8bb
+    # via pyright
+nodejs-wheel-binaries==24.19.0 \
+    --hash=sha256:1c890adf4b7e6556ccc1ca66c866bb81884b6c9a581dee4e530dc7f78fb9d514 \
+    --hash=sha256:28d078b2ced9e2069516e652dc4b1380e7a1a7f2d3934eccd1611586d283ba4c \
+    --hash=sha256:352e048ab4dd35e7de5f338d1cc4fcbf77a0e93da30bf7336a8217ee246b31d7 \
+    --hash=sha256:4196a947bcc883f2003ab101762d729f3e99b5e86b75bd09151563403e2eceb8 \
+    --hash=sha256:4e029dadfae1295876063c96b236f673487e8c27379fe146c1e2250283520227 \
+    --hash=sha256:67e3abeb9c3830cae8c8487ae8a2af7cc27dfa75af06145cee5ca7d1857c81bd \
+    --hash=sha256:d9074c665ea68b04e183d82482c86dc907d3a9bd15eb6cf85542cb785266bb36 \
+    --hash=sha256:db217eef8cab8551667863379b08db4d9067403f6cbbe87481eb40edceb8aa9b \
+    --hash=sha256:e12cbfd69089504e42fb14194ce734a9dcf3eb38c820ca63dd511d36fb964e9c
+    # via pyright
 opentelemetry-api==1.28.1 \
     --hash=sha256:6fa7295a12c707f5aebef82da3d9ec5afe6992f3e42bfe7bec0339a44b3518e7 \
     --hash=sha256:bfe86c95576cf19a914497f439fd79c9553a38de0adbdc26f7cfc46b0c00b16c
@@ -1204,6 +1219,10 @@ pyprctl==0.1.3 \
     --hash=sha256:1fb54d3ab030ec02e4afc38fb9662d6634c12834e91ae7959de56a9c09f69c26 \
     --hash=sha256:6302e5114f078fb33e5799835d0a69e2fc180bb6b28ad073515fa40c5272f1dd
     # via -r reboot/requirements.in
+pyright[nodejs]==1.1.411 \
+    --hash=sha256:d885a0551f2e763b089a02702174e7f4ba77548cddabc972ab86d1f7f1b0f998 \
+    --hash=sha256:dc7c72a8e2700c55baa127554040e067041ea53ccfd50bf96308cc4291c7d5d9
+    # via -r reboot/requirements.in
 python-dateutil==2.8.2 \
     --hash=sha256:0123cacc1627ae19ddf3c27a5de5bd67ee4586fbdd6440d9748f8abb483d3e86 \
     --hash=sha256:961d03dc3453ebbc59dbdea9e4e11c5651520a876d0f4db161e8674aae935da9
@@ -1445,6 +1464,7 @@ typing-extensions==4.15.0 \
     #   opentelemetry-sdk
     #   pydantic
     #   pydantic-core
+    #   pyright
     #   referencing
     #   typing-inspection
     #   uvicorn

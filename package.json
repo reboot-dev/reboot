@@ -25,7 +25,6 @@
     "jsdom": "^26.1.0",
     "js-sha1": "0.7.0",
     "esbuild": "^0.28.0",
-    "pyright": "1.1.413",
     "express": "^5.1.0",
     "lru-cache-idb": "^0.5.2",
     "react-resizable-panels": "4.12.3",
