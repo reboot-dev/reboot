@@ -1237,12 +1237,15 @@ async def _analyze_function(
     developer's own or an installed package's, is followed: that
     function's body is analyzed the same way and its calls are the
     caller's, flattened, with no record of the function they came
-    through. Whether a context reaches the function is never asked,
+    through. Whether a context reaches a function is never asked,
     since each Reboot call is recognized at its own call site, so a
     context that arrives inside a dataclass or a closure is followed
-    like one passed directly. `visited` is every function on the
-    way here, by file and line, so that functions calling each
-    other are followed once.
+    like one passed directly. A nested function or a lambda is
+    walked as part of the body it is written in, whether or not
+    anything is seen to call it: nearly everything written is
+    called, so assuming so costs nothing. `visited` is every
+    function already walked on the way here, by file and line, so
+    that functions calling each other are followed once.
 
     An ambiguous call is one with no definition pyright can say, or
     one whose definition is no function: a stub's, which has no body
@@ -1252,6 +1255,14 @@ async def _analyze_function(
     """
     calls: list[Call] = []
     ambiguous: list[str] = []
+
+    # The function itself is walked here, and everything defined
+    # in it with it: an `async def inner` written in the body, or a
+    # lambda bound to a name. A call to either lands inside the
+    # function, and is not followed again.
+    visited = visited | {(filename, function.lineno)}
+    assert function.end_lineno is not None
+    span = range(function.lineno, function.end_lineno + 1)
 
     for node in ast.walk(function):
         match node:
@@ -1275,6 +1286,13 @@ async def _analyze_function(
         # Nothing in the standard library takes a context, so a call
         # into it can neither be nor reach a Reboot call.
         if location.standard_library:
+            continue
+
+        # Defined inside this very function, so already walked.
+        if (
+            location.line in span and
+            _standardized_path(location.filename) == filename
+        ):
             continue
 
         if location.filename.name.endswith('_rbt.py'):
@@ -1386,7 +1404,7 @@ async def _analyze_class(
                         filename=filename,
                         text=analysis.parsed[filename].text,
                         analysis=analysis,
-                        visited=frozenset({(filename, statement.lineno)}),
+                        visited=frozenset(),
                     )
                     servicer.methods.append(
                         ServicerInfo.Method(
