@@ -649,10 +649,12 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         stub of a state type, however the reference is held; a call
         with no Reboot definition at all is recorded as ambiguous;
         and a call into the generator's machinery, such as the
-        `ref` inside a chain, is neither."""
+        `ref` inside a chain, or into the standard library, is
+        neither."""
         servicer = self._write(
             'shop_servicer.py',
             source=(
+                'import asyncio\n'
                 'from shop.v1.depot_rbt import Depot\n'
                 'from shop.v1.shop_rbt import Shop\n'
                 '\n'
@@ -676,6 +678,8 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 "        await depot.until('u').look(context)\n"
                 '        helper(context)\n'
                 '        self.notify(context)\n'
+                '        print(len(request.ids))\n'
+                '        await asyncio.sleep(0)\n'
             ),
         )
         application = self._write('main.py', source=APPLICATION)
