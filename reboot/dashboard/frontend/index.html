@@ -9,6 +9,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Reboot dashboard</title>
+    <!-- React Flow's own stylesheet, `@xyflow/react/dist/style.css`
+         in its package, which the Bazel build copies beside this
+         file. Flat, and under the package's name, because the wheel
+         maps each directory here to a Python package name.
+         `dashboard.css` comes after it and overrides. -->
+    <link rel="stylesheet" href="./xyflow-react.css" />
     <link rel="stylesheet" href="./dashboard.css" />
   </head>
   <body>

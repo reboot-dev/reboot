@@ -10,7 +10,7 @@ import type {
   Method as MethodMessage,
   Method_Kind,
   StateType as StateTypeMessage,
-} from "@dashboard/dashboard_pb";
+} from "../../../../rbt/dashboard/v1/dashboard_pb";
 import type {
   Constraints,
   Schema,

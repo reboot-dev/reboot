@@ -1210,3 +1210,174 @@ header h1 {
   color: hsl(var(--foreground));
   border-color: hsl(240 5.9% 78%);
 }
+
+/* --- Call graph --- */
+
+/* The graph owns the rest of the pane below the header, and the
+   pane stops scrolling: panning the canvas is the graph's own
+   gesture, and a scrollbar would fight it. */
+.pane.graph-pane {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* As a flex item the header's auto margins would shrink it to its
+   words and centre those; at full width it is the same 840px column
+   the other pages put their heading in. The note under it, when
+   there is one, sits in the same column. */
+.pane.graph-pane > header,
+.graph-note {
+  width: 100%;
+}
+
+.graph-note {
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 0 48px 24px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.graph-canvas {
+  flex: 1;
+  min-height: 0;
+  border-top: 1px solid hsl(var(--border));
+}
+
+.react-flow {
+  background: hsl(var(--background));
+}
+
+/* Nodes aren't draggable, so a drag anywhere on them pans the graph:
+   they wear the pane's hand (open, or closed while panning) rather
+   than xyflow's default arrow. */
+.graph-canvas .react-flow__node {
+  cursor: inherit;
+}
+
+/* The dots read as a drafting surface against the parchment
+   background without competing with the edges. */
+.react-flow__background {
+  color: hsl(240 6% 78%);
+}
+
+/* The handles are landing points for edges, not things to grab. */
+.graph-port {
+  opacity: 0;
+  pointer-events: none;
+  border: none;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* A state type: a card like the method cards elsewhere, with one
+   row per method. */
+.graph-state-type {
+  width: 100%;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px hsl(240 10% 40% / 0.1);
+  overflow: hidden;
+}
+
+/* 34px tall, which `graph.tsx` lays out by. */
+.graph-state-type-head {
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid hsl(var(--border-soft));
+  font-size: 12.5px;
+  font-weight: 650;
+  color: hsl(var(--foreground));
+}
+
+/* One method, one row: its kind's colour on the dot, its name, and
+   an edge landing on its left or leaving on its right. 26px tall,
+   which `graph.tsx` lays out by. */
+.graph-method {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 12px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  color: hsl(var(--foreground));
+}
+
+/* Each kind's colour: the hue its dot wears, which is the hue
+   `graph.tsx` gives its edges, and the kind pills wear on the state
+   types page. A method the API does not declare has no kind. */
+.graph-kind-reader {
+  --kind: 166 55% 35%;
+}
+
+.graph-kind-writer {
+  --kind: 211 72% 45%;
+}
+
+.graph-kind-transaction {
+  --kind: 275 50% 50%;
+}
+
+.graph-kind-workflow {
+  --kind: 36 85% 42%;
+}
+
+.graph-kind-undeclared {
+  --kind: 211 25% 60%;
+}
+
+.graph-method-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: hsl(var(--kind));
+}
+
+/* A workflow's dot is a ring: like its dashed edges, it is drawn in
+   outline because it runs past the call that started it. */
+.graph-kind-workflow .graph-method-dot {
+  background: transparent;
+  border: 1.5px solid hsl(var(--kind));
+}
+
+.graph-method-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A factory: the method that brings the state into existence, which
+   is what a `constructs` edge lands on. */
+.graph-method-factory {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: hsl(211 72% 26%);
+  color: hsl(0 0% 100%);
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+/* What an edge says about itself, floated at its midpoint: a small
+   solid pill so the word reads over whatever the edge crosses. The
+   text is a darker cut of the edge's colour, set inline; the border
+   takes a wash of the same colour through `currentColor`. */
+.graph-edge-label {
+  position: absolute;
+  padding: 1.5px 7px;
+  border-radius: 999px;
+  background: hsl(var(--card));
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  box-shadow: 0 1px 2px hsl(240 10% 40% / 0.1);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+}

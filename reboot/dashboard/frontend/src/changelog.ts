@@ -3,8 +3,11 @@
 // Written as `rbt.dashboard.v1.Change` and stored, serialized, in
 // an `OrderedMap` keyed by a uuidv7, so the keys are in the order
 // the changes happened and a reverse range is newest first.
-import type { MethodChange, PropertyChange } from "@dashboard/dashboard_pb";
-import { Change } from "@dashboard/dashboard_pb";
+import type {
+  MethodChange,
+  PropertyChange,
+} from "../../../../rbt/dashboard/v1/dashboard_pb";
+import { Change } from "../../../../rbt/dashboard/v1/dashboard_pb";
 import {
   formatConstraints,
   formatType,
