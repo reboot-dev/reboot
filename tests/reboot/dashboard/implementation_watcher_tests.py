@@ -773,6 +773,50 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(found[servicer].external, ())
         del helpers
 
+    async def test_nested_functions_and_lambdas_are_walked(self) -> None:
+        """A function or lambda written inside a method is part of
+        the body walked, however it is then used, e.g. gathered,
+        and calling the nested function does not walk it again."""
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'import asyncio\n'
+                'from shop.v1.depot_rbt import Depot\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                '        async def inner(id):\n'
+                '            await Depot.ref(id).look(context)\n'
+                '\n'
+                "        later = lambda: Shop.ref('l').look(context)\n"
+                '        await asyncio.gather(inner(1), inner(2), later())\n'
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        [found_servicer] = found[servicer].servicers
+        [method] = found_servicer.methods
+        Call = ServicerInfo.Method.Call
+        self.assertEqual(
+            [
+                (call.state_type, call.method, call.how)
+                for call in method.calls
+            ],
+            [
+                # The lambda's call first: `ast.walk` is
+                # breadth-first and the lambda's body is shallower
+                # than the awaited call inside `inner`.
+                ('shop.v1.Shop', 'look', Call.How.CALL),
+                ('shop.v1.Depot', 'look', Call.How.CALL),
+            ],
+        )
+        self.assertEqual(list(method.ambiguous), [])
+
     async def test_helpers_calling_each_other_are_followed_once(
         self,
     ) -> None:
