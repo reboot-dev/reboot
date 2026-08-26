@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import aiofiles
+import hashlib
 import importlib
 import os
 import types
@@ -753,10 +754,24 @@ async def generate_proto_file_from_api(
 
     os.makedirs(os.path.dirname(proto_file_path), exist_ok=True)
 
+    text = await proto_text_from_api(api, filename)
+
     async with aiofiles.open(proto_file_path, 'w') as proto:
-        await proto.write(await proto_text_from_api(api, filename))
+        await proto.write(text)
+        # Appended after the text it digests, so that the digest is
+        # of exactly what `proto_text_from_api` returns, which is
+        # what whoever compares computes.
+        await proto.write(
+            f'option (rbt.v1alpha1.file).api_digest = "{api_digest(text)}";\n'
+        )
 
     return proto_file_name
+
+
+def api_digest(proto_text: str) -> str:
+    """Returns the hex SHA-256 of the proto text an API generates to,
+    which is what says whether generated code came from that API."""
+    return hashlib.sha256(proto_text.encode()).hexdigest()
 
 
 class _ProtoText:
