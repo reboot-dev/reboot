@@ -22,6 +22,7 @@ from reboot.dashboard.constants import (
     IMPLEMENTATION_ID,
 )
 from reboot.dashboard.implementation_watcher import (
+    AnalyzedFile,
     MethodDefinition,
     _analyze,
     _generated_definitions,
@@ -31,7 +32,7 @@ from reboot.dashboard.implementation_watcher import (
 )
 from reboot.dashboard.main import application
 from reboot.dashboard.pyright import Pyright
-from reboot.dashboard.walk import AnalyzedFile, _walk
+from reboot.dashboard.walk import _walk
 from typing import Optional
 from unittest.mock import patch
 
