@@ -1,5 +1,5 @@
-"""Walks the developer's files: reads and parses each file an
-application reaches through its imports, records what each parse
+"""Walks the developer's files: reads and parses each file the
+entries reach through their imports, records what each parse
 observed, and carries forward what an earlier walk already parsed
 when the file is unchanged.
 """
@@ -609,7 +609,7 @@ class Parse:
 
 async def _walk(
     *,
-    application: Path,
+    entries: Sequence[Path],
     roots: Sequence[Path],
     known: Mapping[Path, K],
 ) -> tuple[dict[Path, K], Mapping[Path, ParsedFile]]:
@@ -621,10 +621,11 @@ async def _walk(
     comes back with `unchanged`, which is the `known` a next
     iteration starts from.
 
-    Only what the application reaches is returned: a file that has
-    stopped being imported is absent, however recently it changed,
-    and one that has started being imported is parsed for the first
-    time.
+    `entries` are the files the walk starts from: an application's
+    entry point, or every file of a directory. Only what they reach
+    is returned: a file that has stopped being imported is absent,
+    however recently it changed, and one that has started being
+    imported is parsed for the first time.
 
     Everything is read here, before anything is asked of pyright,
     and each `ParsedFile` carries the text it was parsed from, so
@@ -641,19 +642,20 @@ async def _walk(
     code is taken to end.
 
     """
-    application = _standardized_path(application)
-
     files = Files.create(
         roots=roots,
         known=known,
     )
 
     # Everything reachable is read by one depth-first recursion from
-    # the application's file. Parsing is synchronous and blocks the
-    # Python event loop, but every parse follows an awaited read of
-    # the same file, so the loop turns between files and other
-    # dashboard requests are not starved.
-    _, files = await files.lookup_or_parse_filename(application)
+    # each entry. Parsing is synchronous and blocks the Python event
+    # loop, but every parse follows an awaited read of the same
+    # file, so the loop turns between files and other dashboard
+    # requests are not starved.
+    for entry in entries:
+        _, files = await files.lookup_or_parse_filename(
+            _standardized_path(entry)
+        )
 
     # Whether each unchanged file needs to be analyzed can be decided
     # now we know all the parsed files (which is a collection of both
