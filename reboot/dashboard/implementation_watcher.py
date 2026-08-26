@@ -66,6 +66,7 @@ from reboot.dashboard.walk import (
     Digest,
     Parse,
     ParsedFile,
+    _modified_at,
     _read,
     _standardized_path,
     _walk,
@@ -78,14 +79,6 @@ from typing import Mapping, Optional, Sequence
 # is defined so that what an analysis records and what a reader
 # reads are one message.
 Call = Servicer.Method.Call
-
-
-def _modified_at(path: Path) -> Timestamp:
-    """Returns when a file was last modified, as the filesystem
-    records it, to the nanosecond."""
-    modified = Timestamp()
-    modified.FromNanoseconds(path.stat().st_mtime_ns)
-    return modified
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -527,7 +520,7 @@ class Analysis:
             return Parse(text=parsed.text, syntax=parsed.syntax), None
 
         try:
-            source = await _read(filename)
+            source, modified = await _read(filename)
         except OSError:
             return None, None
 
@@ -539,7 +532,9 @@ class Analysis:
             )
 
         parse = Parse.from_bytes(
-            source, digest=hashlib.sha256(source).digest()
+            source,
+            digest=hashlib.sha256(source).digest(),
+            modified=modified,
         )
         return (parse if isinstance(parse, Parse) else None), external
 

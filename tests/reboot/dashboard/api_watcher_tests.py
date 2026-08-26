@@ -19,6 +19,7 @@ from reboot.dashboard.constants import (
     ENVVAR_RBT_API_DIRECTORY,
 )
 from reboot.dashboard.main import application
+from reboot.dashboard.walk import _modified_at
 from typing import Optional
 from unittest.mock import patch
 
@@ -230,6 +231,28 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(change['id'], 'shop.v1.Depot')
         self.assertEqual(change['change'], 'added')
+
+    async def test_every_api_file_is_listed_with_when_it_was_modified(
+        self,
+    ) -> None:
+        """Every candidate API file is recorded with its modification
+        time, a file declaring no state type included, since its
+        change is what makes generated code stale too."""
+        self._write_api_file(self.directory, 'shop', 'Shop')
+        helper = self.directory / 'shop' / 'v1' / 'helper.py'
+        helper.write_text('SHARED = 1\n')
+
+        await self._start_dashboard()
+        api = await self._wait_for_api(lambda api: len(api.files) == 2)
+
+        self.assertEqual(
+            api.files['shop/v1/helper.py'].modified,
+            _modified_at(helper),
+        )
+        self.assertEqual(
+            api.files['shop/v1/shop.py'].modified,
+            _modified_at(self.directory / 'shop' / 'v1' / 'shop.py'),
+        )
 
     async def test_what_was_already_on_disk_is_not_history(self) -> None:
         self._write_api_file(self.directory, 'shop', 'Shop')

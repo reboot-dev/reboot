@@ -11,6 +11,7 @@ import io
 import os
 import tokenize
 from dataclasses import dataclass, replace
+from google.protobuf.timestamp_pb2 import Timestamp
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import File
 from types import MappingProxyType
@@ -38,6 +39,14 @@ GENERATED_SUFFIXES = ('_rbt.py', '_pb2.py', '_pb2_grpc.py')
 # Every file the developer might have written a servicer in, which is
 # the rule `rbt generate` and `rbt dev run` both use for source.
 SOURCE_GLOB = '**/*.py'
+
+
+def _modified_at(path: Path) -> Timestamp:
+    """Returns when a file was last modified, as the filesystem
+    records it, to the nanosecond."""
+    modified = Timestamp()
+    modified.FromNanoseconds(path.stat().st_mtime_ns)
+    return modified
 
 
 def _standardized_path(filename: Path) -> Path:
@@ -73,9 +82,16 @@ def _anchored(path: Path) -> str:
     return '.' + os.sep + spelled
 
 
-async def _read(filename: Path) -> bytes:
+async def _read(filename: Path) -> tuple[bytes, Timestamp]:
+    """Returns a file's bytes, with when the file was last modified,
+    taken from the open file itself rather than from its path, so
+    that the two describe one file even when the path is being
+    swapped under us by a save; and taken before the bytes, so that
+    the time is never newer than they are."""
     async with aiofiles.open(filename, 'rb') as file:
-        return await file.read()
+        modified = Timestamp()
+        modified.FromNanoseconds(os.fstat(file.fileno()).st_mtime_ns)
+        return await file.read(), modified
 
 
 def _extract_possible_module_paths_from_imports(
@@ -247,6 +263,11 @@ class ParsedFile:
     # pyright before the analysis asks about the file, so that the
     # answers are about exactly this text.
     text: str
+
+    # When the bytes parsed were last modified, from the open file
+    # they came from: when the content this is of was last modified,
+    # which a later touch of the path does not move.
+    modified: Timestamp
 
 
 class KnownFileProtocol(Protocol):
@@ -512,7 +533,7 @@ class Files(Generic[KnownFile]):
             return files.visiting[filename], files
 
         try:
-            source = await _read(filename)
+            source, modified = await _read(filename)
         except OSError as error:
             return None, files.with_unreadable_file(filename, error)
 
@@ -537,7 +558,7 @@ class Files(Generic[KnownFile]):
                 files = await files.lookup_or_parse_module_path(module_path)
             return known.digest, files
 
-        parse = Parse.from_bytes(source, digest=digest)
+        parse = Parse.from_bytes(source, digest=digest, modified=modified)
         if isinstance(parse, Unparseable):
             return digest, files.with_unparseable_file(filename, parse)
 
@@ -574,6 +595,7 @@ class Files(Generic[KnownFile]):
             ),
             syntax=parse.syntax,
             text=parse.text,
+            modified=modified,
         )
 
         return digest, files.with_parsed_file(parsed)
@@ -650,6 +672,7 @@ class Parse:
         source: bytes,
         *,
         digest: Digest,
+        modified: Timestamp,
     ) -> 'Parse | Unparseable':
         """Returns a file's bytes parsed, and `Unparseable` for bytes
         that will not decode or will not parse, half-written being
@@ -660,7 +683,7 @@ class Parse:
             text = source.decode(encoding)
             return cls(text=text, syntax=ast.parse(text))
         except (SyntaxError, ValueError) as error:
-            return Unparseable(digest=digest, error=error)
+            return Unparseable(digest=digest, modified=modified, error=error)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -670,6 +693,10 @@ class Unparseable:
     # Of the bytes, saying whether parsing them again would say
     # anything new.
     digest: Digest
+
+    # When the bytes were last modified, from the open file they
+    # came from.
+    modified: Timestamp
 
     # Why: the error decoding or parsing raised, e.g. a
     # `SyntaxError` for invalid syntax, a `UnicodeDecodeError`, which
@@ -782,10 +809,9 @@ async def _walk(
         for dependency in file.external:
             if dependency.filename not in external_digests:
                 try:
-                    external_digests[dependency.filename] = (
-                        hashlib.sha256(await _read(Path(dependency.filename))
-                                      ).digest()
-                    )
+                    source, _ = await _read(Path(dependency.filename))
+                    external_digests[dependency.filename
+                                    ] = (hashlib.sha256(source).digest())
                 except OSError:
                     external_digests[dependency.filename] = None
             # Recorded from bytes actually read, so the digest is
@@ -831,14 +857,14 @@ async def _walk(
             # next iteration will start another walk and we'll
             # converge correctly.
             try:
-                source = await _read(file.filename)
+                source, modified = await _read(file.filename)
             except OSError as error:
                 unreadable[filename] = error
                 continue
 
             digest = hashlib.sha256(source).digest()
 
-            parse = Parse.from_bytes(source, digest=digest)
+            parse = Parse.from_bytes(source, digest=digest, modified=modified)
             if isinstance(parse, Unparseable):
                 # Bytes that will not parse right now, possible if our
                 # walk is racing with a concurrent modification to the
@@ -863,6 +889,7 @@ async def _walk(
                 ),
                 syntax=parse.syntax,
                 text=parse.text,
+                modified=modified,
             )
         else:
             unchanged[filename] = file
