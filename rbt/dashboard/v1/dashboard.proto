@@ -278,6 +278,13 @@ message File {
   // be: a file that will not parse, or will not import. Absent for
   // a file that read.
   optional string error = 4;
+
+  // Represents when the file was last modified, as the filesystem
+  // records it, as of the last write. Against the generated files'
+  // times, what says whether generated code is older than the API
+  // files. Recorded for the API's files; the implementation's are
+  // not compared by time.
+  google.protobuf.Timestamp modified = 5;
 }
 
 // What the dashboard application has read of the developer's

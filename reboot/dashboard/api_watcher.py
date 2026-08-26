@@ -19,6 +19,7 @@ the watch failed to hear.
 """
 from dataclasses import dataclass
 from functools import partial
+from google.protobuf.timestamp_pb2 import Timestamp
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import API as APIState
 from rbt.dashboard.v1.dashboard_pb2 import Change, File, StateType
@@ -69,16 +70,23 @@ class ReadFile:
     # Why the file could not be read, when it could not be.
     error: Optional[str]
 
+    # When the file was last modified, as the filesystem records it,
+    # as of the listing that read it: what, against the generated
+    # files' times, says whether generated code is older than this.
+    modified: Timestamp
+
 
 def _api_files(api_directory: Path) -> list[Path]:
-    """Every candidate API file under `api_directory`, sorted.
+    """Every candidate API file under `api_directory`, in the spelling
+    `_standardized_path` returns, sorted.
 
     Candidate, because an API is a Python object, built when the
     module executes, so only reading a file tells whether it declares
     one.
     """
     return sorted(
-        path for path in api_directory.glob(SOURCE_GLOB)
+        _standardized_path(path)
+        for path in api_directory.glob(SOURCE_GLOB)
         if not path.name.endswith(GENERATED_SUFFIXES)
     )
 
@@ -109,6 +117,7 @@ def _reconstitute_known(
             external=tuple(file.external),
             state_types=tuple(state_types.get(filename, [])),
             error=file.error if file.HasField('error') else None,
+            modified=file.modified,
         )
     return known
 
@@ -161,6 +170,7 @@ def _files(
         )
         if file.error is not None:
             recorded.error = file.error
+        recorded.modified.CopyFrom(file.modified)
         files[_relative(filename, api_directory)] = recorded
     return files
 
@@ -182,10 +192,8 @@ async def _walk_and_read(
     request the same however many times it is made. So everything
     returned is a plain value pickle can keep.
     """
-    entries = [_standardized_path(path) for path in _api_files(directory)]
-
     unchanged, parsed, unparseable, _ = await _walk(
-        entries=entries,
+        entries=_api_files(directory),
         roots=[directory],
         known=known,
     )
@@ -203,13 +211,12 @@ async def _walk_and_read(
         )
     }
 
-    # What is known now: the unchanged files, each
-    # parsed file as read, and each unparseable file,
-    # which declares nothing and whose imports could
-    # not be followed, with why the walk could not
-    # parse it, spelled the way the reader spells an
-    # error. A candidate that is gone, or could not
-    # be read, is in none of these.
+    # What is known now: the unchanged files, each parsed file as
+    # read, and each unparseable file, which declares nothing and
+    # whose imports could not be followed, with why the walk could
+    # not parse it, spelled the way the reader spells an error. A
+    # candidate that is gone, or could not be read, is in none of
+    # these.
     known_now: dict[Path, ReadFile] = dict(unchanged)
     for filename, (state_types, error) in reads.items():
         known_now[filename] = ReadFile(
@@ -219,6 +226,19 @@ async def _walk_and_read(
             external=(),
             state_types=tuple(state_types),
             error=error,
+            # The parsed bytes' time, from the open file they came
+            # from, so a time and a digest always describe one file.
+            # The reader opens the file again, though, and a save
+            # landing in between gives declarations from bytes newer
+            # than this. That is okay: the time is then older than
+            # the content, never newer, so the page can only
+            # under-report generated code as stale, and only until
+            # the next iteration, which that save's event, on a
+            # watch armed before this walk, starts at once; its walk
+            # finds the digest moved, reads the file again, and
+            # records the newer time with the same declarations, so
+            # nothing reaches the changelog.
+            modified=parsed[filename].modified,
         )
     for filename, unparseable_file in unparseable.items():
         known_now[filename] = ReadFile(
@@ -231,6 +251,7 @@ async def _walk_and_read(
                 f'{type(unparseable_file.error).__name__}: '
                 f'{unparseable_file.error}'
             ),
+            modified=unparseable_file.modified,
         )
 
     if known_now == known:
