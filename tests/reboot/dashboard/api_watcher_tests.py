@@ -224,10 +224,8 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(revision=self.revision)
         await self._wait_for_api(lambda api: len(_state_types_in(api)) == 2)
 
-        while len(await self._changelog_entries()) == 0:
-            await asyncio.sleep(0.1)
-
-        [change] = await self._changelog_entries()
+        # The first read recorded `Shop`, `LookRequest` and `LookResponse`.
+        change, *_ = await self._changelog_entries()
 
         self.assertEqual(change['id'], 'shop.v1.Depot')
         self.assertEqual(change['change'], 'added')
@@ -254,13 +252,23 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
             _modified_at(self.directory / 'shop' / 'v1' / 'shop.py'),
         )
 
-    async def test_what_was_already_on_disk_is_not_history(self) -> None:
+    async def test_the_first_read_records_what_is_on_disk(self) -> None:
         self._write_api_file(self.directory, 'shop', 'Shop')
 
         await self._start_dashboard()
         await self._wait_for_api(lambda api: len(_state_types_in(api)) == 1)
 
-        self.assertEqual(await self._changelog_entries(), [])
+        self.assertEqual(
+            sorted(
+                (change['id'], change['change'])
+                for change in await self._changelog_entries()
+            ),
+            [
+                ('shop.v1.LookRequest', 'added'),
+                ('shop.v1.LookResponse', 'added'),
+                ('shop.v1.Shop', 'added'),
+            ],
+        )
 
     async def test_fixing_a_file_broken_at_startup_is_history(self) -> None:
         # A file that was on disk but did not parse told the dashboard
@@ -277,9 +285,6 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         self._write_api_file(self.directory, 'shop', 'Shop')
         await self._wait_for_api(lambda api: len(_state_types_in(api)) == 1)
-
-        while len(await self._changelog_entries()) < 3:
-            await asyncio.sleep(0.1)
 
         # The state type and the two data types it declares.
         self.assertEqual(
@@ -306,10 +311,8 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         self._write_api_file(self.directory, 'depot', 'Depot')
         await self._wait_for_api(lambda api: len(_state_types_in(api)) == 2)
 
-        while len(await self._changelog_entries()) == 0:
-            await asyncio.sleep(0.1)
-
-        [change] = await self._changelog_entries()
+        # The first read recorded `Shop`, `LookRequest` and `LookResponse`.
+        change, *_ = await self._changelog_entries()
 
         self.assertEqual(change['id'], 'shop.v1.Depot')
         self.assertEqual(change['change'], 'added')
@@ -339,10 +342,8 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
             ['shop.v1.Emporium']
         )
 
-        while len(await self._changelog_entries()) < 4:
-            await asyncio.sleep(0.1)
-
-        # Each save added a state type and removed the one before it.
+        # The first read added three types; each save then added a
+        # state type and removed the one before it.
         self.assertEqual(
             sorted(
                 (change['id'], change['change'])
@@ -352,6 +353,9 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
                 ('shop.v1.Bazaar', 'added'),
                 ('shop.v1.Bazaar', 'removed'),
                 ('shop.v1.Emporium', 'added'),
+                ('shop.v1.LookRequest', 'added'),
+                ('shop.v1.LookResponse', 'added'),
+                ('shop.v1.Shop', 'added'),
                 ('shop.v1.Shop', 'removed'),
             ],
         )
@@ -379,11 +383,15 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
                 '    look=Reader(',
             )
         )
+        await self._wait_for_api(
+            lambda api: any(
+                len(state_type['methods']) == 2
+                for state_type in _state_types_in(api)
+            )
+        )
 
-        while len(await self._changelog_entries()) == 0:
-            await asyncio.sleep(0.1)
-
-        [change] = await self._changelog_entries()
+        # The first read recorded `Shop`, `LookRequest` and `LookResponse`.
+        change, *_ = await self._changelog_entries()
 
         self.assertEqual(change['id'], 'shop.v1.Shop')
         self.assertEqual(change['change'], 'changed')
@@ -407,10 +415,9 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         await self._wait_for_api(lambda api: len(_state_types_in(api)) == 1)
 
-        while len(await self._changelog_entries()) == 0:
-            await asyncio.sleep(0.1)
-
-        [change] = await self._changelog_entries()
+        # The first read recorded `Shop`, `Depot`, `LookRequest` and
+        # `LookResponse`.
+        change, *_ = await self._changelog_entries()
 
         self.assertEqual(change['id'], 'shop.v1.Depot')
         self.assertEqual(change['change'], 'removed')

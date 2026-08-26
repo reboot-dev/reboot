@@ -17,7 +17,9 @@ import type {
 
 export type ChangedPart = PlainMessage<ChangedPartMessage>;
 
-// One row: what changed, and when, which is the key it is under.
+// One entry: a type the dashboard found added, changed or removed
+// when it read a file. `key` is the uuidv7 the entry is under; `at`
+// is the time in `key`, when the dashboard read the file.
 export type Change = Omit<PlainMessage<ChangeMessage>, "changedParts"> & {
   changedParts?: ChangedPart[];
   key: string;
@@ -69,8 +71,15 @@ export const timeAgo = (at: Date, now: Date): string => {
     [unit, ms] = [larger, size];
   }
 
+  const rounded = Math.round(elapsed / ms);
+  // `Intl.RelativeTimeFormat` formats zero seconds as "now";
+  // `ChangeRow` prefixes "read ", so the freshest row reads
+  // "read just now".
+  if (rounded === 0 && unit === "second") {
+    return "just now";
+  }
   return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(
-    Math.round(elapsed / ms),
+    rounded,
     unit
   );
 };

@@ -701,7 +701,7 @@ const ChangeRow: FC<{ change: Change; now: Date }> = ({ change, now }) => {
   return (
     <div className="change">
       <time className="change-when" dateTime={change.at.toISOString()}>
-        {timeAgo(change.at, now)}
+        read {timeAgo(change.at, now)}
       </time>
       <span className="change-where">{change.namespace}</span>
       {/* The wrapper, not the pill, is the grid cell: the row's padding
@@ -740,9 +740,6 @@ const ChangeRow: FC<{ change: Change; now: Date }> = ({ change, now }) => {
   );
 };
 
-// Changes to the developer's API files since this dashboard started,
-// newest first. Paged, because a day of editing produces many rows
-// and the reader starts at the top.
 const ChangelogPage: FC<{ onCount: (n: number) => void; live: boolean }> = ({
   onCount,
   live,
@@ -774,8 +771,7 @@ const ChangelogPage: FC<{ onCount: (n: number) => void; live: boolean }> = ({
   if (shown.length === 0) {
     return (
       <div className="empty">
-        Nothing has changed since this dashboard started. Edit an API file and
-        it will show up here.
+        No API files read yet. Write one and it will show up here.
       </div>
     );
   }
