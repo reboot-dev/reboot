@@ -653,7 +653,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             roots = [application.parent]
         roots = [*roots, self.generated]
 
-        unchanged, parsed = await _walk(
+        unchanged, parsed, _, _ = await _walk(
             entries=[application],
             roots=roots,
             known=known or {},
