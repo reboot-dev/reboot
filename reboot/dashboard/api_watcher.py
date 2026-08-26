@@ -219,7 +219,6 @@ async def _walk_and_read(
     api_directory: str,
     directory: Path,
     known: Mapping[Path, ReadFile],
-    iteration: int,
 ) -> tuple[Optional[dict[Path, ReadFile]], list[Change]]:
     """Returns what is known of the files now, each file as read,
     and what changed since `known`, what the state records; and
@@ -300,14 +299,8 @@ async def _walk_and_read(
     if known_now == known:
         return None, []
 
-    # The first iteration ever, which the loop remembers across
-    # restarts, records no changes: what the files declare predates
-    # this dashboard, so it is shown but is nobody's edit. From then
-    # on every difference from what the state records is one, made
-    # while the dashboard watched or while it was down.
-    changes = (
-        [] if iteration == 0 else
-        list(changes_between(_declarations(known), _declarations(known_now)))
+    changes = list(
+        changes_between(_declarations(known), _declarations(known_now))
     )
 
     return known_now, changes
@@ -329,7 +322,7 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
     restarted = True
 
     with file_watcher() as watcher:
-        async for iteration in context.loop('Read what changed'):
+        async for _ in context.loop('Read what changed'):
             # The loop opens the watch before it reads anything, so a
             # save made during a read resolves `event` instead of
             # firing between watches, where nothing would notice it.
@@ -350,7 +343,6 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
                         api_directory=api_directory,
                         directory=directory,
                         known=known,
-                        iteration=iteration,
                     ),
                 )
 
