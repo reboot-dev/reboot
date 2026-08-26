@@ -1118,7 +1118,7 @@ async def watch(
 
             async with watcher.watch(globs + external_globs) as event:
                 unchanged, parsed = await _walk(
-                    application=application,
+                    entries=[application],
                     roots=roots,
                     known=known,
                 )
