@@ -44,13 +44,14 @@ of: where a state type is implemented can only change when the
 developer's source changes, so an edit under the roots is what wakes
 this, and nothing else does.
 """
+import aiofiles
 import ast
 import asyncio
 import hashlib
 from dataclasses import dataclass, replace
 from google.protobuf.timestamp_pb2 import Timestamp
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_pb2 import File
+from rbt.dashboard.v1.dashboard_pb2 import File, Generated
 from rbt.dashboard.v1.dashboard_pb2 import \
     Implementation as ImplementationState
 from rbt.dashboard.v1.dashboard_pb2 import Servicer
@@ -1024,27 +1025,57 @@ async def _analyze(
     return analyzed
 
 
+# How a generated module records which API it was generated from:
+# its fifth line, after the four tool directives the generator always
+# writes first, as `reboot/templates/reboot.py.j2` writes it, which
+# is where this spelling and this line number have to match.
+_API_DIGEST_PREFIX = b'# Generated from an API digesting to '
+_API_DIGEST_LINE = 5
+
+
+async def _try_extract_api_digest(path: Path) -> Optional[str]:
+    """Returns the digest a generated module records having been
+    generated from, and `None` when it records none: one generated
+    from a `.proto`, or by a Reboot before digests were recorded."""
+    line = b''
+    async with aiofiles.open(path, 'rb') as file:
+        for _ in range(_API_DIGEST_LINE):
+            line = await file.readline()
+    if not line.startswith(_API_DIGEST_PREFIX):
+        return None
+    return line[len(_API_DIGEST_PREFIX):].rstrip(b'.\r\n').decode()
+
+
 async def _list_generated(
     generated_directory: Optional[Path],
-) -> Mapping[str, Timestamp]:
-    """Returns every Python file under the generated directory, keyed
-    by its path relative to it the way `rbt generate` names its
-    outputs, e.g. `shop/v1/shop_rbt.py`, with the time it was last
-    modified, and nothing for no directory. Listed off the event
-    loop, since a large directory takes a while to walk and stat."""
+) -> Mapping[str, Generated]:
+    """Returns every `_rbt` module under the generated directory, the
+    one `rbt generate` writes per API file, keyed by its path
+    relative to the directory, e.g. `shop/v1/shop_rbt.py`, with the
+    time it was last modified and the digest it records having been
+    generated from; and nothing for no directory. Listed off the
+    event loop, since a large directory takes a while to walk and
+    stat."""
     if generated_directory is None:
         return MappingProxyType({})
 
-    def listing() -> Mapping[str, Timestamp]:
-        generated: dict[str, Timestamp] = {}
-        for path in generated_directory.glob(SOURCE_GLOB):
-            if not path.is_file():
-                continue
-            generated[path.relative_to(generated_directory).as_posix()
-                     ] = _modified_at(path)
-        return MappingProxyType(generated)
+    def listing() -> dict[Path, Timestamp]:
+        return {
+            path: _modified_at(path)
+            for path in generated_directory.glob('**/*_rbt.py')
+            if path.is_file()
+        }
 
-    return await asyncio.to_thread(listing)
+    generated: dict[str, Generated] = {}
+    for path, modified in (await asyncio.to_thread(listing)).items():
+        generated[path.relative_to(generated_directory).as_posix()] = (
+            Generated(
+                modified=modified,
+                api_digest=await _try_extract_api_digest(path),
+            )
+        )
+
+    return MappingProxyType(generated)
 
 
 async def watch(
@@ -1085,7 +1116,7 @@ async def watch(
     # the state already records writes nothing.
     state = await Implementation.ref().always().read(context)
     known = _reconstitute_known(state)
-    generated: Mapping[str, Timestamp] = state.generated
+    generated: Mapping[str, Generated] = state.generated
 
     with file_watcher() as watcher:
         async for iteration in context.loop('Watch the application'):
@@ -1185,8 +1216,8 @@ async def watch(
                         del state.servicers[:]
                         state.servicers.extend(servicers)
                         state.generated.clear()
-                        for filename, modified in generated_now.items():
-                            state.generated[filename].CopyFrom(modified)
+                        for filename, file in generated_now.items():
+                            state.generated[filename].CopyFrom(file)
 
                         # A file that changes after this write is
                         # simply parsed again by a restarted walk,

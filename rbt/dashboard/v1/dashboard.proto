@@ -287,6 +287,19 @@ message File {
   google.protobuf.Timestamp modified = 5;
 }
 
+// Represents one file in the generated directory, as of the last
+// write.
+message Generated {
+  // Represents when the file was last modified, as the filesystem
+  // records it.
+  google.protobuf.Timestamp modified = 1;
+
+  // Represents the digest of the proto the file was generated from,
+  // as the file records it. Absent for a file recording none: one
+  // generated before digests were recorded, or from a `.proto`.
+  optional string api_digest = 2;
+}
+
 // What the dashboard application has read of the developer's
 // application: which of their files implements each state type.
 //
@@ -313,24 +326,24 @@ message Implementation {
   // which its digest says.
   map<string, File> files = 3;
 
-  // Represents every Python file in the generated directory, keyed
-  // by its path relative to it the way `rbt generate` names its
-  // outputs, e.g. "shop/v1/shop_rbt.py", with the time it was last
-  // modified, as of the last write. A listing rather than what the
-  // walk reached, since a generated module nothing imports yet is
-  // still generated. Empty when no generated directory was named.
+  // Represents every `_rbt` module in the generated directory, the
+  // one `rbt generate` writes per API file, keyed by its path
+  // relative to the directory, e.g. "shop/v1/shop_rbt.py", as of
+  // the last write. A listing rather than what the walk reached,
+  // since a module nothing imports yet is still generated. Empty
+  // when no generated directory was named.
   //
-  // Against `API.files`, this says whether generated code is
-  // missing or older than the API files, which is what suggests
-  // running `rbt generate`.
-  map<string, google.protobuf.Timestamp> generated = 4;
+  // Against `API.files`, this says whether an API file's generated
+  // code is missing or out of date, which is what suggests running
+  // `rbt generate`.
+  map<string, Generated> generated = 4;
 }
 
 message ImplementationGetRequest {}
 
 message ImplementationGetResponse {
   repeated Servicer servicers = 1;
-  map<string, google.protobuf.Timestamp> generated = 2;
+  map<string, Generated> generated = 2;
 }
 
 message ImplementationWatchRequest {}
