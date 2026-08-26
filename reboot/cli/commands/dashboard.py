@@ -72,6 +72,14 @@ def _api_directory(parser: ArgumentParser) -> str:
     """Returns the directory holding the developer's API files, which
     is the directory they tell `rbt generate` to read them from.
 
+    Everything the dashboard reads of the developer's project comes
+    from `.rbtrc` and nowhere else: a pydantic API under
+    `generate api/`, the application under `dev run --application=`,
+    and the Python `rbt generate` writes under `generate --python=`.
+    `rbt dashboard` runs apart from `rbt dev run` and `rbt generate`,
+    so a flag given to either on the command line reaches nothing
+    here; it has to be in `.rbtrc`.
+
     Taken from there rather than named again here, so that moving the
     API files is one edit and the dashboard cannot end up watching a
     directory the rest of the tooling has stopped using.
