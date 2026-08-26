@@ -17,6 +17,14 @@ message API {
   // Why the API files could not be read, if they could not be. A
   // half-written file is the normal cause while someone is typing.
   optional string error = 2;
+
+  // Represents every candidate API file the watch read, keyed by
+  // its path relative to the API directory, the way `StateType.file`
+  // spells it, as of the last write. A restarted dashboard starts
+  // from these rather than reading every file again; one that
+  // changed since this was written is simply read again, which its
+  // digest says.
+  map<string, File> files = 3;
 }
 
 message StateType {
@@ -86,11 +94,18 @@ message APIGetRequest {}
 message APIGetResponse {
   repeated StateType state_types = 1;
   optional string error = 2;
+  map<string, File> files = 3;
 }
 
 message APIUpdateRequest {
   repeated StateType state_types = 1;
   optional string error = 2;
+  map<string, File> files = 3;
+
+  // What differs from what the state records, for the changelog.
+  // Recorded in the same transaction as the state, so that the
+  // changelog never says something the state does not.
+  repeated Change changes = 4;
 }
 
 message APIUpdateResponse {}
@@ -131,12 +146,6 @@ message ChangedPart {
   // `method`, `property` or `state`.
   string part = 3;
 }
-
-message APIRecordChangesRequest {
-  repeated Change changes = 1;
-}
-
-message APIRecordChangesResponse {}
 
 message APIWatchRequest {}
 
@@ -264,6 +273,11 @@ message File {
   // walk never finds these, so each is digested directly at the
   // end of a walk, and a change reanalyzes this file.
   repeated Dependency external = 3;
+
+  // Represents why the file could not be read, when it could not
+  // be: a file that will not parse, or will not import. Absent for
+  // a file that read.
+  optional string error = 4;
 }
 
 // What the dashboard application has read of the developer's
@@ -382,15 +396,11 @@ service APIMethods {
     };
   }
 
+  // Replaces what the API files declare and records what changed,
+  // as one transaction. Assigns each change its key, so that a
+  // workflow retrying this call sends an identical request every
+  // attempt.
   rpc Update(APIUpdateRequest) returns (APIUpdateResponse) {
-    option (rbt.v1alpha1.method).writer = {
-    };
-  }
-
-  // RecordChanges assigns each change its key, so that a workflow
-  // retrying this call sends an identical request every attempt.
-  rpc RecordChanges(APIRecordChangesRequest)
-      returns (APIRecordChangesResponse) {
     option (rbt.v1alpha1.method).transaction = {
     };
   }

@@ -102,7 +102,7 @@ def changes_between(
     before: list[StateType],
     after: list[StateType],
 ) -> Iterator[Change]:
-    """Ordered by id so that a retry of the `RecordChanges` call the
+    """Ordered by id so that a retry of the `Update` call the
     watcher makes sends the same list, which is what makes the write
     idempotent.
     """

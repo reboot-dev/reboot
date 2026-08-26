@@ -52,8 +52,11 @@ py_library(
         ":api_reader_py",
         ":changelog_py",
         ":constants_py",
+        ":walk_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//reboot/aio:concurrently_py",
         "//reboot/aio:external_py",
+        "//reboot/aio:workflows_py",
         "//reboot/cli/common:watch_py",
     ],
 )

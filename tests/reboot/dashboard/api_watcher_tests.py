@@ -81,7 +81,7 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         API files first and start the dashboard against files that
         already exist.
         """
-        await self.rbt.up(application(), local_envoy=True)
+        self.revision = await self.rbt.up(application(), local_envoy=True)
         self.url = f'http://127.0.0.1:{self.rbt.envoy_port()}'
 
     async def asyncTearDown(self) -> None:
@@ -118,6 +118,119 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
             return []
         return [MessageToDict(entry.value) for entry in response.entries]
 
+    async def test_a_change_to_an_imported_file_reads_its_importer(
+        self,
+    ) -> None:
+        """A file declaring nothing, imported by one that does, is a
+        dependency of it: changing the imported file reads the
+        importer again, so what it declares follows."""
+        models = self.directory / 'shop' / 'v1' / 'models.py'
+        models.parent.mkdir(parents=True, exist_ok=True)
+        models.write_text(
+            'from reboot.api import Field, Model\n'
+            '\n'
+            '\n'
+            'class LookRequest(Model):\n'
+            '    item: str = Field(tag=1)\n'
+        )
+        shop = self.directory / 'shop' / 'v1' / 'shop.py'
+        shop.write_text(
+            SHOP.format(state='Shop').replace(
+                'class LookRequest(Model):\n    item: str = Field(tag=1)\n',
+                'from shop.v1.models import LookRequest\n',
+            )
+        )
+
+        await self._start_dashboard()
+        await self._wait_for_api(lambda api: len(_state_types_in(api)) == 1)
+
+        # A second field, in the imported file only.
+        models.write_text(
+            models.read_text() + '    quantity: int = Field(tag=2)\n'
+        )
+
+        api = await self._wait_for_api(
+            lambda api: any(
+                'quantity' in data_type['schema'] for state_type in
+                _state_types_in(api) for data_type in state_type['dataTypes']
+            )
+        )
+        self.assertIn('shop/v1/models.py', api.files)
+
+    async def test_a_burst_of_saves_reads_every_saved_file(self) -> None:
+        """Files saved together are all read, however many of the
+        saves the watch heard: what to read is decided by walking
+        the files, not by the event."""
+        self._write_api_file(self.directory, 'shop', 'Shop')
+        self._write_api_file(self.directory, 'depot', 'Depot')
+
+        await self._start_dashboard()
+        await self._wait_for_api(lambda api: len(_state_types_in(api)) == 2)
+
+        self._write_api_file(self.directory, 'shop', 'Bazaar')
+        self._write_api_file(self.directory, 'depot', 'Warehouse')
+
+        await self._wait_for_api(
+            lambda api: sorted(
+                state['name'] for state in _state_types_in(api)
+            ) == ['shop.v1.Bazaar', 'shop.v1.Warehouse']
+        )
+
+    async def test_a_file_that_will_not_read_says_so_beside_the_file(
+        self,
+    ) -> None:
+        """Why a file could not be read is recorded against that file,
+        beside the digest that spares reading it again unchanged."""
+        self._write_api_file(self.directory, 'shop', 'Shop')
+        broken = self.directory / 'shop' / 'v1' / 'depot.py'
+        broken.write_text('this is not python(')
+
+        await self._start_dashboard()
+        # Both files read: the broken one, which sorts first, is
+        # written before the other is read.
+        api = await self._wait_for_api(
+            lambda api: api.HasField('error') and len(_state_types_in(api)) ==
+            1
+        )
+
+        self.assertTrue(api.files['shop/v1/depot.py'].HasField('error'))
+        self.assertIn('SyntaxError', api.files['shop/v1/depot.py'].error)
+        self.assertFalse(api.files['shop/v1/shop.py'].HasField('error'))
+        self.assertEqual(
+            [state['name'] for state in _state_types_in(api)],
+            ['shop.v1.Shop'],
+        )
+
+    async def test_a_change_made_while_the_dashboard_was_down_is_history(
+        self,
+    ) -> None:
+        """A dashboard brought back up reads what changed while it was
+        down and records it: the state remembers what it last saw,
+        and a restart is itself a reason to walk the files again
+        rather than waiting for a save."""
+        self._write_api_file(self.directory, 'shop', 'Shop')
+
+        await self._start_dashboard()
+        await self._wait_for_api(
+            lambda api: len(_state_types_in(api)) == 1 and 'shop/v1/shop.py' in
+            api.files
+        )
+
+        await self.rbt.down()
+
+        self._write_api_file(self.directory, 'depot', 'Depot')
+
+        await self.rbt.up(revision=self.revision)
+        await self._wait_for_api(lambda api: len(_state_types_in(api)) == 2)
+
+        while len(await self._changelog_entries()) == 0:
+            await asyncio.sleep(0.1)
+
+        [change] = await self._changelog_entries()
+
+        self.assertEqual(change['id'], 'shop.v1.Depot')
+        self.assertEqual(change['change'], 'added')
+
     async def test_what_was_already_on_disk_is_not_history(self) -> None:
         self._write_api_file(self.directory, 'shop', 'Shop')
 
@@ -126,13 +239,10 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(await self._changelog_entries(), [])
 
-    async def test_fixing_a_file_broken_at_startup_is_not_history(
-        self
-    ) -> None:
-        # A file that was already on disk but did not parse told the
-        # dashboard nothing, so what it turns out to declare once it
-        # does parse is what it already declared. Fixing a typo is not
-        # adding everything in the file.
+    async def test_fixing_a_file_broken_at_startup_is_history(self) -> None:
+        # A file that was on disk but did not parse told the dashboard
+        # nothing; what it turns out to declare once it does parse is
+        # what the dashboard then sees added.
         path = self.directory / 'shop' / 'v1' / 'shop.py'
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('this is not python(')
@@ -145,10 +255,21 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         self._write_api_file(self.directory, 'shop', 'Shop')
         await self._wait_for_api(lambda api: len(_state_types_in(api)) == 1)
 
-        # Long enough that a change would have been recorded by now.
-        await asyncio.sleep(2)
+        while len(await self._changelog_entries()) < 3:
+            await asyncio.sleep(0.1)
 
-        self.assertEqual(await self._changelog_entries(), [])
+        # The state type and the two data types it declares.
+        self.assertEqual(
+            sorted(
+                (change['id'], change['change'])
+                for change in await self._changelog_entries()
+            ),
+            [
+                ('shop.v1.LookRequest', 'added'),
+                ('shop.v1.LookResponse', 'added'),
+                ('shop.v1.Shop', 'added'),
+            ],
+        )
 
     async def test_a_type_added_after_startup_is_history(self) -> None:
         self._write_api_file(self.directory, 'shop', 'Shop')
