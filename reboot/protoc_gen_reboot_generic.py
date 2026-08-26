@@ -318,6 +318,7 @@ class ProtoFile:
 class ProtoFileOptions:
     zod: Optional[str]
     pydantic: Optional[str]
+    api_digest: Optional[str]
 
 
 @dataclass
@@ -790,6 +791,8 @@ class RebootProtocPlugin(ProtocPlugin):
             zod=options.zod if options.HasField('zod') else None,
             pydantic=options.pydantic
             if options.HasField('pydantic') else None,
+            api_digest=options.api_digest
+            if options.HasField('api_digest') else None,
         )
 
     def _is_default_constructible(self, service: ServiceDescriptor) -> bool:

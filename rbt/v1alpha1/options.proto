@@ -186,6 +186,11 @@ message FileOptions {
   // Path to Python schema that we want to be able to import in
   // our generated code.
   optional string pydantic = 2;
+  // A hex SHA-256 of the proto text this file held before this
+  // option was appended, which is what a pydantic API generates
+  // to: written into the generated code, so that whoever has the
+  // API in hand can tell whether the generated code came from it.
+  optional string api_digest = 3;
 }
 
 extend google.protobuf.FileOptions {
