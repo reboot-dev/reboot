@@ -538,7 +538,10 @@ class Analysis:
                 digest=hashlib.sha256(source).digest(),
             )
 
-        return Parse.from_bytes(source), external
+        parse = Parse.from_bytes(
+            source, digest=hashlib.sha256(source).digest()
+        )
+        return (parse if isinstance(parse, Parse) else None), external
 
     def _with_external_dependency(
         self,
@@ -1117,7 +1120,7 @@ async def watch(
             )
 
             async with watcher.watch(globs + external_globs) as event:
-                unchanged, parsed = await _walk(
+                unchanged, parsed, _, _ = await _walk(
                     entries=[application],
                     roots=roots,
                     known=known,

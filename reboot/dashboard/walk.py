@@ -324,6 +324,18 @@ class Files(Generic[KnownFile]):
     # `known`.
     unchanged: Mapping[Path, KnownFile]
 
+    # Files whose bytes were read but would not decode or parse,
+    # which is the normal state of a file somebody is typing into:
+    # each with the digest of its bytes, so that a caller may know
+    # such a file next iteration, and why it would not parse.
+    unparseable: Mapping[Path, 'Unparseable']
+
+    # Files that could not be read, by the error reading them raised:
+    # most often deleted between the listing and the read, which the
+    # save that deleted them, its event pending, settles next
+    # iteration.
+    unreadable: Mapping[Path, OSError]
+
     # Files whose bytes are read but whose imports are still being
     # followed, above us in the walk's recursion, by the digest of
     # those bytes. What a cycle of imports meets: the file is
@@ -364,6 +376,8 @@ class Files(Generic[KnownFile]):
                 {file.filename: file for file in known.values()}
             ),
             parsed=MappingProxyType({}),
+            unparseable=MappingProxyType({}),
+            unreadable=MappingProxyType({}),
             unchanged=MappingProxyType({}),
             visiting=MappingProxyType({}),
             resolutions=MappingProxyType({}),
@@ -379,6 +393,38 @@ class Files(Generic[KnownFile]):
             parsed=MappingProxyType({
                 **self.parsed,
                 parsed.filename: parsed,
+            }),
+        )
+
+    def with_unparseable_file(
+        self,
+        filename: Path,
+        unparseable: 'Unparseable',
+    ) -> 'Files[KnownFile]':
+        """Returns this with one more file read but not parsed, into
+        `unparseable`."""
+        return replace(
+            self,
+            unparseable=MappingProxyType(
+                {
+                    **self.unparseable,
+                    filename: unparseable,
+                }
+            ),
+        )
+
+    def with_unreadable_file(
+        self,
+        filename: Path,
+        error: OSError,
+    ) -> 'Files[KnownFile]':
+        """Returns this with one more file that could not be read,
+        into `unreadable`."""
+        return replace(
+            self,
+            unreadable=MappingProxyType({
+                **self.unreadable,
+                filename: error,
             }),
         )
 
@@ -441,8 +487,9 @@ class Files(Generic[KnownFile]):
         the same as the previous iteration's; or read and parsed,
         its own imports followed depth first and recorded as its
         dependencies, joining `parsed`. Bytes that will not decode
-        or parse come back digested all the same, joining nothing; a
-        file that cannot be read comes back as `None`. `filename`
+        or parse come back digested all the same, joining
+        `unparseable`; a file that cannot be read comes back as
+        `None`, joining `unreadable`. `filename`
         must be in the spelling `_standardized_path` returns, the
         way every filename here is.
         """
@@ -466,8 +513,8 @@ class Files(Generic[KnownFile]):
 
         try:
             source = await _read(filename)
-        except OSError:
-            return None, files
+        except OSError as error:
+            return None, files.with_unreadable_file(filename, error)
 
         digest = hashlib.sha256(source).digest()
 
@@ -490,9 +537,9 @@ class Files(Generic[KnownFile]):
                 files = await files.lookup_or_parse_module_path(module_path)
             return known.digest, files
 
-        parse = Parse.from_bytes(source)
-        if parse is None:
-            return digest, files
+        parse = Parse.from_bytes(source, digest=digest)
+        if isinstance(parse, Unparseable):
+            return digest, files.with_unparseable_file(filename, parse)
 
         module_paths = _extract_possible_module_paths_from_imports(
             parse.syntax,
@@ -598,16 +645,38 @@ class Parse:
     syntax: ast.Module
 
     @classmethod
-    def from_bytes(cls, source: bytes) -> Optional['Parse']:
-        """Returns a file's bytes parsed, and `None` for bytes that
-        will not decode or will not parse, half-written being the
-        normal state of a file somebody is typing into."""
+    def from_bytes(
+        cls,
+        source: bytes,
+        *,
+        digest: Digest,
+    ) -> 'Parse | Unparseable':
+        """Returns a file's bytes parsed, and `Unparseable` for bytes
+        that will not decode or will not parse, half-written being
+        the normal state of a file somebody is typing into. `digest`
+        is of the bytes, which the caller has in hand."""
         try:
             encoding, _ = tokenize.detect_encoding(io.BytesIO(source).readline)
             text = source.decode(encoding)
             return cls(text=text, syntax=ast.parse(text))
-        except (SyntaxError, UnicodeDecodeError, ValueError):
-            return None
+        except (SyntaxError, ValueError) as error:
+            return Unparseable(digest=digest, error=error)
+
+
+@dataclass(frozen=True, kw_only=True)
+class Unparseable:
+    """One file's bytes that would not decode or parse."""
+
+    # Of the bytes, saying whether parsing them again would say
+    # anything new.
+    digest: Digest
+
+    # Why: the error decoding or parsing raised, e.g. a
+    # `SyntaxError` for invalid syntax, a `UnicodeDecodeError`, which
+    # is a `ValueError`, for bytes the declared encoding will not
+    # decode, and a plain `ValueError` for bytes `ast` rejects before
+    # parsing, such as ones holding a null byte.
+    error: SyntaxError | ValueError
 
 
 async def _walk(
@@ -615,12 +684,15 @@ async def _walk(
     entries: Sequence[Path],
     roots: Sequence[Path],
     known: Mapping[Path, KnownFile],
-) -> tuple[dict[Path, KnownFile], Mapping[Path, ParsedFile]]:
-    """Returns the developer's files read for one iteration, as two
+) -> tuple[dict[Path, KnownFile], Mapping[Path, ParsedFile], Mapping[
+    Path, Unparseable], Mapping[Path, OSError]]:
+    """Returns the developer's files read for one iteration, as four
     maps keyed by the spelling `_standardized_path` returns:
-    `unchanged`, the files whose
-    carried analyses still stand, and `parsed`, the files to be
-    analyzed. Whoever calls analyzes the parsed ones and merges what
+    `unchanged`, the files whose carried analyses still stand;
+    `parsed`, the files to be analyzed; `unparseable`, the files
+    read that would not decode or parse, by digest and the error;
+    and `unreadable`, the files that could not be read, by the
+    error. Whoever calls analyzes the parsed ones and merges what
     comes back with `unchanged`, which is the `known` a next
     iteration starts from.
 
@@ -748,31 +820,34 @@ async def _walk(
     # returned as `unchanged`.
     unchanged: dict[Path, KnownFile] = {}
     parsed = dict(files.parsed)
+    unparseable = dict(files.unparseable)
+    unreadable = dict(files.unreadable)
     for filename, file in files.unchanged.items():
         if filename in needs_reanalysis:
             # A file that cannot be read right now, possible if our
-            # walk is racing with a concurrent file deletion, is not
-            # added to either `known` oor `parsed`. This means it
-            # won't get analyzed but that is okay because that same
-            # deletion's event is already pending, so the next
-            # iteration will start another walk and we'll converge
-            # correctly.
+            # walk is racing with a concurrent file deletion, joins
+            # `unreadable`, and is not analyzed. That is okay because
+            # that same deletion's event is already pending, so the
+            # next iteration will start another walk and we'll
+            # converge correctly.
             try:
                 source = await _read(file.filename)
-            except OSError:
+            except OSError as error:
+                unreadable[filename] = error
                 continue
 
             digest = hashlib.sha256(source).digest()
 
-            parse = Parse.from_bytes(source)
-            if parse is None:
+            parse = Parse.from_bytes(source, digest=digest)
+            if isinstance(parse, Unparseable):
                 # Bytes that will not parse right now, possible if our
                 # walk is racing with a concurrent modification to the
-                # file that makes it invalid syntax, is not added to
-                # either `known` or `parsed`. That concurrent
+                # file that makes it invalid syntax, join
+                # `unparseable`, and are not analyzed. That concurrent
                 # modification will be detected by our watch so the
                 # next iteration will start another walk and we'll
                 # converge correctly.
+                unparseable[filename] = parse
                 continue
 
             parsed[filename] = ParsedFile(
@@ -792,4 +867,4 @@ async def _walk(
         else:
             unchanged[filename] = file
 
-    return unchanged, parsed
+    return unchanged, parsed, unparseable, unreadable
