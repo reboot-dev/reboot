@@ -22,17 +22,16 @@ from reboot.dashboard.constants import (
     IMPLEMENTATION_ID,
 )
 from reboot.dashboard.implementation_watcher import (
-    AnalyzedFile,
     MethodDefinition,
     _analyze,
     _generated_definitions,
     _modified_at,
     _reconstitute_known,
-    _walk,
     extract_and_sort_servicers,
 )
 from reboot.dashboard.main import application
 from reboot.dashboard.pyright import Pyright
+from reboot.dashboard.walk import AnalyzedFile, _walk
 from typing import Optional
 from unittest.mock import patch
 

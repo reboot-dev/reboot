@@ -35,6 +35,7 @@ py_test(
         "//reboot/aio:tests_py",
         "//reboot/dashboard:implementation_watcher_py",
         "//reboot/dashboard:main_py",
+        "//reboot/dashboard:walk_py",
     ],
 )
 
