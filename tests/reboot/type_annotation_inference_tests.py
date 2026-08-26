@@ -5,6 +5,7 @@ backs `at_least_once` / `at_most_once` / `until` /
 These tests exercise `_resolve_callable_return_type` directly --
 they don't run a full workflow.
 """
+import functools
 import unittest
 from reboot.aio.workflows import (
     _UNSET,
@@ -32,6 +33,18 @@ class ResolveCallableReturnTypeTestCase(unittest.TestCase):
 
         resolved, inferred = _resolve_callable_return_type(fn, _UNSET)
         self.assertEqual(resolved, int)
+        self.assertTrue(inferred)
+
+    def test_inferred_through_a_partial(self) -> None:
+
+        async def fn(*, a: int) -> tuple[int, str]:
+            return a, ''
+
+        resolved, inferred = _resolve_callable_return_type(
+            functools.partial(functools.partial(fn, a=1)),
+            _UNSET,
+        )
+        self.assertEqual(resolved, tuple)
         self.assertTrue(inferred)
 
     def test_inferred_from_sync_return_annotation(self) -> None:

@@ -141,6 +141,12 @@ def _resolve_callable_return_type(
     if not isinstance(explicit, _Unset):
         return _normalize_type(explicit), False
 
+    # A `functools.partial` binds arguments but keeps the function,
+    # whose return annotation is unchanged, so look through it;
+    # `typing.get_type_hints` itself refuses a partial.
+    while isinstance(callable, functools.partial):
+        callable = callable.func
+
     try:
         hints = typing.get_type_hints(callable)
     except Exception:
