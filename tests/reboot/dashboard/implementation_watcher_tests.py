@@ -9,6 +9,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from rbt.dashboard.v1.dashboard_pb2 import Generated
 from rbt.dashboard.v1.dashboard_pb2 import \
     Implementation as ImplementationState
 from rbt.dashboard.v1.dashboard_pb2 import Servicer
@@ -26,6 +27,8 @@ from reboot.dashboard.implementation_watcher import (
     MethodDefinition,
     _analyze,
     _generated_definitions,
+    _list_generated,
+    _try_extract_api_digest,
     _modified_at,
     _reconstitute_known,
     extract_and_sort_servicers,
@@ -463,12 +466,12 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         servicers to their state types, and the generated directory
         is listed whole, imported or not, so that a reader can tell
         a state type nothing has been generated for."""
-        # A file in the generated directory that defines nothing, so
-        # that the listing says an iteration has run before anything
-        # is generated.
-        (self.generated / 'shop' /
-         '__init__.py').parent.mkdir(parents=True, exist_ok=True)
-        (self.generated / 'shop' / '__init__.py').write_text('')
+        # A module in the generated directory that defines nothing,
+        # so that the listing says an iteration has run before
+        # anything is generated.
+        empty = self.generated / 'shop' / 'v1' / 'empty_rbt.py'
+        empty.parent.mkdir(parents=True, exist_ok=True)
+        empty.write_text('')
 
         response = await self._implementation(
             satisfied=lambda response: len(response.generated) > 0
@@ -476,10 +479,7 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(response.servicers), [])
         self.assertEqual(
             dict(response.generated),
-            {
-                'shop/__init__.py':
-                    _modified_at(self.generated / 'shop' / '__init__.py'),
-            },
+            {'shop/v1/empty_rbt.py': Generated(modified=_modified_at(empty))},
         )
 
         self._generate()
@@ -495,13 +495,78 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             dict(response.generated),
             {
-                filename: _modified_at(self.generated / filename)
-                for filename in (
-                    'shop/__init__.py',
-                    'shop/v1/depot_rbt.py',
-                    'shop/v1/shop_rbt.py',
-                )
+                filename:
+                    Generated(
+                        modified=_modified_at(self.generated / filename)
+                    ) for filename in (
+                        'shop/v1/depot_rbt.py',
+                        'shop/v1/empty_rbt.py',
+                        'shop/v1/shop_rbt.py',
+                    )
             },
+        )
+
+
+class GeneratedListingTest(unittest.IsolatedAsyncioTestCase):
+    """What the generated directory's listing reads off its files."""
+
+    async def test_a_module_records_which_api_it_was_generated_from(
+        self,
+    ) -> None:
+        """A generated module's fifth line, as the template writes
+        it, is read back as the digest it was generated from; a
+        module without it records none; and the generator's other
+        outputs are not listed at all."""
+        directives = (
+            '# yapf: disable\n'
+            '# isort: skip_file\n'
+            '# ruff: noqa\n'
+            '# mypy: disable-error-code="func-returns-value"\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            generated = Path(directory).resolve()
+            (generated / 'shop' / 'v1').mkdir(parents=True)
+            digest = 'ab' * 32
+            (generated / 'shop' / 'v1' / 'shop_rbt.py').write_text(
+                directives +
+                f'# Generated from an API digesting to {digest}.\n'
+                '\n'
+                'import os\n'
+            )
+            (generated / 'shop' / 'v1' /
+             'depot_rbt.py').write_text(directives + '\n'
+                                        'import os\n')
+            (generated / 'shop' / 'v1' / 'shop_pb2.py').write_text(
+                directives +
+                f'# Generated from an API digesting to {digest}.\n'
+            )
+
+            listing = await _list_generated(generated)
+
+        self.assertEqual(listing['shop/v1/shop_rbt.py'].api_digest, digest)
+        self.assertFalse(
+            listing['shop/v1/depot_rbt.py'].HasField('api_digest')
+        )
+        self.assertNotIn('shop/v1/shop_pb2.py', listing)
+
+    async def test_the_generator_writes_the_digest_where_it_is_read(
+        self,
+    ) -> None:
+        """The generator's actual output for a pydantic API, checked
+        in as a golden and rewritten from the template by
+        `make goldens`, records its digest on the line the listing
+        reads, so that moving the line in the template fails here."""
+        golden = Path(__file__).parent.parent / 'ping_api_rbt.golden.py'
+
+        lines = golden.read_text().split('\n')
+        self.assertTrue(
+            lines[4].startswith('# Generated from an API digesting to '),
+            lines[:6],
+        )
+        self.assertEqual(
+            await _try_extract_api_digest(golden),
+            lines[4].removeprefix('# Generated from an API digesting to '
+                                 ).removesuffix('.'),
         )
 
 

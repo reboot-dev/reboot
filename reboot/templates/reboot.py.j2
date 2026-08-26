@@ -8,9 +8,11 @@ returning `None`. Rather than adding extensive if-else branching, we
 disable this error for the generated file. The error will still be
 reported in user code. #}
 # mypy: disable-error-code="func-returns-value"
-{# Which API this was generated from, for whoever compares: the
-dashboard reads this line back, so its spelling is shared with
-`reboot/dashboard/implementation_watcher.py`. #}
+{# Which API this was generated from, for whoever compares: the fifth
+line, after the four above, which are always written, and which
+`yapf` wants first. `reboot/dashboard/implementation_watcher.py`
+reads that line back, and spells it the same, so the two have to
+change together. #}
 {% if options.proto.api_digest %}
 # Generated from an API digesting to {{ options.proto.api_digest }}.
 {% endif %}

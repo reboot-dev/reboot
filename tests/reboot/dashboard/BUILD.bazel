@@ -30,6 +30,7 @@ py_test(
     srcs = ["implementation_watcher_tests.py"],
     data = [
         "//tests/reboot:greeter_rbt.golden.py",
+        "//tests/reboot:ping_api_rbt.golden.py",
     ],
     main = "implementation_watcher_tests.py",
     deps = [
