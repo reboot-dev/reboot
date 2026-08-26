@@ -754,17 +754,29 @@ async def generate_proto_file_from_api(
     os.makedirs(os.path.dirname(proto_file_path), exist_ok=True)
 
     async with aiofiles.open(proto_file_path, 'w') as proto:
-        await _write_proto(proto, api, filename)
+        await proto.write(await proto_text_from_api(api, filename))
 
     return proto_file_name
 
 
-async def _write_proto(proto, api: API, filename: str) -> None:
-    """Writes the proto that `api`, as `filename` under an API
-    directory declares it, generates to."""
+class _ProtoText:
+    """Collects what would otherwise be written to a file."""
+
+    def __init__(self) -> None:
+        self.parts: list[str] = []
+
+    async def write(self, text: str) -> None:
+        self.parts.append(text)
+
+
+async def proto_text_from_api(api: API, filename: str) -> str:
+    """Returns the proto that `api`, as `filename` under an API
+    directory declares it, generates to: what `protoc` is handed."""
     package_name = os.path.dirname(filename).replace(os.sep, '.')
 
     generated_errors_names = set()
+
+    proto = _ProtoText()
 
     await proto.write('syntax = "proto3";\n')
     await proto.write(f'package {package_name};\n')
@@ -979,3 +991,5 @@ async def _write_proto(proto, api: API, filename: str) -> None:
             await proto.write("  }\n")
 
         await proto.write("}\n\n")
+
+    return ''.join(proto.parts)
