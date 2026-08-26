@@ -62,7 +62,6 @@ from reboot.dashboard.pyright import Location, Pyright
 from reboot.dashboard.walk import (
     GENERATED_SUFFIXES,
     SOURCE_GLOB,
-    AnalyzedFile,
     Dependency,
     Digest,
     Parse,
@@ -87,6 +86,36 @@ def _modified_at(path: Path) -> Timestamp:
     modified = Timestamp()
     modified.FromNanoseconds(path.stat().st_mtime_ns)
     return modified
+
+
+@dataclass(frozen=True, kw_only=True)
+class AnalyzedFile:
+    """What analyzing one of the developer's files found."""
+
+    # The file this is, in the spelling `_standardized_path` returns: the
+    # one spelling every route to the file, a relative import, an
+    # absolute one, or a symlink, arrives at.
+    filename: Path
+
+    # Of the bytes the file held, saying whether parsing it again
+    # would say anything new.
+    digest: Digest
+
+    # What each import observed when this file was analyzed, keyed
+    # by possible module path, e.g. `shop/v1/shop_rbt`. A change in
+    # which file is at a module path, or in that file's bytes, is
+    # what calls for reanalyzing this file.
+    dependencies: Mapping[str, Dependency]
+
+    # The files outside every root this file's analysis read, with
+    # the digest each was read with. The walk never finds these, so
+    # each is digested directly at the end of a walk, and a change
+    # is what calls for reanalyzing this file.
+    external: tuple[Dependency, ...]
+
+    # Every servicer the file defines, resolved: which state type each
+    # services and the calls each method makes.
+    servicers: tuple[Servicer, ...]
 
 
 def _position_at_last_character(

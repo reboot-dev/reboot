@@ -12,9 +12,9 @@ import os
 import tokenize
 from dataclasses import dataclass, replace
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_pb2 import File, Servicer
+from rbt.dashboard.v1.dashboard_pb2 import File
 from types import MappingProxyType
-from typing import Mapping, Optional, Sequence
+from typing import Generic, Mapping, Optional, Protocol, Sequence, TypeVar
 
 # A SHA-256 digest -- of a file's bytes, or of a method's syntax --
 # saying whether what was digested has changed.
@@ -249,38 +249,47 @@ class ParsedFile:
     text: str
 
 
-@dataclass(frozen=True, kw_only=True)
-class AnalyzedFile:
-    """What analyzing one of the developer's files found."""
+class KnownFile(Protocol):
+    """What the walk needs of a file a previous iteration recorded:
+    enough to say whether it must be read again. Whatever else the
+    record carries, the analysis that was made of the file, is the
+    caller's, and comes back unchanged for a file the walk finds
+    unchanged."""
 
-    # The file this is, in the spelling `_standardized_path` returns: the
-    # one spelling every route to the file, a relative import, an
-    # absolute one, or a symlink, arrives at.
-    filename: Path
+    # The file this is, in the spelling `_standardized_path` returns.
+    @property
+    def filename(self) -> Path:
+        ...
 
     # Of the bytes the file held, saying whether parsing it again
     # would say anything new.
-    digest: Digest
+    @property
+    def digest(self) -> Digest:
+        ...
 
-    # What each import observed when this file was analyzed, keyed
-    # by possible module path, e.g. `shop/v1/shop_rbt`. A change in
-    # which file is at a module path, or in that file's bytes, is
-    # what calls for reanalyzing this file.
-    dependencies: Mapping[str, Dependency]
+    # What each import observed when this file was recorded, keyed
+    # by possible module path. A change in which file is at a module
+    # path, or in that file's bytes, is what calls for reading this
+    # file again.
+    @property
+    def dependencies(self) -> Mapping[str, Dependency]:
+        ...
 
-    # The files outside every root this file's analysis read, with
-    # the digest each was read with. The walk never finds these, so
-    # each is digested directly at the end of a walk, and a change
-    # is what calls for reanalyzing this file.
-    external: tuple[Dependency, ...]
+    # The files outside every root that recording this file read,
+    # with the digest each was read with. The walk never finds
+    # these, so each is digested directly at the end of a walk.
+    @property
+    def external(self) -> tuple[Dependency, ...]:
+        ...
 
-    # Every servicer the file defines, resolved: which state type each
-    # services and the calls each method makes.
-    servicers: tuple[Servicer, ...]
+
+# The caller's record of a file, whatever it carries beyond what the
+# walk needs.
+K = TypeVar('K', bound=KnownFile)
 
 
 @dataclass(frozen=True, kw_only=True)
-class Files:
+class Files(Generic[K]):
     """The developer's files, as far as one iteration of the watch
     has taken them.
 
@@ -299,7 +308,7 @@ class Files:
     # `_standardized_path` returns, so that every route to a file finds
     # the same record. A file unchanged since is neither parsed nor
     # analyzed again.
-    known: Mapping[Path, AnalyzedFile]
+    known: Mapping[Path, K]
 
     # Parsed this iteration, not yet analyzed. Keyed by the spelling
     # `_standardized_path` returns, like every map here, so that every
@@ -313,7 +322,7 @@ class Files:
     # is decided at the end of the walk, where the ones that need to
     # be reparsed join `parsed` and the rest become the iteration's
     # `known`.
-    unchanged: Mapping[Path, AnalyzedFile]
+    unchanged: Mapping[Path, K]
 
     # Files whose bytes are read but whose imports are still being
     # followed, above us in the walk's recursion, by the digest of
@@ -345,8 +354,8 @@ class Files:
         cls,
         *,
         roots: Sequence[Path],
-        known: Mapping[Path, AnalyzedFile],
-    ) -> 'Files':
+        known: Mapping[Path, K],
+    ) -> 'Files[K]':
         """Returns the files an iteration starts from: nothing
         parsed, nothing analyzed."""
         return cls(
@@ -361,7 +370,7 @@ class Files:
             dependencies=MappingProxyType({}),
         )
 
-    def with_parsed_file(self, parsed: ParsedFile) -> 'Files':
+    def with_parsed_file(self, parsed: ParsedFile) -> 'Files[K]':
         """Returns this with one more file parsed, into `parsed`."""
         # A file is parsed or unchanged, never both.
         assert parsed.filename not in self.unchanged
@@ -373,7 +382,7 @@ class Files:
             }),
         )
 
-    def with_unchanged_known_file(self, file: AnalyzedFile) -> 'Files':
+    def with_unchanged_known_file(self, file: K) -> 'Files[K]':
         """Returns this with a file the previous iteration analyzed
         verified unchanged, the analysis it carries along with it."""
         # A file is parsed or unchanged, never both.
@@ -422,7 +431,7 @@ class Files:
     async def lookup_or_parse_filename(
         self,
         filename: Path,
-    ) -> tuple[Optional[Digest], 'Files']:
+    ) -> tuple[Optional[Digest], 'Files[K]']:
         """Returns the digest of the file's bytes, met the way this
         walk has it: looked up among what is already read; taken as
         unchanged, its carried analysis along, when its bytes are
@@ -522,7 +531,7 @@ class Files:
     async def lookup_or_parse_module_path(
         self,
         module_path: str,
-    ) -> 'Files':
+    ) -> 'Files[K]':
         """Follows a possible module path, e.g. `shop/v1/shop_rbt`
         or `./backend/db`, to its file, met the way this walk has
         it, recording what the import observed in `dependencies`,
@@ -602,8 +611,8 @@ async def _walk(
     *,
     application: Path,
     roots: Sequence[Path],
-    known: Optional[Mapping[Path, AnalyzedFile]] = None,
-) -> tuple[dict[Path, AnalyzedFile], Mapping[Path, ParsedFile]]:
+    known: Mapping[Path, K],
+) -> tuple[dict[Path, K], Mapping[Path, ParsedFile]]:
     """Returns the developer's files read for one iteration, as two
     maps keyed by the spelling `_standardized_path` returns:
     `unchanged`, the files whose
@@ -636,7 +645,7 @@ async def _walk(
 
     files = Files.create(
         roots=roots,
-        known=known or {},
+        known=known,
     )
 
     # Everything reachable is read by one depth-first recursion from
@@ -732,7 +741,7 @@ async def _walk(
     # Each unchanged file is now decided: any that need to be
     # reanalyzed is read and parsed again, and the rest are just
     # returned as `unchanged`.
-    unchanged: dict[Path, AnalyzedFile] = {}
+    unchanged: dict[Path, K] = {}
     parsed = dict(files.parsed)
     for filename, file in files.unchanged.items():
         if filename in needs_reanalysis:
