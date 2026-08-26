@@ -40,15 +40,44 @@ export interface GraphStateType {
   methods: GraphMethod[];
 }
 
+export interface GraphPackage {
+  // `bank.v1`.
+  name: string;
+  stateTypes: GraphStateType[];
+}
+
+// `bank.v1` for `bank.v1.Account`.
+export const packageName = (stateTypeName: string): string =>
+  stateTypeName.split(".").slice(0, -1).join(".");
+
+// Packages in the order their first state type comes.
+export const groupStateTypesByPackage = (
+  stateTypes: GraphStateType[]
+): GraphPackage[] => {
+  const packages = new Map<string, GraphStateType[]>();
+  for (const stateType of stateTypes) {
+    const name = packageName(stateType.id);
+    const stateTypesInPackage = packages.get(name);
+    if (stateTypesInPackage === undefined) {
+      packages.set(name, [stateType]);
+    } else {
+      stateTypesInPackage.push(stateType);
+    }
+  }
+  return [...packages].map(([name, stateTypes]) => ({ name, stateTypes }));
+};
+
 // A key unique to one method: `bank.v1.Account.deposit`.
 export const methodId = (stateTypeName: string, methodName: string): string =>
   `${stateTypeName}.${methodName}`;
 
 // Folds the calls the analysis lists into one per distinct call,
 // counted.
-const countCalls = (analyzed: Servicer_Method | undefined): GraphCall[] => {
+const countCalls = (
+  analyzedMethod: Servicer_Method | undefined
+): GraphCall[] => {
   const calls = new Map<string, GraphCall>();
-  for (const call of analyzed?.calls ?? []) {
+  for (const call of analyzedMethod?.calls ?? []) {
     const key = `${call.stateType}|${call.method}|${call.how}`;
     const counted = calls.get(key);
     if (counted === undefined) {
@@ -75,12 +104,12 @@ export const joinStateTypes = (
 ): GraphStateType[] => {
   // A state type can have more than one servicer in `servicers`, sorted
   // by file; where they define the same method, the first wins.
-  const analyzed = new Map<string, Servicer_Method>();
+  const analyzedMethodsById = new Map<string, Servicer_Method>();
   for (const servicer of servicers) {
     for (const method of servicer.methods) {
       const id = methodId(servicer.stateType, method.name);
-      if (!analyzed.has(id)) {
-        analyzed.set(id, method);
+      if (!analyzedMethodsById.has(id)) {
+        analyzedMethodsById.set(id, method);
       }
     }
   }
@@ -96,7 +125,7 @@ export const joinStateTypes = (
           kind: method.kind,
           factory: method.factory,
           calls: countCalls(
-            analyzed.get(methodId(stateType.name, method.name))
+            analyzedMethodsById.get(methodId(stateType.name, method.name))
           ),
         })),
       },
@@ -106,17 +135,21 @@ export const joinStateTypes = (
   for (const stateType of stateTypes.values()) {
     for (const method of stateType.methods) {
       for (const call of method.calls) {
-        let called = stateTypes.get(call.stateTypeName);
-        if (called === undefined) {
-          called = {
+        let calledStateType = stateTypes.get(call.stateTypeName);
+        if (calledStateType === undefined) {
+          calledStateType = {
             id: call.stateTypeName,
             name: shortNameOfTypeName(call.stateTypeName),
             methods: [],
           };
-          stateTypes.set(call.stateTypeName, called);
+          stateTypes.set(call.stateTypeName, calledStateType);
         }
-        if (!called.methods.some((known) => known.name === call.methodName)) {
-          called.methods.push({
+        if (
+          !calledStateType.methods.some(
+            (known) => known.name === call.methodName
+          )
+        ) {
+          calledStateType.methods.push({
             name: call.methodName,
             factory: false,
             calls: [],

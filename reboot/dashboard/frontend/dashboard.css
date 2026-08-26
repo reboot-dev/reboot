@@ -1255,6 +1255,15 @@ header h1 {
   color: hsl(240 6% 78%);
 }
 
+/* Everything a chosen method does not reach steps back. */
+.react-flow__node.graph-faded {
+  opacity: 0.15;
+}
+
+.react-flow__edge.graph-faded {
+  opacity: 0.1;
+}
+
 /* The handles are landing points for edges, not things to grab. */
 .graph-port {
   opacity: 0;
@@ -1297,6 +1306,16 @@ header h1 {
   font-family: ui-monospace, Menlo, monospace;
   font-size: 11px;
   color: hsl(var(--foreground));
+  cursor: pointer;
+}
+
+.graph-method:hover {
+  background: hsl(var(--kind) / 0.08);
+}
+
+.graph-method.selected {
+  background: hsl(var(--kind) / 0.16);
+  font-weight: 650;
 }
 
 /* Each kind's colour: the hue its dot wears, which is the hue
@@ -1373,4 +1392,188 @@ header h1 {
   letter-spacing: 0.02em;
   white-space: nowrap;
   pointer-events: none;
+}
+
+/* A collapsed package: a box standing for its cards, opened by a
+   click anywhere on it. */
+.graph-canvas .react-flow__node-package {
+  cursor: pointer;
+}
+
+.graph-package {
+  width: 100%;
+  height: 100%;
+  padding: 12px 16px;
+  background: hsl(var(--sidebar));
+  border: 1px solid hsl(var(--border-strong));
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px hsl(240 10% 40% / 0.08);
+}
+
+.graph-package:hover {
+  border-color: hsl(var(--primary) / 0.5);
+}
+
+.graph-package-name {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 13px;
+  font-weight: 650;
+  color: hsl(var(--foreground));
+}
+
+.graph-package-counts {
+  margin-top: 2px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 9.5px;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+
+.graph-package-hint {
+  margin-top: 6px;
+  font-size: 9px;
+  font-style: italic;
+  color: hsl(var(--muted-foreground) / 0.8);
+}
+
+/* An expanded package: a box around its cards. */
+.graph-expanded-package {
+  width: 100%;
+  height: 100%;
+  background: hsl(var(--sidebar) / 0.5);
+  border: 1px solid hsl(var(--border-strong));
+  border-radius: 10px;
+}
+
+/* 38px tall, which `graph.tsx` lays out by. */
+.graph-expanded-package-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+}
+
+.graph-expanded-package-name {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: hsl(var(--foreground));
+}
+
+.graph-expanded-package-collapse {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 9.5px;
+  color: hsl(var(--muted-foreground));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.graph-expanded-package-collapse:hover {
+  color: hsl(var(--foreground));
+}
+
+/* The state types page's buttons, in their outlined dress and a
+   size for the canvas's corner. */
+.graph-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.graph-actions .expand-button {
+  padding: 6px 12px;
+  border-color: hsl(240 5.9% 78%);
+  background: hsl(var(--card));
+  color: hsl(var(--primary));
+  box-shadow: 0 1px 2px hsl(240 10% 40% / 0.1);
+  font-size: 12px;
+}
+
+.graph-actions .expand-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+/* The legend, folded to its title by its own `<summary>`. */
+.graph-legend {
+  width: 208px;
+  padding: 10px 12px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px hsl(240 10% 40% / 0.1);
+}
+
+.graph-legend:not([open]) {
+  width: auto;
+}
+
+.graph-legend > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.graph-legend > summary::-webkit-details-marker {
+  display: none;
+}
+
+.graph-legend > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  border-left: 5px solid currentColor;
+  transition: transform 120ms ease;
+}
+
+.graph-legend[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.graph-legend[open] > summary {
+  padding-bottom: 6px;
+}
+
+.graph-legend > summary:hover {
+  color: hsl(var(--foreground));
+}
+
+.graph-legend-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 0;
+  border-top: 1px solid hsl(var(--border-soft));
+}
+
+.graph-legend-rows:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.graph-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  color: hsl(var(--foreground));
+}
+
+.graph-legend-line {
+  flex: none;
+  width: 30px;
+  height: 8px;
+  color: hsl(211 25% 60%);
 }
