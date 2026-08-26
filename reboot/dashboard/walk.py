@@ -249,7 +249,7 @@ class ParsedFile:
     text: str
 
 
-class KnownFile(Protocol):
+class KnownFileProtocol(Protocol):
     """What the walk needs of a file a previous iteration recorded:
     enough to say whether it must be read again. Whatever else the
     record carries, the analysis that was made of the file, is the
@@ -285,11 +285,11 @@ class KnownFile(Protocol):
 
 # The caller's record of a file, whatever it carries beyond what the
 # walk needs.
-K = TypeVar('K', bound=KnownFile)
+KnownFile = TypeVar('KnownFile', bound=KnownFileProtocol)
 
 
 @dataclass(frozen=True, kw_only=True)
-class Files(Generic[K]):
+class Files(Generic[KnownFile]):
     """The developer's files, as far as one iteration of the watch
     has taken them.
 
@@ -308,7 +308,7 @@ class Files(Generic[K]):
     # `_standardized_path` returns, so that every route to a file finds
     # the same record. A file unchanged since is neither parsed nor
     # analyzed again.
-    known: Mapping[Path, K]
+    known: Mapping[Path, KnownFile]
 
     # Parsed this iteration, not yet analyzed. Keyed by the spelling
     # `_standardized_path` returns, like every map here, so that every
@@ -322,7 +322,7 @@ class Files(Generic[K]):
     # is decided at the end of the walk, where the ones that need to
     # be reparsed join `parsed` and the rest become the iteration's
     # `known`.
-    unchanged: Mapping[Path, K]
+    unchanged: Mapping[Path, KnownFile]
 
     # Files whose bytes are read but whose imports are still being
     # followed, above us in the walk's recursion, by the digest of
@@ -354,8 +354,8 @@ class Files(Generic[K]):
         cls,
         *,
         roots: Sequence[Path],
-        known: Mapping[Path, K],
-    ) -> 'Files[K]':
+        known: Mapping[Path, KnownFile],
+    ) -> 'Files[KnownFile]':
         """Returns the files an iteration starts from: nothing
         parsed, nothing analyzed."""
         return cls(
@@ -370,7 +370,7 @@ class Files(Generic[K]):
             dependencies=MappingProxyType({}),
         )
 
-    def with_parsed_file(self, parsed: ParsedFile) -> 'Files[K]':
+    def with_parsed_file(self, parsed: ParsedFile) -> 'Files[KnownFile]':
         """Returns this with one more file parsed, into `parsed`."""
         # A file is parsed or unchanged, never both.
         assert parsed.filename not in self.unchanged
@@ -382,7 +382,10 @@ class Files(Generic[K]):
             }),
         )
 
-    def with_unchanged_known_file(self, file: K) -> 'Files[K]':
+    def with_unchanged_known_file(
+        self,
+        file: KnownFile,
+    ) -> 'Files[KnownFile]':
         """Returns this with a file the previous iteration analyzed
         verified unchanged, the analysis it carries along with it."""
         # A file is parsed or unchanged, never both.
@@ -431,7 +434,7 @@ class Files(Generic[K]):
     async def lookup_or_parse_filename(
         self,
         filename: Path,
-    ) -> tuple[Optional[Digest], 'Files[K]']:
+    ) -> tuple[Optional[Digest], 'Files[KnownFile]']:
         """Returns the digest of the file's bytes, met the way this
         walk has it: looked up among what is already read; taken as
         unchanged, its carried analysis along, when its bytes are
@@ -531,7 +534,7 @@ class Files(Generic[K]):
     async def lookup_or_parse_module_path(
         self,
         module_path: str,
-    ) -> 'Files[K]':
+    ) -> 'Files[KnownFile]':
         """Follows a possible module path, e.g. `shop/v1/shop_rbt`
         or `./backend/db`, to its file, met the way this walk has
         it, recording what the import observed in `dependencies`,
@@ -611,8 +614,8 @@ async def _walk(
     *,
     entries: Sequence[Path],
     roots: Sequence[Path],
-    known: Mapping[Path, K],
-) -> tuple[dict[Path, K], Mapping[Path, ParsedFile]]:
+    known: Mapping[Path, KnownFile],
+) -> tuple[dict[Path, KnownFile], Mapping[Path, ParsedFile]]:
     """Returns the developer's files read for one iteration, as two
     maps keyed by the spelling `_standardized_path` returns:
     `unchanged`, the files whose
@@ -743,7 +746,7 @@ async def _walk(
     # Each unchanged file is now decided: any that need to be
     # reanalyzed is read and parsed again, and the rest are just
     # returned as `unchanged`.
-    unchanged: dict[Path, K] = {}
+    unchanged: dict[Path, KnownFile] = {}
     parsed = dict(files.parsed)
     for filename, file in files.unchanged.items():
         if filename in needs_reanalysis:
