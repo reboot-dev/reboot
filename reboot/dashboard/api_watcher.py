@@ -5,232 +5,319 @@ flow the API files are written first, then generated code, then
 servicers, then a build, then a running process. So the watcher reads
 the files themselves.
 
-It reads per file, so that state types appear as each file is
-written, and so that a file which does not parse, the normal case
-while someone is typing, loses only its own types.
+It reads per file, all at once, and writes what every file declares
+once per change, so that a file which does not parse, the normal
+case while someone is typing, loses only its own types.
+
+Which files to read is decided from the disk, not from the event
+that woke the watch: every candidate file is walked, and one whose
+bytes are unchanged, and whose imports lead to unchanged files, is
+neither read nor imported again. So a change to a file that
+declares nothing but is imported by one that does reads the
+importer, and a burst of saves loses nothing however many events
+the watch failed to hear.
 """
-from log.log import get_logger
+from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_pb2 import StateType
+from rbt.dashboard.v1.dashboard_pb2 import API as APIState
+from rbt.dashboard.v1.dashboard_pb2 import Change, File, StateType
 from rbt.dashboard.v1.dashboard_rbt import API
+from reboot.aio.concurrently import concurrently
 from reboot.aio.contexts import WorkflowContext
+from reboot.aio.workflows import at_least_once
 from reboot.cli.common.watch import file_watcher
 from reboot.dashboard.api_reader import read_api_file
 from reboot.dashboard.changelog import changes_between
-from typing import Optional
-from watchdog.events import FileSystemEvent
-
-logger = get_logger(__name__)
-
-API_GLOB = '**/*.py'
-
-# Suffixes of the files `rbt generate` writes, so it skips them
-# when reading sources. `reboot/cli/commands/generate.py` (what to
-# generate from) and `reboot/cli/commands/dev.py` (what to watch)
-# list the same three; change all three lists together.
-GENERATED_SUFFIXES = ('_rbt.py', '_pb2.py', '_pb2_grpc.py')
+from reboot.dashboard.walk import (
+    GENERATED_SUFFIXES,
+    SOURCE_GLOB,
+    Dependency,
+    Digest,
+    _standardized_path,
+    _walk,
+)
+from typing import Mapping, Optional
 
 
-def _api_files(api_directory: Path) -> list[str]:
-    """Every candidate API file, relative to `api_directory`.
+@dataclass(frozen=True, kw_only=True)
+class ReadFile:
+    """What reading one of the developer's API files found."""
+
+    # The file this is, in the spelling `_standardized_path` returns.
+    filename: Path
+
+    # Of the bytes the file held, saying whether reading it again
+    # would say anything new.
+    digest: Digest
+
+    # What each import observed when this file was read, keyed by
+    # possible module path, e.g. `shop/v1/models`. A change in which
+    # file is at a module path, or in that file's bytes, is what
+    # calls for reading this file again. Empty for a file that would
+    # not parse, whose imports could not be followed.
+    dependencies: Mapping[str, Dependency]
+
+    # The files outside the API directory reading this file read:
+    # none, since the reader follows nothing beyond the directory.
+    external: tuple[Dependency, ...]
+
+    # Every state type the file declares, as the reader described
+    # them. Empty for a file that could not be read.
+    state_types: tuple[StateType, ...]
+
+    # Why the file could not be read, when it could not be.
+    error: Optional[str]
+
+
+def _api_files(api_directory: Path) -> list[Path]:
+    """Every candidate API file under `api_directory`, sorted.
 
     Candidate, because an API is a Python object, built when the
     module executes, so only reading a file tells whether it declares
     one.
     """
     return sorted(
-        str(path.relative_to(api_directory))
-        for path in api_directory.glob(API_GLOB)
+        path for path in api_directory.glob(SOURCE_GLOB)
         if not path.name.endswith(GENERATED_SUFFIXES)
     )
 
 
-class _StateTypesByFile:
-    """What each file last declared, and what went wrong reading it.
+def _reconstitute_known(
+    state: APIState,
+    *,
+    api_directory: Path,
+) -> dict[Path, ReadFile]:
+    """Returns the files a previous run recorded, joined back together
+    from the state: each `File` with the state types recorded for its
+    file. What a restarted watch starts from, so that only files that
+    changed while the dashboard was down are read again."""
+    state_types: dict[Path, list[StateType]] = {}
+    for state_type in state.state_types:
+        state_types.setdefault(
+            _standardized_path(api_directory / state_type.file),
+            [],
+        ).append(state_type)
 
-    A file that fails to parse keeps the state types from its last
-    successful read, so the dashboard keeps showing them while the
-    developer edits the file.
+    known: dict[Path, ReadFile] = {}
+    for relative, file in state.files.items():
+        filename = _standardized_path(api_directory / relative)
+        known[filename] = ReadFile(
+            filename=filename,
+            digest=file.digest,
+            dependencies=dict(file.dependencies),
+            external=tuple(file.external),
+            state_types=tuple(state_types.get(filename, [])),
+            error=file.error if file.HasField('error') else None,
+        )
+    return known
+
+
+def _state_types(known: Mapping[Path, ReadFile]) -> list[StateType]:
+    """Every state type the files declare, in the order of the
+    files."""
+    return [
+        state_type for filename in sorted(known)
+        for state_type in known[filename].state_types
+    ]
+
+
+def _error(
+    known: Mapping[Path, ReadFile],
+    *,
+    api_directory: Path,
+) -> Optional[str]:
+    """Why the files could not be read, one line per file that could
+    not be, and `None` when every file read."""
+    lines = [
+        f'{_relative(filename, api_directory)}: {known[filename].error}'
+        for filename in sorted(known)
+        if known[filename].error is not None
+    ]
+    if len(lines) == 0:
+        return None
+    return '\n'.join(lines)
+
+
+def _relative(filename: Path, api_directory: Path) -> str:
+    """The file's path relative to the API directory, which is how
+    the reader is asked for it and how a state type names it."""
+    return str(filename.resolve().relative_to(api_directory))
+
+
+def _files(
+    known_now: Mapping[Path, ReadFile],
+    *,
+    api_directory: Path,
+) -> dict[str, File]:
+    """Each file as read, keyed relative to the API directory, the
+    way the state records them."""
+    files: dict[str, File] = {}
+    for filename, file in known_now.items():
+        recorded = File(
+            digest=file.digest,
+            dependencies=file.dependencies,
+            external=file.external,
+        )
+        if file.error is not None:
+            recorded.error = file.error
+        files[_relative(filename, api_directory)] = recorded
+    return files
+
+
+async def _walk_and_read(
+    *,
+    api_directory: str,
+    directory: Path,
+    known: Mapping[Path, ReadFile],
+    iteration: int,
+) -> tuple[Optional[dict[Path, ReadFile]], list[Change]]:
+    """Returns what is known of the files now, each file as read,
+    and what changed since `known`, what the state records; and
+    `None` and nothing when nothing differs.
+
+    Memoized by the caller per iteration, so that a retry of the
+    iteration updates with what this read found rather than with
+    what a later read finds, which is what keeps the update's
+    request the same however many times it is made. So everything
+    returned is a plain value pickle can keep.
     """
+    entries = [_standardized_path(path) for path in _api_files(directory)]
 
-    def __init__(self) -> None:
-        self._state_types: dict[str, list[StateType]] = {}
-        self._errors: dict[str, str] = {}
+    unchanged, parsed, unparseable, _ = await _walk(
+        entries=entries,
+        roots=[directory],
+        known=known,
+    )
 
-    def set_file(
-        self,
-        filename: str,
-        state_types: list[StateType],
-        error: Optional[str],
-    ) -> None:
-        if error is None:
-            self._state_types[filename] = state_types
-            self._errors.pop(filename, None)
-        else:
-            self._errors[filename] = error
+    # Every parsed file is read, all at once: each read
+    # is an interpreter importing the file, and none
+    # waits on another.
+    reads: dict[Path, tuple[list[StateType], Optional[str]]] = {
+        filename: read async for filename, read in concurrently(
+            lambda filename: read_api_file(
+                api_directory,
+                _relative(filename, directory),
+            ),
+            for_each=sorted(parsed),
+        )
+    }
 
-    def keep_only(self, filenames: set[str]) -> None:
-        """Drops the types and errors of every file not in `filenames`,
-        the files that currently exist."""
-        for stored in list(self._state_types):
-            if stored not in filenames:
-                del self._state_types[stored]
-        for stored in list(self._errors):
-            if stored not in filenames:
-                del self._errors[stored]
-
-    def state_types(self) -> list[StateType]:
-        described = []
-        for filename in sorted(self._state_types):
-            described.extend(self._state_types[filename])
-        return described
-
-    def error(self) -> Optional[str]:
-        if not self._errors:
-            return None
-        return '\n'.join(
-            f'{filename}: {self._errors[filename]}'
-            for filename in sorted(self._errors)
+    # What is known now: the unchanged files, each
+    # parsed file as read, and each unparseable file,
+    # which declares nothing and whose imports could
+    # not be followed, with why the walk could not
+    # parse it, spelled the way the reader spells an
+    # error. A candidate that is gone, or could not
+    # be read, is in none of these.
+    known_now: dict[Path, ReadFile] = dict(unchanged)
+    for filename, (state_types, error) in reads.items():
+        known_now[filename] = ReadFile(
+            filename=filename,
+            digest=parsed[filename].digest,
+            dependencies=dict(parsed[filename].dependencies),
+            external=(),
+            state_types=tuple(state_types),
+            error=error,
+        )
+    for filename, unparseable_file in unparseable.items():
+        known_now[filename] = ReadFile(
+            filename=filename,
+            digest=unparseable_file.digest,
+            dependencies={},
+            external=(),
+            state_types=(),
+            error=(
+                f'{type(unparseable_file.error).__name__}: '
+                f'{unparseable_file.error}'
+            ),
         )
 
+    if known_now == known:
+        return None, []
 
-def _event_filenames(event: FileSystemEvent, directory: Path) -> set[str]:
-    """The filenames an event names, relative to `directory`.
+    # The first iteration ever, which the loop remembers across
+    # restarts, records no changes: what the files declare predates
+    # this dashboard, so it is shown but is nobody's edit. From then
+    # on every difference from what the state records is one, made
+    # while the dashboard watched or while it was down.
+    changes = (
+        [] if iteration == 0 else
+        list(changes_between(
+            _state_types(known),
+            _state_types(known_now),
+        ))
+    )
 
-    A rename reports where the file went as well as where it was, so
-    both paths count. An empty result means neither path is under the
-    directory, and the caller responds by reading every file.
-    """
-    filenames = set()
-    for path in (event.src_path, event.dest_path):
-        if not path:
-            continue
-        try:
-            filenames.add(str(Path(path).relative_to(directory)))
-        except ValueError:
-            continue
-    return filenames
+    return known_now, changes
 
 
 async def watch(context: WorkflowContext, *, api_directory: str) -> None:
     """Keeps the API state matching what the API files declare, until
     cancelled."""
     directory = Path(api_directory).resolve()
-    state_types_by_file = _StateTypesByFile()
-    updated: Optional[tuple] = None
 
-    # Files on disk at startup that the watcher has not yet read
-    # without error. A file's first good read is its baseline, even if
-    # it was broken at startup and fixed later: what it declares
-    # predates this dashboard, so the page shows it but the changelog
-    # does not record it as a change.
-    unread = set(_api_files(directory))
+    # What a previous run recorded: starting from it, only files that
+    # changed while the dashboard was down are read again.
+    state = await API.ref().always().read(context)
+    known: Mapping[
+        Path, ReadFile] = _reconstitute_known(state, api_directory=directory)
 
-    async def write_state_if_changed(
-        alias: str,
-        *,
-        is_baseline: bool = False,
-    ) -> None:
-        nonlocal updated
-
-        current = (
-            state_types_by_file.state_types(), state_types_by_file.error()
-        )
-        if current == updated:
-            return
-        before = [] if updated is None else updated[0]
-        updated = current
-        state_types, error = current
-
-        if not is_baseline:
-            await record_changes(alias, before, state_types)
-
-        async def write_state(state: API.State) -> None:
-            del state.state_types[:]
-            state.state_types.extend(state_types)
-            if error is None:
-                state.ClearField('error')
-            else:
-                state.error = error
-
-        await API.ref().per_iteration(alias).write(context, write_state)
-
-    async def record_changes(
-        alias: str,
-        before: list[StateType],
-        after: list[StateType],
-    ) -> None:
-        """Records what changed, for the changelog.
-
-        One call records the whole batch, so a save that touches
-        several types is one transaction. The alias names the file and
-        so repeats every time the file is read; `per_iteration` adds
-        which read this is, so each read is a new call rather than a
-        replay of the first.
-        """
-        recorded = list(changes_between(before, after))
-
-        if len(recorded) == 0:
-            return
-
-        await API.ref().per_iteration(f'history {alias}').RecordChanges(
-            context,
-            changes=recorded,
-        )
-
-    # The first iteration reads every file: the developer may have
-    # written the whole API before the dashboard started.
-    previous_listing = set(_api_files(directory))
-    pending = set(previous_listing)
+    # Whether this process has yet to wait for a save: a restart
+    # is itself a reason to walk the files again.
+    restarted = True
 
     with file_watcher() as watcher:
-        async for iteration in context.loop('read what changed'):
+        async for iteration in context.loop('Read what changed'):
             # The loop opens the watch before it reads anything, so a
             # save made during a read resolves `event` instead of
             # firing between watches, where nothing would notice it.
             # A watch resolves once, so each iteration opens a new one,
-            # as `rbt dev run` does.
+            # as `rbt dev run` does. The event is only a wake-up:
+            # what to read is decided by walking the files.
             async with watcher.watch(
-                [API_GLOB],
+                [SOURCE_GLOB],
                 root_dir=str(directory),
             ) as event:
-                # The page updates after each file so the types appear
-                # as the developer writes them.
-                for filename in sorted(pending):
-                    state_types, error = await read_api_file(
-                        api_directory, filename
+
+                # Memoized per iteration.
+                known_now, changes = await at_least_once(
+                    'Walk and read',
+                    context,
+                    partial(
+                        _walk_and_read,
+                        api_directory=api_directory,
+                        directory=directory,
+                        known=known,
+                        iteration=iteration,
+                    ),
+                )
+
+                # An update wakes every browser reading `Get`, so one
+                # is only made for a difference, and it is one
+                # transaction for the whole iteration, so that a save
+                # that touches several files is one entry's worth of
+                # history.
+                if known_now is not None:
+                    await API.ref().per_iteration('Update').Update(
+                        context,
+                        state_types=_state_types(known_now),
+                        error=_error(known_now, api_directory=directory),
+                        files=_files(known_now, api_directory=directory),
+                        changes=changes,
                     )
-                    state_types_by_file.set_file(filename, state_types, error)
+                    known = known_now
 
-                    is_baseline = error is None and filename in unread
-                    if is_baseline:
-                        unread.discard(filename)
+                # If we're restarting this workflow we might be in an
+                # iteration that has already memoized `_walk_and_read`
+                # and thus we don't want to wait on an `event` because
+                # there may be changes that we want to walk and handle
+                # immediately. Thus, we always go to the next
+                # iteration immediately when we've `restarted`. Worse
+                # case we have an iteration where `known_now` is
+                # `None` so we just wait on the `event`.
+                if restarted:
+                    restarted = False
+                    continue
 
-                    await write_state_if_changed(
-                        f'read {filename}',
-                        is_baseline=is_baseline,
-                    )
-
-                changed = await event
-
-            # The watcher lists the directory on every change because a
-            # listing is one glob with no file reads, and it is what
-            # notices a file added or deleted, which an event naming
-            # one path cannot.
-            filenames = set(_api_files(directory))
-            event_filenames = _event_filenames(changed, directory)
-            pending = (
-                (filenames - previous_listing) | (event_filenames & filenames)
-            )
-            previous_listing = filenames
-
-            if not event_filenames:
-                # The watch only fires for `.py` files under this
-                # directory, so an event naming nothing under it means
-                # the watcher reported paths that do not resolve to
-                # `directory`. The watcher cannot tell which file
-                # changed, so it reads every file.
-                pending = filenames
-
-            state_types_by_file.keep_only(filenames)
-            await write_state_if_changed('retain')
+                await event

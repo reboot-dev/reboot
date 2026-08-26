@@ -6,8 +6,6 @@ from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import (
     APIGetRequest,
     APIGetResponse,
-    APIRecordChangesRequest,
-    APIRecordChangesResponse,
     APIUpdateRequest,
     APIUpdateResponse,
     PreferencesGetRequest,
@@ -56,28 +54,8 @@ class APIServicer(API.Servicer):
         return APIGetResponse(
             state_types=self.state.state_types,
             error=self.state.error if self.state.HasField('error') else None,
+            files=self.state.files,
         )
-
-    async def RecordChanges(
-        self,
-        context: TransactionContext,
-        request: APIRecordChangesRequest,
-    ) -> APIRecordChangesResponse:
-        """Records what changed, newest last."""
-        if len(request.changes) == 0:
-            return APIRecordChangesResponse()
-
-        await OrderedMap.ref(CHANGELOG_ID).Insert(
-            context,
-            entries={
-                # As a `Value`, since the map's items are `Value`s.
-                str(uuid7()):
-                    Item(value=ParseDict(MessageToDict(change), Value()))
-                for change in request.changes
-            },
-        )
-
-        return APIRecordChangesResponse()
 
     @classmethod
     async def Watch(
@@ -101,15 +79,32 @@ class APIServicer(API.Servicer):
 
     async def Update(
         self,
-        context: WriterContext,
+        context: TransactionContext,
         request: APIUpdateRequest,
     ) -> APIUpdateResponse:
+        """Replaces what the API files declare and records what
+        changed, newest last, as one transaction."""
         del self.state.state_types[:]
         self.state.state_types.extend(request.state_types)
         if request.HasField('error'):
             self.state.error = request.error
         else:
             self.state.ClearField('error')
+        self.state.files.clear()
+        for filename, file in request.files.items():
+            self.state.files[filename].CopyFrom(file)
+
+        if len(request.changes) > 0:
+            await OrderedMap.ref(CHANGELOG_ID).Insert(
+                context,
+                entries={
+                    # As a `Value`, since the map's items are `Value`s.
+                    str(uuid7()):
+                        Item(value=ParseDict(MessageToDict(change), Value()))
+                    for change in request.changes
+                },
+            )
+
         return APIUpdateResponse()
 
 
