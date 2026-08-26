@@ -1,7 +1,10 @@
 // The call graph's data: the API's state types and methods, joined
 // with the Reboot calls the analysis of the developer's application
 // found in each method's implementation.
+import type { Timestamp } from "@bufbuild/protobuf";
 import type {
+  File,
+  Generated,
   Method_Kind,
   Servicer,
   Servicer_Method,
@@ -160,4 +163,67 @@ export const joinStateTypes = (
   }
 
   return [...stateTypes.values()];
+};
+
+// Why `rbt generate` has to run, or with `same` may have to: a
+// state type's generated module is `missing`, `older` than its API
+// file, or the `same` age, by modification time.
+export type ReasonToGenerate = "missing" | "older" | "same";
+
+// `reasonToGenerate` returns the highest rank over all state types:
+// one `missing` or `older` module outranks any number of `same`.
+const RANK: Record<ReasonToGenerate, number> = {
+  same: 1,
+  older: 2,
+  missing: 3,
+};
+
+// The API file declaring a state type, relative to the API
+// directory, which is how `API.files` is keyed: `shop/v1/shop.py`
+// for `shop.v1.Shop` declared in `api/shop/v1/shop.py`.
+// `stateType.filename` includes the API directory; the package in
+// `stateType.name` is the file's directory relative to it, as
+// `state_types_in_file` qualifies names.
+const apiFileOfStateType = (stateType: StateType): string => {
+  const basename = stateType.filename.split("/").pop() ?? stateType.filename;
+  const directory = packageName(stateType.name).replace(/\./g, "/");
+  return directory === "" ? basename : `${directory}/${basename}`;
+};
+
+// The module `rbt generate` writes for an API file, relative to the
+// generated directory, which is how `generated` is keyed:
+// `shop/v1/shop_rbt.py` for `shop/v1/shop.py`.
+const generatedModuleOfApiFile = (apiFile: string): string =>
+  apiFile.replace(/\.py$/, "_rbt.py");
+
+const compareTimestamps = (a: Timestamp, b: Timestamp): number =>
+  a.seconds === b.seconds ? a.nanos - b.nanos : a.seconds < b.seconds ? -1 : 1;
+
+export const reasonToGenerate = (
+  stateTypes: StateType[],
+  files: { [key: string]: Pick<File, "modified"> },
+  generated: { [key: string]: Pick<Generated, "modified"> }
+): ReasonToGenerate | undefined => {
+  let reason: ReasonToGenerate | undefined;
+  for (const stateType of stateTypes) {
+    const apiFile = apiFileOfStateType(stateType);
+    const module = generated[generatedModuleOfApiFile(apiFile)];
+    if (module === undefined) {
+      return "missing";
+    }
+    const modified = files[apiFile]?.modified;
+    if (modified === undefined || module.modified === undefined) {
+      continue;
+    }
+    const compared = compareTimestamps(module.modified, modified);
+    const one: ReasonToGenerate | undefined =
+      compared < 0 ? "older" : compared === 0 ? "same" : undefined;
+    if (
+      one !== undefined &&
+      (reason === undefined || RANK[one] > RANK[reason])
+    ) {
+      reason = one;
+    }
+  }
+  return reason;
 };

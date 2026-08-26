@@ -61,7 +61,7 @@ import {
   rowOfChange,
   timeAgo,
 } from "./changelog";
-import { joinStateTypes } from "./callgraph";
+import { joinStateTypes, reasonToGenerate } from "./callgraph";
 import { GraphPage } from "./graph";
 
 // One subscriber per tab, for as long as the tab is open.
@@ -913,6 +913,18 @@ const Overview: FC<{
     [stateTypes, servicers]
   );
 
+  const generateReason = useMemo(
+    () =>
+      response === undefined || implementation === undefined
+        ? undefined
+        : reasonToGenerate(
+            stateTypes,
+            response.files,
+            implementation.generated
+          ),
+    [response, implementation, stateTypes]
+  );
+
   const linkedDataTypes = useMemo(
     () => linkDataTypes({ stateTypes, dataTypes, schemas }),
     [stateTypes, dataTypes, schemas]
@@ -1065,7 +1077,29 @@ const Overview: FC<{
             <ChangelogPage onCount={setChanges} live={live} />
           ) : page === "graph" ? (
             <>
-              {implementation !== undefined && servicers.length === 0 ? (
+              {generateReason === "missing" ? (
+                <p className="graph-note muted">
+                  Your application imports generated code that does not exist
+                  yet, so its calls cannot be read. Run{" "}
+                  <code>rbt generate</code>.
+                </p>
+              ) : generateReason === "older" ? (
+                <p className="graph-note muted">
+                  Your API files are newer than your generated code, so the
+                  static call graph analysis may be out of date. Run{" "}
+                  <code>rbt generate</code>.
+                </p>
+              ) : generateReason === "same" ? (
+                <p className="graph-note muted">
+                  Your API files and generated code were last modified at the
+                  same time, so the static call graph analysis may be out of
+                  date. If you changed an API, run <code>rbt generate</code>.
+                </p>
+              ) : null}
+              {/* With a module `missing`, no servicer resolves. */}
+              {generateReason !== "missing" &&
+              implementation !== undefined &&
+              servicers.length === 0 ? (
                 <p className="graph-note muted">
                   No servicers found, so no calls are drawn. The dashboard reads
                   the Python application your <code>.rbtrc</code> names with{" "}
