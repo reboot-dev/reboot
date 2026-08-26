@@ -95,10 +95,10 @@ class Pyright:
         self,
         *,
         root: Path,
-        paths: Sequence[Path],
+        extra_paths: Sequence[Path],
     ) -> None:
         """Starts the server over `root`, resolving imports through
-        `paths`, such as the directory `rbt generate` writes to."""
+        `extra_paths`, such as the directory `rbt generate` writes to."""
         # The `pyright` package's own language server entry point,
         # run with the interpreter `reboot` is installed into, so
         # that nothing depends on the `PATH`; the package, a
@@ -151,7 +151,10 @@ class Pyright:
                                 'analysis':
                                     {
                                         'extraPaths':
-                                            [str(path) for path in paths],
+                                            [
+                                                str(path)
+                                                for path in extra_paths
+                                            ],
                                         'typeCheckingMode': 'basic',
                                         'useLibraryCodeForTypes': True,
                                     }

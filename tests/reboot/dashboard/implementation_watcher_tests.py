@@ -181,6 +181,8 @@ class {state}:
         ):
             pass
 
+        peek = look
+
         def schedule(self, when=None) -> '{state}.WeakReference._Schedule':
             return {state}.WeakReference._Schedule()
 
@@ -204,6 +206,8 @@ class {state}:
         state_id=None,
     ):
         pass
+
+    build = make
 
     class _ConstructIdempotently:
 
@@ -589,23 +593,44 @@ class GoldenDefinitionsTest(unittest.TestCase):
             if isinstance(definition, MethodDefinition)
         ]
 
-        methods = {
-            'ConstructAndStoreRecursiveMessage',
-            'DangerousFields',
-            'FailWithAborted',
-            'FailWithException',
-            'GetWholeState',
-            'Greet',
-            'ReadRecursiveMessage',
-            'SetAdjective',
-            'StoreRecursiveMessage',
-            'TestLongRunningFetch',
-            'TestLongRunningWriter',
-            'TransactionSetAdjective',
-            'TryToConstructContext',
-            'TryToConstructExternalContext',
-            'Workflow',
+        # Each stub and the alias the generator writes beside it,
+        # `greet = Greet`.
+        ALIASES = {
+            'ConstructAndStoreRecursiveMessage':
+                'construct_and_store_recursive_message',
+            'DangerousFields':
+                'dangerous_fields',
+            'FailWithAborted':
+                'fail_with_aborted',
+            'FailWithException':
+                'fail_with_exception',
+            'GetWholeState':
+                'get_whole_state',
+            'Greet':
+                'greet',
+            'ReadRecursiveMessage':
+                'read_recursive_message',
+            'SetAdjective':
+                'set_adjective',
+            'StoreRecursiveMessage':
+                'store_recursive_message',
+            'TestLongRunningFetch':
+                'test_long_running_fetch',
+            'TestLongRunningWriter':
+                'test_long_running_writer',
+            'TransactionSetAdjective':
+                'transaction_set_adjective',
+            'TryToConstructContext':
+                'try_to_construct_context',
+            'TryToConstructExternalContext':
+                'try_to_construct_external_context',
+            'Workflow':
+                'workflow',
         }
+        methods = set(ALIASES)
+
+        def with_aliases(names: set[str]) -> set[str]:
+            return names | {ALIASES[name] for name in names}
 
         names_by_how: dict[int, set[str]] = {}
         for definition in definitions:
@@ -619,31 +644,33 @@ class GoldenDefinitionsTest(unittest.TestCase):
             names_by_how,
             {
                 Call.How.CALL:
-                    methods,
+                    with_aliases(methods),
                 Call.How.SCHEDULE:
-                    methods,
+                    with_aliases(methods),
                 Call.How.SPAWN:
-                    methods,
+                    with_aliases(methods),
                 # A workflow is scheduled, never called across all
                 # of a state type's states, so `forall` leaves it
                 # out.
                 Call.How.FORALL:
-                    methods - {'Workflow'},
+                    with_aliases(methods - {'Workflow'}),
                 # Awaiting until a condition holds only makes sense
                 # for what can be read, so `until` carries only the
                 # reader methods.
                 Call.How.UNTIL:
-                    {
-                        'FailWithAborted',
-                        'FailWithException',
-                        'GetWholeState',
-                        'Greet',
-                        'ReadRecursiveMessage',
-                        'TestLongRunningFetch',
-                        'TryToConstructContext',
-                        'TryToConstructExternalContext',
-                    },
-                Call.How.CONSTRUCT: {'Create'},
+                    with_aliases(
+                        {
+                            'FailWithAborted',
+                            'FailWithException',
+                            'GetWholeState',
+                            'Greet',
+                            'ReadRecursiveMessage',
+                            'TestLongRunningFetch',
+                            'TryToConstructContext',
+                            'TryToConstructExternalContext',
+                        }
+                    ),
+                Call.How.CONSTRUCT: {'Create', 'create'},
             },
         )
         self.assertEqual(
@@ -691,7 +718,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         self.pyright = Pyright()
         await self.pyright.start(
             root=self.directory,
-            paths=[self.directory, self.generated, self.installed],
+            extra_paths=[self.directory, self.generated, self.installed],
         )
 
     async def asyncTearDown(self) -> None:
@@ -908,6 +935,42 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             ],
         )
         self.assertEqual(list(method.ambiguous), [])
+
+    async def test_a_call_through_an_alias_of_a_stub(self) -> None:
+        """The pydantic generator writes each stub an alias in the name
+        the developer calls, `create = Create`; a call through one is
+        the method's."""
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'from shop.v1.depot_rbt import Depot\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                "        await Depot.ref('d').peek(context)\n"
+                "        await Depot.build(context, 'd')\n"
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        [found_servicer] = found[servicer].servicers
+        [method] = found_servicer.methods
+        Call = Servicer.Method.Call
+        self.assertEqual(
+            [
+                (call.state_type, call.method, call.how)
+                for call in method.calls
+            ],
+            [
+                ('shop.v1.Depot', 'peek', Call.How.CALL),
+                ('shop.v1.Depot', 'build', Call.How.CONSTRUCT),
+            ],
+        )
 
     async def test_helpers_calling_each_other_are_followed_once(
         self,

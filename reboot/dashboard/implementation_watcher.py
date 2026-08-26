@@ -256,6 +256,40 @@ def _takes_context_second(
     return len(arguments) >= 2 and arguments[1].arg == '__context__'
 
 
+def _method_definitions_in(
+    body: Sequence[ast.stmt],
+    *,
+    state_type: str,
+    how: Call.How.ValueType,
+) -> dict[int, MethodDefinition]:
+    """Returns the method stubs a class body defines, by line: each
+    def taking `__context__` second, and each alias the generator
+    writes for one after it, e.g. `add_to_cart = AddToCart`, under
+    the name the developer calls."""
+    definitions: dict[int, MethodDefinition] = {}
+    stubs: set[str] = set()
+    for node in body:
+        match node:
+            case (ast.FunctionDef() |
+                  ast.AsyncFunctionDef()) if _takes_context_second(node):
+                stubs.add(node.name)
+                definitions[node.lineno] = MethodDefinition(
+                    state_type=state_type,
+                    name=node.name,
+                    how=how,
+                )
+            case ast.Assign(
+                targets=[ast.Name(id=str(alias))],
+                value=ast.Name(id=str(stub)),
+            ) if stub in stubs:
+                definitions[node.lineno] = MethodDefinition(
+                    state_type=state_type,
+                    name=alias,
+                    how=how,
+                )
+    return definitions
+
+
 def _generated_definitions(
     syntax: ast.Module,
 ) -> Mapping[int, GeneratedDefinition]:
@@ -323,72 +357,48 @@ def _generated_definitions(
                 # is told apart from the machinery around it, such
                 # as `ref` and `schedule` themselves, by the
                 # `__context__` parameter only the generator's
-                # stubs take second.
+                # stubs take second. An alias written after a stub,
+                # `add_to_cart = AddToCart`, defines the same method
+                # under the name the developer calls.
+                definitions.update(
+                    _method_definitions_in(
+                        statement.body,
+                        state_type=state_type,
+                        how=Call.How.CONSTRUCT,
+                    )
+                )
                 for inner in statement.body:
                     match inner:
-                        case (ast.FunctionDef() | ast.AsyncFunctionDef()
-                             ) if _takes_context_second(inner):
-                            definitions[inner.lineno] = MethodDefinition(
-                                state_type=state_type,
-                                name=inner.name,
-                                how=Call.How.CONSTRUCT,
-                            )
-
                         case ast.ClassDef(
                         ) if (inner.name in HOWS_BY_CLASS_NAME):
-                            for node in inner.body:
-                                match node:
-                                    case (
-                                        ast.FunctionDef() |
-                                        ast.AsyncFunctionDef()
-                                    ) if _takes_context_second(node):
-                                        definitions[node.lineno] = (
-                                            MethodDefinition(
-                                                state_type=state_type,
-                                                name=node.name,
-                                                how=HOWS_BY_CLASS_NAME[
-                                                    inner.name],
-                                            )
-                                        )
+                            definitions.update(
+                                _method_definitions_in(
+                                    inner.body,
+                                    state_type=state_type,
+                                    how=HOWS_BY_CLASS_NAME[inner.name],
+                                )
+                            )
 
                         case ast.ClassDef(name='WeakReference'):
+                            definitions.update(
+                                _method_definitions_in(
+                                    inner.body,
+                                    state_type=state_type,
+                                    how=Call.How.CALL,
+                                )
+                            )
                             for node in inner.body:
                                 match node:
-                                    case (
-                                        ast.FunctionDef() |
-                                        ast.AsyncFunctionDef()
-                                    ) if _takes_context_second(node):
-                                        definitions[node.lineno] = (
-                                            MethodDefinition(
-                                                state_type=state_type,
-                                                name=node.name,
-                                                how=Call.How.CALL,
-                                            )
-                                        )
-
                                     case ast.ClassDef(
                                     ) if (node.name in HOWS_BY_CLASS_NAME):
-                                        how = HOWS_BY_CLASS_NAME[node.name]
-                                        for scheduled in node.body:
-                                            match scheduled:
-                                                case (
-                                                    ast.FunctionDef() |
-                                                    ast.AsyncFunctionDef()
-                                                ) if (
-                                                    _takes_context_second(
-                                                        scheduled
-                                                    )
-                                                ):
-                                                    definitions[
-                                                        scheduled.lineno] = (
-                                                            MethodDefinition(
-                                                                state_type=
-                                                                state_type,
-                                                                name=scheduled.
-                                                                name,
-                                                                how=how,
-                                                            )
-                                                        )
+                                        definitions.update(
+                                            _method_definitions_in(
+                                                node.body,
+                                                state_type=state_type,
+                                                how=HOWS_BY_CLASS_NAME[
+                                                    node.name],
+                                            )
+                                        )
 
     return MappingProxyType(definitions)
 
@@ -1174,10 +1184,13 @@ async def watch(
                 # directory moving, which today is handled by every
                 # iteration's fresh start being rooted at the
                 # current directory and would again take a restart.
+                # Absolute, since pyright does not resolve `extraPaths`
+                # against the root; a root outside the working directory
+                # is absolute already, and joining leaves it alone.
                 pyright = Pyright()
                 await pyright.start(
                     root=Path.cwd(),
-                    paths=list(roots),
+                    extra_paths=[Path.cwd() / root for root in roots],
                 )
                 try:
                     analyzed = await _analyze(
