@@ -47,6 +47,8 @@ esbuild(
         ":dashboard_ts",
     ],
     bazel_sandbox_plugin = False,
+    # `minifySyntax` has no attribute on the rule.
+    config = "esbuild.config.mjs",
     # `esbuild` defaults `NODE_ENV` to "development" when not
     # minifying; this ships React's production build.
     define = {"process.env.NODE_ENV": "\"production\""},
