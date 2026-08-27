@@ -105,15 +105,15 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         path.write_text(SHOP.format(state=state))
 
     async def _wait_for_api(self, satisfied):
-        while True:
-            context = self.rbt.create_external_context(name=self.id())
-            try:
-                response = await API.ref(API_ID).Get(context)
-                if satisfied(response):
-                    return response
-            except Exception:
-                pass
-            await asyncio.sleep(0.1)
+        """Returns the recorded API once it satisfies, reading again
+        whenever it changes."""
+        context = self.rbt.create_external_context(name=self.id())
+
+        async for response in API.ref(API_ID).reactively().Get(context):
+            if satisfied(response):
+                return response
+
+        raise AssertionError('never satisfied')
 
     async def _changelog_entries(self) -> list[Change]:
         """What the dashboard has noticed, newest first."""
