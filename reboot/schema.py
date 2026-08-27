@@ -450,7 +450,7 @@ def _schema_of(
         ]
 
         literals: set[str] = set()
-        variants: list[Variant] = []  # noqa: F841
+        variants: list[Variant] = []
 
         for option in options:
             assert issubclass(option, Model)
@@ -479,7 +479,9 @@ def _schema_of(
                 discriminator=discriminator,
                 schemas=schemas,
             )
-            raise NotImplementedError("a variant")
+            variants.append(
+                Variant(literal=literal, reference=reference.reference)
+            )
 
         raise NotImplementedError("the union's type")
     else:
