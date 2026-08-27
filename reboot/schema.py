@@ -19,6 +19,7 @@ from rbt.v1alpha1.schema_pb2 import (
     INTEGER,
     STRING,
     Array,
+    DiscriminatedUnion,
     Literals,
     Map,
     Property,
@@ -483,6 +484,13 @@ def _schema_of(
                 Variant(literal=literal, reference=reference.reference)
             )
 
-        raise NotImplementedError("the union's type")
+        return (
+            Type(
+                discriminated_union=DiscriminatedUnion(
+                    discriminator=discriminator, variants=variants
+                )
+            ),
+            schemas,
+        )
     else:
         fail(f"Unexpected type '{annotation}' at '{path}'")
