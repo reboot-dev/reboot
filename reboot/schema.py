@@ -332,7 +332,7 @@ def _schema_of(
             elif value_type == int:
                 value = Type(scalar=INTEGER)
             elif value_type == float:
-                raise NotImplementedError("a `float` value")
+                value = Type(scalar=FLOAT)
             elif value_type == bool:
                 raise NotImplementedError("a `bool` value")
             elif value_type is Any:
