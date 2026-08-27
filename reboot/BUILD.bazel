@@ -354,7 +354,6 @@ py_library(
     deps = [
         ":api_py",
         ":fail_py",
-        ":pydantic_schema_to_proto_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:schema_py_proto",
         requirement("pydantic"),
     ],
@@ -367,6 +366,7 @@ py_library(
     deps = [
         ":api_py",
         ":fail_py",
+        ":schema_py",
         requirement("pydantic"),
         requirement("aiofiles"),
     ],

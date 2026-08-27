@@ -4,32 +4,23 @@ import aiofiles
 import hashlib
 import importlib
 import os
-import types
 import typing
+from rbt.v1alpha1 import schema_pb2
 from reboot.api import (
     API,
     UI,
     MethodModel,
-    Model,
     Resource,
     Tool,
     UserPydanticError,
-    get_field_tag,
     to_pascal_case,
     to_snake_case,
 )
 from reboot.fail import fail
+from reboot.schema import Schemas, schema_of
 from reboot.settings import AUTO_CONSTRUCT_STATE_TYPE
-from typing import (
-    Any,
-    Dict,
-    List,
-    Literal,
-    Optional,
-    Union,
-    get_args,
-    get_origin,
-)
+from types import MappingProxyType
+from typing import List, Optional
 
 # Proto `AutoConstruct` enum value name for per-user
 # auto-construction. Must match the enum in
@@ -42,85 +33,59 @@ def _escape_string_for_proto(string: str) -> str:
     return string.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def _pydantic_field_type_string_from_type(
-    field_type: typing.Type,
-    field_name: str,
-    model_name: str,
-) -> str:
-    origin = get_origin(field_type)
+def _pydantic_field_type_string_from_type(field_type: schema_pb2.Type) -> str:
+    kind = field_type.WhichOneof('type')
 
-    if field_type is Any:
+    if kind == 'scalar':
         # `Any` (e.g. a `dict[str, Any]` value) renders as
         # `typing.Any`; on the wire it becomes a
         # `google.protobuf.Value`. We import `typing` as
         # `IMPORT_typing` to avoid name conflicts in generated code.
-        return 'IMPORT_typing.Any'
-
-    if origin is Union or origin is types.UnionType:
-        non_none_args = [
-            arg for arg in get_args(field_type) if arg is not type(None)
-        ]
-        if len(non_none_args) == 1:
-            # When `non_none_args` has only one type, it means
-            # it is an `Optional[T]` type, where `T` is not a
-            # discriminated union, which we handle separately below.
-            assert field_type is not None
-            # To avoid name conflicts in the generated code, we import the
-            # 'typing' module as 'IMPORT_typing'.
-            # Recursively get the type string for the inner type.
-            # It is crucial at least for inner `Literal` types, since
-            # they should be represented as `IMPORT_typing.Literal[...]`
-            # and the whole type string should be
-            # `IMPORT_typing.Optional[IMPORT_typing.Literal[...]]`.
-            return f'IMPORT_typing.Optional[{_pydantic_field_type_string_from_type(non_none_args[0], field_name, model_name)}]'
-        else:
-            # To avoid name conflicts in the generated code, we import the
-            # 'typing' module as 'IMPORT_typing'.
-            union_type_string = f'IMPORT_typing.Union[{", ".join([_pydantic_field_type_string_from_type(arg, field_name, model_name) for arg in non_none_args])}]'
-            if type(None) in get_args(field_type):
-                return f'IMPORT_typing.Optional[{union_type_string}]'
-            return union_type_string
-    elif origin is Literal:
+        # Primitive types do not need a module prefix.
+        return {
+            schema_pb2.STRING: 'str',
+            schema_pb2.INTEGER: 'int',
+            schema_pb2.FLOAT: 'float',
+            schema_pb2.BOOLEAN: 'bool',
+            schema_pb2.ANY: 'IMPORT_typing.Any',
+        }[field_type.scalar]
+    elif kind == 'optional':
         # To avoid name conflicts in the generated code, we import the
         # 'typing' module as 'IMPORT_typing'.
-        return f'IMPORT_{field_type}'
-    elif origin is None:
-        # It can happen if we have a primitive type or another
-        # 'Model'.
-        assert isinstance(field_type, type)
-        # Annotation at that point will be '<class 'int'>',
-        # '<class 'AnotherModel'>', etc., so we need to get the actual
-        # type string.
-        if issubclass(field_type, Model):
-            return f'{field_type.__module__}.{field_type.__name__}'
-        else:
-            # Primitive type does not need module prefix.
-            return field_type.__name__
-    elif origin is list:
+        # Recursively get the type string for the inner type.
+        # It is crucial at least for inner `Literal` types, since
+        # they should be represented as `IMPORT_typing.Literal[...]`
+        # and the whole type string should be
+        # `IMPORT_typing.Optional[IMPORT_typing.Literal[...]]`.
+        return f'IMPORT_typing.Optional[{_pydantic_field_type_string_from_type(field_type.optional.inner)}]'
+    elif kind == 'discriminated_union':
+        # To avoid name conflicts in the generated code, we import the
+        # 'typing' module as 'IMPORT_typing'.
+        return f'IMPORT_typing.Union[{", ".join([variant.reference.name for variant in field_type.discriminated_union.variants])}]'
+    elif kind == 'literals':
+        # To avoid name conflicts in the generated code, we import the
+        # 'typing' module as 'IMPORT_typing'.
+        values = ", ".join(repr(value) for value in field_type.literals.values)
+        return f'IMPORT_typing.Literal[{values}]'
+    elif kind == 'reference':
+        # A reference's name is the model's module and class.
+        return field_type.reference.name
+    elif kind == 'array':
         # Recurse into the item since an inner type must be
         # rendered using `IMPORT_typing` prefix, while a `Model`
         # must keep its exact module path.
-        (item_type,) = get_args(field_type)
         item_string = _pydantic_field_type_string_from_type(
-            item_type, field_name, model_name
+            field_type.array.item
         )
         return f'list[{item_string}]'
-    elif origin is dict:
+    elif kind == 'map':
         # See the 'list' case above.
-        key_type, value_type = get_args(field_type)
-        key_string = _pydantic_field_type_string_from_type(
-            key_type, field_name, model_name
-        )
         value_string = _pydantic_field_type_string_from_type(
-            value_type, field_name, model_name
+            field_type.map.value
         )
-        return f'dict[{key_string}, {value_string}]'
+        return f'dict[str, {value_string}]'
     else:
-        fail(
-            f"Unsupported field type '{field_type}' for field "
-            f"'{field_name}' in Pydantic model "
-            f"'{model_name}'."
-        )
+        raise AssertionError(f"Unsupported field type '{field_type}'.")
 
 
 async def _write_field_maybe_with_type_string_annotation(
@@ -147,12 +112,7 @@ async def _write_field_maybe_with_type_string_annotation(
 
 async def generate(
     proto,
-    schema: typing.Union[
-        typing.Type[Model],
-        typing.Type[dict],
-        typing.Type[list],
-    ],
-    path: str,
+    schema: typing.Union[schema_pb2.Schema, schema_pb2.Type],
     name: Optional[str] = None,
     state: bool = False,
     # Currently we need to add Pydantic type string annotation for every
@@ -176,11 +136,10 @@ async def generate(
     auto_construct: Optional[str] = None,
     # What the state type does, in the author's own words.
     description: Optional[str] = None,
+    # Every schema `schema` may refer to, by reference name.
+    schemas: Schemas = MappingProxyType({}),
 ):
-    origin = get_origin(schema)
-    args = get_args(schema)
-
-    if origin is None and issubclass(schema, Model):
+    if isinstance(schema, schema_pb2.Schema):
         assert name is not None
 
         await proto.write(f"message {name} {{\n")
@@ -233,99 +192,34 @@ async def generate(
             else:
                 await proto.write("  option (rbt.v1alpha1.state) = {};\n")
 
-        tags: Dict[int, str] = {}
-
-        # Type assertion to help Pylance understand schema is a 'Model'
-        # and do not complain.
-        base_model_schema: typing.Type[Model] = schema
-        for field_name, field_info in base_model_schema.model_fields.items():
-            field_type = field_info.annotation
-            if field_type is None:
-                fail(
-                    f"Missing type annotation for property '{field_name}' at "
-                    f"'{path}'; all properties must have a type annotation"
-                )
-
-            # Pydantic declares `annotation` as optional, but a model
-            # field is always defined by a type annotation, so it is
-            # present for every field we iterate here.
-            assert field_type is not None
-
-            # Discriminated union might be defined only as a field option
-            # in the Pydantic model, so we need to get it from there.
-            # If it was passed from the parent call, we just use that, and
-            # it means we are generating one of the options of the
-            # discriminated union.
-            discriminator = discriminator or getattr(
-                field_info,
-                'discriminator',
-                None,
-            )
-
-            tag = get_field_tag(field_info)
-            if tag is None:
-                fail(
-                    f"Missing tag for property '{field_name}' at '{path}'; "
-                    f"all properties must be tagged for backwards compatibility"
-                )
-
-            if tag in tags:
-                fail(
-                    f"Trying to use tag '{tag}' with property '{field_name}' "
-                    f"already used by '{tags[tag]}' at '{path}'"
-                )
-
-            tags[tag] = field_name
-
-            # In Pydantic if a class has an `Optional` field, that field
-            # should be explicitly set to `None`, otherwise it will fail
-            # during validation. So the "required" in Pydantic means
-            # that the field has `default` or `default_factory` specified.
-            required = field_info.is_required()
+        for property_ in schema.properties:
+            field_name = property_.name
+            tag = property_.tag
+            required = property_.required
+            type_ = property_.type
 
             field_type_string: Optional[str] = None
             if add_type_string_annotation_to_proto:
                 field_type_string = _pydantic_field_type_string_from_type(
-                    field_type,
-                    field_name,
-                    base_model_schema.__name__,
+                    type_
                 )
 
             proto_field_name = field_name
 
-            inner_type = field_type
-
-            field_origin = get_origin(field_type)
-            field_args = get_args(field_type)
+            inner_type = type_
 
             # Get inner type for 'Optional[T]' if possible.
-            if (field_origin is Union or field_origin is types.UnionType
-               ) and type(None) in field_args and len(field_args) == 2:
-                inner_type = next(
-                    arg for arg in field_args if arg is not type(None)
-                )
-            elif field_origin is Union or field_origin is types.UnionType:
-                # Get the discriminator for this field's Union type.
-                # This must come from the field itself, not from a parent.
-                field_discriminator = getattr(
-                    field_info,
-                    'discriminator',
-                    None,
-                )
-                assert field_discriminator is not None, (
-                    f"`Union` field `{field_name}` at `{path}` must have a "
-                    f"discriminator defined"
-                )
+            if type_.WhichOneof('type') == 'optional':
+                inner_type = type_.optional.inner
 
+            if inner_type.WhichOneof('type') == 'discriminated_union':
                 type_name = to_pascal_case(field_name)
                 await generate(
                     proto,
                     inner_type,
-                    f"{path}.{field_name}",
                     name=type_name,
-                    # It is the only place where user can read a discriminator
-                    # from a discriminated union.
-                    discriminator=field_discriminator,
+                    discriminator=inner_type.discriminated_union.discriminator,
+                    schemas=schemas,
                 )
 
                 await _write_field_maybe_with_type_string_annotation(
@@ -338,14 +232,7 @@ async def generate(
                 )
                 continue
 
-            # The 'inner_type' represents the actual type, i.e. 'list[list[...]]]',
-            # '<class 'str'>', '<class 'int'>', etc. So we need to get
-            # the real type to handle for complex structures. For primitive
-            # types the 'inner_origin' will be 'None'.
-            inner_origin = get_origin(inner_type)
-
-            if inner_type == str:
-                assert inner_origin is None
+            if inner_type.scalar == schema_pb2.STRING:
                 await _write_field_maybe_with_type_string_annotation(
                     proto,
                     proto_field_name,
@@ -354,8 +241,7 @@ async def generate(
                     required,
                     field_type_string,
                 )
-            elif inner_type == int:
-                assert inner_origin is None
+            elif inner_type.scalar == schema_pb2.INTEGER:
                 await _write_field_maybe_with_type_string_annotation(
                     proto,
                     proto_field_name,
@@ -364,8 +250,7 @@ async def generate(
                     required,
                     field_type_string,
                 )
-            elif inner_type == float:
-                assert inner_origin is None
+            elif inner_type.scalar == schema_pb2.FLOAT:
                 await _write_field_maybe_with_type_string_annotation(
                     proto,
                     proto_field_name,
@@ -374,8 +259,7 @@ async def generate(
                     required,
                     field_type_string,
                 )
-            elif inner_type == bool:
-                assert inner_origin is None
+            elif inner_type.scalar == schema_pb2.BOOLEAN:
                 await _write_field_maybe_with_type_string_annotation(
                     proto,
                     proto_field_name,
@@ -384,7 +268,7 @@ async def generate(
                     required,
                     field_type_string,
                 )
-            elif inner_type is Any:
+            elif inner_type.scalar == schema_pb2.ANY:
                 # A bare `Any` field carries an arbitrary JSON value,
                 # just like a `dict[str, Any]` value; both lower to a
                 # `google.protobuf.Value`. `struct.proto` is imported
@@ -397,13 +281,13 @@ async def generate(
                     required,
                     field_type_string,
                 )
-            elif inner_origin in (list, List):
+            elif inner_type.WhichOneof('type') == 'array':
                 type_name = to_pascal_case(field_name) + "Array"
                 await proto.write(f"  message {type_name} {{\n")
                 await generate(
                     proto,
                     inner_type,
-                    f"{path}.{field_name}",
+                    schemas=schemas,
                 )
                 await proto.write("  }\n")
 
@@ -415,13 +299,13 @@ async def generate(
                     required,
                     field_type_string,
                 )
-            elif inner_origin in (dict, Dict):
+            elif inner_type.WhichOneof('type') == 'map':
                 type_name = to_pascal_case(field_name) + "Record"
                 await proto.write(f"  message {type_name} {{\n")
                 await generate(
                     proto,
                     inner_type,
-                    f"{path}.{field_name}",
+                    schemas=schemas,
                 )
                 await proto.write("  }\n")
                 await _write_field_maybe_with_type_string_annotation(
@@ -432,25 +316,18 @@ async def generate(
                     required,
                     field_type_string,
                 )
-            elif inner_origin is Literal:
+            elif inner_type.WhichOneof('type') == 'literals':
                 if discriminator is not None:
                     # Skip discriminator fields - they are handled specially
                     # in the discriminated union generation.
                     continue
                 type_name = to_pascal_case(field_name)
-                literal_args = get_args(inner_type)
-
-                # Verify all literal values are strings.
-                for literal_value in literal_args:
-                    if not isinstance(literal_value, str):
-                        fail(
-                            f"Unexpected literal `{literal_value}` for property "
-                            f"`{field_name}`; only string literals are "
-                            f"currently supported"
-                        )
+                literals_type = inner_type
 
                 await proto.write(f"  enum {type_name} {{\n")
-                for i, literal_value in enumerate(literal_args):
+                for i, literal_value in enumerate(
+                    literals_type.literals.values
+                ):
                     # According to Protobuf `enum` rules:
                     # `enum` values use C++ scoping rules, meaning that
                     # `enum` values are siblings of their type, not
@@ -475,14 +352,13 @@ async def generate(
                     required,
                     field_type_string,
                 )
-            elif isinstance(inner_type,
-                            type) and issubclass(inner_type, Model):
+            elif inner_type.WhichOneof('type') == 'reference':
                 type_name = to_pascal_case(field_name)
                 await generate(
                     proto,
-                    inner_type,
-                    f"{path}.{field_name}",
+                    schemas[inner_type.reference.name],
                     name=type_name,
+                    schemas=schemas,
                 )
                 await _write_field_maybe_with_type_string_annotation(
                     proto,
@@ -492,208 +368,134 @@ async def generate(
                     required,
                     field_type_string,
                 )
-            elif not field_args and inner_origin is None:
-                # Better error message for unparameterized generics.
-                #
-                # 'inner_origin' becomes 'None' there, since there is no
-                # args specified (i.e. 'list' instead of 'list[str]').
-                fail(
-                    f"'{path}.{field_name}' has collection type '{inner_type}' "
-                    "which doesn't have an item type specified. Please specify "
-                    "the item type, e.g., 'list[str]' or 'dict[str, int]'."
-                )
             else:
-                fail(
-                    f"'{path}.{field_name}' has type '{inner_type}' which is not "
+                raise AssertionError(
+                    f"'{field_name}' has type '{inner_type}' which is not "
                     f"(yet) supported, please reach out to the maintainers!"
                 )
 
         await proto.write("}\n")
-    elif origin in (dict, Dict):
-        if len(args) >= 2:
-            key_type = args[0]
-            value_type = args[1]
+    elif isinstance(schema,
+                    schema_pb2.Type) and schema.WhichOneof('type') == 'map':
+        value_type = schema.map.value
 
-            if key_type != str:
-                fail(
-                    f"Unexpected 'dict' key type '{key_type}' at '{path}'; "
-                    f"only 'string' key types are currently supported for 'dict's"
-                )
-
-            value_origin = get_origin(value_type)
-
-            if value_type == str:
-                type_name = "string"
-            elif value_type == int:
-                type_name = "double"
-            elif value_type == float:
-                type_name = "double"
-            elif value_type == bool:
-                type_name = "bool"
-            elif value_type is Any:
-                # `dict[str, Any]` carries arbitrary JSON values, which
-                # a `google.protobuf.Value` represents; `struct.proto`
-                # is already imported by every generated file.
-                type_name = "google.protobuf.Value"
-            elif value_origin in (list, List):
-                type_name = "Value"
-                await proto.write("  message Value {\n")
-                await generate(proto, value_type, f"{path}.[value]")
-                await proto.write("  }\n")
-            elif value_origin in (dict, Dict):
-                type_name = "Value"
-                await proto.write("  message Value {\n")
-                await generate(proto, value_type, f"{path}.[value]")
-                await proto.write("  }\n")
-            elif isinstance(value_type,
-                            type) and issubclass(value_type, Model):
-                type_name = value_type.__name__
-                await generate(
-                    proto,
-                    value_type,
-                    f"{path}.[value]",
-                    name=type_name,
-                )
-            elif value_origin is Literal:
-                type_name = "Value"
-                literal_args = get_args(value_type)
-
-                # Verify all literal values are strings.
-                for literal_value in literal_args:
-                    if not isinstance(literal_value, str):
-                        fail(
-                            f"Unexpected literal `{literal_value}` for the "
-                            f"'dict' at '{path}'; only string literals are "
-                            "currently supported"
-                        )
-
-                # Same as the field-level `Literal` handling above: a
-                # nested `enum` whose values are prefixed with the type
-                # name, since Protobuf `enum` values use C++ scoping.
-                await proto.write(f"  enum {type_name} {{\n")
-                for i, literal_value in enumerate(literal_args):
-                    await proto.write(
-                        f"    {type_name}_{literal_value} = {i};\n"
-                    )
-                await proto.write("  }\n")
-            # NOTE: Discriminated unions are not supported inside `dict` values
-            # because Pydantic only allows discriminators on direct model fields.
-            # `Union` types here would only be `Optional[T]`, which is not supported
-            # inside collections.
-            else:
-                fail(
-                    f"Dictionary at '{path}' has value type '{value_type}' which is not "
-                    f"(yet) supported"
-                )
-
-            await proto.write(f"    map<string, {type_name}> record = 1;\n")
-        else:
-            fail(
-                f"Dictionary type at '{path}' must have key and value types, "
-                f"e.g., dict[str, int]"
+        if value_type.scalar == schema_pb2.STRING:
+            type_name = "string"
+        elif value_type.scalar == schema_pb2.INTEGER:
+            type_name = "double"
+        elif value_type.scalar == schema_pb2.FLOAT:
+            type_name = "double"
+        elif value_type.scalar == schema_pb2.BOOLEAN:
+            type_name = "bool"
+        elif value_type.scalar == schema_pb2.ANY:
+            # `dict[str, Any]` carries arbitrary JSON values, which
+            # a `google.protobuf.Value` represents; `struct.proto`
+            # is already imported by every generated file.
+            type_name = "google.protobuf.Value"
+        elif value_type.WhichOneof('type') == 'array':
+            type_name = "Value"
+            await proto.write("  message Value {\n")
+            await generate(proto, value_type, schemas=schemas)
+            await proto.write("  }\n")
+        elif value_type.WhichOneof('type') == 'map':
+            type_name = "Value"
+            await proto.write("  message Value {\n")
+            await generate(proto, value_type, schemas=schemas)
+            await proto.write("  }\n")
+        elif value_type.WhichOneof('type') == 'reference':
+            type_name = schemas[value_type.reference.name].name
+            await generate(
+                proto,
+                schemas[value_type.reference.name],
+                name=type_name,
+                schemas=schemas,
             )
-    elif origin in (list, List):
-        if args:
-            item_type = args[0]
-            item_origin = get_origin(item_type)
+        elif value_type.WhichOneof('type') == 'literals':
+            type_name = "Value"
+            literals_type = value_type
 
-            if item_type == str:
-                type_name = "string"
-            elif item_type == int:
-                type_name = "double"
-            elif item_type == float:
-                type_name = "double"
-            elif item_type == bool:
-                type_name = "bool"
-            elif item_type is Any:
-                # A `list[Any]` carries arbitrary JSON values; each
-                # element becomes a `google.protobuf.Value`, just like
-                # a `dict[str, Any]` value.
-                type_name = "google.protobuf.Value"
-            elif item_origin in (list, List):
-                type_name = "Item"
-                await proto.write("  message Item {\n")
-                await generate(proto, item_type, f"{path}.[item]")
-                await proto.write("  }\n")
-            elif item_origin in (dict, Dict):
-                type_name = "Item"
-                await proto.write("  message Item {\n")
-                await generate(proto, item_type, f"{path}.[item]")
-                await proto.write("  }\n")
-            elif isinstance(item_type, type) and issubclass(item_type, Model):
-                type_name = item_type.__name__
-                await generate(
-                    proto, item_type, f"{path}.[item]", name=type_name
-                )
-            elif item_origin is Literal:
-                type_name = "Item"
-                literal_args = get_args(item_type)
-
-                # Verify all literal values are strings.
-                for literal_value in literal_args:
-                    if not isinstance(literal_value, str):
-                        fail(
-                            f"Unexpected literal `{literal_value}` for the "
-                            f"list at '{path}'; only string literals are "
-                            "currently supported"
-                        )
-
-                # Same as the field-level `Literal` handling above: a
-                # nested `enum` whose values are prefixed with the type
-                # name, since Protobuf `enum` values use C++ scoping.
-                await proto.write(f"  enum {type_name} {{\n")
-                for i, literal_value in enumerate(literal_args):
-                    await proto.write(
-                        f"    {type_name}_{literal_value} = {i};\n"
-                    )
-                await proto.write("  }\n")
-            # NOTE: Discriminated unions are not supported inside `list` items
-            # because Pydantic only allows discriminators on direct model fields.
-            # `Union` types here would only be `Optional[T]`, which is not supported
-            # inside collections.
-            else:
-                fail(
-                    f"List at '{path}' has item type '{item_type}' which is not "
-                    f"(yet) supported"
-                )
-
-            await proto.write(f"    repeated {type_name} items = 1;\n")
+            # Same as the field-level `Literal` handling above: a
+            # nested `enum` whose values are prefixed with the type
+            # name, since Protobuf `enum` values use C++ scoping.
+            await proto.write(f"  enum {type_name} {{\n")
+            for i, literal_value in enumerate(literals_type.literals.values):
+                await proto.write(f"    {type_name}_{literal_value} = {i};\n")
+            await proto.write("  }\n")
         else:
-            fail(
-                f"List type at '{path}' must have an item type, e.g., list[str]"
+            raise AssertionError(
+                f"Dictionary has value type '{value_type}' which is not "
+                f"(yet) supported"
             )
-    elif origin is Union or origin is types.UnionType:
+
+        await proto.write(f"    map<string, {type_name}> record = 1;\n")
+    elif isinstance(schema,
+                    schema_pb2.Type) and schema.WhichOneof('type') == 'array':
+        item_type = schema.array.item
+
+        if item_type.scalar == schema_pb2.STRING:
+            type_name = "string"
+        elif item_type.scalar == schema_pb2.INTEGER:
+            type_name = "double"
+        elif item_type.scalar == schema_pb2.FLOAT:
+            type_name = "double"
+        elif item_type.scalar == schema_pb2.BOOLEAN:
+            type_name = "bool"
+        elif item_type.scalar == schema_pb2.ANY:
+            # A `list[Any]` carries arbitrary JSON values; each
+            # element becomes a `google.protobuf.Value`, just like
+            # a `dict[str, Any]` value.
+            type_name = "google.protobuf.Value"
+        elif item_type.WhichOneof('type') == 'array':
+            type_name = "Item"
+            await proto.write("  message Item {\n")
+            await generate(proto, item_type, schemas=schemas)
+            await proto.write("  }\n")
+        elif item_type.WhichOneof('type') == 'map':
+            type_name = "Item"
+            await proto.write("  message Item {\n")
+            await generate(proto, item_type, schemas=schemas)
+            await proto.write("  }\n")
+        elif item_type.WhichOneof('type') == 'reference':
+            type_name = schemas[item_type.reference.name].name
+            await generate(
+                proto,
+                schemas[item_type.reference.name],
+                name=type_name,
+                schemas=schemas,
+            )
+        elif item_type.WhichOneof('type') == 'literals':
+            type_name = "Item"
+            literals_type = item_type
+
+            # Same as the field-level `Literal` handling above: a
+            # nested `enum` whose values are prefixed with the type
+            # name, since Protobuf `enum` values use C++ scoping.
+            await proto.write(f"  enum {type_name} {{\n")
+            for i, literal_value in enumerate(literals_type.literals.values):
+                await proto.write(f"    {type_name}_{literal_value} = {i};\n")
+            await proto.write("  }\n")
+        else:
+            raise AssertionError(
+                f"List has item type '{item_type}' which is not "
+                f"(yet) supported"
+            )
+
+        await proto.write(f"    repeated {type_name} items = 1;\n")
+    elif isinstance(schema, schema_pb2.Type
+                   ) and schema.WhichOneof('type') == 'discriminated_union':
         assert name is not None
         assert discriminator is not None
 
         await proto.write(f"message {name} {{\n")
 
-        # Filter out `None` for `Optional[Union[A, B]]`.
-        options = [opt for opt in get_args(schema) if opt is not type(None)]
-
-        literals: set[str] = set()
         # List of (tag, snake_case_literal, PascalCase type name) - using list
         # to preserve order and assign sequential tags.
         options_info: list[tuple[int, str, str]] = []
         # Sequential tag for oneof entries.
         oneof_tag = 1
 
-        for option in options:
-            assert issubclass(option, Model)
-            assert discriminator in option.__annotations__
-
-            # Get the discriminator literal value.
-            literal_type = option.__annotations__[discriminator]
-            literal_values = get_args(literal_type)
-            assert len(literal_values) == 1
-            literal = literal_values[0]
-
-            if literal in literals:
-                fail(
-                    f"Duplicate literal `{literal}` in discriminated union "
-                    f"at `{path}`"
-                )
-            literals.add(literal)
+        for variant in schema.discriminated_union.variants:
+            literal = variant.literal
 
             type_name = to_pascal_case(literal)
             snake_literal = to_snake_case(literal)
@@ -704,12 +506,12 @@ async def generate(
             # The discriminator field will be skipped because we pass it through.
             await generate(
                 proto,
-                option,
-                f"{path}.{{ {discriminator}: \"{literal}\", ... }}",
+                schemas[variant.reference.name],
                 name=type_name,
                 # Pass the discriminator to skip its generation in the
                 # option Protobuf message.
                 discriminator=discriminator,
+                schemas=schemas,
             )
 
         # Generate the single oneof block with all variants.
@@ -719,7 +521,7 @@ async def generate(
         await proto.write("  }\n")
         await proto.write("}\n")
     else:
-        fail(f"Unexpected type '{schema}' at '{path}'")
+        raise AssertionError(f"Unexpected type '{schema}'")
 
 
 async def generate_proto_file_from_api(
@@ -791,6 +593,10 @@ async def proto_text_from_api(api: API, filename: str) -> str:
 
     generated_errors_names = set()
 
+    # Every schema read so far, so that a model several methods share
+    # is read once.
+    schemas: Schemas = MappingProxyType({})
+
     proto = _ProtoText()
 
     await proto.write('syntax = "proto3";\n')
@@ -847,11 +653,14 @@ async def proto_text_from_api(api: API, filename: str) -> str:
                 }
             )
 
+        schema, schemas = schema_of(
+            type_obj.state, path=f"api.{type_name}.state", schemas=schemas
+        )
         await generate(
             proto,
-            type_obj.state,
-            f"api.{type_name}.state",
+            schema,
             name=type_name,
+            schemas=schemas,
             state=True,
             uis=uis if uis else None,
             auto_construct=_PER_USER_ID
@@ -865,12 +674,16 @@ async def proto_text_from_api(api: API, filename: str) -> str:
         # `request=None` have no input parameters.
         for method_name, ui_method in ui_methods.items():
             if ui_method.request is not None:
+                schema, schemas = schema_of(
+                    ui_method.request,
+                    path=f"api.{type_name}.methods.{method_name}.request",
+                    schemas=schemas,
+                )
                 await generate(
                     proto,
-                    ui_method.request,
-                    f"api.{type_name}.methods."
-                    f"{method_name}.request",
+                    schema,
                     name=ui_method.request.__name__,
+                    schemas=schemas,
                     add_type_string_annotation_to_proto=True,
                 )
                 await proto.write('\n')
@@ -881,11 +694,16 @@ async def proto_text_from_api(api: API, filename: str) -> str:
             if method_spec.request is not None:
                 request_type_name = f"{type_name}{to_pascal_case(method_name)}Request"
 
+                schema, schemas = schema_of(
+                    method_spec.request,
+                    path=f"api.{type_name}.methods.{method_name}.request",
+                    schemas=schemas,
+                )
                 await generate(
                     proto,
-                    method_spec.request,
-                    f"api.{type_name}.methods.{method_name}.request",
+                    schema,
                     name=request_type_name,
+                    schemas=schemas,
                     add_type_string_annotation_to_proto=True,
                 )
                 await proto.write('\n')
@@ -893,11 +711,16 @@ async def proto_text_from_api(api: API, filename: str) -> str:
             if method_spec.response is not None:
                 response_type_name = f"{type_name}{to_pascal_case(method_name)}Response"
 
+                schema, schemas = schema_of(
+                    method_spec.response,
+                    path=f"api.{type_name}.methods.{method_name}.response",
+                    schemas=schemas,
+                )
                 await generate(
                     proto,
-                    method_spec.response,
-                    f"api.{type_name}.methods.{method_name}.response",
+                    schema,
                     name=response_type_name,
+                    schemas=schemas,
                 )
                 await proto.write('\n')
 
@@ -908,11 +731,17 @@ async def proto_text_from_api(api: API, filename: str) -> str:
                     if error_type_name in generated_errors_names:
                         continue
                     generated_errors_names.add(error_type_name)
+                    schema, schemas = schema_of(
+                        error_model,
+                        path=f"api.{type_name}.methods.{method_name}."
+                        f"errors.{error_type_name}",
+                        schemas=schemas,
+                    )
                     await generate(
                         proto,
-                        error_model,
-                        f"api.{type_name}.methods.{method_name}.errors.{error_type_name}",
+                        schema,
                         name=error_type_name,
+                        schemas=schemas,
                     )
                     await proto.write('\n')
 
