@@ -13,6 +13,7 @@ import types
 import typing
 from rbt.v1alpha1 import schema_pb2
 from rbt.v1alpha1.schema_pb2 import (
+    FLOAT,
     INTEGER,
     STRING,
     Property,
@@ -216,7 +217,11 @@ def _schema_of(
                 )
             elif inner_type == float:
                 assert inner_origin is None
-                raise NotImplementedError("a `float` property")
+                schema.properties.append(
+                    _property(
+                        field_name, tag, Type(scalar=FLOAT), required, optional
+                    )
+                )
             elif inner_type == bool:
                 assert inner_origin is None
                 raise NotImplementedError("a `bool` property")
