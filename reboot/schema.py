@@ -13,6 +13,7 @@ import types
 import typing
 from rbt.v1alpha1 import schema_pb2
 from rbt.v1alpha1.schema_pb2 import (
+    ANY,
     BOOLEAN,
     FLOAT,
     INTEGER,
@@ -236,7 +237,11 @@ def _schema_of(
                 # just like a `dict[str, Any]` value; both lower to a
                 # `google.protobuf.Value`. `struct.proto` is imported
                 # by every generated file.
-                raise NotImplementedError("an `Any` property")
+                schema.properties.append(
+                    _property(
+                        field_name, tag, Type(scalar=ANY), required, optional
+                    )
+                )
             elif inner_origin in (list, List):
                 type_, schemas = _schema_of(
                     inner_type,
