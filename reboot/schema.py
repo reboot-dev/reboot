@@ -337,7 +337,7 @@ def _schema_of(
                 value = Type(scalar=BOOLEAN)
             elif value_type is Any:
                 # `dict[str, Any]` carries arbitrary JSON values.
-                raise NotImplementedError("an `Any` value")
+                value = Type(scalar=ANY)
             elif value_origin in (list, List):
                 value, schemas = _schema_of(
                     value_type, f"{path}.[value]", schemas=schemas
