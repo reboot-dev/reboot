@@ -494,3 +494,18 @@ def _schema_of(
         )
     else:
         fail(f"Unexpected type '{annotation}' at '{path}'")
+
+
+def schema_of(
+    model: type[Model],
+    *,
+    path: str,
+    schemas: Schemas = MappingProxyType({}),
+) -> tuple[Schema, Schemas]:
+    """Returns a model's schema, its properties in declaration order
+    each typed in the grammar, and `schemas` with it and every schema
+    it reaches filed by reference name. `path` names the model in a
+    failure, e.g. `api.Shop.state` or `api.Shop.methods.look.request`.
+    A model already in `schemas` is not read again."""
+    reference, schemas = _schema_of(model, path, schemas=schemas)
+    return schemas[reference.reference.name], schemas
