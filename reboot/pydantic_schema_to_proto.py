@@ -317,9 +317,9 @@ async def generate(
                     field_type_string,
                 )
             elif inner_type.WhichOneof('type') == 'literals':
-                if discriminator is not None:
-                    # Skip discriminator fields - they are handled specially
-                    # in the discriminated union generation.
+                if field_name == discriminator:
+                    # Skip the discriminator field - the `oneof` of the
+                    # discriminated union stands in for it.
                     continue
                 type_name = to_pascal_case(field_name)
                 literals_type = inner_type
