@@ -395,7 +395,7 @@ def _schema_of(
             elif item_type == float:
                 item = Type(scalar=FLOAT)
             elif item_type == bool:
-                raise NotImplementedError("a `bool` item")
+                item = Type(scalar=BOOLEAN)
             elif item_type is Any:
                 # A `list[Any]` carries arbitrary JSON values, just
                 # like a `dict[str, Any]` value.
