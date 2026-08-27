@@ -294,7 +294,9 @@ def _schema_of(
                     f"{path}.{field_name}",
                     schemas=schemas,
                 )
-                raise NotImplementedError("a model property")
+                schema.properties.append(
+                    _property(field_name, tag, type_, required, optional)
+                )
             elif not field_args and inner_origin is None:
                 # Better error message for unparameterized generics.
                 #
