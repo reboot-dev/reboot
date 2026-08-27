@@ -399,7 +399,7 @@ def _schema_of(
             elif item_type is Any:
                 # A `list[Any]` carries arbitrary JSON values, just
                 # like a `dict[str, Any]` value.
-                raise NotImplementedError("an `Any` item")
+                item = Type(scalar=ANY)
             elif item_origin in (list, List):
                 item, schemas = _schema_of(
                     item_type, f"{path}.[item]", schemas=schemas
