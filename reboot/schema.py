@@ -13,6 +13,7 @@ import types
 import typing
 from rbt.v1alpha1 import schema_pb2
 from rbt.v1alpha1.schema_pb2 import (
+    BOOLEAN,
     FLOAT,
     INTEGER,
     STRING,
@@ -224,7 +225,12 @@ def _schema_of(
                 )
             elif inner_type == bool:
                 assert inner_origin is None
-                raise NotImplementedError("a `bool` property")
+                schema.properties.append(
+                    _property(
+                        field_name, tag, Type(scalar=BOOLEAN), required,
+                        optional
+                    )
+                )
             elif inner_type is Any:
                 # A bare `Any` field carries an arbitrary JSON value,
                 # just like a `dict[str, Any]` value; both lower to a
