@@ -328,7 +328,7 @@ def _schema_of(
             value_origin = get_origin(value_type)
 
             if value_type == str:
-                raise NotImplementedError("a `str` value")
+                value = Type(scalar=STRING)
             elif value_type == int:
                 raise NotImplementedError("an `int` value")
             elif value_type == float:
