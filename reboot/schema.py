@@ -393,7 +393,7 @@ def _schema_of(
             elif item_type == int:
                 item = Type(scalar=INTEGER)
             elif item_type == float:
-                raise NotImplementedError("a `float` item")
+                item = Type(scalar=FLOAT)
             elif item_type == bool:
                 raise NotImplementedError("a `bool` item")
             elif item_type is Any:
