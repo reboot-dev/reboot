@@ -12,7 +12,7 @@ it.
 import types
 import typing
 from rbt.v1alpha1 import schema_pb2
-from rbt.v1alpha1.schema_pb2 import Property, Schema, Type, Variant
+from rbt.v1alpha1.schema_pb2 import Property, Reference, Schema, Type, Variant
 from reboot.api import Model, get_field_tag
 from reboot.fail import fail
 from types import MappingProxyType
@@ -81,7 +81,15 @@ def _schema_of(
     args = get_args(annotation)
 
     if origin is None and issubclass(annotation, Model):
-        raise NotImplementedError("the model's schema")
+        name = reference_name(annotation)
+        if name in schemas:
+            # A model reached again, through another property or through
+            # itself, is read once.
+            return Type(reference=Reference(name=name)), schemas
+        schema = Schema(name=annotation.__name__, module=annotation.__module__)
+        # Filed before its properties are read, so that a model referring
+        # to itself is reached once.
+        schemas = MappingProxyType({**schemas, name: schema})
 
         tags: Dict[int, str] = {}
 
