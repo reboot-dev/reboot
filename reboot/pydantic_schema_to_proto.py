@@ -85,7 +85,10 @@ def _pydantic_field_type_string_from_type(field_type: schema_pb2.Type) -> str:
         )
         return f'dict[str, {value_string}]'
     else:
-        raise AssertionError(f"Unsupported field type '{field_type}'.")
+        raise AssertionError(
+            f"Invariant broken: `schema_of` produced a type '{field_type}' "
+            "the grammar has no spelling for."
+        )
 
 
 async def _write_field_maybe_with_type_string_annotation(
@@ -370,8 +373,8 @@ async def generate(
                 )
             else:
                 raise AssertionError(
-                    f"'{field_name}' has type '{inner_type}' which is not "
-                    f"(yet) supported, please reach out to the maintainers!"
+                    "Unexpected schema with a property "
+                    f"'{field_name}' of type '{inner_type}'"
                 )
 
         await proto.write("}\n")
@@ -423,8 +426,8 @@ async def generate(
             await proto.write("  }\n")
         else:
             raise AssertionError(
-                f"Dictionary has value type '{value_type}' which is not "
-                f"(yet) supported"
+                "Unexpected schema with `dict` value type "
+                f"'{value_type}'"
             )
 
         await proto.write(f"    map<string, {type_name}> record = 1;\n")
@@ -476,8 +479,8 @@ async def generate(
             await proto.write("  }\n")
         else:
             raise AssertionError(
-                f"List has item type '{item_type}' which is not "
-                f"(yet) supported"
+                "Unexpected schema with `list` item type "
+                f"'{item_type}'"
             )
 
         await proto.write(f"    repeated {type_name} items = 1;\n")
@@ -521,7 +524,10 @@ async def generate(
         await proto.write("  }\n")
         await proto.write("}\n")
     else:
-        raise AssertionError(f"Unexpected type '{schema}'")
+        raise AssertionError(
+            f"Unexpected schema '{schema}', which is "
+            "neither a `Schema` nor a type"
+        )
 
 
 async def generate_proto_file_from_api(
