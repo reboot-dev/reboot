@@ -18,6 +18,7 @@ from rbt.v1alpha1.schema_pb2 import (
     FLOAT,
     INTEGER,
     STRING,
+    Literals,
     Property,
     Reference,
     Schema,
@@ -277,7 +278,15 @@ def _schema_of(
                             f"currently supported"
                         )
 
-                raise NotImplementedError("a `Literal` property")
+                schema.properties.append(
+                    _property(
+                        field_name,
+                        tag,
+                        Type(literals=Literals(values=literal_args)),
+                        required,
+                        optional,
+                    )
+                )
             elif isinstance(inner_type,
                             type) and issubclass(inner_type, Model):
                 type_, schemas = _schema_of(
