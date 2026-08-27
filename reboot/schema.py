@@ -80,10 +80,6 @@ def _schema_of(
     # We pass it down from the parent call, since the discriminator
     # is defined as a field option in the Pydantic model, not
     # in the `Union` type itself.
-    # The second scenario when discriminator is passed is when generating
-    # the individual option of the discriminated union - in that case
-    # we need to skip the discriminator field generation, since it
-    # is represented as a `oneof` in the parent message.
     discriminator: Optional[str] = None,
     # Every schema reached so far, by reference name.
     schemas: Schemas = MappingProxyType({}),
@@ -123,17 +119,6 @@ def _schema_of(
             # field is always defined by a type annotation, so it is
             # present for every field we iterate here.
             assert field_type is not None
-
-            # Discriminated union might be defined only as a field option
-            # in the Pydantic model, so we need to get it from there.
-            # If it was passed from the parent call, we just use that, and
-            # it means we are generating one of the options of the
-            # discriminated union.
-            discriminator = discriminator or getattr(
-                field_info,
-                'discriminator',
-                None,
-            )
 
             tag = get_field_tag(field_info)
             if tag is None:
@@ -266,10 +251,6 @@ def _schema_of(
                     _property(field_name, tag, type_, required, optional)
                 )
             elif inner_origin is Literal:
-                if discriminator is not None:
-                    # Skip discriminator fields - they are handled specially
-                    # in the discriminated union generation.
-                    continue
                 literal_args = get_args(inner_type)
 
                 # Verify all literal values are strings.
@@ -471,13 +452,9 @@ def _schema_of(
             literals.add(literal)
 
             # Read the option model by recursively calling `_schema_of`.
-            # The discriminator field will be skipped because we pass it through.
             reference, schemas = _schema_of(
                 option,
                 f"{path}.{{ {discriminator}: \"{literal}\", ... }}",
-                # Pass the discriminator to skip its generation in the
-                # option's schema.
-                discriminator=discriminator,
                 schemas=schemas,
             )
             variants.append(
