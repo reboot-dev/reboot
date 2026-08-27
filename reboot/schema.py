@@ -389,7 +389,7 @@ def _schema_of(
             item_origin = get_origin(item_type)
 
             if item_type == str:
-                raise NotImplementedError("a `str` item")
+                item = Type(scalar=STRING)
             elif item_type == int:
                 raise NotImplementedError("an `int` item")
             elif item_type == float:
