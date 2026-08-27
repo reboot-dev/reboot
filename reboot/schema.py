@@ -12,7 +12,14 @@ it.
 import types
 import typing
 from rbt.v1alpha1 import schema_pb2
-from rbt.v1alpha1.schema_pb2 import Property, Reference, Schema, Type, Variant
+from rbt.v1alpha1.schema_pb2 import (
+    STRING,
+    Property,
+    Reference,
+    Schema,
+    Type,
+    Variant,
+)
 from reboot.api import Model, get_field_tag
 from reboot.fail import fail
 from types import MappingProxyType
@@ -188,11 +195,16 @@ def _schema_of(
             # types the 'inner_origin' will be 'None'.
             inner_origin = get_origin(inner_type)
             # Whether the property was declared `Optional[...]`.
-            optional = inner_type is not field_type  # noqa: F841
+            optional = inner_type is not field_type
 
             if inner_type == str:
                 assert inner_origin is None
-                raise NotImplementedError("a `str` property")
+                schema.properties.append(
+                    _property(
+                        field_name, tag, Type(scalar=STRING), required,
+                        optional
+                    )
+                )
             elif inner_type == int:
                 assert inner_origin is None
                 raise NotImplementedError("an `int` property")
