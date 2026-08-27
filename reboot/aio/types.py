@@ -132,7 +132,7 @@ class StateRef:
             'state_id',
             MAX_ACTOR_ID_LENGTH,
             length_min=MIN_ACTOR_ID_LENGTH,
-            illegal_characters="\0\n\\",
+            illegal_characters=ILLEGAL_STATE_ID_CHARACTERS,
             error_type=InvalidStateRefError,
         )
         return StateRef(
@@ -151,7 +151,7 @@ class StateRef:
             'state_id',
             MAX_ACTOR_ID_LENGTH,
             length_min=0,
-            illegal_characters="\0\n\\",
+            illegal_characters=ILLEGAL_STATE_ID_CHARACTERS,
             error_type=InvalidStateRefError,
         )
         return StateRef(
@@ -290,6 +290,16 @@ def state_type_tag_for_name(state_type: StateTypeName) -> StateTypeTag:
         assert len(state_type_tag) == _STATE_TYPE_TAG_LENGTH
         _state_type_tags[state_type] = state_type_tag
     return StateTypeTag(state_type_tag)
+
+
+# The characters a state ID may not contain. A `\` is illegal because
+# `_state_id_encode` spends it escaping a `/`; `\0` and `\n` are
+# illegal because a state ID is carried in a gRPC header.
+#
+# NOTE: there is a TypeScript copy of this list, passed to
+# `validateASCII` by `stateIdToRef` in `rbt/v1alpha1/index.ts`; keep the
+# two lists in sync.
+ILLEGAL_STATE_ID_CHARACTERS = "\0\n\\"
 
 
 def _state_id_encode(state_id: StateId) -> str:

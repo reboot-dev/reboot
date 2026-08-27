@@ -17,7 +17,7 @@ from reboot.aio.external import ExternalContext
 from reboot.aio.headers import SERVER_ID_HEADER
 from reboot.aio.interceptors import LegacyGrpcContext
 from reboot.aio.tests import Reboot, temporary_environ
-from reboot.aio.types import StateRef
+from reboot.aio.types import StateRef, StateTypeName
 from reboot.settings import ENVVAR_LOCAL_ENVOY_DEBUG
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA
 from tests.reboot.general_pb2_grpc import (
@@ -30,6 +30,7 @@ from tests.reboot.general_servicer import (
     GeneralResponse,
     GeneralServicer,
 )
+from urllib.parse import quote, urlparse
 
 
 class IdentifierServicer(GeneralServicer):
@@ -106,6 +107,50 @@ class LegacyIdentifierServicer(LegacyGeneralServicer):
             if h[0] == SERVER_ID_HEADER
         )
         return GeneralResponse(content=content)
+
+
+def _reader_path(state_id: str) -> str:
+    """The path a JS client puts on the wire to call
+    `tests.reboot.General`'s `Reader` on `state_id`."""
+    state_type_tag, _, encoded_state_id = StateRef.from_id(
+        StateTypeName('tests.reboot.General'),
+        state_id,
+    ).to_str().partition(':')
+    # Mirrors `stateIdToRef` in `rbt/v1alpha1/index.ts`.
+    return (
+        f"/__/reboot/rpc/{state_type_tag}:{quote(encoded_state_id, safe='')}"
+        "/tests.reboot.GeneralMethods/Reader"
+    )
+
+
+async def _post_exact_path(url: str, path: str) -> tuple[int, bytes]:
+    """POSTs to `path` byte for byte and returns the response's status
+    and body.
+
+    An HTTP client library requotes the path it is given; this does not,
+    so `path` reaches the server spelled exactly as a browser would
+    spell it.
+    """
+    endpoint = urlparse(url)
+    reader, writer = await asyncio.open_connection(
+        endpoint.hostname, endpoint.port
+    )
+    try:
+        writer.write(
+            (
+                f"POST {path} HTTP/1.1\r\n"
+                f"Host: {endpoint.netloc}\r\n"
+                "Content-Length: 0\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+            ).encode()
+        )
+        await writer.drain()
+        head, _, body = (await reader.read()).partition(b"\r\n\r\n")
+        return int(head.split(b" ", 2)[1]), body
+    finally:
+        writer.close()
+        await writer.wait_closed()
 
 
 class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
@@ -385,6 +430,35 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
                             }
                     }
                     self.assertEqual(await response.json(), expect_response)
+
+        # A state ID may hold any printable ASCII character, so the JS
+        # clients percent-encode the ID before interpolating it into
+        # this path (see `stateIdToRef` in `rbt/v1alpha1/index.ts`) and
+        # the filter decodes every escape back out. A `\` is left out
+        # because it is how a `/` within a single ID is spelled, which
+        # is why `StateRef.from_id` refuses it.
+        special_state_ids = [
+            f"a{chr(code)}b" for code in range(0x20, 0x7f) if chr(code) != '\\'
+        ]
+        for state_id in special_state_ids:
+            await General.ConstructorWriter(context, state_id)
+
+            status, body = await _post_exact_path(
+                url,
+                _reader_path(state_id),
+            )
+            self.assertEqual(status, 200, f"for {state_id!r}: {body!r}")
+
+        # Those 200s mean each decoded ID named the state the
+        # constructor above made, rather than merely some state,
+        # because a reader on a state that was never constructed
+        # answers 409 instead.
+        for state_id in special_state_ids:
+            status, body = await _post_exact_path(
+                url,
+                _reader_path(f"never-constructed{state_id}"),
+            )
+            self.assertEqual(status, 409, f"for {state_id!r}: {body!r}")
 
     async def test_remove_json_trailers_filter(self):
         """
