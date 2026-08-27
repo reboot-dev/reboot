@@ -9,8 +9,11 @@ else: a type outside the set fails here, with the message the
 developer sees. The proto writer prints this; the dashboard describes
 it.
 """
+import inspect
+import json
 import types
 import typing
+from pydantic_core import PydanticUndefined, to_jsonable_python
 from rbt.v1alpha1 import schema_pb2
 from rbt.v1alpha1.schema_pb2 import (
     ANY,
@@ -61,12 +64,20 @@ def _property(
     type_: Type,
     required: bool,
     optional: bool,
+    *,
+    description: Optional[str],
+    default: Optional[str],
 ) -> Property:
     """One property, its type wrapped as `Optional` when the property
     was declared `Optional[...]`."""
     if optional:
         type_ = Type(optional=schema_pb2.Optional(inner=type_))
-    return Property(name=name, tag=tag, type=type_, required=required)
+    property_ = Property(name=name, tag=tag, type=type_, required=required)
+    if description is not None:
+        property_.description = description
+    if default is not None:
+        property_.default = default
+    return property_
 
 
 def _schema_of(
@@ -98,6 +109,8 @@ def _schema_of(
             # itself, is read once.
             return Type(reference=Reference(name=name)), schemas
         schema = Schema(name=annotation.__name__, module=annotation.__module__)
+        if annotation.__doc__ is not None:
+            schema.description = inspect.cleandoc(annotation.__doc__)
         # Filed before its properties are read, so that a model referring
         # to itself is reached once.
         schemas = MappingProxyType({**schemas, name: schema})
@@ -141,6 +154,20 @@ def _schema_of(
             # that the field has `default` or `default_factory` specified.
             required = field_info.is_required()
 
+            description = field_info.description
+
+            # A default a factory makes is not known without calling
+            # it, so only a literal one is recorded, as pydantic does
+            # for JSON Schema.
+            default = (
+                None
+                if field_info.default is PydanticUndefined else json.dumps(
+                    to_jsonable_python(
+                        field_info.default, serialize_unknown=True
+                    )
+                )
+            )
+
             inner_type = field_type
 
             field_origin = get_origin(field_type)
@@ -176,8 +203,13 @@ def _schema_of(
 
                 schema.properties.append(
                     _property(
-                        field_name, tag, type_, required,
-                        type(None) in field_args
+                        field_name,
+                        tag,
+                        type_,
+                        required,
+                        type(None) in field_args,
+                        description=description,
+                        default=default,
                     )
                 )
                 continue
@@ -195,7 +227,7 @@ def _schema_of(
                 schema.properties.append(
                     _property(
                         field_name, tag, Type(scalar=STRING), required,
-                        optional
+                        optional, description=description, default=default
                     )
                 )
             elif inner_type == int:
@@ -203,14 +235,15 @@ def _schema_of(
                 schema.properties.append(
                     _property(
                         field_name, tag, Type(scalar=INTEGER), required,
-                        optional
+                        optional, description=description, default=default
                     )
                 )
             elif inner_type == float:
                 assert inner_origin is None
                 schema.properties.append(
                     _property(
-                        field_name, tag, Type(scalar=FLOAT), required, optional
+                        field_name, tag, Type(scalar=FLOAT), required,
+                        optional, description=description, default=default
                     )
                 )
             elif inner_type == bool:
@@ -218,7 +251,7 @@ def _schema_of(
                 schema.properties.append(
                     _property(
                         field_name, tag, Type(scalar=BOOLEAN), required,
-                        optional
+                        optional, description=description, default=default
                     )
                 )
             elif inner_type is Any:
@@ -228,7 +261,8 @@ def _schema_of(
                 # by every generated file.
                 schema.properties.append(
                     _property(
-                        field_name, tag, Type(scalar=ANY), required, optional
+                        field_name, tag, Type(scalar=ANY), required, optional,
+                        description=description, default=default
                     )
                 )
             elif inner_origin in (list, List):
@@ -239,7 +273,10 @@ def _schema_of(
                 )
 
                 schema.properties.append(
-                    _property(field_name, tag, type_, required, optional)
+                    _property(
+                        field_name, tag, type_, required, optional,
+                        description=description, default=default
+                    )
                 )
             elif inner_origin in (dict, Dict):
                 type_, schemas = _schema_of(
@@ -248,7 +285,10 @@ def _schema_of(
                     schemas=schemas,
                 )
                 schema.properties.append(
-                    _property(field_name, tag, type_, required, optional)
+                    _property(
+                        field_name, tag, type_, required, optional,
+                        description=description, default=default
+                    )
                 )
             elif inner_origin is Literal:
                 literal_args = get_args(inner_type)
@@ -264,11 +304,9 @@ def _schema_of(
 
                 schema.properties.append(
                     _property(
-                        field_name,
-                        tag,
-                        Type(literals=Literals(values=literal_args)),
-                        required,
-                        optional,
+                        field_name, tag,
+                        Type(literals=Literals(values=literal_args)), required,
+                        optional, description=description, default=default
                     )
                 )
             elif isinstance(inner_type,
@@ -279,7 +317,10 @@ def _schema_of(
                     schemas=schemas,
                 )
                 schema.properties.append(
-                    _property(field_name, tag, type_, required, optional)
+                    _property(
+                        field_name, tag, type_, required, optional,
+                        description=description, default=default
+                    )
                 )
             elif not field_args and inner_origin is None:
                 # Better error message for unparameterized generics.

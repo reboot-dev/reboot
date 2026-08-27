@@ -85,6 +85,13 @@ message Property {
   Type type = 3;
   // Whether a value must be given: the property has no default.
   bool required = 4;
+  // What the property means, as the developer wrote it in
+  // `Field(description=...)`.
+  optional string description = 5;
+  // The value the property takes when none is given, as JSON text,
+  // since a default is any value of the property's type. Absent when
+  // there is none, and when a factory makes it.
+  optional string default = 6;
 }
 
 // Represents one model: its properties, in declaration order.
@@ -94,4 +101,6 @@ message Schema {
   // The module the model is declared in.
   string module = 2;
   repeated Property properties = 3;
+  // What the model means: its docstring.
+  optional string description = 4;
 }
