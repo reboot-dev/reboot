@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package rbt.v1alpha1;
+
+// The schema of a model an API declares, as a grammar: the closed set
+// of forms Reboot knows how to generate for and describe. What
+// `rbt generate` prints proto from, and what the dashboard describes
+// a state type with, so that the two agree by construction: a type
+// outside this set is one neither can express.
+
+// Represents one type.
+message Type {
+  oneof type {
+    Scalar scalar = 1;
+    Array array = 2;
+    Map map = 3;
+    Literals literals = 4;
+    Reference reference = 5;
+    Optional optional = 6;
+    DiscriminatedUnion discriminated_union = 7;
+  }
+}
+
+// Represents a value with no structure of its own.
+enum Scalar {
+  SCALAR_UNSPECIFIED = 0;
+  STRING = 1;
+  INTEGER = 2;
+  FLOAT = 3;
+  BOOLEAN = 4;
+  // Any JSON value at all, which is what `Any` declares.
+  ANY = 5;
+}
+
+// Represents a `list[item]`.
+message Array {
+  Type item = 1;
+}
+
+// Represents a `dict[str, value]`: the keys are always strings.
+message Map {
+  Type value = 1;
+}
+
+// Represents a `Literal[...]` of strings, one of which the value is.
+message Literals {
+  repeated string values = 1;
+}
+
+// Represents another model, by the name its schema is filed under:
+// the model's module and class name, e.g. "shop.v1.shop.Item". What
+// `schema_of` returns beside a schema is every schema it refers to,
+// by that name, so that a reference is a lookup and a model used in
+// several places, or in itself, is described once.
+message Reference {
+  string name = 1;
+}
+
+// Represents an `Optional[inner]`: the inner type, or `None`.
+message Optional {
+  Type inner = 1;
+}
+
+// Represents one model of a discriminated union, told from the
+// others by the literal its discriminator property holds.
+message Variant {
+  string literal = 1;
+  Reference reference = 2;
+}
+
+// Represents a `Union` of models told apart by one property, the
+// discriminator, which each model declares as a `Literal` of one
+// string.
+message DiscriminatedUnion {
+  string discriminator = 1;
+  repeated Variant variants = 2;
+}
+
+// Represents one property of a model.
+message Property {
+  string name = 1;
+  // The tag the property is declared with, which identifies it
+  // across renames.
+  uint32 tag = 2;
+  Type type = 3;
+  // Whether a value must be given: the property has no default.
+  bool required = 4;
+}
+
+// Represents one model: its properties, in declaration order.
+message Schema {
+  // The model's class name.
+  string name = 1;
+  // The module the model is declared in.
+  string module = 2;
+  repeated Property properties = 3;
+}

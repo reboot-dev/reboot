@@ -348,12 +348,25 @@ py_binary(
 )
 
 py_library(
+    name = "schema_py",
+    srcs = ["schema.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":api_py",
+        ":fail_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:schema_py_proto",
+        requirement("pydantic"),
+    ],
+)
+
+py_library(
     name = "pydantic_schema_to_proto_py",
     srcs = ["pydantic_schema_to_proto.py"],
     visibility = ["//visibility:public"],
     deps = [
         ":api_py",
         ":fail_py",
+        ":schema_py",
         requirement("pydantic"),
         requirement("aiofiles"),
     ],
