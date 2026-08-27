@@ -258,7 +258,9 @@ def _schema_of(
                     f"{path}.{field_name}",
                     schemas=schemas,
                 )
-                raise NotImplementedError("a `dict` property")
+                schema.properties.append(
+                    _property(field_name, tag, type_, required, optional)
+                )
             elif inner_origin is Literal:
                 if discriminator is not None:
                     # Skip discriminator fields - they are handled specially
