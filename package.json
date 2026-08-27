@@ -8,7 +8,6 @@
     "@reboot-dev/reboot-std": "1.4.1",
     "@reboot-dev/reboot-web": "1.4.1",
     "@reboot-dev/reboot": "1.4.1",
-    "@stoplight/json-schema-tree": "4.0.0",
     "@modelcontextprotocol/ext-apps": "1.5.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@bufbuild/protobuf": "1.10.1",
