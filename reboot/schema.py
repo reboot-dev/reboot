@@ -139,7 +139,7 @@ def _schema_of(
             # should be explicitly set to `None`, otherwise it will fail
             # during validation. So the "required" in Pydantic means
             # that the field has `default` or `default_factory` specified.
-            required = field_info.is_required()  # noqa: F841
+            required = field_info.is_required()
 
             inner_type = field_type
 
@@ -174,7 +174,12 @@ def _schema_of(
                     schemas=schemas,
                 )
 
-                raise NotImplementedError("a discriminated union property")
+                schema.properties.append(
+                    _property(
+                        field_name, tag, type_, required,
+                        type(None) in field_args
+                    )
+                )
                 continue
 
             # The 'inner_type' represents the actual type, i.e. 'list[list[...]]]',
