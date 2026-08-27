@@ -3,20 +3,19 @@
 // `state_types` by running the real reader over `api/`, so the tests
 // below fail when either side drifts from the other.
 import { describe, expect, it } from "vitest";
-import type { StateType } from "../../../reboot/dashboard/frontend/src/link_fields_to_data_types";
+import { StateType } from "../../../rbt/dashboard/v1/dashboard_pb";
 import {
   fieldsOfDataType,
   fieldsOfState,
-  formatTypeOfSchema,
+  formatType,
   linkDataTypes,
-  parseSchemaText,
 } from "../../../reboot/dashboard/frontend/src/link_fields_to_data_types";
 import stateTypesJson from "./state_types";
 
-// The reader prints proto JSON, whose camelCase field names are the
-// generated classes' property names, so its output already matches
-// `StateType[]`.
-const stateTypes = stateTypesJson as unknown as StateType[];
+// The reader prints proto JSON, which the generated class reads.
+const stateTypes = (stateTypesJson as unknown[]).map((json) =>
+  StateType.fromJson(json as Parameters<typeof StateType.fromJson>[0])
+);
 
 const linkedDataTypesById = () =>
   new Map(
@@ -30,9 +29,9 @@ describe("the type spelling the changelog shares with the fields table", () => {
   it("spells every field of every model the way the table does", () => {
     // Every model the reader described, with the rows the table
     // makes of it: the spelling of each row's type is what
-    // `formatTypeOfSchema` must give for that property's schema,
-    // an optional field's `| null` aside, which the table shows as a
-    // column rather than in the type.
+    // `formatType` must give for that property's type, an optional
+    // field's `| null` aside, which the table shows as a column
+    // rather than in the type.
     const models = stateTypes.flatMap((stateType) => [
       { schema: stateType.schema, rows: fieldsOfState(stateType) },
       ...stateType.dataTypes.map((dataType) => ({
@@ -43,13 +42,12 @@ describe("the type spelling the changelog shares with the fields table", () => {
     expect(models.length).toBeGreaterThan(0);
 
     for (const { schema, rows } of models) {
-      const properties = parseSchemaText(schema).properties as Record<
-        string,
-        unknown
-      >;
       expect(rows.length).toBeGreaterThan(0);
       for (const row of rows) {
-        expect(formatTypeOfSchema(properties[row.name])).toBe(
+        const property = schema!.properties.find(
+          (candidate) => candidate.name === row.name
+        );
+        expect(formatType(property!.type)).toBe(
           row.optional ? `${row.type} | null` : row.type
         );
       }
@@ -64,7 +62,7 @@ describe("the description the reader writes", () => {
     const remaining = shop.methods.find(
       (method) => method.name === "remaining"
     );
-    expect(remaining?.response).toBe("StockResponse");
+    expect(remaining?.response).toBe("shop.v1.shop.StockResponse");
 
     const fields = fieldsOfDataType(shop, remaining!.response!);
     const items = fields.find((field) => field.name === "items");
@@ -79,7 +77,7 @@ describe("the description the reader writes", () => {
     expect(shelves?.link).toBe("shop.v1.Item");
   });
 
-  it("does not read a free-form map's title as a type", () => {
+  it("spells a free-form map by its value type", () => {
     const request = linkedDataTypesById().get("shop.v1.StockRequest")!;
     const labels = request.fields.find((field) => field.name === "labels")!;
 
@@ -95,7 +93,7 @@ describe("the description the reader writes", () => {
     );
     const [error] = remaining!.errors;
 
-    expect(error).toBe("OutOfStockError");
+    expect(error).toBe("shop.v1.shop.OutOfStockError");
     expect(fieldsOfDataType(shop, error).map((field) => field.name)).toEqual([
       "item",
     ]);

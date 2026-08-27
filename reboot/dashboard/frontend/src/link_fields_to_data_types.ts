@@ -3,19 +3,15 @@
 // contain it.
 //
 // The generated `rbt.dashboard.v1` messages describe the API; each
-// model's own shape is Pydantic's JSON Schema, carried as text and
-// walked with `SchemaTree`.
-import {
-  isRegularNode,
-  SchemaNodeKind,
-  SchemaTree,
-} from "@stoplight/json-schema-tree";
-import type { SchemaNode } from "@stoplight/json-schema-tree";
+// model's own shape is its `rbt.v1alpha1.Schema`, the grammar
+// `rbt generate` prints proto from.
 import type {
   Method as MethodMessage,
   Method_Kind,
   StateType as StateTypeMessage,
 } from "@dashboard/dashboard_pb";
+import type { Schema, Type } from "../../../../rbt/v1alpha1/schema_pb";
+import { Scalar } from "../../../../rbt/v1alpha1/schema_pb";
 
 // Type aliases rather than re-exports: the generated `Method` and
 // `StateType` are classes, whose names bind a value even under
@@ -75,238 +71,116 @@ export interface Referrer {
   label: string;
 }
 
-type Schema = Record<string, unknown>;
-
-const isSchema = (value: unknown): value is Schema =>
-  value !== null && typeof value === "object" && !Array.isArray(value);
-
-const parseSchema = (text: string): Schema => {
-  const parsed: unknown = text === "" ? {} : JSON.parse(text);
-  return isSchema(parsed) ? parsed : {};
+// A scalar as the page spells it. Keyed by every `Scalar`, so a
+// scalar added to the grammar does not compile until it is spelled
+// here.
+const SCALAR_NAMES: Record<Scalar, string> = {
+  [Scalar.SCALAR_UNSPECIFIED]: "any",
+  [Scalar.STRING]: "string",
+  [Scalar.INTEGER]: "integer",
+  [Scalar.FLOAT]: "number",
+  [Scalar.BOOLEAN]: "boolean",
+  [Scalar.ANY]: "any",
 };
 
-export const parseSchemaText = parseSchema;
-
-// The prefix of a reference to a sibling model; the rest is the
-// sibling's name.
-const DEFS = "#/$defs/";
-
-const nameOfRef = (ref: string): string => ref.slice(DEFS.length);
-
-// Every model's schema by the name a `$ref` uses: the data types by
-// `name`, and the state model by its `title`, which Pydantic sets to
-// the class name.
-const defsOfStateType = (stateType: StateType): Record<string, Schema> => {
-  const defs = Object.fromEntries(
-    stateType.dataTypes.map((dataType) => [
-      dataType.name,
-      parseSchema(dataType.schema),
-    ])
-  );
-  const state = parseSchema(stateType.schema);
-  if (typeof state.title === "string") {
-    defs[state.title] = state;
+// A type written the way its author would write it: a reference by
+// the model's class name, a list as `Item[]`, a dict as
+// `Record<string, T>`, literals as `"a" | "b"`, an optional as
+// `T | null`. The changelog and the fields table share this, so a
+// change reads the way the table does.
+export const formatType = (type: Type | undefined): string => {
+  const form = type?.type;
+  switch (form?.case) {
+    case "scalar":
+      return SCALAR_NAMES[form.value];
+    case "array":
+      return `${formatType(form.value.item)}[]`;
+    case "map":
+      return `Record<string, ${formatType(form.value.value)}>`;
+    case "literals":
+      return form.value.values
+        .map((value) => JSON.stringify(value))
+        .join(" | ");
+    case "reference":
+      return shortNameOfTypeName(form.value.name);
+    case "optional":
+      return `${formatType(form.value.inner)} | null`;
+    case "discriminatedUnion":
+      return form.value.variants
+        .map((variant) => shortNameOfTypeName(variant.reference?.name ?? ""))
+        .join(" | ");
+    case undefined:
+      return "any";
   }
-  return defs;
 };
 
-// `SchemaTree` resolves a `$ref` against the `$defs` of the schema it
-// is given, so each model is walked with the whole pool beside it.
-const treeOfSchema = (
-  stateType: StateType,
-  schema: Schema
-): SchemaNode | undefined => {
-  const tree = new SchemaTree(
-    { ...schema, $defs: defsOfStateType(stateType) },
-    { mergeAllOf: true }
-  );
-  tree.populate();
-  return tree.root.children[0];
+// The one model a type refers to, under any list or dict layers:
+// what a field's row links to. A union refers to several, and links
+// to none.
+const referenceIn = (type: Type | undefined): string | undefined => {
+  const form = type?.type;
+  switch (form?.case) {
+    case "reference":
+      return form.value.name;
+    case "array":
+      return referenceIn(form.value.item);
+    case "map":
+      return referenceIn(form.value.value);
+    case "optional":
+      return referenceIn(form.value.inner);
+    default:
+      return undefined;
+  }
 };
 
-const nameOfNode = (schemaNode: SchemaNode): string => {
-  const path = schemaNode.subpath;
-  return path.length > 0 ? path[path.length - 1] : "";
-};
+// The id of a data type is the state type's package plus the model's
+// class name, the same format `rbt generate` uses for these types'
+// message names.
+const idOfDataType = (stateType: StateType, className: string): string =>
+  `${namespaceOfTypeName(stateType.name)}.${className}`;
 
-const typesOfNode = (schemaNode: SchemaNode): SchemaNodeKind[] =>
-  isRegularNode(schemaNode) ? schemaNode.types ?? [] : [];
-
-const childrenOfNode = (schemaNode: SchemaNode): SchemaNode[] =>
-  "children" in schemaNode ? schemaNode.children ?? [] : [];
-
-// The model a field refers to, read from the schema as Pydantic wrote
-// it: resolving an `Optional[X]` merges the referred schema into the
-// branch, and the `$ref` is gone from the resolved node.
-const refInFragment = (fragment: unknown): string | undefined => {
-  if (!isSchema(fragment)) {
-    return undefined;
-  }
-  if (typeof fragment.$ref === "string") {
-    return nameOfRef(fragment.$ref);
-  }
-  const branches =
-    [fragment.anyOf, fragment.allOf, fragment.oneOf].find(Array.isArray) ?? [];
-  for (const branch of branches) {
-    const found = refInFragment(branch);
-    if (found !== undefined) {
-      return found;
-    }
-  }
-  return (
-    refInFragment(fragment.items) ??
-    refInFragment(fragment.additionalProperties)
-  );
-};
-
-// Pydantic writes `Optional[X]` as `anyOf: [X, {type: null}]`.
-const unwrapOptional = (
-  schemaNode: SchemaNode
-): { node: SchemaNode; optional: boolean } => {
-  const children = childrenOfNode(schemaNode);
-  const branches = children.filter(
-    (child) => !typesOfNode(child).includes(SchemaNodeKind.Null)
-  );
-  const nullable = children.length !== branches.length;
-
-  if (
-    nullable &&
-    branches.length === 1 &&
-    typesOfNode(schemaNode).length === 0
-  ) {
-    return { node: branches[0], optional: true };
-  }
-  return { node: schemaNode, optional: false };
-};
-
-// A node as the row prints it, written the way its author would
-// write the type. `refName` names the model under every list layer:
-// a reference to `Item` inside `list[list[...]]` prints `Item[][]`.
-// The spelling of a type from its schema alone, with no tree and no
-// sibling models to resolve a `$ref` through, which the changelog
-// has: the same spellings `formatType` below gives the fields
-// table, so that a change reads the way the table does. A `$ref` is
-// spelled by the referenced model's name, as the table spells it.
-export const formatTypeOfSchema = (schema: unknown): string => {
-  if (!isSchema(schema)) {
-    return "any";
-  }
-  if (typeof schema.$ref === "string") {
-    return nameOfRef(schema.$ref);
-  }
-  if (Array.isArray(schema.anyOf)) {
-    return schema.anyOf.map(formatTypeOfSchema).join(" | ");
-  }
-  // Pydantic wraps a reference that carries a description in a
-  // one-branch `allOf`, which the tree merges away.
-  if (Array.isArray(schema.allOf) && schema.allOf.length === 1) {
-    return formatTypeOfSchema(schema.allOf[0]);
-  }
-  if (Array.isArray(schema.enum)) {
-    return schema.enum.map((value) => JSON.stringify(value)).join(" | ");
-  }
-  if (schema.type === "array") {
-    return schema.items === undefined
-      ? "array"
-      : `${formatTypeOfSchema(schema.items)}[]`;
-  }
-  if (schema.type === "object") {
-    const additional = schema.additionalProperties;
-    if (additional === undefined) {
-      return "object";
-    }
-    return `Record<string, ${
-      additional === true ? "any" : formatTypeOfSchema(additional)
-    }>`;
-  }
-  if (typeof schema.type === "string") {
-    return schema.type;
-  }
-  if (Array.isArray(schema.type)) {
-    return schema.type.join(" | ");
-  }
-  return "any";
-};
-
-const formatType = (schemaNode: SchemaNode, refName?: string): string => {
-  const types = typesOfNode(schemaNode);
-
-  if (types.includes(SchemaNodeKind.Array)) {
-    const item: SchemaNode | undefined = childrenOfNode(schemaNode)[0];
-    return item === undefined
-      ? "array"
-      : `${formatType(unwrapOptional(item).node, refName)}[]`;
-  }
-
-  if (refName !== undefined) {
-    return refName;
-  }
-
-  if (isRegularNode(schemaNode) && schemaNode.enum !== null) {
-    return schemaNode.enum.map((value) => JSON.stringify(value)).join(" | ");
-  }
-
-  if (isRegularNode(schemaNode) && types.includes(SchemaNodeKind.Object)) {
-    // A free-form `dict`: the developer's models arrive as `$ref`s
-    // and return as `refName` above. Its `title` is Pydantic's
-    // title-casing of the field's name, not the name of a type.
-    const additional = schemaNode.fragment.additionalProperties;
-
-    if (additional === undefined) {
-      return "object";
-    }
-
-    const valueNode: SchemaNode | undefined = childrenOfNode(schemaNode)[0];
-
-    return `Record<string, ${
-      additional === true || valueNode === undefined
-        ? "any"
-        : formatType(unwrapOptional(valueNode).node)
-    }>`;
-  }
-  return types.length > 0 ? types.join(" | ") : "any";
-};
-
-// Maps each data type's name to its id, the only lookup the rows
-// need. The id is the state type's package plus the type's name, the
-// same format `rbt generate` uses for these types' message names.
+// Maps each data type's reference name, the way a `Method` or a
+// `Reference` names it, to its id, the only lookup the rows need.
 const dataTypeIdsByName = (stateType: StateType): Map<string, string> =>
   new Map(
     stateType.dataTypes.map((dataType) => [
       dataType.name,
-      `${namespaceOfTypeName(stateType.name)}.${dataType.name}`,
+      idOfDataType(stateType, dataType.schema?.name ?? ""),
     ])
   );
 
-// The rows of one model, in the order Pydantic wrote its
-// `properties`, which is the order the developer declared the fields.
-const rowsOfSchema = (stateType: StateType, schema: Schema): Field[] => {
-  const root = treeOfSchema(stateType, schema);
-  if (root === undefined) {
-    return [];
-  }
+// The id of the data type a `Method` names, and none for the state
+// model, which has no page of its own.
+export const dataTypeIdOfName = (
+  stateType: StateType,
+  name: string
+): string | undefined => dataTypeIdsByName(stateType).get(name);
+
+// The rows of one model, in the order the developer declared the
+// properties.
+const rowsOfSchema = (
+  stateType: StateType,
+  schema: Schema | undefined
+): Field[] => {
   const ids = dataTypeIdsByName(stateType);
-  return childrenOfNode(root).map((child) => {
-    const { node: valueNode, optional } = unwrapOptional(child);
-    const refName = refInFragment(
-      "originalFragment" in child ? child.originalFragment : undefined
-    );
-    const description = isRegularNode(valueNode)
-      ? valueNode.annotations.description
-      : undefined;
+  return (schema?.properties ?? []).map((property) => {
+    const form = property.type?.type;
+    const optional = form?.case === "optional";
+    const type = optional ? form.value.inner : property.type;
+    const reference = referenceIn(type);
     return {
-      name: nameOfNode(child),
-      type: formatType(valueNode, refName),
+      name: property.name,
+      type: formatType(type),
       optional,
-      description: typeof description === "string" ? description : undefined,
+      description: property.description,
       // A reference to the state model has no page, so no link.
-      link: refName === undefined ? undefined : ids.get(refName),
+      link: reference === undefined ? undefined : ids.get(reference),
     };
   });
 };
 
 export const fieldsOfState = (stateType: StateType): Field[] =>
-  rowsOfSchema(stateType, parseSchema(stateType.schema));
+  rowsOfSchema(stateType, stateType.schema);
 
 // The fields of the data type named `name`, one level deep.
 export const fieldsOfDataType = (
@@ -316,9 +190,7 @@ export const fieldsOfDataType = (
   const dataType = stateType.dataTypes.find(
     (candidate) => candidate.name === name
   );
-  return dataType === undefined
-    ? []
-    : rowsOfSchema(stateType, parseSchema(dataType.schema));
+  return dataType === undefined ? [] : rowsOfSchema(stateType, dataType.schema);
 };
 
 // Every type the developer wrote that is not a state type, by id.
@@ -372,17 +244,15 @@ export const linkDataTypes = (stateTypes: StateType[]): LinkedDataType[] => {
     // Each container's rows register it as a referrer of the data
     // types it contains: the state under the state type's short name,
     // and each data type under its own.
-    const containers: [string, string, Schema][] = [
-      [
-        shortNameOfTypeName(stateType.name),
-        stateType.name,
-        parseSchema(stateType.schema),
-      ],
-      ...stateType.dataTypes.map((dataType): [string, string, Schema] => [
-        dataType.name,
-        ids.get(dataType.name)!,
-        parseSchema(dataType.schema),
-      ]),
+    const containers: [string, string, Schema | undefined][] = [
+      [shortNameOfTypeName(stateType.name), stateType.name, stateType.schema],
+      ...stateType.dataTypes.map(
+        (dataType): [string, string, Schema | undefined] => [
+          dataType.schema?.name ?? "",
+          ids.get(dataType.name)!,
+          dataType.schema,
+        ]
+      ),
     ];
 
     for (const [name, id, schema] of containers) {
@@ -398,17 +268,13 @@ export const linkDataTypes = (stateTypes: StateType[]): LinkedDataType[] => {
       if (linkedDataTypesById.has(id)) {
         continue;
       }
-      const schema = parseSchema(dataType.schema);
       linkedDataTypesById.set(id, {
         id,
-        name: dataType.name,
+        name: dataType.schema?.name ?? "",
         namespace: namespaceOfTypeName(stateType.name),
         filename: stateType.filename,
-        description:
-          typeof schema.description === "string"
-            ? schema.description
-            : undefined,
-        fields: rowsOfSchema(stateType, schema),
+        description: dataType.schema?.description,
+        fields: rowsOfSchema(stateType, dataType.schema),
         referrers: [],
       });
     }

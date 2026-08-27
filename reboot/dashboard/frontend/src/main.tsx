@@ -34,6 +34,7 @@ import type {
   StateType,
 } from "./link_fields_to_data_types";
 import {
+  dataTypeIdOfName,
   linkDataTypes,
   fieldsOfDataType,
   labelOfKind,
@@ -372,7 +373,6 @@ const Signature: FC<{ stateType: StateType; method: Method }> = ({
   stateType,
   method,
 }) => {
-  const namespace = namespaceOfTypeName(stateType.name);
   const takes =
     method.request === undefined
       ? []
@@ -401,7 +401,10 @@ const Signature: FC<{ stateType: StateType; method: Method }> = ({
           {method.errors.map((name, index) => (
             <Fragment key={name}>
               {index > 0 && ", "}
-              <TypeName type={name} link={`${namespace}.${name}`} />
+              <TypeName
+                type={shortNameOfTypeName(name)}
+                link={dataTypeIdOfName(stateType, name)}
+              />
             </Fragment>
           ))}
         </div>

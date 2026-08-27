@@ -5,11 +5,7 @@
 // the changes happened and a reverse range is newest first.
 import type { MethodChange, PropertyChange } from "@dashboard/dashboard_pb";
 import { Change } from "@dashboard/dashboard_pb";
-import {
-  formatTypeOfSchema,
-  labelOfKind,
-  parseSchemaText,
-} from "./link_fields_to_data_types";
+import { formatType, labelOfKind } from "./link_fields_to_data_types";
 
 // One entry of the changelog: what changed, and when, which is the
 // key it is under.
@@ -80,37 +76,6 @@ export type Row = {
   parts: Part[];
 };
 
-// The keys of a property's type schema that its spelling shows;
-// the rest are constraints, named when the spelling alone would not
-// say what changed.
-const SPELLED_KEYS = [
-  "type",
-  "items",
-  "additionalProperties",
-  "$ref",
-  "anyOf",
-  "enum",
-];
-
-// What a type change says: the spellings when they differ, the way
-// the fields table spells them, and otherwise the constraints that
-// moved, which the spelling leaves out.
-const typeChangeDetail = (fromJson: string, toJson: string): string => {
-  const from = parseSchemaText(fromJson);
-  const to = parseSchemaText(toJson);
-  const fromText = formatTypeOfSchema(from);
-  const toText = formatTypeOfSchema(to);
-  if (fromText !== toText) {
-    return `from ${fromText} to ${toText}`;
-  }
-  const keys = new Set([...Object.keys(from), ...Object.keys(to)]);
-  const moved = [...keys]
-    .filter((key) => !SPELLED_KEYS.includes(key))
-    .filter((key) => JSON.stringify(from[key]) !== JSON.stringify(to[key]))
-    .sort();
-  return `(${moved.join(", ")})`;
-};
-
 const fromTo = (from: string | undefined, to: string | undefined): string =>
   from === undefined
     ? `to ${to ?? "none"}`
@@ -142,7 +107,9 @@ const partsOfProperties = (properties: PropertyChange[]): Part[] =>
           name,
           difference: "changed",
           verb: "type changed",
-          detail: typeChangeDetail(c.value.from, c.value.to),
+          detail: `from ${formatType(c.value.from)} to ${formatType(
+            c.value.to
+          )}`,
         };
       case "required":
         return {

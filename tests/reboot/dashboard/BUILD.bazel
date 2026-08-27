@@ -129,7 +129,8 @@ ts_project(
         },
     },
     deps = [
-        "//:node_modules/@stoplight/json-schema-tree",
+        "//rbt/dashboard/v1:dashboard_js_proto",
+        "//rbt/v1alpha1:schema_js_proto",
         "//reboot/dashboard/frontend:dashboard_ts",
         "//reboot/std/vitest:vitest_ts",
     ],
