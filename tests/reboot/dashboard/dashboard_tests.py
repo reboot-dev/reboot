@@ -96,9 +96,9 @@ _SCHEMAS = {
 _SHOP = {
     'name':
         'shop.v1.Shop',
-    'file':
+    'filename':
         'api/shop/v1/shop.py',
-    'stateSchema':
+    'schema':
         json.dumps(_SCHEMAS['ShopState']),
     'methods':
         [

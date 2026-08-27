@@ -47,7 +47,7 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
 
         # The API directory as given, then the path inside it.
         self.assertEqual(
-            shop.file,
+            shop.filename,
             os.path.join(API_DIRECTORY, 'shop/v1/shop.py'),
         )
 
@@ -58,7 +58,7 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
 
         # `properties` keeps the order the fields were declared in.
         self.assertEqual(
-            list(json.loads(shop.state_schema)['properties']),
+            list(json.loads(shop.schema)['properties']),
             ['name', 'open'],
         )
 

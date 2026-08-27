@@ -572,6 +572,19 @@ nav a .nav-name {
   color: hsl(28 80% 35%);
 }
 
+/* A change to the application rather than to the API files. */
+.change-kind-implementation {
+  background: hsl(205 70% 55% / 0.14);
+  border-color: hsl(205 60% 50% / 0.38);
+  color: hsl(205 70% 35%);
+}
+
+.change-kind-file {
+  background: hsl(0 0% 50% / 0.12);
+  border-color: hsl(0 0% 50% / 0.35);
+  color: hsl(0 0% 35%);
+}
+
 .change-added {
   background: hsl(166 47% 61% / 0.18);
   border-color: hsl(166 40% 55% / 0.45);
@@ -608,11 +621,10 @@ a.change-name:hover {
 /* What changed inside it, which is what the row is actually about: the
    largest thing in the row, with the name itself carrying the
    weight. */
+/* Prose around the names, which are the code chips within it. */
 .change-changed-parts {
-  font-family: ui-monospace, Menlo, monospace;
   font-size: 12.5px;
-  font-weight: 700;
-  color: hsl(var(--foreground));
+  color: hsl(var(--muted-foreground));
   overflow-wrap: anywhere;
 }
 
@@ -681,7 +693,8 @@ header h1 {
    `0.9em` rather than a pixel size, so it follows whichever
    description it sits in. */
 .state-type-description code,
-.method-description code {
+.method-description code,
+.change code {
   font-family: ui-monospace, Menlo, monospace;
   font-size: 0.9em;
   background: hsl(var(--surface-sunken));

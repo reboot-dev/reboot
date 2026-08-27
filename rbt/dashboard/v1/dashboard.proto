@@ -33,7 +33,7 @@ message StateType {
   string name = 1;
 
   // The path including the directory passed to `--api-directory`.
-  string file = 2;
+  string filename = 2;
 
   optional string description = 3;
 
@@ -41,7 +41,7 @@ message StateType {
 
   // JSON Schema of the state model, as JSON text so that `properties`
   // stays in the order the developer declared the fields.
-  string state_schema = 5;
+  string schema = 5;
 
   // The request, response and error models of the methods, and
   // anything those contain, however deeply nested. Every name a
@@ -110,41 +110,215 @@ message APIUpdateRequest {
 
 message APIUpdateResponse {}
 
-// One type that was added, changed or removed, as `changelog.py`
-// records it.
-//
-// `kind`, `change` and `part` keep their lowercase spellings: entries
-// recorded before these messages existed persist in the changelog
-// with those words, and the page uses the values directly as CSS
-// class names and routes.
+// One thing the dashboard noticed change. Each arm is one whole
+// event and says everything about itself; nothing is shared between
+// arms but the uuidv7 key the changelog stores it under, which is
+// when it happened. Stored as the serialized `Change`.
 message Change {
-  // The type's page id, such as `shop.v1.Shop`.
-  string id = 1;
+  oneof change {
+    StateTypeAdded state_type_added = 1;
+    StateTypeChanged state_type_changed = 2;
+    StateTypeRemoved state_type_removed = 3;
 
-  // `state` or `data`: which page shows the type.
-  string kind = 2;
+    DataTypeAdded data_type_added = 4;
+    DataTypeChanged data_type_changed = 5;
+    DataTypeRemoved data_type_removed = 6;
 
-  string name = 3;
-  string namespace = 4;
-  string file = 5;
+    ImplementationAdded implementation_added = 7;
+    ImplementationChanged implementation_changed = 8;
+    ImplementationRemoved implementation_removed = 9;
 
-  // `added`, `changed` or `removed`.
-  string change = 6;
-
-  // Set only when `change` is `changed`: which of the type's parts
-  // were added, changed or removed.
-  repeated ChangedPart changed_parts = 7;
+    FileAdded file_added = 10;
+    FileRemoved file_removed = 11;
+  }
 }
 
-// One part of a changed type, and what happened to it.
-message ChangedPart {
+// What one thing was and is, for a change that is a move from one
+// value to another.
+message Renamed {
+  string from = 1;
+  string to = 2;
+}
+
+message DescriptionChanged {
+  optional string from = 1;
+  optional string to = 2;
+}
+
+// A property's type: everything its JSON Schema says about the
+// values it takes, which is all of its schema apart from its
+// description, title, default and tag, as JSON text.
+message TypeChanged {
+  string from = 1;
+  string to = 2;
+}
+
+message RequiredChanged {
+  // Whether the property is required now.
+  bool required = 1;
+}
+
+// A property's default, as JSON text; absent for no default.
+message DefaultChanged {
+  optional string from = 1;
+  optional string to = 2;
+}
+
+message PropertyAdded {}
+
+message PropertyRemoved {}
+
+// One property of a state model or data type, and one thing that
+// happened to it. One entry per thing: a property whose type and
+// requiredness both changed is two entries.
+message PropertyChange {
+  // What identifies the property: its tag, which is what it is
+  // shipped under, so a rename keeps it and a retag does not.
+  uint32 tag = 1;
+
+  // Its name now; for a removed property, the name it had.
+  string name = 2;
+
+  oneof change {
+    PropertyAdded added = 3;
+    PropertyRemoved removed = 4;
+    Renamed renamed = 5;
+    TypeChanged type = 6;
+    RequiredChanged required = 7;
+    DefaultChanged default = 8;
+    DescriptionChanged description = 9;
+  }
+}
+
+message MethodAdded {}
+
+message MethodRemoved {}
+
+message KindChanged {
+  Method.Kind from = 1;
+  Method.Kind to = 2;
+}
+
+message FactoryChanged {
+  bool factory = 1;
+}
+
+message McpChanged {
+  bool mcp = 1;
+}
+
+// The request or response type, by name; absent for none.
+message RequestChanged {
+  optional string from = 1;
+  optional string to = 2;
+}
+
+message ResponseChanged {
+  optional string from = 1;
+  optional string to = 2;
+}
+
+message ErrorsChanged {
+  repeated string from = 1;
+  repeated string to = 2;
+}
+
+// One method of a state type, and one thing that happened to it.
+// One entry per thing.
+message MethodChange {
   string name = 1;
 
-  // `added`, `changed` or `removed`.
-  string change = 2;
+  oneof change {
+    MethodAdded added = 2;
+    MethodRemoved removed = 3;
+    KindChanged kind = 4;
+    FactoryChanged factory = 5;
+    McpChanged mcp = 6;
+    RequestChanged request = 7;
+    ResponseChanged response = 8;
+    ErrorsChanged errors = 9;
+    DescriptionChanged description = 10;
+  }
+}
 
-  // `method`, `property` or `state`.
-  string part = 3;
+// A state type the API files declare.
+message StateTypeAdded {
+  // Fully qualified, e.g. "shop.v1.Shop".
+  string name = 1;
+  string filename = 2;
+}
+
+// The state model's class renamed, which is separate from the state
+// type's own name.
+message StateModelRenamed {
+  string from = 1;
+  string to = 2;
+}
+
+// Never without something that changed: every change to a state
+// type is one of its methods, one of its properties, its
+// description or its state model's name.
+message StateTypeChanged {
+  string name = 1;
+  string filename = 2;
+  repeated MethodChange methods = 3;
+  repeated PropertyChange properties = 4;
+  optional DescriptionChanged description = 5;
+  optional StateModelRenamed state_model_renamed = 6;
+}
+
+message StateTypeRemoved {
+  string name = 1;
+  // The file it was declared in.
+  string filename = 2;
+}
+
+// A data type the API files declare: a model that is not a state.
+message DataTypeAdded {
+  // Qualified by the package of the state type declaring it, e.g.
+  // "shop.v1.LookRequest".
+  string name = 1;
+  string filename = 2;
+}
+
+// Never without something that changed: every change to a data type
+// is one of its properties or its description.
+message DataTypeChanged {
+  string name = 1;
+  string filename = 2;
+  repeated PropertyChange properties = 3;
+  optional DescriptionChanged description = 4;
+}
+
+message DataTypeRemoved {
+  string name = 1;
+  string filename = 2;
+}
+
+// How the application implements a state type: a servicer.
+message ImplementationAdded {
+  string state_type = 1;
+  string filename = 2;
+}
+
+message ImplementationChanged {
+  string state_type = 1;
+  string filename = 2;
+  repeated MethodChange methods = 3;
+}
+
+message ImplementationRemoved {
+  string state_type = 1;
+  string filename = 2;
+}
+
+// A file of the application the walk reaches.
+message FileAdded {
+  string filename = 1;
+}
+
+message FileRemoved {
+  string filename = 1;
 }
 
 message APIWatchRequest {}
@@ -220,7 +394,7 @@ message Servicer {
 
   // The file it is written in, spelled the way the developer would
   // open it, e.g. "backend/src/account_servicer.py".
-  string file = 2;
+  string filename = 2;
 
   // Represents the line its class is written on, counting from one.
   uint32 line = 4;

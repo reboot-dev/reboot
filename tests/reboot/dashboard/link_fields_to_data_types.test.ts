@@ -5,8 +5,11 @@
 import { describe, expect, it } from "vitest";
 import type { StateType } from "../../../reboot/dashboard/frontend/src/link_fields_to_data_types";
 import {
-  linkDataTypes,
   fieldsOfDataType,
+  fieldsOfState,
+  formatTypeOfSchema,
+  linkDataTypes,
+  parseSchemaText,
 } from "../../../reboot/dashboard/frontend/src/link_fields_to_data_types";
 import stateTypesJson from "./state_types";
 
@@ -22,6 +25,37 @@ const linkedDataTypesById = () =>
       linkedDataType,
     ])
   );
+
+describe("the type spelling the changelog shares with the fields table", () => {
+  it("spells every field of every model the way the table does", () => {
+    // Every model the reader described, with the rows the table
+    // makes of it: the spelling of each row's type is what
+    // `formatTypeOfSchema` must give for that property's schema,
+    // an optional field's `| null` aside, which the table shows as a
+    // column rather than in the type.
+    const models = stateTypes.flatMap((stateType) => [
+      { schema: stateType.schema, rows: fieldsOfState(stateType) },
+      ...stateType.dataTypes.map((dataType) => ({
+        schema: dataType.schema,
+        rows: fieldsOfDataType(stateType, dataType.name),
+      })),
+    ]);
+    expect(models.length).toBeGreaterThan(0);
+
+    for (const { schema, rows } of models) {
+      const properties = parseSchemaText(schema).properties as Record<
+        string,
+        unknown
+      >;
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(formatTypeOfSchema(properties[row.name])).toBe(
+          row.optional ? `${row.type} | null` : row.type
+        );
+      }
+    }
+  });
+});
 
 describe("the description the reader writes", () => {
   it("carries nested types rather than naming them", () => {

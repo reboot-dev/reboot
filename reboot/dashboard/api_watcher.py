@@ -103,7 +103,7 @@ def _reconstitute_known(
     state_types: dict[Path, list[StateType]] = {}
     for state_type in state.state_types:
         state_types.setdefault(
-            _standardized_path(api_directory / state_type.file),
+            _standardized_path(api_directory / state_type.filename),
             [],
         ).append(state_type)
 

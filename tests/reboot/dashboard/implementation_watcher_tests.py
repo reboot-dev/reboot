@@ -353,7 +353,7 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(
-            [servicer.file for servicer in found['shop.v1.Shop']],
+            [servicer.filename for servicer in found['shop.v1.Shop']],
             [str(self.source / 'shop_servicer.py')],
         )
 
@@ -402,7 +402,7 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(
-            [servicer.file for servicer in found['shop.v1.Shop']], [
+            [servicer.filename for servicer in found['shop.v1.Shop']], [
                 str(self.source / 'other_servicer.py'),
                 str(self.source / 'shop_servicer.py'),
             ]
@@ -430,7 +430,7 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(
-            [servicer.file for servicer in found['shop.v1.Depot']],
+            [servicer.filename for servicer in found['shop.v1.Depot']],
             [str(self.source / 'depot_servicer.py')],
         )
 
@@ -446,7 +446,7 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
             satisfied=lambda found: 'shop.v1.Shop' in found
         )
         self.assertEqual(
-            [servicer.file for servicer in found['shop.v1.Shop']],
+            [servicer.filename for servicer in found['shop.v1.Shop']],
             [str(self.source / 'shop_servicer.py')],
         )
 
@@ -1207,7 +1207,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         file.dependencies['helper'].filename = 'helper.py'
         servicer = state.servicers.add()
         servicer.state_type = 'shop.v1.Shop'
-        servicer.file = 'backend/x.py'
+        servicer.filename = 'backend/x.py'
 
         known = _reconstitute_known(state)
 
@@ -1230,7 +1230,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         """Returns every servicer as the state type it services and
         the file it is written in."""
         return [
-            (servicer.state_type, servicer.file)
+            (servicer.state_type, servicer.filename)
             for servicer in extract_and_sort_servicers(files)
         ]
 

@@ -108,8 +108,8 @@ def _state_type_from_type(name: str, file: str, type_obj) -> StateType:
 
     state_type = StateType(
         name=name,
-        file=file,
-        state_schema=json.dumps(schemas[state]),
+        filename=file,
+        schema=json.dumps(schemas[state]),
         methods=[
             _method_from_spec(method_name, spec, names)
             for method_name, spec in type_obj.methods.items()

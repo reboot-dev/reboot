@@ -41,8 +41,8 @@ import {
   fieldsOfState,
   shortNameOfTypeName,
 } from "./link_fields_to_data_types";
-import type { Change } from "./changelog";
-import { timeAgo, changesInEntries } from "./changelog";
+import type { Entry } from "./changelog";
+import { entriesOfRange, rowOfChange, timeAgo } from "./changelog";
 
 // One subscriber per tab, for as long as the tab is open.
 const SUBSCRIBER_ID = uuidv4();
@@ -553,7 +553,7 @@ const StateType: FC<{
           {expanded ? "Hide details" : "Expand details"}
         </button>
       </div>
-      <div className="file">{stateType.file}</div>
+      <div className="file">{stateType.filename}</div>
       {stateType.description !== undefined && (
         <Description
           className="state-type-description"
@@ -637,7 +637,7 @@ const LinkedDataTypeCard: FC<{
         </span>
       </div>
     </div>
-    <div className="file">{linkedDataType.file}</div>
+    <div className="file">{linkedDataType.filename}</div>
     {linkedDataType.description !== undefined && (
       <Description
         className="state-type-description"
@@ -673,52 +673,51 @@ const LinkedDataTypeCard: FC<{
   </section>
 );
 
-// The page a change links to: none once the type is removed, and
-// none for a `kind` this page does not know.
-const pageOfChange = (change: Change): Page | undefined =>
-  change.change === "removed"
-    ? undefined
-    : change.kind === "state" || change.kind === "data"
-    ? change.kind
-    : undefined;
-
-const ChangeRow: FC<{ change: Change; now: Date }> = ({ change, now }) => {
-  const page = pageOfChange(change);
+const ChangeRow: FC<{ entry: Entry; now: Date }> = ({ entry, now }) => {
+  const row = rowOfChange(entry.change);
   return (
     <div className="change">
-      <time className="change-when" dateTime={change.at.toISOString()}>
-        {timeAgo(change.at, now)}
+      <time className="change-when" dateTime={entry.at.toISOString()}>
+        {timeAgo(entry.at, now)}
       </time>
-      <span className="change-where">{change.namespace}</span>
+      <span className="change-where">{row.where}</span>
       {/* The wrapper, not the pill, is the grid cell: the row's padding
         and hover fill apply to it, and the pill's background covers
         only the pill. */}
       <span className="change-pill-cell">
-        <span className={`change-pill change-kind-${change.kind}`}>
-          {change.kind}
+        <span className={`change-pill change-kind-${row.kind}`}>
+          {row.kind}
         </span>
       </span>
       <span className="change-pill-cell">
-        <span className={`change-pill change-${change.change}`}>
-          {change.change}
+        <span className={`change-pill change-${row.difference}`}>
+          {row.difference}
         </span>
       </span>
-      {page === undefined ? (
-        <span className="change-name">{change.name}</span>
+      {/* Names are identifiers, so they are set as code, the way the
+        descriptions set them. */}
+      {row.link === undefined ? (
+        <span className="change-name">
+          <code>{row.name}</code>
+        </span>
       ) : (
-        <Link className="change-name" to={pathOfTypeOnPage(page, change.id)}>
-          {change.name}
+        <Link
+          className="change-name"
+          to={pathOfTypeOnPage(row.link.page, row.link.id)}
+        >
+          <code>{row.name}</code>
         </Link>
       )}
       <span className="change-changed-parts">
-        {change.changedParts?.map((changedPart, index) => (
-          <Fragment key={changedPart.name}>
+        {row.parts.map((part, index) => (
+          <Fragment key={`${part.noun} ${part.name} ${part.verb}`}>
             {index > 0 && ", "}
-            {`${changedPart.part} `}
-            <span className={`changed-part changed-part-${changedPart.change}`}>
-              {changedPart.name}
-            </span>
-            {` ${changedPart.change}`}
+            {part.noun && `${part.noun} `}
+            <code className={`changed-part changed-part-${part.difference}`}>
+              {part.name}
+            </code>
+            {` ${part.verb}`}
+            {part.detail && ` ${part.detail}`}
           </Fragment>
         ))}
       </span>
@@ -744,7 +743,7 @@ const ChangelogPage: FC<{ onCount: (n: number) => void; live: boolean }> = ({
   // The read aborts when the map does not exist, and it does not exist
   // until the first change is recorded.
   const entries = aborted !== undefined ? [] : response?.entries ?? [];
-  const changes = changesInEntries(entries);
+  const changes = entriesOfRange(entries);
   const more = changes.length > CHANGES_PER_PAGE * pages;
   const shown = more ? changes.slice(0, CHANGES_PER_PAGE * pages) : changes;
 
@@ -774,8 +773,8 @@ const ChangelogPage: FC<{ onCount: (n: number) => void; live: boolean }> = ({
         </div>
       )}
       <div className="changes">
-        {shown.map((change) => (
-          <ChangeRow change={change} now={now} key={change.key} />
+        {shown.map((entry) => (
+          <ChangeRow entry={entry} now={now} key={entry.key} />
         ))}
       </div>
       {more && (

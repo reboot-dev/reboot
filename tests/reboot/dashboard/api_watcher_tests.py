@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from google.protobuf.json_format import MessageToDict
 from pathlib import Path
+from rbt.dashboard.v1.dashboard_pb2 import Change
 from rbt.dashboard.v1.dashboard_rbt import API
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from reboot.aio.tests import Reboot
@@ -50,6 +51,13 @@ class LookResponse(Model):
 
 api = API({state}=Type(state={state}State, methods={state}Methods))
 '''
+
+
+def _named(change: Change) -> tuple[str, str]:
+    """The name the change's arm carries, and which arm it is."""
+    arm = change.WhichOneof('change')
+    assert arm is not None
+    return getattr(change, arm).name, arm
 
 
 def _state_types_in(response) -> list[dict]:
@@ -106,7 +114,7 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
                 pass
             await asyncio.sleep(0.1)
 
-    async def _changelog_entries(self) -> list[dict]:
+    async def _changelog_entries(self) -> list[Change]:
         """What the dashboard has noticed, newest first."""
         context = self.rbt.create_external_context(name=self.id())
         try:
@@ -117,7 +125,7 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         except Exception:
             # Nothing has been recorded, so the map does not exist.
             return []
-        return [MessageToDict(entry.value) for entry in response.entries]
+        return [Change.FromString(entry.bytes) for entry in response.entries]
 
     async def test_a_change_to_an_imported_file_reads_its_importer(
         self,
@@ -229,8 +237,7 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         [change] = await self._changelog_entries()
 
-        self.assertEqual(change['id'], 'shop.v1.Depot')
-        self.assertEqual(change['change'], 'added')
+        self.assertEqual(_named(change), ('shop.v1.Depot', 'state_type_added'))
 
     async def test_every_api_file_is_listed_with_when_it_was_modified(
         self,
@@ -284,13 +291,12 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         # The state type and the two data types it declares.
         self.assertEqual(
             sorted(
-                (change['id'], change['change'])
-                for change in await self._changelog_entries()
+                _named(change) for change in await self._changelog_entries()
             ),
             [
-                ('shop.v1.LookRequest', 'added'),
-                ('shop.v1.LookResponse', 'added'),
-                ('shop.v1.Shop', 'added'),
+                ('shop.v1.LookRequest', 'data_type_added'),
+                ('shop.v1.LookResponse', 'data_type_added'),
+                ('shop.v1.Shop', 'state_type_added'),
             ],
         )
 
@@ -311,11 +317,11 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         [change] = await self._changelog_entries()
 
-        self.assertEqual(change['id'], 'shop.v1.Depot')
-        self.assertEqual(change['change'], 'added')
-        # Which page it came from, so a row can link to it.
-        self.assertEqual(change['kind'], 'state')
-        self.assertTrue(change['file'].endswith('shop/v1/depot.py'))
+        self.assertEqual(change.WhichOneof('change'), 'state_type_added')
+        self.assertEqual(change.state_type_added.name, 'shop.v1.Depot')
+        self.assertTrue(
+            change.state_type_added.filename.endswith('shop/v1/depot.py')
+        )
 
     async def test_the_same_file_changing_twice_is_two_changes(self) -> None:
         # Saving one file again is the ordinary thing to do, and each
@@ -345,14 +351,13 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         # Each save added a state type and removed the one before it.
         self.assertEqual(
             sorted(
-                (change['id'], change['change'])
-                for change in await self._changelog_entries()
+                _named(change) for change in await self._changelog_entries()
             ),
             [
-                ('shop.v1.Bazaar', 'added'),
-                ('shop.v1.Bazaar', 'removed'),
-                ('shop.v1.Emporium', 'added'),
-                ('shop.v1.Shop', 'removed'),
+                ('shop.v1.Bazaar', 'state_type_added'),
+                ('shop.v1.Bazaar', 'state_type_removed'),
+                ('shop.v1.Emporium', 'state_type_added'),
+                ('shop.v1.Shop', 'state_type_removed'),
             ],
         )
 
@@ -385,16 +390,90 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         [change] = await self._changelog_entries()
 
-        self.assertEqual(change['id'], 'shop.v1.Shop')
-        self.assertEqual(change['change'], 'changed')
+        self.assertEqual(change.WhichOneof('change'), 'state_type_changed')
+        self.assertEqual(change.state_type_changed.name, 'shop.v1.Shop')
         self.assertEqual(
-            change['changedParts'],
-            [{
-                'name': 'stock',
-                'change': 'added',
-                'part': 'method'
-            }]
+            [
+                (method.name, method.WhichOneof('change'))
+                for method in change.state_type_changed.methods
+            ],
+            [('stock', 'added')],
         )
+        self.assertEqual(list(change.state_type_changed.properties), [])
+
+    async def test_a_change_names_the_state_models_properties(
+        self,
+    ) -> None:
+        """A field added to the state model is named, the way a data
+        type's property is, and the state model is marked changed."""
+        self._write_api_file(self.directory, 'shop', 'Shop')
+
+        await self._start_dashboard()
+        await self._wait_for_api(lambda api: len(_state_types_in(api)) == 1)
+
+        path = self.directory / 'shop' / 'v1' / 'shop.py'
+        path.write_text(
+            SHOP.format(state='Shop').replace(
+                'class ShopState(Model):\n    name: str = Field(tag=1)\n',
+                'class ShopState(Model):\n'
+                '    name: str = Field(tag=1)\n'
+                '    quantity: int = Field(tag=2)\n',
+            )
+        )
+
+        while len(await self._changelog_entries()) == 0:
+            await asyncio.sleep(0.1)
+
+        [change] = await self._changelog_entries()
+
+        self.assertEqual(change.WhichOneof('change'), 'state_type_changed')
+        self.assertEqual(
+            [
+                (property.tag, property.name, property.WhichOneof('change'))
+                for property in change.state_type_changed.properties
+            ],
+            [(2, 'quantity', 'added')],
+        )
+        self.assertEqual(list(change.state_type_changed.methods), [])
+
+    async def test_a_property_is_known_by_its_tag(self) -> None:
+        """A property keeps its tag through a rename, so a field
+        renamed and retyped in one save is one property renamed and
+        its type changed, not a field removed and another added."""
+        self._write_api_file(self.directory, 'shop', 'Shop')
+
+        await self._start_dashboard()
+        await self._wait_for_api(lambda api: len(_state_types_in(api)) == 1)
+
+        path = self.directory / 'shop' / 'v1' / 'shop.py'
+        path.write_text(
+            SHOP.format(state='Shop').replace(
+                'class ShopState(Model):\n    name: str = Field(tag=1)\n',
+                'class ShopState(Model):\n    title: int = Field(tag=1)\n',
+            )
+        )
+
+        while len(await self._changelog_entries()) == 0:
+            await asyncio.sleep(0.1)
+
+        [change] = await self._changelog_entries()
+
+        self.assertEqual(change.WhichOneof('change'), 'state_type_changed')
+        renamed, retyped = change.state_type_changed.properties
+        self.assertEqual(
+            (renamed.tag, renamed.name, renamed.WhichOneof('change')),
+            (1, 'title', 'renamed'),
+        )
+        self.assertEqual(
+            (getattr(renamed.renamed, 'from'), renamed.renamed.to),
+            ('name', 'title'),
+        )
+        self.assertEqual(
+            (retyped.tag, retyped.name, retyped.WhichOneof('change')),
+            (1, 'title', 'type'),
+        )
+        self.assertIn('"string"', getattr(retyped.type, 'from'))
+        self.assertIn('"integer"', retyped.type.to)
 
     async def test_a_file_deleted_is_history(self) -> None:
         self._write_api_file(self.directory, 'shop', 'Shop')
@@ -412,8 +491,8 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         [change] = await self._changelog_entries()
 
-        self.assertEqual(change['id'], 'shop.v1.Depot')
-        self.assertEqual(change['change'], 'removed')
+        self.assertEqual(change.WhichOneof('change'), 'state_type_removed')
+        self.assertEqual(change.state_type_removed.name, 'shop.v1.Depot')
 
 
 if __name__ == '__main__':

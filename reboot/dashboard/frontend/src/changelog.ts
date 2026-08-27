@@ -1,25 +1,20 @@
-// What the dashboard noticed changing in the developer's API files,
-// and how to read it.
+// What the dashboard noticed changing, and how to read it.
 //
-// Written by `changelog.py` as `rbt.dashboard.v1.Change` and stored
-// in an `OrderedMap` keyed by a uuidv7, so the keys are in the order
-// the changes happened and a reverse range is newest first. The
-// map's items are `google.protobuf.Value`s, so each entry is typed
-// from the proto rather than parsed: `PlainMessage` is the message's
-// fields without its methods, and `changedParts` is optional because an
-// entry whose type was added or removed whole was recorded without
-// one.
-import type { PlainMessage } from "@bufbuild/protobuf";
-import type {
-  Change as ChangeMessage,
-  ChangedPart as ChangedPartMessage,
-} from "@dashboard/dashboard_pb";
+// Written as `rbt.dashboard.v1.Change` and stored, serialized, in
+// an `OrderedMap` keyed by a uuidv7, so the keys are in the order
+// the changes happened and a reverse range is newest first.
+import type { MethodChange, PropertyChange } from "@dashboard/dashboard_pb";
+import { Change } from "@dashboard/dashboard_pb";
+import {
+  formatTypeOfSchema,
+  labelOfKind,
+  parseSchemaText,
+} from "./link_fields_to_data_types";
 
-export type ChangedPart = PlainMessage<ChangedPartMessage>;
-
-// One row: what changed, and when, which is the key it is under.
-export type Change = Omit<PlainMessage<ChangeMessage>, "changedParts"> & {
-  changedParts?: ChangedPart[];
+// One entry of the changelog: what changed, and when, which is the
+// key it is under.
+export type Entry = {
+  change: Change;
   key: string;
   at: Date;
 };
@@ -29,24 +24,367 @@ export type Change = Omit<PlainMessage<ChangeMessage>, "changedParts"> & {
 export const timeInUuid7 = (key: string): Date =>
   new Date(parseInt(key.replace(/-/g, "").slice(0, 12), 16));
 
-// The entries of a reverse range, as rows.
-export const changesInEntries = (
-  entries: { key: string; value?: { toJson: () => unknown } }[]
-): Change[] =>
+// The entries of a reverse range, parsed. An entry holding anything
+// but a serialized `Change` is left out.
+export const entriesOfRange = (
+  entries: { key: string; bytes?: Uint8Array }[]
+): Entry[] =>
   entries.flatMap((entry) => {
-    const change = entry.value?.toJson();
-    return change === null ||
-      typeof change !== "object" ||
-      Array.isArray(change)
-      ? []
-      : [
-          {
-            ...(change as Omit<Change, "key" | "at">),
-            key: entry.key,
-            at: timeInUuid7(entry.key),
-          },
-        ];
+    if (entry.bytes === undefined) {
+      return [];
+    }
+    try {
+      return [
+        {
+          change: Change.fromBinary(entry.bytes),
+          key: entry.key,
+          at: timeInUuid7(entry.key),
+        },
+      ];
+    } catch {
+      return [];
+    }
   });
+
+// What a row of the changelog shows, the same for every kind of
+// change: where it happened, what kind of thing changed, what
+// happened to it, its name, the id of the page to link to when the
+// thing still exists, and which of its parts changed and how.
+// One thing that happened to a part of a type: the noun and name of
+// the part, what happened to it, and what more the row says about
+// it. `difference` is the CSS class; `verb` is the words.
+export type Part = {
+  noun: string;
+  name: string;
+  difference: "added" | "changed" | "removed";
+  verb: string;
+  detail?: string;
+};
+
+export type Row = {
+  where: string;
+  kind: "state" | "data" | "implementation" | "file";
+  difference: string;
+  name: string;
+  // The page and id the name links to; none once the thing is gone
+  // and none for a thing with no page.
+  link?: { page: "state" | "data"; id: string };
+  parts: Part[];
+};
+
+// The keys of a property's type schema that its spelling shows;
+// the rest are constraints, named when the spelling alone would not
+// say what changed.
+const SPELLED_KEYS = [
+  "type",
+  "items",
+  "additionalProperties",
+  "$ref",
+  "anyOf",
+  "enum",
+];
+
+// What a type change says: the spellings when they differ, the way
+// the fields table spells them, and otherwise the constraints that
+// moved, which the spelling leaves out.
+const typeChangeDetail = (fromJson: string, toJson: string): string => {
+  const from = parseSchemaText(fromJson);
+  const to = parseSchemaText(toJson);
+  const fromText = formatTypeOfSchema(from);
+  const toText = formatTypeOfSchema(to);
+  if (fromText !== toText) {
+    return `from ${fromText} to ${toText}`;
+  }
+  const keys = new Set([...Object.keys(from), ...Object.keys(to)]);
+  const moved = [...keys]
+    .filter((key) => !SPELLED_KEYS.includes(key))
+    .filter((key) => JSON.stringify(from[key]) !== JSON.stringify(to[key]))
+    .sort();
+  return `(${moved.join(", ")})`;
+};
+
+const fromTo = (from: string | undefined, to: string | undefined): string =>
+  from === undefined
+    ? `to ${to ?? "none"}`
+    : to === undefined
+    ? `from ${from}, now none`
+    : `from ${from} to ${to}`;
+
+const partsOfProperties = (properties: PropertyChange[]): Part[] =>
+  properties.map((property) => {
+    const noun = "property";
+    const name = property.name;
+    const c = property.change;
+    switch (c.case) {
+      case "added":
+        return { noun, name, difference: "added", verb: "added" };
+      case "removed":
+        return { noun, name, difference: "removed", verb: "removed" };
+      case "renamed":
+        return {
+          noun,
+          name: c.value.from,
+          difference: "changed",
+          verb: "renamed",
+          detail: `to ${c.value.to}`,
+        };
+      case "type":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: "type changed",
+          detail: typeChangeDetail(c.value.from, c.value.to),
+        };
+      case "required":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: c.value.required ? "now required" : "now optional",
+        };
+      case "default":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: "default changed",
+          detail: fromTo(c.value.from, c.value.to),
+        };
+      case "description":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: "description changed",
+        };
+      case undefined:
+        return { noun, name, difference: "changed", verb: "changed" };
+    }
+  });
+
+const partsOfMethods = (methods: MethodChange[]): Part[] =>
+  methods.map((method) => {
+    const noun = "method";
+    const name = method.name;
+    const c = method.change;
+    switch (c.case) {
+      case "added":
+        return { noun, name, difference: "added", verb: "added" };
+      case "removed":
+        return { noun, name, difference: "removed", verb: "removed" };
+      case "kind":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: "kind changed",
+          detail: fromTo(labelOfKind(c.value.from), labelOfKind(c.value.to)),
+        };
+      case "factory":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: c.value.factory ? "now a factory" : "no longer a factory",
+        };
+      case "mcp":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: c.value.mcp ? "now an MCP tool" : "no longer an MCP tool",
+        };
+      case "request":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: "request changed",
+          detail: fromTo(c.value.from, c.value.to),
+        };
+      case "response":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: "response changed",
+          detail: fromTo(c.value.from, c.value.to),
+        };
+      case "errors":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: "errors changed",
+          detail: fromTo(
+            c.value.from.join(", ") || "none",
+            c.value.to.join(", ") || "none"
+          ),
+        };
+      case "description":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: "description changed",
+        };
+      case undefined:
+        return { noun, name, difference: "changed", verb: "changed" };
+    }
+  });
+
+const namespaceOf = (qualified: string): string =>
+  qualified.includes(".") ? qualified.slice(0, qualified.lastIndexOf(".")) : "";
+
+const shortNameOf = (qualified: string): string =>
+  qualified.slice(qualified.lastIndexOf(".") + 1);
+
+const directoryOf = (file: string): string =>
+  file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : "";
+
+const baseNameOf = (file: string): string =>
+  file.slice(file.lastIndexOf("/") + 1);
+
+// How each kind of change reads as a row. Every arm of `Change` is
+// handled here, so a new arm is a compile error until it is.
+export const rowOfChange = (change: Change): Row => {
+  const what = change.change;
+  switch (what.case) {
+    case "stateTypeAdded":
+      return {
+        where: namespaceOf(what.value.name),
+        kind: "state",
+        difference: "added",
+        name: shortNameOf(what.value.name),
+        link: { page: "state", id: what.value.name },
+        parts: [],
+      };
+    case "stateTypeChanged":
+      return {
+        where: namespaceOf(what.value.name),
+        kind: "state",
+        difference: "changed",
+        name: shortNameOf(what.value.name),
+        link: { page: "state", id: what.value.name },
+        parts: [
+          ...(what.value.stateModelRenamed === undefined
+            ? []
+            : [
+                {
+                  noun: "state model",
+                  name: what.value.stateModelRenamed.from,
+                  difference: "changed" as const,
+                  verb: "renamed",
+                  detail: `to ${what.value.stateModelRenamed.to}`,
+                },
+              ]),
+          ...(what.value.description === undefined
+            ? []
+            : [
+                {
+                  noun: "",
+                  name: shortNameOf(what.value.name),
+                  difference: "changed" as const,
+                  verb: "description changed",
+                },
+              ]),
+          ...partsOfProperties(what.value.properties),
+          ...partsOfMethods(what.value.methods),
+        ],
+      };
+    case "stateTypeRemoved":
+      return {
+        where: namespaceOf(what.value.name),
+        kind: "state",
+        difference: "removed",
+        name: shortNameOf(what.value.name),
+        parts: [],
+      };
+    case "dataTypeAdded":
+      return {
+        where: namespaceOf(what.value.name),
+        kind: "data",
+        difference: "added",
+        name: shortNameOf(what.value.name),
+        link: { page: "data", id: what.value.name },
+        parts: [],
+      };
+    case "dataTypeChanged":
+      return {
+        where: namespaceOf(what.value.name),
+        kind: "data",
+        difference: "changed",
+        name: shortNameOf(what.value.name),
+        link: { page: "data", id: what.value.name },
+        parts: [
+          ...(what.value.description === undefined
+            ? []
+            : [
+                {
+                  noun: "",
+                  name: shortNameOf(what.value.name),
+                  difference: "changed" as const,
+                  verb: "description changed",
+                },
+              ]),
+          ...partsOfProperties(what.value.properties),
+        ],
+      };
+    case "dataTypeRemoved":
+      return {
+        where: namespaceOf(what.value.name),
+        kind: "data",
+        difference: "removed",
+        name: shortNameOf(what.value.name),
+        parts: [],
+      };
+    case "implementationAdded":
+      return {
+        where: namespaceOf(what.value.stateType),
+        kind: "implementation",
+        difference: "added",
+        name: shortNameOf(what.value.stateType),
+        link: { page: "state", id: what.value.stateType },
+        parts: [],
+      };
+    case "implementationChanged":
+      return {
+        where: namespaceOf(what.value.stateType),
+        kind: "implementation",
+        difference: "changed",
+        name: shortNameOf(what.value.stateType),
+        link: { page: "state", id: what.value.stateType },
+        parts: partsOfMethods(what.value.methods),
+      };
+    case "implementationRemoved":
+      return {
+        where: namespaceOf(what.value.stateType),
+        kind: "implementation",
+        difference: "removed",
+        name: shortNameOf(what.value.stateType),
+        parts: [],
+      };
+    case "fileAdded":
+      return {
+        where: directoryOf(what.value.filename),
+        kind: "file",
+        difference: "added",
+        name: baseNameOf(what.value.filename),
+        parts: [],
+      };
+    case "fileRemoved":
+      return {
+        where: directoryOf(what.value.filename),
+        kind: "file",
+        difference: "removed",
+        name: baseNameOf(what.value.filename),
+        parts: [],
+      };
+    case undefined:
+      return { where: "", kind: "file", difference: "", name: "", parts: [] };
+  }
+};
 
 // How long ago, in the coarsest unit that still says something. The
 // page is watched while somebody works, so seconds and minutes are

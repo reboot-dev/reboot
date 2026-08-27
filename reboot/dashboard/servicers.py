@@ -1,7 +1,5 @@
 """Servicers for the developer dashboard application."""
 import os
-from google.protobuf.json_format import MessageToDict, ParseDict
-from google.protobuf.struct_pb2 import Value
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import (
     APIGetRequest,
@@ -98,9 +96,7 @@ class APIServicer(API.Servicer):
             await OrderedMap.ref(CHANGELOG_ID).Insert(
                 context,
                 entries={
-                    # As a `Value`, since the map's items are `Value`s.
-                    str(uuid7()):
-                        Item(value=ParseDict(MessageToDict(change), Value()))
+                    str(uuid7()): Item(bytes=change.SerializeToString())
                     for change in request.changes
                 },
             )

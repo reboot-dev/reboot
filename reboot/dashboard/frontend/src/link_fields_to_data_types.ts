@@ -62,7 +62,7 @@ export interface LinkedDataType {
   id: string;
   name: string;
   namespace: string;
-  file: string;
+  filename: string;
   description?: string;
   fields: Field[];
   referrers: Referrer[];
@@ -85,6 +85,8 @@ const parseSchema = (text: string): Schema => {
   return isSchema(parsed) ? parsed : {};
 };
 
+export const parseSchemaText = parseSchema;
+
 // The prefix of a reference to a sibling model; the rest is the
 // sibling's name.
 const DEFS = "#/$defs/";
@@ -101,7 +103,7 @@ const defsOfStateType = (stateType: StateType): Record<string, Schema> => {
       parseSchema(dataType.schema),
     ])
   );
-  const state = parseSchema(stateType.stateSchema);
+  const state = parseSchema(stateType.schema);
   if (typeof state.title === "string") {
     defs[state.title] = state;
   }
@@ -180,6 +182,52 @@ const unwrapOptional = (
 // A node as the row prints it, written the way its author would
 // write the type. `refName` names the model under every list layer:
 // a reference to `Item` inside `list[list[...]]` prints `Item[][]`.
+// The spelling of a type from its schema alone, with no tree and no
+// sibling models to resolve a `$ref` through, which the changelog
+// has: the same spellings `formatType` below gives the fields
+// table, so that a change reads the way the table does. A `$ref` is
+// spelled by the referenced model's name, as the table spells it.
+export const formatTypeOfSchema = (schema: unknown): string => {
+  if (!isSchema(schema)) {
+    return "any";
+  }
+  if (typeof schema.$ref === "string") {
+    return nameOfRef(schema.$ref);
+  }
+  if (Array.isArray(schema.anyOf)) {
+    return schema.anyOf.map(formatTypeOfSchema).join(" | ");
+  }
+  // Pydantic wraps a reference that carries a description in a
+  // one-branch `allOf`, which the tree merges away.
+  if (Array.isArray(schema.allOf) && schema.allOf.length === 1) {
+    return formatTypeOfSchema(schema.allOf[0]);
+  }
+  if (Array.isArray(schema.enum)) {
+    return schema.enum.map((value) => JSON.stringify(value)).join(" | ");
+  }
+  if (schema.type === "array") {
+    return schema.items === undefined
+      ? "array"
+      : `${formatTypeOfSchema(schema.items)}[]`;
+  }
+  if (schema.type === "object") {
+    const additional = schema.additionalProperties;
+    if (additional === undefined) {
+      return "object";
+    }
+    return `Record<string, ${
+      additional === true ? "any" : formatTypeOfSchema(additional)
+    }>`;
+  }
+  if (typeof schema.type === "string") {
+    return schema.type;
+  }
+  if (Array.isArray(schema.type)) {
+    return schema.type.join(" | ");
+  }
+  return "any";
+};
+
 const formatType = (schemaNode: SchemaNode, refName?: string): string => {
   const types = typesOfNode(schemaNode);
 
@@ -258,7 +306,7 @@ const rowsOfSchema = (stateType: StateType, schema: Schema): Field[] => {
 };
 
 export const fieldsOfState = (stateType: StateType): Field[] =>
-  rowsOfSchema(stateType, parseSchema(stateType.stateSchema));
+  rowsOfSchema(stateType, parseSchema(stateType.schema));
 
 // The fields of the data type named `name`, one level deep.
 export const fieldsOfDataType = (
@@ -328,7 +376,7 @@ export const linkDataTypes = (stateTypes: StateType[]): LinkedDataType[] => {
       [
         shortNameOfTypeName(stateType.name),
         stateType.name,
-        parseSchema(stateType.stateSchema),
+        parseSchema(stateType.schema),
       ],
       ...stateType.dataTypes.map((dataType): [string, string, Schema] => [
         dataType.name,
@@ -355,7 +403,7 @@ export const linkDataTypes = (stateTypes: StateType[]): LinkedDataType[] => {
         id,
         name: dataType.name,
         namespace: namespaceOfTypeName(stateType.name),
-        file: stateType.file,
+        filename: stateType.filename,
         description:
           typeof schema.description === "string"
             ? schema.description

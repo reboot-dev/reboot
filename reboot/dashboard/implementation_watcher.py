@@ -853,7 +853,7 @@ async def _analyze_class(
 
         servicer = Servicer(
             state_type=definition.state_type,
-            file=str(filename),
+            filename=str(filename),
             line=class_definition.lineno,
             character=class_definition.col_offset,
         )
@@ -953,7 +953,7 @@ def extract_and_sort_servicers(
     """
     return sorted(
         (servicer for file in files.values() for servicer in file.servicers),
-        key=lambda servicer: (servicer.state_type, servicer.file),
+        key=lambda servicer: (servicer.state_type, servicer.filename),
     )
 
 
@@ -967,7 +967,7 @@ def _reconstitute_known(
     parsed and analyzed again."""
     servicers: dict[str, list[Servicer]] = {}
     for servicer in state.servicers:
-        servicers.setdefault(servicer.file, []).append(servicer)
+        servicers.setdefault(servicer.filename, []).append(servicer)
 
     return {
         Path(filename):
