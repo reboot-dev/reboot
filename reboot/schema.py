@@ -425,7 +425,7 @@ def _schema_of(
                             "currently supported"
                         )
 
-                raise NotImplementedError("a `Literal` item")
+                item = Type(literals=Literals(values=literal_args))
             # NOTE: Discriminated unions are not supported inside `list` items
             # because Pydantic only allows discriminators on direct model fields.
             # `Union` types here would only be `Optional[T]`, which is not supported
