@@ -4,12 +4,12 @@ This is what lets the dashboard show state types before anything has
 been built: `rbt generate` has not run, no servicer exists, and there
 is no process to ask. Only the file the developer wrote.
 """
-import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import Method, StateType
+from rbt.v1alpha1.schema_pb2 import Array, Optional, Reference, Schema, Type
 from reboot.dashboard.api_reader import read_api_file
 
 API_DIRECTORY = str(Path(__file__).parent / 'api')
@@ -19,12 +19,23 @@ def _state_types_by_name(state_types: list[StateType]) -> dict[str, StateType]:
     return {state_type.name: state_type for state_type in state_types}
 
 
-def _schema_of_data_type(state_type: StateType, name: str) -> dict:
-    """The JSON Schema of the data type called `name`."""
+def _schema_of_data_type(state_type: StateType, name: str) -> Schema:
+    """The schema of the data type called `name`."""
     for data_type in state_type.data_types:
         if data_type.name == name:
-            return json.loads(data_type.schema)
+            return data_type.schema
     raise AssertionError(f"No data type '{name}' in {state_type.name}")
+
+
+def _property_names(schema: Schema) -> list[str]:
+    return [property.name for property in schema.properties]
+
+
+def _property(schema: Schema, name: str):
+    for property in schema.properties:
+        if property.name == name:
+            return property
+    raise AssertionError(f"No property '{name}' in {schema.name}")
 
 
 def _method_named(state_type: StateType, name: str) -> Method:
@@ -57,18 +68,19 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
         )
 
         # `properties` keeps the order the fields were declared in.
-        self.assertEqual(
-            list(json.loads(shop.schema)['properties']),
-            ['name', 'open'],
-        )
+        self.assertEqual(shop.schema.name, 'ShopState')
+        self.assertEqual(_property_names(shop.schema), ['name', 'open'])
 
         # Methods keep the names their author gave them, and name what
-        # they take and return in `data_types`.
+        # they take and return in `data_types`, the way a `Reference`
+        # names a model: by its module and class.
         stock = _method_named(shop, 'stock')
         self.assertEqual(stock.kind, Method.Kind.TRANSACTION)
-        self.assertEqual(stock.request, 'StockRequest')
+        self.assertEqual(stock.request, 'shop.v1.shop.StockRequest')
         self.assertEqual(
-            list(_schema_of_data_type(shop, 'StockRequest')['properties']),
+            _property_names(
+                _schema_of_data_type(shop, 'shop.v1.shop.StockRequest')
+            ),
             ['item', 'quantity', 'labels'],
         )
 
@@ -77,7 +89,7 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
 
         remaining = _method_named(shop, 'remaining')
         self.assertEqual(remaining.kind, Method.Kind.READER)
-        self.assertEqual(remaining.response, 'StockResponse')
+        self.assertEqual(remaining.response, 'shop.v1.shop.StockResponse')
         self.assertTrue(remaining.mcp)
         self.assertEqual(
             remaining.description,
@@ -86,9 +98,13 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
 
         # An error is a data type like a request, so its fields can be
         # read.
-        self.assertEqual(list(remaining.errors), ['OutOfStockError'])
         self.assertEqual(
-            list(_schema_of_data_type(shop, 'OutOfStockError')['properties']),
+            list(remaining.errors), ['shop.v1.shop.OutOfStockError']
+        )
+        self.assertEqual(
+            _property_names(
+                _schema_of_data_type(shop, 'shop.v1.shop.OutOfStockError')
+            ),
             ['item'],
         )
 
@@ -107,36 +123,41 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(error)
         shop = _state_types_by_name(state_types)['shop.v1.Shop']
 
+        items = _property(
+            _schema_of_data_type(shop, 'shop.v1.shop.StockResponse'), 'items'
+        )
+        self.assertEqual(items.tag, 2)
         self.assertEqual(
-            _schema_of_data_type(shop, 'StockResponse')['properties']['items'],
-            {
-                'items': {
-                    '$ref': '#/$defs/Item'
-                },
-                'tag': 2,
-                'title': 'Items',
-                'type': 'array',
-            },
+            items.type,
+            Type(
+                array=Array(
+                    item=Type(reference=Reference(name='shop.v1.shop.Item'))
+                )
+            ),
         )
 
-        # Pydantic writes `Optional[X]` as a union with null.
-        self.assertEqual(
-            _schema_of_data_type(shop, 'Item')['properties']['price']['anyOf'],
-            [{
-                '$ref': '#/$defs/Price'
-            }, {
-                'type': 'null'
-            }],
+        # `Optional[X]` is an optional of a reference.
+        price = _property(
+            _schema_of_data_type(shop, 'shop.v1.shop.Item'), 'price'
         )
+        self.assertEqual(
+            price.type,
+            Type(
+                optional=Optional(
+                    inner=Type(reference=Reference(name='shop.v1.shop.Price'))
+                )
+            ),
+        )
+        self.assertEqual(price.default, 'null')
 
         self.assertEqual(
-            list(_schema_of_data_type(shop, 'Price')['properties']),
+            _property_names(_schema_of_data_type(shop, 'shop.v1.shop.Price')),
             ['currency', 'cents'],
         )
 
         # A model's docstring is its schema's description.
         self.assertEqual(
-            _schema_of_data_type(shop, 'Item')['description'],
+            _schema_of_data_type(shop, 'shop.v1.shop.Item').description,
             'One thing the shop sells.',
         )
 

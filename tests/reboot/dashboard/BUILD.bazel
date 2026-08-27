@@ -10,6 +10,7 @@ py_test(
     main = "api_reader_tests.py",
     deps = [
         "//reboot/dashboard:api_reader_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:schema_py_proto",
     ],
 )
 
@@ -22,6 +23,7 @@ py_test(
         "//reboot/dashboard:api_watcher_py",
         "//reboot/dashboard:main_py",
         "//reboot/dashboard:walk_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:schema_py_proto",
     ],
 )
 

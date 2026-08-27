@@ -33,6 +33,14 @@ py_proto_library(
     deps = [":schema_proto"],
 )
 
+js_proto_library(
+    name = "schema_js_proto",
+    package_json = ":package.json",
+    proto = "schema.proto",
+    proto_deps = [":schema_proto"],
+    visibility = ["//visibility:public"],
+)
+
 proto_library(
     name = "options_proto",
     srcs = [":options.proto"],

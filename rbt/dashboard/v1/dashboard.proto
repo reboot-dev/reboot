@@ -4,6 +4,7 @@ package rbt.dashboard.v1;
 
 import "google/protobuf/timestamp.proto";
 import "rbt/v1alpha1/options.proto";
+import "rbt/v1alpha1/schema.proto";
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -39,15 +40,14 @@ message StateType {
 
   repeated Method methods = 4;
 
-  // JSON Schema of the state model, as JSON text so that `properties`
-  // stays in the order the developer declared the fields.
-  string schema = 5;
+  // The state model's schema, its properties in the order the
+  // developer declared them.
+  rbt.v1alpha1.Schema schema = 5;
 
   // The request, response and error models of the methods, and
   // anything those contain, however deeply nested. Every name a
-  // `Method` or a `$ref` in this state type uses is the `name` of
-  // exactly one entry in this list. Another state type's list may
-  // contain a different model under the same name.
+  // `Method` or a `Reference` in this state type uses is the `name`
+  // of exactly one entry in this list.
   repeated DataType data_types = 6;
 }
 
@@ -69,8 +69,9 @@ message Method {
   // Whether the application exposes the method as an MCP tool.
   bool mcp = 4;
 
-  // Names of entries in the enclosing state type's `data_types`.
-  // Absent when the method takes or returns nothing.
+  // Names of entries in the enclosing state type's `data_types`, the
+  // way a `Reference` names them. Absent when the method takes or
+  // returns nothing.
   optional string request = 5;
   optional string response = 6;
   repeated string errors = 7;
@@ -81,12 +82,11 @@ message Method {
 // A model that is not a state model: a request, a response, an
 // error, or anything those contain, however deeply nested.
 message DataType {
+  // The name a `Reference` to the model carries: its module and
+  // class name, e.g. `shop.v1.shop.Item`.
   string name = 1;
 
-  // Pydantic's JSON Schema for the model, as JSON text. A reference
-  // to a sibling is spelled `#/$defs/<name>`, `<name>` being that
-  // sibling's `name`.
-  string schema = 2;
+  rbt.v1alpha1.Schema schema = 2;
 }
 
 message APIGetRequest {}
@@ -142,12 +142,9 @@ message DescriptionChanged {
   optional string to = 2;
 }
 
-// A property's type: everything its JSON Schema says about the
-// values it takes, which is all of its schema apart from its
-// description, title, default and tag, as JSON text.
 message TypeChanged {
-  string from = 1;
-  string to = 2;
+  rbt.v1alpha1.Type from = 1;
+  rbt.v1alpha1.Type to = 2;
 }
 
 message RequiredChanged {

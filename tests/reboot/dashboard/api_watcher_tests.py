@@ -13,6 +13,7 @@ from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import Change
 from rbt.dashboard.v1.dashboard_rbt import API
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
+from rbt.v1alpha1.schema_pb2 import INTEGER, STRING
 from reboot.aio.tests import Reboot
 from reboot.dashboard.constants import (
     API_ID,
@@ -160,8 +161,10 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         api = await self._wait_for_api(
             lambda api: any(
-                'quantity' in data_type['schema'] for state_type in
-                _state_types_in(api) for data_type in state_type['dataTypes']
+                property['name'] == 'quantity'
+                for state_type in _state_types_in(api)
+                for data_type in state_type['dataTypes']
+                for property in data_type['schema'].get('properties', [])
             )
         )
         self.assertIn('shop/v1/models.py', api.files)
@@ -472,8 +475,8 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
             (retyped.tag, retyped.name, retyped.WhichOneof('change')),
             (1, 'title', 'type'),
         )
-        self.assertIn('"string"', getattr(retyped.type, 'from'))
-        self.assertIn('"integer"', retyped.type.to)
+        self.assertEqual(getattr(retyped.type, 'from').scalar, STRING)
+        self.assertEqual(retyped.type.to.scalar, INTEGER)
 
     async def test_a_file_deleted_is_history(self) -> None:
         self._write_api_file(self.directory, 'shop', 'Shop')

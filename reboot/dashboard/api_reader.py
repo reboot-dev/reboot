@@ -15,9 +15,9 @@ edits. And it derives a module path from a relative filename, so it
 needs a working directory and `sys.path` that the dashboard should not
 adopt.
 
-Pydantic writes the JSON Schema of every model a state type mentions,
-however deeply nested; the reader names them and marks which one is
-the state.
+Every model a state type mentions is read into its schema, however
+deeply nested, and named the way a `Reference` names it; the state
+model's schema is set apart from the rest.
 """
 import asyncio
 import importlib
@@ -25,98 +25,87 @@ import json
 import os
 import sys
 from google.protobuf.json_format import MessageToDict, ParseDict
-from pydantic.json_schema import models_json_schema
 from rbt.dashboard.v1.dashboard_pb2 import DataType, Method, StateType
-from reboot.api import API, MethodModel, Model
+from reboot.api import API, MethodModel
+from reboot.schema import Schemas, reference_name, schema_of
 from typing import Optional
 
-# The prefix of a schema's reference to a sibling model.
-DEFS = '#/$defs/'
 
-
-def _schemas_of_models(models: list[type[Model]]) -> tuple[dict, dict]:
-    """The JSON Schema of each of `models` and of every model those
-    contain, keyed by name, and each model's name.
-
-    One call for the whole state type, so a model two methods mention
-    is described once and references between models resolve.
-    """
-    if len(models) == 0:
-        return {}, {}
-
-    # `models_json_schema` dedupes for us, but wants each model once.
-    unique = list(dict.fromkeys(models))
-
-    refs, schema = models_json_schema(
-        [(model, 'validation') for model in unique],
-        ref_template=f'{DEFS}{{model}}',
-    )
-
-    return schema.get('$defs', {}), {
-        model: refs[(model, 'validation')]['$ref'].replace(DEFS, '')
-        for model in unique
-    }
-
-
-def _models_of_type(type_obj) -> list[type[Model]]:
-    """Every model the state type or its methods name, state first.
+def _schemas_of_type(type_name: str, type_obj) -> Schemas:
+    """The schema of every model the state type or its methods name,
+    and of every model those contain, by reference name.
 
     A `UI` method draws no method row, but the model it takes is one
     the developer wrote and is described like any other.
     """
-    models: list[type[Model]] = [type_obj.state]
+    path = f'api.{type_name}'
+    _, schemas = schema_of(type_obj.state, path=f'{path}.state')
 
-    for spec in type_obj.methods.values():
+    for method_name, spec in type_obj.methods.items():
         if spec.request is not None:
-            models.append(spec.request)
+            _, schemas = schema_of(
+                spec.request,
+                path=f'{path}.methods.{method_name}.request',
+                schemas=schemas,
+            )
         if not isinstance(spec, MethodModel):
             continue
         if spec.response is not None:
-            models.append(spec.response)
-        models.extend(spec.errors)
+            _, schemas = schema_of(
+                spec.response,
+                path=f'{path}.methods.{method_name}.response',
+                schemas=schemas,
+            )
+        for error in spec.errors:
+            _, schemas = schema_of(
+                error,
+                path=f'{path}.methods.{method_name}.errors.{error.__name__}',
+                schemas=schemas,
+            )
 
-    return models
+    return schemas
 
 
-def _method_from_spec(
-    method_name: str,
-    spec: MethodModel,
-    names: dict,
-) -> Method:
+def _method_from_spec(method_name: str, spec: MethodModel) -> Method:
     method = Method(
         name=method_name,
         kind=Method.Kind.Value(spec.kind.value.upper()),
         factory=spec.factory,
         mcp=spec.mcp is not None,
-        errors=[names[error] for error in spec.errors],
+        errors=[reference_name(error) for error in spec.errors],
     )
 
     if spec.request is not None:
-        method.request = names[spec.request]
+        method.request = reference_name(spec.request)
     if spec.response is not None:
-        method.response = names[spec.response]
+        method.response = reference_name(spec.response)
     if spec.description is not None:
         method.description = spec.description
 
     return method
 
 
-def _state_type_from_type(name: str, file: str, type_obj) -> StateType:
-    schemas, names = _schemas_of_models(_models_of_type(type_obj))
+def _state_type_from_type(
+    name: str,
+    file: str,
+    type_name: str,
+    type_obj,
+) -> StateType:
+    schemas = _schemas_of_type(type_name, type_obj)
 
-    state = names[type_obj.state]
+    state = reference_name(type_obj.state)
 
     state_type = StateType(
         name=name,
         filename=file,
-        schema=json.dumps(schemas[state]),
+        schema=schemas[state],
         methods=[
-            _method_from_spec(method_name, spec, names)
+            _method_from_spec(method_name, spec)
             for method_name, spec in type_obj.methods.items()
             if isinstance(spec, MethodModel)
         ],
         data_types=[
-            DataType(name=model_name, schema=json.dumps(schema))
+            DataType(name=model_name, schema=schema)
             for model_name, schema in schemas.items()
             if model_name != state
         ],
@@ -156,8 +145,9 @@ def state_types_in_file(api_directory: str, filename: str) -> list[StateType]:
     package = os.path.dirname(filename).replace(os.sep, '.')
 
     return [
-        _state_type_from_type(f'{package}.{type_name}', file, type_obj)
-        for type_name, type_obj in api.get_types().items()
+        _state_type_from_type(
+            f'{package}.{type_name}', file, type_name, type_obj
+        ) for type_name, type_obj in api.get_types().items()
     ]
 
 

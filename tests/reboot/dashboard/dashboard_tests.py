@@ -5,7 +5,6 @@ These tests run the dashboard under the `Reboot()` harness, write the
 API state directly, and drive the served page with a browser.
 """
 import asyncio
-import json
 import socket
 import unittest
 from google.protobuf.json_format import ParseDict
@@ -46,51 +45,89 @@ def _new_driver():
 
 
 # One state type as `api_reader` describes it: methods name entries in
-# `dataTypes`, and each model's shape is its JSON Schema as text.
+# `dataTypes` by reference name, and each model's shape is its
+# schema, in proto JSON.
+_MODULE = 'shop.v1.shop'
+
+
+def _schema(name: str, properties: list[dict], **rest) -> dict:
+    return {
+        'name': name,
+        'module': _MODULE,
+        'properties': properties,
+        **rest,
+    }
+
+
 _SCHEMAS = {
     'ShopState':
-        {
-            'type': 'object',
-            'properties': {
-                'name': {
-                    'type': 'string'
-                }
-            },
-        },
-    'LookRequest':
-        {
-            'type': 'object',
-            'properties': {
-                'item': {
-                    'type': 'string'
-                }
-            },
-        },
-    'LookResponse':
-        {
-            'type': 'object',
-            'properties':
+        _schema(
+            'ShopState',
+            [
                 {
-                    'found': {
-                        'type': 'boolean'
+                    'name': 'name',
+                    'tag': 1,
+                    'type': {
+                        'scalar': 'STRING'
                     },
-                    'shelf': {
-                        '$ref': '#/$defs/Shelf'
+                    'required': True,
+                }
+            ],
+        ),
+    'LookRequest':
+        _schema(
+            'LookRequest',
+            [
+                {
+                    'name': 'item',
+                    'tag': 1,
+                    'type': {
+                        'scalar': 'STRING'
                     },
+                    'required': True,
+                }
+            ],
+        ),
+    'LookResponse':
+        _schema(
+            'LookResponse',
+            [
+                {
+                    'name': 'found',
+                    'tag': 1,
+                    'type': {
+                        'scalar': 'BOOLEAN'
+                    },
+                    'required': True,
                 },
-        },
+                {
+                    'name': 'shelf',
+                    'tag': 2,
+                    'type': {
+                        'reference': {
+                            'name': f'{_MODULE}.Shelf'
+                        }
+                    },
+                    'required': True,
+                },
+            ],
+        ),
     # No method names `Shelf`; only `LookResponse.shelf` refers to it.
     'Shelf':
-        {
-            'type': 'object',
-            'title': 'Shelf',
-            'description': 'Where an item sits.',
-            'properties': {
-                'aisle': {
-                    'type': 'integer'
+        _schema(
+            'Shelf',
+            [
+                {
+                    'name': 'aisle',
+                    'tag': 1,
+                    'type': {
+                        'scalar': 'INTEGER'
+                    },
+                    'required': True,
                 }
-            },
-        },
+            ],
+            description='Where an item sits.',
+        ),
 }
 
 _SHOP = {
@@ -99,7 +136,7 @@ _SHOP = {
     'filename':
         'api/shop/v1/shop.py',
     'schema':
-        json.dumps(_SCHEMAS['ShopState']),
+        _SCHEMAS['ShopState'],
     'methods':
         [
             {
@@ -108,15 +145,15 @@ _SHOP = {
                 'factory': False,
                 'mcp': False,
                 'errors': [],
-                'request': 'LookRequest',
-                'response': 'LookResponse',
+                'request': f'{_MODULE}.LookRequest',
+                'response': f'{_MODULE}.LookResponse',
             },
         ],
     'dataTypes':
         [
             {
-                'name': name,
-                'schema': json.dumps(schema),
+                'name': f'{_MODULE}.{name}',
+                'schema': schema,
             } for name, schema in _SCHEMAS.items() if name != 'ShopState'
         ],
 }
