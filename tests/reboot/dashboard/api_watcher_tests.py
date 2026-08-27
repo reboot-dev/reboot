@@ -161,10 +161,8 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         api = await self._wait_for_api(
             lambda api: any(
-                property['name'] == 'quantity'
-                for state_type in _state_types_in(api)
-                for data_type in state_type['dataTypes']
-                for property in data_type['schema'].get('properties', [])
+                property.name == 'quantity' for schema in api.schemas.values(
+                ) for property in schema.properties
             )
         )
         self.assertIn('shop/v1/models.py', api.files)

@@ -22,8 +22,15 @@ from functools import partial
 from google.protobuf.timestamp_pb2 import Timestamp
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import API as APIState
-from rbt.dashboard.v1.dashboard_pb2 import Change, File, StateType
+from rbt.dashboard.v1.dashboard_pb2 import (
+    Change,
+    DataType,
+    Declarations,
+    File,
+    StateType,
+)
 from rbt.dashboard.v1.dashboard_rbt import API
+from rbt.v1alpha1.schema_pb2 import Schema
 from reboot.aio.concurrently import concurrently
 from reboot.aio.contexts import WorkflowContext
 from reboot.aio.workflows import at_least_once
@@ -67,6 +74,15 @@ class ReadFile:
     # them. Empty for a file that could not be read.
     state_types: tuple[StateType, ...]
 
+    # Every data type the file declares. Empty for a file that could
+    # not be read.
+    data_types: tuple[DataType, ...]
+
+    # The schema of every model the file declares, state models
+    # included, by reference name. Empty for a file that could not be
+    # read.
+    schemas: Mapping[str, Schema]
+
     # Why the file could not be read, when it could not be.
     error: Optional[str]
 
@@ -107,28 +123,51 @@ def _reconstitute_known(
             [],
         ).append(state_type)
 
+    data_types: dict[Path, list[DataType]] = {}
+    for data_type in state.data_types:
+        data_types.setdefault(
+            _standardized_path(api_directory / data_type.filename),
+            [],
+        ).append(data_type)
+
     known: dict[Path, ReadFile] = {}
     for relative, file in state.files.items():
         filename = _standardized_path(api_directory / relative)
+        # A file's schemas are those its state types and data types
+        # refer to.
+        references = [
+            state_type.reference
+            for state_type in state_types.get(filename, [])
+        ] + [
+            data_type.reference for data_type in data_types.get(filename, [])
+        ]
         known[filename] = ReadFile(
             filename=filename,
             digest=file.digest,
             dependencies=dict(file.dependencies),
             external=tuple(file.external),
             state_types=tuple(state_types.get(filename, [])),
+            data_types=tuple(data_types.get(filename, [])),
+            schemas={
+                reference.name: state.schemas[reference.name]
+                for reference in references
+            },
             error=file.error if file.HasField('error') else None,
             modified=file.modified,
         )
     return known
 
 
-def _state_types(known: Mapping[Path, ReadFile]) -> list[StateType]:
-    """Every state type the files declare, in the order of the
-    files."""
-    return [
-        state_type for filename in sorted(known)
-        for state_type in known[filename].state_types
-    ]
+def _declarations(known: Mapping[Path, ReadFile]) -> Declarations:
+    """Everything the files declare: the state types and data types
+    in the order of the files, and every schema by reference name."""
+    declarations = Declarations()
+    for filename in sorted(known):
+        declarations.state_types.extend(known[filename].state_types)
+        declarations.data_types.extend(known[filename].data_types)
+        for name, schema in known[filename].schemas.items():
+            declarations.schemas[name].CopyFrom(schema)
+    return declarations
 
 
 def _error(
@@ -201,7 +240,7 @@ async def _walk_and_read(
     # Every parsed file is read, all at once: each read
     # is an interpreter importing the file, and none
     # waits on another.
-    reads: dict[Path, tuple[list[StateType], Optional[str]]] = {
+    reads: dict[Path, tuple[Declarations, Optional[str]]] = {
         filename: read async for filename, read in concurrently(
             lambda filename: read_api_file(
                 api_directory,
@@ -218,13 +257,15 @@ async def _walk_and_read(
     # candidate that is gone, or could not be read, is in none of
     # these.
     known_now: dict[Path, ReadFile] = dict(unchanged)
-    for filename, (state_types, error) in reads.items():
+    for filename, (declarations, error) in reads.items():
         known_now[filename] = ReadFile(
             filename=filename,
             digest=parsed[filename].digest,
             dependencies=dict(parsed[filename].dependencies),
             external=(),
-            state_types=tuple(state_types),
+            state_types=tuple(declarations.state_types),
+            data_types=tuple(declarations.data_types),
+            schemas=dict(declarations.schemas),
             error=error,
             # The parsed bytes' time, from the open file they came
             # from, so a time and a digest always describe one file.
@@ -247,6 +288,8 @@ async def _walk_and_read(
             dependencies={},
             external=(),
             state_types=(),
+            data_types=(),
+            schemas={},
             error=(
                 f'{type(unparseable_file.error).__name__}: '
                 f'{unparseable_file.error}'
@@ -264,10 +307,7 @@ async def _walk_and_read(
     # while the dashboard watched or while it was down.
     changes = (
         [] if iteration == 0 else
-        list(changes_between(
-            _state_types(known),
-            _state_types(known_now),
-        ))
+        list(changes_between(_declarations(known), _declarations(known_now)))
     )
 
     return known_now, changes
@@ -320,11 +360,14 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
                 # that touches several files is one entry's worth of
                 # history.
                 if known_now is not None:
+                    declarations = _declarations(known_now)
                     await API.ref().per_iteration('Update').Update(
                         context,
-                        state_types=_state_types(known_now),
+                        state_types=list(declarations.state_types),
                         error=_error(known_now, api_directory=directory),
                         files=_files(known_now, api_directory=directory),
+                        data_types=list(declarations.data_types),
+                        schemas=dict(declarations.schemas),
                         changes=changes,
                     )
                     known = known_now

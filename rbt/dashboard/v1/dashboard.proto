@@ -26,6 +26,16 @@ message API {
   // changed since this was written is simply read again, which its
   // digest says.
   map<string, File> files = 3;
+
+  // The models that are not state models: the requests, responses
+  // and errors of the methods, and anything those contain, however
+  // deeply nested.
+  repeated DataType data_types = 4;
+
+  // The schema of every model the API files declare, state models
+  // included, by the name a `Reference` carries: the model's module
+  // and class name.
+  map<string, rbt.v1alpha1.Schema> schemas = 5;
 }
 
 message StateType {
@@ -40,15 +50,8 @@ message StateType {
 
   repeated Method methods = 4;
 
-  // The state model's schema, its properties in the order the
-  // developer declared them.
-  rbt.v1alpha1.Schema schema = 5;
-
-  // The request, response and error models of the methods, and
-  // anything those contain, however deeply nested. Every name a
-  // `Method` or a `Reference` in this state type uses is the `name`
-  // of exactly one entry in this list.
-  repeated DataType data_types = 6;
+  // The state model: a key of `API.schemas`.
+  rbt.v1alpha1.Reference reference = 5;
 }
 
 message Method {
@@ -69,12 +72,11 @@ message Method {
   // Whether the application exposes the method as an MCP tool.
   bool mcp = 4;
 
-  // Names of entries in the enclosing state type's `data_types`, the
-  // way a `Reference` names them. Absent when the method takes or
-  // returns nothing.
-  optional string request = 5;
-  optional string response = 6;
-  repeated string errors = 7;
+  // Keys of `API.schemas`. Absent when the method takes or returns
+  // nothing.
+  optional rbt.v1alpha1.Reference request = 5;
+  optional rbt.v1alpha1.Reference response = 6;
+  repeated rbt.v1alpha1.Reference errors = 7;
 
   optional string description = 8;
 }
@@ -82,11 +84,21 @@ message Method {
 // A model that is not a state model: a request, a response, an
 // error, or anything those contain, however deeply nested.
 message DataType {
-  // The name a `Reference` to the model carries: its module and
-  // class name, e.g. `shop.v1.shop.Item`.
-  string name = 1;
+  // The path of the file declaring it, including the directory
+  // passed to `--api-directory`.
+  string filename = 1;
 
-  rbt.v1alpha1.Schema schema = 2;
+  // The model: a key of `API.schemas`.
+  rbt.v1alpha1.Reference reference = 2;
+}
+
+// What the API files declare: the state types, the data types, and
+// the schema of every model either refers to, by the name a
+// `Reference` carries.
+message Declarations {
+  repeated StateType state_types = 1;
+  repeated DataType data_types = 2;
+  map<string, rbt.v1alpha1.Schema> schemas = 3;
 }
 
 message APIGetRequest {}
@@ -95,12 +107,16 @@ message APIGetResponse {
   repeated StateType state_types = 1;
   optional string error = 2;
   map<string, File> files = 3;
+  repeated DataType data_types = 4;
+  map<string, rbt.v1alpha1.Schema> schemas = 5;
 }
 
 message APIUpdateRequest {
   repeated StateType state_types = 1;
   optional string error = 2;
   map<string, File> files = 3;
+  repeated DataType data_types = 5;
+  map<string, rbt.v1alpha1.Schema> schemas = 6;
 
   // What differs from what the state records, for the changelog.
   // Recorded in the same transaction as the state, so that the
@@ -203,18 +219,18 @@ message McpChanged {
 
 // The request or response type, by name; absent for none.
 message RequestChanged {
-  optional string from = 1;
-  optional string to = 2;
+  optional rbt.v1alpha1.Reference from = 1;
+  optional rbt.v1alpha1.Reference to = 2;
 }
 
 message ResponseChanged {
-  optional string from = 1;
-  optional string to = 2;
+  optional rbt.v1alpha1.Reference from = 1;
+  optional rbt.v1alpha1.Reference to = 2;
 }
 
 message ErrorsChanged {
-  repeated string from = 1;
-  repeated string to = 2;
+  repeated rbt.v1alpha1.Reference from = 1;
+  repeated rbt.v1alpha1.Reference to = 2;
 }
 
 // One method of a state type, and one thing that happened to it.

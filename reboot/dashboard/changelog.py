@@ -12,6 +12,7 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     DataTypeAdded,
     DataTypeChanged,
     DataTypeRemoved,
+    Declarations,
     DefaultChanged,
     DescriptionChanged,
     ErrorsChanged,
@@ -30,13 +31,12 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     RequiredChanged,
     ResponseChanged,
     StateModelRenamed,
-    StateType,
     StateTypeAdded,
     StateTypeChanged,
     StateTypeRemoved,
     TypeChanged,
 )
-from rbt.v1alpha1.schema_pb2 import Property, Schema
+from rbt.v1alpha1.schema_pb2 import Property, Reference, Schema
 from typing import Iterator, Mapping, Optional
 
 
@@ -47,32 +47,22 @@ def _properties_of(schema: Schema) -> dict[int, Property]:
     return {property.tag: property for property in schema.properties}
 
 
-def _described(
-    state_types: list[StateType],
-) -> tuple[dict[str, StateType], dict[str, tuple[str, DataType]]]:
-    """Returns every type a description declares, state types and
-    data types apart, each by its fully qualified name; a data type
-    beside the filename of the state type that declares it."""
-    described_state_types: dict[str, StateType] = {}
-    described_data_types: dict[str, tuple[str, DataType]] = {}
-
-    for state_type in state_types:
-        described_state_types[state_type.name] = state_type
-
-        # A data type's name is qualified the way the page derives
-        # it: the state type's package, then the model's class name.
-        package = state_type.name.rsplit('.', 1)[0]
-
-        for data_type in state_type.data_types:
-            described_data_types[f'{package}.{data_type.schema.name}'] = (
-                state_type.filename,
-                data_type,
-            )
-
-    return described_state_types, described_data_types
+def _data_types(declarations: Declarations) -> dict[str, DataType]:
+    """Every data type, by the name the page gives it: the model's
+    package, then its class name."""
+    data_types: dict[str, DataType] = {}
+    for data_type in declarations.data_types:
+        schema = declarations.schemas[data_type.reference.name]
+        package = schema.module.rsplit('.', 1)[0]
+        data_types[f'{package}.{schema.name}'] = data_type
+    return data_types
 
 
 def _optional_string(message, field: str) -> Optional[str]:
+    return getattr(message, field) if message.HasField(field) else None
+
+
+def _optional_reference(message, field: str) -> Optional[Reference]:
     return getattr(message, field) if message.HasField(field) else None
 
 
@@ -200,7 +190,8 @@ def _method_changes(
             ('request', RequestChanged),
             ('response', ResponseChanged),
         ):
-            if _optional_string(old, field) != _optional_string(new, field):
+            if _optional_reference(old,
+                                   field) != _optional_reference(new, field):
                 changes.append(
                     MethodChange(
                         name=name,
@@ -208,8 +199,10 @@ def _method_changes(
                             field:
                                 changed(
                                     **{
-                                        'from': _optional_string(old, field),
-                                        'to': _optional_string(new, field),
+                                        'from':
+                                            _optional_reference(old, field),
+                                        'to':
+                                            _optional_reference(new, field),
                                     }
                                 )
                         },
@@ -255,15 +248,19 @@ def _description_changed(
 
 
 def changes_between(
-    before: list[StateType],
-    after: list[StateType],
+    before: Declarations,
+    after: Declarations,
 ) -> Iterator[Change]:
     """Ordered by name, state types before data types, so that a
     retry of the `Update` call the watcher makes sends the same
     list, which is what makes the write idempotent.
     """
-    state_types_before, data_types_before = _described(before)
-    state_types_after, data_types_after = _described(after)
+    state_types_before = {
+        state_type.name: state_type for state_type in before.state_types
+    }
+    state_types_after = {
+        state_type.name: state_type for state_type in after.state_types
+    }
 
     for name in sorted(set(state_types_before) | set(state_types_after)):
         old = state_types_before.get(name)
@@ -285,6 +282,9 @@ def changes_between(
             )
             continue
 
+        old_schema = before.schemas[old.reference.name]
+        new_schema = after.schemas[new.reference.name]
+
         changed = StateTypeChanged(
             name=name,
             filename=new.filename,
@@ -293,22 +293,22 @@ def changes_between(
                 {method.name: method for method in new.methods},
             ),
             properties=_property_changes(
-                _properties_of(old.schema),
-                _properties_of(new.schema),
+                _properties_of(old_schema),
+                _properties_of(new_schema),
             ),
             # The state model's docstring, which is what a reader of
             # the state page sees as its description.
             description=_description_changed(
-                _optional_string(old.schema, 'description'),
-                _optional_string(new.schema, 'description'),
+                _optional_string(old_schema, 'description'),
+                _optional_string(new_schema, 'description'),
             ),
             state_model_renamed=(
                 StateModelRenamed(
                     **{
-                        'from': old.schema.name,
-                        'to': new.schema.name,
+                        'from': old_schema.name,
+                        'to': new_schema.name,
                     }
-                ) if old.schema.name != new.schema.name else None
+                ) if old_schema.name != new_schema.name else None
             ),
         )
         if (
@@ -318,6 +318,9 @@ def changes_between(
         ):
             yield Change(state_type_changed=changed)
 
+    data_types_before = _data_types(before)
+    data_types_after = _data_types(after)
+
     for name in sorted(set(data_types_before) | set(data_types_after)):
         old_data_type = data_types_before.get(name)
         new_data_type = data_types_after.get(name)
@@ -326,28 +329,31 @@ def changes_between(
             assert new_data_type is not None
             yield Change(
                 data_type_added=DataTypeAdded(
-                    name=name, filename=new_data_type[0]
+                    name=name, filename=new_data_type.filename
                 )
             )
             continue
         if new_data_type is None:
             yield Change(
                 data_type_removed=DataTypeRemoved(
-                    name=name, filename=old_data_type[0]
+                    name=name, filename=old_data_type.filename
                 )
             )
             continue
 
+        old_data_type_schema = before.schemas[old_data_type.reference.name]
+        new_data_type_schema = after.schemas[new_data_type.reference.name]
+
         changed_data_type = DataTypeChanged(
             name=name,
-            filename=new_data_type[0],
+            filename=new_data_type.filename,
             properties=_property_changes(
-                _properties_of(old_data_type[1].schema),
-                _properties_of(new_data_type[1].schema),
+                _properties_of(old_data_type_schema),
+                _properties_of(new_data_type_schema),
             ),
             description=_description_changed(
-                _optional_string(old_data_type[1].schema, 'description'),
-                _optional_string(new_data_type[1].schema, 'description'),
+                _optional_string(old_data_type_schema, 'description'),
+                _optional_string(new_data_type_schema, 'description'),
             ),
         )
         if (

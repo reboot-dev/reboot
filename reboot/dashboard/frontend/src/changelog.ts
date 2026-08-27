@@ -176,7 +176,7 @@ const partsOfMethods = (methods: MethodChange[]): Part[] =>
           name,
           difference: "changed",
           verb: "request changed",
-          detail: fromTo(c.value.from, c.value.to),
+          detail: fromTo(c.value.from?.name, c.value.to?.name),
         };
       case "response":
         return {
@@ -184,7 +184,7 @@ const partsOfMethods = (methods: MethodChange[]): Part[] =>
           name,
           difference: "changed",
           verb: "response changed",
-          detail: fromTo(c.value.from, c.value.to),
+          detail: fromTo(c.value.from?.name, c.value.to?.name),
         };
       case "errors":
         return {
@@ -193,8 +193,8 @@ const partsOfMethods = (methods: MethodChange[]): Part[] =>
           difference: "changed",
           verb: "errors changed",
           detail: fromTo(
-            c.value.from.join(", ") || "none",
-            c.value.to.join(", ") || "none"
+            c.value.from.map((error) => error.name).join(", ") || "none",
+            c.value.to.map((error) => error.name).join(", ") || "none"
           ),
         };
       case "description":

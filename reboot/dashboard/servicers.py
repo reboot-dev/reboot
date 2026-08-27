@@ -53,6 +53,8 @@ class APIServicer(API.Servicer):
             state_types=self.state.state_types,
             error=self.state.error if self.state.HasField('error') else None,
             files=self.state.files,
+            data_types=self.state.data_types,
+            schemas=self.state.schemas,
         )
 
     @classmethod
@@ -91,6 +93,11 @@ class APIServicer(API.Servicer):
         self.state.files.clear()
         for filename, file in request.files.items():
             self.state.files[filename].CopyFrom(file)
+        del self.state.data_types[:]
+        self.state.data_types.extend(request.data_types)
+        self.state.schemas.clear()
+        for name, schema in request.schemas.items():
+            self.state.schemas[name].CopyFrom(schema)
 
         if len(request.changes) > 0:
             await OrderedMap.ref(CHANGELOG_ID).Insert(

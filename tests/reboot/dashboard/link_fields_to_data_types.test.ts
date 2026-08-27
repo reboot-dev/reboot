@@ -3,23 +3,25 @@
 // `state_types` by running the real reader over `api/`, so the tests
 // below fail when either side drifts from the other.
 import { describe, expect, it } from "vitest";
-import { StateType } from "../../../rbt/dashboard/v1/dashboard_pb";
+import { Declarations } from "../../../rbt/dashboard/v1/dashboard_pb";
 import {
   fieldsOfDataType,
   fieldsOfState,
   formatType,
   linkDataTypes,
 } from "../../../reboot/dashboard/frontend/src/link_fields_to_data_types";
-import stateTypesJson from "./state_types";
+import declarationsJson from "./state_types";
 
-// The reader prints proto JSON, which the generated class reads.
-const stateTypes = (stateTypesJson as unknown[]).map((json) =>
-  StateType.fromJson(json as Parameters<typeof StateType.fromJson>[0])
+// The reader prints proto JSON, which the generated class reads: the
+// state types, the data types and the schemas the page walks.
+const declarations = Declarations.fromJson(
+  declarationsJson as Parameters<typeof Declarations.fromJson>[0]
 );
+const stateTypes = declarations.stateTypes;
 
 const linkedDataTypesById = () =>
   new Map(
-    linkDataTypes(stateTypes).map((linkedDataType) => [
+    linkDataTypes(declarations).map((linkedDataType) => [
       linkedDataType.id,
       linkedDataType,
     ])
@@ -27,18 +29,17 @@ const linkedDataTypesById = () =>
 
 describe("the type spelling the changelog shares with the fields table", () => {
   it("spells every field of every model the way the table does", () => {
-    // Every model the reader described, with the rows the table
+    // Every model the reader declarations, with the rows the table
     // makes of it: the spelling of each row's type is what
     // `formatType` must give for that property's type, an optional
     // field's `| null` aside, which the table shows as a column
     // rather than in the type.
-    const models = stateTypes.flatMap((stateType) => [
-      { schema: stateType.schema, rows: fieldsOfState(stateType) },
-      ...stateType.dataTypes.map((dataType) => ({
-        schema: dataType.schema,
-        rows: fieldsOfDataType(stateType, dataType.name),
-      })),
-    ]);
+    const models = Object.entries(declarations.schemas).map(
+      ([name, schema]) => ({
+        schema,
+        rows: fieldsOfDataType({ ...declarations, name }),
+      })
+    );
     expect(models.length).toBeGreaterThan(0);
 
     for (const { schema, rows } of models) {
@@ -62,9 +63,12 @@ describe("the description the reader writes", () => {
     const remaining = shop.methods.find(
       (method) => method.name === "remaining"
     );
-    expect(remaining?.response).toBe("shop.v1.shop.StockResponse");
+    expect(remaining?.response?.name).toBe("shop.v1.shop.StockResponse");
 
-    const fields = fieldsOfDataType(shop, remaining!.response!);
+    const fields = fieldsOfDataType({
+      ...declarations,
+      name: remaining!.response!.name,
+    });
     const items = fields.find((field) => field.name === "items");
 
     // A field row names its element type and links to that type's
@@ -93,10 +97,12 @@ describe("the description the reader writes", () => {
     );
     const [error] = remaining!.errors;
 
-    expect(error).toBe("shop.v1.shop.OutOfStockError");
-    expect(fieldsOfDataType(shop, error).map((field) => field.name)).toEqual([
-      "item",
-    ]);
+    expect(error.name).toBe("shop.v1.shop.OutOfStockError");
+    expect(
+      fieldsOfDataType({ ...declarations, name: error.name }).map(
+        (field) => field.name
+      )
+    ).toEqual(["item"]);
   });
 });
 
@@ -113,6 +119,12 @@ describe("the data types the description carries", () => {
 
   it("leaves out the state types' own state", () => {
     expect(linkedDataTypesById().has("shop.v1.ShopState")).toBe(false);
+    // The state page shows the state model's fields.
+    expect(
+      fieldsOfState({ ...declarations, stateType: stateTypes[0] }).map(
+        (field) => field.name
+      )
+    ).toEqual(["name", "open"]);
   });
 
   it("links a contained type rather than opening it", () => {
@@ -138,9 +150,10 @@ describe("the data types the description carries", () => {
     const remaining = shop.methods.find(
       (method) => method.name === "remaining"
     );
-    const items = fieldsOfDataType(shop, remaining!.response!).find(
-      (field) => field.name === "items"
-    );
+    const items = fieldsOfDataType({
+      ...declarations,
+      name: remaining!.response!.name,
+    }).find((field) => field.name === "items");
     expect(items?.link).toBe("shop.v1.Item");
 
     const price = linkedDataTypes

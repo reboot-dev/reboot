@@ -63,6 +63,7 @@ py_web_test_suite_env(
         "//reboot/dashboard:api_watcher_py",
         "//reboot/dashboard:main_py",
         "//reboot/std/presence/v1:presence_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:schema_py_proto",
         "@io_bazel_rules_webtesting//testing/web",
     ],
 )

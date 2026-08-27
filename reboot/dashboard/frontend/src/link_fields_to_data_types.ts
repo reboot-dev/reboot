@@ -6,6 +6,7 @@
 // model's own shape is its `rbt.v1alpha1.Schema`, the grammar
 // `rbt generate` prints proto from.
 import type {
+  DataType,
   Method as MethodMessage,
   Method_Kind,
   StateType as StateTypeMessage,
@@ -18,6 +19,10 @@ import { Scalar } from "../../../../rbt/v1alpha1/schema_pb";
 // `import type`, and the page has components with those names.
 export type Method = MethodMessage;
 export type StateType = StateTypeMessage;
+
+// The schema of every model the API files declare, by the name a
+// `Reference` carries: what `API.schemas` is.
+export type Schemas = { [name: string]: Schema };
 
 // A kind as the page prints it, which is also its CSS class and its
 // key in the definitions. Keyed by every `Method.Kind`, so a kind
@@ -33,7 +38,9 @@ const KIND_LABELS: Record<Method_Kind, string> = {
 export const labelOfKind = (kind: Method_Kind): string => KIND_LABELS[kind];
 
 // A type's namespace is its proto package: `bank.v1.Account` has the
-// namespace `bank.v1`, which is the developer's `api/bank/v1/`.
+// namespace `bank.v1`, which is the developer's `api/bank/v1/`. A
+// model's module, `bank.v1.account`, has the same namespace, since
+// the package is the file's directory.
 export const namespaceOfTypeName = (name: string): string =>
   name.slice(0, name.lastIndexOf("."));
 
@@ -133,37 +140,39 @@ const referenceIn = (type: Type | undefined): string | undefined => {
   }
 };
 
-// The id of a data type is the state type's package plus the model's
-// class name, the same format `rbt generate` uses for these types'
-// message names.
-const idOfDataType = (stateType: StateType, className: string): string =>
-  `${namespaceOfTypeName(stateType.name)}.${className}`;
+// The id of a data type is the model's package plus its class name,
+// the same format `rbt generate` uses for these types' message names.
+const idOfSchema = (schema: Schema | undefined): string =>
+  `${namespaceOfTypeName(schema?.module ?? "")}.${schema?.name ?? ""}`;
 
-// Maps each data type's reference name, the way a `Method` or a
-// `Reference` names it, to its id, the only lookup the rows need.
-const dataTypeIdsByName = (stateType: StateType): Map<string, string> =>
-  new Map(
-    stateType.dataTypes.map((dataType) => [
-      dataType.name,
-      idOfDataType(stateType, dataType.schema?.name ?? ""),
-    ])
-  );
-
-// The id of the data type a `Method` names, and none for the state
-// model, which has no page of its own.
-export const dataTypeIdOfName = (
-  stateType: StateType,
-  name: string
-): string | undefined => dataTypeIdsByName(stateType).get(name);
+// The id of the data type a `Method` or a `Reference` names, and none
+// for a name that is not a data type's, such as a state model's,
+// which has no page of its own.
+export const dataTypeIdOfName = ({
+  dataTypes,
+  schemas,
+  name,
+}: {
+  dataTypes: DataType[];
+  schemas: Schemas;
+  name: string;
+}): string | undefined =>
+  dataTypes.some((dataType) => dataType.reference?.name === name)
+    ? idOfSchema(schemas[name])
+    : undefined;
 
 // The rows of one model, in the order the developer declared the
 // properties.
-const rowsOfSchema = (
-  stateType: StateType,
-  schema: Schema | undefined
-): Field[] => {
-  const ids = dataTypeIdsByName(stateType);
-  return (schema?.properties ?? []).map((property) => {
+const rowsOfSchema = ({
+  dataTypes,
+  schemas,
+  schema,
+}: {
+  dataTypes: DataType[];
+  schemas: Schemas;
+  schema: Schema | undefined;
+}): Field[] =>
+  (schema?.properties ?? []).map((property) => {
     const form = property.type?.type;
     const optional = form?.case === "optional";
     const type = optional ? form.value.inner : property.type;
@@ -173,36 +182,49 @@ const rowsOfSchema = (
       type: formatType(type),
       optional,
       description: property.description,
-      // A reference to the state model has no page, so no link.
-      link: reference === undefined ? undefined : ids.get(reference),
+      link:
+        reference === undefined
+          ? undefined
+          : dataTypeIdOfName({ dataTypes, schemas, name: reference }),
     };
   });
-};
 
-export const fieldsOfState = (stateType: StateType): Field[] =>
-  rowsOfSchema(stateType, stateType.schema);
+export const fieldsOfState = ({
+  dataTypes,
+  schemas,
+  stateType,
+}: {
+  dataTypes: DataType[];
+  schemas: Schemas;
+  stateType: StateType;
+}): Field[] =>
+  rowsOfSchema({
+    dataTypes,
+    schemas,
+    schema: schemas[stateType.reference?.name ?? ""],
+  });
 
-// The fields of the data type named `name`, one level deep.
-export const fieldsOfDataType = (
-  stateType: StateType,
-  name: string
-): Field[] => {
-  const dataType = stateType.dataTypes.find(
-    (candidate) => candidate.name === name
-  );
-  return dataType === undefined ? [] : rowsOfSchema(stateType, dataType.schema);
-};
+// The fields of the model named `name`, one level deep.
+export const fieldsOfDataType = ({
+  dataTypes,
+  schemas,
+  name,
+}: {
+  dataTypes: DataType[];
+  schemas: Schemas;
+  name: string;
+}): Field[] => rowsOfSchema({ dataTypes, schemas, schema: schemas[name] });
 
-// Every type the developer wrote that is not a state type, by id.
-//
-// The state types' own state models are left out: the state page
-// shows those.
-//
-// Deduplicated here rather than in the reader: `data_types` is scoped
-// per state type, so a model two state types contain arrives twice,
-// and merging the copies by id takes the whole description, which is
-// exactly what this function walks.
-export const linkDataTypes = (stateTypes: StateType[]): LinkedDataType[] => {
+// Every data type, by id, with what contains it.
+export const linkDataTypes = ({
+  stateTypes,
+  dataTypes,
+  schemas,
+}: {
+  stateTypes: StateType[];
+  dataTypes: DataType[];
+  schemas: Schemas;
+}): LinkedDataType[] => {
   const linkedDataTypesById = new Map<string, LinkedDataType>();
   const referrersById = new Map<string, Referrer[]>();
 
@@ -217,19 +239,22 @@ export const linkDataTypes = (stateTypes: StateType[]): LinkedDataType[] => {
     }
   };
 
+  // What each method takes, returns and raises, labeled the way the
+  // state page labels the method.
   for (const stateType of stateTypes) {
-    const ids = dataTypeIdsByName(stateType);
-
-    // What each method takes, returns and raises, labeled the way the
-    // state page labels the method.
     for (const method of stateType.methods) {
       const namesWithVerbs: [string | undefined, string][] = [
-        [method.request, "takes"],
-        [method.response, "returns"],
-        ...method.errors.map((error) => [error, "raises"] as [string, string]),
+        [method.request?.name, "takes"],
+        [method.response?.name, "returns"],
+        ...method.errors.map(
+          (error) => [error.name, "raises"] as [string, string]
+        ),
       ];
       for (const [name, verb] of namesWithVerbs) {
-        const id = name === undefined ? undefined : ids.get(name);
+        const id =
+          name === undefined
+            ? undefined
+            : dataTypeIdOfName({ dataTypes, schemas, name });
         if (id !== undefined) {
           addReferrer(id, {
             id: stateType.name,
@@ -240,44 +265,42 @@ export const linkDataTypes = (stateTypes: StateType[]): LinkedDataType[] => {
         }
       }
     }
+  }
 
-    // Each container's rows register it as a referrer of the data
-    // types it contains: the state under the state type's short name,
-    // and each data type under its own.
-    const containers: [string, string, Schema | undefined][] = [
-      [shortNameOfTypeName(stateType.name), stateType.name, stateType.schema],
-      ...stateType.dataTypes.map(
-        (dataType): [string, string, Schema | undefined] => [
-          dataType.schema?.name ?? "",
-          ids.get(dataType.name)!,
-          dataType.schema,
-        ]
-      ),
-    ];
-
-    for (const [name, id, schema] of containers) {
-      for (const field of rowsOfSchema(stateType, schema)) {
-        if (field.link !== undefined) {
-          addReferrer(field.link, { id, label: `${name}.${field.name}` });
-        }
+  // Each container's rows register it as a referrer of the data
+  // types it contains: a state model under its state type's short
+  // name, and each data type under its own.
+  const containers: [string, string, Schema | undefined][] = [
+    ...stateTypes.map((stateType): [string, string, Schema | undefined] => [
+      shortNameOfTypeName(stateType.name),
+      stateType.name,
+      schemas[stateType.reference?.name ?? ""],
+    ]),
+    ...dataTypes.map((dataType): [string, string, Schema | undefined] => {
+      const schema = schemas[dataType.reference?.name ?? ""];
+      return [schema?.name ?? "", idOfSchema(schema), schema];
+    }),
+  ];
+  for (const [label, id, schema] of containers) {
+    for (const field of rowsOfSchema({ dataTypes, schemas, schema })) {
+      if (field.link !== undefined) {
+        addReferrer(field.link, { id, label: `${label}.${field.name}` });
       }
     }
+  }
 
-    for (const dataType of stateType.dataTypes) {
-      const id = ids.get(dataType.name)!;
-      if (linkedDataTypesById.has(id)) {
-        continue;
-      }
-      linkedDataTypesById.set(id, {
-        id,
-        name: dataType.schema?.name ?? "",
-        namespace: namespaceOfTypeName(stateType.name),
-        filename: stateType.filename,
-        description: dataType.schema?.description,
-        fields: rowsOfSchema(stateType, dataType.schema),
-        referrers: [],
-      });
-    }
+  for (const dataType of dataTypes) {
+    const schema = schemas[dataType.reference?.name ?? ""];
+    const id = idOfSchema(schema);
+    linkedDataTypesById.set(id, {
+      id,
+      name: schema?.name ?? "",
+      namespace: namespaceOfTypeName(schema?.module ?? ""),
+      filename: dataType.filename,
+      description: schema?.description,
+      fields: rowsOfSchema({ dataTypes, schemas, schema }),
+      referrers: [],
+    });
   }
 
   return [...linkedDataTypesById.values()]

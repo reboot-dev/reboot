@@ -26,11 +26,13 @@ import {
 } from "react-router";
 import { v4 as uuidv4 } from "uuid";
 import { API_ID, CHANGELOG_ID, PREFERENCES_ID, PRESENCE_ID } from "./constants";
+import type { DataType } from "@dashboard/dashboard_pb";
 import type {
   LinkedDataType,
   Field,
   Method,
   Referrer,
+  Schemas,
   StateType,
 } from "./link_fields_to_data_types";
 import {
@@ -369,18 +371,19 @@ const Keys: FC<{ fields: Field[] }> = ({ fields }) => (
   </>
 );
 
-const Signature: FC<{ stateType: StateType; method: Method }> = ({
-  stateType,
-  method,
-}) => {
+const Signature: FC<{
+  dataTypes: DataType[];
+  schemas: Schemas;
+  method: Method;
+}> = ({ dataTypes, schemas, method }) => {
   const takes =
     method.request === undefined
       ? []
-      : fieldsOfDataType(stateType, method.request);
+      : fieldsOfDataType({ dataTypes, schemas, name: method.request.name });
   const returns =
     method.response === undefined
       ? []
-      : fieldsOfDataType(stateType, method.response);
+      : fieldsOfDataType({ dataTypes, schemas, name: method.response.name });
 
   return (
     <div className="method-signature">
@@ -398,12 +401,12 @@ const Signature: FC<{ stateType: StateType; method: Method }> = ({
       {method.errors.length > 0 && (
         <div className="errors">
           {"raises "}
-          {method.errors.map((name, index) => (
+          {method.errors.map(({ name }, index) => (
             <Fragment key={name}>
               {index > 0 && ", "}
               <TypeName
                 type={shortNameOfTypeName(name)}
-                link={dataTypeIdOfName(stateType, name)}
+                link={dataTypeIdOfName({ dataTypes, schemas, name })}
               />
             </Fragment>
           ))}
@@ -413,10 +416,12 @@ const Signature: FC<{ stateType: StateType; method: Method }> = ({
   );
 };
 
-const Method: FC<{ stateType: StateType; method: Method }> = ({
-  stateType,
-  method,
-}) => {
+const Method: FC<{
+  dataTypes: DataType[];
+  schemas: Schemas;
+  stateType: StateType;
+  method: Method;
+}> = ({ dataTypes, schemas, stateType, method }) => {
   return (
     <div className="method" id={`m-${method.name}`}>
       <div className="method-head">
@@ -455,7 +460,7 @@ const Method: FC<{ stateType: StateType; method: Method }> = ({
               text={method.description}
             />
           )}
-          <Signature stateType={stateType} method={method} />
+          <Signature dataTypes={dataTypes} schemas={schemas} method={method} />
         </div>
       </div>
     </div>
@@ -518,12 +523,14 @@ const useSlidingPills = (expanded: boolean) => {
 };
 
 const StateType: FC<{
+  dataTypes: DataType[];
+  schemas: Schemas;
   stateType: StateType;
   expanded: boolean;
   onToggle: () => void;
-}> = ({ stateType, expanded, onToggle }) => {
+}> = ({ dataTypes, schemas, stateType, expanded, onToggle }) => {
   const section = useSlidingPills(expanded);
-  const fields = fieldsOfState(stateType);
+  const fields = fieldsOfState({ dataTypes, schemas, stateType });
 
   return (
     // The stylesheet opens and closes every method's detail from this
@@ -581,7 +588,13 @@ const StateType: FC<{
       <div className="eyebrow section">methods</div>
       <div className="methods">
         {stateType.methods.map((method) => (
-          <Method stateType={stateType} method={method} key={method.name} />
+          <Method
+            dataTypes={dataTypes}
+            schemas={schemas}
+            stateType={stateType}
+            method={method}
+            key={method.name}
+          />
         ))}
       </div>
     </section>
@@ -846,9 +859,20 @@ const Overview: FC<{
   // stay at whatever each file last declared.
   const error = response?.error ?? "";
 
+  // The data types beside the state types, and every model's schema
+  // by reference name.
+  const dataTypes: DataType[] = useMemo(
+    () => response?.dataTypes ?? [],
+    [response?.dataTypes]
+  );
+  const schemas: Schemas = useMemo(
+    () => response?.schemas ?? {},
+    [response?.schemas]
+  );
+
   const linkedDataTypes = useMemo(
-    () => linkDataTypes(stateTypes),
-    [stateTypes]
+    () => linkDataTypes({ stateTypes, dataTypes, schemas }),
+    [stateTypes, dataTypes, schemas]
   );
 
   // A referrer is either a state type or a data type, and its link
@@ -990,6 +1014,8 @@ const Overview: FC<{
           ) : page === "state" ? (
             stateTypes.map((stateType) => (
               <StateType
+                dataTypes={dataTypes}
+                schemas={schemas}
                 stateType={stateType}
                 expanded={isExpanded(stateType.name)}
                 onToggle={() => onToggle(stateType.name)}

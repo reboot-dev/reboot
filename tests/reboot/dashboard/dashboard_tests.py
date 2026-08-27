@@ -8,8 +8,9 @@ import asyncio
 import socket
 import unittest
 from google.protobuf.json_format import ParseDict
-from rbt.dashboard.v1.dashboard_pb2 import StateType
+from rbt.dashboard.v1.dashboard_pb2 import DataType, StateType
 from rbt.dashboard.v1.dashboard_rbt import API, Preferences
+from rbt.v1alpha1.schema_pb2 import Schema
 from reboot.aio.tests import Reboot
 from reboot.dashboard.constants import (
     API_ID,
@@ -44,10 +45,11 @@ def _new_driver():
     )
 
 
-# One state type as `api_reader` describes it: methods name entries in
-# `dataTypes` by reference name, and each model's shape is its
-# schema, in proto JSON.
+# One state type as `api_reader` describes it: it and its methods
+# name entries in `schemas` by reference name, each a model's shape
+# in proto JSON, and every model but the state model is a data type.
 _MODULE = 'shop.v1.shop'
+_FILENAME = 'api/shop/v1/shop.py'
 
 
 def _schema(name: str, properties: list[dict], **rest) -> dict:
@@ -134,9 +136,10 @@ _SHOP = {
     'name':
         'shop.v1.Shop',
     'filename':
-        'api/shop/v1/shop.py',
-    'schema':
-        _SCHEMAS['ShopState'],
+        _FILENAME,
+    'reference': {
+        'name': f'{_MODULE}.ShopState'
+    },
     'methods':
         [
             {
@@ -145,18 +148,24 @@ _SHOP = {
                 'factory': False,
                 'mcp': False,
                 'errors': [],
-                'request': f'{_MODULE}.LookRequest',
-                'response': f'{_MODULE}.LookResponse',
+                'request': {
+                    'name': f'{_MODULE}.LookRequest'
+                },
+                'response': {
+                    'name': f'{_MODULE}.LookResponse'
+                },
             },
         ],
-    'dataTypes':
-        [
-            {
-                'name': f'{_MODULE}.{name}',
-                'schema': schema,
-            } for name, schema in _SCHEMAS.items() if name != 'ShopState'
-        ],
 }
+
+_DATA_TYPES = [
+    {
+        'filename': _FILENAME,
+        'reference': {
+            'name': f'{_MODULE}.{name}'
+        },
+    } for name in _SCHEMAS if name != 'ShopState'
+]
 
 
 class DashboardTest(unittest.IsolatedAsyncioTestCase):
@@ -231,6 +240,13 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         await API.ref(API_ID).Update(
             context,
             state_types=[ParseDict(_SHOP, StateType())],
+            data_types=[
+                ParseDict(data_type, DataType()) for data_type in _DATA_TYPES
+            ],
+            schemas={
+                f'{_MODULE}.{name}': ParseDict(schema, Schema())
+                for name, schema in _SCHEMAS.items()
+            },
         )
 
     def _run_in_browser(self, body):

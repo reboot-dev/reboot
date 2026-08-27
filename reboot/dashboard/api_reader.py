@@ -5,9 +5,10 @@ Run as a subprocess:
     python -m reboot.dashboard.api_reader <api-directory> \\
         <file-relative-to-it>
 
-and it writes the state types the file declares to stdout, as a JSON
-list of `rbt.dashboard.v1.StateType` in proto JSON, or a message to
-stderr and a non-zero exit if the file cannot be read.
+and it writes what the file declares to stdout, as proto JSON of an
+`rbt.dashboard.v1.Declarations`: the state types, the data types and
+every model's schema, or a message to stderr and a non-zero exit if
+the file cannot be read.
 
 A subprocess for two reasons. Reading a Pydantic API means importing
 it, so doing it in the dashboard would accumulate stale modules across
@@ -16,8 +17,9 @@ needs a working directory and `sys.path` that the dashboard should not
 adopt.
 
 Every model a state type mentions is read into its schema, however
-deeply nested, and named the way a `Reference` names it; the state
-model's schema is set apart from the rest.
+deeply nested, and filed by the name a `Reference` carries; a state
+type refers to its state model that way, and every other model is
+listed as a data type.
 """
 import asyncio
 import importlib
@@ -25,7 +27,13 @@ import json
 import os
 import sys
 from google.protobuf.json_format import MessageToDict, ParseDict
-from rbt.dashboard.v1.dashboard_pb2 import DataType, Method, StateType
+from rbt.dashboard.v1.dashboard_pb2 import (
+    DataType,
+    Declarations,
+    Method,
+    StateType,
+)
+from rbt.v1alpha1.schema_pb2 import Reference
 from reboot.api import API, MethodModel
 from reboot.schema import Schemas, reference_name, schema_of
 from typing import Optional
@@ -72,13 +80,15 @@ def _method_from_spec(method_name: str, spec: MethodModel) -> Method:
         kind=Method.Kind.Value(spec.kind.value.upper()),
         factory=spec.factory,
         mcp=spec.mcp is not None,
-        errors=[reference_name(error) for error in spec.errors],
+        errors=[
+            Reference(name=reference_name(error)) for error in spec.errors
+        ],
     )
 
     if spec.request is not None:
-        method.request = reference_name(spec.request)
+        method.request.name = reference_name(spec.request)
     if spec.response is not None:
-        method.response = reference_name(spec.response)
+        method.response.name = reference_name(spec.response)
     if spec.description is not None:
         method.description = spec.description
 
@@ -90,35 +100,31 @@ def _state_type_from_type(
     file: str,
     type_name: str,
     type_obj,
-) -> StateType:
+) -> tuple[StateType, Schemas]:
+    """The state type as described, and the schema of every model it
+    mentions, by reference name."""
     schemas = _schemas_of_type(type_name, type_obj)
-
-    state = reference_name(type_obj.state)
 
     state_type = StateType(
         name=name,
         filename=file,
-        schema=schemas[state],
+        reference=Reference(name=reference_name(type_obj.state)),
         methods=[
             _method_from_spec(method_name, spec)
             for method_name, spec in type_obj.methods.items()
             if isinstance(spec, MethodModel)
-        ],
-        data_types=[
-            DataType(name=model_name, schema=schema)
-            for model_name, schema in schemas.items()
-            if model_name != state
         ],
     )
 
     if type_obj.description is not None:
         state_type.description = type_obj.description
 
-    return state_type
+    return state_type, schemas
 
 
-def state_types_in_file(api_directory: str, filename: str) -> list[StateType]:
-    """Describes the state types declared in one API file.
+def read(api_directory: str, filename: str) -> Declarations:
+    """Describes one API file: the state types it declares, and every
+    model those mention, by reference name.
 
     State type names are qualified by the file's directory, the way
     the generated code qualifies them: `shop/v1/shop.py` declaring
@@ -140,26 +146,41 @@ def state_types_in_file(api_directory: str, filename: str) -> list[StateType]:
     api = getattr(module, 'api', None)
     if not isinstance(api, API):
         # A file containing shared code declares no `api`.
-        return []
+        return Declarations()
 
     package = os.path.dirname(filename).replace(os.sep, '.')
 
-    return [
-        _state_type_from_type(
+    declarations = Declarations()
+    for type_name, type_obj in api.get_types().items():
+        state_type, schemas = _state_type_from_type(
             f'{package}.{type_name}', file, type_name, type_obj
-        ) for type_name, type_obj in api.get_types().items()
-    ]
+        )
+        declarations.state_types.append(state_type)
+        for name, schema in schemas.items():
+            declarations.schemas[name].CopyFrom(schema)
+
+    # Every model that is not a state model is a data type.
+    state_models = {
+        state_type.reference.name for state_type in declarations.state_types
+    }
+    declarations.data_types.extend(
+        DataType(filename=file, reference=Reference(name=name))
+        for name in declarations.schemas
+        if name not in state_models
+    )
+
+    return declarations
 
 
 async def read_api_file(
     api_directory: str,
     filename: str,
-) -> tuple[list[StateType], Optional[str]]:
+) -> tuple[Declarations, Optional[str]]:
     """Describes one API file in a subprocess.
 
-    Returns the state types it declares, and a message when it could
-    not be read. A half-written file is the normal case while someone
-    is typing.
+    Returns the state types it declares and the models those mention,
+    and a message when it could not be read. A half-written file is
+    the normal case while someone is typing.
     """
     process = await asyncio.create_subprocess_exec(
         sys.executable,
@@ -181,16 +202,14 @@ async def read_api_file(
     out, errors = await process.communicate()
 
     if process.returncode != 0:
-        return [], errors.decode().strip()
+        return Declarations(), errors.decode().strip()
 
     try:
-        described = json.loads(out)
+        declarations = json.loads(out)
     except json.JSONDecodeError as e:
-        return [], f'Could not read the description: {e}'
+        return Declarations(), f"'{filename}' failed to load as JSON: {e}"
 
-    return [
-        ParseDict(state_type, StateType()) for state_type in described
-    ], None
+    return ParseDict(declarations, Declarations()), None
 
 
 def main() -> int:
@@ -199,7 +218,7 @@ def main() -> int:
         return 2
 
     try:
-        state_types = state_types_in_file(sys.argv[1], sys.argv[2])
+        declarations = read(sys.argv[1], sys.argv[2])
     except SystemExit:
         # `fail()` inside `reboot.api` prints why a malformed API is
         # malformed, then raises this. The dashboard shows that
@@ -211,15 +230,13 @@ def main() -> int:
 
     print(
         json.dumps(
-            [
-                # Empty repeated fields print as `[]`, matching the
-                # generated TypeScript types, whose repeated fields
-                # are always arrays.
-                MessageToDict(
-                    state_type,
-                    always_print_fields_with_no_presence=True,
-                ) for state_type in state_types
-            ]
+            # Empty repeated fields print as `[]`, matching the
+            # generated TypeScript types, whose repeated fields are
+            # always arrays.
+            MessageToDict(
+                declarations,
+                always_print_fields_with_no_presence=True,
+            )
         )
     )
 
