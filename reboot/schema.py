@@ -313,7 +313,7 @@ def _schema_of(
                     f"(yet) supported, please reach out to the maintainers!"
                 )
 
-        raise NotImplementedError("the model's reference")
+        return Type(reference=Reference(name=name)), schemas
     elif origin in (dict, Dict):
         if len(args) >= 2:
             key_type = args[0]
