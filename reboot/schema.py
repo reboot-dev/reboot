@@ -18,6 +18,7 @@ from rbt.v1alpha1.schema_pb2 import (
     FLOAT,
     INTEGER,
     STRING,
+    Array,
     Literals,
     Map,
     Property,
@@ -435,7 +436,7 @@ def _schema_of(
                     f"(yet) supported"
                 )
 
-            raise NotImplementedError("the `list`'s type")
+            return Type(array=Array(item=item)), schemas
         else:
             fail(
                 f"List type at '{path}' must have an item type, e.g., list[str]"
