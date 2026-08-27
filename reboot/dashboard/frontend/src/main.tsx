@@ -42,7 +42,12 @@ import {
   shortNameOfTypeName,
 } from "./link_fields_to_data_types";
 import type { Entry } from "./changelog";
-import { entriesOfRange, rowOfChange, timeAgo } from "./changelog";
+import {
+  entriesOfRange,
+  labelOfChangeKind,
+  rowOfChange,
+  timeAgo,
+} from "./changelog";
 
 // One subscriber per tab, for as long as the tab is open.
 const SUBSCRIBER_ID = uuidv4();
@@ -686,7 +691,7 @@ const ChangeRow: FC<{ entry: Entry; now: Date }> = ({ entry, now }) => {
         only the pill. */}
       <span className="change-pill-cell">
         <span className={`change-pill change-kind-${row.kind}`}>
-          {row.kind}
+          {labelOfChangeKind[row.kind]}
         </span>
       </span>
       <span className="change-pill-cell">

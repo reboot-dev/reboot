@@ -61,9 +61,17 @@ export type Part = {
   detail?: string;
 };
 
+// What the kind pill says: where the change lives, the API files or
+// the code, and for the API which of its pages.
+export const labelOfChangeKind: Record<Row["kind"], string> = {
+  state: "API · STATE",
+  data: "API · DATA",
+  implementation: "CODE",
+};
+
 export type Row = {
   where: string;
-  kind: "state" | "data" | "implementation" | "file";
+  kind: "state" | "data" | "implementation";
   difference: string;
   name: string;
   // The page and id the name links to; none once the thing is gone
@@ -240,12 +248,6 @@ const namespaceOf = (qualified: string): string =>
 const shortNameOf = (qualified: string): string =>
   qualified.slice(qualified.lastIndexOf(".") + 1);
 
-const directoryOf = (file: string): string =>
-  file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : "";
-
-const baseNameOf = (file: string): string =>
-  file.slice(file.lastIndexOf("/") + 1);
-
 // How each kind of change reads as a row. Every arm of `Change` is
 // handled here, so a new arm is a compile error until it is.
 export const rowOfChange = (change: Change): Row => {
@@ -365,24 +367,8 @@ export const rowOfChange = (change: Change): Row => {
         name: shortNameOf(what.value.stateType),
         parts: [],
       };
-    case "fileAdded":
-      return {
-        where: directoryOf(what.value.filename),
-        kind: "file",
-        difference: "added",
-        name: baseNameOf(what.value.filename),
-        parts: [],
-      };
-    case "fileRemoved":
-      return {
-        where: directoryOf(what.value.filename),
-        kind: "file",
-        difference: "removed",
-        name: baseNameOf(what.value.filename),
-        parts: [],
-      };
     case undefined:
-      return { where: "", kind: "file", difference: "", name: "", parts: [] };
+      return { where: "", kind: "state", difference: "", name: "", parts: [] };
   }
 };
 

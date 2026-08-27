@@ -127,9 +127,6 @@ message Change {
     ImplementationAdded implementation_added = 7;
     ImplementationChanged implementation_changed = 8;
     ImplementationRemoved implementation_removed = 9;
-
-    FileAdded file_added = 10;
-    FileRemoved file_removed = 11;
   }
 }
 
@@ -310,15 +307,6 @@ message ImplementationChanged {
 message ImplementationRemoved {
   string state_type = 1;
   string filename = 2;
-}
-
-// A file of the application the walk reaches.
-message FileAdded {
-  string filename = 1;
-}
-
-message FileRemoved {
-  string filename = 1;
 }
 
 message APIWatchRequest {}

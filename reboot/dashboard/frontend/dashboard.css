@@ -572,17 +572,11 @@ nav a .nav-name {
   color: hsl(28 80% 35%);
 }
 
-/* A change to the application rather than to the API files. */
+/* A change to the code rather than to the API files. */
 .change-kind-implementation {
   background: hsl(205 70% 55% / 0.14);
   border-color: hsl(205 60% 50% / 0.38);
   color: hsl(205 70% 35%);
-}
-
-.change-kind-file {
-  background: hsl(0 0% 50% / 0.12);
-  border-color: hsl(0 0% 50% / 0.35);
-  color: hsl(0 0% 35%);
 }
 
 .change-added {
