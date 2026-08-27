@@ -19,6 +19,7 @@ from rbt.v1alpha1.schema_pb2 import (
     INTEGER,
     STRING,
     Literals,
+    Map,
     Property,
     Reference,
     Schema,
@@ -376,7 +377,7 @@ def _schema_of(
                     f"(yet) supported"
                 )
 
-            raise NotImplementedError("the `dict`'s type")
+            return Type(map=Map(value=value)), schemas
         else:
             fail(
                 f"Dictionary type at '{path}' must have key and value types, "
