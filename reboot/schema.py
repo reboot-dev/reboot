@@ -249,7 +249,9 @@ def _schema_of(
                     schemas=schemas,
                 )
 
-                raise NotImplementedError("a `list` property")
+                schema.properties.append(
+                    _property(field_name, tag, type_, required, optional)
+                )
             elif inner_origin in (dict, Dict):
                 type_, schemas = _schema_of(
                     inner_type,
