@@ -33,9 +33,9 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     Method,
     StateType,
 )
-from rbt.v1alpha1.schema_pb2 import Reference
+from rbt.v1alpha1.pydantic.schema_pb2 import Reference
 from reboot.api import API, MethodModel
-from reboot.schema import Schemas, reference_name, schema_of
+from reboot.pydantic_schema import Schemas, reference_name, schema_of
 from typing import Optional
 
 

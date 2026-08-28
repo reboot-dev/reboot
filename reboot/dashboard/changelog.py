@@ -38,7 +38,12 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     StateTypeRemoved,
     TypeChanged,
 )
-from rbt.v1alpha1.schema_pb2 import Constraints, Property, Reference, Schema
+from rbt.v1alpha1.pydantic.schema_pb2 import (
+    Constraints,
+    Property,
+    Reference,
+    Schema,
+)
 from typing import Iterator, Mapping, Optional
 
 

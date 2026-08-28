@@ -10,7 +10,7 @@ import unittest
 from google.protobuf.json_format import ParseDict
 from rbt.dashboard.v1.dashboard_pb2 import DataType, StateType
 from rbt.dashboard.v1.dashboard_rbt import API, Preferences
-from rbt.v1alpha1.schema_pb2 import Schema
+from rbt.v1alpha1.pydantic.schema_pb2 import Schema
 from reboot.aio.tests import Reboot
 from reboot.dashboard.constants import (
     API_ID,

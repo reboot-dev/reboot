@@ -4,7 +4,7 @@ package rbt.dashboard.v1;
 
 import "google/protobuf/timestamp.proto";
 import "rbt/v1alpha1/options.proto";
-import "rbt/v1alpha1/schema.proto";
+import "rbt/v1alpha1/pydantic/schema.proto";
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -35,7 +35,7 @@ message API {
   // The schema of every model the API files declare, state models
   // included, by the name a `Reference` carries: the model's module
   // and class name.
-  map<string, rbt.v1alpha1.Schema> schemas = 5;
+  map<string, rbt.v1alpha1.pydantic.Schema> schemas = 5;
 }
 
 message StateType {
@@ -51,7 +51,7 @@ message StateType {
   repeated Method methods = 4;
 
   // The state model: a key of `API.schemas`.
-  rbt.v1alpha1.Reference reference = 5;
+  rbt.v1alpha1.pydantic.Reference reference = 5;
 }
 
 message Method {
@@ -74,9 +74,9 @@ message Method {
 
   // Keys of `API.schemas`. Absent when the method takes or returns
   // nothing.
-  optional rbt.v1alpha1.Reference request = 5;
-  optional rbt.v1alpha1.Reference response = 6;
-  repeated rbt.v1alpha1.Reference errors = 7;
+  optional rbt.v1alpha1.pydantic.Reference request = 5;
+  optional rbt.v1alpha1.pydantic.Reference response = 6;
+  repeated rbt.v1alpha1.pydantic.Reference errors = 7;
 
   optional string description = 8;
 }
@@ -89,7 +89,7 @@ message DataType {
   string filename = 1;
 
   // The model: a key of `API.schemas`.
-  rbt.v1alpha1.Reference reference = 2;
+  rbt.v1alpha1.pydantic.Reference reference = 2;
 }
 
 // What the API files declare: the state types, the data types, and
@@ -98,7 +98,7 @@ message DataType {
 message Declarations {
   repeated StateType state_types = 1;
   repeated DataType data_types = 2;
-  map<string, rbt.v1alpha1.Schema> schemas = 3;
+  map<string, rbt.v1alpha1.pydantic.Schema> schemas = 3;
 }
 
 message APIGetRequest {}
@@ -108,7 +108,7 @@ message APIGetResponse {
   optional string error = 2;
   map<string, File> files = 3;
   repeated DataType data_types = 4;
-  map<string, rbt.v1alpha1.Schema> schemas = 5;
+  map<string, rbt.v1alpha1.pydantic.Schema> schemas = 5;
 }
 
 message APIUpdateRequest {
@@ -116,7 +116,7 @@ message APIUpdateRequest {
   optional string error = 2;
   map<string, File> files = 3;
   repeated DataType data_types = 5;
-  map<string, rbt.v1alpha1.Schema> schemas = 6;
+  map<string, rbt.v1alpha1.pydantic.Schema> schemas = 6;
 
   // What differs from what the state records, for the changelog.
   // Recorded in the same transaction as the state, so that the
@@ -159,8 +159,8 @@ message DescriptionChanged {
 }
 
 message TypeChanged {
-  rbt.v1alpha1.Type from = 1;
-  rbt.v1alpha1.Type to = 2;
+  rbt.v1alpha1.pydantic.Type from = 1;
+  rbt.v1alpha1.pydantic.Type to = 2;
 }
 
 message RequiredChanged {
@@ -176,8 +176,8 @@ message DefaultChanged {
 
 // A property's constraints; absent for none.
 message ConstraintsChanged {
-  optional rbt.v1alpha1.Constraints from = 1;
-  optional rbt.v1alpha1.Constraints to = 2;
+  optional rbt.v1alpha1.pydantic.Constraints from = 1;
+  optional rbt.v1alpha1.pydantic.Constraints to = 2;
 }
 
 message DeprecatedChanged {
@@ -232,18 +232,18 @@ message McpChanged {
 
 // The request or response type, by name; absent for none.
 message RequestChanged {
-  optional rbt.v1alpha1.Reference from = 1;
-  optional rbt.v1alpha1.Reference to = 2;
+  optional rbt.v1alpha1.pydantic.Reference from = 1;
+  optional rbt.v1alpha1.pydantic.Reference to = 2;
 }
 
 message ResponseChanged {
-  optional rbt.v1alpha1.Reference from = 1;
-  optional rbt.v1alpha1.Reference to = 2;
+  optional rbt.v1alpha1.pydantic.Reference from = 1;
+  optional rbt.v1alpha1.pydantic.Reference to = 2;
 }
 
 message ErrorsChanged {
-  repeated rbt.v1alpha1.Reference from = 1;
-  repeated rbt.v1alpha1.Reference to = 2;
+  repeated rbt.v1alpha1.pydantic.Reference from = 1;
+  repeated rbt.v1alpha1.pydantic.Reference to = 2;
 }
 
 // One method of a state type, and one thing that happened to it.

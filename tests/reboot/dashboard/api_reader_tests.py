@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import Declarations, Method, StateType
-from rbt.v1alpha1.schema_pb2 import (
+from rbt.v1alpha1.pydantic.schema_pb2 import (
     Array,
     Constraints,
     Optional,

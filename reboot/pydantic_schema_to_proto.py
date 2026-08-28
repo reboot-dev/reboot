@@ -5,7 +5,7 @@ import hashlib
 import importlib
 import os
 import typing
-from rbt.v1alpha1 import schema_pb2
+from rbt.v1alpha1.pydantic import schema_pb2
 from reboot.api import (
     API,
     UI,
@@ -17,7 +17,7 @@ from reboot.api import (
     to_snake_case,
 )
 from reboot.fail import fail
-from reboot.schema import Schemas, schema_of
+from reboot.pydantic_schema import Schemas, schema_of
 from reboot.settings import AUTO_CONSTRUCT_STATE_TYPE
 from types import MappingProxyType
 from typing import List, Optional

@@ -22,26 +22,6 @@ filegroup(
 )
 
 proto_library(
-    name = "schema_proto",
-    srcs = [":schema.proto"],
-    visibility = ["//visibility:public"],
-)
-
-py_proto_library(
-    name = "schema_py_proto",
-    visibility = ["//visibility:public"],
-    deps = [":schema_proto"],
-)
-
-js_proto_library(
-    name = "schema_js_proto",
-    package_json = ":package.json",
-    proto = "schema.proto",
-    proto_deps = [":schema_proto"],
-    visibility = ["//visibility:public"],
-)
-
-proto_library(
     name = "options_proto",
     srcs = [":options.proto"],
     visibility = ["//visibility:public"],

@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package rbt.v1alpha1;
+package rbt.v1alpha1.pydantic;
 
 // The schema of a model an API declares, as a grammar: the closed set
 // of forms Reboot knows how to generate for and describe. What

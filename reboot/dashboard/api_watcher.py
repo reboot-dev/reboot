@@ -30,7 +30,7 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     StateType,
 )
 from rbt.dashboard.v1.dashboard_rbt import API
-from rbt.v1alpha1.schema_pb2 import Schema
+from rbt.v1alpha1.pydantic.schema_pb2 import Schema
 from reboot.aio.concurrently import concurrently
 from reboot.aio.contexts import WorkflowContext
 from reboot.aio.workflows import at_least_once

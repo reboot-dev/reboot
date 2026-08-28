@@ -3,7 +3,7 @@
 // contain it.
 //
 // The generated `rbt.dashboard.v1` messages describe the API; each
-// model's own shape is its `rbt.v1alpha1.Schema`, the grammar
+// model's own shape is its `rbt.v1alpha1.pydantic.Schema`, the grammar
 // `rbt generate` prints proto from.
 import type {
   DataType,
@@ -15,8 +15,8 @@ import type {
   Constraints,
   Schema,
   Type,
-} from "../../../../rbt/v1alpha1/schema_pb";
-import { Scalar } from "../../../../rbt/v1alpha1/schema_pb";
+} from "../../../../rbt/v1alpha1/pydantic/schema_pb";
+import { Scalar } from "../../../../rbt/v1alpha1/pydantic/schema_pb";
 
 // Type aliases rather than re-exports: the generated `Method` and
 // `StateType` are classes, whose names bind a value even under

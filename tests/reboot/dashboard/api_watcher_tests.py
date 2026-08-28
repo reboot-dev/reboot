@@ -13,7 +13,7 @@ from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import Change
 from rbt.dashboard.v1.dashboard_rbt import API
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
-from rbt.v1alpha1.schema_pb2 import INTEGER, STRING
+from rbt.v1alpha1.pydantic.schema_pb2 import INTEGER, STRING
 from reboot.aio.tests import Reboot
 from reboot.dashboard.constants import (
     API_ID,
