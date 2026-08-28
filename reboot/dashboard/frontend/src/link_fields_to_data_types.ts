@@ -44,7 +44,7 @@ export const labelOfKind = (kind: Method_Kind): string => KIND_LABELS[kind];
 // A type's proto package: `bank.v1` for `bank.v1.Account`, which is
 // the developer's `api/bank/v1/`. A model's module, `bank.v1.account`,
 // has the same package, since the package is the file's directory.
-// The page groups types by it, as namespaces.
+// The page groups types by it.
 export const packageName = (name: string): string =>
   name.split(".").slice(0, -1).join(".");
 
@@ -72,7 +72,7 @@ export interface Field {
 export interface LinkedDataType {
   id: string;
   name: string;
-  namespace: string;
+  package: string;
   filename: string;
   description?: string;
   fields: Field[];
@@ -344,7 +344,7 @@ export const linkDataTypes = ({
     linkedDataTypesById.set(id, {
       id,
       name: schema?.name ?? "",
-      namespace: packageName(schema?.module ?? ""),
+      package: packageName(schema?.module ?? ""),
       filename: dataType.filename,
       description: schema?.description,
       fields: rowsOfSchema({ dataTypes, schemas, schema }),

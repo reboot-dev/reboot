@@ -192,8 +192,8 @@ const Description: FC<{ className: string; text: string }> = ({
 
 // Standard-library types are not what the developer wrote, so the
 // page starts them collapsed.
-const isStandardLibrary = (namespace: string): boolean =>
-  namespace.startsWith("rbt.");
+const isStandardLibrary = (packageName: string): boolean =>
+  packageName.startsWith("rbt.");
 
 // Each page indexes the same API: `changelog` is its history, `state`
 // is the state types it declares, `data` is the types those declare
@@ -236,7 +236,7 @@ const PageSelector: FC<{ counts: Record<Page, number> }> = ({ counts }) => (
 );
 
 // Pixels, which is how `Panel` reads plain numbers. The minimum is the
-// narrowest width at which a namespace row stays readable; the maximum
+// narrowest width at which a package row stays readable; the maximum
 // leaves the document half of a small laptop screen.
 const NAV_WIDTH = { default: 250, min: 170, max: 520 };
 
@@ -264,33 +264,33 @@ const Connection: FC<{ live: boolean }> = ({ live }) => (
 interface NavEntry {
   id: string;
   name: string;
-  namespace: string;
+  package: string;
   count: string;
 }
 
-const Namespace: FC<{
-  namespace: string;
+const Package: FC<{
+  package: string;
   entries: NavEntry[];
   page: Page;
   noun: string;
-}> = ({ namespace, entries, page, noun }) => {
-  const [open, setOpen] = useState(!isStandardLibrary(namespace));
+}> = ({ package: name, entries, page, noun }) => {
+  const [open, setOpen] = useState(!isStandardLibrary(name));
 
   return (
-    <div className="namespace">
+    <div className="package">
       <button
-        className="namespace-head"
+        className="package-head"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
       >
-        <span className="nav-name namespace-name">
+        <span className="nav-name package-name">
           <span className="caret">{open ? "▾" : "▸"}</span>
-          {namespace}
+          {name}
         </span>
         <span className="nav-count">{countWithNoun(entries.length, noun)}</span>
       </button>
       {open && (
-        <div className="namespace-types">
+        <div className="package-types">
           {entries.map((entry) => (
             <Link to={pathOfTypeOnPage(page, entry.id)} key={entry.id}>
               <span className="nav-name">{entry.name}</span>
@@ -303,28 +303,28 @@ const Namespace: FC<{
   );
 };
 
-// The developer's namespaces sort before the standard library's: the
+// The developer's packages sort before the standard library's: the
 // developer wrote their own types and only references the standard
 // ones.
-const groupByNamespace = (
+const groupByPackage = (
   entries: NavEntry[]
-): { namespace: string; entries: NavEntry[] }[] => {
+): { package: string; entries: NavEntry[] }[] => {
   const grouped = new Map<string, NavEntry[]>();
   for (const entry of entries) {
-    const group = grouped.get(entry.namespace);
+    const group = grouped.get(entry.package);
     if (group === undefined) {
-      grouped.set(entry.namespace, [entry]);
+      grouped.set(entry.package, [entry]);
     } else {
       group.push(entry);
     }
   }
   return [...grouped.entries()]
-    .map(([namespace, entries]) => ({ namespace, entries }))
+    .map(([name, entries]) => ({ package: name, entries }))
     .sort((a, b) => {
       const standard =
-        Number(isStandardLibrary(a.namespace)) -
-        Number(isStandardLibrary(b.namespace));
-      return standard !== 0 ? standard : a.namespace.localeCompare(b.namespace);
+        Number(isStandardLibrary(a.package)) -
+        Number(isStandardLibrary(b.package));
+      return standard !== 0 ? standard : a.package.localeCompare(b.package);
     });
 };
 
@@ -933,7 +933,7 @@ const Overview: FC<{
     return (id: string): Page => (states.has(id) ? "state" : "data");
   }, [stateTypes]);
 
-  // The changelog is one list rather than a set of namespaces, and
+  // The changelog is one list rather than a set of packages, and
   // the graph is one canvas, so the sidebar has nothing to index.
   const entries: NavEntry[] = useMemo(
     () =>
@@ -943,19 +943,19 @@ const Overview: FC<{
         ? stateTypes.map((stateType) => ({
             id: stateType.name,
             name: shortNameOfTypeName(stateType.name),
-            namespace: packageName(stateType.name),
+            package: packageName(stateType.name),
             count: countWithNoun(stateType.methods.length, "method"),
           }))
         : linkedDataTypes.map((linkedDataType) => ({
             id: linkedDataType.id,
             name: linkedDataType.name,
-            namespace: linkedDataType.namespace,
+            package: linkedDataType.package,
             count: countWithNoun(linkedDataType.fields.length, "field"),
           })),
     [page, stateTypes, linkedDataTypes]
   );
 
-  const namespaces = useMemo(() => groupByNamespace(entries), [entries]);
+  const packages = useMemo(() => groupByPackage(entries), [entries]);
 
   // How many changes the changelog page is showing. The page reports
   // it through `onCount`, since the page is what reads the entries.
@@ -976,13 +976,13 @@ const Overview: FC<{
         )}`
       : page === "state"
       ? `${countWithNoun(stateTypes.length, "state type")} in ${countWithNoun(
-          namespaces.length,
-          "namespace"
+          packages.length,
+          "package"
         )}`
       : `${countWithNoun(
           linkedDataTypes.length,
           "data type"
-        )} in ${countWithNoun(namespaces.length, "namespace")}`;
+        )} in ${countWithNoun(packages.length, "package")}`;
 
   // The browser scrolls to the element the URL hash names only if it
   // exists when the hash changes, and it does not exist on a page that
@@ -1049,14 +1049,14 @@ const Overview: FC<{
           <RebootBrand live={live} />
           <PageSelector counts={counts} />
           {/* The changelog has none. */}
-          {namespaces.length > 0 && <div className="eyebrow">namespaces</div>}
-          {namespaces.map(({ namespace, entries }) => (
-            <Namespace
-              namespace={namespace}
+          {packages.length > 0 && <div className="eyebrow">packages</div>}
+          {packages.map((group) => (
+            <Package
+              package={group.package}
               page={page}
               noun={page === "state" ? "state type" : "data type"}
-              entries={entries}
-              key={namespace}
+              entries={group.entries}
+              key={group.package}
             />
           ))}
         </nav>
