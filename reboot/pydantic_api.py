@@ -96,12 +96,13 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
                 )
 
             if method_spec.response is not None:
-                schema, schemas = schema_of(
+                # The response model's schema goes in `schemas`, the
+                # method referring to it by name.
+                _, schemas = schema_of(
                     method_spec.response,
                     path=f"api.{type_name}.methods.{method_name}.response",
                     schemas=schemas,
                 )
-                raise NotImplementedError("a method's response")
 
         for method_name, method_spec in regular_methods.items():
             if method_spec.errors:
