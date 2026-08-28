@@ -12,6 +12,7 @@ from rbt.v1alpha1.pydantic import api_pb2
 from rbt.v1alpha1.pydantic.schema_pb2 import Reference
 from reboot.api import API, UI, MethodModel, Resource, Tool
 from reboot.pydantic_schema import Schemas, reference_name, schema_of
+from reboot.settings import AUTO_CONSTRUCT_STATE_TYPE
 from types import MappingProxyType
 
 
@@ -26,7 +27,7 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
     # is read once.
     schemas: Schemas = MappingProxyType({})
 
-    state_types: list[api_pb2.StateType] = []  # noqa: F841
+    state_types: list[api_pb2.StateType] = []
 
     for type_name, type_obj in api.get_types().items():
         # Separate UI methods from regular methods.
@@ -39,7 +40,7 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
             n: m for n, m in type_obj.methods.items() if isinstance(m, UI)
         }
 
-        uis: list[api_pb2.UI] = []  # noqa: F841
+        uis: list[api_pb2.UI] = []
         for method_name, ui_method in ui_methods.items():
             uis.append(
                 api_pb2.UI(
@@ -55,10 +56,19 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
                 )
             )
 
-        schema, schemas = schema_of(
+        # The state model's schema goes in `schemas`, the state type
+        # referring to it by name.
+        _, schemas = schema_of(
             type_obj.state, path=f"api.{type_name}.state", schemas=schemas
         )
-        raise NotImplementedError("the state type")
+        state_type = api_pb2.StateType(
+            name=type_name,
+            reference=Reference(name=reference_name(type_obj.state)),
+            description=type_obj.description,
+            auto_construct=type_name == AUTO_CONSTRUCT_STATE_TYPE,
+            uis=uis,
+        )
+        state_types.append(state_type)
 
         # Generate request messages for UI methods that
         # have a request type. UI methods with
