@@ -151,7 +151,9 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
             if method_spec.mcp is not None:
                 mcp = method_spec.mcp
                 if isinstance(mcp, Tool):
-                    raise NotImplementedError("a method's MCP tool")
+                    method.mcp.tool.CopyFrom(
+                        api_pb2.Tool(name=mcp.name, title=mcp.title)
+                    )
                 elif isinstance(mcp, Resource):
                     raise NotImplementedError("a method's MCP resource")
 
