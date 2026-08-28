@@ -69,6 +69,12 @@ py_library(
     srcs = ["pyright.py"],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
+    deps = [
+        # `pyright[nodejs]`: the language server, and the Node it
+        # runs on.
+        requirement("nodejs-wheel-binaries"),
+        requirement("pyright"),
+    ],
 )
 
 py_library(
