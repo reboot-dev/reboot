@@ -11,7 +11,7 @@ import type {
   Servicer_Method_Call_How,
 } from "../../../../rbt/dashboard/v1/dashboard_pb";
 import type { StateType } from "./link_fields_to_data_types";
-import { shortNameOfTypeName } from "./link_fields_to_data_types";
+import { packageName, shortNameOfTypeName } from "./link_fields_to_data_types";
 
 // One call a method's implementation makes, and how many times. The
 // analysis lists a call once per site, and a helper several methods
@@ -48,10 +48,6 @@ export interface GraphPackage {
   name: string;
   stateTypes: GraphStateType[];
 }
-
-// `bank.v1` for `bank.v1.Account`.
-export const packageName = (stateTypeName: string): string =>
-  stateTypeName.split(".").slice(0, -1).join(".");
 
 // Packages in the order their first state type comes.
 export const groupStateTypesByPackage = (

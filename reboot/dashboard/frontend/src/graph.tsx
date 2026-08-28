@@ -39,8 +39,8 @@ import type {
   GraphPackage,
   GraphStateType,
 } from "./callgraph";
-import { groupStateTypesByPackage, methodId, packageName } from "./callgraph";
-import { labelOfKind } from "./link_fields_to_data_types";
+import { groupStateTypesByPackage, methodId } from "./callgraph";
+import { labelOfKind, packageName } from "./link_fields_to_data_types";
 
 // A method the API does not declare has no kind, so its edges and
 // its dot are no kind's colour. A folded edge carries every kind at

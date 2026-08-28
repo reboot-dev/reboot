@@ -12,6 +12,7 @@ import {
   formatConstraints,
   formatType,
   labelOfKind,
+  packageName,
 } from "./link_fields_to_data_types";
 
 // One entry of the changelog: a type the dashboard found added,
@@ -236,9 +237,6 @@ const partsOfMethods = (methods: MethodChange[]): Part[] =>
     }
   });
 
-const namespaceOf = (qualified: string): string =>
-  qualified.includes(".") ? qualified.slice(0, qualified.lastIndexOf(".")) : "";
-
 const shortNameOf = (qualified: string): string =>
   qualified.slice(qualified.lastIndexOf(".") + 1);
 
@@ -249,7 +247,7 @@ export const rowOfChange = (change: Change): Row => {
   switch (what.case) {
     case "stateTypeAdded":
       return {
-        where: namespaceOf(what.value.name),
+        where: packageName(what.value.name),
         kind: "state",
         difference: "added",
         name: shortNameOf(what.value.name),
@@ -258,7 +256,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "stateTypeChanged":
       return {
-        where: namespaceOf(what.value.name),
+        where: packageName(what.value.name),
         kind: "state",
         difference: "changed",
         name: shortNameOf(what.value.name),
@@ -291,7 +289,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "stateTypeRemoved":
       return {
-        where: namespaceOf(what.value.name),
+        where: packageName(what.value.name),
         kind: "state",
         difference: "removed",
         name: shortNameOf(what.value.name),
@@ -299,7 +297,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "dataTypeAdded":
       return {
-        where: namespaceOf(what.value.name),
+        where: packageName(what.value.name),
         kind: "data",
         difference: "added",
         name: shortNameOf(what.value.name),
@@ -308,7 +306,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "dataTypeChanged":
       return {
-        where: namespaceOf(what.value.name),
+        where: packageName(what.value.name),
         kind: "data",
         difference: "changed",
         name: shortNameOf(what.value.name),
@@ -329,7 +327,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "dataTypeRemoved":
       return {
-        where: namespaceOf(what.value.name),
+        where: packageName(what.value.name),
         kind: "data",
         difference: "removed",
         name: shortNameOf(what.value.name),
@@ -337,7 +335,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "implementationAdded":
       return {
-        where: namespaceOf(what.value.stateType),
+        where: packageName(what.value.stateType),
         kind: "implementation",
         difference: "added",
         name: shortNameOf(what.value.stateType),
@@ -346,7 +344,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "implementationChanged":
       return {
-        where: namespaceOf(what.value.stateType),
+        where: packageName(what.value.stateType),
         kind: "implementation",
         difference: "changed",
         name: shortNameOf(what.value.stateType),
@@ -355,7 +353,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "implementationRemoved":
       return {
-        where: namespaceOf(what.value.stateType),
+        where: packageName(what.value.stateType),
         kind: "implementation",
         difference: "removed",
         name: shortNameOf(what.value.stateType),

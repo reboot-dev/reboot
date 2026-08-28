@@ -50,7 +50,7 @@ import {
   linkDataTypes,
   fieldsOfDataType,
   labelOfKind,
-  namespaceOfTypeName,
+  packageName,
   fieldsOfState,
   shortNameOfTypeName,
 } from "./link_fields_to_data_types";
@@ -943,7 +943,7 @@ const Overview: FC<{
         ? stateTypes.map((stateType) => ({
             id: stateType.name,
             name: shortNameOfTypeName(stateType.name),
-            namespace: namespaceOfTypeName(stateType.name),
+            namespace: packageName(stateType.name),
             count: countWithNoun(stateType.methods.length, "method"),
           }))
         : linkedDataTypes.map((linkedDataType) => ({

@@ -41,12 +41,12 @@ const KIND_LABELS: Record<Method_Kind, string> = {
 
 export const labelOfKind = (kind: Method_Kind): string => KIND_LABELS[kind];
 
-// A type's namespace is its proto package: `bank.v1.Account` has the
-// namespace `bank.v1`, which is the developer's `api/bank/v1/`. A
-// model's module, `bank.v1.account`, has the same namespace, since
-// the package is the file's directory.
-export const namespaceOfTypeName = (name: string): string =>
-  name.slice(0, name.lastIndexOf("."));
+// A type's proto package: `bank.v1` for `bank.v1.Account`, which is
+// the developer's `api/bank/v1/`. A model's module, `bank.v1.account`,
+// has the same package, since the package is the file's directory.
+// The page groups types by it, as namespaces.
+export const packageName = (name: string): string =>
+  name.split(".").slice(0, -1).join(".");
 
 export const shortNameOfTypeName = (name: string): string =>
   name.slice(name.lastIndexOf(".") + 1);
@@ -190,7 +190,7 @@ const referenceIn = (type: Type | undefined): string | undefined => {
 // The id of a data type is the model's package plus its class name,
 // the same format `rbt generate` uses for these types' message names.
 const idOfSchema = (schema: Schema | undefined): string =>
-  `${namespaceOfTypeName(schema?.module ?? "")}.${schema?.name ?? ""}`;
+  `${packageName(schema?.module ?? "")}.${schema?.name ?? ""}`;
 
 // The id of the data type a `Method` or a `Reference` names, and none
 // for a name that is not a data type's, such as a state model's,
@@ -344,7 +344,7 @@ export const linkDataTypes = ({
     linkedDataTypesById.set(id, {
       id,
       name: schema?.name ?? "",
-      namespace: namespaceOfTypeName(schema?.module ?? ""),
+      namespace: packageName(schema?.module ?? ""),
       filename: dataType.filename,
       description: schema?.description,
       fields: rowsOfSchema({ dataTypes, schemas, schema }),
