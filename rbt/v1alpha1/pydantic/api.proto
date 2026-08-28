@@ -1,0 +1,145 @@
+syntax = "proto3";
+
+package rbt.v1alpha1.pydantic;
+
+import "rbt/v1alpha1/pydantic/schema.proto";
+
+// What one API file declares, as a grammar: the closed set of forms a
+// pydantic `API(...)` can take, which `rbt generate` prints proto from
+// and the dashboard describes. Every model a state type mentions is
+// in `schemas`, by the name a `Reference` carries.
+
+// Represents one API file's `api = API(...)`.
+message API {
+  // The package the file generates to: its directory under the API
+  // directory, dotted, e.g. "shop.v1" for `shop/v1/shop.py`.
+  string package = 1;
+
+  // The module the file is, dotted, e.g. "shop.v1.shop": what a
+  // `Reference` to a model of this file begins with.
+  string module = 2;
+
+  // In declaration order, which is the order they generate in.
+  repeated StateType state_types = 3;
+
+  // The models that are not state models: the requests, responses
+  // and errors of the methods, the requests of the UIs, and anything
+  // those contain, however deeply nested. Each is listed once, where
+  // it is first met walking the file in declaration order: state
+  // type by state type; within one, the state model's properties,
+  // then each UI's request, then each method's request, response and
+  // errors; and a model's properties, in declaration order, before
+  // the property after it.
+  repeated Reference data_types = 4;
+
+  // The schema of every model the state types mention, state models
+  // included, by the name a `Reference` carries.
+  map<string, Schema> schemas = 5;
+}
+
+// Represents one `Type(...)` of the `API`.
+message StateType {
+  // The class name the developer gave it, e.g. "Shop".
+  string name = 1;
+
+  // The state model.
+  Reference reference = 2;
+
+  // What the state type does, in the author's own words.
+  optional string description = 3;
+
+  // Whether the state constructs itself for each user id.
+  bool auto_construct = 4;
+
+  // In declaration order.
+  repeated Method methods = 5;
+
+  // In declaration order.
+  repeated UI uis = 6;
+}
+
+// Represents one `Reader(...)`, `Writer(...)`, `Transaction(...)` or
+// `Workflow(...)` of a state type: what every kind declares, and,
+// under `kind`, what its kind alone does.
+message Method {
+  string name = 1;
+
+  // Which kind of method it is, with what that kind alone declares.
+  oneof kind {
+    Reader reader = 2;
+    Writer writer = 3;
+    Transaction transaction = 4;
+    Workflow workflow = 5;
+  }
+
+  // Whether the method constructs the state.
+  bool factory = 6;
+
+  // Absent when the method takes or returns nothing.
+  optional Reference request = 7;
+  optional Reference response = 8;
+
+  // The errors the method declares it raises, in declaration order.
+  repeated Reference errors = 9;
+
+  optional string description = 10;
+
+  // How the method is exposed over MCP; absent when it is not.
+  optional MCP mcp = 11;
+}
+
+// What a `Reader(...)` alone declares: nothing yet.
+message Reader {}
+
+// What a `Writer(...)` alone declares: nothing yet.
+message Writer {}
+
+// What a `Transaction(...)` alone declares: nothing yet.
+message Transaction {}
+
+// What a `Workflow(...)` alone declares: nothing yet.
+message Workflow {}
+
+// Represents a method's `mcp=...`: how AI agents reach it over the
+// Model Context Protocol.
+message MCP {
+  // Which of MCP's server primitives the method is exposed as.
+  oneof primitive {
+    Tool tool = 1;
+    Resource resource = 2;
+  }
+}
+
+// Represents a `Tool(...)`: a method exposed to AI agents as a tool.
+message Tool {
+  // The tool's name and title as an agent sees them; each absent
+  // when the method's own name stands in.
+  optional string name = 1;
+  optional string title = 2;
+}
+
+// Represents a `Resource(...)`: a method exposed to AI agents as a
+// resource. Declared by `reboot.api`, which does not yet accept one.
+message Resource {
+  optional string name = 1;
+  optional string title = 2;
+}
+
+// Represents a `UI(...)` of a state type: a page the state type
+// renders, whose request model is the page's props.
+message UI {
+  string name = 1;
+
+  // The path the page is served at.
+  string path = 2;
+
+  // The page's props; absent for a page taking none.
+  optional Reference request = 3;
+
+  optional string title = 4;
+
+  optional string description = 5;
+
+  // Where the page's built artifact is; absent when unset.
+  optional string artifact_path = 6;
+}

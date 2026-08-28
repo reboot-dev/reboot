@@ -21,3 +21,27 @@ js_proto_library(
     proto_deps = [":schema_proto"],
     visibility = ["//visibility:public"],
 )
+
+proto_library(
+    name = "api_proto",
+    srcs = [":api.proto"],
+    visibility = ["//visibility:public"],
+    deps = [":schema_proto"],
+)
+
+py_proto_library(
+    name = "api_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":api_proto"],
+)
+
+js_proto_library(
+    name = "api_js_proto",
+    package_json = ":package.json",
+    proto = ":api.proto",
+    proto_deps = [
+        ":api_proto",
+        ":schema_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
