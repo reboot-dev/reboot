@@ -142,7 +142,8 @@ service ApplicationMethods {
       errors: [
         "InvalidInputError",
         "ConcurrentModificationError",
-        "PaymentMethodRequiredError"
+        "PaymentMethodRequiredError",
+        "BillingError"
       ],
     };
   }
@@ -452,6 +453,15 @@ message ConcurrentModificationError {
 //////////////////////////////////////////////////////////////////////
 
 message PaymentMethodRequiredError {}
+
+//////////////////////////////////////////////////////////////////////
+
+// The organization's billing is not in a state that permits deploying:
+// it has no usable Stripe subscription, or it has an unpaid balance
+// and is inside its grace period.
+message BillingError {
+  string reason = 1;
+}
 
 //////////////////////////////////////////////////////////////////////
 
