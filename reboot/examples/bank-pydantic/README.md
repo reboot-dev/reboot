@@ -105,9 +105,10 @@ one signs you in on the other.
 The mobile app signs in too, against the same OAuth server, and with
 the same `useSignIn()` / `useSignOut()` / `useUser()` hooks. It cannot
 use the browser-redirect flow the web app uses — React Native has no
-page to redirect and no cookie jar to hold the session — so it passes
-`nativeAuth({...})` from `@reboot-dev/reboot-react/native` to its
-`RebootClientProvider`, and Reboot runs the standard
+page to redirect and no cookie jar to hold the session — so it builds
+an auth object with `expoAuth({...})` from
+`@reboot-dev/reboot-react/native` and passes it to its
+`RebootClientProvider` as `nativeAuth`, and Reboot runs the standard
 authorization-code flow with PKCE that native apps use instead,
 keeping the resulting tokens in the device keychain. Because
 `backend/src/main.py` lists the app's redirect URI in
