@@ -155,7 +155,9 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
                         api_pb2.Tool(name=mcp.name, title=mcp.title)
                     )
                 elif isinstance(mcp, Resource):
-                    raise NotImplementedError("a method's MCP resource")
+                    method.mcp.resource.CopyFrom(
+                        api_pb2.Resource(name=mcp.name, title=mcp.title)
+                    )
 
             # Appended once whole: the container keeps a copy, so a
             # message appended earlier would not see its MCP set.
