@@ -108,13 +108,14 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
             if method_spec.errors:
                 for error_model in method_spec.errors:
                     error_type_name = error_model.__name__
-                    schema, schemas = schema_of(
+                    # The error model's schema goes in `schemas`, the
+                    # method referring to it by name.
+                    _, schemas = schema_of(
                         error_model,
                         path=f"api.{type_name}.methods.{method_name}."
                         f"errors.{error_type_name}",
                         schemas=schemas,
                     )
-                    raise NotImplementedError("a method's error")
 
                 raise NotImplementedError("a method's errors")
 
