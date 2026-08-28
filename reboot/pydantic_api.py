@@ -16,10 +16,12 @@ from reboot.settings import AUTO_CONSTRUCT_STATE_TYPE
 from types import MappingProxyType
 
 
-def _api_of(api: API, filename: str) -> api_pb2.API:
-    """Reads what `api`, as `filename` under an API directory,
-    declares: its state types, their methods and UIs, and the schema
-    of every model those mention."""
+def api_of(api: API, *, filename: str) -> api_pb2.API:
+    """Returns what `api`, as `filename` under an API directory,
+    declares: its state types in declaration order, each with its
+    state model, methods and UIs; the data types those mention; and
+    the schema of every model, by reference name. `filename` names
+    the file in a failure and decides the package and module."""
     package = os.path.dirname(filename).replace(os.sep, '.')
     module = filename.rsplit('.py', 1)[0].replace(os.sep, '.')
 

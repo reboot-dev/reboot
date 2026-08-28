@@ -15,6 +15,17 @@ py_test(
 )
 
 py_test(
+    name = "pydantic_api_tests_py",
+    srcs = ["pydantic_api_tests.py"],
+    data = glob(["api/**"]),
+    main = "pydantic_api_tests.py",
+    deps = [
+        "//reboot:pydantic_api_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:api_py_proto",
+    ],
+)
+
+py_test(
     name = "api_watcher_tests_py",
     srcs = ["api_watcher_tests.py"],
     main = "api_watcher_tests.py",
