@@ -20,8 +20,8 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
     """Reads what `api`, as `filename` under an API directory,
     declares: its state types, their methods and UIs, and the schema
     of every model those mention."""
-    package = os.path.dirname(filename).replace(os.sep, '.')  # noqa: F841
-    module = filename.rsplit('.py', 1)[0].replace(os.sep, '.')  # noqa: F841
+    package = os.path.dirname(filename).replace(os.sep, '.')
+    module = filename.rsplit('.py', 1)[0].replace(os.sep, '.')
 
     # Every schema read so far, so that a model several methods share
     # is read once.
@@ -163,4 +163,17 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
             # message appended earlier would not see its MCP set.
             state_type.methods.append(method)
 
-    raise NotImplementedError("the API's data types and schemas")
+    # Every model that is not a state model is a data type, in the
+    # order the schemas were filed.
+    state_models = {state_type.reference.name for state_type in state_types}
+    data_types = [
+        Reference(name=name) for name in schemas if name not in state_models
+    ]
+
+    return api_pb2.API(
+        package=package,
+        module=module,
+        state_types=state_types,
+        data_types=data_types,
+        schemas=dict(schemas),
+    )
