@@ -116,17 +116,20 @@ def _reconstitute_known(
     from the state: each `File` with the state types recorded for its
     file. What a restarted watch starts from, so that only files that
     changed while the dashboard was down are read again."""
+    # A state type's or data type's `filename` is the path the
+    # developer would open: the API directory as they spelled it,
+    # then the file under it, so it is standardized as it is.
     state_types: dict[Path, list[StateType]] = {}
     for state_type in state.state_types:
         state_types.setdefault(
-            _standardized_path(api_directory / state_type.filename),
+            _standardized_path(Path(state_type.filename)),
             [],
         ).append(state_type)
 
     data_types: dict[Path, list[DataType]] = {}
     for data_type in state.data_types:
         data_types.setdefault(
-            _standardized_path(api_directory / data_type.filename),
+            _standardized_path(Path(data_type.filename)),
             [],
         ).append(data_type)
 

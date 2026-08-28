@@ -238,6 +238,57 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(_named(change), ('shop.v1.Depot', 'state_type_added'))
 
+    async def test_a_restart_keeps_what_unchanged_files_declare(self) -> None:
+        """A dashboard brought back up joins each file's state types
+        back onto the file it recorded, so an edit to one file after
+        the restart leaves what the other files declare in place. With
+        the API directory spelled relative to the working directory,
+        as `rbt dashboard --api-directory=api` spells it, which is how
+        every filename the state records is spelled too."""
+        working_directory = os.getcwd()
+        os.chdir(self.directory)
+        self.addCleanup(os.chdir, working_directory)
+        with patch.dict(os.environ, {ENVVAR_RBT_API_DIRECTORY: 'api'}):
+            api_directory = self.directory / 'api'
+            self._write_api_file(api_directory, 'shop', 'Shop')
+            self._write_api_file(api_directory, 'depot', 'Depot')
+
+            await self._start_dashboard()
+            await self._wait_for_api(
+                lambda api: len(_state_types_in(api)) == 2
+            )
+
+            await self.rbt.down()
+            await self.rbt.up(revision=self.revision)
+
+            # An edit to one file, after the restart.
+            path = api_directory / 'shop' / 'v1' / 'shop.py'
+            path.write_text(
+                SHOP.format(state='Shop').replace(
+                    'class ShopState(Model):\n    name: str = Field(tag=1)\n',
+                    'class ShopState(Model):\n'
+                    '    name: str = Field(tag=1)\n'
+                    '    quantity: int = Field(tag=2)\n',
+                )
+            )
+            api = await self._wait_for_api(
+                lambda api: any(
+                    property.name == 'quantity' for schema in api.schemas.
+                    values() for property in schema.properties
+                )
+            )
+
+            # `Depot`, in the file that did not change, is still there,
+            # and was never recorded as removed.
+            self.assertEqual(
+                sorted(state_type.name for state_type in api.state_types),
+                ['shop.v1.Depot', 'shop.v1.Shop'],
+            )
+            self.assertNotIn(
+                ('shop.v1.Depot', 'state_type_removed'),
+                [_named(change) for change in await self._changelog_entries()],
+            )
+
     async def test_every_api_file_is_listed_with_when_it_was_modified(
         self,
     ) -> None:
