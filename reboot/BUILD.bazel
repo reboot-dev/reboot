@@ -360,6 +360,20 @@ py_library(
 )
 
 py_library(
+    name = "pydantic_api_py",
+    srcs = ["pydantic_api.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":api_py",
+        ":pydantic_schema_py",
+        ":pydantic_schema_to_proto_py",
+        ":settings_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:api_py_proto",
+        requirement("pydantic"),
+    ],
+)
+
+py_library(
     name = "pydantic_schema_to_proto_py",
     srcs = ["pydantic_schema_to_proto.py"],
     visibility = ["//visibility:public"],
