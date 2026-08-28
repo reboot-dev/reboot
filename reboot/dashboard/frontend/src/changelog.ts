@@ -5,7 +5,11 @@
 // the changes happened and a reverse range is newest first.
 import type { MethodChange, PropertyChange } from "@dashboard/dashboard_pb";
 import { Change } from "@dashboard/dashboard_pb";
-import { formatType, labelOfKind } from "./link_fields_to_data_types";
+import {
+  formatConstraints,
+  formatType,
+  labelOfKind,
+} from "./link_fields_to_data_types";
 
 // One entry of the changelog: what changed, and when, which is the
 // key it is under.
@@ -132,6 +136,24 @@ const partsOfProperties = (properties: PropertyChange[]): Part[] =>
           name,
           difference: "changed",
           verb: "description changed",
+        };
+      case "constraints":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: "constraints changed",
+          detail: fromTo(
+            formatConstraints(c.value.from),
+            formatConstraints(c.value.to)
+          ),
+        };
+      case "deprecated":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: c.value.deprecated ? "now deprecated" : "no longer deprecated",
         };
       case undefined:
         return { noun, name, difference: "changed", verb: "changed" };

@@ -22,6 +22,7 @@ from rbt.v1alpha1.schema_pb2 import (
     INTEGER,
     STRING,
     Array,
+    Constraints,
     DiscriminatedUnion,
     Literals,
     Map,
@@ -67,17 +68,55 @@ def _property(
     *,
     description: Optional[str],
     default: Optional[str],
+    constraints: Optional[Constraints],
+    deprecated: bool,
 ) -> Property:
     """One property, its type wrapped as `Optional` when the property
     was declared `Optional[...]`."""
     if optional:
         type_ = Type(optional=schema_pb2.Optional(inner=type_))
-    property_ = Property(name=name, tag=tag, type=type_, required=required)
+    property_ = Property(
+        name=name,
+        tag=tag,
+        type=type_,
+        required=required,
+        deprecated=deprecated,
+    )
     if description is not None:
         property_.description = description
     if default is not None:
         property_.default = default
+    if constraints is not None:
+        property_.constraints.CopyFrom(constraints)
     return property_
+
+
+# Each constraint `Field(...)` can declare, by the name pydantic keeps
+# it under in `FieldInfo.metadata` (an `annotated_types` object such
+# as `Ge(ge=0)`, or pydantic's own metadata for `pattern`), and the
+# `Constraints` field it is recorded in.
+_CONSTRAINTS = (
+    ('gt', 'greater_than'),
+    ('ge', 'greater_than_or_equal'),
+    ('lt', 'less_than'),
+    ('le', 'less_than_or_equal'),
+    ('multiple_of', 'multiple_of'),
+    ('min_length', 'min_length'),
+    ('max_length', 'max_length'),
+    ('pattern', 'pattern'),
+)
+
+
+def _constraints(field_info: Any) -> Optional[Constraints]:
+    """What `Field(...)` declared a value must satisfy beyond its
+    type, and `None` when it declared nothing."""
+    constraints = Constraints()
+    for metadata in field_info.metadata:
+        for attribute, field in _CONSTRAINTS:
+            value = getattr(metadata, attribute, None)
+            if value is not None:
+                setattr(constraints, field, value)
+    return constraints if constraints.ListFields() else None
 
 
 def _schema_of(
@@ -156,6 +195,12 @@ def _schema_of(
 
             description = field_info.description
 
+            constraints = _constraints(field_info)
+
+            # `deprecated` is `True`, a message, or a
+            # `warnings.deprecated`; each means the property is.
+            deprecated = bool(field_info.deprecated)
+
             # A default a factory makes is not known without calling
             # it, so only a literal one is recorded, as pydantic does
             # for JSON Schema.
@@ -210,6 +255,8 @@ def _schema_of(
                         type(None) in field_args,
                         description=description,
                         default=default,
+                        constraints=constraints,
+                        deprecated=deprecated,
                     )
                 )
                 continue
@@ -227,7 +274,8 @@ def _schema_of(
                 schema.properties.append(
                     _property(
                         field_name, tag, Type(scalar=STRING), required,
-                        optional, description=description, default=default
+                        optional, description=description, default=default,
+                        constraints=constraints, deprecated=deprecated
                     )
                 )
             elif inner_type == int:
@@ -235,7 +283,8 @@ def _schema_of(
                 schema.properties.append(
                     _property(
                         field_name, tag, Type(scalar=INTEGER), required,
-                        optional, description=description, default=default
+                        optional, description=description, default=default,
+                        constraints=constraints, deprecated=deprecated
                     )
                 )
             elif inner_type == float:
@@ -243,7 +292,8 @@ def _schema_of(
                 schema.properties.append(
                     _property(
                         field_name, tag, Type(scalar=FLOAT), required,
-                        optional, description=description, default=default
+                        optional, description=description, default=default,
+                        constraints=constraints, deprecated=deprecated
                     )
                 )
             elif inner_type == bool:
@@ -251,7 +301,8 @@ def _schema_of(
                 schema.properties.append(
                     _property(
                         field_name, tag, Type(scalar=BOOLEAN), required,
-                        optional, description=description, default=default
+                        optional, description=description, default=default,
+                        constraints=constraints, deprecated=deprecated
                     )
                 )
             elif inner_type is Any:
@@ -262,7 +313,8 @@ def _schema_of(
                 schema.properties.append(
                     _property(
                         field_name, tag, Type(scalar=ANY), required, optional,
-                        description=description, default=default
+                        description=description, default=default,
+                        constraints=constraints, deprecated=deprecated
                     )
                 )
             elif inner_origin in (list, List):
@@ -275,7 +327,8 @@ def _schema_of(
                 schema.properties.append(
                     _property(
                         field_name, tag, type_, required, optional,
-                        description=description, default=default
+                        description=description, default=default,
+                        constraints=constraints, deprecated=deprecated
                     )
                 )
             elif inner_origin in (dict, Dict):
@@ -287,7 +340,8 @@ def _schema_of(
                 schema.properties.append(
                     _property(
                         field_name, tag, type_, required, optional,
-                        description=description, default=default
+                        description=description, default=default,
+                        constraints=constraints, deprecated=deprecated
                     )
                 )
             elif inner_origin is Literal:
@@ -306,7 +360,8 @@ def _schema_of(
                     _property(
                         field_name, tag,
                         Type(literals=Literals(values=literal_args)), required,
-                        optional, description=description, default=default
+                        optional, description=description, default=default,
+                        constraints=constraints, deprecated=deprecated
                     )
                 )
             elif isinstance(inner_type,
@@ -319,7 +374,8 @@ def _schema_of(
                 schema.properties.append(
                     _property(
                         field_name, tag, type_, required, optional,
-                        description=description, default=default
+                        description=description, default=default,
+                        constraints=constraints, deprecated=deprecated
                     )
                 )
             elif not field_args and inner_origin is None:

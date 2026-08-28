@@ -330,8 +330,18 @@ const Fields: FC<{ fields: Field[] }> = ({ fields }) => (
           {": "}
           <TypeName type={field.type} link={field.link} />
           {";"}
-          {field.description !== undefined && (
-            <span className="comment">{` // ${field.description}`}</span>
+          {(field.description !== undefined ||
+            field.constraints !== undefined ||
+            field.deprecated) && (
+            <span className="comment">
+              {` // ${[
+                field.deprecated ? "deprecated" : undefined,
+                field.description,
+                field.constraints,
+              ]
+                .filter((part) => part !== undefined)
+                .join("; ")}`}
+            </span>
           )}
           {"\n"}
         </Fragment>

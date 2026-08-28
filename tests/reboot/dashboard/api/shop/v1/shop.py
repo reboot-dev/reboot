@@ -18,7 +18,9 @@ class ShopState(Model):
 
 class StockRequest(Model):
     item: str = Field(tag=1)
-    quantity: int = Field(tag=2)
+    # A bound, so that what a value must satisfy beyond its type is
+    # read too.
+    quantity: int = Field(tag=2, ge=0)
     # A free-form map, which Pydantic titles after the field rather
     # than after any type: the page must not read that title as one.
     labels: dict[str, str] = Field(tag=3, default_factory=dict)

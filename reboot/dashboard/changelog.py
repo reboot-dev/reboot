@@ -8,12 +8,14 @@ named is never made.
 """
 from rbt.dashboard.v1.dashboard_pb2 import (
     Change,
+    ConstraintsChanged,
     DataType,
     DataTypeAdded,
     DataTypeChanged,
     DataTypeRemoved,
     Declarations,
     DefaultChanged,
+    DeprecatedChanged,
     DescriptionChanged,
     ErrorsChanged,
     FactoryChanged,
@@ -36,7 +38,7 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     StateTypeRemoved,
     TypeChanged,
 )
-from rbt.v1alpha1.schema_pb2 import Property, Reference, Schema
+from rbt.v1alpha1.schema_pb2 import Constraints, Property, Reference, Schema
 from typing import Iterator, Mapping, Optional
 
 
@@ -64,6 +66,10 @@ def _optional_string(message, field: str) -> Optional[str]:
 
 def _optional_reference(message, field: str) -> Optional[Reference]:
     return getattr(message, field) if message.HasField(field) else None
+
+
+def _optional_constraints(property: Property) -> Optional[Constraints]:
+    return (property.constraints if property.HasField('constraints') else None)
 
 
 def _property_changes(
@@ -145,6 +151,27 @@ def _property_changes(
                             'to': _optional_string(new, 'description'),
                         }
                     ),
+                )
+            )
+        if _optional_constraints(old) != _optional_constraints(new):
+            changes.append(
+                PropertyChange(
+                    tag=tag,
+                    name=new.name,
+                    constraints=ConstraintsChanged(
+                        **{
+                            'from': _optional_constraints(old),
+                            'to': _optional_constraints(new),
+                        }
+                    ),
+                )
+            )
+        if old.deprecated != new.deprecated:
+            changes.append(
+                PropertyChange(
+                    tag=tag,
+                    name=new.name,
+                    deprecated=DeprecatedChanged(deprecated=new.deprecated),
                 )
             )
     return changes

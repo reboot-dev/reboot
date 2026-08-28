@@ -9,7 +9,14 @@ import tempfile
 import unittest
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import Declarations, Method, StateType
-from rbt.v1alpha1.schema_pb2 import Array, Optional, Reference, Schema, Type
+from rbt.v1alpha1.schema_pb2 import (
+    Array,
+    Constraints,
+    Optional,
+    Reference,
+    Schema,
+    Type,
+)
 from reboot.dashboard.api_reader import read_api_file
 
 API_DIRECTORY = str(Path(__file__).parent / 'api')
@@ -101,6 +108,16 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
             ),
             ['item', 'quantity', 'labels'],
         )
+
+        # What a value must satisfy beyond its type.
+        quantity = _property(
+            _schema_of_model(declarations, 'shop.v1.shop.StockRequest'),
+            'quantity',
+        )
+        self.assertEqual(
+            quantity.constraints, Constraints(greater_than_or_equal=0)
+        )
+        self.assertFalse(quantity.deprecated)
 
         self.assertEqual(stock.description, 'Add stock of an item.')
         self.assertFalse(stock.mcp)

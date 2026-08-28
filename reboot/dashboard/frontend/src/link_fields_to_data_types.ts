@@ -11,7 +11,11 @@ import type {
   Method_Kind,
   StateType as StateTypeMessage,
 } from "@dashboard/dashboard_pb";
-import type { Schema, Type } from "../../../../rbt/v1alpha1/schema_pb";
+import type {
+  Constraints,
+  Schema,
+  Type,
+} from "../../../../rbt/v1alpha1/schema_pb";
 import { Scalar } from "../../../../rbt/v1alpha1/schema_pb";
 
 // Type aliases rather than re-exports: the generated `Method` and
@@ -56,6 +60,10 @@ export interface Field {
   optional: boolean;
   description?: string;
   link?: string;
+  // What the value must satisfy beyond its type, spelled by
+  // `formatConstraints`; none when nothing was declared.
+  constraints?: string;
+  deprecated: boolean;
 }
 
 // One of the developer's types that is not a state type: a request,
@@ -121,6 +129,45 @@ export const formatType = (type: Type | undefined): string => {
   }
 };
 
+// What a value must satisfy beyond its type, written the way a
+// developer would read it: `> 0`, `<= 100`, `multiple of 5`,
+// `length 1..10`, `matches /^x/`.
+export const formatConstraints = (
+  constraints: Constraints | undefined
+): string | undefined => {
+  if (constraints === undefined) {
+    return undefined;
+  }
+  const parts: string[] = [];
+  if (constraints.greaterThan !== undefined) {
+    parts.push(`> ${constraints.greaterThan}`);
+  }
+  if (constraints.greaterThanOrEqual !== undefined) {
+    parts.push(`>= ${constraints.greaterThanOrEqual}`);
+  }
+  if (constraints.lessThan !== undefined) {
+    parts.push(`< ${constraints.lessThan}`);
+  }
+  if (constraints.lessThanOrEqual !== undefined) {
+    parts.push(`<= ${constraints.lessThanOrEqual}`);
+  }
+  if (constraints.multipleOf !== undefined) {
+    parts.push(`multiple of ${constraints.multipleOf}`);
+  }
+  if (
+    constraints.minLength !== undefined ||
+    constraints.maxLength !== undefined
+  ) {
+    parts.push(
+      `length ${constraints.minLength ?? 0}..${constraints.maxLength ?? ""}`
+    );
+  }
+  if (constraints.pattern !== undefined) {
+    parts.push(`matches /${constraints.pattern}/`);
+  }
+  return parts.length === 0 ? undefined : parts.join(", ");
+};
+
 // The one model a type refers to, under any list or dict layers:
 // what a field's row links to. A union refers to several, and links
 // to none.
@@ -182,6 +229,8 @@ const rowsOfSchema = ({
       type: formatType(type),
       optional,
       description: property.description,
+      constraints: formatConstraints(property.constraints),
+      deprecated: property.deprecated,
       link:
         reference === undefined
           ? undefined

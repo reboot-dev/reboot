@@ -89,6 +89,14 @@ describe("the description the reader writes", () => {
     expect(labels.link).toBeUndefined();
   });
 
+  it("spells what a value must satisfy beyond its type", () => {
+    const request = linkedDataTypesById().get("shop.v1.StockRequest")!;
+    const quantity = request.fields.find((field) => field.name === "quantity")!;
+
+    expect(quantity.constraints).toBe(">= 0");
+    expect(quantity.deprecated).toBe(false);
+  });
+
   it("makes an error's fields readable, not just its name", () => {
     const [shop] = stateTypes;
 
