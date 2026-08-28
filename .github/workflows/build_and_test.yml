@@ -132,9 +132,13 @@ jobs:
         # must be a separate step from the test run to also cover targets
         # that don't have test coverage.
         bazel build //...
+        # Test the whole workspace, not just `//tests/...`: some tests
+        # live next to the code they check, e.g. the `README_md_test`
+        # targets in `//reboot/examples/...` that check each example's
+        # generated `README.md` against its template.
         bazel test \
           --test_tag_filters=-requires-docker,-flaky,-manual \
-          //tests/...
+          //...
 
   test-react-native-maestro:
     name: Test React Native mobile app (Maestro)
