@@ -9,8 +9,9 @@ with.
 """
 import os
 from rbt.v1alpha1.pydantic import api_pb2
+from rbt.v1alpha1.pydantic.schema_pb2 import Reference
 from reboot.api import API, UI, MethodModel, Resource, Tool
-from reboot.pydantic_schema import Schemas, schema_of
+from reboot.pydantic_schema import Schemas, reference_name, schema_of
 from types import MappingProxyType
 
 
@@ -38,8 +39,21 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
             n: m for n, m in type_obj.methods.items() if isinstance(m, UI)
         }
 
+        uis: list[api_pb2.UI] = []  # noqa: F841
         for method_name, ui_method in ui_methods.items():
-            raise NotImplementedError("a UI")
+            uis.append(
+                api_pb2.UI(
+                    name=method_name,
+                    path=ui_method.path,
+                    request=(
+                        Reference(name=reference_name(ui_method.request))
+                        if ui_method.request is not None else None
+                    ),
+                    title=ui_method.title,
+                    description=ui_method.description,
+                    artifact_path=ui_method.artifact_path,
+                )
+            )
 
         schema, schemas = schema_of(
             type_obj.state, path=f"api.{type_name}.state", schemas=schemas
