@@ -10,7 +10,7 @@ with.
 import os
 from rbt.v1alpha1.pydantic import api_pb2
 from rbt.v1alpha1.pydantic.schema_pb2 import Reference
-from reboot.api import API, UI, MethodModel, Resource, Tool
+from reboot.api import API, UI, MethodKind, MethodModel, Resource, Tool
 from reboot.pydantic_schema import Schemas, reference_name, schema_of
 from reboot.settings import AUTO_CONSTRUCT_STATE_TYPE
 from types import MappingProxyType
@@ -118,7 +118,34 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
                     )
 
         for method_name, method_spec in regular_methods.items():
-            raise NotImplementedError("a method")
+            method = api_pb2.Method(
+                name=method_name,
+                factory=method_spec.factory,
+                request=(
+                    Reference(name=reference_name(method_spec.request))
+                    if method_spec.request is not None else None
+                ),
+                response=(
+                    Reference(name=reference_name(method_spec.response))
+                    if method_spec.response is not None else None
+                ),
+                errors=[
+                    Reference(name=reference_name(error))
+                    for error in method_spec.errors
+                ],
+                description=method_spec.description,
+            )
+            # A kind's message declares nothing yet; setting it is what
+            # selects the arm.
+            match method_spec.kind:
+                case MethodKind.READER:
+                    method.reader.CopyFrom(api_pb2.Reader())
+                case MethodKind.WRITER:
+                    method.writer.CopyFrom(api_pb2.Writer())
+                case MethodKind.TRANSACTION:
+                    method.transaction.CopyFrom(api_pb2.Transaction())
+                case MethodKind.WORKFLOW:
+                    method.workflow.CopyFrom(api_pb2.Workflow())
 
             # MCP options for exposing method as tool/resource.
             if method_spec.mcp is not None:
@@ -127,5 +154,9 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
                     raise NotImplementedError("a method's MCP tool")
                 elif isinstance(mcp, Resource):
                     raise NotImplementedError("a method's MCP resource")
+
+            # Appended once whole: the container keeps a copy, so a
+            # message appended earlier would not see its MCP set.
+            state_type.methods.append(method)
 
     raise NotImplementedError("the API's data types and schemas")
