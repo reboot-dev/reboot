@@ -117,8 +117,6 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
                         schemas=schemas,
                     )
 
-                raise NotImplementedError("a method's errors")
-
         for method_name, method_spec in regular_methods.items():
             raise NotImplementedError("a method")
 
