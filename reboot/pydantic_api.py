@@ -87,12 +87,13 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
         # regular methods.
         for method_name, method_spec in regular_methods.items():
             if method_spec.request is not None:
-                schema, schemas = schema_of(
+                # The request model's schema goes in `schemas`, the
+                # method referring to it by name.
+                _, schemas = schema_of(
                     method_spec.request,
                     path=f"api.{type_name}.methods.{method_name}.request",
                     schemas=schemas,
                 )
-                raise NotImplementedError("a method's request")
 
             if method_spec.response is not None:
                 schema, schemas = schema_of(
