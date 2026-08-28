@@ -18,13 +18,14 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
     """Reads what `api`, as `filename` under an API directory,
     declares: its state types, their methods and UIs, and the schema
     of every model those mention."""
-    package_name = os.path.dirname(filename).replace(os.sep, '.')  # noqa: F841
+    package = os.path.dirname(filename).replace(os.sep, '.')  # noqa: F841
+    module = filename.rsplit('.py', 1)[0].replace(os.sep, '.')  # noqa: F841
 
     # Every schema read so far, so that a model several methods share
     # is read once.
     schemas: Schemas = MappingProxyType({})
 
-    raise NotImplementedError("the API")
+    state_types: list[api_pb2.StateType] = []  # noqa: F841
 
     for type_name, type_obj in api.get_types().items():
         # Separate UI methods from regular methods.
