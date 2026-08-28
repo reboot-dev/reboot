@@ -75,12 +75,13 @@ def _api_of(api: API, filename: str) -> api_pb2.API:
         # `request=None` have no input parameters.
         for method_name, ui_method in ui_methods.items():
             if ui_method.request is not None:
-                schema, schemas = schema_of(
+                # The UI's request model's schema goes in `schemas`,
+                # the UI referring to it by name.
+                _, schemas = schema_of(
                     ui_method.request,
                     path=f"api.{type_name}.methods.{method_name}.request",
                     schemas=schemas,
                 )
-                raise NotImplementedError("a UI's request")
 
         # Generate request/response messages for
         # regular methods.
