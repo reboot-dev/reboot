@@ -33,6 +33,14 @@ message API {
   // What each file declaring an `api` declares, keyed the way
   // `files` is, which is also the `filename` inside.
   map<string, rbt.v1alpha1.pydantic.API> apis = 4;
+
+  // The digest of what each file declaring an `api` declares, as
+  // it is now, keyed by the module `rbt generate` writes for the
+  // file, relative to the generated directory the way
+  // `Implementation.generated` is keyed: `shop/v1/shop_rbt.py` for
+  // `shop/v1/shop.py`. The module records the digest it was
+  // generated from.
+  map<string, string> api_digests = 5;
 }
 
 message APIGetRequest {}
@@ -42,6 +50,7 @@ message APIGetResponse {
   optional string error = 2;
   map<string, File> files = 3;
   map<string, rbt.v1alpha1.pydantic.API> apis = 4;
+  map<string, string> api_digests = 5;
 }
 
 message APIUpdateRequest {
@@ -49,6 +58,7 @@ message APIUpdateRequest {
   optional string error = 2;
   map<string, File> files = 3;
   map<string, rbt.v1alpha1.pydantic.API> apis = 5;
+  map<string, string> api_digests = 6;
 
   // What differs from what the state records, for the changelog.
   // Recorded in the same transaction as the state, so that the
@@ -427,9 +437,10 @@ message Generated {
   // records it.
   google.protobuf.Timestamp modified = 1;
 
-  // Represents the digest of the proto the file was generated from,
-  // as the file records it. Absent for a file recording none: one
-  // generated before digests were recorded, or from a `.proto`.
+  // Represents the digest of what the API file declared when the
+  // module was generated from it, as the module records it. Absent
+  // for a module recording none: one generated before digests were
+  // recorded, or from a `.proto`.
   optional string api_digest = 2;
 }
 

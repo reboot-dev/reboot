@@ -901,8 +901,12 @@ const Overview: FC<{
     () =>
       response === undefined || implementation === undefined
         ? undefined
-        : reasonToGenerate(apis, response.files, implementation.generated),
-    [response, implementation, apis]
+        : reasonToGenerate(
+            response.apiDigests,
+            response.files,
+            implementation.generated
+          ),
+    [response, implementation]
   );
 
   const linkedDataTypes = useMemo(() => linkDataTypes({ apis }), [apis]);
@@ -1065,6 +1069,12 @@ const Overview: FC<{
                   Your application imports generated code that does not exist
                   yet, so its calls cannot be read. Run{" "}
                   <code>rbt generate</code>.
+                </p>
+              ) : generateReason === "changed" ? (
+                <p className="graph-note muted">
+                  Your API files changed since your generated code was written
+                  from them, so the static call graph analysis may be out of
+                  date. Run <code>rbt generate</code>.
                 </p>
               ) : generateReason === "older" ? (
                 <p className="graph-note muted">

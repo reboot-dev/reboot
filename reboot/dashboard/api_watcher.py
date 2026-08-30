@@ -39,6 +39,7 @@ from reboot.dashboard.walk import (
     _standardized_path,
     _walk,
 )
+from reboot.pydantic_api import api_digest
 from typing import Mapping, Optional
 
 
@@ -126,6 +127,23 @@ def _apis(
     return {
         _relative(filename, api_directory): file.api
         for filename, file in sorted(known.items())
+        if file.api is not None
+    }
+
+
+def _api_digests(
+    known: Mapping[Path, ReadFile],
+    *,
+    api_directory: Path,
+) -> dict[str, str]:
+    """The digest of what each file declaring an `api` declares,
+    keyed by the module `rbt generate` writes for the file, relative
+    to the generated directory the way `Implementation.generated` is
+    keyed: `shop/v1/shop_rbt.py` for `shop/v1/shop.py`."""
+    return {
+        f'{_relative(filename, api_directory).removesuffix(".py")}_rbt.py':
+            api_digest(file.api)
+        for filename, file in known.items()
         if file.api is not None
     }
 
@@ -317,6 +335,9 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
                         error=_error(known_now, api_directory=directory),
                         files=_files(known_now, api_directory=directory),
                         apis=_apis(known_now, api_directory=directory),
+                        api_digests=_api_digests(
+                            known_now, api_directory=directory
+                        ),
                         changes=changes,
                     )
                     known = known_now

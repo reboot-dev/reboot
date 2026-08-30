@@ -60,6 +60,7 @@ py_library(
         ":constants_py",
         ":walk_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//reboot:pydantic_api_py",
         "//reboot/aio:concurrently_py",
         "//reboot/aio:external_py",
         "//reboot/aio:workflows_py",

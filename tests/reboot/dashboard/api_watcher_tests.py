@@ -333,6 +333,13 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
             _modified_at(self.directory / 'shop' / 'v1' / 'shop.py'),
         )
 
+        # And what `rbt generate` writes for each file declaring an
+        # `api`, keyed by the module: nothing, for the helper.
+        self.assertEqual(list(api.api_digests), ['shop/v1/shop_rbt.py'])
+        self.assertRegex(
+            api.api_digests['shop/v1/shop_rbt.py'], '^[0-9a-f]{64}$'
+        )
+
     async def test_the_first_read_records_what_is_on_disk(self) -> None:
         self._write_api_file(self.directory, 'shop', 'Shop')
 

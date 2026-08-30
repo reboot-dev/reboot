@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 
 import aiofiles
-import hashlib
 import importlib
 import os
 import typing
 from rbt.v1alpha1.pydantic import api_pb2, schema_pb2
 from reboot.api import API, UserPydanticError, to_pascal_case, to_snake_case
 from reboot.fail import fail
-from reboot.pydantic_api import api_of
+from reboot.pydantic_api import api_digest, api_of
 from reboot.pydantic_schema import Schemas
 from types import MappingProxyType
 from typing import List, Optional
@@ -104,7 +103,7 @@ async def _write_field_maybe_with_type_string_annotation(
     await proto.write(";\n")
 
 
-async def generate(
+async def generate_from_schema(
     proto,
     schema: typing.Union[schema_pb2.Schema, schema_pb2.Type],
     name: Optional[str] = None,
@@ -208,7 +207,7 @@ async def generate(
 
             if inner_type.WhichOneof('type') == 'discriminated_union':
                 type_name = to_pascal_case(field_name)
-                await generate(
+                await generate_from_schema(
                     proto,
                     inner_type,
                     name=type_name,
@@ -278,7 +277,7 @@ async def generate(
             elif inner_type.WhichOneof('type') == 'array':
                 type_name = to_pascal_case(field_name) + "Array"
                 await proto.write(f"  message {type_name} {{\n")
-                await generate(
+                await generate_from_schema(
                     proto,
                     inner_type,
                     schemas=schemas,
@@ -296,7 +295,7 @@ async def generate(
             elif inner_type.WhichOneof('type') == 'map':
                 type_name = to_pascal_case(field_name) + "Record"
                 await proto.write(f"  message {type_name} {{\n")
-                await generate(
+                await generate_from_schema(
                     proto,
                     inner_type,
                     schemas=schemas,
@@ -348,7 +347,7 @@ async def generate(
                 )
             elif inner_type.WhichOneof('type') == 'reference':
                 type_name = to_pascal_case(field_name)
-                await generate(
+                await generate_from_schema(
                     proto,
                     schemas[inner_type.reference.name],
                     name=type_name,
@@ -389,16 +388,16 @@ async def generate(
         elif value_type.WhichOneof('type') == 'array':
             type_name = "Value"
             await proto.write("  message Value {\n")
-            await generate(proto, value_type, schemas=schemas)
+            await generate_from_schema(proto, value_type, schemas=schemas)
             await proto.write("  }\n")
         elif value_type.WhichOneof('type') == 'map':
             type_name = "Value"
             await proto.write("  message Value {\n")
-            await generate(proto, value_type, schemas=schemas)
+            await generate_from_schema(proto, value_type, schemas=schemas)
             await proto.write("  }\n")
         elif value_type.WhichOneof('type') == 'reference':
             type_name = schemas[value_type.reference.name].name
-            await generate(
+            await generate_from_schema(
                 proto,
                 schemas[value_type.reference.name],
                 name=type_name,
@@ -442,16 +441,16 @@ async def generate(
         elif item_type.WhichOneof('type') == 'array':
             type_name = "Item"
             await proto.write("  message Item {\n")
-            await generate(proto, item_type, schemas=schemas)
+            await generate_from_schema(proto, item_type, schemas=schemas)
             await proto.write("  }\n")
         elif item_type.WhichOneof('type') == 'map':
             type_name = "Item"
             await proto.write("  message Item {\n")
-            await generate(proto, item_type, schemas=schemas)
+            await generate_from_schema(proto, item_type, schemas=schemas)
             await proto.write("  }\n")
         elif item_type.WhichOneof('type') == 'reference':
             type_name = schemas[item_type.reference.name].name
-            await generate(
+            await generate_from_schema(
                 proto,
                 schemas[item_type.reference.name],
                 name=type_name,
@@ -498,7 +497,7 @@ async def generate(
 
             # Generate the option message by recursively calling generate.
             # The discriminator field will be skipped because we pass it through.
-            await generate(
+            await generate_from_schema(
                 proto,
                 schemas[variant.reference.name],
                 name=type_name,
@@ -553,44 +552,22 @@ async def generate_proto_file_from_api(
 
     os.makedirs(os.path.dirname(proto_file_path), exist_ok=True)
 
-    text = await proto_text_from_api(api_of(api, filename=filename))
-
     async with aiofiles.open(proto_file_path, 'w') as proto:
-        await proto.write(text)
-        # Appended after the text it digests, so that the digest is
-        # of exactly what `proto_text_from_api` returns, which is
-        # what whoever compares computes.
-        await proto.write(
-            f'option (rbt.v1alpha1.file).api_digest = "{api_digest(text)}";\n'
-        )
+        await generate_from_api(proto, api_of(api, filename=filename))
 
     return proto_file_name
 
 
-def api_digest(proto_text: str) -> str:
-    """Returns the hex SHA-256 of the proto text an API generates to,
-    which is what says whether generated code came from that API."""
-    return hashlib.sha256(proto_text.encode()).hexdigest()
-
-
-class _ProtoText:
-    """Collects what would otherwise be written to a file."""
-
-    def __init__(self) -> None:
-        self.parts: list[str] = []
-
-    async def write(self, text: str) -> None:
-        self.parts.append(text)
-
-
-async def proto_text_from_api(api: api_pb2.API) -> str:
-    """Returns the proto that `api`, what an API file declares,
-    generates to: what `protoc` is handed."""
+async def generate_from_api(
+    proto,
+    api: api_pb2.API,
+) -> None:
+    """Writes to `proto` the proto that `api`, what an API file
+    declares, generates to, and the digest of the declaration: what
+    `protoc` is handed."""
     schemas = api.schemas
 
     generated_errors_names = set()
-
-    proto = _ProtoText()
 
     await proto.write('syntax = "proto3";\n')
     await proto.write(f'package {api.package};\n')
@@ -637,7 +614,7 @@ async def proto_text_from_api(api: api_pb2.API) -> str:
                 }
             )
 
-        await generate(
+        await generate_from_schema(
             proto,
             schemas[state_type.reference.name],
             name=type_name,
@@ -657,7 +634,7 @@ async def proto_text_from_api(api: api_pb2.API) -> str:
         # `request=None` have no input parameters.
         for ui in state_type.uis:
             if ui.HasField('request'):
-                await generate(
+                await generate_from_schema(
                     proto,
                     schemas[ui.request.name],
                     name=schemas[ui.request.name].name,
@@ -673,7 +650,7 @@ async def proto_text_from_api(api: api_pb2.API) -> str:
             if method.HasField('request'):
                 request_type_name = f"{type_name}{to_pascal_case(method_name)}Request"
 
-                await generate(
+                await generate_from_schema(
                     proto,
                     schemas[method.request.name],
                     name=request_type_name,
@@ -685,7 +662,7 @@ async def proto_text_from_api(api: api_pb2.API) -> str:
             if method.HasField('response'):
                 response_type_name = f"{type_name}{to_pascal_case(method_name)}Response"
 
-                await generate(
+                await generate_from_schema(
                     proto,
                     schemas[method.response.name],
                     name=response_type_name,
@@ -701,7 +678,7 @@ async def proto_text_from_api(api: api_pb2.API) -> str:
                     if error_type_name in generated_errors_names:
                         continue
                     generated_errors_names.add(error_type_name)
-                    await generate(
+                    await generate_from_schema(
                         proto,
                         schemas[error.name],
                         name=error_type_name,
@@ -799,4 +776,6 @@ async def proto_text_from_api(api: api_pb2.API) -> str:
 
         await proto.write("}\n\n")
 
-    return ''.join(proto.parts)
+    await proto.write(
+        f'option (rbt.v1alpha1.file).api_digest = "{api_digest(api)}";\n'
+    )

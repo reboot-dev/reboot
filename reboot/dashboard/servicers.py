@@ -54,6 +54,7 @@ class APIServicer(API.Servicer):
             error=self.state.error if self.state.HasField('error') else None,
             files=self.state.files,
             apis=self.state.apis,
+            api_digests=self.state.api_digests,
         )
 
     @classmethod
@@ -94,6 +95,8 @@ class APIServicer(API.Servicer):
         self.state.apis.clear()
         for filename, api in request.apis.items():
             self.state.apis[filename].CopyFrom(api)
+        self.state.api_digests.clear()
+        self.state.api_digests.update(request.api_digests)
 
         if len(request.changes) > 0:
             await OrderedMap.ref(CHANGELOG_ID).Insert(
