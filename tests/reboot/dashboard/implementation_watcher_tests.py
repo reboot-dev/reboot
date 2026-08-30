@@ -458,8 +458,9 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         async for response in API.ref(API_ID).reactively().Get(context):
             if any(
-                state_type.name == 'shop.v1.Shop'
-                for state_type in response.state_types
+                f'{api.package}.{state_type.name}' == 'shop.v1.Shop'
+                for api in response.apis.values()
+                for state_type in api.state_types
             ):
                 return
 

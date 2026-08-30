@@ -4,6 +4,7 @@ package rbt.dashboard.v1;
 
 import "google/protobuf/timestamp.proto";
 import "rbt/v1alpha1/options.proto";
+import "rbt/v1alpha1/pydantic/api.proto";
 import "rbt/v1alpha1/pydantic/schema.proto";
 
 ////////////////////////////////////////////////////////////////////////
@@ -13,110 +14,41 @@ message API {
   option (rbt.v1alpha1.state) = {
   };
 
-  repeated StateType state_types = 1;
+  // The API directory as the developer spelled it to `rbt dashboard`,
+  // e.g. "api": what, before a file's path relative to it, is the
+  // path they would open.
+  string api_directory = 1;
 
   // Why the API files could not be read, if they could not be. A
   // half-written file is the normal cause while someone is typing.
   optional string error = 2;
 
   // Represents every candidate API file the watch read, keyed by
-  // its path relative to the API directory, the way `StateType.file`
-  // spells it, as of the last write. A restarted dashboard starts
-  // from these rather than reading every file again; one that
-  // changed since this was written is simply read again, which its
-  // digest says.
+  // its path relative to the API directory, as of the last write. A
+  // restarted dashboard starts from these rather than reading every
+  // file again; one that changed since this was written is simply
+  // read again, which its digest says.
   map<string, File> files = 3;
 
-  // The models that are not state models: the requests, responses
-  // and errors of the methods, and anything those contain, however
-  // deeply nested.
-  repeated DataType data_types = 4;
-
-  // The schema of every model the API files declare, state models
-  // included, by the name a `Reference` carries: the model's module
-  // and class name.
-  map<string, rbt.v1alpha1.pydantic.Schema> schemas = 5;
-}
-
-message StateType {
-  // Fully qualified by the file's directory: `shop/v1/shop.py`
-  // declaring `Shop` yields `shop.v1.Shop`.
-  string name = 1;
-
-  // The path including the directory passed to `--api-directory`.
-  string filename = 2;
-
-  optional string description = 3;
-
-  repeated Method methods = 4;
-
-  // The state model: a key of `API.schemas`.
-  rbt.v1alpha1.pydantic.Reference reference = 5;
-}
-
-message Method {
-  enum Kind {
-    KIND_UNSPECIFIED = 0;
-    READER = 1;
-    WRITER = 2;
-    TRANSACTION = 3;
-    WORKFLOW = 4;
-  }
-
-  string name = 1;
-
-  Kind kind = 2;
-
-  bool factory = 3;
-
-  // Whether the application exposes the method as an MCP tool.
-  bool mcp = 4;
-
-  // Keys of `API.schemas`. Absent when the method takes or returns
-  // nothing.
-  optional rbt.v1alpha1.pydantic.Reference request = 5;
-  optional rbt.v1alpha1.pydantic.Reference response = 6;
-  repeated rbt.v1alpha1.pydantic.Reference errors = 7;
-
-  optional string description = 8;
-}
-
-// A model that is not a state model: a request, a response, an
-// error, or anything those contain, however deeply nested.
-message DataType {
-  // The path of the file declaring it, including the directory
-  // passed to `--api-directory`.
-  string filename = 1;
-
-  // The model: a key of `API.schemas`.
-  rbt.v1alpha1.pydantic.Reference reference = 2;
-}
-
-// What the API files declare: the state types, the data types, and
-// the schema of every model either refers to, by the name a
-// `Reference` carries.
-message Declarations {
-  repeated StateType state_types = 1;
-  repeated DataType data_types = 2;
-  map<string, rbt.v1alpha1.pydantic.Schema> schemas = 3;
+  // What each file declaring an `api` declares, keyed the way
+  // `files` is, which is also the `filename` inside.
+  map<string, rbt.v1alpha1.pydantic.API> apis = 4;
 }
 
 message APIGetRequest {}
 
 message APIGetResponse {
-  repeated StateType state_types = 1;
+  string api_directory = 1;
   optional string error = 2;
   map<string, File> files = 3;
-  repeated DataType data_types = 4;
-  map<string, rbt.v1alpha1.pydantic.Schema> schemas = 5;
+  map<string, rbt.v1alpha1.pydantic.API> apis = 4;
 }
 
 message APIUpdateRequest {
-  repeated StateType state_types = 1;
+  string api_directory = 1;
   optional string error = 2;
   map<string, File> files = 3;
-  repeated DataType data_types = 5;
-  map<string, rbt.v1alpha1.pydantic.Schema> schemas = 6;
+  map<string, rbt.v1alpha1.pydantic.API> apis = 5;
 
   // What differs from what the state records, for the changelog.
   // Recorded in the same transaction as the state, so that the
@@ -217,17 +149,29 @@ message MethodAdded {}
 
 message MethodRemoved {}
 
+// A method's kind: which arm of `rbt.v1alpha1.pydantic.Method.kind`
+// the method declares.
 message KindChanged {
-  Method.Kind from = 1;
-  Method.Kind to = 2;
+  enum Kind {
+    UNKNOWN = 0;
+    READER = 1;
+    WRITER = 2;
+    TRANSACTION = 3;
+    WORKFLOW = 4;
+  }
+
+  Kind from = 1;
+  Kind to = 2;
 }
 
 message FactoryChanged {
   bool factory = 1;
 }
 
-message McpChanged {
-  bool mcp = 1;
+// How a method is exposed over MCP; absent for not at all.
+message MCPChanged {
+  optional rbt.v1alpha1.pydantic.MCP from = 1;
+  optional rbt.v1alpha1.pydantic.MCP to = 2;
 }
 
 // The request or response type, by name; absent for none.
@@ -256,7 +200,7 @@ message MethodChange {
     MethodRemoved removed = 3;
     KindChanged kind = 4;
     FactoryChanged factory = 5;
-    McpChanged mcp = 6;
+    MCPChanged mcp = 6;
     RequestChanged request = 7;
     ResponseChanged response = 8;
     ErrorsChanged errors = 9;
@@ -298,7 +242,7 @@ message StateTypeRemoved {
 
 // A data type the API files declare: a model that is not a state.
 message DataTypeAdded {
-  // Qualified by the package of the state type declaring it, e.g.
+  // Qualified by the module of the file declaring it, e.g.
   // "shop.v1.LookRequest".
   string name = 1;
   string filename = 2;
@@ -381,8 +325,8 @@ message Servicer {
         UNTIL = 6;
       }
 
-      // Represents the state type called, spelled as
-      // `StateType.name`.
+      // Represents the state type called, spelled as the runtime
+      // names one: its package, then its name, e.g. `shop.v1.Shop`.
       string state_type = 1;
 
       // Represents the method called, spelled as `Method.name`.
@@ -403,7 +347,8 @@ message Servicer {
     repeated string ambiguous = 4;
   }
 
-  // The state type it services, spelled as `StateType.name`.
+  // The state type it services, spelled as the runtime names one,
+  // e.g. `shop.v1.Shop`.
   string state_type = 1;
 
   // The file it is written in, spelled the way the developer would
@@ -581,8 +526,8 @@ message PreferencesSetSuppressOpenOnRestartRequest {
 message PreferencesSetSuppressOpenOnRestartResponse {}
 
 message PreferencesSetExpandedRequest {
-  // The fully qualified name of one state type, spelled the way
-  // `StateType.name` spells it: e.g., `shop.v1.Shop`.
+  // The fully qualified name of one state type, spelled as the
+  // runtime names one: e.g. `shop.v1.Shop`.
   string state_type = 1;
 
   bool expanded = 2;

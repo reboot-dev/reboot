@@ -1,5 +1,6 @@
-"""The dashboard's changelog: what differs between the description of
-the developer's API files before a save and the description after it.
+"""The dashboard's changelog: what differs between what the
+developer's API files declared before a save and what they declare
+after it.
 
 Every change names what changed: a type added or removed whole, or,
 for one that is still there, each of its methods, properties and
@@ -9,19 +10,16 @@ named is never made.
 from rbt.dashboard.v1.dashboard_pb2 import (
     Change,
     ConstraintsChanged,
-    DataType,
     DataTypeAdded,
     DataTypeChanged,
     DataTypeRemoved,
-    Declarations,
     DefaultChanged,
     DeprecatedChanged,
     DescriptionChanged,
     ErrorsChanged,
     FactoryChanged,
     KindChanged,
-    McpChanged,
-    Method,
+    MCPChanged,
     MethodAdded,
     MethodChange,
     MethodRemoved,
@@ -38,6 +36,7 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     StateTypeRemoved,
     TypeChanged,
 )
+from rbt.v1alpha1.pydantic.api_pb2 import API, MCP, Method, StateType
 from rbt.v1alpha1.pydantic.schema_pb2 import (
     Constraints,
     Property,
@@ -46,23 +45,42 @@ from rbt.v1alpha1.pydantic.schema_pb2 import (
 )
 from typing import Iterator, Mapping, Optional
 
+# What the API files declare, keyed by file relative to the API
+# directory: what `API.apis` records.
+APIs = Mapping[str, API]
+
+
+def state_type_name(api: API, state_type: StateType) -> str:
+    """The name the dashboard gives a state type, which is the name
+    the runtime gives it: its package, then its name, e.g.
+    `shop.v1.Shop`."""
+    return f'{api.package}.{state_type.name}'
+
+
+def _state_types(apis: APIs) -> dict[str, tuple[API, StateType]]:
+    """Every state type by the name the dashboard gives it, beside
+    the API of the file declaring it."""
+    return {
+        state_type_name(api, state_type): (api, state_type)
+        for api in apis.values() for state_type in api.state_types
+    }
+
+
+def _data_types(apis: APIs) -> dict[str, tuple[API, Schema]]:
+    """Every data type by the name the dashboard gives it, which is
+    the name a `Reference` carries, beside the API of the file
+    declaring it and its schema."""
+    return {
+        reference.name: (api, api.schemas[reference.name])
+        for api in apis.values() for reference in api.data_types
+    }
+
 
 def _properties_of(schema: Schema) -> dict[int, Property]:
     """Every property a model's schema declares, by tag: every field
     of a model is declared with `Field(tag=...)`, which is what makes
     the tag its identity."""
     return {property.tag: property for property in schema.properties}
-
-
-def _data_types(declarations: Declarations) -> dict[str, DataType]:
-    """Every data type, by the name the page gives it: the model's
-    package, then its class name."""
-    data_types: dict[str, DataType] = {}
-    for data_type in declarations.data_types:
-        schema = declarations.schemas[data_type.reference.name]
-        package = schema.module.rsplit('.', 1)[0]
-        data_types[f'{package}.{schema.name}'] = data_type
-    return data_types
 
 
 def _optional_string(message, field: str) -> Optional[str]:
@@ -75,6 +93,10 @@ def _optional_reference(message, field: str) -> Optional[Reference]:
 
 def _optional_constraints(property: Property) -> Optional[Constraints]:
     return (property.constraints if property.HasField('constraints') else None)
+
+
+def _optional_mcp(method: Method) -> Optional[MCP]:
+    return method.mcp if method.HasField('mcp') else None
 
 
 def _property_changes(
@@ -198,14 +220,20 @@ def _method_changes(
         if new is None:
             changes.append(MethodChange(name=name, removed=MethodRemoved()))
             continue
-        if old.kind != new.kind:
+        old_kind = old.WhichOneof('kind')
+        new_kind = new.WhichOneof('kind')
+        # `api_of` always sets a kind.
+        assert old_kind is not None and new_kind is not None
+        if old_kind != new_kind:
             changes.append(
                 MethodChange(
                     name=name,
-                    kind=KindChanged(**{
-                        'from': old.kind,
-                        'to': new.kind,
-                    }),
+                    kind=KindChanged(
+                        **{
+                            'from': KindChanged.Kind.Value(old_kind.upper()),
+                            'to': KindChanged.Kind.Value(new_kind.upper()),
+                        }
+                    ),
                 )
             )
         if old.factory != new.factory:
@@ -214,9 +242,17 @@ def _method_changes(
                     name=name, factory=FactoryChanged(factory=new.factory)
                 )
             )
-        if old.mcp != new.mcp:
+        if _optional_mcp(old) != _optional_mcp(new):
             changes.append(
-                MethodChange(name=name, mcp=McpChanged(mcp=new.mcp))
+                MethodChange(
+                    name=name,
+                    mcp=MCPChanged(
+                        **{
+                            'from': _optional_mcp(old),
+                            'to': _optional_mcp(new),
+                        }
+                    ),
+                )
             )
         for field, changed in (
             ('request', RequestChanged),
@@ -279,20 +315,15 @@ def _description_changed(
     return DescriptionChanged(**{'from': old, 'to': new})
 
 
-def changes_between(
-    before: Declarations,
-    after: Declarations,
-) -> Iterator[Change]:
+def changes_between(before: APIs, after: APIs) -> Iterator[Change]:
     """Ordered by name, state types before data types, so that a
     retry of the `Update` call the watcher makes sends the same
-    list, which is what makes the write idempotent.
+    list, which is what makes the write idempotent. A change names
+    its file the way `API.apis` is keyed: relative to the API
+    directory.
     """
-    state_types_before = {
-        state_type.name: state_type for state_type in before.state_types
-    }
-    state_types_after = {
-        state_type.name: state_type for state_type in after.state_types
-    }
+    state_types_before = _state_types(before)
+    state_types_after = _state_types(after)
 
     for name in sorted(set(state_types_before) | set(state_types_after)):
         old = state_types_before.get(name)
@@ -300,29 +331,33 @@ def changes_between(
 
         if old is None:
             assert new is not None
+            added_api, _ = new
             yield Change(
                 state_type_added=StateTypeAdded(
-                    name=name, filename=new.filename
+                    name=name, filename=added_api.filename
                 )
             )
             continue
         if new is None:
+            removed_api, _ = old
             yield Change(
                 state_type_removed=StateTypeRemoved(
-                    name=name, filename=old.filename
+                    name=name, filename=removed_api.filename
                 )
             )
             continue
 
-        old_schema = before.schemas[old.reference.name]
-        new_schema = after.schemas[new.reference.name]
+        old_api, old_state_type = old
+        new_api, new_state_type = new
+        old_schema = old_api.schemas[old_state_type.reference.name]
+        new_schema = new_api.schemas[new_state_type.reference.name]
 
         changed = StateTypeChanged(
             name=name,
-            filename=new.filename,
+            filename=new_api.filename,
             methods=_method_changes(
-                {method.name: method for method in old.methods},
-                {method.name: method for method in new.methods},
+                {method.name: method for method in old_state_type.methods},
+                {method.name: method for method in new_state_type.methods},
             ),
             properties=_property_changes(
                 _properties_of(old_schema),
@@ -359,33 +394,35 @@ def changes_between(
 
         if old_data_type is None:
             assert new_data_type is not None
+            added_api, _ = new_data_type
             yield Change(
                 data_type_added=DataTypeAdded(
-                    name=name, filename=new_data_type.filename
+                    name=name, filename=added_api.filename
                 )
             )
             continue
         if new_data_type is None:
+            removed_api, _ = old_data_type
             yield Change(
                 data_type_removed=DataTypeRemoved(
-                    name=name, filename=old_data_type.filename
+                    name=name, filename=removed_api.filename
                 )
             )
             continue
 
-        old_data_type_schema = before.schemas[old_data_type.reference.name]
-        new_data_type_schema = after.schemas[new_data_type.reference.name]
+        old_api, old_schema = old_data_type
+        new_api, new_schema = new_data_type
 
         changed_data_type = DataTypeChanged(
             name=name,
-            filename=new_data_type.filename,
+            filename=new_api.filename,
             properties=_property_changes(
-                _properties_of(old_data_type_schema),
-                _properties_of(new_data_type_schema),
+                _properties_of(old_schema),
+                _properties_of(new_schema),
             ),
             description=_description_changed(
-                _optional_string(old_data_type_schema, 'description'),
-                _optional_string(new_data_type_schema, 'description'),
+                _optional_string(old_schema, 'description'),
+                _optional_string(new_schema, 'description'),
             ),
         )
         if (

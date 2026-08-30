@@ -36,23 +36,24 @@ import {
   PREFERENCES_ID,
   PRESENCE_ID,
 } from "./constants";
-import type { DataType } from "../../../../rbt/dashboard/v1/dashboard_pb";
+import type * as api_pb from "../../../../rbt/v1alpha1/pydantic/api_pb";
 import type {
+  APIs,
   LinkedDataType,
   Field,
-  Method,
+  Kind,
   Referrer,
-  Schemas,
-  StateType,
 } from "./link_fields_to_data_types";
 import {
   dataTypeIdOfName,
+  kindOfMethod,
   linkDataTypes,
   fieldsOfDataType,
   labelOfKind,
-  packageName,
   fieldsOfState,
+  qualifiedName,
   shortNameOfTypeName,
+  sortedAPIs,
 } from "./link_fields_to_data_types";
 import type { Entry } from "./changelog";
 import {
@@ -156,8 +157,8 @@ const Pill: FC<{ className: string; label: string; meaning?: string }> = ({
   );
 };
 
-const Kind: FC<{ kind: Method["kind"] }> = ({ kind }) => {
-  const label = labelOfKind(kind);
+const Kind: FC<{ kind: Kind | undefined }> = ({ kind }) => {
+  const label = kind === undefined ? "unspecified" : labelOfKind(kind);
   return (
     <Pill
       className={`kind kind-${label}`}
@@ -396,18 +397,17 @@ const Keys: FC<{ fields: Field[] }> = ({ fields }) => (
 );
 
 const Signature: FC<{
-  dataTypes: DataType[];
-  schemas: Schemas;
-  method: Method;
-}> = ({ dataTypes, schemas, method }) => {
+  api: api_pb.API;
+  method: api_pb.Method;
+}> = ({ api, method }) => {
   const takes =
     method.request === undefined
       ? []
-      : fieldsOfDataType({ dataTypes, schemas, name: method.request.name });
+      : fieldsOfDataType({ api, name: method.request.name });
   const returns =
     method.response === undefined
       ? []
-      : fieldsOfDataType({ dataTypes, schemas, name: method.response.name });
+      : fieldsOfDataType({ api, name: method.response.name });
 
   return (
     <div className="method-signature">
@@ -430,7 +430,7 @@ const Signature: FC<{
               {index > 0 && ", "}
               <TypeName
                 type={shortNameOfTypeName(name)}
-                link={dataTypeIdOfName({ dataTypes, schemas, name })}
+                link={dataTypeIdOfName({ api, name })}
               />
             </Fragment>
           ))}
@@ -441,11 +441,9 @@ const Signature: FC<{
 };
 
 const Method: FC<{
-  dataTypes: DataType[];
-  schemas: Schemas;
-  stateType: StateType;
-  method: Method;
-}> = ({ dataTypes, schemas, stateType, method }) => {
+  api: api_pb.API;
+  method: api_pb.Method;
+}> = ({ api, method }) => {
   return (
     <div className="method" id={`m-${method.name}`}>
       <div className="method-head">
@@ -454,7 +452,7 @@ const Method: FC<{
           {/* The kind comes before the tags because every method has
               one, so it sits in the same column in every row. The tags
               are optional. */}
-          <Kind kind={method.kind} />
+          <Kind kind={kindOfMethod(method)} />
           <span className="tags">
             {method.factory && (
               <Pill
@@ -463,7 +461,7 @@ const Method: FC<{
                 meaning={DEFINITIONS.factory}
               />
             )}
-            {method.mcp && (
+            {method.mcp !== undefined && (
               <Pill
                 className="tag tag-mcp"
                 label="MCP"
@@ -484,7 +482,7 @@ const Method: FC<{
               text={method.description}
             />
           )}
-          <Signature dataTypes={dataTypes} schemas={schemas} method={method} />
+          <Signature api={api} method={method} />
         </div>
       </div>
     </div>
@@ -547,14 +545,14 @@ const useSlidingPills = (expanded: boolean) => {
 };
 
 const StateType: FC<{
-  dataTypes: DataType[];
-  schemas: Schemas;
-  stateType: StateType;
+  api: api_pb.API;
+  stateType: api_pb.StateType;
   expanded: boolean;
   onToggle: () => void;
-}> = ({ dataTypes, schemas, stateType, expanded, onToggle }) => {
+}> = ({ api, stateType, expanded, onToggle }) => {
   const section = useSlidingPills(expanded);
-  const fields = fieldsOfState({ dataTypes, schemas, stateType });
+  const name = qualifiedName({ api, stateType });
+  const fields = fieldsOfState({ api, stateType });
 
   return (
     // The stylesheet opens and closes every method's detail from this
@@ -562,7 +560,7 @@ const StateType: FC<{
     <section
       ref={section}
       className={expanded ? "state-type is-expanded" : "state-type"}
-      id={pathOfTypeOnPage("state", stateType.name)}
+      id={pathOfTypeOnPage("state", name)}
     >
       <div>
         <Pill
@@ -573,8 +571,8 @@ const StateType: FC<{
       </div>
       <div className="state-type-head">
         <div className="state-type-heading">
-          <h2>{shortNameOfTypeName(stateType.name)}</h2>
-          <Anchor page="state" id={stateType.name} />
+          <h2>{stateType.name}</h2>
+          <Anchor page="state" id={name} />
           <span className="summary-line">
             {countWithNoun(fields.length, "field")} ·{" "}
             {countWithNoun(stateType.methods.length, "method")}
@@ -584,7 +582,7 @@ const StateType: FC<{
           className="expand-button"
           onClick={onToggle}
           aria-expanded={expanded}
-          aria-controls={pathOfTypeOnPage("state", stateType.name)}
+          aria-controls={pathOfTypeOnPage("state", name)}
         >
           {/* The caret points in the direction the details move on click:
               down when they expand, up when they collapse. */}
@@ -592,7 +590,7 @@ const StateType: FC<{
           {expanded ? "Hide details" : "Expand details"}
         </button>
       </div>
-      <div className="file">{stateType.filename}</div>
+      <div className="file">{api.filename}</div>
       {stateType.description !== undefined && (
         <Description
           className="state-type-description"
@@ -612,13 +610,7 @@ const StateType: FC<{
       <div className="eyebrow section">methods</div>
       <div className="methods">
         {stateType.methods.map((method) => (
-          <Method
-            dataTypes={dataTypes}
-            schemas={schemas}
-            stateType={stateType}
-            method={method}
-            key={method.name}
-          />
+          <Method api={api} method={method} key={method.name} />
         ))}
       </div>
     </section>
@@ -866,29 +858,25 @@ const Overview: FC<{
   // retrying.
   const live = !isLoading;
 
-  // The state types the developer's API files declare, which exist
-  // before the application is generated, built or started, so this
-  // page can show them without an application.
-  const stateTypes: StateType[] = useMemo(
-    () => response?.stateTypes ?? [],
-    [response?.stateTypes]
+  // What the developer's API files declare, which exists before the
+  // application is generated, built or started, so this page can
+  // show it without an application.
+  const apis: APIs = useMemo(() => response?.apis ?? {}, [response?.apis]);
+
+  // How many state types the API files declare.
+  const stateTypeCount = useMemo(
+    () =>
+      Object.values(apis).reduce(
+        (total, api) => total + api.stateTypes.length,
+        0
+      ),
+    [apis]
   );
 
   // Why any API file could not be read, which is routine while the
   // developer is typing. The page shows it beside the types, which
   // stay at whatever each file last declared.
   const error = response?.error ?? "";
-
-  // The data types beside the state types, and every model's schema
-  // by reference name.
-  const dataTypes: DataType[] = useMemo(
-    () => response?.dataTypes ?? [],
-    [response?.dataTypes]
-  );
-  const schemas: Schemas = useMemo(
-    () => response?.schemas ?? {},
-    [response?.schemas]
-  );
 
   // What the dashboard read of the developer's application: the
   // Reboot calls each servicer's methods make. Nothing until the
@@ -905,33 +893,30 @@ const Overview: FC<{
   );
 
   const graphStateTypes = useMemo(
-    () => joinStateTypes(stateTypes, servicers),
-    [stateTypes, servicers]
+    () => joinStateTypes(apis, servicers),
+    [apis, servicers]
   );
 
   const generateReason = useMemo(
     () =>
       response === undefined || implementation === undefined
         ? undefined
-        : reasonToGenerate(
-            stateTypes,
-            response.files,
-            implementation.generated
-          ),
-    [response, implementation, stateTypes]
+        : reasonToGenerate(apis, response.files, implementation.generated),
+    [response, implementation, apis]
   );
 
-  const linkedDataTypes = useMemo(
-    () => linkDataTypes({ stateTypes, dataTypes, schemas }),
-    [stateTypes, dataTypes, schemas]
-  );
+  const linkedDataTypes = useMemo(() => linkDataTypes({ apis }), [apis]);
 
   // A referrer is either a state type or a data type, and its link
   // must open the page that lists it.
   const pageOfTypeId = useMemo(() => {
-    const states = new Set(stateTypes.map((stateType) => stateType.name));
+    const states = new Set(
+      Object.values(apis).flatMap((api) =>
+        api.stateTypes.map((stateType) => qualifiedName({ api, stateType }))
+      )
+    );
     return (id: string): Page => (states.has(id) ? "state" : "data");
-  }, [stateTypes]);
+  }, [apis]);
 
   // The changelog is one list rather than a set of packages, and
   // the graph is one canvas, so the sidebar has nothing to index.
@@ -940,19 +925,21 @@ const Overview: FC<{
       page === "changelog" || page === "graph"
         ? []
         : page === "state"
-        ? stateTypes.map((stateType) => ({
-            id: stateType.name,
-            name: shortNameOfTypeName(stateType.name),
-            package: packageName(stateType.name),
-            count: countWithNoun(stateType.methods.length, "method"),
-          }))
+        ? sortedAPIs(apis).flatMap((api) =>
+            api.stateTypes.map((stateType) => ({
+              id: qualifiedName({ api, stateType }),
+              name: stateType.name,
+              package: api.package,
+              count: countWithNoun(stateType.methods.length, "method"),
+            }))
+          )
         : linkedDataTypes.map((linkedDataType) => ({
             id: linkedDataType.id,
             name: linkedDataType.name,
             package: linkedDataType.package,
             count: countWithNoun(linkedDataType.fields.length, "field"),
           })),
-    [page, stateTypes, linkedDataTypes]
+    [page, apis, linkedDataTypes]
   );
 
   const packages = useMemo(() => groupByPackage(entries), [entries]);
@@ -975,7 +962,7 @@ const Overview: FC<{
           "state type"
         )}`
       : page === "state"
-      ? `${countWithNoun(stateTypes.length, "state type")} in ${countWithNoun(
+      ? `${countWithNoun(stateTypeCount, "state type")} in ${countWithNoun(
           packages.length,
           "package"
         )}`
@@ -992,11 +979,11 @@ const Overview: FC<{
       return;
     }
     document.getElementById(pathOfTypeOnPage(page, target))?.scrollIntoView();
-  }, [page, target, stateTypes, linkedDataTypes]);
+  }, [page, target, apis, linkedDataTypes]);
 
   // Only until the first read; while reloading, `response` keeps the
   // types last read, so the page shows those instead.
-  if (isLoading && stateTypes.length === 0) {
+  if (isLoading && stateTypeCount === 0) {
     return (
       <main>
         <h1>Reboot application</h1>
@@ -1005,7 +992,7 @@ const Overview: FC<{
     );
   }
 
-  if (stateTypes.length === 0) {
+  if (stateTypeCount === 0) {
     return (
       <main>
         <h1>Reboot application</h1>
@@ -1019,7 +1006,7 @@ const Overview: FC<{
   }
 
   const counts: Record<Page, number> = {
-    state: stateTypes.length,
+    state: stateTypeCount,
     data: linkedDataTypes.length,
     changelog: changes,
     graph: calls,
@@ -1105,16 +1092,20 @@ const Overview: FC<{
               <GraphPage stateTypes={graphStateTypes} onCount={setCalls} />
             </>
           ) : page === "state" ? (
-            stateTypes.map((stateType) => (
-              <StateType
-                dataTypes={dataTypes}
-                schemas={schemas}
-                stateType={stateType}
-                expanded={isExpanded(stateType.name)}
-                onToggle={() => onToggle(stateType.name)}
-                key={stateType.name}
-              />
-            ))
+            sortedAPIs(apis).flatMap((api) =>
+              api.stateTypes.map((stateType) => {
+                const name = qualifiedName({ api, stateType });
+                return (
+                  <StateType
+                    api={api}
+                    stateType={stateType}
+                    expanded={isExpanded(name)}
+                    onToggle={() => onToggle(name)}
+                    key={name}
+                  />
+                );
+              })
+            )
           ) : linkedDataTypes.length === 0 ? (
             <div className="empty">
               No data types. The state types declare no requests, responses or

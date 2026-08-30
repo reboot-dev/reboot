@@ -62,8 +62,21 @@ def _named(change: Change) -> tuple[str, str]:
 
 
 def _state_types_in(response) -> list[dict]:
-    """The state types the description carries, as JSON."""
-    return [MessageToDict(state_type) for state_type in response.state_types]
+    """Every state type the API files declare, as JSON, named the way
+    the runtime names one: the file's package, then its name."""
+    return [
+        MessageToDict(state_type) | {
+            'name': f'{api.package}.{state_type.name}'
+        } for api in response.apis.values() for state_type in api.state_types
+    ]
+
+
+def _schemas_in(response) -> list:
+    """Every model's schema the API files declare."""
+    return [
+        schema for api in response.apis.values()
+        for schema in api.schemas.values()
+    ]
 
 
 class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
@@ -161,8 +174,8 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         api = await self._wait_for_api(
             lambda api: any(
-                property.name == 'quantity' for schema in api.schemas.values(
-                ) for property in schema.properties
+                property.name == 'quantity' for schema in _schemas_in(api) for
+                property in schema.properties
             )
         )
         self.assertIn('shop/v1/models.py', api.files)
@@ -233,10 +246,19 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(revision=self.revision)
         await self._wait_for_api(lambda api: len(_state_types_in(api)) == 2)
 
-        # The first read recorded `Shop`, `LookRequest` and `LookResponse`.
-        change, *_ = await self._changelog_entries()
+        # The first read recorded `Shop`, `LookRequest` and
+        # `LookResponse`; the restart's read recorded what `depot.py`
+        # declares.
+        newest = await self._changelog_entries()
 
-        self.assertEqual(_named(change), ('shop.v1.Depot', 'state_type_added'))
+        self.assertEqual(
+            sorted(_named(change) for change in newest[:3]),
+            [
+                ('shop.v1.Depot', 'state_type_added'),
+                ('shop.v1.depot.LookRequest', 'data_type_added'),
+                ('shop.v1.depot.LookResponse', 'data_type_added'),
+            ],
+        )
 
     async def test_a_restart_keeps_what_unchanged_files_declare(self) -> None:
         """A dashboard brought back up joins each file's state types
@@ -273,15 +295,15 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
             )
             api = await self._wait_for_api(
                 lambda api: any(
-                    property.name == 'quantity' for schema in api.schemas.
-                    values() for property in schema.properties
+                    property.name == 'quantity' for schema in
+                    _schemas_in(api) for property in schema.properties
                 )
             )
 
             # `Depot`, in the file that did not change, is still there,
             # and was never recorded as removed.
             self.assertEqual(
-                sorted(state_type.name for state_type in api.state_types),
+                sorted(state['name'] for state in _state_types_in(api)),
                 ['shop.v1.Depot', 'shop.v1.Shop'],
             )
             self.assertNotIn(
@@ -322,9 +344,9 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
                 _named(change) for change in await self._changelog_entries()
             ),
             [
-                ('shop.v1.LookRequest', 'data_type_added'),
-                ('shop.v1.LookResponse', 'data_type_added'),
                 ('shop.v1.Shop', 'state_type_added'),
+                ('shop.v1.shop.LookRequest', 'data_type_added'),
+                ('shop.v1.shop.LookResponse', 'data_type_added'),
             ],
         )
 
@@ -350,9 +372,9 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
                 _named(change) for change in await self._changelog_entries()
             ),
             [
-                ('shop.v1.LookRequest', 'data_type_added'),
-                ('shop.v1.LookResponse', 'data_type_added'),
                 ('shop.v1.Shop', 'state_type_added'),
+                ('shop.v1.shop.LookRequest', 'data_type_added'),
+                ('shop.v1.shop.LookResponse', 'data_type_added'),
             ],
         )
 
@@ -369,13 +391,13 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         await self._wait_for_api(lambda api: len(_state_types_in(api)) == 2)
 
         # The first read recorded `Shop`, `LookRequest` and `LookResponse`.
-        change, *_ = await self._changelog_entries()
+        # `depot.py` declares `Depot` and its own `LookRequest` and
+        # `LookResponse`.
+        *_, change = (await self._changelog_entries())[:3]
 
         self.assertEqual(change.WhichOneof('change'), 'state_type_added')
         self.assertEqual(change.state_type_added.name, 'shop.v1.Depot')
-        self.assertTrue(
-            change.state_type_added.filename.endswith('shop/v1/depot.py')
-        )
+        self.assertEqual(change.state_type_added.filename, 'shop/v1/depot.py')
 
     async def test_the_same_file_changing_twice_is_two_changes(self) -> None:
         # Saving one file again is the ordinary thing to do, and each
@@ -409,10 +431,10 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
                 ('shop.v1.Bazaar', 'state_type_added'),
                 ('shop.v1.Bazaar', 'state_type_removed'),
                 ('shop.v1.Emporium', 'state_type_added'),
-                ('shop.v1.LookRequest', 'data_type_added'),
-                ('shop.v1.LookResponse', 'data_type_added'),
                 ('shop.v1.Shop', 'state_type_added'),
                 ('shop.v1.Shop', 'state_type_removed'),
+                ('shop.v1.shop.LookRequest', 'data_type_added'),
+                ('shop.v1.shop.LookResponse', 'data_type_added'),
             ],
         )
 
@@ -482,8 +504,8 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         await self._wait_for_api(
             lambda api: any(
-                property.name == 'quantity' for schema in api.schemas.values(
-                ) for property in schema.properties
+                property.name == 'quantity' for schema in _schemas_in(api) for
+                property in schema.properties
             )
         )
 
@@ -519,7 +541,7 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         await self._wait_for_api(
             lambda api: any(
-                property.name == 'title' for schema in api.schemas.values() for
+                property.name == 'title' for schema in _schemas_in(api) for
                 property in schema.properties
             )
         )
@@ -557,7 +579,9 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         # The first read recorded `Shop`, `Depot`, `LookRequest` and
         # `LookResponse`.
-        change, *_ = await self._changelog_entries()
+        # Everything `depot.py` declared is gone: `Depot` and its own
+        # `LookRequest` and `LookResponse`.
+        *_, change = (await self._changelog_entries())[:3]
 
         self.assertEqual(change.WhichOneof('change'), 'state_type_removed')
         self.assertEqual(change.state_type_removed.name, 'shop.v1.Depot')

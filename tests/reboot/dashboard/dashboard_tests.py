@@ -8,9 +8,8 @@ import asyncio
 import socket
 import unittest
 from google.protobuf.json_format import ParseDict
-from rbt.dashboard.v1.dashboard_pb2 import DataType, StateType
 from rbt.dashboard.v1.dashboard_rbt import API, Preferences
-from rbt.v1alpha1.pydantic.schema_pb2 import Schema
+from rbt.v1alpha1.pydantic import api_pb2
 from reboot.aio.tests import Reboot
 from reboot.dashboard.constants import (
     API_ID,
@@ -45,11 +44,12 @@ def _new_driver():
     )
 
 
-# One state type as `api_reader` describes it: it and its methods
-# name entries in `schemas` by reference name, each a model's shape
-# in proto JSON, and every model but the state model is a data type.
+# What one API file declares, as `api_reader` describes it: its state
+# type and methods name entries in `schemas` by reference name, each
+# a model's shape in proto JSON, and every model but the state model
+# is a data type.
 _MODULE = 'shop.v1.shop'
-_FILENAME = 'api/shop/v1/shop.py'
+_FILENAME = 'shop/v1/shop.py'
 
 
 def _schema(name: str, properties: list[dict], **rest) -> dict:
@@ -132,40 +132,46 @@ _SCHEMAS = {
         ),
 }
 
-_SHOP = {
-    'name':
-        'shop.v1.Shop',
-    'filename':
-        _FILENAME,
-    'reference': {
-        'name': f'{_MODULE}.ShopState'
-    },
-    'methods':
+_API = {
+    'filename': _FILENAME,
+    'package': 'shop.v1',
+    'module': _MODULE,
+    'stateTypes':
         [
             {
-                'name': 'look',
-                'kind': 'READER',
-                'factory': False,
-                'mcp': False,
-                'errors': [],
-                'request': {
-                    'name': f'{_MODULE}.LookRequest'
+                'name':
+                    'Shop',
+                'reference': {
+                    'name': f'{_MODULE}.ShopState'
                 },
-                'response': {
-                    'name': f'{_MODULE}.LookResponse'
-                },
+                'methods':
+                    [
+                        {
+                            'name': 'look',
+                            'reader': {},
+                            'factory': False,
+                            'errors': [],
+                            'request': {
+                                'name': f'{_MODULE}.LookRequest'
+                            },
+                            'response': {
+                                'name': f'{_MODULE}.LookResponse'
+                            },
+                        },
+                    ],
             },
         ],
-}
-
-_DATA_TYPES = [
-    {
-        'filename': _FILENAME,
-        'reference': {
-            'name': f'{_MODULE}.{name}'
+    'dataTypes':
+        [
+            {
+                'name': f'{_MODULE}.{name}'
+            } for name in _SCHEMAS if name != 'ShopState'
+        ],
+    'schemas':
+        {
+            f'{_MODULE}.{name}': schema for name, schema in _SCHEMAS.items()
         },
-    } for name in _SCHEMAS if name != 'ShopState'
-]
+}
 
 
 class DashboardTest(unittest.IsolatedAsyncioTestCase):
@@ -239,14 +245,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
         await API.ref(API_ID).Update(
             context,
-            state_types=[ParseDict(_SHOP, StateType())],
-            data_types=[
-                ParseDict(data_type, DataType()) for data_type in _DATA_TYPES
-            ],
-            schemas={
-                f'{_MODULE}.{name}': ParseDict(schema, Schema())
-                for name, schema in _SCHEMAS.items()
-            },
+            api_directory='api',
+            files={},
+            apis={_FILENAME: ParseDict(_API, api_pb2.API())},
         )
 
     def _run_in_browser(self, body):
@@ -278,7 +279,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
         await API.ref(API_ID).Update(
             context,
-            state_types=[ParseDict(_SHOP, StateType())],
+            api_directory='api',
+            files={},
+            apis={_FILENAME: ParseDict(_API, api_pb2.API())},
             error='shop.py: SyntaxError: invalid syntax',
         )
 
@@ -469,23 +472,23 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             # A viewport this small leaves Shelf, the last of three
             # types, off screen, so the page has to scroll to reach it.
             driver.set_window_size(900, 600)
-            driver.get(f'{self.url}{DASHBOARD_PATH}/#/data/shop.v1.Shelf')
+            driver.get(f'{self.url}{DASHBOARD_PATH}/#/data/shop.v1.shop.Shelf')
             WebDriverWait(driver, 60).until(
                 expected_conditions.presence_of_element_located(
-                    (By.CSS_SELECTOR, '[id="/data/shop.v1.Shelf"]')
+                    (By.CSS_SELECTOR, '[id="/data/shop.v1.shop.Shelf"]')
                 )
             )
             # The field row whose type is `Shelf` links to it by that
             # name.
             link = driver.find_element(
                 By.CSS_SELECTOR,
-                '.type-block a[href="#/data/shop.v1.Shelf"]',
+                '.type-block a[href="#/data/shop.v1.shop.Shelf"]',
             )
             self.assertEqual(link.text, 'Shelf')
             return driver.execute_script(
                 'const pane = document.querySelector(".pane");'
                 'const shelf ='
-                '  document.querySelector(\'[id="/data/shop.v1.Shelf"]\');'
+                '  document.querySelector(\'[id="/data/shop.v1.shop.Shelf"]\');'
                 'const box = shelf.getBoundingClientRect();'
                 'return {'
                 '  scrolled: pane.scrollTop,'
@@ -508,7 +511,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('LookRequest', page)
         self.assertIn('LookResponse', page)
         self.assertIn('Where an item sits.', page)
-        self.assertNotIn('/data/shop.v1.ShopState', page)
+        self.assertNotIn('/data/shop.v1.shop.ShopState', page)
 
         # And the field or method that contains each type, so the page
         # lists both what a type contains and what contains it.
@@ -532,7 +535,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
             driver.find_element(
                 By.CSS_SELECTOR,
-                '.method-signature a[href="#/data/shop.v1.Shelf"]',
+                '.method-signature a[href="#/data/shop.v1.shop.Shelf"]',
             ).click()
 
             # The link changes the hash to a page that was not rendered
@@ -540,7 +543,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             # before it scrolls to it.
             WebDriverWait(driver, 60).until(
                 expected_conditions.presence_of_element_located(
-                    (By.CSS_SELECTOR, '[id="/data/shop.v1.Shelf"]')
+                    (By.CSS_SELECTOR, '[id="/data/shop.v1.shop.Shelf"]')
                 )
             )
             return driver.page_source

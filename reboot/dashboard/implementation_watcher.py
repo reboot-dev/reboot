@@ -146,10 +146,10 @@ def _digest(node: ast.AST) -> Digest:
 
 def _try_find_state_type_name(class_definition: ast.ClassDef) -> Optional[str]:
     """Returns the state type a class of generated code belongs to,
-    spelled as `StateType.name`, which the generator writes into
-    the class as `__state_type_name__`, and `None` for a class
-    without one. E.g. `'shop.v1.Shop'` for a class containing
-    `__state_type_name__ = StateTypeName('shop.v1.Shop')`."""
+    spelled as the generator writes it into the class, e.g.
+    `'shop.v1.Shop'` for a class containing
+    `__state_type_name__ = StateTypeName('shop.v1.Shop')`, and
+    `None` for a class without one."""
     for statement in class_definition.body:
         match statement:
             case ast.Assign(
@@ -170,8 +170,8 @@ class StateTypeDefinition:
     after the state type, e.g. the generator's `class Shop:` for
     `shop.v1.Shop`."""
 
-    # The state type, spelled as `StateType.name`, e.g.
-    # `shop.v1.Shop`.
+    # The state type, spelled as `__state_type_name__` spells it,
+    # e.g. `shop.v1.Shop`.
     state_type: str
 
 
@@ -182,8 +182,8 @@ class BaseServicerDefinition:
     the state type, e.g. the generator's
     `class ShopBaseServicer:`."""
 
-    # The state type, spelled as `StateType.name`, e.g.
-    # `shop.v1.Shop`.
+    # The state type, spelled as `__state_type_name__` spells it,
+    # e.g. `shop.v1.Shop`.
     state_type: str
 
 
@@ -193,8 +193,8 @@ class ServicerDefinition:
     comes through a base defined in the same module, e.g. the
     generator's `class ShopServicer(ShopBaseServicer):`."""
 
-    # The state type, spelled as `StateType.name`, e.g.
-    # `shop.v1.Shop`.
+    # The state type, spelled as `__state_type_name__` spells it,
+    # e.g. `shop.v1.Shop`.
     state_type: str
 
 
@@ -208,8 +208,8 @@ class MethodDefinition:
     constructors. What a call made through any reference, or a
     construction, is defined by."""
 
-    # The state type, spelled as `StateType.name`, e.g.
-    # `shop.v1.Shop`.
+    # The state type, spelled as `__state_type_name__` spells it,
+    # e.g. `shop.v1.Shop`.
     state_type: str
 
     # The method name, spelled as the developer calls it, e.g. `look`.

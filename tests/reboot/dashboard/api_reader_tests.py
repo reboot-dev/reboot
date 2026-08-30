@@ -8,7 +8,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_pb2 import Declarations, Method, StateType
+from rbt.v1alpha1.pydantic.api_pb2 import API, Method, StateType
 from rbt.v1alpha1.pydantic.schema_pb2 import (
     Array,
     Constraints,
@@ -26,13 +26,11 @@ def _state_types_by_name(state_types: list[StateType]) -> dict[str, StateType]:
     return {state_type.name: state_type for state_type in state_types}
 
 
-def _schema_of_model(declarations: Declarations, name: str) -> Schema:
+def _schema_of_model(api: API, name: str) -> Schema:
     """The schema of the model called `name`."""
-    if name not in declarations.schemas:
-        raise AssertionError(
-            f"No model '{name}' in {list(declarations.schemas)}"
-        )
-    return declarations.schemas[name]
+    if name not in api.schemas:
+        raise AssertionError(f"No model '{name}' in {list(api.schemas)}")
+    return api.schemas[name]
 
 
 def _property_names(schema: Schema) -> list[str]:
@@ -56,20 +54,18 @@ def _method_named(state_type: StateType, name: str) -> Method:
 class APIReaderTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_describes_a_state_type_and_its_methods(self) -> None:
-        declarations, error = await read_api_file(
-            API_DIRECTORY, 'shop/v1/shop.py'
-        )
+        api, error = await read_api_file(API_DIRECTORY, 'shop/v1/shop.py')
 
         self.assertIsNone(error)
+        assert api is not None
 
-        shop = _state_types_by_name(list(declarations.state_types)
-                                   )['shop.v1.Shop']
+        # The file relative to the API directory, and the package and
+        # module the generated code spells the file as.
+        self.assertEqual(api.filename, 'shop/v1/shop.py')
+        self.assertEqual(api.package, 'shop.v1')
+        self.assertEqual(api.module, 'shop.v1.shop')
 
-        # The API directory as given, then the path inside it.
-        self.assertEqual(
-            shop.filename,
-            os.path.join(API_DIRECTORY, 'shop/v1/shop.py'),
-        )
+        shop = _state_types_by_name(list(api.state_types))['Shop']
 
         self.assertEqual(
             shop.description,
@@ -79,39 +75,32 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
         # The state model's schema is among the schemas, and
         # `properties` keeps the order the fields were declared in.
         self.assertEqual(shop.reference.name, 'shop.v1.shop.ShopState')
-        state = _schema_of_model(declarations, shop.reference.name)
+        state = _schema_of_model(api, shop.reference.name)
         self.assertEqual(state.name, 'ShopState')
         self.assertEqual(_property_names(state), ['name', 'open'])
 
-        # Every other model is a data type, declared by this file.
+        # Every other model is a data type.
         self.assertEqual(
-            sorted(
-                (data_type.reference.name, data_type.filename)
-                for data_type in declarations.data_types
-            ),
-            [
-                (name, os.path.join(API_DIRECTORY, 'shop/v1/shop.py'))
-                for name in
-                sorted(set(declarations.schemas) - {'shop.v1.shop.ShopState'})
-            ],
+            sorted(reference.name for reference in api.data_types),
+            sorted(set(api.schemas) - {'shop.v1.shop.ShopState'}),
         )
 
         # Methods keep the names their author gave them, and name what
         # they take and return in `schemas`, the way a `Reference`
         # names a model: by its module and class.
         stock = _method_named(shop, 'stock')
-        self.assertEqual(stock.kind, Method.Kind.TRANSACTION)
+        self.assertEqual(stock.WhichOneof('kind'), 'transaction')
         self.assertEqual(stock.request.name, 'shop.v1.shop.StockRequest')
         self.assertEqual(
             _property_names(
-                _schema_of_model(declarations, 'shop.v1.shop.StockRequest')
+                _schema_of_model(api, 'shop.v1.shop.StockRequest')
             ),
             ['item', 'quantity', 'labels'],
         )
 
         # What a value must satisfy beyond its type.
         quantity = _property(
-            _schema_of_model(declarations, 'shop.v1.shop.StockRequest'),
+            _schema_of_model(api, 'shop.v1.shop.StockRequest'),
             'quantity',
         )
         self.assertEqual(
@@ -120,12 +109,12 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(quantity.deprecated)
 
         self.assertEqual(stock.description, 'Add stock of an item.')
-        self.assertFalse(stock.mcp)
+        self.assertFalse(stock.HasField('mcp'))
 
         remaining = _method_named(shop, 'remaining')
-        self.assertEqual(remaining.kind, Method.Kind.READER)
+        self.assertEqual(remaining.WhichOneof('kind'), 'reader')
         self.assertEqual(remaining.response.name, 'shop.v1.shop.StockResponse')
-        self.assertTrue(remaining.mcp)
+        self.assertEqual(remaining.mcp.WhichOneof('primitive'), 'tool')
         self.assertEqual(
             remaining.description,
             'How much of an item is left.',
@@ -139,7 +128,7 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             _property_names(
-                _schema_of_model(declarations, 'shop.v1.shop.OutOfStockError')
+                _schema_of_model(api, 'shop.v1.shop.OutOfStockError')
             ),
             ['item'],
         )
@@ -152,15 +141,13 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
     async def test_a_nested_type_is_followed_rather_than_named(self) -> None:
         # `StockResponse.items` is a list of `Item`, whose `price` is an
         # `Optional[Price]`; `schemas` describes every one of them.
-        declarations, error = await read_api_file(
-            API_DIRECTORY, 'shop/v1/shop.py'
-        )
+        api, error = await read_api_file(API_DIRECTORY, 'shop/v1/shop.py')
 
         self.assertIsNone(error)
+        assert api is not None
 
         items = _property(
-            _schema_of_model(declarations, 'shop.v1.shop.StockResponse'),
-            'items'
+            _schema_of_model(api, 'shop.v1.shop.StockResponse'), 'items'
         )
         self.assertEqual(items.tag, 2)
         self.assertEqual(
@@ -173,9 +160,7 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
         )
 
         # `Optional[X]` is an optional of a reference.
-        price = _property(
-            _schema_of_model(declarations, 'shop.v1.shop.Item'), 'price'
-        )
+        price = _property(_schema_of_model(api, 'shop.v1.shop.Item'), 'price')
         self.assertEqual(
             price.type,
             Type(
@@ -187,25 +172,21 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(price.default, 'null')
 
         self.assertEqual(
-            _property_names(
-                _schema_of_model(declarations, 'shop.v1.shop.Price')
-            ),
+            _property_names(_schema_of_model(api, 'shop.v1.shop.Price')),
             ['currency', 'cents'],
         )
 
         # A model's docstring is its schema's description.
         self.assertEqual(
-            _schema_of_model(declarations, 'shop.v1.shop.Item').description,
+            _schema_of_model(api, 'shop.v1.shop.Item').description,
             'One thing the shop sells.',
         )
 
     async def test_a_file_with_no_api_describes_nothing(self) -> None:
-        declarations, error = await read_api_file(
-            API_DIRECTORY, 'shop/v1/helper.py'
-        )
+        api, error = await read_api_file(API_DIRECTORY, 'shop/v1/helper.py')
 
         self.assertIsNone(error)
-        self.assertEqual(declarations, Declarations())
+        self.assertIsNone(api)
 
     async def test_a_file_that_does_not_parse_reports_why(self) -> None:
         # A half-written file is the normal case while someone is
@@ -215,11 +196,9 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
             Path(os.path.join(directory, 'shop', 'v1', 'shop.py')
                 ).write_text('from reboot.api import API\napi = API(\n')
 
-            declarations, error = await read_api_file(
-                directory, 'shop/v1/shop.py'
-            )
+            api, error = await read_api_file(directory, 'shop/v1/shop.py')
 
-            self.assertEqual(declarations, Declarations())
+            self.assertIsNone(api)
             assert error is not None
             self.assertIn('SyntaxError', error)
 

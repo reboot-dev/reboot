@@ -16,7 +16,8 @@ py_library(
     deps = [
         "//rbt/dashboard/v1:dashboard_py_reboot",
         "//reboot:api_py",
-        "//reboot:pydantic_schema_py",
+        "//reboot:pydantic_api_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:api_py_proto",
     ],
 )
 
@@ -31,7 +32,8 @@ py_binary(
     deps = [
         "//rbt/dashboard/v1:dashboard_py_reboot",
         "//reboot:api_py",
-        "//reboot:pydantic_schema_py",
+        "//reboot:pydantic_api_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:api_py_proto",
     ],
 )
 
@@ -42,6 +44,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//rbt/dashboard/v1:dashboard_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:api_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:schema_py_proto",
     ],
 )

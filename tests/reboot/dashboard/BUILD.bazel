@@ -10,6 +10,7 @@ py_test(
     main = "api_reader_tests.py",
     deps = [
         "//reboot/dashboard:api_reader_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:api_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:schema_py_proto",
     ],
 )
@@ -104,8 +105,8 @@ py_test(
     ],
 )
 
-# `api_reader.py` writes the state types and
-# `link_fields_to_data_types.ts` walks them. This runs the real reader
+# `api_reader.py` writes what an API file declares and
+# `link_fields_to_data_types.ts` walks it. This runs the real reader
 # over the API files in this package so the test below walks real
 # output the way the page does. The output is a TypeScript module so
 # that it is a source of the test, with no file to read at runtime.
@@ -114,8 +115,7 @@ genrule(
     srcs = glob(["api/**"]),
     outs = ["state_types.ts"],
     # Run from this package with a relative `api`, the way
-    # `rbt dashboard --api-directory=api` does, so that each state
-    # type's `file` is `api/shop/v1/shop.py` as in a real dashboard.
+    # `rbt dashboard --api-directory=api` does.
     cmd = "OUT=$$PWD/$@ && " +
           "READER=$$PWD/$(location //reboot/dashboard:api_reader) && " +
           "cd $$(dirname $(location api/shop/v1/shop.py))/../../.. && " +
@@ -142,6 +142,7 @@ ts_project(
     },
     deps = [
         "//rbt/dashboard/v1:dashboard_js_proto",
+        "//rbt/v1alpha1/pydantic:api_js_proto",
         "//rbt/v1alpha1/pydantic:schema_js_proto",
         "//reboot/dashboard/frontend:dashboard_ts",
         "//reboot/std/vitest:vitest_ts",

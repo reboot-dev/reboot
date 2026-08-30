@@ -8,10 +8,7 @@
 //
 // React Flow draws; ELK places. React Flow deliberately has no layout
 // of its own.
-import {
-  Method_Kind,
-  Servicer_Method_Call_How as How,
-} from "../../../../rbt/dashboard/v1/dashboard_pb";
+import { Servicer_Method_Call_How as How } from "../../../../rbt/dashboard/v1/dashboard_pb";
 import {
   Background,
   BaseEdge,
@@ -40,7 +37,11 @@ import type {
   GraphStateType,
 } from "./callgraph";
 import { groupStateTypesByPackage, methodId } from "./callgraph";
-import { labelOfKind, packageName } from "./link_fields_to_data_types";
+import type { Kind } from "./link_fields_to_data_types";
+import {
+  labelOfKind,
+  packageOfStateTypeName,
+} from "./link_fields_to_data_types";
 
 // A method the API does not declare has no kind, so its edges and
 // its dot are no kind's colour. A folded edge carries every kind at
@@ -50,34 +51,32 @@ const NEUTRAL_TEXT = "hsl(211 25% 40%)";
 
 // One colour per kind of method, the hues the kind pills wear on the
 // state types page, so a purple edge here and a purple pill there say
-// the same thing. Keyed by every `Method.Kind`, so a kind added to
+// the same thing. Keyed by every `Kind`, so a kind added to
 // the proto does not compile until it is coloured here.
-const KIND_COLOR: Record<Method_Kind, string> = {
-  [Method_Kind.KIND_UNSPECIFIED]: NEUTRAL_COLOR,
-  [Method_Kind.READER]: "hsl(166 55% 35%)",
-  [Method_Kind.WRITER]: "hsl(211 72% 45%)",
-  [Method_Kind.TRANSACTION]: "hsl(275 50% 50%)",
-  [Method_Kind.WORKFLOW]: "hsl(36 85% 42%)",
+const KIND_COLOR: Record<Kind, string> = {
+  reader: "hsl(166 55% 35%)",
+  writer: "hsl(211 72% 45%)",
+  transaction: "hsl(275 50% 50%)",
+  workflow: "hsl(36 85% 42%)",
 };
 
 // What a label is written in: the same hues, but dark enough to read
 // at a label's size. These are the text colours of the kind pills.
-const KIND_TEXT: Record<Method_Kind, string> = {
-  [Method_Kind.KIND_UNSPECIFIED]: NEUTRAL_TEXT,
-  [Method_Kind.READER]: "hsl(166 55% 27%)",
-  [Method_Kind.WRITER]: "hsl(211 72% 32%)",
-  [Method_Kind.TRANSACTION]: "hsl(275 50% 38%)",
-  [Method_Kind.WORKFLOW]: "hsl(28 80% 33%)",
+const KIND_TEXT: Record<Kind, string> = {
+  reader: "hsl(166 55% 27%)",
+  writer: "hsl(211 72% 32%)",
+  transaction: "hsl(275 50% 38%)",
+  workflow: "hsl(28 80% 33%)",
 };
 
-const colorOfKind = (kind: Method_Kind | undefined): string =>
+const colorOfKind = (kind: Kind | undefined): string =>
   kind === undefined ? NEUTRAL_COLOR : KIND_COLOR[kind];
 
-const textColorOfKind = (kind: Method_Kind | undefined): string =>
+const textColorOfKind = (kind: Kind | undefined): string =>
   kind === undefined ? NEUTRAL_TEXT : KIND_TEXT[kind];
 
 // The kind's CSS class, which colours the row's dot.
-const classNameOfKind = (kind: Method_Kind | undefined): string =>
+const classNameOfKind = (kind: Kind | undefined): string =>
   `graph-kind-${kind === undefined ? "undeclared" : labelOfKind(kind)}`;
 
 // How a call is reached, said in one word on the edge. A plain call
@@ -254,7 +253,7 @@ const layoutPackages = async (
     for (const stateType of pkg.stateTypes) {
       for (const method of stateType.methods) {
         for (const call of method.calls) {
-          const target = packageName(call.stateTypeName);
+          const target = packageOfStateTypeName(call.stateTypeName);
           if (isDrawn(call) && target !== pkg.name) {
             callPairsBetweenPackages.add(`${pkg.name}>${target}`);
           }
@@ -357,7 +356,7 @@ interface CallEdgeData extends Record<string, unknown> {
   how?: How;
   // The calling method's kind, which is the edge's colour. Absent
   // for a method the API does not declare, and on a folded edge.
-  kind?: Method_Kind;
+  kind?: Kind;
   count: number;
   // The calling method's id, absent on a folded edge. What choosing
   // a method keeps.
@@ -385,7 +384,7 @@ const edgesOfPackages = (
           if (!isDrawn(call)) {
             continue;
           }
-          const targetPackage = packageName(call.stateTypeName);
+          const targetPackage = packageOfStateTypeName(call.stateTypeName);
           const targetExpanded = !collapsed.has(targetPackage);
 
           // A call inside a collapsed box is that box's business.
@@ -592,7 +591,7 @@ const CallEdge: FC<EdgeProps<Edge<CallEdgeData>>> = ({
   const label = count > 1 ? `${howWord ?? "calls"} ×${count}` : howWord;
   const dashPattern =
     (how === undefined ? undefined : HOW_DASH[how]) ??
-    (kind === Method_Kind.WORKFLOW ? WORKFLOW_DASH : undefined);
+    (kind === "workflow" ? WORKFLOW_DASH : undefined);
 
   return (
     <>
@@ -648,20 +647,17 @@ const Legend: FC = () => (
     <details className="graph-legend" open>
       <summary className="eyebrow">legend</summary>
       <div className="graph-legend-rows">
-        {[
-          Method_Kind.READER,
-          Method_Kind.WRITER,
-          Method_Kind.TRANSACTION,
-          Method_Kind.WORKFLOW,
-        ].map((kind) => (
-          <div
-            className={`graph-legend-row ${classNameOfKind(kind)}`}
-            key={kind}
-          >
-            <span className="graph-method-dot" aria-hidden="true" />
-            <span>{labelOfKind(kind)}</span>
-          </div>
-        ))}
+        {(["reader", "writer", "transaction", "workflow"] as Kind[]).map(
+          (kind) => (
+            <div
+              className={`graph-legend-row ${classNameOfKind(kind)}`}
+              key={kind}
+            >
+              <span className="graph-method-dot" aria-hidden="true" />
+              <span>{labelOfKind(kind)}</span>
+            </div>
+          )
+        )}
         <div className={`graph-legend-row ${classNameOfKind(undefined)}`}>
           <span className="graph-method-dot" aria-hidden="true" />
           <span>not declared in the API</span>
@@ -802,7 +798,7 @@ const GraphCanvas: FC<{ packages: GraphPackage[] }> = ({ packages }) => {
     });
     setSelectedMethodId((selectedMethodId) =>
       selectedMethodId !== null &&
-      packageName(stateTypeNameOfMethodId(selectedMethodId)) === name
+      packageOfStateTypeName(stateTypeNameOfMethodId(selectedMethodId)) === name
         ? null
         : selectedMethodId
     );

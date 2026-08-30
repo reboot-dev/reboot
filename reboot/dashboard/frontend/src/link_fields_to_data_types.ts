@@ -2,54 +2,67 @@
 // contains, and each data type back to the fields and methods that
 // contain it.
 //
-// The generated `rbt.dashboard.v1` messages describe the API; each
-// model's own shape is its `rbt.v1alpha1.pydantic.Schema`, the grammar
-// `rbt generate` prints proto from.
-import type {
-  DataType,
-  Method as MethodMessage,
-  Method_Kind,
-  StateType as StateTypeMessage,
-} from "../../../../rbt/dashboard/v1/dashboard_pb";
-import type {
-  Constraints,
-  Schema,
-  Type,
-} from "../../../../rbt/v1alpha1/pydantic/schema_pb";
-import { Scalar } from "../../../../rbt/v1alpha1/pydantic/schema_pb";
+// What the API files declare is one `rbt.v1alpha1.pydantic.API` per
+// file, the grammar `rbt generate` prints proto from: its state
+// types, its data types, and each model's own shape as an
+// `rbt.v1alpha1.pydantic.Schema`.
+// The generated messages are addressed qualified, `api_pb.Method`,
+// so their names never collide with the page's components.
+import type * as api_pb from "../../../../rbt/v1alpha1/pydantic/api_pb";
+import * as schema_pb from "../../../../rbt/v1alpha1/pydantic/schema_pb";
 
-// Type aliases rather than re-exports: the generated `Method` and
-// `StateType` are classes, whose names bind a value even under
-// `import type`, and the page has components with those names.
-export type Method = MethodMessage;
-export type StateType = StateTypeMessage;
+// What every API file declares, by the file relative to the API
+// directory: what `API.apis` is.
+export type APIs = { [filename: string]: api_pb.API };
 
 // The schema of every model the API files declare, by the name a
-// `Reference` carries: what `API.schemas` is.
-export type Schemas = { [name: string]: Schema };
+// `Reference` carries.
+export type Schemas = { [name: string]: schema_pb.Schema };
 
-// A kind as the page prints it, which is also its CSS class and its
-// key in the definitions. Keyed by every `Method.Kind`, so a kind
-// added to the proto does not compile until it is named here.
-const KIND_LABELS: Record<Method_Kind, string> = {
-  0: "unspecified",
-  1: "reader",
-  2: "writer",
-  3: "transaction",
-  4: "workflow",
-};
+// A method's kind, spelled by the arm of `Method.kind` that is set,
+// which is also the CSS class of its pill and its key in the
+// definitions.
+export type Kind = "reader" | "writer" | "transaction" | "workflow";
 
-export const labelOfKind = (kind: Method_Kind): string => KIND_LABELS[kind];
+// A method the API does not declare has no kind.
+export const kindOfMethod = (method: api_pb.Method): Kind | undefined =>
+  method.kind.case;
 
-// A type's proto package: `bank.v1` for `bank.v1.Account`, which is
-// the developer's `api/bank/v1/`. A model's module, `bank.v1.account`,
-// has the same package, since the package is the file's directory.
-// The page groups types by it.
-export const packageName = (name: string): string =>
-  name.split(".").slice(0, -1).join(".");
+export const labelOfKind = (kind: Kind): string => kind;
+
+// The proto package a data type's name belongs to: `bank.v1` for
+// `bank.v1.account.Account`, dropping the class and the module's own
+// segment, since a data type is named by its reference name. The
+// page groups types by package.
+export const packageOfDataTypeName = (name: string): string =>
+  name.split(".").slice(0, -2).join(".");
+
+// The proto package a state type name belongs to: `bank.v1` for
+// `bank.v1.Account`, dropping only the class, since a state type is
+// named by its package, not its module.
+export const packageOfStateTypeName = (name: string): string =>
+  name.slice(0, name.lastIndexOf("."));
 
 export const shortNameOfTypeName = (name: string): string =>
   name.slice(name.lastIndexOf(".") + 1);
+
+// The state type's fully qualified name, its package then its name:
+// `shop.v1.Shop`, which is how the runtime names it and how the
+// page's anchors and the changelog name it.
+export const qualifiedName = ({
+  api,
+  stateType,
+}: {
+  api: api_pb.API;
+  stateType: api_pb.StateType;
+}): string => `${api.package}.${stateType.name}`;
+
+// The APIs, files in name order, which is the order the page lists
+// types in.
+export const sortedAPIs = (apis: APIs): api_pb.API[] =>
+  Object.keys(apis)
+    .sort()
+    .map((filename) => apis[filename]);
 
 // One field of a type, as the page displays it. When the field's type
 // is one of the developer's data types, `link` is that type's id
@@ -89,13 +102,13 @@ export interface Referrer {
 // A scalar as the page spells it. Keyed by every `Scalar`, so a
 // scalar added to the grammar does not compile until it is spelled
 // here.
-const SCALAR_NAMES: Record<Scalar, string> = {
-  [Scalar.SCALAR_UNSPECIFIED]: "any",
-  [Scalar.STRING]: "string",
-  [Scalar.INTEGER]: "integer",
-  [Scalar.FLOAT]: "number",
-  [Scalar.BOOLEAN]: "boolean",
-  [Scalar.ANY]: "any",
+const SCALAR_NAMES: Record<schema_pb.Scalar, string> = {
+  [schema_pb.Scalar.SCALAR_UNSPECIFIED]: "any",
+  [schema_pb.Scalar.STRING]: "string",
+  [schema_pb.Scalar.INTEGER]: "integer",
+  [schema_pb.Scalar.FLOAT]: "number",
+  [schema_pb.Scalar.BOOLEAN]: "boolean",
+  [schema_pb.Scalar.ANY]: "any",
 };
 
 // A type written the way its author would write it: a reference by
@@ -103,7 +116,7 @@ const SCALAR_NAMES: Record<Scalar, string> = {
 // `Record<string, T>`, literals as `"a" | "b"`, an optional as
 // `T | null`. The changelog and the fields table share this, so a
 // change reads the way the table does.
-export const formatType = (type: Type | undefined): string => {
+export const formatType = (type: schema_pb.Type | undefined): string => {
   const form = type?.type;
   switch (form?.case) {
     case "scalar":
@@ -133,7 +146,7 @@ export const formatType = (type: Type | undefined): string => {
 // developer would read it: `> 0`, `<= 100`, `multiple of 5`,
 // `length 1..10`, `matches /^x/`.
 export const formatConstraints = (
-  constraints: Constraints | undefined
+  constraints: schema_pb.Constraints | undefined
 ): string | undefined => {
   if (constraints === undefined) {
     return undefined;
@@ -171,7 +184,7 @@ export const formatConstraints = (
 // The one model a type refers to, under any list or dict layers:
 // what a field's row links to. A union refers to several, and links
 // to none.
-const referenceIn = (type: Type | undefined): string | undefined => {
+const referenceIn = (type: schema_pb.Type | undefined): string | undefined => {
   const form = type?.type;
   switch (form?.case) {
     case "reference":
@@ -187,37 +200,26 @@ const referenceIn = (type: Type | undefined): string | undefined => {
   }
 };
 
-// The id of a data type is the model's package plus its class name,
-// the same format `rbt generate` uses for these types' message names.
-const idOfSchema = (schema: Schema | undefined): string =>
-  `${packageName(schema?.module ?? "")}.${schema?.name ?? ""}`;
-
-// The id of the data type a `Method` or a `Reference` names, and none
-// for a name that is not a data type's, such as a state model's,
-// which has no page of its own.
+// The id of the data type a `Method` or a `Reference` names, which is
+// the name itself, and none for a name that is not a data type's,
+// such as a state model's, which has no page of its own.
 export const dataTypeIdOfName = ({
-  dataTypes,
-  schemas,
+  api,
   name,
 }: {
-  dataTypes: DataType[];
-  schemas: Schemas;
+  api: api_pb.API;
   name: string;
 }): string | undefined =>
-  dataTypes.some((dataType) => dataType.reference?.name === name)
-    ? idOfSchema(schemas[name])
-    : undefined;
+  api.dataTypes.some((reference) => reference.name === name) ? name : undefined;
 
 // The rows of one model, in the order the developer declared the
 // properties.
 const rowsOfSchema = ({
-  dataTypes,
-  schemas,
+  api,
   schema,
 }: {
-  dataTypes: DataType[];
-  schemas: Schemas;
-  schema: Schema | undefined;
+  api: api_pb.API;
+  schema: schema_pb.Schema | undefined;
 }): Field[] =>
   (schema?.properties ?? []).map((property) => {
     const form = property.type?.type;
@@ -234,46 +236,33 @@ const rowsOfSchema = ({
       link:
         reference === undefined
           ? undefined
-          : dataTypeIdOfName({ dataTypes, schemas, name: reference }),
+          : dataTypeIdOfName({ api, name: reference }),
     };
   });
 
 export const fieldsOfState = ({
-  dataTypes,
-  schemas,
+  api,
   stateType,
 }: {
-  dataTypes: DataType[];
-  schemas: Schemas;
-  stateType: StateType;
+  api: api_pb.API;
+  stateType: api_pb.StateType;
 }): Field[] =>
   rowsOfSchema({
-    dataTypes,
-    schemas,
-    schema: schemas[stateType.reference?.name ?? ""],
+    api,
+    schema: api.schemas[stateType.reference?.name ?? ""],
   });
 
 // The fields of the model named `name`, one level deep.
 export const fieldsOfDataType = ({
-  dataTypes,
-  schemas,
+  api,
   name,
 }: {
-  dataTypes: DataType[];
-  schemas: Schemas;
+  api: api_pb.API;
   name: string;
-}): Field[] => rowsOfSchema({ dataTypes, schemas, schema: schemas[name] });
+}): Field[] => rowsOfSchema({ api, schema: api.schemas[name] });
 
 // Every data type, by id, with what contains it.
-export const linkDataTypes = ({
-  stateTypes,
-  dataTypes,
-  schemas,
-}: {
-  stateTypes: StateType[];
-  dataTypes: DataType[];
-  schemas: Schemas;
-}): LinkedDataType[] => {
+export const linkDataTypes = ({ apis }: { apis: APIs }): LinkedDataType[] => {
   const linkedDataTypesById = new Map<string, LinkedDataType>();
   const referrersById = new Map<string, Referrer[]>();
 
@@ -290,27 +279,28 @@ export const linkDataTypes = ({
 
   // What each method takes, returns and raises, labeled the way the
   // state page labels the method.
-  for (const stateType of stateTypes) {
-    for (const method of stateType.methods) {
-      const namesWithVerbs: [string | undefined, string][] = [
-        [method.request?.name, "takes"],
-        [method.response?.name, "returns"],
-        ...method.errors.map(
-          (error) => [error.name, "raises"] as [string, string]
-        ),
-      ];
-      for (const [name, verb] of namesWithVerbs) {
-        const id =
-          name === undefined
-            ? undefined
-            : dataTypeIdOfName({ dataTypes, schemas, name });
-        if (id !== undefined) {
-          addReferrer(id, {
-            id: stateType.name,
-            label: `${shortNameOfTypeName(stateType.name)}.${
-              method.name
-            } (${verb})`,
-          });
+  for (const api of Object.values(apis)) {
+    for (const stateType of api.stateTypes) {
+      const name = qualifiedName({ api, stateType });
+      for (const method of stateType.methods) {
+        const namesWithVerbs: [string | undefined, string][] = [
+          [method.request?.name, "takes"],
+          [method.response?.name, "returns"],
+          ...method.errors.map(
+            (error) => [error.name, "raises"] as [string, string]
+          ),
+        ];
+        for (const [referenced, verb] of namesWithVerbs) {
+          const dataTypeId =
+            referenced === undefined
+              ? undefined
+              : dataTypeIdOfName({ api, name: referenced });
+          if (dataTypeId !== undefined) {
+            addReferrer(dataTypeId, {
+              id: name,
+              label: `${stateType.name}.${method.name} (${verb})`,
+            });
+          }
         }
       }
     }
@@ -319,37 +309,58 @@ export const linkDataTypes = ({
   // Each container's rows register it as a referrer of the data
   // types it contains: a state model under its state type's short
   // name, and each data type under its own.
-  const containers: [string, string, Schema | undefined][] = [
-    ...stateTypes.map((stateType): [string, string, Schema | undefined] => [
-      shortNameOfTypeName(stateType.name),
-      stateType.name,
-      schemas[stateType.reference?.name ?? ""],
-    ]),
-    ...dataTypes.map((dataType): [string, string, Schema | undefined] => {
-      const schema = schemas[dataType.reference?.name ?? ""];
-      return [schema?.name ?? "", idOfSchema(schema), schema];
-    }),
+  const containers: [
+    string,
+    string,
+    schema_pb.Schema | undefined,
+    api_pb.API
+  ][] = [
+    ...Object.values(apis).flatMap((api) =>
+      api.stateTypes.map(
+        (
+          stateType
+        ): [string, string, schema_pb.Schema | undefined, api_pb.API] => [
+          stateType.name,
+          qualifiedName({ api, stateType }),
+          api.schemas[stateType.reference?.name ?? ""],
+          api,
+        ]
+      )
+    ),
+    ...Object.values(apis).flatMap((api) =>
+      api.dataTypes.map(
+        (
+          reference
+        ): [string, string, schema_pb.Schema | undefined, api_pb.API] => [
+          api.schemas[reference.name]?.name ?? "",
+          reference.name,
+          api.schemas[reference.name],
+          api,
+        ]
+      )
+    ),
   ];
-  for (const [label, id, schema] of containers) {
-    for (const field of rowsOfSchema({ dataTypes, schemas, schema })) {
+  for (const [label, id, schema, api] of containers) {
+    for (const field of rowsOfSchema({ api, schema })) {
       if (field.link !== undefined) {
         addReferrer(field.link, { id, label: `${label}.${field.name}` });
       }
     }
   }
 
-  for (const dataType of dataTypes) {
-    const schema = schemas[dataType.reference?.name ?? ""];
-    const id = idOfSchema(schema);
-    linkedDataTypesById.set(id, {
-      id,
-      name: schema?.name ?? "",
-      package: packageName(schema?.module ?? ""),
-      filename: dataType.filename,
-      description: schema?.description,
-      fields: rowsOfSchema({ dataTypes, schemas, schema }),
-      referrers: [],
-    });
+  for (const api of sortedAPIs(apis)) {
+    for (const reference of api.dataTypes) {
+      const schema = api.schemas[reference.name];
+      linkedDataTypesById.set(reference.name, {
+        id: reference.name,
+        name: schema?.name ?? "",
+        package: packageOfDataTypeName(reference.name),
+        filename: api.filename,
+        description: schema?.description,
+        fields: rowsOfSchema({ api, schema }),
+        referrers: [],
+      });
+    }
   }
 
   return [...linkedDataTypesById.values()]

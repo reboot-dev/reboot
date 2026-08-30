@@ -15,6 +15,7 @@ proto_library(
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:api_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:schema_proto",
         "@com_google_protobuf//:struct_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -38,6 +39,7 @@ js_proto_library(
         # use `create_protoc_plugin_rule` we need to repeat the dependencies of
         # the `proto_libraries` here.
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:api_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:schema_proto",
         "@com_google_protobuf//:descriptor_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -66,6 +68,7 @@ js_reboot_react_library(
     proto_deps = [
         ":dashboard_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:api_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:schema_proto",
         "@com_google_protobuf//:descriptor_proto",
         "@com_google_protobuf//:timestamp_proto",

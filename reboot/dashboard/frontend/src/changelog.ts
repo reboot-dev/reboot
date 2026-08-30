@@ -7,12 +7,16 @@ import type {
   MethodChange,
   PropertyChange,
 } from "../../../../rbt/dashboard/v1/dashboard_pb";
-import { Change } from "../../../../rbt/dashboard/v1/dashboard_pb";
+import {
+  Change,
+  KindChanged_Kind,
+} from "../../../../rbt/dashboard/v1/dashboard_pb";
+import type { Kind } from "./link_fields_to_data_types";
 import {
   formatConstraints,
   formatType,
-  labelOfKind,
-  packageName,
+  packageOfDataTypeName,
+  packageOfStateTypeName,
 } from "./link_fields_to_data_types";
 
 // One entry of the changelog: a type the dashboard found added,
@@ -85,6 +89,23 @@ export type Row = {
   link?: { page: "state" | "data"; id: string };
   parts: Part[];
 };
+
+// The `Kind` each real arm of `KindChanged.Kind` encodes.
+const KIND_OF_ARM: Record<
+  Exclude<KindChanged_Kind, KindChanged_Kind.UNKNOWN>,
+  Kind
+> = {
+  [KindChanged_Kind.READER]: "reader",
+  [KindChanged_Kind.WRITER]: "writer",
+  [KindChanged_Kind.TRANSACTION]: "transaction",
+  [KindChanged_Kind.WORKFLOW]: "workflow",
+};
+
+// `UNKNOWN` is the proto's zero value, which no recorded change
+// carries; a row holding it shows `undefined` rather than a guessed
+// kind.
+const kindOfArm = (arm: KindChanged_Kind): Kind | undefined =>
+  arm === KindChanged_Kind.UNKNOWN ? undefined : KIND_OF_ARM[arm];
 
 const fromTo = (from: string | undefined, to: string | undefined): string =>
   from === undefined
@@ -182,7 +203,7 @@ const partsOfMethods = (methods: MethodChange[]): Part[] =>
           name,
           difference: "changed",
           verb: "kind changed",
-          detail: fromTo(labelOfKind(c.value.from), labelOfKind(c.value.to)),
+          detail: fromTo(kindOfArm(c.value.from), kindOfArm(c.value.to)),
         };
       case "factory":
         return {
@@ -191,13 +212,18 @@ const partsOfMethods = (methods: MethodChange[]): Part[] =>
           difference: "changed",
           verb: c.value.factory ? "now a factory" : "no longer a factory",
         };
-      case "mcp":
+      case "mcp": {
+        const { from, to } = c.value;
         return {
           noun,
           name,
           difference: "changed",
-          verb: c.value.mcp ? "now an MCP tool" : "no longer an MCP tool",
+          verb:
+            to !== undefined
+              ? `now an MCP ${to.primitive.case}`
+              : `no longer an MCP ${from?.primitive.case}`,
         };
+      }
       case "request":
         return {
           noun,
@@ -247,7 +273,7 @@ export const rowOfChange = (change: Change): Row => {
   switch (what.case) {
     case "stateTypeAdded":
       return {
-        where: packageName(what.value.name),
+        where: packageOfStateTypeName(what.value.name),
         kind: "state",
         difference: "added",
         name: shortNameOf(what.value.name),
@@ -256,7 +282,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "stateTypeChanged":
       return {
-        where: packageName(what.value.name),
+        where: packageOfStateTypeName(what.value.name),
         kind: "state",
         difference: "changed",
         name: shortNameOf(what.value.name),
@@ -289,7 +315,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "stateTypeRemoved":
       return {
-        where: packageName(what.value.name),
+        where: packageOfStateTypeName(what.value.name),
         kind: "state",
         difference: "removed",
         name: shortNameOf(what.value.name),
@@ -297,7 +323,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "dataTypeAdded":
       return {
-        where: packageName(what.value.name),
+        where: packageOfDataTypeName(what.value.name),
         kind: "data",
         difference: "added",
         name: shortNameOf(what.value.name),
@@ -306,7 +332,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "dataTypeChanged":
       return {
-        where: packageName(what.value.name),
+        where: packageOfDataTypeName(what.value.name),
         kind: "data",
         difference: "changed",
         name: shortNameOf(what.value.name),
@@ -327,7 +353,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "dataTypeRemoved":
       return {
-        where: packageName(what.value.name),
+        where: packageOfDataTypeName(what.value.name),
         kind: "data",
         difference: "removed",
         name: shortNameOf(what.value.name),
@@ -335,7 +361,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "implementationAdded":
       return {
-        where: packageName(what.value.stateType),
+        where: packageOfStateTypeName(what.value.stateType),
         kind: "implementation",
         difference: "added",
         name: shortNameOf(what.value.stateType),
@@ -344,7 +370,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "implementationChanged":
       return {
-        where: packageName(what.value.stateType),
+        where: packageOfStateTypeName(what.value.stateType),
         kind: "implementation",
         difference: "changed",
         name: shortNameOf(what.value.stateType),
@@ -353,7 +379,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "implementationRemoved":
       return {
-        where: packageName(what.value.stateType),
+        where: packageOfStateTypeName(what.value.stateType),
         kind: "implementation",
         difference: "removed",
         name: shortNameOf(what.value.stateType),

@@ -50,11 +50,10 @@ class APIServicer(API.Servicer):
         request: APIGetRequest,
     ) -> APIGetResponse:
         return APIGetResponse(
-            state_types=self.state.state_types,
+            api_directory=self.state.api_directory,
             error=self.state.error if self.state.HasField('error') else None,
             files=self.state.files,
-            data_types=self.state.data_types,
-            schemas=self.state.schemas,
+            apis=self.state.apis,
         )
 
     @classmethod
@@ -84,8 +83,7 @@ class APIServicer(API.Servicer):
     ) -> APIUpdateResponse:
         """Replaces what the API files declare and records what
         changed, newest last, as one transaction."""
-        del self.state.state_types[:]
-        self.state.state_types.extend(request.state_types)
+        self.state.api_directory = request.api_directory
         if request.HasField('error'):
             self.state.error = request.error
         else:
@@ -93,11 +91,9 @@ class APIServicer(API.Servicer):
         self.state.files.clear()
         for filename, file in request.files.items():
             self.state.files[filename].CopyFrom(file)
-        del self.state.data_types[:]
-        self.state.data_types.extend(request.data_types)
-        self.state.schemas.clear()
-        for name, schema in request.schemas.items():
-            self.state.schemas[name].CopyFrom(schema)
+        self.state.apis.clear()
+        for filename, api in request.apis.items():
+            self.state.apis[filename].CopyFrom(api)
 
         if len(request.changes) > 0:
             await OrderedMap.ref(CHANGELOG_ID).Insert(
