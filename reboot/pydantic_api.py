@@ -173,6 +173,7 @@ def api_of(api: API, *, filename: str) -> api_pb2.API:
     ]
 
     return api_pb2.API(
+        filename=filename,
         package=package,
         module=module,
         state_types=state_types,

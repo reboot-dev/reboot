@@ -11,16 +11,20 @@ import "rbt/v1alpha1/pydantic/schema.proto";
 
 // Represents one API file's `api = API(...)`.
 message API {
-  // The package the file generates to: its directory under the API
-  // directory, dotted, e.g. "shop.v1" for `shop/v1/shop.py`.
-  string package = 1;
+  // The file, relative to the API directory, e.g. "shop/v1/shop.py":
+  // what `package` and `module` are derived from.
+  string filename = 1;
+
+  // The package the file generates to: its directory, dotted, e.g.
+  // "shop.v1".
+  string package = 2;
 
   // The module the file is, dotted, e.g. "shop.v1.shop": what a
   // `Reference` to a model of this file begins with.
-  string module = 2;
+  string module = 3;
 
   // In declaration order, which is the order they generate in.
-  repeated StateType state_types = 3;
+  repeated StateType state_types = 4;
 
   // The models that are not state models: the requests, responses
   // and errors of the methods, the requests of the UIs, and anything
@@ -30,11 +34,11 @@ message API {
   // then each UI's request, then each method's request, response and
   // errors; and a model's properties, in declaration order, before
   // the property after it.
-  repeated Reference data_types = 4;
+  repeated Reference data_types = 5;
 
   // The schema of every model the state types mention, state models
   // included, by the name a `Reference` carries.
-  map<string, Schema> schemas = 5;
+  map<string, Schema> schemas = 6;
 }
 
 // Represents one `Type(...)` of the `API`.

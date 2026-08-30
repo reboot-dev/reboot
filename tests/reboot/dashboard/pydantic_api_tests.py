@@ -25,6 +25,7 @@ class PydanticApiTest(unittest.TestCase):
     def test_reads_what_the_file_declares(self) -> None:
         declared = _read('shop/v1/shop.py')
 
+        self.assertEqual(declared.filename, 'shop/v1/shop.py')
         self.assertEqual(declared.package, 'shop.v1')
         self.assertEqual(declared.module, 'shop.v1.shop')
 
