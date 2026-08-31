@@ -104,6 +104,16 @@ build --@mypy_integration//:mypy_config=//:mypy.ini
 # will let libraries like `@com_google_protobuf` be implicit namespace packages.
 build --incompatible_default_to_explicit_init_py
 
+# Don't compile `.py` sources to `.pyc` at build time. Several of our
+# `.py` files are listed in the `srcs` of more than one target, which
+# is fine on its own but gives each of those targets its own action
+# writing the same `__pycache__/<name>.cpython-310.pyc` output, and
+# Bazel rejects that as conflicting actions. Precompiling buys us
+# nothing here - it only moves work that the interpreter already does
+# on first import - so turn it off rather than restructure the
+# targets.
+build --@rules_python//python/config_settings:precompile=force_disabled
+
 # Configs to simplify debugging tests. Use via `bazel --config=k8s-debug`.
 test:k8s-debug --test_output=streamed
 test:k8s-debug --nocache_test_results
