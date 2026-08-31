@@ -1,0 +1,30 @@
+`cython_library()` builds each Cython extension as a `cc_binary` with
+`linkshared = 1` that deliberately leaves every `Py*` symbol
+undefined, to be resolved by the interpreter that loads it. On MacOS
+that only links if `-undefined dynamic_lookup` is passed.
+
+Bazel 6's MacOS crosstool added that flag to every
+`cpp_link_dynamic_library` / `cpp_link_nodeps_dynamic_library` action
+from its `default_link_flags` feature. Bazel 8's does not, so linking
+`cygrpc.so` fails with several hundred `Undefined symbols for
+architecture arm64` errors.
+
+Passing the flag through `--linkopt` in our `.bazelrc` would apply it
+to every MacOS link, including executables, where it would turn a
+genuine missing-symbol error into a crash at run time. Setting it on
+the one target that wants it keeps that error checking everywhere
+else.
+diff -ru grpc-1.71.0.orig/bazel/cython_library.bzl grpc-1.71.0/bazel/cython_library.bzl
+--- grpc-1.71.0.orig/bazel/cython_library.bzl
++++ grpc-1.71.0/bazel/cython_library.bzl
+@@ -75,6 +75,10 @@
+             deps = deps + ["@local_config_python//:python_headers"],
+             defines = defines,
+             linkshared = 1,
++            linkopts = select({
++                "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
++                "//conditions:default": [],
++            }),
+         )
+         shared_objects.append(shared_object_name)
+

@@ -52,6 +52,7 @@ def repos():
             "@com_github_reboot_dev_reboot//bazel:grpc_01_mypy_pyi_generation.patch",
             "@com_github_reboot_dev_reboot//bazel:grpc_02_zlib_upgrade.patch",
             "@com_github_reboot_dev_reboot//bazel:grpc_03_generated_protos_staging.patch",
+            "@com_github_reboot_dev_reboot//bazel:grpc_04_macos_dynamic_lookup.patch",
         ],
         patch_args = ["-p1"],
     )
