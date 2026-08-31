@@ -1,4 +1,7 @@
+# Bazel 8 enables Bzlmod and disables `WORKSPACE` by default. We are
+# not ready to migrate to Bzlmod, so keep using `WORKSPACE`.
 common --enable_bzlmod=false
+common --enable_workspace=true
 
 try-import submodules/dev-tools/.bazelrc
 
