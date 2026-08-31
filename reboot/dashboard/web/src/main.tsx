@@ -492,13 +492,13 @@ const Method: FC<{
           transition on this element, not a mount. */}
       <div className="method-detail">
         <div className="method-detail-inner">
+          <Signature api={api} method={method} />
           {method.description !== undefined && (
             <Description
               className="method-description"
               text={method.description}
             />
           )}
-          <Signature api={api} method={method} />
         </div>
       </div>
     </div>
