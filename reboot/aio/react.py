@@ -73,6 +73,10 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
             self._state_name_by_state_tag[state_tag] = state_type_name
             self._middleware_by_state_type[state_type_name] = middleware
 
+        # Events, keyed by the ID of a response sent by `Query`, that
+        # are set once the client acknowledges that response.
+        self._query_response_acknowledgements: dict[str, asyncio.Event] = {}
+
         self._stop_websockets_serve = asyncio.Event()
 
     def _state_type_name_for_state_ref(
@@ -338,16 +342,34 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
         query_task = asyncio.current_task()
         assert query_task is not None
 
-        async def consume_heartbeats():
+        # Events, keyed by query response ID, that are set once the
+        # client acknowledges the response with that ID.
+        acknowledgements: dict[str, asyncio.Event] = {}
+
+        async def consume_requests():
             try:
                 while True:
-                    _ = await websocket.recv()
+                    request_bytes = await websocket.recv()
+
+                    # Everything the client sends after its initial
+                    # request is either an acknowledgement or a
+                    # heartbeat; a heartbeat is an empty
+                    # `QueryRequest`, which acknowledges nothing.
+                    acknowledgement = react_pb2.QueryRequest()
+                    acknowledgement.ParseFromString(request_bytes)
+
+                    acknowledged = acknowledgements.pop(
+                        acknowledgement.acknowledge_query_response_id,
+                        None,
+                    )
+                    if acknowledged is not None:
+                        acknowledged.set()
             except Exception:
                 # WebSocket closed (or errored); cancel the main query
                 # task to unblock `_query()` and trigger cleanup.
                 query_task.cancel()
 
-        heartbeats_task = asyncio.create_task(consume_heartbeats())
+        requests_task = asyncio.create_task(consume_requests())
 
         try:
             async for response in self._query(
@@ -355,13 +377,124 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
                 headers=headers,
                 middleware=middleware,
             ):
-                await websocket.send(response.SerializeToString())
+                response.query_response_id = str(uuid.uuid4())
+
+                acknowledged = asyncio.Event()
+                acknowledgements[response.query_response_id] = acknowledged
+
+                try:
+                    await websocket.send(response.SerializeToString())
+
+                    # Wait for the client to tell us that it is ready
+                    # for a next response. This is what stops us from
+                    # producing responses faster than the client can
+                    # consume them; while we wait here the state may
+                    # change any number of times, and the next
+                    # response we produce will reflect the latest of
+                    # those states.
+                    await acknowledged.wait()
+                finally:
+                    acknowledgements.pop(response.query_response_id, None)
         finally:
-            heartbeats_task.cancel()
-            await asyncio.gather(heartbeats_task, return_exceptions=True)
+            requests_task.cancel()
+            await asyncio.gather(requests_task, return_exceptions=True)
 
     def add_to_server(self, server: grpc.aio.Server) -> None:
         react_pb2_grpc.add_ReactServicer_to_server(self, server)
+
+    async def _middleware_for(
+        self,
+        grpc_context: grpc.aio.ServicerContext,
+        headers: Headers,
+    ) -> Middleware:
+        """Returns the middleware for the state that the given headers
+        address, after confirming that this server is authoritative for
+        that state."""
+        state_ref = headers.state_ref
+
+        state_type_name = self._state_type_name_for_state_ref(state_ref)
+
+        if state_type_name is None:
+            log_at_most_once_per(
+                seconds=60,
+                log_method=logger.error,
+                message=_unknown_query_or_mutation_error_message(
+                    is_query=True,
+                    state_type=state_ref.state_type,
+                ),
+            )
+            raise SystemAborted(UnknownService())
+
+        middleware = self._middleware_by_state_type[state_type_name]
+
+        try:
+            assert headers.application_id is not None  # Guaranteed by `Headers`.
+            authoritative_server = middleware.placement_client.server_for_actor(
+                headers.application_id,
+                state_ref,
+            )
+        except reboot.aio.placement.UnknownApplicationError:
+            # It's possible that the user did indeed type an application ID
+            # that doesn't exist, but it's also quite possible that this
+            # request reached us before the placement planner had gossipped
+            # out the information about which applications exist (we see
+            # this e.g. after `rbt dev`'s chaos monkey restarts). For that
+            # reason, abort with a retryable error.
+            raise SystemAborted(
+                Unavailable(),
+                message=
+                f"Application '{headers.application_id}' not found. If you "
+                "are confident the application exists, this may be because "
+                "the system is still starting.",
+            ) from None
+
+        if authoritative_server != middleware.server_id:
+            # This is NOT the correct server. Fail.
+            await grpc_context.abort(
+                grpc.StatusCode.UNAVAILABLE,
+                f"Server '{middleware.server_id}' is not "
+                "authoritative for this request; server "
+                f"'{authoritative_server}' is.",
+            )
+            raise  # Unreachable but necessary for mypy.
+
+        return middleware
+
+    async def AcknowledgeQueryResponse(
+        self,
+        request: react_pb2.AcknowledgeQueryResponseRequest,
+        grpc_context: grpc.aio.ServicerContext,
+    ) -> react_pb2.AcknowledgeQueryResponseResponse:
+        """Implements the React.AcknowledgeQueryResponse RPC that lets a
+        client tell us it has processed a response from `Query` and is
+        ready for a next one."""
+        # Confirm that we are the server that produced the response.
+        await self._middleware_for(
+            grpc_context,
+            Headers.from_grpc_context(grpc_context),
+        )
+
+        acknowledged = self._query_response_acknowledgements.pop(
+            request.query_response_id,
+            None,
+        )
+
+        if acknowledged is None:
+            # There are several valid reasons why we may not know this
+            # response:
+            # 1. The server may have restarted and lost its memory of
+            #    the response. The client's `Query` call will have been
+            #    broken by that same restart, and it will get a fresh
+            #    response once it reconnects.
+            # 2. The client may have sent its acknowledgement twice
+            #    (e.g. retried the request), in which case we have
+            #    already produced a next response.
+            # Either way there is nothing left to do.
+            return react_pb2.AcknowledgeQueryResponseResponse()
+
+        acknowledged.set()
+
+        return react_pb2.AcknowledgeQueryResponseResponse()
 
     async def _query(
         self,
@@ -425,61 +558,44 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
         try:
             headers = Headers.from_grpc_context(grpc_context)
 
-            state_ref = headers.state_ref
-
-            state_type_name = self._state_type_name_for_state_ref(state_ref)
-
-            if state_type_name is None:
-                log_at_most_once_per(
-                    seconds=60,
-                    log_method=logger.error,
-                    message=_unknown_query_or_mutation_error_message(
-                        is_query=True,
-                        state_type=state_ref.state_type,
-                    ),
-                )
-                raise SystemAborted(UnknownService())
-
-            middleware = self._middleware_by_state_type[state_type_name]
-
-            # Confirm whether this is the right server to be serving this
-            # request.
-            try:
-                assert headers.application_id is not None  # Guaranteed by `Headers`.
-                authoritative_server = middleware.placement_client.server_for_actor(
-                    headers.application_id,
-                    state_ref,
-                )
-            except reboot.aio.placement.UnknownApplicationError:
-                # It's possible that the user did indeed type an application ID
-                # that doesn't exist, but it's also quite possible that this
-                # request reached us before the placement planner had gossipped
-                # out the information about which applications exist (we see
-                # this e.g. after `rbt dev`'s chaos monkey restarts). For that
-                # reason, abort with a retryable error.
-                raise SystemAborted(
-                    Unavailable(),
-                    message=
-                    f"Application '{headers.application_id}' not found. If you "
-                    "are confident the application exists, this may be because "
-                    "the system is still starting.",
-                ) from None
-            if authoritative_server != middleware.server_id:
-                # This is NOT the correct server. Fail.
-                await grpc_context.abort(
-                    grpc.StatusCode.UNAVAILABLE,
-                    f"Server '{middleware.server_id}' is not "
-                    "authoritative for this request; server "
-                    f"'{authoritative_server}' is.",
-                )
-                raise  # Unreachable but necessary for mypy.
+            middleware = await self._middleware_for(grpc_context, headers)
 
             async for response in self._query(
                 request=request,
                 headers=headers,
                 middleware=middleware,
             ):
-                yield response
+                response.query_response_id = str(uuid.uuid4())
+
+                acknowledged = asyncio.Event()
+                self._query_response_acknowledgements[
+                    response.query_response_id] = acknowledged
+
+                try:
+                    yield response
+
+                    # Wait for the client to tell us, via
+                    # `AcknowledgeQueryResponse`, that it is ready for
+                    # a next response. This is what stops us from
+                    # producing responses faster than the client can
+                    # consume them; while we wait here the state may
+                    # change any number of times, and the next
+                    # response we produce will reflect the latest of
+                    # those states.
+                    #
+                    # TODO: consider more advanced flow control
+                    #       mechanisms than "one-ack-per-response";
+                    #       e.g. if we could measure the throughput to
+                    #       the client we could proactively send
+                    #       multiple responses without waiting for an
+                    #       ack for each one, which would reduce the
+                    #       user-visible latency of updates.
+                    await acknowledged.wait()
+                finally:
+                    self._query_response_acknowledgements.pop(
+                        response.query_response_id,
+                        None,
+                    )
         except asyncio.CancelledError:
             # It's pretty normal for a query to be cancelled; it's not useful to
             # print a stack trace.

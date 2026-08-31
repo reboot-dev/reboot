@@ -18,6 +18,12 @@ message QueryRequest {
 
   // Authorization bearer token.
   optional string bearer_token = 3;
+
+  // ID of the `QueryResponse` that this request acknowledges; see
+  // `AcknowledgeQueryResponse`. Only meaningful on transports where a
+  // client can send more than one message per query, i.e. websockets.
+  // When this is set the other fields are ignored.
+  string acknowledge_query_response_id = 4;
 }
 
 message QueryResponse {
@@ -40,7 +46,19 @@ message QueryResponse {
   //
   // TODO(benh): send these as bytes?
   repeated string idempotency_keys = 2;
+
+  // Unique ID of this response, used to acknowledge it.
+  string query_response_id = 4;
 }
+
+////////////////////////////////////////////////////////////////////////
+
+message AcknowledgeQueryResponseRequest {
+  // ID of the `QueryResponse` being acknowledged.
+  string query_response_id = 1;
+}
+
+message AcknowledgeQueryResponseResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -90,14 +108,31 @@ message WebSocketsConnectionResponse {}
 service React {
   // Allows users to "watch" the response of a unary reader method for
   // changes. The current response of the method is sent when the
-  // stream is opened, then a new response is sent whenever the
-  // state changes in a way that causes the method's response to change.
+  // stream is opened. Every response must be acknowledged by the
+  // client before a next one is produced, and that next response
+  // reflects the _latest_ state, skipping any states that came and
+  // went while the client was busy.
+  //
+  // A client acknowledges either by calling
+  // `AcknowledgeQueryResponse`, or, when its responses arrive over a
+  // websocket, by sending a `QueryRequest` with
+  // `acknowledge_query_response_id` set on that same websocket.
   //
   // NOTE: the service name and state ID is expected to be part of the
   // gRPC metadata, exactly like any other reboot requests.
   rpc Query(QueryRequest) returns (stream QueryResponse) {
     option (google.api.http) = {
       post: "/rbt.v1alpha1.React/Query"
+    };
+  }
+
+  // Acknowledges that a client has processed a response from `Query`
+  // and is ready for a next one. Must be called on the same server
+  // that produced the response.
+  rpc AcknowledgeQueryResponse(AcknowledgeQueryResponseRequest)
+      returns (AcknowledgeQueryResponseResponse) {
+    option (google.api.http) = {
+      post: "/rbt.v1alpha1.React/AcknowledgeQueryResponse"
     };
   }
 
