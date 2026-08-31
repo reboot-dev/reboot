@@ -781,13 +781,6 @@ header h1 {
   transform: translateY(1px);
 }
 
-.state-type.is-expanded .expand-button {
-  border-color: hsl(240 5.9% 78%);
-  background: hsl(var(--muted));
-  color: hsl(var(--primary));
-  box-shadow: none;
-}
-
 .expand-button .caret {
   font-family: ui-monospace, Menlo, monospace;
   font-size: 11px;
@@ -827,6 +820,33 @@ header h1 {
 
 .method-head {
   padding: 14px 18px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.method-caret {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  color: hsl(240 3.8% 55%);
+}
+
+/* The `methods` eyebrow doubles as the toggle that drops every
+   method's detail at once. A button, styled back to the eyebrow it
+   replaces. */
+.section-toggle {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+}
+
+.section-toggle .caret {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
 }
 
 .method-title {
@@ -857,38 +877,47 @@ header h1 {
    row it replaced. Chrome has had subgrid since 117; anything older
    keeps the flex row and simply does not line up. */
 @supports (grid-template-columns: subgrid) {
-  .state-type:not(.is-expanded) .methods {
+  .methods {
     display: grid;
-    grid-template-columns: max-content max-content 1fr;
+    grid-template-columns: max-content max-content max-content 1fr;
     /* The 14px is the gap between methods; the columns want the 8px
        that `.method-title` uses when it is laid out as flex. */
     row-gap: 14px;
     column-gap: 8px;
   }
 
-  .state-type:not(.is-expanded) .method,
-  .state-type:not(.is-expanded) .method-head,
-  .state-type:not(.is-expanded) .method-title {
+  .method:not(.is-expanded),
+  .method:not(.is-expanded) .method-head,
+  .method:not(.is-expanded) .method-title {
     display: grid;
     grid-column: 1 / -1;
     grid-template-columns: subgrid;
     align-items: center;
   }
 
-  .state-type:not(.is-expanded) .method-detail {
+  .method:not(.is-expanded) .method-detail {
     grid-column: 1 / -1;
   }
 
-  .state-type:not(.is-expanded) .method-name {
+  .method:not(.is-expanded) .method-caret {
     grid-column: 1;
   }
 
-  .state-type:not(.is-expanded) .kind {
+  .method:not(.is-expanded) .method-name {
     grid-column: 2;
   }
 
-  .state-type:not(.is-expanded) .tags {
+  .method:not(.is-expanded) .kind {
     grid-column: 3;
+  }
+
+  .method:not(.is-expanded) .tags {
+    grid-column: 4;
+  }
+
+  .method.is-expanded {
+    display: block;
+    grid-column: 1 / -1;
   }
 }
 
@@ -1077,7 +1106,7 @@ header h1 {
   overflow: hidden;
 }
 
-.state-type.is-expanded .method-detail {
+.method.is-expanded .method-detail {
   grid-template-rows: 1fr;
   opacity: 1;
   transition: grid-template-rows 240ms cubic-bezier(0.32, 0.72, 0, 1),
@@ -1086,7 +1115,7 @@ header h1 {
 
 @media (prefers-reduced-motion: reduce) {
   .method-detail,
-  .state-type.is-expanded .method-detail {
+  .method.is-expanded .method-detail {
     transition-duration: 1ms;
   }
 }

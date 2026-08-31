@@ -54,17 +54,24 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
             suppress_open_on_restart=suppress,
         )
 
-    async def _read_expanded_state_types(self) -> list[str]:
+    async def _read_expanded_methods(self) -> list[str]:
         context = self.rbt.create_external_context(name=self.id())
         response = await Preferences.ref(PREFERENCES_ID).Get(context)
-        return list(response.expanded_state_types)
+        return list(response.expanded_methods)
 
-    async def _set_expanded(self, state_type: str, expanded: bool) -> None:
-        """Makes the choice a state type's `Expand details` makes."""
+    async def _set_methods_expanded(
+        self,
+        state_type: str,
+        methods: list[str],
+        expanded: bool,
+    ) -> None:
+        """Makes the choice a method's toggle makes: one method for
+        its own, every method of a state type for the state type's."""
         context = self.rbt.create_external_context(name=self.id())
-        await Preferences.ref(PREFERENCES_ID).SetExpanded(
+        await Preferences.ref(PREFERENCES_ID).SetMethodsExpanded(
             context,
             state_type=state_type,
+            methods=methods,
             expanded=expanded,
         )
 
@@ -87,33 +94,34 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
         # that expands a state type must not write back a stale
         # answer to a question it was not asked.
         await self._set_suppress_open_on_restart(True)
-        await self._set_expanded('bank.v1.Account', True)
+        await self._set_methods_expanded('bank.v1.Account', ['deposit'], True)
 
         await initialize(self._initialize_context())
 
         self.assertTrue(await self._read_preferences())
         self.assertEqual(
-            await self._read_expanded_state_types(), ['bank.v1.Account']
+            await self._read_expanded_methods(), ['bank.v1.Account.deposit']
         )
 
     async def test_what_is_expanded_is_a_sorted_set(self) -> None:
         # Two tabs can each send the same click, a page that
-        # reconnects can send one it already sent, and a collapse can
+        # reconnects can send one it already sent, and a close can
         # arrive for something that was never open.
-        await self._set_expanded('bank.v1.Customer', True)
-        await self._set_expanded('bank.v1.Account', True)
-        await self._set_expanded('bank.v1.Account', True)
-        await self._set_expanded('bank.v1.Bank', True)
+        await self._set_methods_expanded(
+            'bank.v1.Account', ['open', 'deposit'], True
+        )
+        await self._set_methods_expanded('bank.v1.Account', ['deposit'], True)
+        await self._set_methods_expanded('bank.v1.Bank', ['transfer'], True)
 
-        await self._set_expanded('bank.v1.Bank', False)
-        await self._set_expanded('bank.v1.Never', False)
+        await self._set_methods_expanded('bank.v1.Bank', ['transfer'], False)
+        await self._set_methods_expanded('bank.v1.Never', ['gone'], False)
 
         # Sorted, so that the reactive read does not push a change to
         # every open page when the only difference is the order two
         # clicks happened to arrive in.
         self.assertEqual(
-            await self._read_expanded_state_types(),
-            ['bank.v1.Account', 'bank.v1.Customer'],
+            await self._read_expanded_methods(),
+            ['bank.v1.Account.deposit', 'bank.v1.Account.open'],
         )
 
 

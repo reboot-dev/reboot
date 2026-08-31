@@ -10,8 +10,8 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     DashboardUpdateCodeResponse,
     PreferencesGetRequest,
     PreferencesGetResponse,
-    PreferencesSetExpandedRequest,
-    PreferencesSetExpandedResponse,
+    PreferencesSetMethodsExpandedRequest,
+    PreferencesSetMethodsExpandedResponse,
     PreferencesSetNavWidthRequest,
     PreferencesSetNavWidthResponse,
     PreferencesSetSuppressOpenOnRestartRequest,
@@ -196,7 +196,7 @@ class PreferencesServicer(Preferences.Servicer):
     ) -> PreferencesGetResponse:
         return PreferencesGetResponse(
             suppress_open_on_restart=self.state.suppress_open_on_restart,
-            expanded_state_types=self.state.expanded_state_types,
+            expanded_methods=self.state.expanded_methods,
             nav_width=(
                 self.state.nav_width
                 if self.state.HasField('nav_width') else None
@@ -211,21 +211,25 @@ class PreferencesServicer(Preferences.Servicer):
         self.state.suppress_open_on_restart = request.suppress_open_on_restart
         return PreferencesSetSuppressOpenOnRestartResponse()
 
-    async def SetExpanded(
+    async def SetMethodsExpanded(
         self,
         context: WriterContext,
-        request: PreferencesSetExpandedRequest,
-    ) -> PreferencesSetExpandedResponse:
-        expanded = set(self.state.expanded_state_types)
+        request: PreferencesSetMethodsExpandedRequest,
+    ) -> PreferencesSetMethodsExpandedResponse:
+        """Opens or closes each named method: one for a single
+        method's toggle, all of a state type's for its own."""
+        expanded = set(self.state.expanded_methods)
 
-        if request.expanded:
-            expanded.add(request.state_type)
-        else:
-            expanded.discard(request.state_type)
+        for method in request.methods:
+            key = f'{request.state_type}.{method}'
+            if request.expanded:
+                expanded.add(key)
+            else:
+                expanded.discard(key)
 
-        self.state.expanded_state_types[:] = sorted(expanded)
+        self.state.expanded_methods[:] = sorted(expanded)
 
-        return PreferencesSetExpandedResponse()
+        return PreferencesSetMethodsExpandedResponse()
 
     async def SetNavWidth(
         self,

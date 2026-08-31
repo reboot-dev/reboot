@@ -364,18 +364,19 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(await self._read_suppress_open_on_restart())
 
-    # The two labels a state type's one button shows.
-    _EXPAND = 'Expand details'
-    _HIDE = 'Hide details'
+    # The two carets the `methods` section's toggle shows.
+    _EXPAND = '▸'
+    _HIDE = '▾'
 
     def _click_to_expand(self, driver, showing: str, becomes: str) -> None:
-        """Clicks a state type's button once it reads `showing`.
+        """Clicks the \`methods\` section's toggle once its caret reads
+        `showing`.
 
-        Waits for `becomes` afterwards: the label and the detail's
-        height come from the same state, so the new label proves the
+        Waits for `becomes` afterwards: the caret and the detail's
+        height come from the same state, so the new caret proves the
         click registered.
         """
-        button = (By.CLASS_NAME, 'expand-button')
+        button = (By.CLASS_NAME, 'section-toggle')
 
         WebDriverWait(driver, 60).until(
             expected_conditions.text_to_be_present_in_element(button, showing)
@@ -407,10 +408,10 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             driver, 60
         ).until(lambda driver: (self._detail_height(driver) > 0) == opened)
 
-    async def _read_expanded_state_types(self) -> list[str]:
+    async def _read_expanded_methods(self) -> list[str]:
         context = self.rbt.create_external_context(name=self.id())
         response = await Preferences.ref(PREFERENCES_ID).Get(context)
-        return list(response.expanded_state_types)
+        return list(response.expanded_methods)
 
     async def test_a_state_type_stays_expanded_across_a_load(self) -> None:
         # The click must store the choice in the dashboard
@@ -440,7 +441,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.to_thread(self._run_in_browser, body)
 
         self.assertEqual(
-            await self._read_expanded_state_types(), ['shop.v1.Shop']
+            await self._read_expanded_methods(), ['shop.v1.Shop.look']
         )
 
         # `_run_in_browser` starts a new browser, so the expanded state can only
@@ -449,7 +450,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             driver.get(f'{self.url}{DASHBOARD_PATH}/#/state')
             WebDriverWait(driver, 60).until(
                 expected_conditions.text_to_be_present_in_element(
-                    (By.CLASS_NAME, 'expand-button'),
+                    (By.CLASS_NAME, 'section-toggle'),
                     self._HIDE,
                 )
             )

@@ -442,11 +442,22 @@ const Signature: FC<{
 const Method: FC<{
   api: api_pb.API;
   method: api_pb.Method;
-}> = ({ api, method }) => {
+  expanded: boolean;
+  onToggle: () => void;
+}> = ({ api, method, expanded, onToggle }) => {
   return (
-    <div className="method" id={`m-${method.name}`}>
-      <div className="method-head">
+    <div
+      className={expanded ? "method is-expanded" : "method"}
+      id={`m-${method.name}`}
+    >
+      <div
+        className="method-head"
+        onClick={onToggle}
+        role="button"
+        aria-expanded={expanded}
+      >
         <div className="method-title">
+          <span className="method-caret caret">{expanded ? "▾" : "▸"}</span>
           <span className="method-name">{method.name}</span>
           {/* The kind comes before the tags because every method has
               one, so it sits in the same column in every row. The tags
@@ -505,7 +516,7 @@ const countWithNoun = (n: number, noun: string): string =>
 const SLIDE_MS = 240;
 const SLIDE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 
-const useSlidingPills = (expanded: boolean) => {
+const useSlidingPills = (expanded: string) => {
   const section = useRef<HTMLElement>(null);
   const before = useRef(new WeakMap<HTMLElement, number>());
   const wasExpanded = useRef(expanded);
@@ -546,19 +557,28 @@ const useSlidingPills = (expanded: boolean) => {
 const StateType: FC<{
   api: api_pb.API;
   stateType: api_pb.StateType;
-  expanded: boolean;
-  onToggle: () => void;
-}> = ({ api, stateType, expanded, onToggle }) => {
-  const section = useSlidingPills(expanded);
+  isMethodExpanded: (method: string) => boolean;
+  onToggleMethods: (methods: string[], expanded: boolean) => void;
+}> = ({ api, stateType, isMethodExpanded, onToggleMethods }) => {
+  const section = useSlidingPills(
+    stateType.methods.map((method) => isMethodExpanded(method.name)).join(":")
+  );
   const name = qualifiedName({ api, stateType });
   const fields = fieldsOfState({ api, stateType });
+
+  // The section's own caret is open only when every method is:
+  // closing any single one closes it, so that clicking it opens
+  // everything again.
+  const allExpanded =
+    stateType.methods.length > 0 &&
+    stateType.methods.every((method) => isMethodExpanded(method.name));
 
   return (
     // The stylesheet opens and closes every method's detail from this
     // class, so the whole section is one transition.
     <section
       ref={section}
-      className={expanded ? "state-type is-expanded" : "state-type"}
+      className="state-type"
       id={pathOfTypeOnPage("state", name)}
     >
       <div>
@@ -577,17 +597,6 @@ const StateType: FC<{
             {countWithNoun(stateType.methods.length, "method")}
           </span>
         </div>
-        <button
-          className="expand-button"
-          onClick={onToggle}
-          aria-expanded={expanded}
-          aria-controls={pathOfTypeOnPage("state", name)}
-        >
-          {/* The caret points in the direction the details move on click:
-              down when they expand, up when they collapse. */}
-          <span className="caret">{expanded ? "▴" : "▾"}</span>
-          {expanded ? "Hide details" : "Expand details"}
-        </button>
       </div>
       <div className="file">{api.filename}</div>
       {stateType.description !== undefined && (
@@ -606,10 +615,30 @@ const StateType: FC<{
         <Fields fields={fields} />
       )}
 
-      <div className="eyebrow section">methods</div>
+      <button
+        className="eyebrow section section-toggle"
+        onClick={() =>
+          onToggleMethods(
+            stateType.methods.map((method) => method.name),
+            !allExpanded
+          )
+        }
+        aria-expanded={allExpanded}
+      >
+        <span className="caret">{allExpanded ? "▾" : "▸"}</span>
+        methods
+      </button>
       <div className="methods">
         {stateType.methods.map((method) => (
-          <Method api={api} method={method} key={method.name} />
+          <Method
+            api={api}
+            method={method}
+            expanded={isMethodExpanded(method.name)}
+            onToggle={() =>
+              onToggleMethods([method.name], !isMethodExpanded(method.name))
+            }
+            key={method.name}
+          />
         ))}
       </div>
     </section>
@@ -809,15 +838,19 @@ const Overview: FC<{
   navWidth: number;
   onNavResizing: (width: number) => void;
   onNavResized: () => void;
-  isExpanded: (name: string) => boolean;
-  onToggle: (name: string) => void;
+  isMethodExpanded: (stateType: string, method: string) => boolean;
+  onToggleMethods: (
+    stateType: string,
+    methods: string[],
+    expanded: boolean
+  ) => void;
 }> = ({
   page,
   navWidth,
   onNavResizing,
   onNavResized,
-  isExpanded,
-  onToggle,
+  isMethodExpanded,
+  onToggleMethods,
 }) => {
   // `Panel` reads `defaultSize` once, when it mounts, and the stored
   // width arrives from the application later. The effect below resizes
@@ -1095,8 +1128,12 @@ const Overview: FC<{
                   <StateType
                     api={api}
                     stateType={stateType}
-                    expanded={isExpanded(name)}
-                    onToggle={() => onToggle(name)}
+                    isMethodExpanded={(method) =>
+                      isMethodExpanded(name, method)
+                    }
+                    onToggleMethods={(methods, expanded) =>
+                      onToggleMethods(name, methods, expanded)
+                    }
                     key={name}
                   />
                 );
@@ -1126,7 +1163,7 @@ const Overview: FC<{
 // reads the same ones, and they persist after the tab that set them
 // closes.
 const App: FC = () => {
-  const { useGet, setSuppressOpenOnRestart, setExpanded, setNavWidth } =
+  const { useGet, setSuppressOpenOnRestart, setMethodsExpanded, setNavWidth } =
     usePreferences({
       id: PREFERENCES_ID,
     });
@@ -1137,8 +1174,8 @@ const App: FC = () => {
   const suppressed = response?.suppressOpenOnRestart ?? false;
 
   const stored = useMemo(
-    () => new Set(response?.expandedStateTypes ?? []),
-    [response?.expandedStateTypes]
+    () => new Set(response?.expandedMethods ?? []),
+    [response?.expandedMethods]
   );
 
   const navWidth = response?.navWidth ?? NAV_WIDTH.default;
@@ -1152,35 +1189,42 @@ const App: FC = () => {
     setNavWidth({ navWidth: resizing.current });
   }, [setNavWidth]);
 
-  // The expanded state of each click that the read does not yet
-  // reflect; it overrides the stored value so the section responds
-  // to the click before the round trip completes.
+  // The open state of each click that the read does not yet
+  // reflect; it overrides the stored value so a method responds to
+  // the click before the round trip completes. Dropped once the
+  // read agrees, since a stale stand-in would hide a later change
+  // from another tab.
   const [clicked, setClicked] = useState(new Map<string, boolean>());
 
-  // Drop each stand-in once the read agrees with it. isExpanded prefers
-  // the stand-in, so a stale one would hide a later change from another
-  // tab.
   useEffect(() => {
     setClicked((clicked) => {
       const waiting = new Map(
-        [...clicked].filter(([name, expanded]) => stored.has(name) !== expanded)
+        [...clicked].filter(([key, expanded]) => stored.has(key) !== expanded)
       );
       return waiting.size === clicked.size ? clicked : waiting;
     });
   }, [stored]);
 
-  const isExpanded = useCallback(
-    (name: string): boolean => clicked.get(name) ?? stored.has(name),
+  const isMethodExpanded = useCallback(
+    (stateType: string, method: string): boolean => {
+      const key = `${stateType}.${method}`;
+      return clicked.get(key) ?? stored.has(key);
+    },
     [clicked, stored]
   );
 
-  const onToggle = useCallback(
-    (name: string): void => {
-      const expanded = !isExpanded(name);
-      setClicked((clicked) => new Map(clicked).set(name, expanded));
-      setExpanded({ stateType: name, expanded });
+  const onToggleMethods = useCallback(
+    (stateType: string, methods: string[], expanded: boolean): void => {
+      setClicked((clicked) => {
+        const standing = new Map(clicked);
+        for (const method of methods) {
+          standing.set(`${stateType}.${method}`, expanded);
+        }
+        return standing;
+      });
+      setMethodsExpanded({ stateType, methods, expanded });
     },
-    [isExpanded, setExpanded]
+    [setMethodsExpanded]
   );
 
   return (
@@ -1202,8 +1246,8 @@ const App: FC = () => {
                   navWidth={navWidth}
                   onNavResizing={onNavResizing}
                   onNavResized={onNavResized}
-                  isExpanded={isExpanded}
-                  onToggle={onToggle}
+                  isMethodExpanded={isMethodExpanded}
+                  onToggleMethods={onToggleMethods}
                 />
               }
               key={page}

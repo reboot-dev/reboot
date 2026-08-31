@@ -535,13 +535,14 @@ message Preferences {
   // `--open-dashboard` opens one even when this is true.
   bool suppress_open_on_restart = 1;
 
-  // The state types whose methods the developer has expanded on the
-  // dashboard, by fully qualified name such as `bank.v1.Account`.
-  // A collapsed state type shows its methods; an expanded one also
-  // shows their detail. SetExpanded keeps this sorted, so that the
-  // same set of state types is stored the same way whatever order
-  // they were expanded in.
-  repeated string expanded_state_types = 2;
+  // The methods whose detail the developer has opened, spelled as
+  // the state type's fully qualified name, a dot, then the method:
+  // e.g. `bank.v1.Account.deposit`. `SetMethodsExpanded` keeps this
+  // sorted, so that the same set of methods is stored the same way
+  // whatever order they were opened in. A state type's own toggle
+  // is the same set: every one of its methods, opened or closed
+  // together.
+  repeated string expanded_methods = 2;
 
   // How wide the developer has dragged the sidebar, in CSS pixels.
   // Unset until the developer drags it; until then the page picks
@@ -553,7 +554,7 @@ message PreferencesGetRequest {}
 
 message PreferencesGetResponse {
   bool suppress_open_on_restart = 1;
-  repeated string expanded_state_types = 2;
+  repeated string expanded_methods = 2;
   optional uint32 nav_width = 3;
 }
 
@@ -563,15 +564,20 @@ message PreferencesSetSuppressOpenOnRestartRequest {
 
 message PreferencesSetSuppressOpenOnRestartResponse {}
 
-message PreferencesSetExpandedRequest {
+message PreferencesSetMethodsExpandedRequest {
   // The fully qualified name of one state type, spelled as the
   // runtime names one: e.g. `shop.v1.Shop`.
   string state_type = 1;
 
-  bool expanded = 2;
+  // The methods to open or close, named as the developer wrote
+  // them: one for a single method's toggle, all of the state
+  // type's for its own.
+  repeated string methods = 2;
+
+  bool expanded = 3;
 }
 
-message PreferencesSetExpandedResponse {}
+message PreferencesSetMethodsExpandedResponse {}
 
 message PreferencesSetNavWidthRequest {
   uint32 nav_width = 1;
@@ -638,8 +644,8 @@ service PreferencesMethods {
 
   // Takes one state type so that two tabs toggling different state
   // types at the same moment do not overwrite each other's change.
-  rpc SetExpanded(PreferencesSetExpandedRequest)
-      returns (PreferencesSetExpandedResponse) {
+  rpc SetMethodsExpanded(PreferencesSetMethodsExpandedRequest)
+      returns (PreferencesSetMethodsExpandedResponse) {
     option (rbt.v1alpha1.method).writer = {
     };
   }
