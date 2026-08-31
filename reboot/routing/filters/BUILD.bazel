@@ -1,16 +1,6 @@
 load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library")
 
-# This target is in this BUILD file, rather than in a BUILD file in `sha1/src/`
-# because the `sha1` library is a submodule whose contents we don't control.
-filegroup(
-    name = "sha1_lua",
-    srcs = glob(
-        ["sha1/src/**/*"],
-    ),
-    visibility = ["//visibility:public"],
-)
-
 py_library(
     name = "lua_py",
     srcs = [
