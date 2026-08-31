@@ -386,7 +386,7 @@ nav a .nav-name {
 
 /* That the page is watching, said where what it is watching for will
    appear. */
-.listening {
+.watching {
   max-width: 840px;
   margin: 0 auto;
   padding: 0 58px 10px;
@@ -397,17 +397,17 @@ nav a .nav-name {
 
 /* The dots are there all along and revealed a character at a time,
    so the line never changes width and nothing beside it moves. */
-.listening-dots {
+.watching-dots {
   display: inline-block;
   width: 3ch;
   overflow: hidden;
   vertical-align: bottom;
-  animation: listening 1.2s steps(3, end) infinite;
+  animation: watching 1.6s steps(4, end) infinite;
 }
 
-@keyframes listening {
+@keyframes watching {
   from {
-    width: 1ch;
+    width: 0;
   }
   to {
     width: 4ch;
@@ -415,7 +415,7 @@ nav a .nav-name {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .listening-dots {
+  .watching-dots {
     animation: none;
   }
 }

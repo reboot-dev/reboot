@@ -817,8 +817,8 @@ const ChangelogPage: FC<{
   return (
     <>
       {live && (
-        <div className="listening">
-          Listening<span className="listening-dots">...</span>
+        <div className="watching">
+          Watching for changes<span className="watching-dots">...</span>
         </div>
       )}
       <div className="changes">
