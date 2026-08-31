@@ -59,6 +59,7 @@ from rbt.dashboard.v1.dashboard_rbt import Implementation
 from reboot.aio.contexts import WorkflowContext
 from reboot.aio.cooperatively import cooperatively
 from reboot.cli.common.watch import file_watcher
+from reboot.dashboard.changelog import code_changes_between
 from reboot.dashboard.pyright import Location, Pyright
 from reboot.dashboard.walk import (
     GENERATED_SUFFIXES,
@@ -1213,6 +1214,12 @@ async def watch(
                 if known_now != known or generated_now != generated:
                     servicers = extract_and_sort_servicers(known_now)
 
+                    changes = list(
+                        code_changes_between(
+                            extract_and_sort_servicers(known), servicers
+                        )
+                    )
+
                     # The file messages the write below records,
                     # built before the write so that the state is
                     # not held open while the files are iterated.
@@ -1233,6 +1240,7 @@ async def watch(
                         servicers=servicers,
                         files=files,
                         generated=dict(generated_now),
+                        changes=changes,
                     )
 
                     known = known_now

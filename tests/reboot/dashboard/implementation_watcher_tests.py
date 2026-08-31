@@ -9,14 +9,16 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_pb2 import Generated
+from rbt.dashboard.v1.dashboard_pb2 import Change, Generated
 from rbt.dashboard.v1.dashboard_pb2 import \
     Implementation as ImplementationState
 from rbt.dashboard.v1.dashboard_pb2 import Servicer
 from rbt.dashboard.v1.dashboard_rbt import API, Implementation
+from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from reboot.aio.tests import Reboot
 from reboot.dashboard.constants import (
     API_ID,
+    CHANGELOG_ID,
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
     ENVVAR_RBT_GENERATED_DIRECTORY,
@@ -316,6 +318,24 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    async def _code_changes(self, *, satisfied) -> list[Change]:
+        """The code's entries in the changelog once they satisfy,
+        newest first, reading again whenever the changelog changes."""
+        context = self.rbt.create_external_context(name=self.id())
+        async for response in OrderedMap.ref(CHANGELOG_ID).reactively(
+        ).ReverseRange(context, limit=100):
+            changes = [
+                Change.FromString(entry.bytes) for entry in response.entries
+            ]
+            code = [
+                change for change in changes
+                if change.WhichOneof('change').startswith('code_')
+            ]
+            if satisfied(code):
+                return code
+
+        raise AssertionError('never satisfied')
+
     async def _servicers(self, *, satisfied):
         """Returns the servicers recorded against each state type
         once they satisfy, reading again whenever they change.
@@ -465,6 +485,57 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
                 return
 
         raise AssertionError("'shop.v1.Shop' was never declared")
+
+    async def test_a_servicer_found_is_history(self) -> None:
+        """A servicer the analysis finds is recorded in the
+        changelog."""
+        self._generate()
+
+        change, *_ = await self._code_changes(
+            satisfied=lambda code: len(code) > 0
+        )
+
+        self.assertEqual(change.WhichOneof('change'), 'code_added')
+        self.assertEqual(change.code_added.state_type, 'shop.v1.Shop')
+        self.assertEqual(
+            change.code_added.filename,
+            str(self.source / 'shop_servicer.py'),
+        )
+
+    async def test_a_method_edited_is_history(self) -> None:
+        """Editing a method's body is one change naming the
+        method."""
+        self._generate()
+
+        await self._code_changes(satisfied=lambda code: len(code) > 0)
+
+        (self.source / 'shop_servicer.py').write_text(
+            SHOP.replace('        pass', '        return request')
+        )
+
+        change, *_ = await self._code_changes(
+            satisfied=lambda code: len(code) > 0 and code[0].
+            WhichOneof('change') == 'code_changed'
+        )
+
+        self.assertEqual(change.code_changed.state_type, 'shop.v1.Shop')
+        self.assertEqual(change.code_changed.method, 'look')
+        self.assertEqual(change.code_changed.WhichOneof('change'), 'body')
+
+    async def test_a_servicer_removed_is_history(self) -> None:
+        self._generate()
+
+        await self._code_changes(satisfied=lambda code: len(code) > 0)
+
+        (self.source / 'shop_servicer.py').unlink()
+        (self.source / 'main.py').write_text('')
+
+        change, *_ = await self._code_changes(
+            satisfied=lambda code: len(code) > 0 and code[0].
+            WhichOneof('change') == 'code_removed'
+        )
+
+        self.assertEqual(change.code_removed.state_type, 'shop.v1.Shop')
 
     async def test_generate_running_while_the_dashboard_runs(self) -> None:
         """`rbt generate` writing its code is what ties the waiting

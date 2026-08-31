@@ -8,7 +8,12 @@ other parts that is not as it was, and how. A change with nothing
 named is never made.
 """
 from rbt.dashboard.v1.dashboard_pb2 import (
+    BodyChanged,
+    CallsChanged,
     Change,
+    CodeAdded,
+    CodeChanged,
+    CodeRemoved,
     ConstraintsChanged,
     DataTypeAdded,
     DataTypeChanged,
@@ -30,6 +35,7 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     RequestChanged,
     RequiredChanged,
     ResponseChanged,
+    Servicer,
     StateModelRenamed,
     StateTypeAdded,
     StateTypeChanged,
@@ -43,7 +49,7 @@ from rbt.v1alpha1.pydantic.schema_pb2 import (
     Reference,
     Schema,
 )
-from typing import Iterator, Mapping, Optional
+from typing import Iterator, Mapping, Optional, Sequence
 
 # What the API files declare, keyed by file relative to the API
 # directory: what `API.apis` records.
@@ -430,3 +436,73 @@ def changes_between(before: APIs, after: APIs) -> Iterator[Change]:
             changed_data_type.HasField('description')
         ):
             yield Change(data_type_changed=changed_data_type)
+
+
+def code_changes_between(
+    before: Sequence[Servicer],
+    after: Sequence[Servicer],
+) -> Iterator[Change]:
+    """What differs between two analyses of the developer's
+    application: a servicer added or removed whole, and for one that
+    is still there, each method whose implementation does something
+    different. The API changelog is what records a method appearing
+    or disappearing; the code's methods are read off the state.
+
+    Ordered by state type, then filename, then method, so that a
+    retry of the `Update` call the watcher makes sends the same
+    list, which is what makes the write idempotent.
+    """
+    servicers_before = {
+        (servicer.state_type, servicer.filename): servicer
+        for servicer in before
+    }
+    servicers_after = {
+        (servicer.state_type, servicer.filename): servicer
+        for servicer in after
+    }
+
+    for key in sorted(set(servicers_before) | set(servicers_after)):
+        state_type, filename = key
+        old = servicers_before.get(key)
+        new = servicers_after.get(key)
+
+        if old is None:
+            assert new is not None
+            yield Change(
+                code_added=CodeAdded(state_type=state_type, filename=filename)
+            )
+            continue
+        if new is None:
+            yield Change(
+                code_removed=CodeRemoved(
+                    state_type=state_type, filename=filename
+                )
+            )
+            continue
+
+        methods_before = {method.name: method for method in old.methods}
+        methods_after = {method.name: method for method in new.methods}
+
+        for name in sorted(set(methods_before) & set(methods_after)):
+            old_method = methods_before[name]
+            new_method = methods_after[name]
+            if old_method.digest != new_method.digest:
+                yield Change(
+                    code_changed=CodeChanged(
+                        state_type=state_type,
+                        filename=filename,
+                        method=name,
+                        body=BodyChanged(),
+                    )
+                )
+            elif old_method != new_method:
+                # The method reads the same; what it reaches does
+                # not, e.g. a helper it calls into changed.
+                yield Change(
+                    code_changed=CodeChanged(
+                        state_type=state_type,
+                        filename=filename,
+                        method=name,
+                        calls=CallsChanged(),
+                    )
+                )

@@ -76,12 +76,12 @@ export type Part = {
 export const labelOfChangeKind: Record<Row["kind"], string> = {
   state: "API · STATE",
   data: "API · DATA",
-  implementation: "CODE",
+  code: "CODE",
 };
 
 export type Row = {
   where: string;
-  kind: "state" | "data" | "implementation";
+  kind: "state" | "data" | "code";
   difference: string;
   name: string;
   // The page and id the name links to; none once the thing is gone
@@ -359,28 +359,38 @@ export const rowOfChange = (change: Change): Row => {
         name: shortNameOf(what.value.name),
         parts: [],
       };
-    case "implementationAdded":
+    case "codeAdded":
       return {
         where: packageOfStateTypeName(what.value.stateType),
-        kind: "implementation",
+        kind: "code",
         difference: "added",
         name: shortNameOf(what.value.stateType),
         link: { page: "state", id: what.value.stateType },
         parts: [],
       };
-    case "implementationChanged":
+    case "codeChanged":
       return {
         where: packageOfStateTypeName(what.value.stateType),
-        kind: "implementation",
+        kind: "code",
         difference: "changed",
         name: shortNameOf(what.value.stateType),
         link: { page: "state", id: what.value.stateType },
-        parts: partsOfMethods(what.value.methods),
+        parts: [
+          {
+            noun: "method",
+            name: what.value.method,
+            difference: "changed",
+            verb:
+              what.value.change.case === "calls"
+                ? "calls changed"
+                : "body changed",
+          },
+        ],
       };
-    case "implementationRemoved":
+    case "codeRemoved":
       return {
         where: packageOfStateTypeName(what.value.stateType),
-        kind: "implementation",
+        kind: "code",
         difference: "removed",
         name: shortNameOf(what.value.stateType),
         parts: [],

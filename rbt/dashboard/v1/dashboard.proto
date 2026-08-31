@@ -82,9 +82,9 @@ message Change {
     DataTypeChanged data_type_changed = 5;
     DataTypeRemoved data_type_removed = 6;
 
-    ImplementationAdded implementation_added = 7;
-    ImplementationChanged implementation_changed = 8;
-    ImplementationRemoved implementation_removed = 9;
+    CodeAdded code_added = 7;
+    CodeChanged code_changed = 8;
+    CodeRemoved code_removed = 9;
   }
 }
 
@@ -218,6 +218,15 @@ message MethodChange {
   }
 }
 
+// A method's body does something different: the digest of its
+// syntax, with formatting and comments left out, moved.
+message BodyChanged {}
+
+// The Reboot calls a method's implementation makes, followed
+// through the functions it calls, are not what they were, while the
+// method's own body is: a function it calls into changed.
+message CallsChanged {}
+
 // A state type the API files declare.
 message StateTypeAdded {
   // Fully qualified, e.g. "shop.v1.Shop".
@@ -273,18 +282,26 @@ message DataTypeRemoved {
 }
 
 // How the application implements a state type: a servicer.
-message ImplementationAdded {
+message CodeAdded {
   string state_type = 1;
   string filename = 2;
 }
 
-message ImplementationChanged {
+// One method of a servicer doing something different.
+message CodeChanged {
   string state_type = 1;
   string filename = 2;
-  repeated MethodChange methods = 3;
+
+  // The method, named as the developer wrote it.
+  string method = 3;
+
+  oneof change {
+    BodyChanged body = 4;
+    CallsChanged calls = 5;
+  }
 }
 
-message ImplementationRemoved {
+message CodeRemoved {
   string state_type = 1;
   string filename = 2;
 }
@@ -494,6 +511,11 @@ message ImplementationUpdateRequest {
   repeated Servicer servicers = 1;
   map<string, File> files = 2;
   map<string, Generated> generated = 3;
+
+  // What differs from what the state records, for the changelog.
+  // Recorded in the same transaction as the state, so that the
+  // changelog never says something the state does not.
+  repeated Change changes = 4;
 }
 
 message ImplementationUpdateResponse {}
@@ -596,7 +618,10 @@ service ImplementationMethods {
   // Watches the developer's application for as long as the dashboard
   // application runs, working out which of their files implements
   // each state type whenever one of those files changes.
-  // Replaces what the application implements, as one transaction.
+  // Replaces what the application implements and records what
+  // changed, as one transaction. Assigns each change its key, so
+  // that a workflow retrying this call sends an identical request
+  // every attempt.
   rpc Update(ImplementationUpdateRequest)
       returns (ImplementationUpdateResponse) {
     option (rbt.v1alpha1.method).transaction = {

@@ -137,7 +137,8 @@ class ImplementationServicer(Implementation.Servicer):
         context: TransactionContext,
         request: ImplementationUpdateRequest,
     ) -> ImplementationUpdateResponse:
-        """Replaces what the application implements."""
+        """Replaces what the application implements and records what
+        changed, newest last."""
         del self.state.servicers[:]
         self.state.servicers.extend(request.servicers)
         self.state.files.clear()
@@ -146,6 +147,15 @@ class ImplementationServicer(Implementation.Servicer):
         self.state.generated.clear()
         for filename, generated in request.generated.items():
             self.state.generated[filename].CopyFrom(generated)
+
+        if len(request.changes) > 0:
+            await OrderedMap.ref(CHANGELOG_ID).Insert(
+                context,
+                entries={
+                    str(uuid7()): Item(bytes=change.SerializeToString())
+                    for change in request.changes
+                },
+            )
 
         return ImplementationUpdateResponse()
 

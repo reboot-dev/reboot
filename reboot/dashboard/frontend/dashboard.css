@@ -573,7 +573,7 @@ nav a .nav-name {
 }
 
 /* A change to the code rather than to the API files. */
-.change-kind-implementation {
+.change-kind-code {
   background: hsl(205 70% 55% / 0.14);
   border-color: hsl(205 60% 50% / 0.38);
   color: hsl(205 70% 35%);
