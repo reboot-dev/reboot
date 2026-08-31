@@ -1373,7 +1373,7 @@ header h1 {
   --kind: 36 85% 42%;
 }
 
-.graph-kind-undeclared {
+.graph-kind-unknown {
   --kind: 211 25% 60%;
 }
 
@@ -1385,9 +1385,9 @@ header h1 {
   background: hsl(var(--kind));
 }
 
-/* A workflow's dot is a ring: like its dashed edges, it is drawn in
-   outline because it runs past the call that started it. */
-.graph-kind-workflow .graph-method-dot {
+/* An unknown method's dot is a ring: nothing declares it, only a
+   call names it, so there is nothing to paint it in with. */
+.graph-kind-unknown .graph-method-dot {
   background: transparent;
   border: 1.5px solid hsl(var(--kind));
 }

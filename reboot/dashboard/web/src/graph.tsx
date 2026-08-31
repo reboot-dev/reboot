@@ -77,7 +77,7 @@ const textColorOfKind = (kind: Kind | undefined): string =>
 
 // The kind's CSS class, which colours the row's dot.
 const classNameOfKind = (kind: Kind | undefined): string =>
-  `graph-kind-${kind === undefined ? "undeclared" : labelOfKind(kind)}`;
+  `graph-kind-${kind === undefined ? "unknown" : labelOfKind(kind)}`;
 
 // How a call is reached, said in one word on the edge. A plain call
 // says nothing: it is the ordinary case, and labelling every edge
@@ -499,7 +499,7 @@ const MethodRow: FC<{
     }}
     title={
       method.kind === undefined
-        ? "not declared in the API"
+        ? "unknown"
         : `${labelOfKind(method.kind)}${method.factory ? ", factory" : ""}`
     }
   >
@@ -660,7 +660,9 @@ const Legend: FC = () => (
         )}
         <div className={`graph-legend-row ${classNameOfKind(undefined)}`}>
           <span className="graph-method-dot" aria-hidden="true" />
-          <span>not declared in the API</span>
+          <span>
+            <em>unknown</em>
+          </span>
         </div>
       </div>
       <div className="graph-legend-rows">
