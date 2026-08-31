@@ -836,7 +836,9 @@ nodejs-wheel-binaries==24.19.0 \
     --hash=sha256:d9074c665ea68b04e183d82482c86dc907d3a9bd15eb6cf85542cb785266bb36 \
     --hash=sha256:db217eef8cab8551667863379b08db4d9067403f6cbbe87481eb40edceb8aa9b \
     --hash=sha256:e12cbfd69089504e42fb14194ce734a9dcf3eb38c820ca63dd511d36fb964e9c
-    # via pyright
+    # via
+    #   -r reboot/requirements.in
+    #   pyright
 opentelemetry-api==1.28.1 \
     --hash=sha256:6fa7295a12c707f5aebef82da3d9ec5afe6992f3e42bfe7bec0339a44b3518e7 \
     --hash=sha256:bfe86c95576cf19a914497f439fd79c9553a38de0adbdc26f7cfc46b0c00b16c
