@@ -58,10 +58,10 @@ def repos():
     maybe(
         http_archive,
         name = "com_google_protobuf",
-        sha256 = "6fbe2e6f703bcd3a246529c2cab586ca12a98c4e641f5f71d51fde09eb48e9e7",
-        strip_prefix = "protobuf-27.1",
+        sha256 = "008a11cc56f9b96679b4c285fd05f46d317d685be3ab524b2a310be0fbad987e",
+        strip_prefix = "protobuf-29.3",
         urls = [
-            "https://github.com/protocolbuffers/protobuf/archive/v27.1.tar.gz",
+            "https://github.com/protocolbuffers/protobuf/archive/v29.3.tar.gz",
         ],
     )
 

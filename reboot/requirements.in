@@ -20,7 +20,7 @@ kubernetes-asyncio==31.1.0  # Latest as of 2024/09/16.
 mypy-protobuf==3.6.0 # Latest as of 2025/03/25.
 packaging>=23.1 # Latest as of 2023/04/12.
 pathspec==0.12.1 # Latest as of 2024/04/22.
-protobuf==5.28.3 # Aligned with `grpcio`.
+protobuf==5.29.3 # Aligned with our `com_google_protobuf` 29.3.
 psutil==6.0.0 # Latest as of 2024/09/10.
 pyjwt==2.10.1 # Latest as of 2024/11/27.
 python-dotenv==1.2.1 # Used by `rbt dev run --env-file`.
