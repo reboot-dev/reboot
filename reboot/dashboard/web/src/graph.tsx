@@ -511,7 +511,7 @@ const MethodRow: FC<{
     />
     <span className="graph-method-dot" aria-hidden="true" />
     <span className="graph-method-name">{method.name}</span>
-    {method.factory && <span className="graph-method-factory">new</span>}
+    {method.factory && <span className="graph-method-factory">factory</span>}
     <Handle
       type="source"
       position={Position.Right}
@@ -679,7 +679,7 @@ const Legend: FC = () => (
       </div>
       <div className="graph-legend-rows">
         <div className="graph-legend-row">
-          <span className="graph-method-factory">new</span>
+          <span className="graph-method-factory">factory</span>
           <span>constructs the state</span>
         </div>
       </div>
