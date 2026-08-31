@@ -1,0 +1,36 @@
+Bazel's native `proto_library` used to place generated `.proto` sources
+under `_virtual_imports` (see Bazel's
+`--incompatible_generated_protos_in_virtual_imports`). Protobuf's
+Starlark reimplementation, which Bazel 8 autoloads in place of the
+native rule, only creates virtual imports when `import_prefix` or
+`strip_import_prefix` is set, so a generated `.proto` now reaches
+`get_staged_proto_file()` as a plain file under `bazel-out/.../bin`.
+
+That makes gRPC take its "different package" branch and strip a
+source-tree prefix off an output-tree path, which yields a nonsense
+path such as `/pydantic_web/nested_types/servicer_api.proto` and fails
+analysis. `declare_out_files()` right below already knows how to
+handle a generated proto that sits in its own package directory, so
+teach `get_staged_proto_file()` the same check and leave such a file
+where it is.
+diff -ru grpc-1.71.0.orig/bazel/protobuf.bzl grpc-1.71.0/bazel/protobuf.bzl
+--- grpc-1.71.0.orig/bazel/protobuf.bzl
++++ grpc-1.71.0/bazel/protobuf.bzl
+@@ -196,14 +196,15 @@
+     Returns:
+       The original proto file OR a new file in the staged location.
+     """
++    prefix = _make_prefix(source_file.owner)
+     if source_file.dirname == label.package or \
+-       is_in_virtual_imports(source_file):
++       is_in_virtual_imports(source_file) or \
++       source_file.path.startswith(context.genfiles_dir.path + "/" + prefix):
+         # Current target and source_file are in same package
+         return source_file
+     else:
+         # Current target and source_file are in different packages (most
+         # probably even in different repositories)
+-        prefix = _make_prefix(source_file.owner)
+         copied_proto = context.actions.declare_file(source_file.path[len(prefix):])
+         context.actions.run_shell(
+             inputs = [source_file],
