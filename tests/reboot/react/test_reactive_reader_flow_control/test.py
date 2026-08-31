@@ -11,7 +11,8 @@ STATE_ID = 'greeter-flow-control-test'
 # Adjectives to write, in rounds. Every round is written while the
 # browser is still busy with the first response of that round.
 ROUNDS = [
-    [f'round-{round}-adjective-{index}' for index in range(10)]
+    [f'round-{round}-adjective-{index}'
+     for index in range(10)]
     for round in range(3)
 ]
 
