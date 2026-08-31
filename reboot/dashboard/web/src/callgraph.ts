@@ -189,7 +189,7 @@ const RANK: Record<ReasonToGenerate, number> = {
 };
 
 // The API file a generated module was written for, relative to the
-// API directory, which is how `API.files` is keyed: `shop/v1/shop.py`
+// API directory, which is how `Dashboard.files` is keyed: `shop/v1/shop.py`
 // for `shop/v1/shop_rbt.py`.
 const apiFileOfGeneratedModule = (module: string): string =>
   module.replace(/_rbt\.py$/, ".py");

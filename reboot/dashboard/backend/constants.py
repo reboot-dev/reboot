@@ -23,7 +23,7 @@ DEFAULT_DASHBOARD_PORT = 9871
 
 # The `API` state holding the shape the developer's API files
 # declare, as the dashboard application last read them.
-API_ID = 'api'
+DASHBOARD_ID = 'dashboard'
 
 # The `Implementation` state holding which of the developer's files
 # implements each state type, as the dashboard application last read
@@ -63,7 +63,7 @@ ENVVAR_RBT_GENERATED_DIRECTORY = 'RBT_GENERATED_DIRECTORY'
 # is looking at a dashboard right now. `rbt dev run` reads it to decide
 # whether to open one.
 #
-# The page names this, `API_ID` and `PREFERENCES_ID` independently,
+# The page names this, `DASHBOARD_ID` and `PREFERENCES_ID` independently,
 # in `frontend/src/constants.ts`, since TypeScript cannot read them
 # from here. Keep the two in step.
 PRESENCE_ID = 'dashboard'

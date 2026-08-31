@@ -21,9 +21,10 @@ from dataclasses import dataclass
 from functools import partial
 from google.protobuf.timestamp_pb2 import Timestamp
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_pb2 import API as APIState
-from rbt.dashboard.v1.dashboard_pb2 import Change, File
-from rbt.dashboard.v1.dashboard_rbt import API
+from rbt.dashboard.v1.dashboard_pb2 import Change
+from rbt.dashboard.v1.dashboard_pb2 import Dashboard as DashboardState
+from rbt.dashboard.v1.dashboard_pb2 import File
+from rbt.dashboard.v1.dashboard_rbt import Dashboard
 from rbt.v1alpha1.pydantic import api_pb2
 from reboot.aio.concurrently import concurrently
 from reboot.aio.contexts import WorkflowContext
@@ -94,7 +95,7 @@ def _api_files(api_directory: Path) -> list[Path]:
 
 
 def _reconstitute_known(
-    state: APIState,
+    state: DashboardState,
     *,
     api_directory: Path,
 ) -> dict[Path, ReadFile]:
@@ -123,7 +124,7 @@ def _apis(
     api_directory: Path,
 ) -> dict[str, api_pb2.API]:
     """What each file declaring an `api` declares, keyed by the file
-    relative to the API directory, the way `API.apis` is keyed."""
+    relative to the API directory, the way `Dashboard.apis` is keyed."""
     return {
         _relative(filename, api_directory): file.api
         for filename, file in sorted(known.items())
@@ -290,7 +291,7 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
 
     # What a previous run recorded: starting from it, only files that
     # changed while the dashboard was down are read again.
-    state = await API.ref().always().read(context)
+    state = await Dashboard.ref().always().read(context)
     known: Mapping[
         Path, ReadFile] = _reconstitute_known(state, api_directory=directory)
 
@@ -329,7 +330,7 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
                 # that touches several files is one entry's worth of
                 # history.
                 if known_now is not None:
-                    await API.ref().per_iteration('Update').Update(
+                    await Dashboard.ref().per_iteration('Update').Update(
                         context,
                         api_directory=api_directory,
                         error=_error(known_now, api_directory=directory),

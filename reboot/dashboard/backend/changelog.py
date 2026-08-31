@@ -52,7 +52,7 @@ from rbt.v1alpha1.pydantic.schema_pb2 import (
 from typing import Iterator, Mapping, Optional, Sequence
 
 # What the API files declare, keyed by file relative to the API
-# directory: what `API.apis` records.
+# directory: what `Dashboard.apis` records.
 APIs = Mapping[str, API]
 
 
@@ -325,7 +325,7 @@ def changes_between(before: APIs, after: APIs) -> Iterator[Change]:
     """Ordered by name, state types before data types, so that a
     retry of the `Update` call the watcher makes sends the same
     list, which is what makes the write idempotent. A change names
-    its file the way `API.apis` is keyed: relative to the API
+    its file the way `Dashboard.apis` is keyed: relative to the API
     directory.
     """
     state_types_before = _state_types(before)

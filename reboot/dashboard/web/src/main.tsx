@@ -1,5 +1,5 @@
 import {
-  useAPI,
+  useDashboard,
   useImplementation,
   usePreferences,
 } from "../../../../rbt/dashboard/v1/dashboard_rbt_react";
@@ -30,7 +30,7 @@ import {
 } from "react-router";
 import { v4 as uuidv4 } from "uuid";
 import {
-  API_ID,
+  DASHBOARD_ID,
   CHANGELOG_ID,
   IMPLEMENTATION_ID,
   PREFERENCES_ID,
@@ -850,7 +850,7 @@ const Overview: FC<{
   // The dashboard's own state: what it read of the developer's API
   // files. Nothing here calls the developer's application, so the
   // application does not have to exist.
-  const { useGet } = useAPI({ id: API_ID });
+  const { useGet } = useDashboard({ id: DASHBOARD_ID });
   const { response, isLoading } = useGet();
 
   // The client exposes no connection state. `isLoading` is the

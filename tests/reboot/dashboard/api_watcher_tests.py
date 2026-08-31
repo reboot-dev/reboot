@@ -11,13 +11,13 @@ import unittest
 from google.protobuf.json_format import MessageToDict
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import Change
-from rbt.dashboard.v1.dashboard_rbt import API
+from rbt.dashboard.v1.dashboard_rbt import Dashboard
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from rbt.v1alpha1.pydantic.schema_pb2 import INTEGER, STRING
 from reboot.aio.tests import Reboot
 from reboot.dashboard.backend.constants import (
-    API_ID,
     CHANGELOG_ID,
+    DASHBOARD_ID,
     ENVVAR_RBT_API_DIRECTORY,
 )
 from reboot.dashboard.backend.main import application
@@ -122,7 +122,8 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         whenever it changes."""
         context = self.rbt.create_external_context(name=self.id())
 
-        async for response in API.ref(API_ID).reactively().Get(context):
+        async for response in Dashboard.ref(DASHBOARD_ID
+                                           ).reactively().Get(context):
             if satisfied(response):
                 return response
 

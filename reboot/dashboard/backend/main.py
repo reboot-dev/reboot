@@ -9,22 +9,26 @@ being developed.
 """
 import asyncio
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_rbt import API, Implementation, Preferences
+from rbt.dashboard.v1.dashboard_rbt import (
+    Dashboard,
+    Implementation,
+    Preferences,
+)
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from rbt.std.presence.v1.presence_rbt import Presence
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow, allow_if, is_app_internal
 from reboot.aio.external import InitializeContext
 from reboot.dashboard.backend.constants import (
-    API_ID,
     CHANGELOG_ID,
+    DASHBOARD_ID,
     DASHBOARD_PATH,
     IMPLEMENTATION_ID,
     PREFERENCES_ID,
     PRESENCE_ID,
 )
 from reboot.dashboard.backend.servicers import (
-    APIServicer,
+    DashboardServicer,
     ImplementationServicer,
     PreferencesServicer,
 )
@@ -47,7 +51,7 @@ def application() -> Application:
     """The dashboard application, with its page mounted."""
     application = Application(
         servicers=[
-            APIServicer,
+            DashboardServicer,
             ImplementationServicer,
             PreferencesServicer,
         ] + presence.servicers(),
@@ -112,7 +116,7 @@ async def initialize(context: InitializeContext) -> None:
     # state id and `initialize`'s seed, which is itself derived from
     # the application. So a restart finds the watchers it already
     # spawned rather than starting more.
-    _ = await API.ref(API_ID).idempotently().spawn().Watch(context)
+    _ = await Dashboard.ref(DASHBOARD_ID).idempotently().spawn().Watch(context)
 
     _ = await Implementation.ref(IMPLEMENTATION_ID
                                 ).idempotently().spawn().Watch(context)

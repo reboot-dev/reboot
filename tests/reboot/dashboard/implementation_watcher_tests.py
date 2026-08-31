@@ -13,11 +13,11 @@ from rbt.dashboard.v1.dashboard_pb2 import Change, Generated
 from rbt.dashboard.v1.dashboard_pb2 import \
     Implementation as ImplementationState
 from rbt.dashboard.v1.dashboard_pb2 import Servicer
-from rbt.dashboard.v1.dashboard_rbt import API, Implementation
+from rbt.dashboard.v1.dashboard_rbt import Dashboard, Implementation
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from reboot.aio.tests import Reboot
 from reboot.dashboard.backend.constants import (
-    API_ID,
+    DASHBOARD_ID,
     CHANGELOG_ID,
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
@@ -476,7 +476,8 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        async for response in API.ref(API_ID).reactively().Get(context):
+        async for response in Dashboard.ref(DASHBOARD_ID
+                                           ).reactively().Get(context):
             if any(
                 f'{api.package}.{state_type.name}' == 'shop.v1.Shop'
                 for api in response.apis.values()

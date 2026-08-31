@@ -12,7 +12,7 @@ import type * as api_pb from "../../../../rbt/v1alpha1/pydantic/api_pb";
 import * as schema_pb from "../../../../rbt/v1alpha1/pydantic/schema_pb";
 
 // What every API file declares, by the file relative to the API
-// directory: what `API.apis` is.
+// directory: what `Dashboard.apis` is.
 export type APIs = { [filename: string]: api_pb.API };
 
 // The schema of every model the API files declare, by the name a

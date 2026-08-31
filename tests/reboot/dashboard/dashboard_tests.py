@@ -8,11 +8,11 @@ import asyncio
 import socket
 import unittest
 from google.protobuf.json_format import ParseDict
-from rbt.dashboard.v1.dashboard_rbt import API, Preferences
+from rbt.dashboard.v1.dashboard_rbt import Dashboard, Preferences
 from rbt.v1alpha1.pydantic import api_pb2
 from reboot.aio.tests import Reboot
 from reboot.dashboard.backend.constants import (
-    API_ID,
+    DASHBOARD_ID,
     DASHBOARD_PATH,
     PREFERENCES_ID,
     PRESENCE_ID,
@@ -243,7 +243,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         files is covered by `api_reader_tests` and `api_watcher_tests`.
         """
         context = self.rbt.create_external_context(name=self.id())
-        await API.ref(API_ID).Update(
+        await Dashboard.ref(DASHBOARD_ID).Update(
             context,
             api_directory='api',
             files={},
@@ -277,7 +277,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             return driver.page_source
 
         context = self.rbt.create_external_context(name=self.id())
-        await API.ref(API_ID).Update(
+        await Dashboard.ref(DASHBOARD_ID).Update(
             context,
             api_directory='api',
             files={},

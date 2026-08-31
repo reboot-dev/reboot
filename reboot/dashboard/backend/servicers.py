@@ -2,10 +2,10 @@
 import os
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import (
-    APIGetRequest,
-    APIGetResponse,
-    APIUpdateRequest,
-    APIUpdateResponse,
+    DashboardGetRequest,
+    DashboardGetResponse,
+    DashboardUpdateRequest,
+    DashboardUpdateResponse,
     ImplementationUpdateRequest,
     ImplementationUpdateResponse,
     PreferencesGetRequest,
@@ -17,7 +17,11 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     PreferencesSetSuppressOpenOnRestartRequest,
     PreferencesSetSuppressOpenOnRestartResponse,
 )
-from rbt.dashboard.v1.dashboard_rbt import API, Implementation, Preferences
+from rbt.dashboard.v1.dashboard_rbt import (
+    Dashboard,
+    Implementation,
+    Preferences,
+)
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import (
@@ -37,7 +41,7 @@ from reboot.std.item.v1.item import Item
 from reboot.uuidv7 import uuid7
 
 
-class APIServicer(API.Servicer):
+class DashboardServicer(Dashboard.Servicer):
     """Holds the shape the developer's API files declare."""
 
     def authorizer(self):
@@ -49,9 +53,9 @@ class APIServicer(API.Servicer):
     async def Get(
         self,
         context: ReaderContext,
-        request: APIGetRequest,
-    ) -> APIGetResponse:
-        return APIGetResponse(
+        request: DashboardGetRequest,
+    ) -> DashboardGetResponse:
+        return DashboardGetResponse(
             api_directory=self.state.api_directory,
             error=self.state.error if self.state.HasField('error') else None,
             files=self.state.files,
@@ -63,8 +67,8 @@ class APIServicer(API.Servicer):
     async def Watch(
         cls,
         context: WorkflowContext,
-        request: API.WatchRequest,
-    ) -> API.WatchResponse:
+        request: Dashboard.WatchRequest,
+    ) -> Dashboard.WatchResponse:
         """Returns only when the dashboard stops, reading the
         developer's API files whenever they change.
 
@@ -77,13 +81,13 @@ class APIServicer(API.Servicer):
 
         await api_watcher.watch(context, api_directory=api_directory)
 
-        return API.WatchResponse()
+        return Dashboard.WatchResponse()
 
     async def Update(
         self,
         context: TransactionContext,
-        request: APIUpdateRequest,
-    ) -> APIUpdateResponse:
+        request: DashboardUpdateRequest,
+    ) -> DashboardUpdateResponse:
         """Replaces what the API files declare and records what
         changed, newest last, as one transaction."""
         self.state.api_directory = request.api_directory
@@ -109,7 +113,7 @@ class APIServicer(API.Servicer):
                 },
             )
 
-        return APIUpdateResponse()
+        return DashboardUpdateResponse()
 
 
 class ImplementationServicer(Implementation.Servicer):

@@ -10,7 +10,7 @@ import "rbt/v1alpha1/pydantic/schema.proto";
 ////////////////////////////////////////////////////////////////////////
 
 // What the dashboard has read from the developer's API files.
-message API {
+message Dashboard {
   option (rbt.v1alpha1.state) = {
   };
 
@@ -43,9 +43,9 @@ message API {
   map<string, string> api_digests = 5;
 }
 
-message APIGetRequest {}
+message DashboardGetRequest {}
 
-message APIGetResponse {
+message DashboardGetResponse {
   string api_directory = 1;
   optional string error = 2;
   map<string, File> files = 3;
@@ -53,7 +53,7 @@ message APIGetResponse {
   map<string, string> api_digests = 5;
 }
 
-message APIUpdateRequest {
+message DashboardUpdateRequest {
   string api_directory = 1;
   optional string error = 2;
   map<string, File> files = 3;
@@ -66,7 +66,7 @@ message APIUpdateRequest {
   repeated Change changes = 4;
 }
 
-message APIUpdateResponse {}
+message DashboardUpdateResponse {}
 
 // One thing the dashboard noticed change. Each arm is one whole
 // event and says everything about itself; nothing is shared between
@@ -306,9 +306,9 @@ message CodeRemoved {
   string filename = 2;
 }
 
-message APIWatchRequest {}
+message DashboardWatchRequest {}
 
-message APIWatchResponse {}
+message DashboardWatchResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -464,7 +464,7 @@ message Generated {
 // What the dashboard application has read of the developer's
 // application: which of their files implements each state type.
 //
-// Held apart from `API` because the two are read from different
+// Held apart from `Dashboard` because the two are read from different
 // places, at different moments, and neither says anything about the
 // other. An API file says a state type exists; only the application
 // says where it is implemented. Whoever wants both asks for both.
@@ -494,7 +494,7 @@ message Implementation {
   // since a module nothing imports yet is still generated. Empty
   // when no generated directory was named.
   //
-  // Against `API.files`, this says whether an API file's generated
+  // Against `Dashboard.files`, this says whether an API file's generated
   // code is missing or out of date, which is what suggests running
   // `rbt generate`.
   map<string, Generated> generated = 4;
@@ -584,8 +584,8 @@ message PreferencesSetNavWidthResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
-service APIMethods {
-  rpc Get(APIGetRequest) returns (APIGetResponse) {
+service DashboardMethods {
+  rpc Get(DashboardGetRequest) returns (DashboardGetResponse) {
     option (rbt.v1alpha1.method).reader = {
     };
   }
@@ -594,14 +594,14 @@ service APIMethods {
   // as one transaction. Assigns each change its key, so that a
   // workflow retrying this call sends an identical request every
   // attempt.
-  rpc Update(APIUpdateRequest) returns (APIUpdateResponse) {
+  rpc Update(DashboardUpdateRequest) returns (DashboardUpdateResponse) {
     option (rbt.v1alpha1.method).transaction = {
     };
   }
 
   // Watches the developer's API files for as long as the dashboard
   // application runs, reading each one that changes.
-  rpc Watch(APIWatchRequest) returns (APIWatchResponse) {
+  rpc Watch(DashboardWatchRequest) returns (DashboardWatchResponse) {
     option (rbt.v1alpha1.method).workflow = {
     };
   }
