@@ -474,10 +474,13 @@ class React:
                         self._state_type_name, self._state_ref
                     )
 
-                    call = react_pb2_grpc.ReactStub(channel).Query(
+                    stub = react_pb2_grpc.ReactStub(channel)
+
+                    call = stub.Query(
                         react_pb2.QueryRequest(
                             method=self._method,
                             request=serialized_request,
+                            client_can_acknowledge_responses=True,
                         ),
                         metadata=metadata,
                     )
@@ -498,25 +501,44 @@ class React:
                         assert task is not None
 
                         async for query_response in call:
-                            if not query_response.HasField('response'):
-                                continue
+                            if query_response.HasField('response'):
+                                response = self._response_type()
+                                response.ParseFromString(
+                                    query_response.response
+                                )
 
-                            response = self._response_type()
-                            response.ParseFromString(query_response.response)
+                                self._used_response[task].clear()
 
-                            self._used_response[task].clear()
+                                self._calls[task] = call
 
-                            self._calls[task] = call
+                                self._responses[task] = asyncio.Future()
+                                self._responses[task].set_result(response)
 
-                            self._responses[task] = asyncio.Future()
-                            self._responses[task].set_result(response)
+                                if not have_first_response.is_set():
+                                    have_first_response.set()
+                                else:
+                                    self._event.set()
 
-                            if not have_first_response.is_set():
-                                have_first_response.set()
-                            else:
-                                self._event.set()
+                                await self._used_response[task].wait()
 
-                            await self._used_response[task].wait()
+                            # Only now that the response has been used
+                            # do we ask for a next one, so that we
+                            # can't fall behind a server that produces
+                            # responses faster than we consume them.
+                            # See
+                            # https://github.com/reboot-dev/mono/issues/4754.
+                            # An older backend doesn't send an ID and
+                            # doesn't expect an acknowledgement.
+                            if query_response.query_response_id != '':
+                                await stub.AcknowledgeQueryResponse(
+                                    react_pb2.AcknowledgeQueryResponseRequest(
+                                        query_response_id=query_response.
+                                        query_response_id,
+                                    ),
+                                    # The same metadata ensures we're
+                                    # routed to the same server.
+                                    metadata=metadata,
+                                )
 
                         raise RuntimeError('React.Query should be infinite')
 

@@ -21331,13 +21331,16 @@ class Ping:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='Describe',
                                     request=PingDescribeRequestToProto(
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -21353,13 +21356,29 @@ class Ping:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = reboot.ping.ping_api_pb2.PingDescribeResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield PingDescribeResponseFromProto(__response__)
 
-                                __response__ = reboot.ping.ping_api_pb2.PingDescribeResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield PingDescribeResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -21466,13 +21485,16 @@ class Ping:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='NumPings',
                                     request=PingNumPingsRequestToProto(
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -21488,13 +21510,29 @@ class Ping:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = reboot.ping.ping_api_pb2.PingNumPingsResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield PingNumPingsResponseFromProto(__response__)
 
-                                __response__ = reboot.ping.ping_api_pb2.PingNumPingsResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield PingNumPingsResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -24116,13 +24154,16 @@ class Pong:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='NumPongs',
                                     request=PongNumPongsRequestToProto(
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -24138,13 +24179,29 @@ class Pong:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = reboot.ping.ping_api_pb2.PongNumPongsResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield PongNumPongsResponseFromProto(__response__)
 
-                                __response__ = reboot.ping.ping_api_pb2.PongNumPongsResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield PongNumPongsResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -26852,13 +26909,16 @@ class User:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='ListCounters',
                                     request=UserListCountersRequestToProto(
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -26874,13 +26934,29 @@ class User:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = reboot.ping.ping_api_pb2.UserListCountersResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield UserListCountersResponseFromProto(__response__)
 
-                                __response__ = reboot.ping.ping_api_pb2.UserListCountersResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield UserListCountersResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -26987,13 +27063,16 @@ class User:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='Whoami',
                                     request=UserWhoamiRequestToProto(
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -27009,13 +27088,29 @@ class User:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = reboot.ping.ping_api_pb2.UserWhoamiResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield UserWhoamiResponseFromProto(__response__)
 
-                                __response__ = reboot.ping.ping_api_pb2.UserWhoamiResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield UserWhoamiResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -30632,13 +30727,16 @@ class Counter:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='Value',
                                     request=CounterValueRequestToProto(
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -30654,13 +30752,29 @@ class Counter:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = reboot.ping.ping_api_pb2.CounterValueResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield CounterValueResponseFromProto(__response__)
 
-                                __response__ = reboot.ping.ping_api_pb2.CounterValueResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield CounterValueResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -30767,13 +30881,16 @@ class Counter:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='Description',
                                     request=CounterDescriptionRequestToProto(
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -30789,13 +30906,29 @@ class Counter:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = reboot.ping.ping_api_pb2.CounterDescriptionResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield CounterDescriptionResponseFromProto(__response__)
 
-                                __response__ = reboot.ping.ping_api_pb2.CounterDescriptionResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield CounterDescriptionResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server

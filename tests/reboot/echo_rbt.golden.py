@@ -20844,14 +20844,17 @@ class Echo:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='Replay',
                                     request=EchoReplayRequestToProto(
                                         __request__
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -20867,13 +20870,29 @@ class Echo:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = tests.reboot.echo_pb2.ReplayResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield EchoReplayResponseFromProto(__response__)
 
-                                __response__ = tests.reboot.echo_pb2.ReplayResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield EchoReplayResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -21021,14 +21040,17 @@ class Echo:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='WaitFor',
                                     request=EchoWaitForRequestToProto(
                                         __request__
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -21044,13 +21066,29 @@ class Echo:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = tests.reboot.echo_pb2.WaitForResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield EchoWaitForResponseFromProto(__response__)
 
-                                __response__ = tests.reboot.echo_pb2.WaitForResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield EchoWaitForResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server

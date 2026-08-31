@@ -21735,14 +21735,17 @@ class Greeter:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='Greet',
                                     request=GreeterGreetRequestToProto(
                                         __request__
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -21758,13 +21761,29 @@ class Greeter:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = tests.reboot.greeter_pb2.GreetResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield GreeterGreetResponseFromProto(__response__)
 
-                                __response__ = tests.reboot.greeter_pb2.GreetResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield GreeterGreetResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -21906,14 +21925,17 @@ class Greeter:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='TryToConstructContext',
                                     request=GreeterTryToConstructContextRequestToProto(
                                         __request__
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -21929,13 +21951,29 @@ class Greeter:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = google.protobuf.empty_pb2.Empty()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield GreeterTryToConstructContextResponseFromProto(__response__)
 
-                                __response__ = google.protobuf.empty_pb2.Empty()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield GreeterTryToConstructContextResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -22077,14 +22115,17 @@ class Greeter:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='TryToConstructExternalContext',
                                     request=GreeterTryToConstructExternalContextRequestToProto(
                                         __request__
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -22100,13 +22141,29 @@ class Greeter:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = google.protobuf.empty_pb2.Empty()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield GreeterTryToConstructExternalContextResponseFromProto(__response__)
 
-                                __response__ = google.protobuf.empty_pb2.Empty()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield GreeterTryToConstructExternalContextResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -22254,14 +22311,17 @@ class Greeter:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='TestLongRunningFetch',
                                     request=GreeterTestLongRunningFetchRequestToProto(
                                         __request__
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -22277,13 +22337,29 @@ class Greeter:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = google.protobuf.empty_pb2.Empty()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield GreeterTestLongRunningFetchResponseFromProto(__response__)
 
-                                __response__ = google.protobuf.empty_pb2.Empty()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield GreeterTestLongRunningFetchResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -22425,14 +22501,17 @@ class Greeter:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='GetWholeState',
                                     request=GreeterGetWholeStateRequestToProto(
                                         __request__
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -22448,13 +22527,29 @@ class Greeter:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = tests.reboot.greeter_pb2.Greeter()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield GreeterGetWholeStateResponseFromProto(__response__)
 
-                                __response__ = tests.reboot.greeter_pb2.Greeter()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield GreeterGetWholeStateResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -22596,14 +22691,17 @@ class Greeter:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='FailWithException',
                                     request=GreeterFailWithExceptionRequestToProto(
                                         __request__
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -22619,13 +22717,29 @@ class Greeter:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = google.protobuf.empty_pb2.Empty()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield GreeterFailWithExceptionResponseFromProto(__response__)
 
-                                __response__ = google.protobuf.empty_pb2.Empty()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield GreeterFailWithExceptionResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -22767,14 +22881,17 @@ class Greeter:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='FailWithAborted',
                                     request=GreeterFailWithAbortedRequestToProto(
                                         __request__
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -22790,13 +22907,29 @@ class Greeter:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = google.protobuf.empty_pb2.Empty()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield GreeterFailWithAbortedResponseFromProto(__response__)
 
-                                __response__ = google.protobuf.empty_pb2.Empty()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield GreeterFailWithAbortedResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -22938,14 +23071,17 @@ class Greeter:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='ReadRecursiveMessage',
                                     request=GreeterReadRecursiveMessageRequestToProto(
                                         __request__
                                     ).SerializeToString(),
+                                    client_can_acknowledge_responses=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -22961,13 +23097,29 @@ class Greeter:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = tests.reboot.greeter_pb2.ReadRecursiveMessageResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield GreeterReadRecursiveMessageResponseFromProto(__response__)
 
-                                __response__ = tests.reboot.greeter_pb2.ReadRecursiveMessageResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield GreeterReadRecursiveMessageResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we ask the server for a next one,
+                                # so that we can't fall behind a server that
+                                # produces responses faster than we consume
+                                # them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                # An older backend doesn't send an ID and
+                                # doesn't expect an acknowledgement.
+                                if __query_response__.query_response_id != "":
+                                    await __stub__.AcknowledgeQueryResponse(
+                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                            query_response_id=__query_response__.query_response_id,
+                                        ),
+                                        # The same metadata ensures we're routed
+                                        # to the same server.
+                                        metadata=__metadata__,
+                                    )
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
