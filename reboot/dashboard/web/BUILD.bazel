@@ -58,7 +58,7 @@ esbuild(
     output = "dashboard_bundle.js",
     platform = "browser",
     tsconfig = "tsconfig.json",
-    visibility = ["//reboot/dashboard:__pkg__"],
+    visibility = ["//reboot/dashboard/backend:__pkg__"],
 )
 
 exports_files(
@@ -67,5 +67,5 @@ exports_files(
         "index.html",
         "reboot-logo.svg",
     ],
-    visibility = ["//reboot/dashboard:__pkg__"],
+    visibility = ["//reboot/dashboard/backend:__pkg__"],
 )

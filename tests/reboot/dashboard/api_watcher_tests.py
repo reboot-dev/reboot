@@ -15,13 +15,13 @@ from rbt.dashboard.v1.dashboard_rbt import API
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from rbt.v1alpha1.pydantic.schema_pb2 import INTEGER, STRING
 from reboot.aio.tests import Reboot
-from reboot.dashboard.constants import (
+from reboot.dashboard.backend.constants import (
     API_ID,
     CHANGELOG_ID,
     ENVVAR_RBT_API_DIRECTORY,
 )
-from reboot.dashboard.main import application
-from reboot.dashboard.walk import _modified_at
+from reboot.dashboard.backend.main import application
+from reboot.dashboard.backend.walk import _modified_at
 from typing import Optional
 from unittest.mock import patch
 

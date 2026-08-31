@@ -19,12 +19,12 @@ from rbt.std.presence.v1.presence_rbt import Presence
 from rbt.v1alpha1.errors_pb2 import NotFound
 from reboot.aio.tests import Reboot
 from reboot.cli.commands.dev import _open_dashboard_once
-from reboot.dashboard.constants import (
+from reboot.dashboard.backend.constants import (
     DASHBOARD_PATH,
     PREFERENCES_ID,
     PRESENCE_ID,
 )
-from reboot.dashboard.main import application
+from reboot.dashboard.backend.main import application
 from unittest.mock import patch
 
 

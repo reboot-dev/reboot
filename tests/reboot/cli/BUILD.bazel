@@ -43,7 +43,7 @@ py_test(
         ":mock_exit_py",
         "//reboot/cli/common:cli_py",
         "//reboot/cli/common:rc_py",
-        "//reboot/dashboard:constants_py",
+        "//reboot/dashboard/backend:constants_py",
     ],
 )
 

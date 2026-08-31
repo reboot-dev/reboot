@@ -56,7 +56,7 @@ from reboot.cli.common.transpile import (
 )
 from reboot.cli.common.watch import FileWatcher, file_watcher
 from reboot.controller.plan_makers import validate_num_servers
-from reboot.dashboard.constants import (
+from reboot.dashboard.backend.constants import (
     DASHBOARD_PATH,
     DEFAULT_DASHBOARD_PORT,
     PREFERENCES_ID,

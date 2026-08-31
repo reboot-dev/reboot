@@ -15,8 +15,8 @@ import uuid
 from rbt.dashboard.v1.dashboard_rbt import Preferences
 from reboot.aio.external import InitializeContext
 from reboot.aio.tests import Reboot
-from reboot.dashboard.constants import PREFERENCES_ID
-from reboot.dashboard.main import application, initialize
+from reboot.dashboard.backend.constants import PREFERENCES_ID
+from reboot.dashboard.backend.main import application, initialize
 
 
 class PreferencesTest(unittest.IsolatedAsyncioTestCase):

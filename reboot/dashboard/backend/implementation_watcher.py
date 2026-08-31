@@ -61,9 +61,9 @@ from reboot.aio.contexts import WorkflowContext
 from reboot.aio.cooperatively import cooperatively
 from reboot.aio.workflows import at_least_once
 from reboot.cli.common.watch import file_watcher
-from reboot.dashboard.changelog import code_changes_between
-from reboot.dashboard.pyright import Location, Pyright
-from reboot.dashboard.walk import (
+from reboot.dashboard.backend.changelog import code_changes_between
+from reboot.dashboard.backend.pyright import Location, Pyright
+from reboot.dashboard.backend.walk import (
     GENERATED_SUFFIXES,
     SOURCE_GLOB,
     Dependency,

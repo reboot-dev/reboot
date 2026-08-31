@@ -19,7 +19,7 @@ from reboot.cli.common.directories import (
 )
 from reboot.cli.common.rc import ArgumentParser
 from reboot.cli.common.subprocesses import Subprocesses
-from reboot.dashboard.constants import (
+from reboot.dashboard.backend.constants import (
     DASHBOARD_PATH,
     DEFAULT_DASHBOARD_PORT,
     ENVVAR_RBT_API_DIRECTORY,
@@ -252,7 +252,7 @@ async def _run_dashboard(
         async with subprocesses.exec(
             sys.executable,
             '-m',
-            'reboot.dashboard.main',
+            'reboot.dashboard.backend.main',
             env=env,
         ) as process:
             await process.wait()

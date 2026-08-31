@@ -17,7 +17,7 @@ from rbt.v1alpha1.pydantic.schema_pb2 import (
     Schema,
     Type,
 )
-from reboot.dashboard.api_reader import read_api_file
+from reboot.dashboard.backend.api_reader import read_api_file
 
 API_DIRECTORY = str(Path(__file__).parent / 'api')
 

@@ -11,13 +11,13 @@ from google.protobuf.json_format import ParseDict
 from rbt.dashboard.v1.dashboard_rbt import API, Preferences
 from rbt.v1alpha1.pydantic import api_pb2
 from reboot.aio.tests import Reboot
-from reboot.dashboard.constants import (
+from reboot.dashboard.backend.constants import (
     API_ID,
     DASHBOARD_PATH,
     PREFERENCES_ID,
     PRESENCE_ID,
 )
-from reboot.dashboard.main import application
+from reboot.dashboard.backend.main import application
 from reboot.std.presence.v1.presence import Presence
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions

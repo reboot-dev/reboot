@@ -135,10 +135,10 @@ genrule(
     name = "dashboard_dist",
     srcs = [
         "//:node_modules/@xyflow/react/dir",
-        "//reboot/dashboard/frontend:dashboard.css",
-        "//reboot/dashboard/frontend:dashboard_bundle.js",
-        "//reboot/dashboard/frontend:index.html",
-        "//reboot/dashboard/frontend:reboot-logo.svg",
+        "//reboot/dashboard/web:dashboard.css",
+        "//reboot/dashboard/web:dashboard_bundle.js",
+        "//reboot/dashboard/web:index.html",
+        "//reboot/dashboard/web:reboot-logo.svg",
     ],
     outs = [
         "dashboard/index.html",
@@ -148,13 +148,13 @@ genrule(
         "dashboard/xyflow-react.css",
     ],
     cmd = "sed 's|\\./src/main\\.tsx|./dashboard_bundle.js|' " +
-          "$(location //reboot/dashboard/frontend:index.html) " +
+          "$(location //reboot/dashboard/web:index.html) " +
           "> $(location dashboard/index.html) && " +
-          "cp $(location //reboot/dashboard/frontend:dashboard.css) " +
+          "cp $(location //reboot/dashboard/web:dashboard.css) " +
           "$(location dashboard/dashboard.css) && " +
-          "cp $(location //reboot/dashboard/frontend:dashboard_bundle.js) " +
+          "cp $(location //reboot/dashboard/web:dashboard_bundle.js) " +
           "$(location dashboard/dashboard_bundle.js) && " +
-          "cp $(location //reboot/dashboard/frontend:reboot-logo.svg) " +
+          "cp $(location //reboot/dashboard/web:reboot-logo.svg) " +
           "$(location dashboard/reboot-logo.svg) && " +
           "cp $(location //:node_modules/@xyflow/react/dir)/dist/style.css " +
           "$(location dashboard/xyflow-react.css)",

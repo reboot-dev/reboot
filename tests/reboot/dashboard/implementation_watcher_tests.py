@@ -16,7 +16,7 @@ from rbt.dashboard.v1.dashboard_pb2 import Servicer
 from rbt.dashboard.v1.dashboard_rbt import API, Implementation
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from reboot.aio.tests import Reboot
-from reboot.dashboard.constants import (
+from reboot.dashboard.backend.constants import (
     API_ID,
     CHANGELOG_ID,
     ENVVAR_RBT_API_DIRECTORY,
@@ -24,7 +24,7 @@ from reboot.dashboard.constants import (
     ENVVAR_RBT_GENERATED_DIRECTORY,
     IMPLEMENTATION_ID,
 )
-from reboot.dashboard.implementation_watcher import (
+from reboot.dashboard.backend.implementation_watcher import (
     AnalyzedFile,
     MethodDefinition,
     _analyze,
@@ -35,9 +35,9 @@ from reboot.dashboard.implementation_watcher import (
     _reconstitute_known,
     extract_and_sort_servicers,
 )
-from reboot.dashboard.main import application
-from reboot.dashboard.pyright import Pyright
-from reboot.dashboard.walk import _walk
+from reboot.dashboard.backend.main import application
+from reboot.dashboard.backend.pyright import Pyright
+from reboot.dashboard.backend.walk import _walk
 from typing import Optional
 from unittest.mock import patch
 

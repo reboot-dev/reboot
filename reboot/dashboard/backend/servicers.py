@@ -26,8 +26,8 @@ from reboot.aio.contexts import (
     WorkflowContext,
     WriterContext,
 )
-from reboot.dashboard import api_watcher, implementation_watcher
-from reboot.dashboard.constants import (
+from reboot.dashboard.backend import api_watcher, implementation_watcher
+from reboot.dashboard.backend.constants import (
     CHANGELOG_ID,
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,

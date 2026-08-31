@@ -9,7 +9,7 @@ py_test(
     data = glob(["api/**"]),
     main = "api_reader_tests.py",
     deps = [
-        "//reboot/dashboard:api_reader_py",
+        "//reboot/dashboard/backend:api_reader_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:api_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:schema_py_proto",
     ],
@@ -32,9 +32,9 @@ py_test(
     main = "api_watcher_tests.py",
     deps = [
         "//reboot/aio:tests_py",
-        "//reboot/dashboard:api_watcher_py",
-        "//reboot/dashboard:main_py",
-        "//reboot/dashboard:walk_py",
+        "//reboot/dashboard/backend:api_watcher_py",
+        "//reboot/dashboard/backend:main_py",
+        "//reboot/dashboard/backend:walk_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:schema_py_proto",
     ],
 )
@@ -49,9 +49,9 @@ py_test(
     main = "implementation_watcher_tests.py",
     deps = [
         "//reboot/aio:tests_py",
-        "//reboot/dashboard:implementation_watcher_py",
-        "//reboot/dashboard:main_py",
-        "//reboot/dashboard:walk_py",
+        "//reboot/dashboard/backend:implementation_watcher_py",
+        "//reboot/dashboard/backend:main_py",
+        "//reboot/dashboard/backend:walk_py",
     ],
 )
 
@@ -72,8 +72,8 @@ py_web_test_suite_env(
     ],
     deps = [
         "//reboot/aio:tests_py",
-        "//reboot/dashboard:api_watcher_py",
-        "//reboot/dashboard:main_py",
+        "//reboot/dashboard/backend:api_watcher_py",
+        "//reboot/dashboard/backend:main_py",
         "//reboot/std/presence/v1:presence_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:schema_py_proto",
         "@io_bazel_rules_webtesting//testing/web",
@@ -87,7 +87,7 @@ py_test(
     deps = [
         "//rbt/dashboard/v1:dashboard_py_reboot",
         "//reboot/aio:tests_py",
-        "//reboot/dashboard:main_py",
+        "//reboot/dashboard/backend:main_py",
     ],
 )
 
@@ -101,7 +101,7 @@ py_test(
         "//rbt/std/presence/v1:presence_py_reboot",
         "//reboot/aio:tests_py",
         "//reboot/cli/commands:dev_py",
-        "//reboot/dashboard:main_py",
+        "//reboot/dashboard/backend:main_py",
     ],
 )
 
@@ -117,11 +117,11 @@ genrule(
     # Run from this package with a relative `api`, the way
     # `rbt dashboard --api-directory=api` does.
     cmd = "OUT=$$PWD/$@ && " +
-          "READER=$$PWD/$(location //reboot/dashboard:api_reader) && " +
+          "READER=$$PWD/$(location //reboot/dashboard/backend:api_reader) && " +
           "cd $$(dirname $(location api/shop/v1/shop.py))/../../.. && " +
           "echo 'export default ' > $$OUT && " +
           "$$READER api shop/v1/shop.py >> $$OUT",
-    tools = ["//reboot/dashboard:api_reader"],
+    tools = ["//reboot/dashboard/backend:api_reader"],
 )
 
 ts_project(
@@ -144,7 +144,7 @@ ts_project(
         "//rbt/dashboard/v1:dashboard_js_proto",
         "//rbt/v1alpha1/pydantic:api_js_proto",
         "//rbt/v1alpha1/pydantic:schema_js_proto",
-        "//reboot/dashboard/frontend:dashboard_ts",
+        "//reboot/dashboard/web:dashboard_ts",
         "//reboot/std/vitest:vitest_ts",
     ],
 )

@@ -15,7 +15,7 @@ from rbt.std.presence.v1.presence_rbt import Presence
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow, allow_if, is_app_internal
 from reboot.aio.external import InitializeContext
-from reboot.dashboard.constants import (
+from reboot.dashboard.backend.constants import (
     API_ID,
     CHANGELOG_ID,
     DASHBOARD_PATH,
@@ -23,7 +23,7 @@ from reboot.dashboard.constants import (
     PREFERENCES_ID,
     PRESENCE_ID,
 )
-from reboot.dashboard.servicers import (
+from reboot.dashboard.backend.servicers import (
     APIServicer,
     ImplementationServicer,
     PreferencesServicer,

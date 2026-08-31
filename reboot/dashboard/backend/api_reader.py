@@ -2,7 +2,7 @@
 
 Run as a subprocess:
 
-    python -m reboot.dashboard.api_reader <api-directory> \\
+    python -m reboot.dashboard.backend.api_reader <api-directory> \\
         <file-relative-to-it>
 
 and it writes what the file declares to stdout, as proto JSON of an
@@ -64,7 +64,7 @@ async def read_api_file(
         '-m',
         # Not `__name__`, which is `__main__` when this module is the
         # one being run.
-        'reboot.dashboard.api_reader',
+        'reboot.dashboard.backend.api_reader',
         api_directory,
         filename,
         stdout=asyncio.subprocess.PIPE,

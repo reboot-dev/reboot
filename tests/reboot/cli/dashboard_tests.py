@@ -5,7 +5,7 @@ from reboot.cli.commands import dashboard
 from reboot.cli.common import cli
 from reboot.cli.common.directories import dot_rbt_directory
 from reboot.cli.common.rc import ArgumentParser
-from reboot.dashboard.constants import DEFAULT_DASHBOARD_PORT
+from reboot.dashboard.backend.constants import DEFAULT_DASHBOARD_PORT
 from tests.reboot.cli.mock_exit import mock_raise_instead_of_exit
 from unittest.mock import patch
 

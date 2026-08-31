@@ -29,9 +29,9 @@ from reboot.aio.concurrently import concurrently
 from reboot.aio.contexts import WorkflowContext
 from reboot.aio.workflows import at_least_once
 from reboot.cli.common.watch import file_watcher
-from reboot.dashboard.api_reader import read_api_file
-from reboot.dashboard.changelog import changes_between
-from reboot.dashboard.walk import (
+from reboot.dashboard.backend.api_reader import read_api_file
+from reboot.dashboard.backend.changelog import changes_between
+from reboot.dashboard.backend.walk import (
     GENERATED_SUFFIXES,
     SOURCE_GLOB,
     Dependency,
