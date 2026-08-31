@@ -25,6 +25,8 @@ import {
   Navigate,
   Route,
   Routes,
+  useLocation,
+  useNavigationType,
   useParams,
 } from "react-router";
 import { v4 as uuidv4 } from "uuid";
@@ -833,6 +835,18 @@ const ChangelogPage: FC<{
   );
 };
 
+// Whether this page load has scrolled to the element the URL names,
+// so a later back or forward keeps the scroll the developer left
+// instead. At module level because `Overview` remounts on every
+// route change.
+let scrolledToTarget = false;
+
+// The `.pane`'s scroll for each history entry, remembered when the
+// entry is left and restored when a back or forward returns to it.
+// The pane, not the window, is what scrolls, so the browser's own
+// scroll restoration never applies to it.
+const paneScrollTops = new Map<string, number>();
+
 const Overview: FC<{
   page: Page;
   navWidth: number;
@@ -844,6 +858,7 @@ const Overview: FC<{
     methods: string[],
     expanded: boolean
   ) => void;
+  preferencesLoaded: boolean;
 }> = ({
   page,
   navWidth,
@@ -851,6 +866,7 @@ const Overview: FC<{
   onNavResized,
   isMethodExpanded,
   onToggleMethods,
+  preferencesLoaded,
 }) => {
   // `Panel` reads `defaultSize` once, when it mounts, and the stored
   // width arrives from the application later. The effect below resizes
@@ -999,19 +1015,63 @@ const Overview: FC<{
           "data type"
         )} in ${countWithNoun(packages.length, "package")}`;
 
-  // The browser scrolls to the element the URL hash names only if it
-  // exists when the hash changes, and it does not exist on a page that
-  // was not showing then. Once that page has rendered, scroll to it.
+  // The page scrolls to the element the URL names only if it exists
+  // when the URL changes, and it does not exist on a page that was
+  // not showing then. Once that page has rendered, scroll to it.
+  //
+  // Only when the developer navigated here: on back and forward,
+  // which the router reports as `POP`, the scroll they left is
+  // restored below instead, and snapping to the target would land
+  // somewhere else. A fresh page load also reports `POP`, and there
+  // the target is the intent, which `scrolledToTarget` says.
+  const navigationType = useNavigationType();
   useEffect(() => {
     if (target === undefined) {
       return;
     }
-    document.getElementById(pathOfTypeOnPage(page, target))?.scrollIntoView();
-  }, [page, target, apis, linkedDataTypes]);
+    if (navigationType === "POP" && scrolledToTarget) {
+      return;
+    }
+    const element = document.getElementById(pathOfTypeOnPage(page, target));
+    if (element !== null) {
+      element.scrollIntoView();
+      scrolledToTarget = true;
+    }
+  }, [navigationType, page, target, apis, linkedDataTypes]);
+
+  const pane = useRef<HTMLDivElement>(null);
+  const location = useLocation();
+  const loaded = !(isLoading && stateTypeCount === 0) && preferencesLoaded;
+
+  // Remembered when this entry is left: the cleanup runs while the
+  // pane is still on screen.
+  useEffect(() => {
+    const key = location.key;
+    return () => {
+      paneScrollTops.set(key, pane.current?.scrollTop ?? 0);
+    };
+  }, [location.key]);
+
+  // Restored only once the entry's content is on screen, so the
+  // offset is applied against the heights the developer was looking
+  // at, not a page that is still loading.
+  useLayoutEffect(() => {
+    if (navigationType !== "POP" || !loaded) {
+      return;
+    }
+    const scrollTop = paneScrollTops.get(location.key);
+    if (scrollTop !== undefined) {
+      pane.current?.scrollTo(0, scrollTop);
+    }
+  }, [navigationType, location.key, loaded]);
 
   // Only until the first read; while reloading, `response` keeps the
-  // types last read, so the page shows those instead.
-  if (isLoading && stateTypeCount === 0) {
+  // types last read, so the page shows those instead. The
+  // preferences read is waited for too, so the first paint has each
+  // method's detail already open or closed: the browser measures its
+  // restored scroll offset against the final layout, not one that
+  // grows when the preferences arrive.
+  if ((isLoading && stateTypeCount === 0) || !preferencesLoaded) {
     return (
       <main>
         <h1>Reboot application</h1>
@@ -1078,7 +1138,10 @@ const Overview: FC<{
       </Panel>
       <Separator className="nav-resizer" />
       <Panel className="pane-panel">
-        <div className={page === "graph" ? "pane graph-pane" : "pane"}>
+        <div
+          className={page === "graph" ? "pane graph-pane" : "pane"}
+          ref={pane}
+        >
           <header>
             <div className="eyebrow">{eyebrow}</div>
             <h1>{heading}</h1>
@@ -1248,6 +1311,7 @@ const App: FC = () => {
                   onNavResized={onNavResized}
                   isMethodExpanded={isMethodExpanded}
                   onToggleMethods={onToggleMethods}
+                  preferencesLoaded={response !== undefined}
                 />
               }
               key={page}
