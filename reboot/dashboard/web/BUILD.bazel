@@ -64,6 +64,7 @@ esbuild(
 exports_files(
     [
         "dashboard.css",
+        "favicon.svg",
         "index.html",
         "reboot-logo.svg",
     ],

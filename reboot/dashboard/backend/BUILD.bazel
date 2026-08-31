@@ -149,12 +149,14 @@ genrule(
         "//reboot/dashboard/web:dashboard.css",
         "//reboot/dashboard/web:dashboard_bundle.js",
         "//reboot/dashboard/web:index.html",
+        "//reboot/dashboard/web:favicon.svg",
         "//reboot/dashboard/web:reboot-logo.svg",
     ],
     outs = [
         "dashboard/index.html",
         "dashboard/dashboard.css",
         "dashboard/dashboard_bundle.js",
+        "dashboard/favicon.svg",
         "dashboard/reboot-logo.svg",
         "dashboard/xyflow-react.css",
     ],
@@ -165,6 +167,8 @@ genrule(
           "$(location dashboard/dashboard.css) && " +
           "cp $(location //reboot/dashboard/web:dashboard_bundle.js) " +
           "$(location dashboard/dashboard_bundle.js) && " +
+          "cp $(location //reboot/dashboard/web:favicon.svg) " +
+          "$(location dashboard/favicon.svg) && " +
           "cp $(location //reboot/dashboard/web:reboot-logo.svg) " +
           "$(location dashboard/reboot-logo.svg) && " +
           "cp $(location //:node_modules/@xyflow/react/dir)/dist/style.css " +
