@@ -723,15 +723,18 @@ const graphViews = new Map<
   string,
   {
     viewport: Viewport;
-    selectedMethodId: string | null;
     collapsed: ReadonlySet<string>;
   }
 >();
 
 const GraphCanvas: FC<{
   packages: GraphPackage[];
+  // The chosen method's id, which is what the URL names: choosing
+  // one is a navigation, so back steps to the one chosen before.
+  selectedMethodId: string | null;
+  onSelectMethod: (id: string | null, replace?: boolean) => void;
   onOpenMethod: (id: string) => void;
-}> = ({ packages, onOpenMethod }) => {
+}> = ({ packages, selectedMethodId, onSelectMethod, onOpenMethod }) => {
   const location = useLocation();
   const saved =
     useNavigationType() === "POP" ? graphViews.get(location.key) : undefined;
@@ -741,19 +744,13 @@ const GraphCanvas: FC<{
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
     saved?.collapsed ?? new Set()
   );
-  // The chosen method's id. Opening and closing boxes leaves it
-  // chosen, so its calls can be followed into whichever box they land
-  // in; only closing its own box lets it go, since its row is gone.
-  const [selectedMethodId, setSelectedMethodId] = useState<string | null>(
-    saved?.selectedMethodId ?? null
-  );
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const { fitView, getViewport, setViewport } = useReactFlow();
 
   // What the cleanup below remembers: the cleanup closes over the
   // first render's state, so it reads these instead.
-  const view = useRef({ selectedMethodId, collapsed });
-  view.current = { selectedMethodId, collapsed };
+  const view = useRef({ collapsed });
+  view.current = { collapsed };
 
   useEffect(() => {
     if (saved !== undefined) {
@@ -844,24 +841,32 @@ const GraphCanvas: FC<{
     [packages, collapsed]
   );
 
-  const togglePackage = useCallback((name: string) => {
-    clickedBoxId.current = packageNodeId(name);
-    setCollapsed((collapsed) => {
-      const nextCollapsed = new Set(collapsed);
-      if (nextCollapsed.has(name)) {
-        nextCollapsed.delete(name);
-      } else {
-        nextCollapsed.add(name);
+  const togglePackage = useCallback(
+    (name: string) => {
+      clickedBoxId.current = packageNodeId(name);
+      setCollapsed((collapsed) => {
+        const nextCollapsed = new Set(collapsed);
+        if (nextCollapsed.has(name)) {
+          nextCollapsed.delete(name);
+        } else {
+          nextCollapsed.add(name);
+        }
+        return nextCollapsed;
+      });
+      // Closing the chosen method's own box lets it go, since its
+      // row is gone; replaced rather than pushed, since the reader
+      // clicked the box, not the choice.
+      if (
+        selectedMethodId !== null &&
+        packageOfStateTypeName(stateTypeNameOfMethodId(selectedMethodId)) ===
+          name &&
+        !collapsed.has(name)
+      ) {
+        onSelectMethod(null, true);
       }
-      return nextCollapsed;
-    });
-    setSelectedMethodId((selectedMethodId) =>
-      selectedMethodId !== null &&
-      packageOfStateTypeName(stateTypeNameOfMethodId(selectedMethodId)) === name
-        ? null
-        : selectedMethodId
-    );
-  }, []);
+    },
+    [collapsed, selectedMethodId, onSelectMethod]
+  );
 
   const setAllCollapsed = useCallback(
     (allCollapsed: boolean) => {
@@ -870,18 +875,19 @@ const GraphCanvas: FC<{
       setCollapsed(
         new Set(allCollapsed ? packages.map((pkg) => pkg.name) : [])
       );
-      if (allCollapsed) {
-        setSelectedMethodId(null);
+      if (allCollapsed && selectedMethodId !== null) {
+        onSelectMethod(null, true);
       }
     },
-    [packages]
+    [packages, selectedMethodId, onSelectMethod]
   );
 
-  const toggleMethodSelection = useCallback((id: string) => {
-    setSelectedMethodId((selectedMethodId) =>
-      selectedMethodId === id ? null : id
-    );
-  }, []);
+  const toggleMethodSelection = useCallback(
+    (id: string) => {
+      onSelectMethod(selectedMethodId === id ? null : id);
+    },
+    [selectedMethodId, onSelectMethod]
+  );
 
   // With a method chosen, its own card and whatever its calls land
   // on; nothing else. A box never fades: it is the room its cards
@@ -968,7 +974,11 @@ const GraphCanvas: FC<{
           togglePackage((node.data as PackageData).name);
         }
       }}
-      onPaneClick={() => setSelectedMethodId(null)}
+      onPaneClick={() => {
+        if (selectedMethodId !== null) {
+          onSelectMethod(null);
+        }
+      }}
       // ELK places the nodes, so they don't move one by one. Left
       // draggable, a node would swallow the mouse and a drag on it
       // would do nothing; this way it falls through and pans the
@@ -1022,8 +1032,10 @@ export const drawnCallCount = (stateTypes: GraphStateType[]): number =>
 
 export const GraphPage: FC<{
   stateTypes: GraphStateType[];
+  selectedMethodId: string | null;
+  onSelectMethod: (id: string | null, replace?: boolean) => void;
   onOpenMethod: (id: string) => void;
-}> = ({ stateTypes, onOpenMethod }) => {
+}> = ({ stateTypes, selectedMethodId, onSelectMethod, onOpenMethod }) => {
   const packages = useMemo(
     () => groupStateTypesByPackage(stateTypes),
     [stateTypes]
@@ -1032,7 +1044,12 @@ export const GraphPage: FC<{
   return (
     <div className="graph-canvas">
       <ReactFlowProvider>
-        <GraphCanvas packages={packages} onOpenMethod={onOpenMethod} />
+        <GraphCanvas
+          packages={packages}
+          selectedMethodId={selectedMethodId}
+          onSelectMethod={onSelectMethod}
+          onOpenMethod={onOpenMethod}
+        />
       </ReactFlowProvider>
     </div>
   );

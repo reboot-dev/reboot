@@ -1204,6 +1204,12 @@ const Overview: FC<{
               ) : null}
               <GraphPage
                 stateTypes={graphStateTypes}
+                selectedMethodId={target ?? null}
+                onSelectMethod={(id, replace) =>
+                  navigate(id === null ? "/graph" : `/graph/${id}`, {
+                    replace,
+                  })
+                }
                 onOpenMethod={onOpenMethod}
               />
             </>
