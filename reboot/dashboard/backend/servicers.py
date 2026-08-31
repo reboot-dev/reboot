@@ -33,6 +33,9 @@ from reboot.dashboard.backend.constants import (
     ENVVAR_RBT_APPLICATION,
     ENVVAR_RBT_GENERATED_DIRECTORY,
 )
+from reboot.dashboard.backend.needs_generate_reason import (
+    needs_generate_reason,
+)
 from reboot.std.item.v1.item import Item
 from reboot.uuidv7 import uuid7
 
@@ -59,6 +62,7 @@ class DashboardServicer(Dashboard.Servicer):
             api_digests=self.state.api_digests,
             servicers=self.state.servicers,
             generated=self.state.generated,
+            needs_generate_reason=needs_generate_reason(self.state),
         )
 
     @classmethod

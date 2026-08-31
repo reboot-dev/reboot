@@ -71,6 +71,18 @@ message Dashboard {
 message DashboardGetRequest {}
 
 message DashboardGetResponse {
+  // Why `rbt generate` has to run: an API file's generated module
+  // is `MISSING`, or the file `CHANGED` since the module was
+  // generated from it, by the digest both record. A module
+  // recording no digest was generated before digests were, so
+  // whether it came from the file as it is is unknowable, which
+  // also reads as `CHANGED`; regenerating resolves it.
+  enum NeedsGenerateReason {
+    UNKNOWN = 0;
+    MISSING = 1;
+    CHANGED = 2;
+  }
+
   string api_directory = 1;
   optional string error = 2;
   map<string, File> api_files = 3;
@@ -78,6 +90,10 @@ message DashboardGetResponse {
   map<string, string> api_digests = 5;
   repeated Servicer servicers = 6;
   map<string, Generated> generated = 7;
+
+  // The worst reason over all the API files, and absent when
+  // nothing says to run `rbt generate`.
+  optional NeedsGenerateReason needs_generate_reason = 8;
 }
 
 message DashboardUpdateApiRequest {

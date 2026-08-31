@@ -2,6 +2,16 @@ load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 py_library(
+    name = "needs_generate_reason_py",
+    srcs = ["needs_generate_reason.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+    ],
+)
+
+py_library(
     name = "constants_py",
     srcs = ["constants.py"],
     srcs_version = "PY3",
@@ -117,6 +127,7 @@ py_library(
         ":api_watcher_py",
         ":code_watcher_py",
         ":constants_py",
+        ":needs_generate_reason_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
         "//rbt/std/collections/ordered_map/v1:ordered_map_py_reboot",
         "//reboot/aio:servicers_py",

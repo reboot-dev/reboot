@@ -1,10 +1,7 @@
 // The call graph's data: the API's state types and methods, joined
 // with the Reboot calls the analysis of the developer's application
 // found in each method's implementation.
-import type { Timestamp } from "@bufbuild/protobuf";
 import type {
-  File,
-  Generated,
   Servicer,
   Servicer_Method,
   Servicer_Method_Call_How,
@@ -170,70 +167,4 @@ export const joinStateTypes = (
   }
 
   return [...graphStateTypes.values()];
-};
-
-// Why `rbt generate` has to run, or with `same` may have to: an
-// API file's generated module is `missing`; the file `changed`
-// since the module was generated from it, by the digest both
-// record; or, when the module records no digest, the module is
-// `older` than the file or the `same` age, by modification time.
-export type ReasonToGenerate = "missing" | "changed" | "older" | "same";
-
-// `reasonToGenerate` returns the highest rank over all API files:
-// one `missing` or `changed` module outranks any number of `same`.
-const RANK: Record<ReasonToGenerate, number> = {
-  same: 1,
-  older: 2,
-  changed: 3,
-  missing: 4,
-};
-
-// The API file a generated module was written for, relative to the
-// API directory, which is how `Dashboard.files` is keyed: `shop/v1/shop.py`
-// for `shop/v1/shop_rbt.py`.
-const apiFileOfGeneratedModule = (module: string): string =>
-  module.replace(/_rbt\.py$/, ".py");
-
-const compareTimestamps = (a: Timestamp, b: Timestamp): number =>
-  a.seconds === b.seconds ? a.nanos - b.nanos : a.seconds < b.seconds ? -1 : 1;
-
-// `apiDigests` is the digest of what each API file declares, by
-// the module it generates to, as `API.api_digests` says;
-// `generated` is what is in the generated directory, as
-// `Implementation.generated` says, keyed the same way.
-export const reasonToGenerate = (
-  apiDigests: { [module: string]: string },
-  files: { [key: string]: Pick<File, "modified"> },
-  generated: { [module: string]: Pick<Generated, "modified" | "apiDigest"> }
-): ReasonToGenerate | undefined => {
-  let reason: ReasonToGenerate | undefined;
-  for (const [moduleName, digest] of Object.entries(apiDigests)) {
-    const module = generated[moduleName];
-    if (module === undefined) {
-      return "missing";
-    }
-    let one: ReasonToGenerate | undefined;
-    if (module.apiDigest !== undefined) {
-      // Both sides record what the API file generates to, which
-      // says exactly whether the module came from the file as it
-      // is: the file `changed` since, or it did not.
-      one = digest === module.apiDigest ? undefined : "changed";
-    } else {
-      // A module recording no digest was generated before digests
-      // were, so the modification times are what there is to go on.
-      const modified = files[apiFileOfGeneratedModule(moduleName)]?.modified;
-      if (modified === undefined || module.modified === undefined) {
-        continue;
-      }
-      const compared = compareTimestamps(module.modified, modified);
-      one = compared < 0 ? "older" : compared === 0 ? "same" : undefined;
-    }
-    if (
-      one !== undefined &&
-      (reason === undefined || RANK[one] > RANK[reason])
-    ) {
-      reason = one;
-    }
-  }
-  return reason;
 };

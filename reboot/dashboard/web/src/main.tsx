@@ -60,7 +60,8 @@ import {
   rowOfChange,
   timeAgo,
 } from "./changelog";
-import { joinStateTypes, reasonToGenerate } from "./callgraph";
+import { DashboardGetResponse_NeedsGenerateReason as NeedsGenerateReason } from "../../../../rbt/dashboard/v1/dashboard_pb";
+import { joinStateTypes } from "./callgraph";
 import { GraphPage } from "./graph";
 
 // One subscriber per tab, for as long as the tab is open.
@@ -889,17 +890,9 @@ const Overview: FC<{
     [apis, servicers]
   );
 
-  const generateReason = useMemo(
-    () =>
-      response === undefined
-        ? undefined
-        : reasonToGenerate(
-            response.apiDigests,
-            response.apiFiles,
-            response.generated
-          ),
-    [response]
-  );
+  // Why `rbt generate` has to run, derived by the backend from
+  // what the two watches recorded.
+  const needsGenerateReason = response?.needsGenerateReason;
 
   const linkedDataTypes = useMemo(() => linkDataTypes({ apis }), [apis]);
 
@@ -1056,38 +1049,27 @@ const Overview: FC<{
             <ChangelogPage onCount={setChanges} live={live} />
           ) : page === "graph" ? (
             <>
-              {generateReason === "missing" ? (
+              {needsGenerateReason === NeedsGenerateReason.MISSING ? (
                 <p className="graph-note muted">
                   Your application imports generated code that does not exist
-                  yet, so its calls cannot be read. Run{" "}
+                  yet, so the static call graph anaysis cannot be done. Run{" "}
                   <code>rbt generate</code>.
                 </p>
-              ) : generateReason === "changed" ? (
+              ) : needsGenerateReason === NeedsGenerateReason.CHANGED ? (
                 <p className="graph-note muted">
-                  Your API files changed since your generated code was written
-                  from them, so the static call graph analysis may be out of
-                  date. Run <code>rbt generate</code>.
-                </p>
-              ) : generateReason === "older" ? (
-                <p className="graph-note muted">
-                  Your API files are newer than your generated code, so the
-                  static call graph analysis may be out of date. Run{" "}
+                  Your API files changed since the generated code was written,
+                  so the static call graph analysis may be out of date. Run{" "}
                   <code>rbt generate</code>.
-                </p>
-              ) : generateReason === "same" ? (
-                <p className="graph-note muted">
-                  Your API files and generated code were last modified at the
-                  same time, so the static call graph analysis may be out of
-                  date. If you changed an API, run <code>rbt generate</code>.
                 </p>
               ) : null}
               {/* With a module `missing`, no servicer resolves. */}
-              {generateReason !== "missing" &&
+              {needsGenerateReason !== NeedsGenerateReason.MISSING &&
               response !== undefined &&
               servicers.length === 0 ? (
                 <p className="graph-note muted">
-                  No servicers found, so no calls are drawn. The dashboard reads
-                  the Python application your <code>.rbtrc</code> names with{" "}
+                  No servicers found, so no static call graph analysis run. The
+                  dashboard reads the Python application your{" "}
+                  <code>.rbtrc</code> names with{" "}
                   <code>dev run --application=</code>.
                 </p>
               ) : null}

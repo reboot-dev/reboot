@@ -4,6 +4,15 @@ load("@rules_python//python:defs.bzl", "py_test")
 load("//tests/reboot/react:py_web_test_suite_env.bzl", "py_web_test_suite_env")
 
 py_test(
+    name = "needs_generate_reason_tests_py",
+    srcs = ["needs_generate_reason_tests.py"],
+    main = "needs_generate_reason_tests.py",
+    deps = [
+        "//reboot/dashboard/backend:needs_generate_reason_py",
+    ],
+)
+
+py_test(
     name = "api_reader_tests_py",
     srcs = ["api_reader_tests.py"],
     data = glob(["api/**"]),
