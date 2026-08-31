@@ -490,6 +490,14 @@ message ImplementationGetResponse {
   map<string, Generated> generated = 2;
 }
 
+message ImplementationUpdateRequest {
+  repeated Servicer servicers = 1;
+  map<string, File> files = 2;
+  map<string, Generated> generated = 3;
+}
+
+message ImplementationUpdateResponse {}
+
 message ImplementationWatchRequest {}
 
 message ImplementationWatchResponse {}
@@ -588,6 +596,13 @@ service ImplementationMethods {
   // Watches the developer's application for as long as the dashboard
   // application runs, working out which of their files implements
   // each state type whenever one of those files changes.
+  // Replaces what the application implements, as one transaction.
+  rpc Update(ImplementationUpdateRequest)
+      returns (ImplementationUpdateResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
   rpc Watch(ImplementationWatchRequest) returns (ImplementationWatchResponse) {
     option (rbt.v1alpha1.method).workflow = {
     };

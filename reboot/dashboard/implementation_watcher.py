@@ -1225,23 +1225,15 @@ async def watch(
                             ) for filename, file in known_now.items()
                     }
 
-                    async def record(state) -> None:
-                        del state.servicers[:]
-                        state.servicers.extend(servicers)
-                        state.generated.clear()
-                        for filename, file in generated_now.items():
-                            state.generated[filename].CopyFrom(file)
-
-                        # A file that changes after this write is
-                        # simply parsed again by a restarted walk,
-                        # which its digest says.
-                        state.files.clear()
-                        for filename, file_info in files.items():
-                            state.files[filename].CopyFrom(file_info)
-
-                    await Implementation.ref().per_iteration(
-                        'Record the servicers'
-                    ).write(context, record)
+                    # A file that changes after this write is
+                    # simply parsed again by a restarted walk,
+                    # which its digest says.
+                    await Implementation.ref().per_iteration('Update').Update(
+                        context,
+                        servicers=servicers,
+                        files=files,
+                        generated=dict(generated_now),
+                    )
 
                     known = known_now
                     generated = generated_now

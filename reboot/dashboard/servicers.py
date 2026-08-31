@@ -6,6 +6,8 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     APIGetResponse,
     APIUpdateRequest,
     APIUpdateResponse,
+    ImplementationUpdateRequest,
+    ImplementationUpdateResponse,
     PreferencesGetRequest,
     PreferencesGetResponse,
     PreferencesSetExpandedRequest,
@@ -129,6 +131,23 @@ class ImplementationServicer(Implementation.Servicer):
             servicers=self.state.servicers,
             generated=self.state.generated,
         )
+
+    async def Update(
+        self,
+        context: TransactionContext,
+        request: ImplementationUpdateRequest,
+    ) -> ImplementationUpdateResponse:
+        """Replaces what the application implements."""
+        del self.state.servicers[:]
+        self.state.servicers.extend(request.servicers)
+        self.state.files.clear()
+        for filename, file in request.files.items():
+            self.state.files[filename].CopyFrom(file)
+        self.state.generated.clear()
+        for filename, generated in request.generated.items():
+            self.state.generated[filename].CopyFrom(generated)
+
+        return ImplementationUpdateResponse()
 
     @classmethod
     async def Watch(
