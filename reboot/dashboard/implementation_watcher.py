@@ -49,15 +49,17 @@ import ast
 import asyncio
 import hashlib
 from dataclasses import dataclass, replace
+from functools import partial
 from google.protobuf.timestamp_pb2 import Timestamp
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_pb2 import File, Generated
+from rbt.dashboard.v1.dashboard_pb2 import Change, File, Generated
 from rbt.dashboard.v1.dashboard_pb2 import \
     Implementation as ImplementationState
 from rbt.dashboard.v1.dashboard_pb2 import Servicer
 from rbt.dashboard.v1.dashboard_rbt import Implementation
 from reboot.aio.contexts import WorkflowContext
 from reboot.aio.cooperatively import cooperatively
+from reboot.aio.workflows import at_least_once
 from reboot.cli.common.watch import file_watcher
 from reboot.dashboard.changelog import code_changes_between
 from reboot.dashboard.pyright import Location, Pyright
@@ -1089,6 +1091,90 @@ async def _list_generated(
     return MappingProxyType(generated)
 
 
+async def _walk_and_analyze(
+    *,
+    application: Path,
+    roots: list[Path],
+    generated_directory: Optional[Path],
+    known: Mapping[Path, AnalyzedFile],
+    generated: Mapping[str, Generated],
+) -> tuple[Optional[dict[Path, AnalyzedFile]], dict[str, Generated],
+           list[Change]]:
+    """Walks and analyzes the application and lists the generated
+    directory: what one iteration of the watch reads off the disk.
+
+    Returns what is known now, what the generated directory holds
+    now and what changed; and `None` for an analysis that reproduces
+    exactly what `known` already records, which writes nothing.
+    """
+    unchanged, parsed, _, _ = await _walk(
+        entries=[application],
+        roots=roots,
+        known=known,
+    )
+
+    # A fresh pyright for every analysis, so that it reads every
+    # file the way the disk has it right now: generated code,
+    # installed packages and the developer's own files alike, with
+    # nothing remembered from an earlier iteration to go stale.
+    # Rooted where the dashboard runs, which is the developer's
+    # working directory, the one both the application and the
+    # generated directory may be given as relative to; a moved
+    # working directory is re-rooted here by the next iteration.
+    #
+    # TODO: keep one pyright running across iterations and send
+    # `workspace/didChangeWatchedFiles` built from the generated
+    # files' fingerprint diff instead of starting anew, sparing the
+    # start and the cold analysis per iteration. That first takes
+    # verifying that pyright does not ignore notifications for
+    # files it never registered watchers over, and accounting for
+    # the working directory moving, which today is handled by every
+    # iteration's fresh start being rooted at the current directory
+    # and would again take a restart.
+    # Absolute, since pyright does not resolve `extraPaths` against
+    # the root; a root outside the working directory is absolute
+    # already, and joining leaves it alone.
+    pyright = Pyright()
+    await pyright.start(
+        root=Path.cwd(),
+        extra_paths=[Path.cwd() / root for root in roots],
+    )
+    try:
+        analyzed = await _analyze(
+            parsed=parsed,
+            pyright=pyright,
+            roots=roots,
+        )
+    finally:
+        await pyright.stop()
+
+    known_now = {**unchanged, **analyzed}
+
+    generated_now = await _list_generated(generated_directory)
+
+    # Everything else the state records, the servicers and the
+    # files, is derived from the analyzed files, so comparing those
+    # and the listing is comparing all of it.
+    if known_now == known and generated_now == generated:
+        return None, {}, []
+
+    # The result is memoized with `pickle`, which cannot serialize
+    # a `MappingProxyType`, so each file's mappings are plain.
+    known_now = {
+        filename: replace(file, dependencies=dict(file.dependencies))
+        for filename, file in known_now.items()
+    }
+
+    changes = list(
+        code_changes_between(
+            extract_and_sort_servicers(known),
+            extract_and_sort_servicers(known_now),
+        )
+    )
+
+    return known_now, dict(generated_now), changes
+
+
 async def watch(
     context: WorkflowContext,
     *,
@@ -1126,8 +1212,12 @@ async def watch(
     # analyzed again, and an iteration that reproduces exactly what
     # the state already records writes nothing.
     state = await Implementation.ref().always().read(context)
-    known = _reconstitute_known(state)
+    known: Mapping[Path, AnalyzedFile] = _reconstitute_known(state)
     generated: Mapping[str, Generated] = state.generated
+
+    # Whether this process has yet to wait for a save: a restart
+    # is itself a reason to analyze the application again.
+    restarted = True
 
     with file_watcher() as watcher:
         async for iteration in context.loop('Watch the application'):
@@ -1157,68 +1247,27 @@ async def watch(
             )
 
             async with watcher.watch(globs + external_globs) as event:
-                unchanged, parsed, _, _ = await _walk(
-                    entries=[application],
-                    roots=roots,
-                    known=known,
-                )
-
-                # A fresh pyright for every analysis, so that it
-                # reads every file the way the disk has it right
-                # now: generated code, installed packages and the
-                # developer's own files alike, with nothing
-                # remembered from an earlier iteration to go stale.
-                # Rooted where the dashboard runs, which is the
-                # developer's working directory, the one both the
-                # application and the generated directory may be
-                # given as relative to; a moved working directory
-                # is re-rooted here by the next iteration.
-                #
-                # TODO: keep one pyright running across iterations
-                # and send `workspace/didChangeWatchedFiles` built
-                # from the generated files' fingerprint diff
-                # instead of starting anew, sparing the start and
-                # the cold analysis per iteration. That first takes
-                # verifying that pyright does not ignore
-                # notifications for files it never registered
-                # watchers over, and accounting for the working
-                # directory moving, which today is handled by every
-                # iteration's fresh start being rooted at the
-                # current directory and would again take a restart.
-                # Absolute, since pyright does not resolve `extraPaths`
-                # against the root; a root outside the working directory
-                # is absolute already, and joining leaves it alone.
-                pyright = Pyright()
-                await pyright.start(
-                    root=Path.cwd(),
-                    extra_paths=[Path.cwd() / root for root in roots],
-                )
-                try:
-                    analyzed = await _analyze(
-                        parsed=parsed,
-                        pyright=pyright,
+                # Memoized per iteration, so a workflow restarted
+                # mid-iteration records the same `Update` it was
+                # recording, which is what the idempotency of the
+                # write needs.
+                known_now, generated_now, changes = await at_least_once(
+                    'Walk and analyze',
+                    context,
+                    partial(
+                        _walk_and_analyze,
+                        application=application,
                         roots=roots,
-                    )
-                finally:
-                    await pyright.stop()
+                        generated_directory=generated_directory,
+                        known=known,
+                        generated=generated,
+                    ),
+                )
 
-                known_now = {**unchanged, **analyzed}
-
-                generated_now = await _list_generated(generated_directory)
-
-                # Everything else the state records, the servicers
-                # and the files, is derived from the analyzed files,
-                # so comparing those and the listing is comparing
-                # all of it. A write wakes every browser reading
-                # `Get`, so one is only made when they differ.
-                if known_now != known or generated_now != generated:
+                # A write wakes every browser reading `Get`, so one
+                # is only made when the analysis found a difference.
+                if known_now is not None:
                     servicers = extract_and_sort_servicers(known_now)
-
-                    changes = list(
-                        code_changes_between(
-                            extract_and_sort_servicers(known), servicers
-                        )
-                    )
 
                     # The file messages the write below records,
                     # built before the write so that the state is
@@ -1245,6 +1294,19 @@ async def watch(
 
                     known = known_now
                     generated = generated_now
+
+                # If we're restarting this workflow we might be in
+                # an iteration that has already memoized
+                # `_walk_and_analyze` and thus we don't want to wait
+                # on an `event` because there may be changes that we
+                # want to analyze and handle immediately. Thus, we
+                # always go to the next iteration immediately when
+                # we've `restarted`. Worse case we have an iteration
+                # where `known_now` is `None` so we just wait on the
+                # `event`.
+                if restarted:
+                    restarted = False
+                    continue
 
                 # `event` resolves when a `.py` file matching `globs`
                 # (so under the roots or the generated directory), is

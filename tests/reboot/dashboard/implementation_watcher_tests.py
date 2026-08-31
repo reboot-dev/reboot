@@ -287,7 +287,7 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         self.rbt = Reboot()
         await self.rbt.start()
-        await self.rbt.up(application(), local_envoy=True)
+        self.revision = await self.rbt.up(application(), local_envoy=True)
 
     async def asyncTearDown(self) -> None:
         await self.rbt.stop()
@@ -519,6 +519,33 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(change.code_changed.state_type, 'shop.v1.Shop')
+        self.assertEqual(change.code_changed.method, 'look')
+        self.assertEqual(change.code_changed.WhichOneof('change'), 'body')
+
+    async def test_a_change_made_while_the_dashboard_was_down_is_history(
+        self,
+    ) -> None:
+        """A dashboard brought back up analyzes what changed while it
+        was down and records it: the state remembers what it last
+        saw, and a restart is itself a reason to analyze the
+        application again rather than waiting for a save."""
+        self._generate()
+
+        await self._code_changes(satisfied=lambda code: len(code) > 0)
+
+        await self.rbt.down()
+
+        (self.source / 'shop_servicer.py').write_text(
+            SHOP.replace('        pass', '        return request')
+        )
+
+        await self.rbt.up(revision=self.revision)
+
+        change, *_ = await self._code_changes(
+            satisfied=lambda code: len(code) > 0 and code[0].
+            WhichOneof('change') == 'code_changed'
+        )
+
         self.assertEqual(change.code_changed.method, 'look')
         self.assertEqual(change.code_changed.WhichOneof('change'), 'body')
 
