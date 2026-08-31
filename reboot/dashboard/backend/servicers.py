@@ -4,10 +4,10 @@ from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import (
     DashboardGetRequest,
     DashboardGetResponse,
-    DashboardUpdateRequest,
-    DashboardUpdateResponse,
-    ImplementationUpdateRequest,
-    ImplementationUpdateResponse,
+    DashboardUpdateApiRequest,
+    DashboardUpdateApiResponse,
+    DashboardUpdateCodeRequest,
+    DashboardUpdateCodeResponse,
     PreferencesGetRequest,
     PreferencesGetResponse,
     PreferencesSetExpandedRequest,
@@ -17,11 +17,7 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     PreferencesSetSuppressOpenOnRestartRequest,
     PreferencesSetSuppressOpenOnRestartResponse,
 )
-from rbt.dashboard.v1.dashboard_rbt import (
-    Dashboard,
-    Implementation,
-    Preferences,
-)
+from rbt.dashboard.v1.dashboard_rbt import Dashboard, Preferences
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import (
@@ -30,7 +26,7 @@ from reboot.aio.contexts import (
     WorkflowContext,
     WriterContext,
 )
-from reboot.dashboard.backend import api_watcher, implementation_watcher
+from reboot.dashboard.backend import api_watcher, code_watcher
 from reboot.dashboard.backend.constants import (
     CHANGELOG_ID,
     ENVVAR_RBT_API_DIRECTORY,
@@ -58,17 +54,19 @@ class DashboardServicer(Dashboard.Servicer):
         return DashboardGetResponse(
             api_directory=self.state.api_directory,
             error=self.state.error if self.state.HasField('error') else None,
-            files=self.state.files,
+            api_files=self.state.api_files,
             apis=self.state.apis,
             api_digests=self.state.api_digests,
+            servicers=self.state.servicers,
+            generated=self.state.generated,
         )
 
     @classmethod
-    async def Watch(
+    async def WatchApi(
         cls,
         context: WorkflowContext,
-        request: Dashboard.WatchRequest,
-    ) -> Dashboard.WatchResponse:
+        request: Dashboard.WatchApiRequest,
+    ) -> Dashboard.WatchApiResponse:
         """Returns only when the dashboard stops, reading the
         developer's API files whenever they change.
 
@@ -81,13 +79,69 @@ class DashboardServicer(Dashboard.Servicer):
 
         await api_watcher.watch(context, api_directory=api_directory)
 
-        return Dashboard.WatchResponse()
+        return Dashboard.WatchApiResponse()
 
-    async def Update(
+    async def UpdateCode(
         self,
         context: TransactionContext,
-        request: DashboardUpdateRequest,
-    ) -> DashboardUpdateResponse:
+        request: DashboardUpdateCodeRequest,
+    ) -> DashboardUpdateCodeResponse:
+        """Replaces what the application implements and records what
+        changed, newest last."""
+        del self.state.servicers[:]
+        self.state.servicers.extend(request.servicers)
+        self.state.code_files.clear()
+        for filename, file in request.code_files.items():
+            self.state.code_files[filename].CopyFrom(file)
+        self.state.generated.clear()
+        for filename, generated in request.generated.items():
+            self.state.generated[filename].CopyFrom(generated)
+
+        if len(request.changes) > 0:
+            await OrderedMap.ref(CHANGELOG_ID).Insert(
+                context,
+                entries={
+                    str(uuid7()): Item(bytes=change.SerializeToString())
+                    for change in request.changes
+                },
+            )
+
+        return DashboardUpdateCodeResponse()
+
+    @classmethod
+    async def WatchCode(
+        cls,
+        context: WorkflowContext,
+        request: Dashboard.WatchCodeRequest,
+    ) -> Dashboard.WatchCodeResponse:
+        """Returns only when the dashboard stops, working out which of
+        the developer's files implements each state type.
+
+        The application comes from the environment each time this
+        runs, for the same reason the API directory does. A developer
+        who named none gets nothing looked for, which is the normal
+        case for a Node.js application.
+        """
+        application = os.environ.get(ENVVAR_RBT_APPLICATION)
+        generated_directory = os.environ.get(ENVVAR_RBT_GENERATED_DIRECTORY)
+
+        if application is not None:
+            await code_watcher.watch(
+                context,
+                application=Path(application),
+                generated_directory=(
+                    Path(generated_directory)
+                    if generated_directory is not None else None
+                ),
+            )
+
+        return Dashboard.WatchCodeResponse()
+
+    async def UpdateApi(
+        self,
+        context: TransactionContext,
+        request: DashboardUpdateApiRequest,
+    ) -> DashboardUpdateApiResponse:
         """Replaces what the API files declare and records what
         changed, newest last, as one transaction."""
         self.state.api_directory = request.api_directory
@@ -95,9 +149,9 @@ class DashboardServicer(Dashboard.Servicer):
             self.state.error = request.error
         else:
             self.state.ClearField('error')
-        self.state.files.clear()
-        for filename, file in request.files.items():
-            self.state.files[filename].CopyFrom(file)
+        self.state.api_files.clear()
+        for filename, file in request.api_files.items():
+            self.state.api_files[filename].CopyFrom(file)
         self.state.apis.clear()
         for filename, api in request.apis.items():
             self.state.apis[filename].CopyFrom(api)
@@ -113,84 +167,7 @@ class DashboardServicer(Dashboard.Servicer):
                 },
             )
 
-        return DashboardUpdateResponse()
-
-
-class ImplementationServicer(Implementation.Servicer):
-    """Holds where each state type the developer declared is
-    implemented."""
-
-    def authorizer(self):
-        # Anyone who can reach this can already read the files it
-        # names: it holds nothing but paths into the developer's own
-        # checkout, and only ever runs under `rbt dashboard`.
-        return allow()
-
-    async def Get(
-        self,
-        context: ReaderContext,
-        request: Implementation.GetRequest,
-    ) -> Implementation.GetResponse:
-        return Implementation.GetResponse(
-            servicers=self.state.servicers,
-            generated=self.state.generated,
-        )
-
-    async def Update(
-        self,
-        context: TransactionContext,
-        request: ImplementationUpdateRequest,
-    ) -> ImplementationUpdateResponse:
-        """Replaces what the application implements and records what
-        changed, newest last."""
-        del self.state.servicers[:]
-        self.state.servicers.extend(request.servicers)
-        self.state.files.clear()
-        for filename, file in request.files.items():
-            self.state.files[filename].CopyFrom(file)
-        self.state.generated.clear()
-        for filename, generated in request.generated.items():
-            self.state.generated[filename].CopyFrom(generated)
-
-        if len(request.changes) > 0:
-            await OrderedMap.ref(CHANGELOG_ID).Insert(
-                context,
-                entries={
-                    str(uuid7()): Item(bytes=change.SerializeToString())
-                    for change in request.changes
-                },
-            )
-
-        return ImplementationUpdateResponse()
-
-    @classmethod
-    async def Watch(
-        cls,
-        context: WorkflowContext,
-        request: Implementation.WatchRequest,
-    ) -> Implementation.WatchResponse:
-        """Returns only when the dashboard stops, working out which of
-        the developer's files implements each state type.
-
-        The application comes from the environment each time this
-        runs, for the same reason the API directory does. A developer
-        who named none gets nothing looked for, which is the normal
-        case for a Node.js application.
-        """
-        application = os.environ.get(ENVVAR_RBT_APPLICATION)
-        generated_directory = os.environ.get(ENVVAR_RBT_GENERATED_DIRECTORY)
-
-        if application is not None:
-            await implementation_watcher.watch(
-                context,
-                application=Path(application),
-                generated_directory=(
-                    Path(generated_directory)
-                    if generated_directory is not None else None
-                ),
-            )
-
-        return Implementation.WatchResponse()
+        return DashboardUpdateApiResponse()
 
 
 class PreferencesServicer(Preferences.Servicer):

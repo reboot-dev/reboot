@@ -93,8 +93,8 @@ py_library(
 )
 
 py_library(
-    name = "implementation_watcher_py",
-    srcs = ["implementation_watcher.py"],
+    name = "code_watcher_py",
+    srcs = ["code_watcher.py"],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
@@ -115,8 +115,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":api_watcher_py",
+        ":code_watcher_py",
         ":constants_py",
-        ":implementation_watcher_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
         "//rbt/std/collections/ordered_map/v1:ordered_map_py_reboot",
         "//reboot/aio:servicers_py",

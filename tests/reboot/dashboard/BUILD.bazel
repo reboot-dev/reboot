@@ -40,16 +40,16 @@ py_test(
 )
 
 py_test(
-    name = "implementation_watcher_tests_py",
-    srcs = ["implementation_watcher_tests.py"],
+    name = "code_watcher_tests_py",
+    srcs = ["code_watcher_tests.py"],
     data = [
         "//tests/reboot:greeter_rbt.golden.py",
         "//tests/reboot:ping_api_rbt.golden.py",
     ],
-    main = "implementation_watcher_tests.py",
+    main = "code_watcher_tests.py",
     deps = [
         "//reboot/aio:tests_py",
-        "//reboot/dashboard/backend:implementation_watcher_py",
+        "//reboot/dashboard/backend:code_watcher_py",
         "//reboot/dashboard/backend:main_py",
         "//reboot/dashboard/backend:walk_py",
     ],

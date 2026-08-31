@@ -11,9 +11,9 @@ import unittest
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import Change, Generated
 from rbt.dashboard.v1.dashboard_pb2 import \
-    Implementation as ImplementationState
+    Dashboard as DashboardState
 from rbt.dashboard.v1.dashboard_pb2 import Servicer
-from rbt.dashboard.v1.dashboard_rbt import Dashboard, Implementation
+from rbt.dashboard.v1.dashboard_rbt import Dashboard
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from reboot.aio.tests import Reboot
 from reboot.dashboard.backend.constants import (
@@ -22,9 +22,8 @@ from reboot.dashboard.backend.constants import (
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
     ENVVAR_RBT_GENERATED_DIRECTORY,
-    IMPLEMENTATION_ID,
 )
-from reboot.dashboard.backend.implementation_watcher import (
+from reboot.dashboard.backend.code_watcher import (
     AnalyzedFile,
     MethodDefinition,
     _analyze,
@@ -345,8 +344,8 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         """
         context = self.rbt.create_external_context(name=self.id())
 
-        async for response in Implementation.ref(IMPLEMENTATION_ID
-                                                ).reactively().Get(context):
+        async for response in Dashboard.ref(DASHBOARD_ID
+                                           ).reactively().Get(context):
             found: dict[str, list[Servicer]] = {}
 
             for servicer in response.servicers:
@@ -362,8 +361,8 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         reading again whenever it changes."""
         context = self.rbt.create_external_context(name=self.id())
 
-        async for response in Implementation.ref(IMPLEMENTATION_ID
-                                                ).reactively().Get(context):
+        async for response in Dashboard.ref(DASHBOARD_ID
+                                           ).reactively().Get(context):
             if satisfied(response):
                 return response
 
@@ -1364,8 +1363,8 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         """What a previous run recorded comes back keyed by the
         stored spelling, with the servicers recorded for each file
         joined back on."""
-        state = ImplementationState()
-        file = state.files['backend/x.py']
+        state = DashboardState()
+        file = state.code_files['backend/x.py']
         file.digest = b'digest'
         file.dependencies['helper'].filename = 'helper.py'
         servicer = state.servicers.add()

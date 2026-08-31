@@ -1,6 +1,5 @@
 import {
   useDashboard,
-  useImplementation,
   usePreferences,
 } from "../../../../rbt/dashboard/v1/dashboard_rbt_react";
 import { useOrderedMap } from "@reboot-dev/reboot-std-api/collections/ordered_map/v1/ordered_map_rbt_react";
@@ -32,7 +31,6 @@ import { v4 as uuidv4 } from "uuid";
 import {
   DASHBOARD_ID,
   CHANGELOG_ID,
-  IMPLEMENTATION_ID,
   PREFERENCES_ID,
   PRESENCE_ID,
 } from "./constants";
@@ -878,18 +876,12 @@ const Overview: FC<{
   // stay at whatever each file last declared.
   const error = response?.error ?? "";
 
-  // What the dashboard read of the developer's application: the
-  // Reboot calls each servicer's methods make. Nothing until the
-  // analysis has run, and for a Node.js application, which it does
-  // not read.
-  const { useGet: useGetImplementation } = useImplementation({
-    id: IMPLEMENTATION_ID,
-  });
-  const { response: implementation } = useGetImplementation();
-
+  // The Reboot calls each servicer's methods make arrive on the
+  // same response: nothing until the analysis has run, and for a
+  // Node.js application, which it does not read.
   const servicers = useMemo(
-    () => implementation?.servicers ?? [],
-    [implementation?.servicers]
+    () => response?.servicers ?? [],
+    [response?.servicers]
   );
 
   const graphStateTypes = useMemo(
@@ -899,14 +891,14 @@ const Overview: FC<{
 
   const generateReason = useMemo(
     () =>
-      response === undefined || implementation === undefined
+      response === undefined
         ? undefined
         : reasonToGenerate(
             response.apiDigests,
-            response.files,
-            implementation.generated
+            response.apiFiles,
+            response.generated
           ),
-    [response, implementation]
+    [response]
   );
 
   const linkedDataTypes = useMemo(() => linkDataTypes({ apis }), [apis]);
@@ -1091,7 +1083,7 @@ const Overview: FC<{
               ) : null}
               {/* With a module `missing`, no servicer resolves. */}
               {generateReason !== "missing" &&
-              implementation !== undefined &&
+              response !== undefined &&
               servicers.length === 0 ? (
                 <p className="graph-note muted">
                   No servicers found, so no calls are drawn. The dashboard reads

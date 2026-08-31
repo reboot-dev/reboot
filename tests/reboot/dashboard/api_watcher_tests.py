@@ -179,7 +179,7 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
                 property in schema.properties
             )
         )
-        self.assertIn('shop/v1/models.py', api.files)
+        self.assertIn('shop/v1/models.py', api.api_files)
 
     async def test_a_burst_of_saves_reads_every_saved_file(self) -> None:
         """Files saved together are all read, however many of the
@@ -217,9 +217,9 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
             1
         )
 
-        self.assertTrue(api.files['shop/v1/depot.py'].HasField('error'))
-        self.assertIn('SyntaxError', api.files['shop/v1/depot.py'].error)
-        self.assertFalse(api.files['shop/v1/shop.py'].HasField('error'))
+        self.assertTrue(api.api_files['shop/v1/depot.py'].HasField('error'))
+        self.assertIn('SyntaxError', api.api_files['shop/v1/depot.py'].error)
+        self.assertFalse(api.api_files['shop/v1/shop.py'].HasField('error'))
         self.assertEqual(
             [state['name'] for state in _state_types_in(api)],
             ['shop.v1.Shop'],
@@ -237,7 +237,7 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         await self._start_dashboard()
         await self._wait_for_api(
             lambda api: len(_state_types_in(api)) == 1 and 'shop/v1/shop.py' in
-            api.files
+            api.api_files
         )
 
         await self.rbt.down()
@@ -323,14 +323,14 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         helper.write_text('SHARED = 1\n')
 
         await self._start_dashboard()
-        api = await self._wait_for_api(lambda api: len(api.files) == 2)
+        api = await self._wait_for_api(lambda api: len(api.api_files) == 2)
 
         self.assertEqual(
-            api.files['shop/v1/helper.py'].modified,
+            api.api_files['shop/v1/helper.py'].modified,
             _modified_at(helper),
         )
         self.assertEqual(
-            api.files['shop/v1/shop.py'].modified,
+            api.api_files['shop/v1/shop.py'].modified,
             _modified_at(self.directory / 'shop' / 'v1' / 'shop.py'),
         )
 

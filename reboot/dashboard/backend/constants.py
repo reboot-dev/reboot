@@ -21,14 +21,9 @@ DASHBOARD_PATH = '/dashboard'
 # logs, and outside the Linux ephemeral range.
 DEFAULT_DASHBOARD_PORT = 9871
 
-# The `API` state holding the shape the developer's API files
-# declare, as the dashboard application last read them.
+# The `Dashboard` state holding everything the dashboard shows, as
+# the dashboard application last read it.
 DASHBOARD_ID = 'dashboard'
-
-# The `Implementation` state holding which of the developer's files
-# implements each state type, as the dashboard application last read
-# their application.
-IMPLEMENTATION_ID = 'implementation'
 
 # The `Preferences` state holding what the developer has said about
 # opening dashboards: the dashboard's banner writes it and `rbt dev

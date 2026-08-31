@@ -52,11 +52,10 @@ from dataclasses import dataclass, replace
 from functools import partial
 from google.protobuf.timestamp_pb2 import Timestamp
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_pb2 import Change, File, Generated
-from rbt.dashboard.v1.dashboard_pb2 import \
-    Implementation as ImplementationState
-from rbt.dashboard.v1.dashboard_pb2 import Servicer
-from rbt.dashboard.v1.dashboard_rbt import Implementation
+from rbt.dashboard.v1.dashboard_pb2 import Change
+from rbt.dashboard.v1.dashboard_pb2 import Dashboard as DashboardState
+from rbt.dashboard.v1.dashboard_pb2 import File, Generated, Servicer
+from rbt.dashboard.v1.dashboard_rbt import Dashboard
 from reboot.aio.contexts import WorkflowContext
 from reboot.aio.cooperatively import cooperatively
 from reboot.aio.workflows import at_least_once
@@ -971,7 +970,7 @@ def extract_and_sort_servicers(
 
 
 def _reconstitute_known(
-    state: ImplementationState,
+    state: DashboardState,
 ) -> dict[Path, AnalyzedFile]:
     """Returns the analyzed files a previous run recorded, joined
     back together from the state: each `File` with the servicers
@@ -990,7 +989,7 @@ def _reconstitute_known(
                 dependencies=MappingProxyType(dict(file.dependencies)),
                 external=tuple(file.external),
                 servicers=tuple(servicers.get(filename, [])),
-            ) for filename, file in state.files.items()
+            ) for filename, file in state.code_files.items()
     }
 
 
@@ -1211,7 +1210,7 @@ async def watch(
     # that changed while the dashboard was down are parsed and
     # analyzed again, and an iteration that reproduces exactly what
     # the state already records writes nothing.
-    state = await Implementation.ref().always().read(context)
+    state = await Dashboard.ref().always().read(context)
     known: Mapping[Path, AnalyzedFile] = _reconstitute_known(state)
     generated: Mapping[str, Generated] = state.generated
 
@@ -1284,10 +1283,10 @@ async def watch(
                     # A file that changes after this write is
                     # simply parsed again by a restarted walk,
                     # which its digest says.
-                    await Implementation.ref().per_iteration('Update').Update(
+                    await Dashboard.ref().per_iteration('Update').UpdateCode(
                         context,
                         servicers=servicers,
-                        files=files,
+                        code_files=files,
                         generated=dict(generated_now),
                         changes=changes,
                     )

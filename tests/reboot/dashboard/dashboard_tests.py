@@ -243,10 +243,10 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         files is covered by `api_reader_tests` and `api_watcher_tests`.
         """
         context = self.rbt.create_external_context(name=self.id())
-        await Dashboard.ref(DASHBOARD_ID).Update(
+        await Dashboard.ref(DASHBOARD_ID).UpdateApi(
             context,
             api_directory='api',
-            files={},
+            api_files={},
             apis={_FILENAME: ParseDict(_API, api_pb2.API())},
         )
 
@@ -277,10 +277,10 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             return driver.page_source
 
         context = self.rbt.create_external_context(name=self.id())
-        await Dashboard.ref(DASHBOARD_ID).Update(
+        await Dashboard.ref(DASHBOARD_ID).UpdateApi(
             context,
             api_directory='api',
-            files={},
+            api_files={},
             apis={_FILENAME: ParseDict(_API, api_pb2.API())},
             error='shop.py: SyntaxError: invalid syntax',
         )

@@ -104,7 +104,7 @@ def _reconstitute_known(
     its file. What a restarted watch starts from, so that only files
     that changed while the dashboard was down are read again."""
     known: dict[Path, ReadFile] = {}
-    for relative, file in state.files.items():
+    for relative, file in state.api_files.items():
         filename = _standardized_path(api_directory / relative)
         known[filename] = ReadFile(
             filename=filename,
@@ -139,7 +139,7 @@ def _api_digests(
 ) -> dict[str, str]:
     """The digest of what each file declaring an `api` declares,
     keyed by the module `rbt generate` writes for the file, relative
-    to the generated directory the way `Implementation.generated` is
+    to the generated directory the way `Dashboard.generated` is
     keyed: `shop/v1/shop_rbt.py` for `shop/v1/shop.py`."""
     return {
         f'{_relative(filename, api_directory).removesuffix(".py")}_rbt.py':
@@ -330,11 +330,11 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
                 # that touches several files is one entry's worth of
                 # history.
                 if known_now is not None:
-                    await Dashboard.ref().per_iteration('Update').Update(
+                    await Dashboard.ref().per_iteration('Update').UpdateApi(
                         context,
                         api_directory=api_directory,
                         error=_error(known_now, api_directory=directory),
-                        files=_files(known_now, api_directory=directory),
+                        api_files=_files(known_now, api_directory=directory),
                         apis=_apis(known_now, api_directory=directory),
                         api_digests=_api_digests(
                             known_now, api_directory=directory

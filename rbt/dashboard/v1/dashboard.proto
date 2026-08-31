@@ -28,19 +28,44 @@ message Dashboard {
   // restarted dashboard starts from these rather than reading every
   // file again; one that changed since this was written is simply
   // read again, which its digest says.
-  map<string, File> files = 3;
+  map<string, File> api_files = 3;
 
   // What each file declaring an `api` declares, keyed the way
-  // `files` is, which is also the `filename` inside.
+  // `api_files` is, which is also the `filename` inside.
   map<string, rbt.v1alpha1.pydantic.API> apis = 4;
 
   // The digest of what each file declaring an `api` declares, as
   // it is now, keyed by the module `rbt generate` writes for the
-  // file, relative to the generated directory the way
-  // `Implementation.generated` is keyed: `shop/v1/shop_rbt.py` for
-  // `shop/v1/shop.py`. The module records the digest it was
-  // generated from.
+  // file, relative to the generated directory the way `generated`
+  // is keyed: `shop/v1/shop_rbt.py` for `shop/v1/shop.py`. The
+  // module records the digest it was generated from.
   map<string, string> api_digests = 5;
+
+  // Every servicer found in the developer's application, sorted. A
+  // state type with no entry here is one no servicer was found for.
+  // A state type with two is two classes servicing it, which is for
+  // whoever reads this to make of what they will.
+  repeated Servicer servicers = 6;
+
+  // Represents every file the walk of the application analyzed,
+  // keyed by its path, relative to the working directory for a file
+  // under it and absolute otherwise, as of the last write. A
+  // restarted dashboard starts from these rather than parsing and
+  // analyzing every file again; one that changed since this was
+  // written is simply parsed again, which its digest says.
+  map<string, File> code_files = 7;
+
+  // Represents every `_rbt` module in the generated directory, the
+  // one `rbt generate` writes per API file, keyed by its path
+  // relative to the directory, e.g. "shop/v1/shop_rbt.py", as of
+  // the last write. A listing rather than what the walk reached,
+  // since a module nothing imports yet is still generated. Empty
+  // when no generated directory was named.
+  //
+  // Against `api_files`, this says whether an API file's generated
+  // code is missing or out of date, which is what suggests running
+  // `rbt generate`.
+  map<string, Generated> generated = 8;
 }
 
 message DashboardGetRequest {}
@@ -48,15 +73,17 @@ message DashboardGetRequest {}
 message DashboardGetResponse {
   string api_directory = 1;
   optional string error = 2;
-  map<string, File> files = 3;
+  map<string, File> api_files = 3;
   map<string, rbt.v1alpha1.pydantic.API> apis = 4;
   map<string, string> api_digests = 5;
+  repeated Servicer servicers = 6;
+  map<string, Generated> generated = 7;
 }
 
-message DashboardUpdateRequest {
+message DashboardUpdateApiRequest {
   string api_directory = 1;
   optional string error = 2;
-  map<string, File> files = 3;
+  map<string, File> api_files = 3;
   map<string, rbt.v1alpha1.pydantic.API> apis = 5;
   map<string, string> api_digests = 6;
 
@@ -66,7 +93,20 @@ message DashboardUpdateRequest {
   repeated Change changes = 4;
 }
 
-message DashboardUpdateResponse {}
+message DashboardUpdateApiResponse {}
+
+message DashboardUpdateCodeRequest {
+  repeated Servicer servicers = 1;
+  map<string, File> code_files = 2;
+  map<string, Generated> generated = 3;
+
+  // What differs from what the state records, for the changelog.
+  // Recorded in the same transaction as the state, so that the
+  // changelog never says something the state does not.
+  repeated Change changes = 4;
+}
+
+message DashboardUpdateCodeResponse {}
 
 // One thing the dashboard noticed change. Each arm is one whole
 // event and says everything about itself; nothing is shared between
@@ -306,9 +346,13 @@ message CodeRemoved {
   string filename = 2;
 }
 
-message DashboardWatchRequest {}
+message DashboardWatchApiRequest {}
 
-message DashboardWatchResponse {}
+message DashboardWatchApiResponse {}
+
+message DashboardWatchCodeRequest {}
+
+message DashboardWatchCodeResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -461,69 +505,6 @@ message Generated {
   optional string api_digest = 2;
 }
 
-// What the dashboard application has read of the developer's
-// application: which of their files implements each state type.
-//
-// Held apart from `Dashboard` because the two are read from different
-// places, at different moments, and neither says anything about the
-// other. An API file says a state type exists; only the application
-// says where it is implemented. Whoever wants both asks for both.
-message Implementation {
-  option (rbt.v1alpha1.state) = {
-  };
-
-  // Every servicer found, sorted. A state type with no entry here is
-  // one no servicer was found for -- which, before this has ever been
-  // written, is all of them. A state type with two is two classes
-  // servicing it, which is for whoever reads this to make of what
-  // they will.
-  repeated Servicer servicers = 1;
-
-  // Represents every file the walk analyzed, keyed by its path,
-  // relative to the working directory for a file under it and
-  // absolute otherwise, as of the last write. A restarted dashboard starts from
-  // these rather than parsing and analyzing every file again; one
-  // that changed since this was written is simply parsed again,
-  // which its digest says.
-  map<string, File> files = 3;
-
-  // Represents every `_rbt` module in the generated directory, the
-  // one `rbt generate` writes per API file, keyed by its path
-  // relative to the directory, e.g. "shop/v1/shop_rbt.py", as of
-  // the last write. A listing rather than what the walk reached,
-  // since a module nothing imports yet is still generated. Empty
-  // when no generated directory was named.
-  //
-  // Against `Dashboard.files`, this says whether an API file's generated
-  // code is missing or out of date, which is what suggests running
-  // `rbt generate`.
-  map<string, Generated> generated = 4;
-}
-
-message ImplementationGetRequest {}
-
-message ImplementationGetResponse {
-  repeated Servicer servicers = 1;
-  map<string, Generated> generated = 2;
-}
-
-message ImplementationUpdateRequest {
-  repeated Servicer servicers = 1;
-  map<string, File> files = 2;
-  map<string, Generated> generated = 3;
-
-  // What differs from what the state records, for the changelog.
-  // Recorded in the same transaction as the state, so that the
-  // changelog never says something the state does not.
-  repeated Change changes = 4;
-}
-
-message ImplementationUpdateResponse {}
-
-message ImplementationWatchRequest {}
-
-message ImplementationWatchResponse {}
-
 ////////////////////////////////////////////////////////////////////////
 
 // The developer's machine-local dashboard preferences.
@@ -594,41 +575,32 @@ service DashboardMethods {
   // as one transaction. Assigns each change its key, so that a
   // workflow retrying this call sends an identical request every
   // attempt.
-  rpc Update(DashboardUpdateRequest) returns (DashboardUpdateResponse) {
+  rpc UpdateApi(DashboardUpdateApiRequest)
+      returns (DashboardUpdateApiResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Replaces what the application implements and records what
+  // changed, the same way.
+  rpc UpdateCode(DashboardUpdateCodeRequest)
+      returns (DashboardUpdateCodeResponse) {
     option (rbt.v1alpha1.method).transaction = {
     };
   }
 
   // Watches the developer's API files for as long as the dashboard
   // application runs, reading each one that changes.
-  rpc Watch(DashboardWatchRequest) returns (DashboardWatchResponse) {
+  rpc WatchApi(DashboardWatchApiRequest) returns (DashboardWatchApiResponse) {
     option (rbt.v1alpha1.method).workflow = {
     };
   }
-}
 
-////////////////////////////////////////////////////////////////////////
-
-service ImplementationMethods {
-  rpc Get(ImplementationGetRequest) returns (ImplementationGetResponse) {
-    option (rbt.v1alpha1.method).reader = {
-    };
-  }
-
-  // Watches the developer's application for as long as the dashboard
-  // application runs, working out which of their files implements
-  // each state type whenever one of those files changes.
-  // Replaces what the application implements and records what
-  // changed, as one transaction. Assigns each change its key, so
-  // that a workflow retrying this call sends an identical request
-  // every attempt.
-  rpc Update(ImplementationUpdateRequest)
-      returns (ImplementationUpdateResponse) {
-    option (rbt.v1alpha1.method).transaction = {
-    };
-  }
-
-  rpc Watch(ImplementationWatchRequest) returns (ImplementationWatchResponse) {
+  // Watches the developer's application for as long as the
+  // dashboard application runs, working out which of their files
+  // implements each state type whenever one of those files changes.
+  rpc WatchCode(DashboardWatchCodeRequest)
+      returns (DashboardWatchCodeResponse) {
     option (rbt.v1alpha1.method).workflow = {
     };
   }
