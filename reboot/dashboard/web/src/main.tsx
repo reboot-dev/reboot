@@ -40,21 +40,21 @@ import type * as api_pb from "../../../../rbt/v1alpha1/pydantic/api_pb";
 import type {
   APIs,
   LinkedDataType,
-  Field,
+  Property,
   Kind,
   Referrer,
-} from "./link_fields_to_data_types";
+} from "./link_properties_to_data_types";
 import {
   dataTypeIdOfName,
   kindOfMethod,
   linkDataTypes,
-  fieldsOfDataType,
+  propertiesOfDataType,
   labelOfKind,
-  fieldsOfState,
+  propertiesOfState,
   qualifiedName,
   shortNameOfTypeName,
   sortedAPIs,
-} from "./link_fields_to_data_types";
+} from "./link_properties_to_data_types";
 import type { Entry } from "./changelog";
 import {
   entriesOfRange,
@@ -90,7 +90,7 @@ const DEFINITIONS: Record<string, string> = {
     "rather than on a state that already exists.",
   mcp: "Callable by AI agents as a tool, over the Model Context " + "Protocol.",
   "state type":
-    "A durable data type. Each instance, named by an id, has fields " +
+    "A durable data type. Each instance, named by an id, has properties " +
     "that Reboot persists for you. Methods are the way to read and " +
     "change them. You can have as many of these as you want.",
   "data type":
@@ -330,30 +330,30 @@ const groupByPackage = (
     });
 };
 
-// A type's fields, one level deep, as a TypeScript type literal. A
-// field whose type is another of the developer's types names it and
+// A type's properties, one level deep, as a TypeScript type literal. A
+// property whose type is another of the developer's types names it and
 // links to it: each type is written out once, on the data page, and
-// every field that contains it points there.
-const Fields: FC<{ fields: Field[] }> = ({ fields }) => (
+// every property that contains it points there.
+const Properties: FC<{ properties: Property[] }> = ({ properties }) => (
   <pre className="type-block">
     <code>
       {"{\n"}
-      {fields.map((field) => (
-        <Fragment key={field.name}>
+      {properties.map((property) => (
+        <Fragment key={property.name}>
           {"  "}
-          <span className="key">{field.name}</span>
-          {field.optional && <span className="optional">?</span>}
+          <span className="key">{property.name}</span>
+          {property.optional && <span className="optional">?</span>}
           {": "}
-          <TypeName type={field.type} link={field.link} />
+          <TypeName type={property.type} link={property.link} />
           {";"}
-          {(field.description !== undefined ||
-            field.constraints !== undefined ||
-            field.deprecated) && (
+          {(property.description !== undefined ||
+            property.constraints !== undefined ||
+            property.deprecated) && (
             <span className="comment">
               {` // ${[
-                field.deprecated ? "deprecated" : undefined,
-                field.description,
-                field.constraints,
+                property.deprecated ? "deprecated" : undefined,
+                property.description,
+                property.constraints,
               ]
                 .filter((part) => part !== undefined)
                 .join("; ")}`}
@@ -381,16 +381,16 @@ const TypeName: FC<{ type: string; link?: string }> = ({ type, link }) =>
 // The keys of a request or response, one level deep: a key whose type
 // is one of the developer's types names and links to that type, so a
 // signature stays one line no matter how deeply the types nest.
-const Keys: FC<{ fields: Field[] }> = ({ fields }) => (
+const Keys: FC<{ properties: Property[] }> = ({ properties }) => (
   <>
     {"{ "}
-    {fields.map((field, index) => (
-      <Fragment key={field.name}>
+    {properties.map((property, index) => (
+      <Fragment key={property.name}>
         {index > 0 && ", "}
-        <span className="key">{field.name}</span>
+        <span className="key">{property.name}</span>
         {": "}
-        <TypeName type={field.type} link={field.link} />
-        {field.optional && <span className="optional">?</span>}
+        <TypeName type={property.type} link={property.link} />
+        {property.optional && <span className="optional">?</span>}
       </Fragment>
     ))}
     {" }"}
@@ -404,21 +404,21 @@ const Signature: FC<{
   const takes =
     method.request === undefined
       ? []
-      : fieldsOfDataType({ api, name: method.request.name });
+      : propertiesOfDataType({ api, name: method.request.name });
   const returns =
     method.response === undefined
       ? []
-      : fieldsOfDataType({ api, name: method.response.name });
+      : propertiesOfDataType({ api, name: method.response.name });
 
   return (
     <div className="method-signature">
       <div>
         {"("}
-        {takes.length > 0 && <Keys fields={takes} />}
+        {takes.length > 0 && <Keys properties={takes} />}
         {") "}
         <span className="arrow">→</span>{" "}
         {returns.length > 0 ? (
-          <Keys fields={returns} />
+          <Keys properties={returns} />
         ) : (
           <span className="nothing">nothing</span>
         )}
@@ -566,7 +566,7 @@ const StateType: FC<{
     stateType.methods.map((method) => isMethodExpanded(method.name)).join(":")
   );
   const name = qualifiedName({ api, stateType });
-  const fields = fieldsOfState({ api, stateType });
+  const properties = propertiesOfState({ api, stateType });
 
   // The section's own caret is open only when every method is:
   // closing any single one closes it, so that clicking it opens
@@ -595,7 +595,7 @@ const StateType: FC<{
           <h2>{stateType.name}</h2>
           <Anchor page="state" id={name} />
           <span className="summary-line">
-            {countWithNoun(fields.length, "field")} ·{" "}
+            {countWithNoun(properties.length, "property")} ·{" "}
             {countWithNoun(stateType.methods.length, "method")}
           </span>
         </div>
@@ -609,12 +609,12 @@ const StateType: FC<{
       )}
 
       <div className="eyebrow section">state</div>
-      {fields.length === 0 ? (
+      {properties.length === 0 ? (
         <div className="empty">
-          No state fields. The key is the whole state.
+          No state properties. The key is the whole state.
         </div>
       ) : (
-        <Fields fields={fields} />
+        <Properties properties={properties} />
       )}
 
       <button
@@ -700,7 +700,7 @@ const LinkedDataTypeCard: FC<{
         <h2>{linkedDataType.name}</h2>
         <Anchor page="data" id={linkedDataType.id} />
         <span className="summary-line">
-          {countWithNoun(linkedDataType.fields.length, "field")}
+          {countWithNoun(linkedDataType.properties.length, "property")}
         </span>
       </div>
     </div>
@@ -712,11 +712,11 @@ const LinkedDataTypeCard: FC<{
       />
     )}
 
-    <div className="eyebrow section">fields</div>
-    {linkedDataType.fields.length === 0 ? (
-      <div className="empty">No fields.</div>
+    <div className="eyebrow section">properties</div>
+    {linkedDataType.properties.length === 0 ? (
+      <div className="empty">No properties.</div>
     ) : (
-      <Fields fields={linkedDataType.fields} />
+      <Properties properties={linkedDataType.properties} />
     )}
 
     <div className="eyebrow section">used by</div>
@@ -961,7 +961,7 @@ const Overview: FC<{
             id: linkedDataType.id,
             name: linkedDataType.name,
             package: linkedDataType.package,
-            count: countWithNoun(linkedDataType.fields.length, "field"),
+            count: countWithNoun(linkedDataType.properties.length, "property"),
           })),
     [page, apis, linkedDataTypes]
   );

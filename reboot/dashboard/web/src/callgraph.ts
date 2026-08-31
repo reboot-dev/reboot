@@ -6,14 +6,14 @@ import type {
   Servicer_Method,
   Servicer_Method_Call_How,
 } from "../../../../rbt/dashboard/v1/dashboard_pb";
-import type { APIs, Kind } from "./link_fields_to_data_types";
+import type { APIs, Kind } from "./link_properties_to_data_types";
 import {
   kindOfMethod,
   packageOfStateTypeName,
   qualifiedName,
   shortNameOfTypeName,
   sortedAPIs,
-} from "./link_fields_to_data_types";
+} from "./link_properties_to_data_types";
 
 // One call a method's implementation makes, and how many times. The
 // analysis lists a call once per site, and a helper several methods

@@ -11,13 +11,13 @@ import {
   Change,
   KindChanged_Kind,
 } from "../../../../rbt/dashboard/v1/dashboard_pb";
-import type { Kind } from "./link_fields_to_data_types";
+import type { Kind } from "./link_properties_to_data_types";
 import {
   formatConstraints,
   formatType,
   packageOfDataTypeName,
   packageOfStateTypeName,
-} from "./link_fields_to_data_types";
+} from "./link_properties_to_data_types";
 
 // One entry of the changelog: a type the dashboard found added,
 // changed or removed when it read a file. `key` is the uuidv7 the

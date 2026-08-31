@@ -13,12 +13,12 @@ ts_project(
         "src/changelog.ts",
         "src/constants.ts",
         "src/graph.tsx",
-        "src/link_fields_to_data_types.ts",
+        "src/link_properties_to_data_types.ts",
         "src/main.tsx",
     ],
     declaration = True,
     tsconfig = ":tsconfig",
-    # The contract test imports `link_fields_to_data_types.ts`.
+    # The contract test imports `link_properties_to_data_types.ts`.
     visibility = ["//tests/reboot/dashboard:__pkg__"],
     deps = [
         "//:node_modules/@bufbuild/protobuf",

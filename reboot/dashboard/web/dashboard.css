@@ -190,7 +190,7 @@ nav > .eyebrow {
    how much of something it holds. Every row is `display: contents`,
    so its two cells are the grid's own items rather than a row's, and
    the count column is therefore sized once across the sidebar. That
-   is what lets `1 field` and `12 state types` begin at the same x,
+   is what lets `1 property` and `12 state types` begin at the same x,
    so the column reads down instead of each row being read across.
 
    Not `subgrid`, which would say this more directly but which the
@@ -1166,7 +1166,7 @@ header h1 {
   color: inherit;
 }
 
-/* A type as its author would write it: braces, one field to a line,
+/* A type as its author would write it: braces, one property to a line,
    the name and then what it holds. Set as a code block because that
    is what it is, and because a shape is read down its left edge
    rather than across a row of labels. */
@@ -1180,7 +1180,7 @@ header h1 {
   font-size: 11.5px;
   line-height: 1.7;
   color: hsl(var(--muted-foreground));
-  /* The braces and field names are pre-formatted, but a long
+  /* The braces and property names are pre-formatted, but a long
      description should wrap rather than widen the card. */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1204,7 +1204,7 @@ header h1 {
 }
 
 /* A type this dashboard can show. Underlined on hover rather than
-   always, so a column of fields reads as fields rather than as a
+   always, so a column of properties reads as properties rather than as a
    column of links, while still saying which of them open. */
 .type-link {
   color: hsl(var(--primary));

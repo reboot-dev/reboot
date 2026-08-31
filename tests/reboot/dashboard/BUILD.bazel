@@ -115,7 +115,7 @@ py_test(
 )
 
 # `api_reader.py` writes what an API file declares and
-# `link_fields_to_data_types.ts` walks it. This runs the real reader
+# `link_properties_to_data_types.ts` walks it. This runs the real reader
 # over the API files in this package so the test below walks real
 # output the way the page does. The output is a TypeScript module so
 # that it is a source of the test, with no file to read at runtime.
@@ -134,9 +134,9 @@ genrule(
 )
 
 ts_project(
-    name = "link_fields_to_data_types_test_ts",
+    name = "link_properties_to_data_types_test_ts",
     srcs = [
-        "link_fields_to_data_types.test.ts",
+        "link_properties_to_data_types.test.ts",
         ":state_types.ts",
     ],
     declaration = True,
@@ -159,11 +159,11 @@ ts_project(
 )
 
 vitest_test(
-    name = "link_fields_to_data_types_test",
+    name = "link_properties_to_data_types_test",
     config = "vitest.config.mjs",
     data = [
         "package.json",
-        ":link_fields_to_data_types_test_ts",
+        ":link_properties_to_data_types_test_ts",
     ],
     node_modules = "//:node_modules",
     visibility = ["//visibility:public"],

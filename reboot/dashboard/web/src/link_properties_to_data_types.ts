@@ -1,5 +1,5 @@
-// Links each field of the developer's models to the data type it
-// contains, and each data type back to the fields and methods that
+// Links each property of the developer's models to the data type it
+// contains, and each data type back to the properties and methods that
 // contain it.
 //
 // What the API files declare is one `rbt.v1alpha1.pydantic.API` per
@@ -64,10 +64,10 @@ export const sortedAPIs = (apis: APIs): api_pb.API[] =>
     .sort()
     .map((filename) => apis[filename]);
 
-// One field of a type, as the page displays it. When the field's type
+// One property of a type, as the page displays it. When the property's type
 // is one of the developer's data types, `link` is that type's id
-// and the page links to its page instead of showing its fields.
-export interface Field {
+// and the page links to its page instead of showing its properties.
+export interface Property {
   name: string;
   type: string;
   optional: boolean;
@@ -88,7 +88,7 @@ export interface LinkedDataType {
   package: string;
   filename: string;
   description?: string;
-  fields: Field[];
+  properties: Property[];
   referrers: Referrer[];
 }
 
@@ -114,7 +114,7 @@ const SCALAR_NAMES: Record<schema_pb.Scalar, string> = {
 // A type written the way its author would write it: a reference by
 // the model's class name, a list as `Item[]`, a dict as
 // `Record<string, T>`, literals as `"a" | "b"`, an optional as
-// `T | null`. The changelog and the fields table share this, so a
+// `T | null`. The changelog and the properties table share this, so a
 // change reads the way the table does.
 export const formatType = (type: schema_pb.Type | undefined): string => {
   const form = type?.type;
@@ -182,7 +182,7 @@ export const formatConstraints = (
 };
 
 // The one model a type refers to, under any list or dict layers:
-// what a field's row links to. A union refers to several, and links
+// what a property's row links to. A union refers to several, and links
 // to none.
 const referenceIn = (type: schema_pb.Type | undefined): string | undefined => {
   const form = type?.type;
@@ -220,7 +220,7 @@ const rowsOfSchema = ({
 }: {
   api: api_pb.API;
   schema: schema_pb.Schema | undefined;
-}): Field[] =>
+}): Property[] =>
   (schema?.properties ?? []).map((property) => {
     const form = property.type?.type;
     const optional = form?.case === "optional";
@@ -240,26 +240,26 @@ const rowsOfSchema = ({
     };
   });
 
-export const fieldsOfState = ({
+export const propertiesOfState = ({
   api,
   stateType,
 }: {
   api: api_pb.API;
   stateType: api_pb.StateType;
-}): Field[] =>
+}): Property[] =>
   rowsOfSchema({
     api,
     schema: api.schemas[stateType.reference?.name ?? ""],
   });
 
-// The fields of the model named `name`, one level deep.
-export const fieldsOfDataType = ({
+// The properties of the model named `name`, one level deep.
+export const propertiesOfDataType = ({
   api,
   name,
 }: {
   api: api_pb.API;
   name: string;
-}): Field[] => rowsOfSchema({ api, schema: api.schemas[name] });
+}): Property[] => rowsOfSchema({ api, schema: api.schemas[name] });
 
 // Every data type, by id, with what contains it.
 export const linkDataTypes = ({ apis }: { apis: APIs }): LinkedDataType[] => {
@@ -341,9 +341,9 @@ export const linkDataTypes = ({ apis }: { apis: APIs }): LinkedDataType[] => {
     ),
   ];
   for (const [label, id, schema, api] of containers) {
-    for (const field of rowsOfSchema({ api, schema })) {
-      if (field.link !== undefined) {
-        addReferrer(field.link, { id, label: `${label}.${field.name}` });
+    for (const property of rowsOfSchema({ api, schema })) {
+      if (property.link !== undefined) {
+        addReferrer(property.link, { id, label: `${label}.${property.name}` });
       }
     }
   }
@@ -357,7 +357,7 @@ export const linkDataTypes = ({ apis }: { apis: APIs }): LinkedDataType[] => {
         package: packageOfDataTypeName(reference.name),
         filename: api.filename,
         description: schema?.description,
-        fields: rowsOfSchema({ api, schema }),
+        properties: rowsOfSchema({ api, schema }),
         referrers: [],
       });
     }

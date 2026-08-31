@@ -461,7 +461,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
     async def test_a_deep_link_lands_on_a_type_that_nothing_names(
         self
     ) -> None:
-        # No method names `Shelf`: it is reached only as a field of
+        # No method names `Shelf`: it is reached only as a property of
         # `LookResponse`, so the data page is the only place that
         # writes it out. The section's `id` equals the route, so the
         # browser looks able to scroll to it on its own. It cannot: the
@@ -479,7 +479,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                     (By.CSS_SELECTOR, '[id="/data/shop.v1.shop.Shelf"]')
                 )
             )
-            # The field row whose type is `Shelf` links to it by that
+            # The property row whose type is `Shelf` links to it by that
             # name.
             link = driver.find_element(
                 By.CSS_SELECTOR,
@@ -514,14 +514,14 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Where an item sits.', page)
         self.assertNotIn('/data/shop.v1.shop.ShopState', page)
 
-        # And the field or method that contains each type, so the page
+        # And the property or method that contains each type, so the page
         # lists both what a type contains and what contains it.
         self.assertIn('LookResponse.shelf', page)
         self.assertIn('Shop.look (takes)', page)
 
     async def test_a_contained_type_is_followed_to_the_data_page(self) -> None:
         # The convention is one level deep: a page names the type a
-        # field contains, and the link on that name goes to the type's
+        # property contains, and the link on that name goes to the type's
         # data page.
         await self._record_state_types()
 

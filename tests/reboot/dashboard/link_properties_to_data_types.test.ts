@@ -1,19 +1,19 @@
 // `api_reader.py` writes what an API file declares and
-// `link_fields_to_data_types.ts` walks it. The build generates
+// `link_properties_to_data_types.ts` walks it. The build generates
 // `state_types` by running the real reader over `api/`, so the tests
 // below fail when either side drifts from the other.
 import { describe, expect, it } from "vitest";
 import * as api_pb from "../../../rbt/v1alpha1/pydantic/api_pb";
-import type { APIs } from "../../../reboot/dashboard/web/src/link_fields_to_data_types";
+import type { APIs } from "../../../reboot/dashboard/web/src/link_properties_to_data_types";
 import {
-  fieldsOfDataType,
-  fieldsOfState,
+  propertiesOfDataType,
+  propertiesOfState,
   formatType,
   linkDataTypes,
   packageOfDataTypeName,
   packageOfStateTypeName,
   qualifiedName,
-} from "../../../reboot/dashboard/web/src/link_fields_to_data_types";
+} from "../../../reboot/dashboard/web/src/link_properties_to_data_types";
 import apiJson from "./state_types";
 
 // The reader prints proto JSON, which the generated class reads: the
@@ -36,16 +36,16 @@ const linkedDataTypesById = () =>
     ])
   );
 
-describe("the type spelling the changelog shares with the fields table", () => {
-  it("spells every field of every model the way the table does", () => {
+describe("the type spelling the changelog shares with the properties table", () => {
+  it("spells every property of every model the way the table does", () => {
     // Every model the reader declares, with the rows the table makes
     // of it: the spelling of each row's type is what `formatType`
-    // must give for that property's type, an optional field's
+    // must give for that property's type, an optional property's
     // `| null` aside, which the table shows as a column rather than
     // in the type.
     const models = Object.entries(schemas).map(([name, schema]) => ({
       schema,
-      rows: fieldsOfDataType({ api, name }),
+      rows: propertiesOfDataType({ api, name }),
     }));
     expect(models.length).toBeGreaterThan(0);
 
@@ -72,25 +72,27 @@ describe("the description the reader writes", () => {
     );
     expect(remaining?.response?.name).toBe("shop.v1.shop.StockResponse");
 
-    const fields = fieldsOfDataType({
+    const properties = propertiesOfDataType({
       api,
       name: remaining!.response!.name,
     });
-    const items = fields.find((field) => field.name === "items");
+    const items = properties.find((property) => property.name === "items");
 
-    // A field row names its element type and links to that type's
-    // definition instead of inlining its fields.
+    // A property row names its element type and links to that type's
+    // definition instead of inlining its properties.
     expect(items?.type).toBe("Item[]");
     expect(items?.link).toBe("shop.v1.shop.Item");
 
-    const shelves = fields.find((field) => field.name === "shelves");
+    const shelves = properties.find((property) => property.name === "shelves");
     expect(shelves?.type).toBe("Item[][]");
     expect(shelves?.link).toBe("shop.v1.shop.Item");
   });
 
   it("spells a free-form map by its value type", () => {
     const request = linkedDataTypesById().get("shop.v1.shop.StockRequest")!;
-    const labels = request.fields.find((field) => field.name === "labels")!;
+    const labels = request.properties.find(
+      (property) => property.name === "labels"
+    )!;
 
     expect(labels.type).toBe("Record<string, string>");
     expect(labels.link).toBeUndefined();
@@ -98,13 +100,15 @@ describe("the description the reader writes", () => {
 
   it("spells what a value must satisfy beyond its type", () => {
     const request = linkedDataTypesById().get("shop.v1.shop.StockRequest")!;
-    const quantity = request.fields.find((field) => field.name === "quantity")!;
+    const quantity = request.properties.find(
+      (property) => property.name === "quantity"
+    )!;
 
     expect(quantity.constraints).toBe(">= 0");
     expect(quantity.deprecated).toBe(false);
   });
 
-  it("makes an error's fields readable, not just its name", () => {
+  it("makes an error's properties readable, not just its name", () => {
     const [shop] = api.stateTypes;
 
     const remaining = shop.methods.find(
@@ -114,15 +118,17 @@ describe("the description the reader writes", () => {
 
     expect(error.name).toBe("shop.v1.shop.OutOfStockError");
     expect(
-      fieldsOfDataType({ api, name: error.name }).map((field) => field.name)
+      propertiesOfDataType({ api, name: error.name }).map(
+        (property) => property.name
+      )
     ).toEqual(["item"]);
   });
 });
 
 describe("the data types the description carries", () => {
   it("carries types that nothing names", () => {
-    // `Item` and `Price` appear only as fields of other types; no method
-    // names them, so the description must follow field references to
+    // `Item` and `Price` appear only as properties of other types; no method
+    // names them, so the description must follow property references to
     // reach them.
     const linkedDataTypes = linkedDataTypesById();
 
@@ -132,10 +138,10 @@ describe("the data types the description carries", () => {
 
   it("leaves out the state types' own state", () => {
     expect(linkedDataTypesById().has("shop.v1.shop.ShopState")).toBe(false);
-    // The state page shows the state model's fields.
+    // The state page shows the state model's properties.
     expect(
-      fieldsOfState({ api, stateType: api.stateTypes[0] }).map(
-        (field) => field.name
+      propertiesOfState({ api, stateType: api.stateTypes[0] }).map(
+        (property) => property.name
       )
     ).toEqual(["name", "open"]);
   });
@@ -144,17 +150,21 @@ describe("the data types the description carries", () => {
     const item = linkedDataTypesById().get("shop.v1.shop.Item")!;
 
     expect(
-      item.fields.map((field) => [field.name, field.type, field.link])
+      item.properties.map((property) => [
+        property.name,
+        property.type,
+        property.link,
+      ])
     ).toEqual([
       ["name", "string", undefined],
       ["price", "Price", "shop.v1.shop.Price"],
     ]);
-    // `Optional[Price]` is an optional field, not a union.
-    expect(item.fields[1].optional).toBe(true);
+    // `Optional[Price]` is an optional property, not a union.
+    expect(item.properties[1].optional).toBe(true);
   });
 
   it("follows a model containing a model containing a model", () => {
-    // Reach each type through the previous field's `link`, as a reader
+    // Reach each type through the previous property's `link`, as a reader
     // following the page does, so the test fails if a link names a type
     // that `linkedDataTypesById()` leaves out.
     const [shop] = api.stateTypes;
@@ -163,19 +173,21 @@ describe("the data types the description carries", () => {
     const remaining = shop.methods.find(
       (method) => method.name === "remaining"
     );
-    const items = fieldsOfDataType({
+    const items = propertiesOfDataType({
       api,
       name: remaining!.response!.name,
-    }).find((field) => field.name === "items");
+    }).find((property) => property.name === "items");
     expect(items?.link).toBe("shop.v1.shop.Item");
 
     const price = linkedDataTypes
       .get(items!.link!)!
-      .fields.find((field) => field.name === "price");
+      .properties.find((property) => property.name === "price");
     expect(price?.link).toBe("shop.v1.shop.Price");
 
     expect(
-      linkedDataTypes.get(price!.link!)!.fields.map((field) => field.name)
+      linkedDataTypes
+        .get(price!.link!)!
+        .properties.map((property) => property.name)
     ).toEqual(["currency", "cents"]);
   });
 
@@ -188,14 +200,14 @@ describe("the data types the description carries", () => {
         .referrers.map((referrer) => referrer.label)
     ).toEqual(["Item.price"]);
 
-    // Two methods take `StockRequest`, and no response field contains it.
+    // Two methods take `StockRequest`, and no response property contains it.
     expect(
       linkedDataTypes
         .get("shop.v1.shop.StockRequest")!
         .referrers.map((referrer) => referrer.label)
     ).toEqual(["Shop.stock (takes)", "Shop.remaining (takes)"]);
 
-    // `shelves` is `Item[][]`: a field refers to `Item` from any list
+    // `shelves` is `Item[][]`: a property refers to `Item` from any list
     // depth.
     expect(
       linkedDataTypes
