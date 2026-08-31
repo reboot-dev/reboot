@@ -21,12 +21,14 @@ import {
   ReactFlow,
   ReactFlowProvider,
   getBezierPath,
-  useReactFlow,
   type Edge,
   type EdgeProps,
   type Node,
   type NodeProps,
+  useReactFlow,
 } from "@xyflow/react";
+import type { Viewport } from "@xyflow/react";
+import { useLocation, useNavigationType } from "react-router";
 import ELK from "elkjs/lib/elk.bundled.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FC } from "react";
@@ -152,6 +154,7 @@ interface StateTypeData extends Record<string, unknown> {
   // The chosen method's id, when one is chosen.
   selectedMethod?: string | null;
   onSelectMethod?: (id: string) => void;
+  onOpenMethod?: (id: string) => void;
 }
 
 type GraphNode =
@@ -488,7 +491,8 @@ const MethodRow: FC<{
   method: GraphMethod;
   selected: boolean;
   onSelect?: (id: string) => void;
-}> = ({ id, method, selected, onSelect }) => (
+  onOpen?: (id: string) => void;
+}> = ({ id, method, selected, onSelect, onOpen }) => (
   <div
     className={`graph-method ${classNameOfKind(method.kind)}${
       selected ? " selected" : ""
@@ -510,7 +514,16 @@ const MethodRow: FC<{
       className="graph-port"
     />
     <span className="graph-method-dot" aria-hidden="true" />
-    <span className="graph-method-name">{method.name}</span>
+    <span
+      className="graph-method-name graph-method-open"
+      title="open on the state page"
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen?.(id);
+      }}
+    >
+      {method.name}
+    </span>
     {method.factory && <span className="graph-method-factory">factory</span>}
     <Handle
       type="source"
@@ -534,6 +547,7 @@ const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
           method={method}
           selected={data.selectedMethod === id}
           onSelect={data.onSelectMethod}
+          onOpen={data.onOpenMethod}
           key={method.name}
         />
       );
@@ -701,16 +715,58 @@ const edgeTypes = { call: CallEdge };
 // ---------------------------------------------------------------
 // The page.
 
-const GraphCanvas: FC<{ packages: GraphPackage[] }> = ({ packages }) => {
+// The canvas's view for each history entry: its viewport, chosen
+// method and collapsed boxes, restored when a back or forward
+// returns to the graph. At module level because the page unmounts
+// whenever another page shows.
+const graphViews = new Map<
+  string,
+  {
+    viewport: Viewport;
+    selectedMethodId: string | null;
+    collapsed: ReadonlySet<string>;
+  }
+>();
+
+const GraphCanvas: FC<{
+  packages: GraphPackage[];
+  onOpenMethod: (id: string) => void;
+}> = ({ packages, onOpenMethod }) => {
+  const location = useLocation();
+  const saved =
+    useNavigationType() === "POP" ? graphViews.get(location.key) : undefined;
+
   // Which boxes are collapsed, rather than which are expanded, so a
   // package that appears later starts expanded like the rest.
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
+    saved?.collapsed ?? new Set()
+  );
   // The chosen method's id. Opening and closing boxes leaves it
   // chosen, so its calls can be followed into whichever box they land
   // in; only closing its own box lets it go, since its row is gone.
-  const [selectedMethodId, setSelectedMethodId] = useState<string | null>(null);
+  const [selectedMethodId, setSelectedMethodId] = useState<string | null>(
+    saved?.selectedMethodId ?? null
+  );
   const [nodes, setNodes] = useState<GraphNode[]>([]);
-  const { fitView } = useReactFlow();
+  const { fitView, getViewport, setViewport } = useReactFlow();
+
+  // What the cleanup below remembers: the cleanup closes over the
+  // first render's state, so it reads these instead.
+  const view = useRef({ selectedMethodId, collapsed });
+  view.current = { selectedMethodId, collapsed };
+
+  useEffect(() => {
+    if (saved !== undefined) {
+      setViewport(saved.viewport);
+    }
+    const key = location.key;
+    return () => {
+      graphViews.set(key, { viewport: getViewport(), ...view.current });
+    };
+    // Runs once per mount: `saved` and `location.key` are fixed for
+    // the page's life.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // The layout run whose answer still matters. A snapshot arriving
   // while the last is being laid out starts another layout, and only
@@ -724,8 +780,9 @@ const GraphCanvas: FC<{ packages: GraphPackage[] }> = ({ packages }) => {
 
   // Set when the nextCollapsed layout should be framed whole: the first, and
   // one that opened or closed every box at once, which changes the
-  // graph too much for any one spot to hold still.
-  const fitViewAfterLayout = useRef(true);
+  // graph too much for any one spot to hold still. A restored view
+  // is already framed the way it was left.
+  const fitViewAfterLayout = useRef(saved === undefined);
 
   useEffect(() => {
     const thisLayoutRun = ++layoutRun.current;
@@ -868,6 +925,7 @@ const GraphCanvas: FC<{ packages: GraphPackage[] }> = ({ packages }) => {
                 ...node.data,
                 selectedMethod: selectedMethodId,
                 onSelectMethod: toggleMethodSelection,
+                onOpenMethod,
               },
             };
           default:
@@ -880,6 +938,7 @@ const GraphCanvas: FC<{ packages: GraphPackage[] }> = ({ packages }) => {
       selectedMethodId,
       toggleMethodSelection,
       togglePackage,
+      onOpenMethod,
     ]
   );
 
@@ -963,7 +1022,8 @@ export const drawnCallCount = (stateTypes: GraphStateType[]): number =>
 
 export const GraphPage: FC<{
   stateTypes: GraphStateType[];
-}> = ({ stateTypes }) => {
+  onOpenMethod: (id: string) => void;
+}> = ({ stateTypes, onOpenMethod }) => {
   const packages = useMemo(
     () => groupStateTypesByPackage(stateTypes),
     [stateTypes]
@@ -972,7 +1032,7 @@ export const GraphPage: FC<{
   return (
     <div className="graph-canvas">
       <ReactFlowProvider>
-        <GraphCanvas packages={packages} />
+        <GraphCanvas packages={packages} onOpenMethod={onOpenMethod} />
       </ReactFlowProvider>
     </div>
   );

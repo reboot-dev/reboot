@@ -1406,6 +1406,15 @@ header h1 {
   white-space: nowrap;
 }
 
+/* The name is the way to the method on the state page. */
+.graph-method-open {
+  cursor: pointer;
+}
+
+.graph-method-open:hover {
+  text-decoration: underline;
+}
+
 /* A factory: the method that brings the state into existence, which
    is what a `constructs` edge lands on. */
 .graph-method-factory {

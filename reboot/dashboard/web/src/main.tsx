@@ -26,6 +26,7 @@ import {
   Route,
   Routes,
   useLocation,
+  useNavigate,
   useNavigationType,
   useParams,
 } from "react-router";
@@ -448,14 +449,14 @@ const Signature: FC<{
 const Method: FC<{
   api: api_pb.API;
   method: api_pb.Method;
+  // The method's id on the page, `/state/bank.v1.Account.deposit`,
+  // which is what a link from the graph names.
+  id: string;
   expanded: boolean;
   onToggle: () => void;
-}> = ({ api, method, expanded, onToggle }) => {
+}> = ({ api, method, id, expanded, onToggle }) => {
   return (
-    <div
-      className={expanded ? "method is-expanded" : "method"}
-      id={`m-${method.name}`}
-    >
+    <div className={expanded ? "method is-expanded" : "method"} id={id}>
       <div
         className="method-head"
         onClick={onToggle}
@@ -639,6 +640,7 @@ const StateType: FC<{
           <Method
             api={api}
             method={method}
+            id={pathOfTypeOnPage("state", `${name}.${method.name}`)}
             expanded={isMethodExpanded(method.name)}
             onToggle={() =>
               onToggleMethods([method.name], !isMethodExpanded(method.name))
@@ -1043,6 +1045,21 @@ const Overview: FC<{
     }
   }, [navigationType, page, target, apis, linkedDataTypes]);
 
+  const navigate = useNavigate();
+
+  // Opens one method on the state page: expanded, named by the URL
+  // so the page scrolls to it. `id` is a `methodId`,
+  // `bank.v1.Account.deposit`.
+  const onOpenMethod = useCallback(
+    (id: string): void => {
+      const stateType = id.slice(0, id.lastIndexOf("."));
+      const method = id.slice(id.lastIndexOf(".") + 1);
+      onToggleMethods(stateType, [method], true);
+      navigate(`/state/${id}`);
+    },
+    [onToggleMethods, navigate]
+  );
+
   const pane = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const loaded = !(isLoading && stateTypeCount === 0) && preferencesLoaded;
@@ -1185,7 +1202,10 @@ const Overview: FC<{
                   <code>dev run --application=</code>.
                 </p>
               ) : null}
-              <GraphPage stateTypes={graphStateTypes} />
+              <GraphPage
+                stateTypes={graphStateTypes}
+                onOpenMethod={onOpenMethod}
+              />
             </>
           ) : page === "state" ? (
             sortedAPIs(apis).flatMap((api) =>
