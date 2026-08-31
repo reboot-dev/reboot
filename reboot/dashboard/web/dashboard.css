@@ -253,6 +253,14 @@ nav > .eyebrow {
   border-radius: 5px 0 0 5px;
   font-weight: 600;
   font-size: 12.5px;
+  /* A long name gives way rather than pushing the count out of
+     view: the `1fr` column only shrinks below its content when the
+     cell may, which `min-width: 0` says. The full name is the
+     row's `title`. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: hsl(var(--foreground));
 }
 

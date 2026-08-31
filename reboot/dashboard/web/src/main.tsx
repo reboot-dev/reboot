@@ -294,7 +294,11 @@ const Package: FC<{
       {open && (
         <div className="package-types">
           {entries.map((entry) => (
-            <Link to={pathOfTypeOnPage(page, entry.id)} key={entry.id}>
+            <Link
+              to={pathOfTypeOnPage(page, entry.id)}
+              title={entry.name}
+              key={entry.id}
+            >
               <span className="nav-name">{entry.name}</span>
               <span className="nav-count">{entry.count}</span>
             </Link>
