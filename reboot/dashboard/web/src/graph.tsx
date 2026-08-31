@@ -946,18 +946,10 @@ const GraphCanvas: FC<{ packages: GraphPackage[] }> = ({ packages }) => {
   );
 };
 
-export const GraphPage: FC<{
-  stateTypes: GraphStateType[];
-  onCount: (drawnCalls: number) => void;
-}> = ({ stateTypes, onCount }) => {
-  const packages = useMemo(
-    () => groupStateTypesByPackage(stateTypes),
-    [stateTypes]
-  );
-
-  // Counted from the data rather than the edges, which collapse when
-  // their box is collapsed.
-  const drawnCalls = stateTypes.reduce(
+// How many calls the graph draws: counted from the data rather than
+// the edges, which collapse when their box is collapsed.
+export const drawnCallCount = (stateTypes: GraphStateType[]): number =>
+  stateTypes.reduce(
     (count, stateType) =>
       count +
       stateType.methods.reduce(
@@ -966,7 +958,14 @@ export const GraphPage: FC<{
       ),
     0
   );
-  useEffect(() => onCount(drawnCalls), [drawnCalls, onCount]);
+
+export const GraphPage: FC<{
+  stateTypes: GraphStateType[];
+}> = ({ stateTypes }) => {
+  const packages = useMemo(
+    () => groupStateTypesByPackage(stateTypes),
+    [stateTypes]
+  );
 
   return (
     <div className="graph-canvas">

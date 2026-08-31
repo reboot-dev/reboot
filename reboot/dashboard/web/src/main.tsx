@@ -62,7 +62,7 @@ import {
 } from "./changelog";
 import { DashboardGetResponse_NeedsGenerateReason as NeedsGenerateReason } from "../../../../rbt/dashboard/v1/dashboard_pb";
 import { joinStateTypes } from "./callgraph";
-import { GraphPage } from "./graph";
+import { drawnCallCount, GraphPage } from "./graph";
 
 // One subscriber per tab, for as long as the tab is open.
 const SUBSCRIBER_ID = uuidv4();
@@ -761,27 +761,13 @@ const ChangeRow: FC<{ entry: Entry; now: Date }> = ({ entry, now }) => {
   );
 };
 
-const ChangelogPage: FC<{ onCount: (n: number) => void; live: boolean }> = ({
-  onCount,
-  live,
-}) => {
-  const { useReverseRange } = useOrderedMap({ id: CHANGELOG_ID });
-  const [pages, setPages] = useState(1);
-
-  const { response, isLoading, aborted } = useReverseRange({
-    // One more than is shown, to learn whether more exist.
-    limit: CHANGES_PER_PAGE * pages + 1,
-  });
-
-  // The read aborts when the map does not exist, and it does not exist
-  // until the first change is recorded.
-  const entries = aborted !== undefined ? [] : response?.entries ?? [];
-  const changes = entriesOfRange(entries);
-  const more = changes.length > CHANGES_PER_PAGE * pages;
-  const shown = more ? changes.slice(0, CHANGES_PER_PAGE * pages) : changes;
-
-  useEffect(() => onCount(shown.length), [shown.length, onCount]);
-
+const ChangelogPage: FC<{
+  shown: Entry[];
+  more: boolean;
+  onMore: () => void;
+  isLoading: boolean;
+  live: boolean;
+}> = ({ shown, more, onMore, isLoading, live }) => {
   // Every row on the page measures "ago" from this same moment.
   const now = new Date();
 
@@ -810,7 +796,7 @@ const ChangelogPage: FC<{ onCount: (n: number) => void; live: boolean }> = ({
         ))}
       </div>
       {more && (
-        <button className="expand-button" onClick={() => setPages(pages + 1)}>
+        <button className="expand-button" onClick={onMore}>
           Show older
         </button>
       )}
@@ -933,12 +919,32 @@ const Overview: FC<{
 
   const packages = useMemo(() => groupByPackage(entries), [entries]);
 
-  // How many changes the changelog page is showing. The page reports
-  // it through `onCount`, since the page is what reads the entries.
-  const [changes, setChanges] = useState(0);
+  // The changelog, read here rather than in its page so that the
+  // nav's count is right before the page is ever opened.
+  const { useReverseRange } = useOrderedMap({ id: CHANGELOG_ID });
+  const [changelogPages, setChangelogPages] = useState(1);
+  const {
+    response: changelogResponse,
+    isLoading: changelogIsLoading,
+    aborted: changelogAborted,
+  } = useReverseRange({
+    // One more than is shown, to learn whether more exist.
+    limit: CHANGES_PER_PAGE * changelogPages + 1,
+  });
+  // The read aborts when the map does not exist, and it does not
+  // exist until the first change is recorded.
+  const changelog = entriesOfRange(
+    changelogAborted !== undefined ? [] : changelogResponse?.entries ?? []
+  );
+  const moreChangelog = changelog.length > CHANGES_PER_PAGE * changelogPages;
+  const shownChangelog = moreChangelog
+    ? changelog.slice(0, CHANGES_PER_PAGE * changelogPages)
+    : changelog;
 
-  // How many calls the graph page is drawing, reported the same way.
-  const [calls, setCalls] = useState(0);
+  const calls = useMemo(
+    () => drawnCallCount(graphStateTypes),
+    [graphStateTypes]
+  );
 
   const eyebrow = page === "changelog" ? "history" : "application domain";
 
@@ -997,7 +1003,7 @@ const Overview: FC<{
   const counts: Record<Page, number> = {
     state: stateTypeCount,
     data: linkedDataTypes.length,
-    changelog: changes,
+    changelog: shownChangelog.length,
     graph: calls,
   };
 
@@ -1046,7 +1052,13 @@ const Overview: FC<{
           </header>
           {error && <div className="error">{error}</div>}
           {page === "changelog" ? (
-            <ChangelogPage onCount={setChanges} live={live} />
+            <ChangelogPage
+              shown={shownChangelog}
+              more={moreChangelog}
+              onMore={() => setChangelogPages(changelogPages + 1)}
+              isLoading={changelogIsLoading}
+              live={live}
+            />
           ) : page === "graph" ? (
             <>
               {needsGenerateReason === NeedsGenerateReason.MISSING ? (
@@ -1073,7 +1085,7 @@ const Overview: FC<{
                   <code>dev run --application=</code>.
                 </p>
               ) : null}
-              <GraphPage stateTypes={graphStateTypes} onCount={setCalls} />
+              <GraphPage stateTypes={graphStateTypes} />
             </>
           ) : page === "state" ? (
             sortedAPIs(apis).flatMap((api) =>
