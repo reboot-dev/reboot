@@ -1981,17 +1981,26 @@ class GreeterInstance {
                         // orphans list with a length greater than 0. In this case, we don't
                         // want to skip checking the expecteds list just because we have
                         // already checked the orphans list.
-                        if (expecteds.length > 0 &&
-                            queryResponse.idempotencyKeys.includes(expecteds[0].idempotencyKey)) {
-                            await expecteds[0].observed(() => {
-                                if (response !== undefined) {
-                                    reader.setResponse(response);
-                                }
-                                expecteds.shift();
-                            });
+                        //
+                        // A single query response can report the idempotency keys of
+                        // several mutations at once, because the backend aggregates the
+                        // keys of every state it skipped over on its way to the state this
+                        // response reflects. Two mutations may also share an idempotency
+                        // key. So observe _every_ mutation whose key this response
+                        // reports, not just the oldest one.
+                        const observeds = expecteds.filter(expected => queryResponse.idempotencyKeys.includes(expected.idempotencyKey));
+                        if (observeds.length > 0) {
+                            expecteds = expecteds.filter(expected => !observeds.includes(expected));
+                            for (const observed of observeds) {
+                                await observed.observed(() => {
+                                    if (response !== undefined) {
+                                        reader.setResponse(response);
+                                    }
+                                });
+                            }
                         }
                         // If we don't have any orphans to observe and we don't have any expecteds to observe,
-                        // or at least, the first expecteds _is not observed_ by this response, then go ahead and
+                        // or at least, none of the expecteds _is observed_ by this response, then go ahead and
                         // pass on the response because it might contain new data that should get shown to the
                         // user (e.g., in a chat app this could be a new chat message from a different user).
                         else if (response !== undefined && !haveOrphans) {

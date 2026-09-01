@@ -418,6 +418,60 @@ export function reactively<
   return [responses(), setRequest];
 }
 
+// Tells the backend that we have processed the response with the given
+// ID and are ready for a next one. Retries until the backend confirms,
+// since a lost acknowledgement would leave the `Query` stream waiting
+// forever.
+async function acknowledgeQueryResponse({
+  endpoint,
+  headers,
+  queryResponseId,
+  signal,
+}: {
+  endpoint: string;
+  headers: Headers;
+  queryResponseId: string;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const url = new URL(
+    `${endpoint}/rbt.v1alpha1.React/AcknowledgeQueryResponse`
+  );
+
+  const backoff = new Backoff();
+
+  while (true) {
+    try {
+      const response = await guardedFetch(
+        new Request(url.toString(), {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ queryResponseId }),
+          signal,
+        })
+      );
+      // A `fetch()` only throws on network errors; an HTTP error
+      // response resolves successfully, so we have to check for it
+      // ourselves.
+      if (!response.ok) {
+        throw new Error(
+          `Acknowledging query response '${queryResponseId}' failed ` +
+            `with HTTP status ${response.status}`
+        );
+      }
+      return;
+    } catch (e) {
+      if (signal?.aborted) {
+        throw e;
+      }
+      console.warn(
+        `[Reboot] Failed to acknowledge query response ` +
+          `'${queryResponseId}', retrying after backoff ...`
+      );
+      await backoff.wait();
+    }
+  }
+}
+
 export async function* reactiveReader({
   endpoint,
   request,
@@ -430,14 +484,18 @@ export async function* reactiveReader({
   websockets: boolean;
 }): AsyncGenerator<react_pb.QueryResponse, void, unknown> {
   const url = new URL(`${endpoint}/rbt.v1alpha1.React/Query`);
+
+  const headers = new Headers();
+
+  if (request.bearerToken !== undefined) {
+    headers.set("Authorization", `Bearer ${request.bearerToken}`);
+  }
+
   if (url.protocol === "https:" && !websockets) {
-    const headers = new Headers();
+    const acknowledgeHeaders = new Headers(headers);
+    acknowledgeHeaders.set("Content-Type", "application/json");
 
-    if (request.bearerToken !== undefined) {
-      headers.set("Authorization", `Bearer ${request.bearerToken}`);
-    }
-
-    yield* grpcServerStream({
+    const responses = grpcServerStream({
       endpoint: url.toString(),
       method: "POST",
       headers,
@@ -445,6 +503,24 @@ export async function* reactiveReader({
       responseType: react_pb.QueryResponse,
       signal,
     });
+
+    for await (const response of responses) {
+      yield response;
+
+      // Only now that our consumer has processed the response do we
+      // ask the backend for a next one, so that it reflects the
+      // latest state rather than a state that has already been
+      // superseded. An older backend doesn't send an ID and doesn't
+      // expect an acknowledgement.
+      if (response.queryResponseId !== "") {
+        await acknowledgeQueryResponse({
+          endpoint,
+          headers: acknowledgeHeaders,
+          queryResponseId: response.queryResponseId,
+          signal,
+        });
+      }
+    }
   } else {
     // TODO: while technically we could `await
     // grpcWebsocketServerStream(...)` doing so will leak websockets
@@ -458,6 +534,14 @@ export async function* reactiveReader({
       heartbeatRequest: new react_pb.QueryRequest(),
       responseType: react_pb.QueryResponse,
       signal,
+      // Acknowledgements go back over the same websocket, so that a
+      // reactive read costs no extra round trips.
+      acknowledgeRequest: (response: react_pb.QueryResponse) =>
+        response.queryResponseId !== ""
+          ? new react_pb.QueryRequest({
+              acknowledgeQueryResponseId: response.queryResponseId,
+            })
+          : undefined,
     });
     for await (const response of responses) {
       if (response.responseOrStatus.case == "status") {
@@ -753,12 +837,16 @@ export async function* grpcWebsocketServerStream<
   heartbeatRequest,
   responseType,
   signal,
+  acknowledgeRequest,
 }: {
   url: URL;
   request: RequestType;
   heartbeatRequest: RequestType;
   responseType: MessageType<ResponseType>;
   signal: AbortSignal;
+  // Produces the request, if any, to send back once the consumer has
+  // processed a response.
+  acknowledgeRequest?: (response: ResponseType) => RequestType | undefined;
 }): AsyncGenerator<ResponseType, void, unknown> {
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
 
@@ -846,7 +934,17 @@ export async function* grpcWebsocketServerStream<
       // suspended at `yield`; the loop re-checks after each one).
       let data: ArrayBuffer | undefined = undefined;
       while ((data = messages.shift()) !== undefined) {
-        yield responseType.fromBinary(new Uint8Array(data));
+        const response = responseType.fromBinary(new Uint8Array(data));
+
+        yield response;
+
+        const acknowledgement = acknowledgeRequest?.(response);
+        if (
+          acknowledgement !== undefined &&
+          websocket.readyState === WebSocket.OPEN
+        ) {
+          websocket.send(acknowledgement.toBinary());
+        }
       }
 
       if (error !== undefined) {
