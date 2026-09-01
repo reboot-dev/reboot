@@ -358,6 +358,15 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+        # A data type's entry records its package, so the page never
+        # derives it from the name's spelling.
+        data_type_added = next(
+            change.data_type_added
+            for change in await self._changelog_entries()
+            if change.WhichOneof('change') == 'data_type_added'
+        )
+        self.assertEqual(data_type_added.package, 'shop.v1')
+
     async def test_fixing_a_file_broken_at_startup_is_history(self) -> None:
         # A file that was on disk but did not parse told the dashboard
         # nothing; what it turns out to declare once it does parse is

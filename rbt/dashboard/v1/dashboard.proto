@@ -321,6 +321,12 @@ message DataTypeAdded {
   // "shop.v1.LookRequest".
   string name = 1;
   string filename = 2;
+
+  // The package the data type belongs to. Recorded rather than
+  // derived from `name`, whose spelling depends on what declared
+  // the type: a Pydantic model's name carries its module, a proto
+  // message's its package.
+  string package = 3;
 }
 
 // Never without something that changed: every change to a data type
@@ -330,11 +336,23 @@ message DataTypeChanged {
   string filename = 2;
   repeated PropertyChange properties = 3;
   optional DescriptionChanged description = 4;
+
+  // The package the data type belongs to. Recorded rather than
+  // derived from `name`, whose spelling depends on what declared
+  // the type: a Pydantic model's name carries its module, a proto
+  // message's its package.
+  string package = 5;
 }
 
 message DataTypeRemoved {
   string name = 1;
   string filename = 2;
+
+  // The package the data type belongs to. Recorded rather than
+  // derived from `name`, whose spelling depends on what declared
+  // the type: a Pydantic model's name carries its module, a proto
+  // message's its package.
+  string package = 3;
 }
 
 // How the application implements a state type: a servicer.

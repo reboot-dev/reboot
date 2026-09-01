@@ -323,7 +323,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "dataTypeAdded":
       return {
-        where: packageOfDataTypeName(what.value.name),
+        where: what.value.package,
         kind: "data",
         difference: "added",
         name: shortNameOf(what.value.name),
@@ -332,7 +332,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "dataTypeChanged":
       return {
-        where: packageOfDataTypeName(what.value.name),
+        where: what.value.package,
         kind: "data",
         difference: "changed",
         name: shortNameOf(what.value.name),
@@ -353,7 +353,7 @@ export const rowOfChange = (change: Change): Row => {
       };
     case "dataTypeRemoved":
       return {
-        where: packageOfDataTypeName(what.value.name),
+        where: what.value.package,
         kind: "data",
         difference: "removed",
         name: shortNameOf(what.value.name),
