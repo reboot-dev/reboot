@@ -1,0 +1,47 @@
+# Python runtime caches and venv, rebuilt inside the image.
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+
+# Reboot runtime state (dev-only).
+.rbt/
+
+# Generated code, regenerated inside the image by `rbt generate`.
+backend/api/
+frontend/api/
+
+# Node sources, dependencies, and caches, including the React Native
+# `mobile/` workspace. Only `frontend/dist/` is copied into the image.
+frontend/node_modules/
+frontend/mobile/
+frontend/mcp/
+frontend/web/
+frontend/src/
+frontend/package.json
+frontend/package-lock.json
+frontend/tsconfig*.json
+frontend/vite.config.ts
+frontend/build.mjs
+frontend/eslint.config.js
+frontend/vite-env.d.ts
+
+# Tests and their recordings.
+tests/
+.tests/
+*.recordings/
+
+# VCS.
+.git/
+.gitignore
+
+# Editor / OS.
+.vscode/
+.idea/
+.claude/
+*.swp
+.DS_Store
+
+# Local-only files.
+README.md

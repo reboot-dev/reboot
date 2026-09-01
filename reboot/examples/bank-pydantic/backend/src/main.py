@@ -36,10 +36,11 @@ async def main():
         oauth=OAuth(
             provider=OAuthProviderByEnvironment(
                 dev=Development(),
-                # TODO: set a real provider (e.g. `Google(...)`) before
-                # production; `prod=None` makes a production deployment
-                # fail to start until one is chosen.
-                prod=None,
+                # This branch deploys to Reboot Cloud only to test a
+                # release, so it signs in with the fake account picker
+                # there too. A real deployment must pick a real
+                # provider (e.g. `Google(...)`) instead.
+                prod=Development(),
             ),
             # The redirect URI of our own mobile app (see
             # `frontend/mobile/`), whose users Reboot signs in without
@@ -52,6 +53,7 @@ async def main():
             skip_consent_for_redirect_uris=[
                 "bankpydanticmobile://redirect",
             ],
+            allowed_origins=[],
         ),
         # Include `OrderedMap` library.
         libraries=[ordered_map_library()],
