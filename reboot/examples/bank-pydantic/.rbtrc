@@ -39,3 +39,22 @@ dev run:dist --frontend-dist-path=frontend/dist
 
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=bank
+
+# Production (`rbt serve run`) settings, used by the `Dockerfile`
+# when deploying to the Reboot Cloud. In production the built
+# `frontend/dist/` is served from disk by the static-file server;
+# the Vite dev server that `--frontend-host` points at is dev-only.
+serve run --python
+serve run --application=backend/src/main.py
+serve run --application-name=bank
+serve run --frontend-root-path=frontend
+serve run --frontend-dist-path=frontend/dist
+
+# Leave TLS termination to the external load balancer; expose a
+# non-SSL port to that load balancer.
+serve run --tls=external
+
+# Application name for the `rbt cloud` commands.
+cloud up --application-name=bank
+cloud down --application-name=bank --expunge
+cloud logs --application-name=bank
