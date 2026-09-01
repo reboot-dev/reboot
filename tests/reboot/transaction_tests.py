@@ -38,6 +38,7 @@ from tests.reboot.general_rbt import (
     GeneralResponse,
 )
 from tests.reboot.general_servicer import GeneralServicer
+from typing import Optional
 from unittest import mock
 
 
@@ -334,35 +335,64 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_coordinator_down_participant_abort(self) -> None:
-        """Tests that a transaction coordinator only keeps information about a
-        transaction before doing the prepare phase of two phase commit
-        in memory so that if it fails when it comes back up the
-        transaction will abort."""
+        """Tests that if a participant aborts and the
+        transaction coordinator fails before completing the prepare
+        phase, recovery re-prepares from the coordinator's durable
+        record of its participants, gets the participant's abort
+        again, and aborts the transaction."""
         # Need to get a reference to the pre-mocked methods so
         # we can use it for any service/actors that we aren't trying
         # to mimic a failure.
         prepare = SidecarStateManager.Prepare
         abort = SidecarStateManager.Abort
+        transaction_coordinator_cleanup = (
+            DatabaseClient.transaction_coordinator_cleanup
+        )
 
         prepare_called = asyncio.Event()
         prepare_waiting = asyncio.Event()
+
+        # Whether `transaction_coordinator_cleanup` fails, simulating
+        # a coordinator that crashes while stopping rather than
+        # cleanly aborting: its record of its participants stays in
+        # the database so recovery must re-prepare and get the
+        # participant's abort again. The event records that the
+        # dying coordinator's one cleanup attempt has failed, after
+        # which the record provably survives until recovery reads it.
+        fail_transaction_coordinator_cleanup = False
+        transaction_coordinator_cleanup_failed = asyncio.Event()
 
         account_ref = StateRef.from_id(
             Account.__state_type_name__, 'jonathan-2345'
         )
 
+        # This test specifically exercises what happens when a
+        # participant aborts but the coordinator doesn't hear about
+        # until it recovers.
+        aborted_transaction_id: Optional[bytes] = None
+
         async def mock_prepare(state_manager, request, grpc_context):
+            nonlocal aborted_transaction_id
             headers = Headers.from_grpc_context(grpc_context)
             if headers.state_ref == account_ref:
-                # NOTE: only want to raise the first time!
-                if not prepare_called.is_set():
+                if aborted_transaction_id is None:
+                    aborted_transaction_id = request.transaction_id
                     prepare_called.set()
                     await prepare_waiting.wait()
+                if request.transaction_id == aborted_transaction_id:
                     return transactions_pb2.PrepareResponse(abort=True)
-                else:
-                    return await prepare(state_manager, request, grpc_context)
-            else:
-                return await prepare(state_manager, request, grpc_context)
+            return await prepare(state_manager, request, grpc_context)
+
+        async def mock_transaction_coordinator_cleanup(
+            database_client,
+            **kwargs,
+        ):
+            if fail_transaction_coordinator_cleanup:
+                transaction_coordinator_cleanup_failed.set()
+                raise RuntimeError('Simulating a coordinator crash')
+            return await transaction_coordinator_cleanup(
+                database_client, **kwargs
+            )
 
         async def mock_abort(state_manager, request, grpc_context):
             headers = Headers.from_grpc_context(grpc_context)
@@ -376,6 +406,10 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             mock_prepare
         ), mock.patch(
             'reboot.aio.state_managers.SidecarStateManager.Abort', mock_abort
+        ), mock.patch(
+            'reboot.server.database.DatabaseClient.'
+            'transaction_coordinator_cleanup',
+            mock_transaction_coordinator_cleanup
         ), mock.patch(
             # Disable retries on error, so that we can get a clear
             # signal when a server has gone down.
@@ -409,6 +443,8 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             await prepare_called.wait()
 
+            fail_transaction_coordinator_cleanup = True
+
             bank_server = await self.rbt.server_stop(bank_server_id)
 
             prepare_waiting.set()
@@ -423,6 +459,13 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             # Need to acknowledge idempotency uncertainty so that we
             # can continue running the test!
             context.acknowledge_idempotency_uncertainty()
+
+            # Once the dying coordinator's one cleanup attempt has
+            # failed, its record of its participants must survive
+            # until recovery reads it, and recovery's own abort can
+            # clean up normally.
+            await transaction_coordinator_cleanup_failed.wait()
+            fail_transaction_coordinator_cleanup = False
 
             await self.rbt.server_start(bank_server)
 
@@ -2091,10 +2134,11 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn('Jazz hands!', str(aborted.exception))
 
-    async def test_transaction_refuses_calls_after_catching_abort(self):
-        """Test that once a caught error has doomed the transaction any
-        further call is refused before being dispatched, rather than
-        doing work that will only be rolled back.
+    async def test_calls_within_transactions_raise_after_catching_abort(self):
+        """Test that once a call within a transaction raises an unrecoverable
+        error the transaction is doomed an any further call raises
+        before being dispatched, rather than doing work that will only
+        be rolled back.
         """
 
         await self.rbt.up(
