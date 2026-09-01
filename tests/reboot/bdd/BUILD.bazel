@@ -1,0 +1,58 @@
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//reboot:rules.bzl", "py_reboot_library")
+
+proto_library(
+    name = "account_proto",
+    srcs = [":account.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "account_py_reboot",
+    proto = "account.proto",
+    proto_library = ":account_proto",
+    visibility = ["//tests/reboot/bdd:__subpackages__"],
+)
+
+py_library(
+    name = "account_servicer_py",
+    srcs = [":account_servicer.py"],
+    srcs_version = "PY3",
+    deps = [
+        ":account_py_reboot",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio/auth:authorizers_py",
+    ],
+)
+
+py_test(
+    name = "bdd_tests_py",
+    srcs = [
+        ":bdd_tests.py",
+        ":collision_tests.py",
+        ":conftest.py",
+        "//tests/reboot:pytest_main.py",
+    ],
+    args = [
+        "tests/reboot/bdd/bdd_tests.py",
+        "tests/reboot/bdd/collision_tests.py",
+        "-v",
+    ],
+    data = [
+        ":accounts.feature",
+        ":collisions.feature",
+    ],
+    main = "pytest_main.py",
+    deps = [
+        requirement("pytest"),
+        requirement("pytest-bdd"),
+        ":account_servicer_py",
+        "//reboot/aio:applications_py",
+        "//reboot/bdd:steps_py",
+        "//tests/reboot/bdd/other:account_servicer_py",
+    ],
+)

@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package tests.reboot.bdd.other;
+
+import "rbt/v1alpha1/options.proto";
+
+// A second state type named `Account`, so that the `reboot.bdd`
+// tests can exercise resolving colliding state type names.
+message Account {
+  option (rbt.v1alpha1.state) = {
+  };
+  int64 total = 1;
+}
+
+service AccountMethods {
+  rpc Open(OpenRequest) returns (OpenResponse) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {},
+    };
+  }
+
+  rpc Total(TotalRequest) returns (TotalResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}
+
+message OpenRequest {
+  int64 initial_total = 1;
+}
+
+message OpenResponse {}
+
+message TotalRequest {}
+
+message TotalResponse {
+  int64 total = 1;
+}
