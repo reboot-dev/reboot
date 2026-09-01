@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package tests.reboot.bdd;
+
+import "rbt/v1alpha1/options.proto";
+
+// A bank account, used to test the `reboot.bdd` steps.
+message Account {
+  option (rbt.v1alpha1.state) = {
+  };
+  int64 balance = 1;
+}
+
+service AccountMethods {
+  rpc Open(OpenRequest) returns (OpenResponse) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {},
+    };
+  }
+
+  rpc Balance(BalanceRequest) returns (BalanceResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc Deposit(DepositRequest) returns (DepositResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [ "OverdraftError" ],
+    };
+  }
+}
+
+message OpenRequest {
+  int64 initial_balance = 1;
+}
+
+message OpenResponse {}
+
+message BalanceRequest {}
+
+message BalanceResponse {
+  int64 balance = 1;
+}
+
+message DepositRequest {
+  int64 amount = 1;
+}
+
+message DepositResponse {
+  int64 updated_balance = 1;
+}
+
+message WithdrawRequest {
+  int64 amount = 1;
+}
+
+message WithdrawResponse {
+  int64 updated_balance = 1;
+}
+
+// Error returned when a withdrawal would overdraft the account.
+message OverdraftError {
+  // Amount the withdrawal would have overdrafted the account by.
+  int64 amount = 1;
+}

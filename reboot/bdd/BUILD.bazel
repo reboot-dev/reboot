@@ -1,0 +1,64 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "__init___py",
+    srcs = ["__init__.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":loop_py",
+        requirement("pytest-bdd"),
+    ],
+)
+
+py_library(
+    name = "loop_py",
+    srcs = ["loop.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "registry_py",
+    srcs = ["registry.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot/aio:applications_py",
+        "//reboot/aio:servicers_py",
+    ],
+)
+
+py_library(
+    name = "fixtures_py",
+    srcs = ["fixtures.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":__init___py",
+        requirement("pytest"),
+        "//reboot/aio:aborted_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+py_library(
+    name = "steps_py",
+    srcs = ["steps.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":__init___py",
+        ":fixtures_py",
+        ":registry_py",
+        requirement("pytest"),
+        requirement("pytest-bdd"),
+        "//reboot/aio:aborted_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:tests_py",
+    ],
+)
