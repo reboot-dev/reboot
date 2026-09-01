@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package rbt.v1alpha1.pydantic;
+package rbt.v1alpha1.api;
 
-import "rbt/v1alpha1/pydantic/schema.proto";
+import "rbt/v1alpha1/api/schema.proto";
 
 // What one API file declares, as a grammar: the closed set of forms a
 // pydantic `API(...)` can take, which `rbt generate` prints proto from

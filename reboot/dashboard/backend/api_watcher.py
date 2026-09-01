@@ -25,7 +25,7 @@ from rbt.dashboard.v1.dashboard_pb2 import Change
 from rbt.dashboard.v1.dashboard_pb2 import Dashboard as DashboardState
 from rbt.dashboard.v1.dashboard_pb2 import File
 from rbt.dashboard.v1.dashboard_rbt import Dashboard
-from rbt.v1alpha1.pydantic import api_pb2
+from rbt.v1alpha1.api import api_pb2
 from reboot.aio.concurrently import concurrently
 from reboot.aio.contexts import WorkflowContext
 from reboot.aio.workflows import at_least_once

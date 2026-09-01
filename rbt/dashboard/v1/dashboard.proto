@@ -4,8 +4,8 @@ package rbt.dashboard.v1;
 
 import "google/protobuf/timestamp.proto";
 import "rbt/v1alpha1/options.proto";
-import "rbt/v1alpha1/pydantic/api.proto";
-import "rbt/v1alpha1/pydantic/schema.proto";
+import "rbt/v1alpha1/api/api.proto";
+import "rbt/v1alpha1/api/schema.proto";
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -32,7 +32,7 @@ message Dashboard {
 
   // What each file declaring an `api` declares, keyed the way
   // `api_files` is, which is also the `filename` inside.
-  map<string, rbt.v1alpha1.pydantic.API> apis = 4;
+  map<string, rbt.v1alpha1.api.API> apis = 4;
 
   // The digest of what each file declaring an `api` declares, as
   // it is now, keyed by the module `rbt generate` writes for the
@@ -86,7 +86,7 @@ message DashboardGetResponse {
   string api_directory = 1;
   optional string error = 2;
   map<string, File> api_files = 3;
-  map<string, rbt.v1alpha1.pydantic.API> apis = 4;
+  map<string, rbt.v1alpha1.api.API> apis = 4;
   map<string, string> api_digests = 5;
   repeated Servicer servicers = 6;
   map<string, Generated> generated = 7;
@@ -100,7 +100,7 @@ message DashboardUpdateApiRequest {
   string api_directory = 1;
   optional string error = 2;
   map<string, File> api_files = 3;
-  map<string, rbt.v1alpha1.pydantic.API> apis = 5;
+  map<string, rbt.v1alpha1.api.API> apis = 5;
   map<string, string> api_digests = 6;
 
   // What differs from what the state records, for the changelog.
@@ -157,8 +157,8 @@ message DescriptionChanged {
 }
 
 message TypeChanged {
-  rbt.v1alpha1.pydantic.Type from = 1;
-  rbt.v1alpha1.pydantic.Type to = 2;
+  rbt.v1alpha1.api.Type from = 1;
+  rbt.v1alpha1.api.Type to = 2;
 }
 
 message RequiredChanged {
@@ -174,8 +174,8 @@ message DefaultChanged {
 
 // A property's constraints; absent for none.
 message ConstraintsChanged {
-  optional rbt.v1alpha1.pydantic.Constraints from = 1;
-  optional rbt.v1alpha1.pydantic.Constraints to = 2;
+  optional rbt.v1alpha1.api.Constraints from = 1;
+  optional rbt.v1alpha1.api.Constraints to = 2;
 }
 
 message DeprecatedChanged {
@@ -215,7 +215,7 @@ message MethodAdded {}
 
 message MethodRemoved {}
 
-// A method's kind: which arm of `rbt.v1alpha1.pydantic.Method.kind`
+// A method's kind: which arm of `rbt.v1alpha1.api.Method.kind`
 // the method declares.
 message KindChanged {
   enum Kind {
@@ -236,24 +236,24 @@ message FactoryChanged {
 
 // How a method is exposed over MCP; absent for not at all.
 message MCPChanged {
-  optional rbt.v1alpha1.pydantic.MCP from = 1;
-  optional rbt.v1alpha1.pydantic.MCP to = 2;
+  optional rbt.v1alpha1.api.MCP from = 1;
+  optional rbt.v1alpha1.api.MCP to = 2;
 }
 
 // The request or response type, by name; absent for none.
 message RequestChanged {
-  optional rbt.v1alpha1.pydantic.Reference from = 1;
-  optional rbt.v1alpha1.pydantic.Reference to = 2;
+  optional rbt.v1alpha1.api.Reference from = 1;
+  optional rbt.v1alpha1.api.Reference to = 2;
 }
 
 message ResponseChanged {
-  optional rbt.v1alpha1.pydantic.Reference from = 1;
-  optional rbt.v1alpha1.pydantic.Reference to = 2;
+  optional rbt.v1alpha1.api.Reference from = 1;
+  optional rbt.v1alpha1.api.Reference to = 2;
 }
 
 message ErrorsChanged {
-  repeated rbt.v1alpha1.pydantic.Reference from = 1;
-  repeated rbt.v1alpha1.pydantic.Reference to = 2;
+  repeated rbt.v1alpha1.api.Reference from = 1;
+  repeated rbt.v1alpha1.api.Reference to = 2;
 }
 
 // One method of a state type, and one thing that happened to it.

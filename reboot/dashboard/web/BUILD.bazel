@@ -36,8 +36,8 @@ ts_project(
         "//:node_modules/uuid",
         "//rbt/dashboard/v1:dashboard_js_reboot_react",
         "//rbt/std/collections/ordered_map/v1:ordered_map_js_reboot_react",
-        "//rbt/v1alpha1/pydantic:api_js_proto",
-        "//rbt/v1alpha1/pydantic:schema_js_proto",
+        "//rbt/v1alpha1/api:api_js_proto",
+        "//rbt/v1alpha1/api:schema_js_proto",
     ],
 )
 

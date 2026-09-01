@@ -6,7 +6,7 @@ Run as a subprocess:
         <file-relative-to-it>
 
 and it writes what the file declares to stdout, as proto JSON of an
-`rbt.v1alpha1.pydantic.API`, or `null` for a file declaring no `api`;
+`rbt.v1alpha1.api.API`, or `null` for a file declaring no `api`;
 or a message to stderr and a non-zero exit if the file cannot be
 read.
 
@@ -24,7 +24,7 @@ import json
 import os
 import sys
 from google.protobuf.json_format import MessageToDict, ParseDict
-from rbt.v1alpha1.pydantic import api_pb2
+from rbt.v1alpha1.api import api_pb2
 from reboot.api import API
 from reboot.pydantic_api import api_of
 from typing import Optional

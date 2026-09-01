@@ -5,7 +5,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from rbt.v1alpha1.pydantic.api_pb2 import API
+from rbt.v1alpha1.api.api_pb2 import API
 from reboot.pydantic_api import api_of
 
 API_DIRECTORY = str(Path(__file__).parent / 'api')

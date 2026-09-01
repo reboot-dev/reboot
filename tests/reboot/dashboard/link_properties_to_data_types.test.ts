@@ -3,7 +3,7 @@
 // `state_types` by running the real reader over `api/`, so the tests
 // below fail when either side drifts from the other.
 import { describe, expect, it } from "vitest";
-import * as api_pb from "../../../rbt/v1alpha1/pydantic/api_pb";
+import * as api_pb from "../../../rbt/v1alpha1/api/api_pb";
 import type { APIs } from "../../../reboot/dashboard/web/src/link_properties_to_data_types";
 import {
   propertiesOfDataType,

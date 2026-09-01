@@ -354,7 +354,7 @@ py_library(
     deps = [
         ":api_py",
         ":fail_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:schema_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:schema_py_proto",
         requirement("pydantic"),
     ],
 )
@@ -367,7 +367,7 @@ py_library(
         ":api_py",
         ":pydantic_schema_py",
         ":settings_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:api_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:api_py_proto",
         requirement("pydantic"),
     ],
 )
@@ -381,7 +381,7 @@ py_library(
         ":fail_py",
         ":pydantic_api_py",
         ":pydantic_schema_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:api_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:api_py_proto",
         requirement("pydantic"),
         requirement("aiofiles"),
     ],

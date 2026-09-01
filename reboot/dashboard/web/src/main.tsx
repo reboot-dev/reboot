@@ -37,7 +37,7 @@ import {
   PREFERENCES_ID,
   PRESENCE_ID,
 } from "./constants";
-import type * as api_pb from "../../../../rbt/v1alpha1/pydantic/api_pb";
+import type * as api_pb from "../../../../rbt/v1alpha1/api/api_pb";
 import type {
   APIs,
   LinkedDataType,

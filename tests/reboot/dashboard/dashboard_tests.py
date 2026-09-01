@@ -9,7 +9,7 @@ import socket
 import unittest
 from google.protobuf.json_format import ParseDict
 from rbt.dashboard.v1.dashboard_rbt import Dashboard, Preferences
-from rbt.v1alpha1.pydantic import api_pb2
+from rbt.v1alpha1.api import api_pb2
 from reboot.aio.tests import Reboot
 from reboot.dashboard.backend.constants import (
     DASHBOARD_ID,

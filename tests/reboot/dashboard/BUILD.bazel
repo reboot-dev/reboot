@@ -19,8 +19,8 @@ py_test(
     main = "api_reader_tests.py",
     deps = [
         "//reboot/dashboard/backend:api_reader_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:api_py_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:schema_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:api_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:schema_py_proto",
     ],
 )
 
@@ -31,7 +31,7 @@ py_test(
     main = "pydantic_api_tests.py",
     deps = [
         "//reboot:pydantic_api_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:api_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:api_py_proto",
     ],
 )
 
@@ -44,7 +44,7 @@ py_test(
         "//reboot/dashboard/backend:api_watcher_py",
         "//reboot/dashboard/backend:main_py",
         "//reboot/dashboard/backend:walk_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:schema_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:schema_py_proto",
     ],
 )
 
@@ -84,7 +84,7 @@ py_web_test_suite_env(
         "//reboot/dashboard/backend:api_watcher_py",
         "//reboot/dashboard/backend:main_py",
         "//reboot/std/presence/v1:presence_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1/pydantic:schema_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:schema_py_proto",
         "@io_bazel_rules_webtesting//testing/web",
     ],
 )
@@ -151,8 +151,8 @@ ts_project(
     },
     deps = [
         "//rbt/dashboard/v1:dashboard_js_proto",
-        "//rbt/v1alpha1/pydantic:api_js_proto",
-        "//rbt/v1alpha1/pydantic:schema_js_proto",
+        "//rbt/v1alpha1/api:api_js_proto",
+        "//rbt/v1alpha1/api:schema_js_proto",
         "//reboot/dashboard/web:dashboard_ts",
         "//reboot/std/vitest:vitest_ts",
     ],

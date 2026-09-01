@@ -1,5 +1,5 @@
 """Reads a pydantic model into its schema, the grammar of
-`rbt/v1alpha1/pydantic/schema.proto`.
+`rbt/v1alpha1/api/schema.proto`.
 
 Read off the models' annotations, into the closed set of forms Reboot
 knows: a scalar, an array, a map, a literal, a reference to another
@@ -14,8 +14,8 @@ import json
 import types
 import typing
 from pydantic_core import PydanticUndefined, to_jsonable_python
-from rbt.v1alpha1.pydantic import schema_pb2
-from rbt.v1alpha1.pydantic.schema_pb2 import (
+from rbt.v1alpha1.api import schema_pb2
+from rbt.v1alpha1.api.schema_pb2 import (
     ANY,
     BOOLEAN,
     FLOAT,

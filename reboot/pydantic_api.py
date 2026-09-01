@@ -1,5 +1,5 @@
 """Reads a pydantic API file's `api = API(...)` into the grammar of
-`rbt/v1alpha1/pydantic/api.proto`.
+`rbt/v1alpha1/api/api.proto`.
 
 Read off the `API` object, into the closed set of forms a declaration
 takes: state types, their methods and UIs, what those take, return
@@ -9,8 +9,8 @@ with.
 """
 import hashlib
 import os
-from rbt.v1alpha1.pydantic import api_pb2
-from rbt.v1alpha1.pydantic.schema_pb2 import Reference
+from rbt.v1alpha1.api import api_pb2
+from rbt.v1alpha1.api.schema_pb2 import Reference
 from reboot.api import API, UI, MethodKind, MethodModel, Resource, Tool
 from reboot.pydantic_schema import Schemas, reference_name, schema_of
 from reboot.settings import AUTO_CONSTRUCT_STATE_TYPE

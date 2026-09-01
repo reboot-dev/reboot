@@ -8,8 +8,8 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from rbt.v1alpha1.pydantic.api_pb2 import API, Method, StateType
-from rbt.v1alpha1.pydantic.schema_pb2 import (
+from rbt.v1alpha1.api.api_pb2 import API, Method, StateType
+from rbt.v1alpha1.api.schema_pb2 import (
     Array,
     Constraints,
     Optional,

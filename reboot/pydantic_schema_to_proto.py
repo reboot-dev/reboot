@@ -4,7 +4,7 @@ import aiofiles
 import importlib
 import os
 import typing
-from rbt.v1alpha1.pydantic import api_pb2, schema_pb2
+from rbt.v1alpha1.api import api_pb2, schema_pb2
 from reboot.api import API, UserPydanticError, to_pascal_case, to_snake_case
 from reboot.fail import fail
 from reboot.pydantic_api import api_digest, api_of

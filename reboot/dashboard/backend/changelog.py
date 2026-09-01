@@ -42,8 +42,8 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     StateTypeRemoved,
     TypeChanged,
 )
-from rbt.v1alpha1.pydantic.api_pb2 import API, MCP, Method, StateType
-from rbt.v1alpha1.pydantic.schema_pb2 import (
+from rbt.v1alpha1.api.api_pb2 import API, MCP, Method, StateType
+from rbt.v1alpha1.api.schema_pb2 import (
     Constraints,
     Property,
     Reference,

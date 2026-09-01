@@ -2,14 +2,14 @@
 // contains, and each data type back to the properties and methods that
 // contain it.
 //
-// What the API files declare is one `rbt.v1alpha1.pydantic.API` per
+// What the API files declare is one `rbt.v1alpha1.api.API` per
 // file, the grammar `rbt generate` prints proto from: its state
 // types, its data types, and each model's own shape as an
-// `rbt.v1alpha1.pydantic.Schema`.
+// `rbt.v1alpha1.api.Schema`.
 // The generated messages are addressed qualified, `api_pb.Method`,
 // so their names never collide with the page's components.
-import type * as api_pb from "../../../../rbt/v1alpha1/pydantic/api_pb";
-import * as schema_pb from "../../../../rbt/v1alpha1/pydantic/schema_pb";
+import type * as api_pb from "../../../../rbt/v1alpha1/api/api_pb";
+import * as schema_pb from "../../../../rbt/v1alpha1/api/schema_pb";
 
 // What every API file declares, by the file relative to the API
 // directory: what `Dashboard.apis` is.
