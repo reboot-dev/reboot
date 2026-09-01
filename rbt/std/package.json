@@ -1,6 +1,6 @@
 {
   "name": "@reboot-dev/reboot-std-api",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "Reboot standard library API.",
   "main": "index.js",
   "type": "module",
