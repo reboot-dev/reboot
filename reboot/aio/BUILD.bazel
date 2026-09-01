@@ -344,6 +344,7 @@ py_library(
         ":tracing_py",
         "//reboot:naming_py",
         "//reboot:run_environments_py",
+        "//reboot:wait_for_tasks_py",
         "//reboot/aio:servers_py",
         "//reboot/aio/auth:authorizers_py",
         "//reboot/aio/auth:token_verifiers_py",
