@@ -430,21 +430,29 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             await bank.SignUp(context, account_id=account_ref.id)
 
-    async def test_coordinator_down_participant_prepared_still_aborts(
+    async def test_coordinator_down_before_recording_participants_aborts(
         self
     ) -> None:
-        """Tests that if a transaction coordinator does not complete the
-        prepare phase of two phase commit before failing then any
-        participants that were prepared still abort once the
-        coordinator restarts."""
+        """Tests that if a transaction coordinator fails before durably
+        recording its participants then recovery knows nothing of the
+        transaction and any participants that were prepared still
+        abort once the coordinator restarts."""
         # Need to get a reference to the pre-mocked methods so
         # we can use it for any service/actors that we aren't trying
         # to mimic a failure.
         prepare = SidecarStateManager.Prepare
         abort = SidecarStateManager.Abort
+        transaction_coordinator_prepare = (
+            DatabaseClient.transaction_coordinator_prepare
+        )
 
-        prepare_called = asyncio.Event()
-        prepare_waiting = asyncio.Event()
+        account_prepared = asyncio.Event()
+
+        # Whether the coordinator's write of its participants to the
+        # database hangs, so the record provably never persists
+        # before the coordinator is stopped.
+        block_transaction_coordinator_prepare = True
+        transaction_coordinator_prepare_called = asyncio.Event()
 
         account_ref = StateRef.from_id(
             Account.__state_type_name__, 'jonathan-2345'
@@ -452,12 +460,10 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         async def mock_prepare(state_manager, request, grpc_context):
             headers = Headers.from_grpc_context(grpc_context)
+            response = await prepare(state_manager, request, grpc_context)
             if headers.state_ref == account_ref:
-                prepare_called.set()
-                await prepare_waiting.wait()
-                return await prepare(state_manager, request, grpc_context)
-            else:
-                return await prepare(state_manager, request, grpc_context)
+                account_prepared.set()
+            return response
 
         async def mock_abort(state_manager, request, grpc_context):
             headers = Headers.from_grpc_context(grpc_context)
@@ -466,11 +472,28 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             else:
                 return await abort(state_manager, request, grpc_context)
 
+        async def mock_transaction_coordinator_prepare(
+            database_client,
+            **kwargs,
+        ):
+            if block_transaction_coordinator_prepare:
+                transaction_coordinator_prepare_called.set()
+                # Hang forever until the server stops, which cancels
+                # this.
+                await asyncio.Event().wait()
+            return await transaction_coordinator_prepare(
+                database_client, **kwargs
+            )
+
         with mock.patch(
             'reboot.aio.state_managers.SidecarStateManager.Prepare',
             mock_prepare
         ), mock.patch(
             'reboot.aio.state_managers.SidecarStateManager.Abort', mock_abort
+        ), mock.patch(
+            'reboot.server.database.DatabaseClient.'
+            'transaction_coordinator_prepare',
+            mock_transaction_coordinator_prepare
         ), mock.patch(
             # Disable retries on error, so that we can get a clear
             # signal when a server has gone down.
@@ -502,10 +525,161 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             sign_up_task = asyncio.create_task(SignUp())
 
-            await prepare_called.wait()
+            # The participant has durably prepared while the
+            # coordinator's write of its participants provably never
+            # persisted.
+            await account_prepared.wait()
+            await transaction_coordinator_prepare_called.wait()
 
             bank_server = await self.rbt.server_stop(bank_server_id)
 
+            with self.assertRaises(Bank.SignUpAborted) as aborted:
+                await sign_up_task
+
+            self.assertEqual(
+                type(aborted.exception.error), errors_pb2.Unavailable
+            )
+
+            # Need to acknowledge idempotency uncertainty so that we
+            # can continue running the test!
+            context.acknowledge_idempotency_uncertainty()
+
+            block_transaction_coordinator_prepare = False
+
+            await self.rbt.server_start(bank_server)
+
+            bank = Bank.ref(SINGLETON_BANK_ID)
+
+            # The recovered coordinator knows nothing of the
+            # transaction, so the prepared participant aborts and the
+            # account can be signed up fresh.
+            await bank.SignUp(context, account_id=account_ref.id)
+
+    async def test_coordinator_down_after_recording_participants_commits(
+        self
+    ) -> None:
+        """Tests that if a transaction coordinator durably records its
+        participants and then fails before hearing that all of them
+        prepared, recovery re-prepares them, and with every
+        participant durably prepared the transaction commits."""
+        prepare = SidecarStateManager.Prepare
+        commit = SidecarStateManager.Commit
+        transaction_coordinator_prepare = (
+            DatabaseClient.transaction_coordinator_prepare
+        )
+        transaction_coordinator_cleanup = (
+            DatabaseClient.transaction_coordinator_cleanup
+        )
+
+        account_prepared = asyncio.Event()
+        prepare_waiting = asyncio.Event()
+        transaction_coordinator_prepare_written = asyncio.Event()
+        account_committed = asyncio.Event()
+
+        # Whether `transaction_coordinator_cleanup` fails, simulating
+        # a coordinator that crashes while stopping rather than
+        # cleanly aborting: its record of its participants stays in
+        # the database and no participant is told to abort. Set from
+        # just before the coordinator is stopped until the commit is
+        # observed, because the dying coordinator's cleanup can still
+        # run after `server_stop` returns; earlier transactions
+        # (e.g., the effect validation re-run of `SignUp`) must be
+        # able to abort and clean up normally.
+        fail_transaction_coordinator_cleanup = False
+
+        account_ref = StateRef.from_id(
+            Account.__state_type_name__, 'jonathan-2345'
+        )
+
+        async def mock_prepare(state_manager, request, grpc_context):
+            headers = Headers.from_grpc_context(grpc_context)
+            response = await prepare(state_manager, request, grpc_context)
+            if headers.state_ref == account_ref:
+                account_prepared.set()
+                # The participant durably prepared, but the
+                # coordinator never hears it: only return the
+                # response after the coordinator has been stopped.
+                await prepare_waiting.wait()
+            return response
+
+        async def mock_transaction_coordinator_prepare(
+            database_client,
+            **kwargs,
+        ):
+            result = await transaction_coordinator_prepare(
+                database_client, **kwargs
+            )
+            transaction_coordinator_prepare_written.set()
+            return result
+
+        async def mock_transaction_coordinator_cleanup(
+            database_client,
+            **kwargs,
+        ):
+            if fail_transaction_coordinator_cleanup:
+                raise RuntimeError('Simulating a coordinator crash')
+            return await transaction_coordinator_cleanup(
+                database_client, **kwargs
+            )
+
+        async def mock_commit(state_manager, request, grpc_context):
+            headers = Headers.from_grpc_context(grpc_context)
+            response = await commit(state_manager, request, grpc_context)
+            if headers.state_ref == account_ref:
+                account_committed.set()
+            return response
+
+        with mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager.Prepare',
+            mock_prepare
+        ), mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager.Commit', mock_commit
+        ), mock.patch(
+            'reboot.server.database.DatabaseClient.'
+            'transaction_coordinator_prepare',
+            mock_transaction_coordinator_prepare
+        ), mock.patch(
+            'reboot.server.database.DatabaseClient.'
+            'transaction_coordinator_cleanup',
+            mock_transaction_coordinator_cleanup
+        ), mock.patch(
+            # Disable retries on error, so that we can get a clear
+            # signal when a server has gone down.
+            'reboot.aio.stubs.UnaryRetriedCall._should_retry',
+            lambda *args, **kwargs: False
+        ):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer]),
+                local_envoy=True,
+                local_envoy_tls=True,  # For SSL/TLS test coverage.
+                servers=2,
+            )
+
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+            bank_server_id, account_server_id = await self.rbt.unique_servers(
+                bank._state_ref,
+                account_ref,
+            )
+
+            async def SignUp():
+                await bank.SignUp(context, account_id=account_ref.id)
+
+            sign_up_task = asyncio.create_task(SignUp())
+
+            # The participant has durably prepared and the
+            # coordinator's record of its participants persisted.
+            await account_prepared.wait()
+            await transaction_coordinator_prepare_written.wait()
+
+            fail_transaction_coordinator_cleanup = True
+
+            bank_server = await self.rbt.server_stop(bank_server_id)
+
+            # Let the participant's prepare return its response to
+            # the now stopped coordinator.
             prepare_waiting.set()
 
             with self.assertRaises(Bank.SignUpAborted) as aborted:
@@ -521,9 +695,20 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             await self.rbt.server_start(bank_server)
 
-            bank = Bank.ref(SINGLETON_BANK_ID)
+            # The recovered coordinator re-prepares its recorded
+            # participants; every one of them is durably prepared, so
+            # the transaction commits.
+            await account_committed.wait()
 
-            await bank.SignUp(context, account_id=account_ref.id)
+            # The stopped coordinator's cleanup was one-shot, but the
+            # recovered coordinator's commit control loop retries its
+            # cleanup until it succeeds, so it may now delete the
+            # record.
+            fail_transaction_coordinator_cleanup = False
+
+            account = Account.ref(account_ref.id)
+            response = await account.Balance(context)
+            self.assertEqual(response.amount, 0)
 
     async def test_participant_restart_retries_transaction(self) -> None:
         """Tests that if a participant server restarts after a
