@@ -38,6 +38,7 @@ py_library(
     deps = [
         ":__init___py",
         requirement("pytest"),
+        "//reboot:api_py",
         "//reboot/aio:aborted_py",
         "//reboot/aio:applications_py",
         "//reboot/aio:external_py",

@@ -2,11 +2,14 @@
 
 import pytest
 from dataclasses import dataclass, field
+from google.protobuf import json_format
+from google.protobuf.message import Message
 from reboot.aio.aborted import Aborted
 from reboot.aio.external import ExternalContext
 from reboot.aio.tests import Reboot
+from reboot.api import Model
 from reboot.bdd.loop import EventLoopThread, start_event_loop, stop_event_loop
-from typing import Any, Callable, Iterator, Optional
+from typing import Any, Callable, Iterator, Optional, Union
 
 
 @pytest.fixture(autouse=True)
@@ -32,6 +35,27 @@ def rbt(reboot_event_loop: EventLoopThread) -> Iterator[Reboot]:
         yield reboot
     finally:
         reboot_event_loop.run(reboot.stop())
+
+
+# A JSON value: what property values, and the values saved under a
+# name, are made of.
+JsonValue = Union[None, bool, int, float, str, list['JsonValue'],
+                  dict[str, 'JsonValue']]
+
+
+def _json_object(
+    message_or_model: Union[Message, Model],
+) -> dict[str, 'JsonValue']:
+    """The given message or model as its JSON object (a message via
+    its canonical JSON, with fields without presence included, so
+    every property is reachable)."""
+    if isinstance(message_or_model, Message):
+        return json_format.MessageToDict(
+            message_or_model,
+            preserving_proto_field_name=True,
+            always_print_fields_with_no_presence=True,
+        )
+    return message_or_model.model_dump()
 
 
 @dataclass
@@ -66,6 +90,10 @@ class World:
 
     # The response of the most recent call a step made.
     response: Optional[Any] = None
+
+    # Values saved under a name, as JSON; later steps say '$name' to
+    # use.
+    saved: dict[str, JsonValue] = field(default_factory=dict)
 
     # The error the most recent 'attempts' step's call aborted with,
     # or `None` if that call succeeded.
@@ -126,6 +154,15 @@ class World:
         if not callable(factory):
             raise ValueError(f"`{state_type}` has no factory `{method}`")
         return factory
+
+    def is_reader(self, *, state_type: str, method: str) -> bool:
+        """Whether the named method is one of the named state type's
+        unary readers."""
+        # TODO: this is a bit of a hack! We check to see if
+        # `StateType.reactively().method()` exists to know if it is a
+        # reader because `reactively` is only for readers.
+        reference = self.client_type(state_type).ref('is-reader')
+        return hasattr(reference.reactively(), method)
 
     async def call(
         self,

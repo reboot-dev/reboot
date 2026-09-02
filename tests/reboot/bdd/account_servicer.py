@@ -27,7 +27,7 @@ class AccountServicer(Account.Servicer):
         request: OpenRequest,
     ) -> OpenResponse:
         self.state.balance = request.initial_balance
-        return OpenResponse()
+        return OpenResponse(account_id=context.state_id)
 
     async def balance(
         self,

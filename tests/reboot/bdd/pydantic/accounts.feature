@@ -6,7 +6,7 @@ Feature: Accounts with a pydantic API
   Scenario: Depositing adds to the balance
     Given an `Account` for "alice" gets created via `open` with `initial_balance=100`
     When the `Account` for "alice" gets a `deposit` with `amount=50`
-    Then the response has `updated_balance=150`
+    Then the result has `updated_balance=150`
     And `balance` on the `Account` for "alice" has `balance=150`
 
   Scenario: Withdrawing more than the balance is refused
