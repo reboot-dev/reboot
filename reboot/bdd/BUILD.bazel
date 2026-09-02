@@ -37,6 +37,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":__init___py",
+        requirement("jsonpath-ng"),
+        requirement("pydantic"),
         requirement("pytest"),
         "//reboot:api_py",
         "//reboot/aio:aborted_py",
@@ -55,6 +57,9 @@ py_library(
         ":__init___py",
         ":fixtures_py",
         ":registry_py",
+        requirement("json5"),
+        requirement("jsonpath-ng"),
+        requirement("pydantic"),
         requirement("pytest"),
         requirement("pytest-bdd"),
         "//reboot/aio:aborted_py",

@@ -1,9 +1,13 @@
 """The pytest fixtures that the built-in `reboot.bdd` steps run on."""
 
+import json
+import jsonpath_ng
 import pytest
 from dataclasses import dataclass, field
 from google.protobuf import json_format
 from google.protobuf.message import Message
+from jsonpath_ng.exceptions import JSONPathError
+from pydantic import ValidationError
 from reboot.aio.aborted import Aborted
 from reboot.aio.external import ExternalContext
 from reboot.aio.tests import Reboot
@@ -48,14 +52,58 @@ def _json_object(
 ) -> dict[str, 'JsonValue']:
     """The given message or model as its JSON object (a message via
     its canonical JSON, with fields without presence included, so
-    every property is reachable)."""
+    every property is reachable, and a model via its JSON-mode dump,
+    so e.g. a datetime is its string)."""
     if isinstance(message_or_model, Message):
         return json_format.MessageToDict(
             message_or_model,
             preserving_proto_field_name=True,
             always_print_fields_with_no_presence=True,
         )
-    return message_or_model.model_dump()
+    return message_or_model.model_dump(mode='json')
+
+
+@dataclass(frozen=True)
+class PropertyPath:
+    """One property's path, in both its forms."""
+
+    # The path as the developer wrote it, e.g. 'owners["main"].name';
+    # what error messages say.
+    text: str
+
+    # The parsed path; what finds, updates, and grammar walks use.
+    expression: jsonpath_ng.JSONPath
+
+    @staticmethod
+    def create(text: str) -> 'PropertyPath':
+        """The property path the given text parses as."""
+        try:
+            expression = jsonpath_ng.parse(text)
+        except JSONPathError as error:
+            raise ValueError(f"Invalid property `{text}`: {error}") from error
+        return PropertyPath(text=text, expression=expression)
+
+
+def _json_type(value: Any) -> type:
+    """The JSON type of a value: `int` and `float` are one number
+    type, and `bool` is its own."""
+    if isinstance(value, bool):
+        return bool
+    if isinstance(value, (int, float)):
+        return float
+    return type(value)
+
+
+def _zero_indexed(path: jsonpath_ng.JSONPath) -> jsonpath_ng.JSONPath:
+    """The path with every list index replaced by [0]; a path's list
+    element type is the same at every index."""
+    match path:
+        case jsonpath_ng.Child(left=left, right=right):
+            return jsonpath_ng.Child(_zero_indexed(left), _zero_indexed(right))
+        case jsonpath_ng.Index():
+            return jsonpath_ng.Index(0)
+        case _:
+            return path
 
 
 @dataclass
@@ -164,13 +212,172 @@ class World:
         reference = self.client_type(state_type).ref('is-reader')
         return hasattr(reference.reactively(), method)
 
+    def request_type(
+        self,
+        *,
+        state_type: str,
+        method: str,
+    ) -> Optional[type]:
+        """The request type of the named method, from the generated
+        client class's `<Method>Request` alias, or `None` when the
+        method takes no request."""
+        client_type = self.client_type(state_type)
+        alias = method.replace('_', '').lower() + 'request'
+        for name in dir(client_type):
+            if name.lower() == alias:
+                request_type = getattr(client_type, name)
+                if isinstance(request_type, type):
+                    return request_type
+        return None
+
+    def request(
+        self,
+        *,
+        state_type: str,
+        method: str,
+        properties: Union[dict[str, JsonValue], list[tuple[PropertyPath,
+                                                           JsonValue]]],
+    ) -> Any:
+        """The request the properties describe, validated by the named
+        method's request type. A dotted property name nests, e.g.
+        'owner.name' describes the request's `owner` message's
+        `name`."""
+        request_type = self.request_type(state_type=state_type, method=method)
+        if request_type is None:
+            raise ValueError(
+                f"`{state_type}`'s `{method}` takes no properties"
+            )
+
+        if isinstance(properties, dict):
+            properties = [
+                (PropertyPath.create(text), value)
+                for text, value in properties.items()
+            ]
+
+        # Build the JSON object a property at a time, where a property
+        # may add but never overwrite (a `find` hit is a collision).
+        result: dict[str, JsonValue] = {}
+
+        def validate(path: PropertyPath) -> None:
+            """Raises for a path that names zero or many locations,
+            because building a request needs each property to name
+            exactly one place to update."""
+
+            def confirmed(expression: jsonpath_ng.JSONPath) -> None:
+                match expression:
+                    case jsonpath_ng.Child(left=left, right=right):
+                        confirmed(left)
+                        confirmed(right)
+                    case jsonpath_ng.Root():
+                        pass
+                    case jsonpath_ng.Fields(fields=(_,)):
+                        pass
+                    case jsonpath_ng.Index(indices=(_,)):
+                        pass
+                    case _:
+                        raise ValueError(
+                            f"Property `{path.text}` may only say "
+                            'fields, ["key"]s, and [index]es, but '
+                            f"says: {expression}"
+                        )
+
+            confirmed(path.expression)
+
+        for path, value in properties:
+            # For creating a JSON object we disallow certain kinds of
+            # paths that just don't make sense or are not useful.
+            validate(path)
+            if path.expression.find(result):
+                raise ValueError(
+                    f"Property `{path.text}` collides with another property"
+                )
+
+            def update(
+                # Object being updated.
+                child: Any,
+                # Containing object.
+                parent: Any,
+                # Field of containing object being updated.
+                field: Any,
+            ) -> Any:
+                if isinstance(parent, list):
+                    # A list index past a list's current end, e.g.,
+                    # 'foo[5]' where the list only has 1 element, will
+                    # pad the list with `{}` placeholders, even if the
+                    # list is of strings or numbers, so we also
+                    # confirm the value's JSON type matches the other
+                    # elements': that refuses both a padded gap in a
+                    # list of scalars and a mistyped element, while a
+                    # gap in a list of objects stays, validated below
+                    # as default-valued elements. The real backstop is
+                    # doing the `model_validate` for Pydantic types
+                    # and `ParseDict` for protobuf below, this is just
+                    # extra.
+                    for index, element in enumerate(parent):
+                        if index == field:
+                            continue
+                        if _json_type(element) is not _json_type(value):
+                            raise ValueError(
+                                f"Property `{path.text}` indexes "
+                                f"into a list whose element "
+                                f"{element!r} is not the same type "
+                                "as its value"
+                            )
+                # There is currently a bug in jsonpath-ng where
+                # returning a value does not always store it correctly
+                # so we need to store it ourselves and return it until
+                # h2non/jsonpath-ng#238 gets fixed.
+                parent[field] = value
+                return value
+
+            try:
+                # NOTE: we are using the version of `update_or_create`
+                # that takes a callable because that forces
+                # jsonpath-ng to raise a KeyError if a path attempts
+                # to do a list index in an already existing dict
+                # (i.e., treating the dict like a list incorrectly).
+                path.expression.update_or_create(result, update)
+            except (KeyError, TypeError) as error:
+                raise ValueError(
+                    f"Property `{path.text}` cannot be applied to "
+                    "what is already built"
+                ) from error
+        # If the request is a Pydantic model, we use `model_validate`.
+        if hasattr(request_type, 'model_validate'):
+            # Guard against pydantic's default of ignoring unknown
+            # keys, which would make a mistyped property a silent
+            # no-op.
+            model_fields = getattr(request_type, 'model_fields')
+            for name in result:
+                if name not in model_fields:
+                    raise ValueError(
+                        f"`{request_type.__name__}` has no property "
+                        f"`{name}`"
+                    )
+            try:
+                return request_type.model_validate(result)
+            except ValidationError as error:
+                raise ValueError(
+                    f"Could not build a `{request_type.__name__}` "
+                    f"from {json.dumps(result)}: {error}"
+                ) from error
+        # The request must be protobuf, use `ParseDict`.
+        try:
+            return json_format.ParseDict(result, request_type())
+        except json_format.ParseError as error:
+            raise ValueError(
+                f"Could not build a `{request_type.__name__}` from "
+                f"{json.dumps(result)}: {error}"
+            ) from error
+
     async def call(
         self,
         *,
         state_type: str,
         state_id: str,
         method: str,
-        properties: dict[str, Any],
+        properties: Union[dict[str, JsonValue], list[tuple[PropertyPath,
+                                                           JsonValue]]],
     ) -> Any:
         """Calls the named method on the named state, with the
         properties as the request's, and returns its response."""
@@ -178,7 +385,16 @@ class World:
         method_callable = getattr(reference, method, None)
         if not callable(method_callable):
             raise ValueError(f"`{state_type}` has no method `{method}`")
-        return await method_callable(self.context(), **properties)
+        if not properties:
+            return await method_callable(self.context())
+        return await method_callable(
+            self.context(),
+            self.request(
+                state_type=state_type,
+                method=method,
+                properties=properties,
+            ),
+        )
 
 
 @pytest.fixture

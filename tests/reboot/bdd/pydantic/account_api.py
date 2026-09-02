@@ -2,10 +2,18 @@
 tests run against."""
 
 from reboot.api import API, Field, Methods, Model, Reader, Type, Writer
+from typing import Optional
+
+
+class Owner(Model):
+    name: str = Field(tag=1)
+    tags: list[str] = Field(tag=2, default_factory=list)
 
 
 class State(Model):
     balance: int = Field(tag=1, default=0)
+    owner: Optional[Owner] = Field(tag=2, default=None)
+    owners: dict[str, Owner] = Field(tag=3, default_factory=dict)
 
 
 class OpenRequest(Model):
@@ -30,6 +38,25 @@ class WithdrawResponse(Model):
 
 class BalanceResponse(Model):
     balance: int = Field(tag=1)
+
+
+class SetOwnerRequest(Model):
+    owner: Owner = Field(tag=1)
+    # Owners in addition to `owner`.
+    co_owners: list[Owner] = Field(tag=2, default_factory=list)
+
+
+class GetOwnerResponse(Model):
+    owner: Optional[Owner] = Field(tag=1)
+
+
+class PutOwnerRequest(Model):
+    key: str = Field(tag=1)
+    owner: Owner = Field(tag=2)
+
+
+class GetOwnersResponse(Model):
+    owners: dict[str, Owner] = Field(tag=1, default_factory=dict)
 
 
 class OverdraftError(Model):
@@ -58,6 +85,26 @@ AccountMethods = Methods(
     balance=Reader(
         request=None,
         response=BalanceResponse,
+        mcp=None,
+    ),
+    set_owner=Writer(
+        request=SetOwnerRequest,
+        response=None,
+        mcp=None,
+    ),
+    get_owner=Reader(
+        request=None,
+        response=GetOwnerResponse,
+        mcp=None,
+    ),
+    put_owner=Writer(
+        request=PutOwnerRequest,
+        response=None,
+        mcp=None,
+    ),
+    get_owners=Reader(
+        request=None,
+        response=GetOwnersResponse,
         mcp=None,
     ),
 )

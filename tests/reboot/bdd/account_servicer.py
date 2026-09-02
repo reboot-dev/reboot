@@ -9,8 +9,16 @@ from tests.reboot.bdd.account_rbt import (
     BalanceResponse,
     DepositRequest,
     DepositResponse,
+    GetOwnerRequest,
+    GetOwnerResponse,
+    GetOwnersRequest,
+    GetOwnersResponse,
     OpenRequest,
     OpenResponse,
+    PutOwnerRequest,
+    PutOwnerResponse,
+    SetOwnerRequest,
+    SetOwnerResponse,
     WithdrawRequest,
     WithdrawResponse,
 )
@@ -35,6 +43,36 @@ class AccountServicer(Account.Servicer):
         request: BalanceRequest,
     ) -> BalanceResponse:
         return BalanceResponse(balance=self.state.balance)
+
+    async def set_owner(
+        self,
+        context: WriterContext,
+        request: SetOwnerRequest,
+    ) -> SetOwnerResponse:
+        self.state.owner.CopyFrom(request.owner)
+        return SetOwnerResponse()
+
+    async def get_owner(
+        self,
+        context: ReaderContext,
+        request: GetOwnerRequest,
+    ) -> GetOwnerResponse:
+        return GetOwnerResponse(owner=self.state.owner)
+
+    async def put_owner(
+        self,
+        context: WriterContext,
+        request: PutOwnerRequest,
+    ) -> PutOwnerResponse:
+        self.state.owners[request.key].CopyFrom(request.owner)
+        return PutOwnerResponse()
+
+    async def get_owners(
+        self,
+        context: ReaderContext,
+        request: GetOwnersRequest,
+    ) -> GetOwnersResponse:
+        return GetOwnersResponse(owners=self.state.owners)
 
     async def deposit(
         self,

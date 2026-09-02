@@ -20,3 +20,21 @@ Feature: Accounts with a pydantic API
     Given an `Account` for "carol" gets created via `open` with `initial_balance=10`
     When "carol" makes 3 deposits of 7
     Then `balance` on the `Account` for "carol" has `balance=31`
+
+  Scenario: Properties can be messages
+    Given an `Account` for "frank" gets created via `open`
+    When the `Account` for "frank" gets a `set_owner` with `owner={name: "Frank", tags: ["vip", "beta"]}`
+    Then `get_owner` on the `Account` for "frank" has `owner={name: "Frank", tags: ["vip", "beta"]}`
+    When the `Account` for "frank" gets a `set_owner` with `owner.name="Frankie"` and `owner.tags=["pro"]`
+    Then `get_owner` on the `Account` for "frank" has `owner={name: "Frankie", tags: ["pro"]}`
+    And `get_owner` on the `Account` for "frank" has `owner.tags[0]="pro"`
+    When `get_owner` on the `Account` for "frank" has `owner` saved as "$owner"
+    And an `Account` for "franklin" gets created via `open`
+    And the `Account` for "franklin" gets a `set_owner` with `owner=$owner`
+    Then `get_owner` on the `Account` for "franklin" has `owner={name: "Frankie", tags: ["pro"]}`
+
+  Scenario: Properties reach through maps
+    Given an `Account` for "heidi" gets created via `open`
+    When the `Account` for "heidi" gets a `put_owner` with `key="main"` and `owner={name: "Heidi", tags: ["a"]}`
+    Then `get_owners` on the `Account` for "heidi" has `owners["main"].name="Heidi"`
+    And `get_owners` on the `Account` for "heidi" has `owners={main: {name: "Heidi", tags: ["a"]}}`
