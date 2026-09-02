@@ -1,0 +1,53 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//reboot:pydantic_to_proto.bzl", "py_reboot_library_from_pydantic")
+
+py_library(
+    name = "account_api_py",
+    srcs = ["account_api.py"],
+    deps = [
+        "//reboot:api_py",
+    ],
+)
+
+py_reboot_library_from_pydantic(
+    name = "account_py_reboot",
+    py_deps = [
+        ":account_api_py",
+    ],
+    pydantic = ":account_api.py",
+)
+
+py_library(
+    name = "account_servicer_py",
+    srcs = [":account_servicer.py"],
+    srcs_version = "PY3",
+    deps = [
+        ":account_api_py",
+        ":account_py_reboot",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio/auth:authorizers_py",
+    ],
+)
+
+py_test(
+    name = "bdd_tests_py",
+    srcs = [
+        ":bdd_tests.py",
+        ":conftest.py",
+        "//tests/reboot:pytest_main.py",
+    ],
+    args = [
+        "tests/reboot/bdd/pydantic/bdd_tests.py",
+        "-v",
+    ],
+    data = [":accounts.feature"],
+    main = "pytest_main.py",
+    deps = [
+        requirement("pytest"),
+        requirement("pytest-bdd"),
+        ":account_servicer_py",
+        "//reboot/aio:applications_py",
+        "//reboot/bdd:steps_py",
+    ],
+)
