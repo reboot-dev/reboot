@@ -40,7 +40,10 @@ message OpenRequest {
   int64 initial_balance = 1;
 }
 
-message OpenResponse {}
+message OpenResponse {
+  // ID of the newly opened account.
+  string account_id = 1;
+}
 
 message BalanceRequest {}
 

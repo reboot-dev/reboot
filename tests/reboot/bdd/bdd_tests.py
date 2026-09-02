@@ -7,10 +7,13 @@ the scenarios in `accounts.feature`."""
 #
 # ruff: noqa: F403
 
+import pytest
 from pytest_bdd import parsers, scenarios
 from reboot.bdd import when
 from reboot.bdd.fixtures import World
 from reboot.bdd.steps import *
+from reboot.bdd.steps import _assert_aborted
+from tests.reboot.bdd.account_pb2 import OverdraftError
 from tests.reboot.bdd.account_rbt import Account
 
 
@@ -27,6 +30,22 @@ async def _makes_deposits(
     context = world.context()
     for _ in range(count):
         await Account.ref(state_id).deposit(context, amount=amount)
+
+
+def test_is_reader() -> None:
+    world = World(client_types={'tests.reboot.bdd.Account': Account})
+    assert world.is_reader(state_type='Account', method='balance')
+    assert not world.is_reader(state_type='Account', method='deposit')
+
+
+def test_assert_aborted_where() -> None:
+    world = World()
+    aborted = Account.WithdrawAborted(OverdraftError(amount=20))
+    _assert_aborted(world, aborted, 'OverdraftError', '`amount=20`')
+    with pytest.raises(AssertionError):
+        _assert_aborted(world, aborted, 'OverdraftError', '`amount=21`')
+    with pytest.raises(AssertionError):
+        _assert_aborted(world, aborted, 'SomeOtherError', None)
 
 
 scenarios('accounts.feature')
