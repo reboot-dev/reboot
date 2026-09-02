@@ -68,6 +68,14 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
                 return response
             await asyncio.sleep(0.05)
 
+    async def _part_numbers(self, blob, part_numbers: list[int]) -> list[int]:
+        """The part numbers that upload instructions were minted for,
+        of those asked for."""
+        response = await self._instructions(blob, part_numbers)
+        return [
+            instruction.part_number for instruction in response.instructions
+        ]
+
     async def _put(self, url: str, data: bytes) -> str:
         """`PUT`s bytes to a (possibly relative) data-plane URL and
         returns the response's ETag."""
@@ -237,6 +245,50 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(Blob.CommitAborted) as commit_raised:
             await sized_blob.commit(self.context)
         self.assertIsInstance(commit_raised.exception.error, SizeMismatch)
+
+    async def test_part_urls_are_bounded_by_the_size_ceiling(self) -> None:
+        # A part URL is self-authorizing, so a blob that declares how
+        # big it may become must not be handed URLs for parts beyond
+        # that: whoever holds them could fill the data plane with
+        # bytes the blob could never commit.
+        bounded, _ = await Blob.create(
+            self.context,
+            content_type="text/plain",
+            max_size=10,
+        )
+        part_size = (await self._instructions(bounded, [])).part_size
+        self.assertEqual(await self._part_numbers(bounded, [1, 2, 3]), [1])
+
+        # A ceiling spanning several parts hands out exactly the parts
+        # it spans, rounding up for the remainder.
+        spanning, _ = await Blob.create(
+            self.context,
+            content_type="text/plain",
+            max_size=2 * part_size + 1,
+        )
+        self.assertEqual(
+            await self._part_numbers(spanning, [1, 2, 3, 4]),
+            [1, 2, 3],
+        )
+
+        # An exact `size` is its own ceiling.
+        sized, _ = await Blob.create(
+            self.context,
+            content_type="text/plain",
+            size=part_size + 1,
+        )
+        self.assertEqual(await self._part_numbers(sized, [1, 2, 3]), [1, 2])
+
+        # Declaring no ceiling at all leaves the app's own policy in
+        # charge, so every part the data plane supports is available.
+        unbounded, _ = await Blob.create(
+            self.context,
+            content_type="text/plain",
+        )
+        self.assertEqual(
+            await self._part_numbers(unbounded, [1, 2, 3]),
+            [1, 2, 3],
+        )
 
     async def test_commit_requires_contiguous_parts(self) -> None:
         blob, _ = await Blob.create(

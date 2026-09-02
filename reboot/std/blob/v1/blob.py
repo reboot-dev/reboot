@@ -316,9 +316,26 @@ class BlobServicer(Blob.Servicer):
                 part_size=self._part_size,
             )
 
+        # A minted URL is self-authorizing: whoever holds it can `PUT` a
+        # full part into the data plane and never report it, so the
+        # numbers handed out here are the only place a declared
+        # `size`/`max_size` can restrict how many bytes an upload
+        # session may occupy: past that, `PartUploaded` and `Commit`
+        # only ever see the sizes a client chose to report.
+        ceiling = _size_ceiling(self.state)
+        if ceiling is None:
+            max_part_number = MAX_PARTS
+        else:
+            # Round up, since a ceiling that doesn't fill a whole part
+            # still needs a part to carry it.
+            max_part_number = min(
+                MAX_PARTS,
+                max(1, (ceiling + self._part_size - 1) // self._part_size),
+            )
+
         part_numbers = [
             number for number in request.part_numbers
-            if 1 <= number <= MAX_PARTS
+            if 1 <= number <= max_part_number
         ]
         response = await self._data_plane.GetPartUploadInstructions(
             DataPlaneGetPartUploadInstructionsRequest(
