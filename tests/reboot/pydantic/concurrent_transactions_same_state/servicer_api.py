@@ -22,6 +22,10 @@ class PeerRequest(Model):
     peer_id: str = Field(tag=1)
 
 
+class DriverRequest(Model):
+    driver_id: str = Field(tag=1)
+
+
 api = API(
     Counter=Type(
         state=CounterState,
@@ -53,8 +57,11 @@ api = API(
                 response=None,
                 mcp=None,
             ),
+            # Takes the name of the driver that called it, because it runs
+            # on the peer's state rather than the driver's and so cannot
+            # work that out from its own context.
             inner=Transaction(
-                request=None,
+                request=DriverRequest,
                 response=CountResponse,
                 mcp=None,
             ),

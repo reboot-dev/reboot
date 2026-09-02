@@ -35,6 +35,10 @@ test("Concurrent transactions on one state", async (t) => {
   // so many of them may be running inside one state at the same time.
   // The rendezvous only opens once every one of them has arrived, so
   // this can only finish if they really do overlap.
+  //
+  // The rendezvous counts the names it has seen rather than the
+  // arrivals, so a driver whose transaction aborted and was retried is
+  // still one arrival.
   await t.test("nested transactions on one state are parallel", async (t) => {
     const { rbt, context } = await setUp();
 
@@ -58,7 +62,7 @@ test("Concurrent transactions on one state", async (t) => {
       )
     );
 
-    assert.equal(rendezvous.arrived, CONCURRENCY);
+    assert.equal(rendezvous.arrived.size, CONCURRENCY);
   });
 
   // A transaction's write survives another transaction on the same

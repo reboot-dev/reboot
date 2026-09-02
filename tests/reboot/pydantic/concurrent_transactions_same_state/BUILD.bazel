@@ -28,6 +28,12 @@ py_library(
 
 py_test(
     name = "test_py",
+    # This test drives 20 transactions into contention on a single
+    # state, and a transaction that aborts under that contention retries
+    # from the top. On the MacOS arm64 CI runner a retry storm has taken
+    # it well past the 300s a `medium` test gets, from a usual ~15s, so
+    # this one gets the 900s of a `large` test to work in.
+    size = "large",
     srcs = ["test.py"],
     main = "test.py",
     deps = [

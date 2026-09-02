@@ -46,7 +46,11 @@ class ConcurrentTransactionsOnOneStateTest(unittest.IsolatedAsyncioTestCase):
         shared mode, so many of them may be running inside one state
         at the same time. The rendezvous only opens once every one of
         them has arrived, so this can only finish if they really do
-        overlap."""
+        overlap.
+
+        The rendezvous counts the names it has seen rather than the
+        arrivals, so a driver whose transaction aborted and was
+        retried is still one arrival."""
         driver_ids = [f"driver-{index}" for index in range(CONCURRENCY)]
         await asyncio.gather(
             *(
@@ -66,7 +70,7 @@ class ConcurrentTransactionsOnOneStateTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        self.assertEqual(rendezvous.arrived, CONCURRENCY)
+        self.assertEqual(len(rendezvous.arrived), CONCURRENCY)
 
     async def test_finishing_transaction_keeps_anothers_write(self) -> None:
         """A transaction's write survives another transaction on the
