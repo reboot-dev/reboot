@@ -9,6 +9,14 @@ message Account {
   option (rbt.v1alpha1.state) = {
   };
   int64 balance = 1;
+  Owner owner = 2;
+  map<string, Owner> owners = 3;
+}
+
+// The person an account belongs to.
+message Owner {
+  string name = 1;
+  repeated string tags = 2;
 }
 
 service AccountMethods {
@@ -19,6 +27,26 @@ service AccountMethods {
   }
 
   rpc Balance(BalanceRequest) returns (BalanceResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc SetOwner(SetOwnerRequest) returns (SetOwnerResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc GetOwner(GetOwnerRequest) returns (GetOwnerResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc PutOwner(PutOwnerRequest) returns (PutOwnerResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc GetOwners(GetOwnersRequest) returns (GetOwnersResponse) {
     option (rbt.v1alpha1.method).reader = {
     };
   }
@@ -46,6 +74,34 @@ message OpenResponse {
 }
 
 message BalanceRequest {}
+
+message SetOwnerRequest {
+  Owner owner = 1;
+
+  // Owners in addition to `owner`.
+  repeated Owner co_owners = 2;
+}
+
+message SetOwnerResponse {}
+
+message GetOwnerRequest {}
+
+message GetOwnerResponse {
+  Owner owner = 1;
+}
+
+message PutOwnerRequest {
+  string key = 1;
+  Owner owner = 2;
+}
+
+message PutOwnerResponse {}
+
+message GetOwnersRequest {}
+
+message GetOwnersResponse {
+  map<string, Owner> owners = 1;
+}
 
 message BalanceResponse {
   int64 balance = 1;

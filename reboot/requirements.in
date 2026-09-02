@@ -23,6 +23,8 @@ pathspec==0.12.1 # Latest as of 2024/04/22.
 protobuf==5.28.3 # Aligned with `grpcio`.
 psutil==6.0.0 # Latest as of 2024/09/10.
 pyjwt==2.10.1 # Latest as of 2024/11/27.
+jsonpath-ng==1.8.0 # For `reboot.bdd`; latest as of 2026/09/03.
+json5==0.15.0 # For `reboot.bdd`; latest as of 2026/09/03.
 pytest==8.4.2 # For `reboot.bdd`; latest 8.x as of 2026/09/01.
 pytest-bdd==8.1.0 # For `reboot.bdd`; latest as of 2026/09/01.
 python-dotenv==1.2.1 # Used by `rbt dev run --env-file`.

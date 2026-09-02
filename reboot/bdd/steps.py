@@ -16,9 +16,13 @@ The steps run against the `Application` returned by the
 Step text refers to a state type by its class name in backticks (or
 by its full state type name, e.g. `bank.v1.Account`, when more than
 one state type goes by the class name), to a state's ID in double
-quotes, and to properties as a list of
-`name=value` pairs, each in backticks, separated by commas or 'and',
-whose values are Python literals:
+quotes, and to properties as `path=value` assignments, each in
+backticks, separated by commas or 'and'; the value is JSON, with
+JSON5's leniencies (object keys need no quotes), and an object or
+array value is validated by the method's request type when calling
+and, when asserting, compared as the complete message the actual
+value's type parses it as. A dotted path nests when calling, e.g.
+`owner.name="Frank"`, and reaches into the response when asserting:
 
     Given the application is up
     And an `Account` for "alice" gets created via `open`
@@ -48,44 +52,85 @@ value (a quoted "$name" stays the literal string):
 #
 # ruff: noqa: F811
 
-import ast
+import json5
+import jsonpath_ng
 import pytest
 import re
+from google.protobuf import json_format
+from google.protobuf.message import Message
+# Re-exported so that `from reboot.bdd.steps import *` brings in the
+# fixtures the steps run on.
+from pydantic import TypeAdapter, ValidationError
 from pytest_bdd import parsers
 from reboot.aio.aborted import Aborted
 from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
+from reboot.api import Model
 from reboot.bdd import given, then, when
-# Re-exported so that `from reboot.bdd.steps import *` brings in the
-# fixtures the steps run on.
-from reboot.bdd.fixtures import JsonValue, World, _json_object
+from reboot.bdd.fixtures import (
+    JsonValue,
+    PropertyPath,
+    World,
+    _json_object,
+    _zero_indexed,
+)
 from reboot.bdd.fixtures import rbt as rbt
 from reboot.bdd.fixtures import reboot_event_loop as reboot_event_loop
 from reboot.bdd.fixtures import world as world
 from reboot.bdd.registry import client_types_by_name
-from typing import Any, Optional
+from typing import Any, Optional, Union, get_args, get_origin
 
-# One 'name=value' property in step text: the name (possibly dotted,
-# to reach a nested property) and value in backticks, the value
-# being anything up to the closing backtick.
-_PROPERTY_PATTERN = re.compile(r'`(?P<name>\w+(?:\.\w+)*)=(?P<value>[^`]+)`')
+# A property path in step text: a leading field, then dotted fields,
+# bracketed list indices, and bracketed map keys.
+_PATH = r'\w+(?:\.\w+|\[\d+\]|\["[^"]*"\])*'
 
-# One saving clause in a 'has' or 'where' list: the (possibly
-# dotted) property name in backticks, saved under a '$name'.
-_SAVE_PATTERN = re.compile(
-    r'`(?P<name>\w+(?:\.\w+)*)` saved as "\$(?P<saved>\w+)"'
-)
+# One 'path=value' property clause: the property's path and value
+# in backticks, the value being anything up to the closing backtick.
+# The groupless form embeds in step patterns and deliberately also
+# matches lexical near-misses (':' for '=', spaces around the '=',
+# an empty value) so that those route to a step whose parser
+# raises the fix; the compiled form is the strict shape, for
+# extraction.
+_PROPERTY_CLAUSE = rf'`{_PATH}\s*[:=]\s*[^`]*`'
+_PROPERTY_PATTERN = re.compile(rf'`(?P<path>{_PATH})=(?P<value>\S[^`]*)`')
+
+# One saving clause: the (possibly dotted) property name in
+# backticks, saved under a '$name'. The groupless form embeds in
+# step patterns and deliberately also matches lexical near-misses
+# ('saved to', a missing '$' or missing quotes) so that those route
+# to a step whose parser raises the fix; the compiled form is the
+# strict shape, for extraction.
+_SAVE_CLAUSE = rf'`{_PATH}`\s+saved\s+(?:as|to)\s+"?\$?\w+"?'
+_SAVE_PATTERN = re.compile(rf'`(?P<path>{_PATH})` saved as "\$(?P<saved>\w+)"')
 
 # What separates two clauses in step text: a comma, an 'and', or a
 # comma followed by an 'and'.
-_SEPARATOR_PATTERN = re.compile(r'\s*(?:,\s*and|,|and)\s+')
+_SEPARATOR = r'\s*(?:,\s*and|,|and)\s+'
+
+# A clause list of only 'path=value' properties: what a 'with'
+# passes to a call, and what a Then 'has'/'where' asserts.
+_PROPERTY_CLAUSES = rf'{_PROPERTY_CLAUSE}(?:{_SEPARATOR}{_PROPERTY_CLAUSE})*'
+
+# A clause list of only saving clauses: what a Given or When 'has'
+# saves.
+_SAVE_CLAUSES = rf'{_SAVE_CLAUSE}(?:{_SEPARATOR}{_SAVE_CLAUSE})*'
+
+# A clause list mixing both kinds, which no step accepts; it exists
+# so the mistake gets a pointed error instead of an unmatched step.
+# A property value can never contain a backtick, so the lookaheads
+# can only hit an actual clause of each kind.
+_CLAUSE = rf'(?:{_PROPERTY_CLAUSE}|{_SAVE_CLAUSE})'
+_MIXED_CLAUSES = (
+    rf'(?=.*`\s+saved\s)(?=.*`{_PATH}\s*[:=])'
+    rf'{_CLAUSE}(?:{_SEPARATOR}{_CLAUSE})*'
+)
 
 # The 'the `Account` for "alice"' phrase naming the state a step acts
 # on.
 _STATE = r'the `(?P<state_type>[\w.]+)` for "(?P<state_id>[^"]*)"'
 
 # A step's optional trailing property list.
-_PROPERTIES = r'(?: with (?P<properties>.+))?'
+_PROPERTIES = rf'(?: with (?P<clauses>{_PROPERTY_CLAUSES}))?'
 
 
 def _saved_value(world: World, name: str) -> JsonValue:
@@ -113,167 +158,281 @@ def _resolve_state_id(world: World, state_id: str) -> str:
     return value
 
 
-def _parse_clauses(
-    world: World,
-    clauses: Optional[str],
-) -> tuple[dict[str, Any], dict[str, str]]:
-    """Parses a step's clause list into the properties to compare,
-    e.g. '`amount=50`', and, keyed by the name to save under, the
-    properties to save, e.g. '`amount` saved as "$amount"'; a
-    property value of the form '$name' becomes the saved value going
-    by that name."""
-    properties: dict[str, Any] = {}
-    saves: dict[str, str] = {}
-    if clauses is None:
-        return properties, saves
-    text = clauses.strip()
-    position = 0
-    while position < len(text):
-        if position > 0:
-            separator = _SEPARATOR_PATTERN.match(text, position)
-            if separator is None:
-                raise ValueError(
-                    "Expected a ',' or 'and' between clauses, but "
-                    f"got: {text[position:]}"
-                )
-            position = separator.end()
-        save_match = _SAVE_PATTERN.match(text, position)
-        if save_match is not None:
-            saves[save_match['saved']] = save_match['name']
-            position = save_match.end()
-            continue
-        property_match = _PROPERTY_PATTERN.match(text, position)
-        if property_match is None:
-            raise ValueError(
-                "Expected a clause of the form `name=value` or "
-                "`name` saved as \"$name\", but got: "
-                f"{text[position:]}"
-            )
-        try:
-            if re.fullmatch(r'\$\w+', property_match['value']):
-                value = _saved_value(world, property_match['value'][1:])
-            else:
-                value = ast.literal_eval(property_match['value'])
-        except (ValueError, SyntaxError) as error:
-            raise ValueError(
-                f"The value of `{property_match['name']}` must be a Python "
-                "literal, e.g. 50, 2.5, \"text\", or True, but got: "
-                f"{property_match['value']}"
-            ) from error
-        properties[property_match['name']] = value
-        position = property_match.end()
-    return properties, saves
+def _almost_property_message(clause: str) -> str:
+    """The 'Almost' error for a property clause that is a lexical
+    near-miss of `path=value`."""
+    if re.match(rf'`{_PATH}\s*:', clause):
+        return f"Almost: say `path=value` with '=', not ':': {clause}"
+    if re.fullmatch(rf'`{_PATH}\s*=\s*`', clause):
+        return f"Almost: the value is missing: {clause}"
+    if re.match(rf'`{_PATH}\s+=', clause) or re.match(rf'`{_PATH}=\s', clause):
+        return (
+            "Almost: write `path=value` without spaces around the "
+            f"'=': {clause}"
+        )
+    return f"Expected a property of the form `path=value`, but got: {clause}"
+
+
+def _almost_save_message(clause: str) -> str:
+    """The 'Almost' error for a saving clause that is a lexical
+    near-miss of `name` saved as "$name"."""
+    if re.search(r'\bsaved\s+to\b', clause):
+        return f"Almost: say 'saved as', not 'saved to': {clause}"
+    if re.search(r'\bsaved\s+as\s+\$\w+$', clause):
+        return f'Almost: quote the name, e.g. saved as "$name": {clause}'
+    if re.search(r'\bsaved\s+as\s+"\w+"$', clause):
+        return (
+            "Almost: the name needs a '$', e.g. saved as "
+            f'"$name": {clause}'
+        )
+    return (
+        'Expected a saving clause of the form `name` saved as "$name", '
+        f'but got: {clause}'
+    )
 
 
 def _parse_properties(
     world: World,
-    properties: Optional[str],
-) -> dict[str, Any]:
+    clauses: Optional[str],
+) -> list[tuple[PropertyPath, JsonValue]]:
     """Parses a step's property list, e.g. '`amount=50` and
-    `reason="promo"`', into a dictionary of Python literal values; a
-    saving clause is refused, it belongs in a 'has' or 'where'
-    list."""
-    parsed, saves = _parse_clauses(world, properties)
-    if saves:
-        raise ValueError(
-            "A property can only be saved from a 'has' or 'where' "
-            "list, not passed to a call: " +
-            ', '.join(f'"${name}"' for name in sorted(saves))
-        )
+    `reason="promo"`', into a dictionary of JSON values; a property
+    value of the form '$name' becomes the saved value going by that
+    name. The step patterns admit lexical near-misses of a clause,
+    so each clause is confirmed strict here, raising the fix."""
+    parsed: list[tuple[PropertyPath, JsonValue]] = []
+    if clauses is None:
+        return parsed
+    for clause_match in re.finditer(_PROPERTY_CLAUSE, clauses):
+        property_match = _PROPERTY_PATTERN.fullmatch(clause_match[0])
+        if property_match is None:
+            raise ValueError(_almost_property_message(clause_match[0]))
+        if re.fullmatch(r'\$\w+', property_match['value']):
+            value = _saved_value(world, property_match['value'][1:])
+        else:
+            try:
+                value = json5.loads(property_match['value'])
+            except ValueError as error:
+                raise ValueError(
+                    f"The value of `{property_match['path']}` must "
+                    "be JSON, e.g. 50, 2.5, \"text\", true, or "
+                    '{name: "value"}, but got: '
+                    f"{property_match['value']}"
+                ) from error
+        parsed.append((PropertyPath.create(property_match['path']), value))
     return parsed
 
 
-def _assert_clauses(
-    world: World,
-    subject: Any,
-    clauses: Optional[str],
-) -> None:
-    """Asserts the given clause list against the given response,
-    state, or error; saving clauses are refused, they belong under
-    Given or When."""
-    properties, saves = _parse_clauses(world, clauses)
-    if saves:
-        raise ValueError(
-            "A Then 'has' or 'where' asserts; save under Given or "
-            "When instead: " +
-            ', '.join(f'"${name}"' for name in sorted(saves))
+def _parse_saves(clauses: str) -> dict[str, PropertyPath]:
+    """Parses a Given or When 'has' list of saving clauses, e.g.
+    '`amount` saved as "$amount"', into the property to save under
+    each name. The step patterns admit lexical near-misses of a
+    clause, so each clause is confirmed strict here, raising the
+    fix."""
+    saves: dict[str, PropertyPath] = {}
+    for clause_match in re.finditer(_SAVE_CLAUSE, clauses):
+        save_match = _SAVE_PATTERN.fullmatch(clause_match[0])
+        if save_match is None:
+            raise ValueError(_almost_save_message(clause_match[0]))
+        saves[save_match['saved']] = PropertyPath.create(save_match['path'])
+    return saves
+
+
+def _resolve_json_property(
+    json_object: JsonValue,
+    path: PropertyPath,
+) -> JsonValue:
+    """The value the property's path finds in the given JSON object;
+    walking the response's JSON, rather than the live response, keeps
+    every value canonical JSON."""
+    found = path.expression.find(json_object)
+    if len(found) == 1:
+        return found[0].value
+    if len(found) > 1:
+        raise AssertionError(
+            f"Expected `{path.text}` to find one value, but it found "
+            f"{len(found)}"
         )
-    _assert_properties(subject, properties)
 
+    # Nothing found: probe the path prefix by prefix for an error
+    # naming where and why.
+    def atoms(
+        expression: jsonpath_ng.JSONPath,
+    ) -> list[jsonpath_ng.JSONPath]:
+        match expression:
+            case jsonpath_ng.Child(left=left, right=right):
+                return atoms(left) + atoms(right)
+            case jsonpath_ng.Root():
+                return []
+            case _:
+                return [expression]
 
-def _save_clauses(
-    world: World,
-    subject: Any,
-    clauses: Optional[str],
-) -> None:
-    """Saves the properties the given clause list names from the
-    given response; comparing clauses are refused, they belong in a
-    Then."""
-    properties, saves = _parse_clauses(world, clauses)
-    if properties:
-        raise ValueError(
-            "A Given or When 'has' saves; assert with a Then "
-            "instead: " +
-            ', '.join(f'`{name}`' for name in sorted(properties))
-        )
-    if not saves:
-        raise ValueError(
-            "Expected at least one saving clause, e.g. "
-            '`name` saved as "$name"'
-        )
-    subject_json = _json_object(subject)
-    for name, property_name in saves.items():
-        world.saved[name] = _resolve_json_property(subject_json, property_name)
-
-
-def _resolve_json_property(json_object: JsonValue, name: str) -> JsonValue:
-    """The value the (possibly dotted) property name reaches in the
-    given JSON object; saving walks the response's JSON, rather than
-    the live response the way asserting does, so that saved values
-    are canonical JSON."""
-    value = json_object
-    for part in name.split('.'):
-        if not isinstance(value, dict):
-            raise AssertionError(
-                f"Expected an object with a property `{part}` (from "
-                f"`{name}`), but got: {value!r}"
-            )
-        if part not in value:
-            raise AssertionError(
-                f"Expected a property `{part}` (from `{name}`), but "
-                "there are: " + (
-                    ', '.join(f'`{n}`'
-                              for n in sorted(value)) or "no properties"
+    prefix: Optional[jsonpath_ng.JSONPath] = None
+    value: JsonValue = json_object
+    for atom in atoms(path.expression):
+        prefix = atom if prefix is None else jsonpath_ng.Child(prefix, atom)
+        prefixed = prefix.find(json_object)
+        if prefixed:
+            value = prefixed[0].value
+            continue
+        match atom:
+            case jsonpath_ng.Index(indices=(index,)
+                                  ) if isinstance(value, list):
+                raise AssertionError(
+                    f"Expected at least {index + 1} elements at "
+                    f"`{prefix}` (from `{path.text}`), but there "
+                    f"are {len(value)}"
                 )
-            )
-        value = value[part]
-    return value
+            case jsonpath_ng.Index():
+                raise AssertionError(
+                    f"Expected a list at `{prefix}` (from "
+                    f"`{path.text}`), but got: {value!r}"
+                )
+            case jsonpath_ng.Fields(fields=(fieldname,)
+                                   ) if isinstance(value, dict):
+                raise AssertionError(
+                    f"Expected a property `{fieldname}` (from "
+                    f"`{path.text}`), but there are: " + (
+                        ', '.join(f'`{n}`'
+                                  for n in sorted(value)) or "no properties"
+                    )
+                )
+            case _:
+                raise AssertionError(
+                    f"Expected an object at `{prefix}` (from "
+                    f"`{path.text}`), but got: {value!r}"
+                )
+    raise AssertionError(f"Expected `{path.text}` to find one value")
 
 
-def _resolve_property(subject: Any, name: str) -> Any:
-    """The value the (possibly dotted) property name reaches on the
-    given response, state, or error."""
-    actual = subject
-    for attribute in name.split('.'):
+def _proto_property_matches(
+    message_type: type[Message],
+    path: PropertyPath,
+    actual: JsonValue,
+    expected: JsonValue,
+) -> bool:
+    """Whether the actual (canonical JSON) value of the named
+    property equals the expected JSON value under the message type's
+    semantics: both are parsed into the type as just that property
+    and the resulting messages compared, so e.g. a 64-bit integer
+    matches its canonical string form and an object compares as the
+    complete message with unset properties at their defaults."""
+    # We transform the path to always set the first (0th index) of a
+    # list vs what ever the path originally was extracting (e.g., [2]
+    # for the 3rd element) so that we aren't comparing lists with gaps
+    # (which won't always work and doesn't buy us anything anyway).
+    expression = _zero_indexed(path.expression)
+
+    def sparse(value: JsonValue) -> Message:
+        result: dict[str, JsonValue] = {}
+        expression.update_or_create(result, value)
         try:
-            actual = getattr(actual, attribute)
-        except AttributeError as error:
+            return json_format.ParseDict(result, message_type())
+        except json_format.ParseError as error:
             raise AssertionError(
-                f"Expected `{type(actual).__name__}` to have a "
-                f"property `{attribute}` (from `{name}`), but it has "
-                "no such property"
+                f"`{path.text}` cannot be {value!r} on "
+                f"`{message_type.__name__}`: {error}"
             ) from error
-    return actual
+
+    # Create a sparse message that only has the values set from what
+    # `path` dictates, such that we can then just rely on protobuf
+    # comparisons to handle things like 64-bit integers (which are
+    # strings in JSON) or bytes (which are base64 encoded).
+    return sparse(actual) == sparse(expected)
 
 
-def _assert_properties(subject: Any, properties: dict[str, Any]) -> None:
-    """Asserts that each of the given (possibly dotted) property names
-    reaches the expected value on the given response, state, or
-    error."""
-    for name, expected in properties.items():
-        actual = _resolve_property(subject, name)
-        assert actual == expected, (
-            f"Expected `{name}` to be {expected!r}, but it is {actual!r}"
+def _without_optional(annotation: Any) -> Any:
+    """The annotation with an `Optional[...]` wrapper removed."""
+    if get_origin(annotation) is Union:
+        arguments = [
+            argument for argument in get_args(annotation)
+            if argument is not type(None)
+        ]
+        if len(arguments) == 1:
+            return arguments[0]
+    return annotation
+
+
+def _pydantic_annotation(model_type: type[Model], path: PropertyPath) -> Any:
+    """The annotation the property's path reaches on the given model
+    type: a field reaches a model's field or a `dict` value, and an
+    index a `list` element."""
+
+    def reached(annotation: Any, expression: jsonpath_ng.JSONPath) -> Any:
+        match expression:
+            case jsonpath_ng.Child(left=left, right=right):
+                return reached(reached(annotation, left), right)
+            case jsonpath_ng.Root():
+                return annotation
+        annotation = _without_optional(annotation)
+        match expression:
+            case jsonpath_ng.Fields(fields=(fieldname,)) if (
+                isinstance(annotation, type) and issubclass(annotation, Model)
+            ):
+                field = annotation.model_fields.get(str(fieldname))
+                if field is None:
+                    raise AssertionError(
+                        f"`{annotation.__name__}` has no property "
+                        f"`{fieldname}` (from `{path.text}`)"
+                    )
+                return field.annotation
+            case jsonpath_ng.Fields() if get_origin(annotation) is dict:
+                return get_args(annotation)[1]
+            case jsonpath_ng.Index() if get_origin(annotation) is list:
+                return get_args(annotation)[0]
+            case _:
+                raise AssertionError(
+                    f"Cannot reach `{expression}` (from `{path.text}`) "
+                    f"in {annotation!r}"
+                )
+
+    return reached(model_type, path.expression)
+
+
+def _pydantic_property_matches(
+    model_type: type[Model],
+    path: PropertyPath,
+    actual: JsonValue,
+    expected: JsonValue,
+) -> bool:
+    """Whether the actual (dumped) value of the named property equals
+    the expected JSON value under the model type's semantics: both
+    sides validate as the property's annotation, so an object
+    compares as the complete model with missing properties at their
+    defaults, and a value in its JSON spelling equals the value it
+    validates as."""
+    adapter = TypeAdapter(_pydantic_annotation(model_type, path))
+    try:
+        return adapter.validate_python(actual
+                                      ) == adapter.validate_python(expected)
+    except ValidationError as error:
+        raise AssertionError(
+            f"`{path.text}` cannot be {expected!r} on "
+            f"`{model_type.__name__}`: {error}"
+        ) from error
+
+
+def _assert_properties(
+    subject: Union[Message, Model],
+    properties: list[tuple[PropertyPath, JsonValue]],
+) -> None:
+    """Asserts that each of the given property paths reaches the
+    expected value on the given response or error, comparing under
+    the subject type's semantics."""
+    subject_json = _json_object(subject)
+    for path, expected in properties:
+        actual = _resolve_json_property(subject_json, path)
+        if isinstance(subject, Message):
+            matches = _proto_property_matches(
+                type(subject), path, actual, expected
+            )
+        else:
+            matches = _pydantic_property_matches(
+                type(subject), path, actual, expected
+            )
+        assert matches, (
+            f"Expected `{path.text}` to be {expected!r}, but it is "
+            f"{actual!r}"
         )
 
 
@@ -301,19 +460,30 @@ def _a_shared_context(world: World) -> None:
         rf'gets created via `(?P<method>\w+)`{_PROPERTIES}$'
     )
 )
+@when(
+    parsers.re(
+        r'(?:a|an) `(?P<state_type>[\w.]+)` for "(?P<state_id>[^"]*)" '
+        rf'gets created via `(?P<method>\w+)`{_PROPERTIES}$'
+    )
+)
 async def _gets_created_via(
     world: World,
     state_type: str,
     state_id: str,
     method: str,
-    properties: Optional[str],
+    clauses: Optional[str],
 ) -> None:
     factory = world.factory(state_type=state_type, method=method)
-    try:
-        _, world.response = await factory(
-            world.context(), _resolve_state_id(world, state_id),
-            **_parse_properties(world, properties)
+    properties = _parse_properties(world, clauses)
+    arguments = [world.context(), _resolve_state_id(world, state_id)]
+    if properties:
+        arguments.append(
+            world.request(
+                state_type=state_type, method=method, properties=properties
+            )
         )
+    try:
+        _, world.response = await factory(*arguments)
     except Aborted as aborted:
         raise AssertionError(
             f"Creating the `{state_type}` for \"{state_id}\" via "
@@ -328,7 +498,7 @@ async def _gets_a(
     state_type: str,
     state_id: str,
     method: str,
-    properties: Optional[str],
+    clauses: Optional[str],
 ) -> None:
     if world.is_reader(state_type=state_type, method=method):
         raise ValueError(
@@ -340,7 +510,7 @@ async def _gets_a(
             state_type=state_type,
             state_id=_resolve_state_id(world, state_id),
             method=method,
-            properties=_parse_properties(world, properties),
+            properties=_parse_properties(world, clauses),
         )
     except Aborted as aborted:
         raise AssertionError(
@@ -357,7 +527,7 @@ async def _attempts_a(
     state_type: str,
     state_id: str,
     method: str,
-    properties: Optional[str],
+    clauses: Optional[str],
 ) -> None:
     if world.is_reader(state_type=state_type, method=method):
         raise ValueError(
@@ -370,7 +540,7 @@ async def _attempts_a(
             state_type=state_type,
             state_id=_resolve_state_id(world, state_id),
             method=method,
-            properties=_parse_properties(world, properties),
+            properties=_parse_properties(world, clauses),
         )
         world.aborted = None
     except Aborted as aborted:
@@ -390,13 +560,13 @@ def _assert_aborted(
         f"Expected an abort with `{error_type}`, but it aborted "
         f"with `{type(error).__name__}`: {aborted}"
     )
-    _assert_clauses(world, error, clauses)
+    _assert_properties(error, _parse_properties(world, clauses))
 
 
 @then(
     parsers.re(
         r'the attempt aborts with `(?P<error_type>\w+)`'
-        r'(?: where (?P<clauses>.+))?$'
+        rf'(?: where (?P<clauses>{_PROPERTY_CLAUSES}))?$'
     )
 )
 def _the_attempt_aborts_with(
@@ -439,8 +609,12 @@ async def _read(
         ) from aborted
 
 
-@then(parsers.re(rf'`(?P<method>\w+)` on {_STATE} '
-                 r'has (?P<clauses>.+)$'))
+@then(
+    parsers.re(
+        rf'`(?P<method>\w+)` on {_STATE} '
+        rf'has (?P<clauses>{_PROPERTY_CLAUSES})$'
+    )
+)
 async def _then_has(
     world: World,
     method: str,
@@ -449,14 +623,22 @@ async def _then_has(
     clauses: str,
 ) -> None:
     response = await _read(world, method, state_type, state_id)
-    _assert_clauses(world, response, clauses)
+    _assert_properties(response, _parse_properties(world, clauses))
 
 
-@given(parsers.re(rf'`(?P<method>\w+)` on {_STATE} '
-                  r'has (?P<clauses>.+)$'))
-@when(parsers.re(rf'`(?P<method>\w+)` on {_STATE} '
-                 r'has (?P<clauses>.+)$'))
-async def _when_has(
+@given(
+    parsers.re(
+        rf'`(?P<method>\w+)` on {_STATE} '
+        rf'has (?P<clauses>{_SAVE_CLAUSES})$'
+    )
+)
+@when(
+    parsers.re(
+        rf'`(?P<method>\w+)` on {_STATE} '
+        rf'has (?P<clauses>{_SAVE_CLAUSES})$'
+    )
+)
+async def _has_saved_as(
     world: World,
     method: str,
     state_type: str,
@@ -464,14 +646,16 @@ async def _when_has(
     clauses: str,
 ) -> None:
     response = await _read(world, method, state_type, state_id)
-    _save_clauses(world, response, clauses)
+    response_json = _json_object(response)
+    for name, path in _parse_saves(clauses).items():
+        world.saved[name] = _resolve_json_property(response_json, path)
 
 
 @then(
     parsers.re(
         rf'`(?P<method>\w+)` on {_STATE} '
         r'aborts with `(?P<error_type>\w+)`'
-        r'(?: where (?P<clauses>.+))?$'
+        rf'(?: where (?P<clauses>{_PROPERTY_CLAUSES}))?$'
     )
 )
 async def _aborts_with(
@@ -505,24 +689,24 @@ async def _aborts_with(
     )
 
 
-@then(parsers.re(r'the result has (?P<clauses>.+)$'))
+@then(parsers.re(rf'the result has (?P<clauses>{_PROPERTY_CLAUSES})$'))
 def _the_result_has(world: World, clauses: str) -> None:
     assert world.response is not None, (
         "Expected a preceding step to have made a call that returned "
         "a response, but there is none"
     )
-    _assert_clauses(world, world.response, clauses)
+    _assert_properties(world.response, _parse_properties(world, clauses))
 
 
 @given(
     parsers.re(
-        r'the resulting `(?P<property_name>\w+(?:\.\w+)*)` '
+        rf'the resulting `(?P<property_name>{_PATH})` '
         r'is saved as "\$(?P<name>\w+)"$'
     )
 )
 @when(
     parsers.re(
-        r'the resulting `(?P<property_name>\w+(?:\.\w+)*)` '
+        rf'the resulting `(?P<property_name>{_PATH})` '
         r'is saved as "\$(?P<name>\w+)"$'
     )
 )
@@ -536,5 +720,98 @@ def _the_resulting_property_is_saved_as(
         "a response, but there is none"
     )
     world.saved[name] = _resolve_json_property(
-        _json_object(world.response), property_name
+        _json_object(world.response), PropertyPath.create(property_name)
     )
+
+
+# The steps below match only *invalid* clause lists, each a
+# near-miss of the grammar the steps above declare, so that the
+# mistake raises a pointed error instead of pytest-bdd's unmatched
+# step. Each pattern is disjoint from every real step's: a real
+# step's tail never matches one of these.
+
+
+@given(parsers.re(rf'.+ has {_PROPERTY_CLAUSES}$'))
+@when(parsers.re(rf'.+ has {_PROPERTY_CLAUSES}$'))
+def _almost_asserting_under_given_or_when() -> None:
+    raise ValueError(
+        "Almost: a Given or When 'has' saves, e.g. `name` saved as "
+        "\"$name\"; assert `path=value` properties with a Then "
+        "instead"
+    )
+
+
+@then(parsers.re(rf'.+ has {_SAVE_CLAUSES}$'))
+def _almost_saving_under_then() -> None:
+    raise ValueError(
+        "Almost: a Then 'has' asserts `path=value` properties; "
+        "save under a Given or When 'has' instead"
+    )
+
+
+@given(parsers.re(rf'.+ has {_MIXED_CLAUSES}$'))
+@when(parsers.re(rf'.+ has {_MIXED_CLAUSES}$'))
+@then(parsers.re(rf'.+ has {_MIXED_CLAUSES}$'))
+def _almost_mixing_clauses() -> None:
+    raise ValueError(
+        "Almost: a 'has' list is all one kind; a Given or When "
+        "'has' saves, and a Then 'has' asserts `path=value` "
+        "properties"
+    )
+
+
+@given(
+    parsers.re(
+        rf'.+ with (?=.*`\s+saved\s){_CLAUSE}'
+        rf'(?:{_SEPARATOR}{_CLAUSE})*$'
+    )
+)
+@when(
+    parsers.re(
+        rf'.+ with (?=.*`\s+saved\s){_CLAUSE}'
+        rf'(?:{_SEPARATOR}{_CLAUSE})*$'
+    )
+)
+def _almost_saving_in_with() -> None:
+    raise ValueError(
+        "Almost: saving goes under a Given or When 'has', not a "
+        "'with' list"
+    )
+
+
+@then(
+    parsers.re(
+        rf'.+ where (?=.*`\s+saved\s){_CLAUSE}'
+        rf'(?:{_SEPARATOR}{_CLAUSE})*$'
+    )
+)
+def _almost_saving_in_where() -> None:
+    raise ValueError(
+        "Almost: saving goes under a Given or When 'has', not a "
+        "'where' list"
+    )
+
+
+# A clause list with no backticks at all, and one whose backticks do
+# not pair up (a leading backtick followed by zero or more closed
+# pairs leaves one unclosed): every valid clause list pairs its
+# backticks, so both shapes are disjoint from every step above.
+_UNBACKTICKED_CLAUSES = r'[^`]+'
+_UNCLOSED_CLAUSES = r'`[^`]*(?:`[^`]*`[^`]*)*'
+
+
+@given(parsers.re(rf'.+ (?:with|has|where) {_UNBACKTICKED_CLAUSES}$'))
+@when(parsers.re(rf'.+ (?:with|has|where) {_UNBACKTICKED_CLAUSES}$'))
+@then(parsers.re(rf'.+ (?:with|has|where) {_UNBACKTICKED_CLAUSES}$'))
+def _almost_missing_backticks() -> None:
+    raise ValueError(
+        "Almost: each clause goes in backticks, e.g. `amount=50` "
+        'or `amount` saved as "$amount"'
+    )
+
+
+@given(parsers.re(rf'.+ (?:with|has|where) {_UNCLOSED_CLAUSES}$'))
+@when(parsers.re(rf'.+ (?:with|has|where) {_UNCLOSED_CLAUSES}$'))
+@then(parsers.re(rf'.+ (?:with|has|where) {_UNCLOSED_CLAUSES}$'))
+def _almost_unclosed_backtick() -> None:
+    raise ValueError("Almost: a backtick is unclosed")

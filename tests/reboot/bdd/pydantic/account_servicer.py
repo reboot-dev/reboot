@@ -7,8 +7,12 @@ from tests.reboot.bdd.pydantic.account_api import (
     BalanceResponse,
     DepositRequest,
     DepositResponse,
+    GetOwnerResponse,
+    GetOwnersResponse,
     OpenRequest,
     OverdraftError,
+    PutOwnerRequest,
+    SetOwnerRequest,
     WithdrawRequest,
     WithdrawResponse,
 )
@@ -53,3 +57,29 @@ class AccountServicer(Account.Servicer):
         context: ReaderContext,
     ) -> BalanceResponse:
         return BalanceResponse(balance=self.state.balance)
+
+    async def set_owner(
+        self,
+        context: WriterContext,
+        request: SetOwnerRequest,
+    ) -> None:
+        self.state.owner = request.owner
+
+    async def get_owner(
+        self,
+        context: ReaderContext,
+    ) -> GetOwnerResponse:
+        return GetOwnerResponse(owner=self.state.owner)
+
+    async def put_owner(
+        self,
+        context: WriterContext,
+        request: PutOwnerRequest,
+    ) -> None:
+        self.state.owners = {**self.state.owners, request.key: request.owner}
+
+    async def get_owners(
+        self,
+        context: ReaderContext,
+    ) -> GetOwnersResponse:
+        return GetOwnersResponse(owners=self.state.owners)
