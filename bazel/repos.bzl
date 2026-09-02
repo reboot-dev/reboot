@@ -144,6 +144,7 @@ def repos():
         url = "https://github.com/bazel-contrib/bazel-mypy-integration/archive/refs/tags/0.5.0.tar.gz",
         patches = [
             "@com_github_reboot_dev_reboot//bazel:bazel-mypy-integration_avoid_duplicate_names.patch",
+            "@com_github_reboot_dev_reboot//bazel:bazel-mypy-integration_first_party_external_repos.patch",
         ],
         patch_args = ["-p1"],
     )
