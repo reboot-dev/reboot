@@ -2,6 +2,7 @@ Feature: Colliding state type names
 
   Background:
     Given the application is up
+    And the user is unauthenticated
 
   Scenario: Full state type names disambiguate
     Given a `tests.reboot.bdd.Account` for "alice" gets created via `open` with `initial_balance=1`
