@@ -154,18 +154,12 @@ If all you have is a `TaskId`, you can use `retrieve()` to get a
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
-<!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/monorepo/bank/backend/tests/account_servicer_test.py&lines=89-92) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/monorepo/bank/backend/tests/account_servicer_test.py -->
-
 ```py
 response = await Account.WelcomeEmailTask.retrieve(
     context,
     task_id=welcome_email_task_id,
 )
 ```
-
-<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 ```ts

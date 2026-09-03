@@ -215,10 +215,6 @@ Here's an example of how the `OverdraftError` can be caught in a type-safe way:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-<!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/monorepo/bank/backend/tests/account_servicer_test.py&lines=51-61) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/monorepo/bank/backend/tests/account_servicer_test.py -->
-
 ```py
 try:
     await account.withdraw(context, amount=65)
@@ -232,8 +228,6 @@ except Account.WithdrawAborted as aborted:
             )
     raise
 ```
-
-<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
