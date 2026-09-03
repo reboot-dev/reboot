@@ -36,6 +36,12 @@ created from then on ('the bearer token is "..." ' instead sets a
 raw token); say who you are before 'Given a shared context', whose
 context keeps the token it was created with.
 
+A Then 'eventually has' holds a reactive read open until its
+assertions hold, waiting at most its required bound, e.g.:
+
+    Then `balance` on the `Account` for "alice" eventually has
+      `balance=150` within 30 seconds
+
 A Then 'has' asserts and a Given or When 'has' saves, and readers
 are only read that way: 'gets a' and 'attempts a' refuse readers the
 way 'has' refuses writers, and a reader's abort is asserted with
@@ -61,6 +67,7 @@ literal string):
 #
 # ruff: noqa: F811
 
+import asyncio
 import json5
 import jsonpath_ng
 import pytest
@@ -280,6 +287,20 @@ def _almost_length_message(clause: str) -> str:
     return (
         "Expected a length clause of the form `path` of length 2, "
         f"but got: {clause}"
+    )
+
+
+def _almost_within_message(within: str) -> str:
+    """The 'Almost' error for a wait bound that is a lexical
+    near-miss of within <n> seconds."""
+    if re.fullmatch(r'\d+(?:\.\d+)?\s*s', within):
+        return (
+            "Almost: say seconds, e.g. within 10 seconds: within "
+            f"{within}"
+        )
+    return (
+        "Expected a wait bound of the form within 10 seconds, but "
+        f"got: within {within}"
     )
 
 
@@ -923,6 +944,74 @@ async def _then_has(
     _assert_properties(response, _parse_assertions(world, clauses))
 
 
+@then(
+    parsers.re(
+        rf'`(?P<method>\w+)` on {_STATE} '
+        rf'eventually has (?P<clauses>{_ASSERT_CLAUSES}) '
+        r'within (?P<within>.+)$'
+    )
+)
+async def _eventually_has(
+    world: World,
+    method: str,
+    state_type: str,
+    state_id: str,
+    clauses: str,
+    within: str,
+) -> None:
+    seconds_match = re.fullmatch(r'(\d+(?:\.\d+)?) seconds?', within)
+    if seconds_match is None:
+        raise ValueError(_almost_within_message(within))
+    seconds = float(seconds_match[1])
+    assertions = _parse_assertions(world, clauses)
+    if not world.is_reader(state_type=state_type, method=method):
+        raise ValueError(
+            f"`{method}` is not a reader; 'eventually has' holds a "
+            "reactive read open, which only readers serve"
+        )
+    reference = world.client_type(state_type).ref(
+        _maybe_saved(world, state_id)
+    )
+    responses = getattr(reference.reactively(), method)(world.context())
+    deadline = asyncio.get_running_loop().time() + seconds
+    last_error: Optional[AssertionError] = None
+    try:
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise AssertionError(
+                    f"Waited {within} for `{method}` on the "
+                    f"`{state_type}` for \"{state_id}\", but " + (
+                        str(last_error)
+                        if last_error is not None else "no response arrived"
+                    )
+                )
+            try:
+                response = await asyncio.wait_for(
+                    anext(responses), timeout=remaining
+                )
+            except asyncio.TimeoutError:
+                continue
+            except StopAsyncIteration:
+                raise AssertionError(
+                    f"The reactive read of `{method}` on the "
+                    f"`{state_type}` for \"{state_id}\" ended, and " + (
+                        str(last_error)
+                        if last_error is not None else "no response arrived"
+                    )
+                ) from None
+            else:
+                try:
+                    _assert_properties(response, assertions)
+                except AssertionError as error:
+                    last_error = error
+                    continue
+                world.response = response
+                return
+    finally:
+        await responses.aclose()
+
+
 @given(
     parsers.re(
         rf'`(?P<method>\w+)` on {_STATE} '
@@ -1026,6 +1115,31 @@ def _the_resulting_property_is_saved_as(
 # mistake raises a pointed error instead of pytest-bdd's unmatched
 # step. Each pattern is disjoint from every real step's: a real
 # step's tail never matches one of these.
+
+
+@then(parsers.re(rf'.+ eventually has {_ASSERT_CLAUSES}$'))
+def _almost_eventually_needs_within() -> None:
+    raise ValueError(
+        "Almost: say how long 'eventually has' keeps its reactive "
+        "read open, e.g. within 10 seconds"
+    )
+
+
+@then(parsers.re(rf'.+(?<!eventually) has {_ASSERT_CLAUSES} within .+$'))
+def _almost_within_needs_eventually() -> None:
+    raise ValueError(
+        "Almost: 'within' goes with 'eventually has'; a plain 'has' "
+        "asserts the response it reads"
+    )
+
+
+@given(parsers.re(r'.+ eventually has .+$'))
+@when(parsers.re(r'.+ eventually has .+$'))
+def _almost_eventually_under_given_or_when() -> None:
+    raise ValueError(
+        "Almost: a Given or When 'has' saves what it reads now; "
+        "'eventually has' asserts, under a Then"
+    )
 
 
 @given(parsers.re(rf'.+ has {_ASSERT_CLAUSES}$'))

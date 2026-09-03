@@ -24,12 +24,16 @@ from reboot.bdd.steps import (
     Equals,
     OfLength,
     _almost_asserting_under_given_or_when,
+    _almost_eventually_needs_within,
+    _almost_eventually_under_given_or_when,
     _almost_missing_backticks,
     _almost_mixing_clauses,
     _almost_predicate_in_call_with,
     _almost_saving_in_with,
     _almost_saving_under_then,
     _almost_unclosed_backtick,
+    _almost_within_message,
+    _almost_within_needs_eventually,
     _assert_aborted,
     _assert_properties,
     _parse_assertions,
@@ -147,6 +151,14 @@ def test_almost_steps_raise() -> None:
         _almost_saving_in_with()
     with pytest.raises(ValueError, match="not a call's 'with'"):
         _almost_predicate_in_call_with()
+    with pytest.raises(ValueError, match="say how long"):
+        _almost_eventually_needs_within()
+    with pytest.raises(ValueError, match="goes with 'eventually has'"):
+        _almost_within_needs_eventually()
+    with pytest.raises(ValueError, match="asserts, under a Then"):
+        _almost_eventually_under_given_or_when()
+    assert "say seconds" in _almost_within_message('10s')
+    assert "within 10 seconds" in _almost_within_message('ten seconds')
     with pytest.raises(ValueError, match="goes in backticks"):
         _almost_missing_backticks()
     with pytest.raises(ValueError, match="backtick is unclosed"):
