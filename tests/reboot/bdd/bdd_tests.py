@@ -10,6 +10,7 @@ the scenarios in `accounts.feature`."""
 import pytest
 import re
 from pytest_bdd import parsers, scenarios
+from reboot.aio.applications import Application
 from reboot.aio.external import ExternalContext
 from reboot.aio.tests import Reboot
 from reboot.bdd import when
@@ -51,7 +52,17 @@ from tests.reboot.bdd.account_pb2 import (
     Owner,
 )
 from tests.reboot.bdd.account_rbt import Account
+from tests.reboot.bdd.account_servicer import AccountServicer
+from tests.reboot.bdd.other.account_servicer import \
+    AccountServicer as OtherAccountServicer
 from typing import cast
+
+
+# An application a scenario picks by name: 'Given the two_accounts
+# application is up'.
+@pytest.fixture
+def two_accounts_application() -> Application:
+    return Application(servicers=[AccountServicer, OtherAccountServicer])
 
 
 # A custom `async def` step, the way a developer would write one: it
@@ -329,3 +340,4 @@ def test_assert_properties_proto_semantics() -> None:
 
 
 scenarios('accounts.feature')
+scenarios('variation.feature')

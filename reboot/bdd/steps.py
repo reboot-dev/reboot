@@ -13,6 +13,12 @@ The steps run against the `Application` returned by the
     def application() -> Application:
         return Application(servicers=[AccountServicer])
 
+A scenario runs a different application by naming it: 'Given the
+"proxy" application is up' runs the one the `proxy_application`
+fixture returns (the quoted name, spaces as underscores, plus
+`_application`), so the scenarios of one feature file vary the
+application under test.
+
 Step text refers to a state type by its class name in backticks (or
 by its full state type name, e.g. `bank.v1.Account`, when more than
 one state type goes by the class name), to a state's ID in double
@@ -782,13 +788,30 @@ def _assert_properties(
                 _assert_of_length(path, actual, length)
 
 
-@given('the application is up')
+@given(parsers.re(r'the (?:"(?P<name>[^"]*)" )?application is up$'))
 async def _the_application_is_up(
     rbt: Reboot,
-    application: Application,
     world: World,
     request: pytest.FixtureRequest,
+    name: Optional[str],
 ) -> None:
+    fixture = (
+        'application' if name is None else name.replace(' ', '_') +
+        '_application'
+    )
+    try:
+        application = request.getfixturevalue(fixture)
+    except pytest.FixtureLookupError:
+        raise ValueError(
+            f"No `{fixture}` fixture (the quoted name, spaces as "
+            "underscores, plus `_application`); define one "
+            "returning the `Application` the scenario runs"
+        ) from None
+    if not isinstance(application, Application):
+        raise ValueError(
+            f"Expecting the `{fixture}` fixture to return an "
+            f"`Application`, but it returned {application!r}"
+        )
     await rbt.up(application)
     world.client_types = client_types_by_name(application)
     world.rbt = rbt
@@ -1261,6 +1284,15 @@ def _almost_within_needs_eventually() -> None:
     raise ValueError(
         "Almost: 'within' goes with 'eventually has'; a plain 'has' "
         "asserts the response it reads"
+    )
+
+
+@given(parsers.re(r'the \w+ application is up$'))
+@when(parsers.re(r'the \w+ application is up$'))
+def _almost_unquoted_application() -> None:
+    raise ValueError(
+        "Almost: quote the application's name, e.g. 'the \"proxy\" "
+        "application is up'"
     )
 
 

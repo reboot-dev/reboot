@@ -46,6 +46,7 @@ py_test(
     data = [
         ":accounts.feature",
         ":collisions.feature",
+        ":variation.feature",
     ],
     main = "pytest_main.py",
     deps = [
