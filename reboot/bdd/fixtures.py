@@ -258,6 +258,50 @@ class World:
                     return request_type
         return None
 
+    def task_type(
+        self,
+        *,
+        state_type: str,
+        method: str,
+    ) -> Optional[type]:
+        """The task type of the named method, from the generated
+        client class's `<Method>Task` class, or `None` when there is
+        none."""
+        client_type = self.client_type(state_type)
+        alias = method.replace('_', '').lower() + 'task'
+        for name in dir(client_type):
+            if name.lower() == alias:
+                task_type = getattr(client_type, name)
+                if isinstance(task_type, type):
+                    return task_type
+        return None
+
+    async def spawn(
+        self,
+        *,
+        state_type: str,
+        state_id: str,
+        method: str,
+        assignments: Union[dict[str, JsonValue], list[Assignment]],
+    ) -> Any:
+        """Spawns the named method as a task on the named state,
+        using the specified `assignments` to create a request, and
+        returns the task handle to await for its response."""
+        reference = self.client_type(state_type).ref(state_id)
+        spawn = getattr(reference.spawn(), method, None)
+        if not callable(spawn):
+            raise ValueError(f"`{state_type}` has no method `{method}`")
+        if not assignments:
+            return await spawn(self.context())
+        return await spawn(
+            self.context(),
+            self.request(
+                state_type=state_type,
+                method=method,
+                assignments=assignments,
+            ),
+        )
+
     def request(
         self,
         *,

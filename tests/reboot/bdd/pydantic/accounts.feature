@@ -53,3 +53,9 @@ Feature: Accounts with a pydantic API
     Given an `Account` for "slow" gets created via `open`
     When the `Account` for "slow" gets a `deposit_later` with `amount=75`
     Then `balance` on the `Account` for "slow" eventually has `balance=75` within 30 seconds
+
+  Scenario: Spawned tasks complete
+    Given an `Account` for "spawned" gets created via `open`
+    When the `Account` for "spawned" gets a `deposit` with `amount=15` spawned with its task id saved as `first`
+    Then the `deposit` task with id "${first}" of the `Account` completes within 30 seconds
+    And the result has `updated_balance=15`

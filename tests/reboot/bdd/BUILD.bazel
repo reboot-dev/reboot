@@ -8,6 +8,7 @@ proto_library(
     srcs = [":account.proto"],
     deps = [
         "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
     ],
 )
 

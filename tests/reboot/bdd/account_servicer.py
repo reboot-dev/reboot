@@ -53,8 +53,10 @@ class AccountServicer(Account.Servicer):
         context: WriterContext,
         request: DepositLaterRequest,
     ) -> DepositLaterResponse:
-        await self.ref().schedule().deposit(context, amount=request.amount)
-        return DepositLaterResponse()
+        task_id = await self.ref().schedule().deposit(
+            context, amount=request.amount
+        )
+        return DepositLaterResponse(task_id=task_id)
 
     async def whoami(
         self,

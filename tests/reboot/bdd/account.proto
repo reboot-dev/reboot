@@ -3,6 +3,7 @@ syntax = "proto3";
 package tests.reboot.bdd;
 
 import "rbt/v1alpha1/options.proto";
+import "rbt/v1alpha1/tasks.proto";
 
 // A bank account, used to test the `reboot.bdd` steps.
 message Account {
@@ -90,7 +91,10 @@ message DepositLaterRequest {
   int64 amount = 1;
 }
 
-message DepositLaterResponse {}
+message DepositLaterResponse {
+  // ID of the scheduled deposit task.
+  rbt.v1alpha1.TaskId task_id = 1;
+}
 
 message WhoamiRequest {}
 
