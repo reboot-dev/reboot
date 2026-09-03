@@ -35,9 +35,12 @@ are only read that way: 'gets a' and 'attempts a' refuse readers the
 way 'has' refuses writers, and a reader's abort is asserted with
 '`reader` on ... aborts with ...'.
 
-A 'has' or 'where' list can also save a property under a name,
-which later steps say as `$name`, in a state's ID or as a property
-value (a quoted "$name" stays the literal string):
+An asserting list can also say the predicates `path` containing
+<value> (a substring of a string, an element of a list, or a key of
+a map) and `path` of length <n>. A Given or When 'has' instead
+saves a property under a name, which later steps say as `$name`, in
+a state's ID or as a property value (a quoted "$name" stays the
+literal string):
 
     When `get_owner` on the `Account` for "frank" has
       `owner.name` saved as "$owner_name"
@@ -105,13 +108,43 @@ _PROPERTY_PATTERN = re.compile(rf'`(?P<path>{_PATH})=(?P<value>\S[^`]*)`')
 _SAVE_CLAUSE = rf'`{_PATH}`\s+saved\s+(?:as|to)\s+"?\$?\w+"?'
 _SAVE_PATTERN = re.compile(rf'`(?P<path>{_PATH})` saved as "\$(?P<saved>\w+)"')
 
+# A predicate clause's argument: a scalar JSON value (a quoted
+# string may contain separators), or a '$name' recall.
+_ARGUMENT = r'(?:"(?:[^"\\]|\\.)*"|\$\w+|[-+.\w]+)'
+
+# One containing clause: asserts a substring of a string, an element
+# of a list, or a key of a map. The groupless form embeds in step
+# patterns and also matches 'contains', so that near-miss routes to
+# a step whose parser raises the fix; the compiled form is the
+# strict shape, for extraction.
+_CONTAINING_CLAUSE = rf'`{_PATH}`\s+contain(?:s|ing)\s+{_ARGUMENT}'
+_CONTAINING_PATTERN = re.compile(
+    rf'`(?P<path>{_PATH})` containing (?P<argument>{_ARGUMENT})'
+)
+
+# One length clause: asserts the length of a string, list, or map.
+# The groupless form embeds in step patterns and also matches a
+# missing 'of' or a non-integer length, for diagnosis; the compiled
+# form is the strict shape, for extraction.
+_LENGTH_CLAUSE = rf'`{_PATH}`\s+(?:of\s+)?length\s+{_ARGUMENT}'
+_LENGTH_PATTERN = re.compile(rf'`(?P<path>{_PATH})` of length (?P<length>\d+)')
+
 # What separates two clauses in step text: a comma, an 'and', or a
 # comma followed by an 'and'.
 _SEPARATOR = r'\s*(?:,\s*and|,|and)\s+'
 
-# A clause list of only 'path=value' properties: what a 'with'
-# passes to a call, and what a Then 'has'/'where' asserts.
+# A clause list of only 'path=value' properties: what a call's
+# 'with' passes.
 _PROPERTY_CLAUSES = rf'{_PROPERTY_CLAUSE}(?:{_SEPARATOR}{_PROPERTY_CLAUSE})*'
+
+# One asserting clause: an equality or a predicate.
+_ASSERT_CLAUSE = (
+    rf'(?:{_PROPERTY_CLAUSE}|{_CONTAINING_CLAUSE}|{_LENGTH_CLAUSE})'
+)
+
+# A clause list of asserting clauses: what a Then 'has' and an
+# abort's 'with' assert.
+_ASSERT_CLAUSES = rf'{_ASSERT_CLAUSE}(?:{_SEPARATOR}{_ASSERT_CLAUSE})*'
 
 # A clause list of only saving clauses: what a Given or When 'has'
 # saves.
@@ -121,9 +154,11 @@ _SAVE_CLAUSES = rf'{_SAVE_CLAUSE}(?:{_SEPARATOR}{_SAVE_CLAUSE})*'
 # so the mistake gets a pointed error instead of an unmatched step.
 # A property value can never contain a backtick, so the lookaheads
 # can only hit an actual clause of each kind.
-_CLAUSE = rf'(?:{_PROPERTY_CLAUSE}|{_SAVE_CLAUSE})'
+_CLAUSE = rf'(?:{_ASSERT_CLAUSE}|{_SAVE_CLAUSE})'
 _MIXED_CLAUSES = (
-    rf'(?=.*`\s+saved\s)(?=.*`{_PATH}\s*[:=])'
+    rf'(?=.*`\s+saved\s)'
+    rf'(?=.*(?:`{_PATH}\s*[:=]|`{_PATH}`\s+contain|'
+    rf'`{_PATH}`\s+(?:of\s+)?length))'
     rf'{_CLAUSE}(?:{_SEPARATOR}{_CLAUSE})*'
 )
 
@@ -144,8 +179,32 @@ class Equals:
     value: JsonValue
 
 
+@dataclass(frozen=True)
+class Containing:
+    """A `path` containing <value> clause: a substring of a string,
+    an element of a list, or a key of a map."""
+
+    # The property asserted on.
+    path: PropertyPath
+
+    # The substring, element, or key; a scalar.
+    value: JsonValue
+
+
+@dataclass(frozen=True)
+class OfLength:
+    """A `path` of length <n> clause: the length of a string, list,
+    or map."""
+
+    # The property asserted on.
+    path: PropertyPath
+
+    # The length asserted.
+    length: int
+
+
 # What one clause of an asserting list parses to.
-Assertion = Equals
+Assertion = Union[Equals, Containing, OfLength]
 
 # A step's optional trailing property list.
 _PROPERTIES = rf'(?: with (?P<clauses>{_PROPERTY_CLAUSES}))?'
@@ -189,6 +248,33 @@ def _almost_property_message(clause: str) -> str:
             f"'=': {clause}"
         )
     return f"Expected a property of the form `path=value`, but got: {clause}"
+
+
+def _almost_containing_message(clause: str) -> str:
+    """The 'Almost' error for a containing clause that is a lexical
+    near-miss of `path` containing <value>."""
+    if re.search(r'\bcontains\b', clause):
+        return f"Almost: say 'containing', not 'contains': {clause}"
+    return (
+        "Expected a containing clause of the form `path` containing "
+        f'"value", but got: {clause}'
+    )
+
+
+def _almost_length_message(clause: str) -> str:
+    """The 'Almost' error for a length clause that is a lexical
+    near-miss of `path` of length <n>."""
+    if re.search(r'`\s+length\b', clause):
+        return f"Almost: say 'of length', not 'length': {clause}"
+    if not re.search(r'\blength\s+\d+$', clause):
+        return (
+            "Almost: 'of length' takes a whole number, e.g. of "
+            f"length 2: {clause}"
+        )
+    return (
+        "Expected a length clause of the form `path` of length 2, "
+        f"but got: {clause}"
+    )
 
 
 def _almost_save_message(clause: str) -> str:
@@ -244,6 +330,82 @@ def _parse_assignments(
             )
         )
     return assignments
+
+
+def _parsed_argument(world: World, argument: str) -> JsonValue:
+    """The JSON value a predicate clause's argument says; a '$name'
+    becomes the saved value going by that name."""
+    if re.fullmatch(r'\$\w+', argument):
+        return _saved_value(world, argument[1:])
+    try:
+        return json5.loads(argument)
+    except ValueError as error:
+        raise ValueError(
+            f"The argument {argument} must be JSON, e.g. 50, 2.5, "
+            '"text", or true'
+        ) from error
+
+
+def _parse_assertions(
+    world: World,
+    clauses: Optional[str],
+) -> list[Assertion]:
+    """Parses a Then 'has' or abort 'with' clause list into
+    `Assertion`s: `Equals` for `path=value`, `Containing` for
+    `path` containing <value>, and `OfLength` for `path` of length
+    <n>. The step patterns admit lexical near-misses of a clause,
+    so each clause is confirmed strict here, raising the fix."""
+    assertions: list[Assertion] = []
+    if clauses is None:
+        return assertions
+    for clause_match in re.finditer(_ASSERT_CLAUSE, clauses):
+        clause = clause_match[0]
+        containing_match = _CONTAINING_PATTERN.fullmatch(clause)
+        if containing_match is not None:
+            assertions.append(
+                Containing(
+                    path=PropertyPath.create(containing_match['path']),
+                    value=_parsed_argument(
+                        world, containing_match['argument']
+                    ),
+                )
+            )
+            continue
+        length_match = _LENGTH_PATTERN.fullmatch(clause)
+        if length_match is not None:
+            assertions.append(
+                OfLength(
+                    path=PropertyPath.create(length_match['path']),
+                    length=int(length_match['length']),
+                )
+            )
+            continue
+        if re.search(r'\bcontain', clause):
+            raise ValueError(_almost_containing_message(clause))
+        if re.search(r'\blength\b', clause):
+            raise ValueError(_almost_length_message(clause))
+        property_match = _PROPERTY_PATTERN.fullmatch(clause)
+        if property_match is None:
+            raise ValueError(_almost_property_message(clause))
+        if re.fullmatch(r'\$\w+', property_match['value']):
+            value = _saved_value(world, property_match['value'][1:])
+        else:
+            try:
+                value = json5.loads(property_match['value'])
+            except ValueError as error:
+                raise ValueError(
+                    f"The value of `{property_match['path']}` must "
+                    "be JSON, e.g. 50, 2.5, \"text\", true, or "
+                    '{name: "value"}, but got: '
+                    f"{property_match['value']}"
+                ) from error
+        assertions.append(
+            Equals(
+                path=PropertyPath.create(property_match['path']),
+                value=value,
+            )
+        )
+    return assertions
 
 
 def _parse_saves(clauses: str) -> dict[str, PropertyPath]:
@@ -435,28 +597,113 @@ def _pydantic_property_matches(
         ) from error
 
 
+def _property_matches(
+    subject: Union[Message, Model],
+    path: PropertyPath,
+    actual: JsonValue,
+    expected: JsonValue,
+) -> bool:
+    """Whether the actual value of the property equals the expected
+    JSON value under the subject type's semantics."""
+    if isinstance(subject, Message):
+        return _proto_property_matches(type(subject), path, actual, expected)
+    return _pydantic_property_matches(type(subject), path, actual, expected)
+
+
+def _element_path(path: PropertyPath) -> PropertyPath:
+    """The path of the given list property's element."""
+    return PropertyPath(
+        text=f'{path.text}[0]',
+        expression=jsonpath_ng.Child(path.expression, jsonpath_ng.Index(0)),
+    )
+
+
+def _assert_containing(
+    subject: Union[Message, Model],
+    path: PropertyPath,
+    actual: JsonValue,
+    argument: JsonValue,
+) -> None:
+    """Asserts the containing predicate on the property's actual
+    value: a substring of a string, an element of a list (compared
+    under the subject type's semantics), or a key of a map."""
+    if isinstance(actual, str):
+        if not isinstance(argument, str):
+            raise ValueError(
+                f"`{path.text}` is a string, so containing takes a "
+                f"string, but got: {argument!r}"
+            )
+        assert argument in actual, (
+            f"Expected `{path.text}` to contain {argument!r}, but "
+            f"it is {actual!r}"
+        )
+        return
+    if isinstance(actual, list):
+        element = _element_path(path)
+        assert any(
+            _property_matches(subject, element, value, argument)
+            for value in actual
+        ), (
+            f"Expected `{path.text}` to contain {argument!r}, but "
+            f"it is {actual!r}"
+        )
+        return
+    if isinstance(actual, dict):
+        if not isinstance(argument, str):
+            raise ValueError(
+                f"`{path.text}` is a map, so containing takes a "
+                f"string key, but got: {argument!r}"
+            )
+        assert argument in actual, (
+            f"Expected `{path.text}` to contain the key "
+            f"{argument!r}, but its keys are: " +
+            (', '.join(repr(key) for key in sorted(actual)) or "none")
+        )
+        return
+    raise ValueError(
+        f"`{path.text}` is {actual!r}; containing needs a string, "
+        "list, or map"
+    )
+
+
+def _assert_of_length(
+    path: PropertyPath,
+    actual: JsonValue,
+    length: int,
+) -> None:
+    """Asserts the length predicate on the property's actual value:
+    the length of a string, list, or map."""
+    if not isinstance(actual, (str, list, dict)):
+        raise ValueError(
+            f"`{path.text}` is {actual!r}; of length needs a "
+            "string, list, or map"
+        )
+    assert len(actual) == length, (
+        f"Expected `{path.text}` to be of length {length}, but it "
+        f"is of length {len(actual)}: {actual!r}"
+    )
+
+
 def _assert_properties(
     subject: Union[Message, Model],
     assertions: list[Assertion],
 ) -> None:
-    """Asserts that each of the given assertions holds on the given
+    """Asserts each of the given assertions against the given
     response or error, comparing under the subject type's
     semantics."""
     subject_json = _json_object(subject)
     for assertion in assertions:
         actual = _resolve_json_property(subject_json, assertion.path)
-        if isinstance(subject, Message):
-            matches = _proto_property_matches(
-                type(subject), assertion.path, actual, assertion.value
-            )
-        else:
-            matches = _pydantic_property_matches(
-                type(subject), assertion.path, actual, assertion.value
-            )
-        assert matches, (
-            f"Expected `{assertion.path.text}` to be "
-            f"{assertion.value!r}, but it is {actual!r}"
-        )
+        match assertion:
+            case Equals(path=path, value=value):
+                assert _property_matches(subject, path, actual, value), (
+                    f"Expected `{path.text}` to be {value!r}, "
+                    f"but it is {actual!r}"
+                )
+            case Containing(path=path, value=value):
+                _assert_containing(subject, path, actual, value)
+            case OfLength(path=path, length=length):
+                _assert_of_length(path, actual, length)
 
 
 @given('the application is up')
@@ -577,25 +824,19 @@ def _assert_aborted(
     clauses: Optional[str],
 ) -> None:
     """Asserts that the given abort's error is of the named type and
-    satisfies the given 'where' clauses."""
+    satisfies the given 'with' clauses."""
     error = aborted.error
     assert type(error).__name__ == error_type, (
         f"Expected an abort with `{error_type}`, but it aborted "
         f"with `{type(error).__name__}`: {aborted}"
     )
-    _assert_properties(
-        error,
-        [
-            Equals(path=assignment.path, value=assignment.value)
-            for assignment in _parse_assignments(world, clauses)
-        ],
-    )
+    _assert_properties(error, _parse_assertions(world, clauses))
 
 
 @then(
     parsers.re(
         r'the attempt aborts with `(?P<error_type>\w+)`'
-        rf'(?: where (?P<clauses>{_PROPERTY_CLAUSES}))?$'
+        rf'(?: with (?P<clauses>{_ASSERT_CLAUSES}))?$'
     )
 )
 def _the_attempt_aborts_with(
@@ -641,7 +882,7 @@ async def _read(
 @then(
     parsers.re(
         rf'`(?P<method>\w+)` on {_STATE} '
-        rf'has (?P<clauses>{_PROPERTY_CLAUSES})$'
+        rf'has (?P<clauses>{_ASSERT_CLAUSES})$'
     )
 )
 async def _then_has(
@@ -652,13 +893,7 @@ async def _then_has(
     clauses: str,
 ) -> None:
     response = await _read(world, method, state_type, state_id)
-    _assert_properties(
-        response,
-        [
-            Equals(path=assignment.path, value=assignment.value)
-            for assignment in _parse_assignments(world, clauses)
-        ],
-    )
+    _assert_properties(response, _parse_assertions(world, clauses))
 
 
 @given(
@@ -690,7 +925,7 @@ async def _has_saved_as(
     parsers.re(
         rf'`(?P<method>\w+)` on {_STATE} '
         r'aborts with `(?P<error_type>\w+)`'
-        rf'(?: where (?P<clauses>{_PROPERTY_CLAUSES}))?$'
+        rf'(?: with (?P<clauses>{_ASSERT_CLAUSES}))?$'
     )
 )
 async def _aborts_with(
@@ -724,19 +959,13 @@ async def _aborts_with(
     )
 
 
-@then(parsers.re(rf'the result has (?P<clauses>{_PROPERTY_CLAUSES})$'))
+@then(parsers.re(rf'the result has (?P<clauses>{_ASSERT_CLAUSES})$'))
 def _the_result_has(world: World, clauses: str) -> None:
     assert world.response is not None, (
         "Expected a preceding step to have made a call that returned "
         "a response, but there is none"
     )
-    _assert_properties(
-        world.response,
-        [
-            Equals(path=assignment.path, value=assignment.value)
-            for assignment in _parse_assignments(world, clauses)
-        ],
-    )
+    _assert_properties(world.response, _parse_assertions(world, clauses))
 
 
 @given(
@@ -772,8 +1001,8 @@ def _the_resulting_property_is_saved_as(
 # step's tail never matches one of these.
 
 
-@given(parsers.re(rf'.+ has {_PROPERTY_CLAUSES}$'))
-@when(parsers.re(rf'.+ has {_PROPERTY_CLAUSES}$'))
+@given(parsers.re(rf'.+ has {_ASSERT_CLAUSES}$'))
+@when(parsers.re(rf'.+ has {_ASSERT_CLAUSES}$'))
 def _almost_asserting_under_given_or_when() -> None:
     raise ValueError(
         "Almost: a Given or When 'has' saves, e.g. `name` saved as "
@@ -813,6 +1042,12 @@ def _almost_mixing_clauses() -> None:
         rf'(?:{_SEPARATOR}{_CLAUSE})*$'
     )
 )
+@then(
+    parsers.re(
+        rf'.+ with (?=.*`\s+saved\s){_CLAUSE}'
+        rf'(?:{_SEPARATOR}{_CLAUSE})*$'
+    )
+)
 def _almost_saving_in_with() -> None:
     raise ValueError(
         "Almost: saving goes under a Given or When 'has', not a "
@@ -820,16 +1055,22 @@ def _almost_saving_in_with() -> None:
     )
 
 
-@then(
+@given(
     parsers.re(
-        rf'.+ where (?=.*`\s+saved\s){_CLAUSE}'
-        rf'(?:{_SEPARATOR}{_CLAUSE})*$'
+        rf'.+ with (?=.*`\s+contain|.*`\s+(?:of\s+)?length)'
+        rf'{_ASSERT_CLAUSES}$'
     )
 )
-def _almost_saving_in_where() -> None:
+@when(
+    parsers.re(
+        rf'.+ with (?=.*`\s+contain|.*`\s+(?:of\s+)?length)'
+        rf'{_ASSERT_CLAUSES}$'
+    )
+)
+def _almost_predicate_in_call_with() -> None:
     raise ValueError(
-        "Almost: saving goes under a Given or When 'has', not a "
-        "'where' list"
+        "Almost: 'containing' and 'of length' assert; they go in a "
+        "Then 'has' or an abort's 'with', not a call's 'with'"
     )
 
 
@@ -841,9 +1082,9 @@ _UNBACKTICKED_CLAUSES = r'[^`]+'
 _UNCLOSED_CLAUSES = r'`[^`]*(?:`[^`]*`[^`]*)*'
 
 
-@given(parsers.re(rf'.+ (?:with|has|where) {_UNBACKTICKED_CLAUSES}$'))
-@when(parsers.re(rf'.+ (?:with|has|where) {_UNBACKTICKED_CLAUSES}$'))
-@then(parsers.re(rf'.+ (?:with|has|where) {_UNBACKTICKED_CLAUSES}$'))
+@given(parsers.re(rf'.+ (?:with|has) {_UNBACKTICKED_CLAUSES}$'))
+@when(parsers.re(rf'.+ (?:with|has) {_UNBACKTICKED_CLAUSES}$'))
+@then(parsers.re(rf'.+ (?:with|has) {_UNBACKTICKED_CLAUSES}$'))
 def _almost_missing_backticks() -> None:
     raise ValueError(
         "Almost: each clause goes in backticks, e.g. `amount=50` "
@@ -851,8 +1092,8 @@ def _almost_missing_backticks() -> None:
     )
 
 
-@given(parsers.re(rf'.+ (?:with|has|where) {_UNCLOSED_CLAUSES}$'))
-@when(parsers.re(rf'.+ (?:with|has|where) {_UNCLOSED_CLAUSES}$'))
-@then(parsers.re(rf'.+ (?:with|has|where) {_UNCLOSED_CLAUSES}$'))
+@given(parsers.re(rf'.+ (?:with|has) {_UNCLOSED_CLAUSES}$'))
+@when(parsers.re(rf'.+ (?:with|has) {_UNCLOSED_CLAUSES}$'))
+@then(parsers.re(rf'.+ (?:with|has) {_UNCLOSED_CLAUSES}$'))
 def _almost_unclosed_backtick() -> None:
     raise ValueError("Almost: a backtick is unclosed")

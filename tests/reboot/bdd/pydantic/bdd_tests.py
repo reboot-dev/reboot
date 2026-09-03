@@ -12,8 +12,15 @@ from pytest_bdd import parsers, scenarios
 from reboot.bdd import when
 from reboot.bdd.fixtures import Assignment, JsonValue, PropertyPath, World
 from reboot.bdd.steps import *
-from reboot.bdd.steps import Assertion, Equals, _assert_properties
+from reboot.bdd.steps import (
+    Assertion,
+    Containing,
+    Equals,
+    OfLength,
+    _assert_properties,
+)
 from tests.reboot.bdd.pydantic.account_api import (
+    DepositResponse,
     GetOwnerResponse,
     GetOwnersResponse,
     Owner,
@@ -137,6 +144,31 @@ def _assertions(
         Equals(path=PropertyPath.create(text), value=value)
         for text, value in properties.items()
     ]
+
+
+def test_assert_predicates_pydantic_semantics() -> None:
+    owners = GetOwnersResponse(owners={'main': Owner(name='Heidi')})
+    _assert_properties(
+        owners,
+        [Containing(path=PropertyPath.create('owners'), value='main')],
+    )
+    _assert_properties(
+        owners,
+        [OfLength(path=PropertyPath.create('owners'), length=1)],
+    )
+    with pytest.raises(AssertionError):
+        _assert_properties(
+            owners,
+            [Containing(path=PropertyPath.create('owners'), value='other')],
+        )
+    # A pydantic number is a number in JSON, so neither predicate
+    # applies to it.
+    response = DepositResponse(updated_balance=150)
+    with pytest.raises(ValueError, match="needs a string, list, or map"):
+        _assert_properties(
+            response,
+            [OfLength(path=PropertyPath.create('updated_balance'), length=3)],
+        )
 
 
 def test_assert_properties_pydantic_semantics() -> None:

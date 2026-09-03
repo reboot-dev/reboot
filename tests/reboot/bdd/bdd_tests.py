@@ -14,20 +14,24 @@ from reboot.bdd import when
 from reboot.bdd.fixtures import JsonValue, PropertyPath, World
 from reboot.bdd.steps import *
 from reboot.bdd.steps import (
+    _ASSERT_CLAUSES,
     _MIXED_CLAUSES,
     _PROPERTY_CLAUSES,
     _SAVE_CLAUSES,
     Assertion,
+    Containing,
     Equals,
+    OfLength,
     _almost_asserting_under_given_or_when,
     _almost_missing_backticks,
     _almost_mixing_clauses,
-    _almost_saving_in_where,
+    _almost_predicate_in_call_with,
     _almost_saving_in_with,
     _almost_saving_under_then,
     _almost_unclosed_backtick,
     _assert_aborted,
     _assert_properties,
+    _parse_assertions,
     _parse_assignments,
     _parse_saves,
 )
@@ -75,6 +79,12 @@ def test_clause_grammar_routing() -> None:
     assert re.fullmatch(_MIXED_CLAUSES, mixed)
     assert not re.fullmatch(_MIXED_CLAUSES, properties)
     assert not re.fullmatch(_MIXED_CLAUSES, saves)
+    predicates = '`name` containing "a and b" and `tags` of length 2'
+    assert re.fullmatch(_ASSERT_CLAUSES, predicates)
+    assert re.fullmatch(_ASSERT_CLAUSES, properties)
+    assert not re.fullmatch(_ASSERT_CLAUSES, saves)
+    assert not re.fullmatch(_PROPERTY_CLAUSES, predicates)
+    assert not re.fullmatch(_SAVE_CLAUSES, predicates)
     # Lexical near-misses still route to their kind.
     assert re.fullmatch(_PROPERTY_CLAUSES, '`amount: 50`')
     assert re.fullmatch(_PROPERTY_CLAUSES, '`amount = 50`')
@@ -114,15 +124,79 @@ def test_almost_steps_raise() -> None:
         _almost_mixing_clauses()
     with pytest.raises(ValueError, match="not a 'with' list"):
         _almost_saving_in_with()
-    with pytest.raises(ValueError, match="not a 'where' list"):
-        _almost_saving_in_where()
+    with pytest.raises(ValueError, match="not a call's 'with'"):
+        _almost_predicate_in_call_with()
     with pytest.raises(ValueError, match="goes in backticks"):
         _almost_missing_backticks()
     with pytest.raises(ValueError, match="backtick is unclosed"):
         _almost_unclosed_backtick()
 
 
-def test_assert_aborted_where() -> None:
+def test_parse_assertions() -> None:
+    world = World()
+    assert _parse_assertions(
+        world,
+        '`name` containing "a and b", `tags` of length 2, and '
+        '`balance=50`',
+    ) == [
+        Containing(path=PropertyPath.create('name'), value='a and b'),
+        OfLength(path=PropertyPath.create('tags'), length=2),
+        Equals(path=PropertyPath.create('balance'), value=50),
+    ]
+    with pytest.raises(ValueError, match="'containing', not 'contains'"):
+        _parse_assertions(world, '`name` contains "a"')
+    with pytest.raises(ValueError, match="'of length', not 'length'"):
+        _parse_assertions(world, '`tags` length 2')
+    with pytest.raises(ValueError, match="takes a whole number"):
+        _parse_assertions(world, '`tags` of length "2"')
+
+
+def test_assert_predicates() -> None:
+    tagged = GetOwnerResponse(owner=Owner(name='Frank', tags=['vip', 'beta']))
+    _assert_properties(
+        tagged,
+        [Containing(path=PropertyPath.create('owner.name'), value='ran')],
+    )
+    _assert_properties(
+        tagged,
+        [Containing(path=PropertyPath.create('owner.tags'), value='vip')],
+    )
+    _assert_properties(
+        tagged,
+        [OfLength(path=PropertyPath.create('owner.tags'), length=2)],
+    )
+    with pytest.raises(AssertionError):
+        _assert_properties(
+            tagged,
+            [Containing(path=PropertyPath.create('owner.name'), value='z')],
+        )
+    with pytest.raises(AssertionError):
+        _assert_properties(
+            tagged,
+            [Containing(path=PropertyPath.create('owner.tags'), value='x')],
+        )
+    with pytest.raises(AssertionError):
+        _assert_properties(
+            tagged,
+            [OfLength(path=PropertyPath.create('owner.tags'), length=3)],
+        )
+    with pytest.raises(ValueError, match="takes a string"):
+        _assert_properties(
+            tagged,
+            [Containing(path=PropertyPath.create('owner.name'), value=5)],
+        )
+    _assert_properties(
+        tagged,
+        [Containing(path=PropertyPath.create('owner'), value='name')],
+    )
+    with pytest.raises(ValueError, match="takes a string key"):
+        _assert_properties(
+            tagged,
+            [Containing(path=PropertyPath.create('owner'), value=5)],
+        )
+
+
+def test_assert_aborted_with() -> None:
     world = World()
     aborted = Account.WithdrawAborted(OverdraftError(amount=20))
     _assert_aborted(world, aborted, 'OverdraftError', '`amount=20`')
