@@ -36,6 +36,12 @@ created from then on ('the bearer token is "..." ' instead sets a
 raw token); say who you are before 'Given a shared context', whose
 context keeps the token it was created with.
 
+A call runs as a task instead by saying 'gets a `method` ...
+spawned with its task id saved as `name`'; the task then awaits as
+'the `method` task with id "${name}" of the `Account` completes
+within 10 seconds', recording its response as the result. A task ID
+a response carries saves and awaits the same way.
+
 A Then 'eventually has' holds a reactive read open until its
 assertions hold, waiting at most its required bound, e.g.:
 
@@ -79,6 +85,7 @@ from google.protobuf.message import Message
 # fixtures the steps run on.
 from pydantic import TypeAdapter, ValidationError
 from pytest_bdd import parsers
+from rbt.v1alpha1 import tasks_pb2
 from reboot.aio.aborted import Aborted
 from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
@@ -307,6 +314,15 @@ def _almost_within_message(within: str) -> str:
         "Expected a wait bound of the form within 10 seconds, but "
         f"got: within {within}"
     )
+
+
+def _parsed_seconds(within: str) -> float:
+    """The seconds a wait bound says; raises the 'Almost' fix for a
+    lexical near-miss."""
+    seconds_match = re.fullmatch(r'(\d+(?:\.\d+)?) seconds?', within)
+    if seconds_match is None:
+        raise ValueError(_almost_within_message(within))
+    return float(seconds_match[1])
 
 
 def _almost_save_message(clause: str) -> str:
@@ -840,15 +856,35 @@ async def _gets_created_via(
         ) from aborted
 
 
-@given(parsers.re(rf'{_STATE} gets a `(?P<method>\w+)`{_PROPERTIES}$'))
-@when(parsers.re(rf'{_STATE} gets a `(?P<method>\w+)`{_PROPERTIES}$'))
+@given(
+    parsers.re(
+        rf'{_STATE} gets a `(?P<method>\w+)`{_PROPERTIES}'
+        r'(?: spawned with its task id saved as `(?P<task>\w+)`)?$'
+    )
+)
+@when(
+    parsers.re(
+        rf'{_STATE} gets a `(?P<method>\w+)`{_PROPERTIES}'
+        r'(?: spawned with its task id saved as `(?P<task>\w+)`)?$'
+    )
+)
 async def _gets_a(
     world: World,
     state_type: str,
     state_id: str,
     method: str,
     clauses: Optional[str],
+    task: Optional[str],
 ) -> None:
+    if task is not None:
+        handle = await world.spawn(
+            state_type=state_type,
+            state_id=_maybe_saved(world, state_id),
+            method=method,
+            assignments=_parse_assignments(world, clauses),
+        )
+        world.saved[task] = _json_object(handle.task_id)
+        return
     if world.is_reader(state_type=state_type, method=method):
         raise ValueError(
             f"`{method}` is a reader; read it with "
@@ -894,6 +930,50 @@ async def _attempts_a(
         world.aborted = None
     except Aborted as aborted:
         world.aborted = aborted
+
+
+@when(
+    parsers.re(
+        r'the `(?P<method>\w+)` task with id "\$\{(?P<name>\w+)\}" '
+        r'of the `(?P<state_type>[\w.]+)` completes within '
+        r'(?P<within>.+)$'
+    )
+)
+@then(
+    parsers.re(
+        r'the `(?P<method>\w+)` task with id "\$\{(?P<name>\w+)\}" '
+        r'of the `(?P<state_type>[\w.]+)` completes within '
+        r'(?P<within>.+)$'
+    )
+)
+async def _the_saved_task_completes(
+    world: World,
+    method: str,
+    name: str,
+    state_type: str,
+    within: str,
+) -> None:
+    seconds = _parsed_seconds(within)
+    saved = _saved_value(world, name)
+    if not isinstance(saved, dict):
+        raise ValueError(
+            f"The value saved as `{name}` must be a task ID, but it "
+            f"is {saved!r}"
+        )
+    task_type = world.task_type(state_type=state_type, method=method)
+    if task_type is None:
+        raise ValueError(f"`{state_type}` has no `{method}` task")
+    task = getattr(task_type, 'retrieve')(
+        world.context(),
+        task_id=json_format.ParseDict(saved, tasks_pb2.TaskId()),
+    )
+    try:
+        world.response = await asyncio.wait_for(task, timeout=seconds)
+    except asyncio.TimeoutError:
+        raise AssertionError(
+            f"Waited {within} for the `{method}` task saved as "
+            f"`{name}` to complete"
+        ) from None
 
 
 def _assert_aborted(
@@ -990,10 +1070,7 @@ async def _eventually_has(
     clauses: str,
     within: str,
 ) -> None:
-    seconds_match = re.fullmatch(r'(\d+(?:\.\d+)?) seconds?', within)
-    if seconds_match is None:
-        raise ValueError(_almost_within_message(within))
-    seconds = float(seconds_match[1])
+    seconds = _parsed_seconds(within)
     assertions = _parse_assertions(world, clauses)
     if not world.is_reader(state_type=state_type, method=method):
         raise ValueError(
@@ -1146,6 +1223,21 @@ def _the_resulting_property_is_saved_as(
 # mistake raises a pointed error instead of pytest-bdd's unmatched
 # step. Each pattern is disjoint from every real step's: a real
 # step's tail never matches one of these.
+
+
+@when(
+    parsers.
+    re(r'the `\w+` task with id "\$\{\w+\}" of the `[\w.]+` completes$')
+)
+@then(
+    parsers.
+    re(r'the `\w+` task with id "\$\{\w+\}" of the `[\w.]+` completes$')
+)
+def _almost_completes_needs_within() -> None:
+    raise ValueError(
+        "Almost: say how long to wait for the task, e.g. within 10 "
+        "seconds"
+    )
 
 
 @then(parsers.re(rf'.+ eventually has {_ASSERT_CLAUSES}$'))

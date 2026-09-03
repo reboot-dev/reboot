@@ -24,6 +24,7 @@ from reboot.bdd.steps import (
     Equals,
     OfLength,
     _almost_asserting_under_given_or_when,
+    _almost_completes_needs_within,
     _almost_eventually_needs_within,
     _almost_eventually_under_given_or_when,
     _almost_missing_backticks,
@@ -65,6 +66,13 @@ async def _makes_deposits(
     context = world.context()
     for _ in range(count):
         await Account.ref(state_id).deposit(context, amount=amount)
+
+
+def test_task_type() -> None:
+    world = World(client_types={'tests.reboot.bdd.Account': Account})
+    task_type = world.task_type(state_type='Account', method='deposit')
+    assert task_type is not None and hasattr(task_type, 'retrieve')
+    assert world.task_type(state_type='Account', method='nothing') is None
 
 
 def test_is_reader() -> None:
@@ -158,6 +166,8 @@ def test_almost_steps_raise() -> None:
         _almost_predicate_in_call_with()
     with pytest.raises(ValueError, match="say how long"):
         _almost_eventually_needs_within()
+    with pytest.raises(ValueError, match="how long to wait for the task"):
+        _almost_completes_needs_within()
     with pytest.raises(ValueError, match="goes with 'eventually has'"):
         _almost_within_needs_eventually()
     with pytest.raises(ValueError, match="asserts, under a Then"):
