@@ -663,6 +663,16 @@ def _pip_package_impl(ctx):
     version = ctx.attr.version
     license = ctx.attr.license
     pyproject_toml_file = ctx.actions.declare_file("%s/pyproject.toml" % STAGING_DIRECTORY_NAME)
+    entry_points = ""
+    for group, entries in ctx.attr.entry_points.items():
+        entry_points += "[project.entry-points.%s]\n" % group
+        for entry in entries:
+            name, separator, module = entry.partition("=")
+            if separator == "":
+                fail("Expected an entry_points entry of the form " +
+                     "'name = module', but got '%s'" % entry)
+            entry_points += '%s = "%s"\n' % (name.strip(), module.strip())
+
     dynamic_fields = '["dependencies"]'
     optional_dependencies = ""
     if extras_requirements_txts:
@@ -682,6 +692,7 @@ def _pip_package_impl(ctx):
             "{CLASSIFIERS}": str(classifiers),
             "{DESCRIPTION}": ctx.attr.description,
             "{DYNAMIC_FIELDS}": dynamic_fields,
+            "{ENTRY_POINTS}": entry_points,
             "{LICENSE}": license,
             "{NAME}": ctx.attr.distribution_name,
             "{OPTIONAL_DEPENDENCIES}": optional_dependencies,
@@ -824,6 +835,13 @@ _pip_package = rule(
         "distribution_name": attr.string(
             doc = "The name of the distribution to generate.",
             mandatory = True,
+        ),
+        "entry_points": attr.string_list_dict(
+            default = {},
+            doc = "The entry points this pip package advertises: " +
+                  "each key is an entry-point group, e.g. " +
+                  "'pytest11', and each value that group's " +
+                  "'name = module' entries.",
         ),
         "extras": attr.label_keyed_string_dict(
             allow_files = True,

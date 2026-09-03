@@ -21,6 +21,8 @@ build-backend = "setuptools.build_meta"
 [project.scripts]
 {SCRIPTS}
 
+{ENTRY_POINTS}
+
 [tool.setuptools]
 # The default settings understand our `src/` layout and will auto-discover the
 # Python packages we've placed there. We don't need to specify them here.
