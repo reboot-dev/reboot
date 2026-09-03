@@ -1,39 +1,15 @@
-import unittest
-from chat_room.v1.chat_room_rbt import ChatRoom
+"""The chat room's tests: the Gherkin scenarios in
+`chat_room.feature`."""
+
+import pytest
 from chat_room_servicer import ChatRoomServicer
 from reboot.aio.applications import Application
-from reboot.aio.tests import Reboot
+from reboot.bdd import scenarios
 
 
-class TestHello(unittest.IsolatedAsyncioTestCase):
+@pytest.fixture
+def application() -> Application:
+    return Application(servicers=[ChatRoomServicer])
 
-    async def asyncSetUp(self) -> None:
-        self.rbt = Reboot()
-        await self.rbt.start()
 
-    async def asyncTearDown(self) -> None:
-        await self.rbt.stop()
-
-    async def test_chat_room(self) -> None:
-        await self.rbt.up(Application(servicers=[ChatRoomServicer]))
-
-        context = self.rbt.create_external_context(name=f"test-{self.id()}")
-
-        chat_room = ChatRoom.ref("testing-chat-room")
-
-        await chat_room.send(context, message="Hello, World")
-
-        response: ChatRoom.MessagesResponse = await chat_room.messages(context)
-        self.assertEqual(response.messages, ["Hello, World"])
-
-        await chat_room.send(context, message="Hello, Reboot!")
-        await chat_room.send(context, message="Hello, Peace of Mind!")
-        response = await chat_room.messages(context)
-        self.assertEqual(
-            response.messages,
-            [
-                "Hello, World",
-                "Hello, Reboot!",
-                "Hello, Peace of Mind!",
-            ],
-        )
+scenarios('chat_room.feature')
