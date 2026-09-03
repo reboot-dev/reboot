@@ -30,11 +30,12 @@ value's type parses it as. A dotted path nests when calling, e.g.
     Then `balance` on the `Account` for "alice" has
       `balance=50`
 
-A scenario says who it calls as with 'Given I am "alice"', which
-mints a test token for that user ID and puts it on every context
-created from then on ('the bearer token is "..." ' instead sets a
-raw token); say who you are before 'Given a shared context', whose
-context keeps the token it was created with.
+A scenario says who it calls as with 'Given the authenticated
+user is "alice"', which mints a test token for that user ID and
+puts it on every context created from then on ('the bearer token is
+"..." ' instead sets a raw token); say who the authenticated user
+is before 'Given a shared context', whose context keeps the token
+it was created with.
 
 A call runs as a task instead by saying 'gets a `method` ...
 spawned with its task id saved as `name`'; the task then awaits as
@@ -793,9 +794,9 @@ async def _the_application_is_up(
     world.name = request.node.name
 
 
-@given(parsers.re(r'I am "(?P<user_id>[^"]*)"$'))
-@when(parsers.re(r'I am "(?P<user_id>[^"]*)"$'))
-async def _i_am(world: World, user_id: str) -> None:
+@given(parsers.re(r'the authenticated user is "(?P<user_id>[^"]*)"$'))
+@when(parsers.re(r'the authenticated user is "(?P<user_id>[^"]*)"$'))
+async def _the_authenticated_user_is(world: World, user_id: str) -> None:
     if world.rbt is None:
         raise ValueError(
             "The application is not up; start the scenario with "
