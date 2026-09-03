@@ -11,6 +11,7 @@ import pytest
 import re
 from pytest_bdd import parsers, scenarios
 from reboot.aio.external import ExternalContext
+from reboot.aio.tests import Reboot
 from reboot.bdd import when
 from reboot.bdd.fixtures import JsonValue, PropertyPath, World
 from reboot.bdd.steps import *
@@ -88,6 +89,14 @@ def test_the_bearer_token_is() -> None:
     world.saved['token'] = 'saved-key'
     _the_bearer_token_is(world, '${token}')
     assert world.bearer_token == 'saved-key'
+
+
+def test_context_requires_user_declared() -> None:
+    world = World(rbt=cast(Reboot, object()), name='test')
+    with pytest.raises(ValueError, match="has not declared a user"):
+        world.context()
+    world.set_bearer_token(None)
+    assert world.user_declared
 
 
 def test_set_bearer_token_guard() -> None:

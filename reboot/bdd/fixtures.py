@@ -160,8 +160,12 @@ class World:
     aborted: Optional[Aborted] = None
 
     # The bearer token every context created from here on carries;
-    # `None` calls anonymously.
+    # `None` calls unauthenticated.
     bearer_token: Optional[str] = None
+
+    # Whether the scenario has said who calls, authenticated or
+    # not; every call requires it.
+    user_declared: bool = False
 
     def context(self) -> ExternalContext:
         """The context for one step's call: the scenario's shared
@@ -174,16 +178,23 @@ class World:
                 "The application is not up; start the scenario with "
                 "'Given the application is up'"
             )
+        if not self.user_declared:
+            raise ValueError(
+                "The scenario has not declared a user; say 'Given "
+                'the authenticated user is "..."\' or \'Given the '
+                "user is unauthenticated'"
+            )
         self.contexts_created += 1
         return self.rbt.create_external_context(
             name=f"{self.name}-{self.contexts_created}",
             bearer_token=self.bearer_token,
         )
 
-    def set_bearer_token(self, bearer_token: str) -> None:
+    def set_bearer_token(self, bearer_token: Optional[str]) -> None:
         """Sets the bearer token every context created from here on
-        carries; raises once a shared context exists, which keeps the
-        token it was created with."""
+        carries, `None` for unauthenticated, satisfying the say-who-
+        calls requirement either way; raises once a shared context
+        exists, which keeps the token it was created with."""
         if self.shared_context is not None:
             raise ValueError(
                 "The shared context already carries an identity; say "
@@ -191,6 +202,7 @@ class World:
                 "shared context'"
             )
         self.bearer_token = bearer_token
+        self.user_declared = True
 
     def client_type(self, state_type: str) -> Any:
         """The generated client class of the named state type, named

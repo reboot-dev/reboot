@@ -30,12 +30,13 @@ value's type parses it as. A dotted path nests when calling, e.g.
     Then `balance` on the `Account` for "alice" has
       `balance=50`
 
-A scenario says who it calls as with 'Given the authenticated
-user is "alice"', which mints a test token for that user ID and
-puts it on every context created from then on ('the bearer token is
-"..." ' instead sets a raw token); say who the authenticated user
-is before 'Given a shared context', whose context keeps the token
-it was created with.
+Every scenario says who calls before its first call: 'Given the
+authenticated user is "alice"' mints a test token for that user ID
+and puts it on every context created from then on, 'Given the user
+is unauthenticated' calls with no token, and 'the bearer token is
+"..."' instead sets a raw token; say who calls before 'Given a
+shared context', whose context keeps the token it was created
+with.
 
 A call runs as a task instead by saying 'gets a `method` ...
 spawned with its task id saved as `name`'; the task then awaits as
@@ -809,6 +810,12 @@ async def _the_authenticated_user_is(world: World, user_id: str) -> None:
     )
 
 
+@given('the user is unauthenticated')
+@when('the user is unauthenticated')
+def _the_user_is_unauthenticated(world: World) -> None:
+    world.set_bearer_token(None)
+
+
 @given(parsers.re(r'the bearer token is "(?P<bearer_token>[^"]*)"$'))
 @when(parsers.re(r'the bearer token is "(?P<bearer_token>[^"]*)"$'))
 def _the_bearer_token_is(world: World, bearer_token: str) -> None:
@@ -1255,6 +1262,18 @@ def _almost_within_needs_eventually() -> None:
         "Almost: 'within' goes with 'eventually has'; a plain 'has' "
         "asserts the response it reads"
     )
+
+
+@given(parsers.re(r'I am "[^"]*"$'))
+@when(parsers.re(r'I am "[^"]*"$'))
+def _almost_i_am() -> None:
+    raise ValueError("Almost: say 'the authenticated user is \"...\"'")
+
+
+@given('the user is anonymous')
+@when('the user is anonymous')
+def _almost_anonymous() -> None:
+    raise ValueError("Almost: say 'the user is unauthenticated'")
 
 
 @given(parsers.re(r'.+ eventually has .+$'))
