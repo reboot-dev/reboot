@@ -13,6 +13,7 @@ from tests.reboot.bdd.pydantic.account_api import (
     OverdraftError,
     PutOwnerRequest,
     SetOwnerRequest,
+    WhoamiResponse,
     WithdrawRequest,
     WithdrawResponse,
 )
@@ -57,6 +58,17 @@ class AccountServicer(Account.Servicer):
         context: ReaderContext,
     ) -> BalanceResponse:
         return BalanceResponse(balance=self.state.balance)
+
+    async def whoami(
+        self,
+        context: ReaderContext,
+    ) -> WhoamiResponse:
+        return WhoamiResponse(
+            user_id=(
+                context.auth.user_id if context.auth is not None and
+                context.auth.user_id is not None else ''
+            )
+        )
 
     async def set_owner(
         self,

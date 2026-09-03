@@ -10,6 +10,7 @@ the scenarios in `accounts.feature`."""
 import pytest
 import re
 from pytest_bdd import parsers, scenarios
+from reboot.aio.external import ExternalContext
 from reboot.bdd import when
 from reboot.bdd.fixtures import JsonValue, PropertyPath, World
 from reboot.bdd.steps import *
@@ -34,6 +35,7 @@ from reboot.bdd.steps import (
     _parse_assertions,
     _parse_assignments,
     _parse_saves,
+    _the_bearer_token_is,
 )
 from tests.reboot.bdd.account_pb2 import (
     BalanceResponse,
@@ -43,6 +45,7 @@ from tests.reboot.bdd.account_pb2 import (
     Owner,
 )
 from tests.reboot.bdd.account_rbt import Account
+from typing import cast
 
 
 # A custom `async def` step, the way a developer would write one: it
@@ -64,6 +67,24 @@ def test_is_reader() -> None:
     world = World(client_types={'tests.reboot.bdd.Account': Account})
     assert world.is_reader(state_type='Account', method='balance')
     assert not world.is_reader(state_type='Account', method='deposit')
+
+
+def test_the_bearer_token_is() -> None:
+    world = World()
+    _the_bearer_token_is(world, 'admin-key')
+    assert world.bearer_token == 'admin-key'
+    world.saved['token'] = 'saved-key'
+    _the_bearer_token_is(world, '$token')
+    assert world.bearer_token == 'saved-key'
+
+
+def test_set_bearer_token_guard() -> None:
+    world = World()
+    world.set_bearer_token('token')
+    assert world.bearer_token == 'token'
+    world.shared_context = cast(ExternalContext, object())
+    with pytest.raises(ValueError, match="before 'Given a shared context'"):
+        world.set_bearer_token('other')
 
 
 def test_clause_grammar_routing() -> None:

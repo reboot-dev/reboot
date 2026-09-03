@@ -159,6 +159,10 @@ class World:
     # or `None` if that call succeeded.
     aborted: Optional[Aborted] = None
 
+    # The bearer token every context created from here on carries;
+    # `None` calls anonymously.
+    bearer_token: Optional[str] = None
+
     def context(self) -> ExternalContext:
         """The context for one step's call: the scenario's shared
         context once a 'Given a shared context' step has created it,
@@ -172,8 +176,20 @@ class World:
             )
         self.contexts_created += 1
         return self.rbt.create_external_context(
-            name=f"{self.name}-{self.contexts_created}"
+            name=f"{self.name}-{self.contexts_created}",
+            bearer_token=self.bearer_token,
         )
+
+    def set_bearer_token(self, bearer_token: str) -> None:
+        """Sets the bearer token every context created from here on
+        carries; raises once a shared context exists, which keeps the
+        token it was created with."""
+        if self.shared_context is not None:
+            raise ValueError(
+                "The shared context already carries an identity; say "
+                "who you are before 'Given a shared context'"
+            )
+        self.bearer_token = bearer_token
 
     def client_type(self, state_type: str) -> Any:
         """The generated client class of the named state type, named

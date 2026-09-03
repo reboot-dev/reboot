@@ -19,6 +19,8 @@ from tests.reboot.bdd.account_rbt import (
     PutOwnerResponse,
     SetOwnerRequest,
     SetOwnerResponse,
+    WhoamiRequest,
+    WhoamiResponse,
     WithdrawRequest,
     WithdrawResponse,
 )
@@ -43,6 +45,18 @@ class AccountServicer(Account.Servicer):
         request: BalanceRequest,
     ) -> BalanceResponse:
         return BalanceResponse(balance=self.state.balance)
+
+    async def whoami(
+        self,
+        context: ReaderContext,
+        request: WhoamiRequest,
+    ) -> WhoamiResponse:
+        return WhoamiResponse(
+            user_id=(
+                context.auth.user_id if context.auth is not None and
+                context.auth.user_id is not None else ""
+            )
+        )
 
     async def set_owner(
         self,

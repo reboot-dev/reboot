@@ -70,3 +70,10 @@ Feature: Accounts
     And an `Account` for "dave" gets created via `open`
     When the `Account` for "dave" gets a `deposit` with `amount=5`
     Then `balance` on the `Account` for "dave" has `balance=5`
+
+  Scenario: Steps call as who I am
+    Given I am "alice"
+    And an `Account` for "joint" gets created via `open`
+    Then `whoami` on the `Account` for "joint" has `user_id="alice"`
+    When I am "bob"
+    Then `whoami` on the `Account` for "joint" has `user_id="bob"`

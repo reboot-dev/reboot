@@ -30,6 +30,12 @@ value's type parses it as. A dotted path nests when calling, e.g.
     Then `balance` on the `Account` for "alice" has
       `balance=50`
 
+A scenario says who it calls as with 'Given I am "alice"', which
+mints a test token for that user ID and puts it on every context
+created from then on ('the bearer token is "..." ' instead sets a
+raw token); say who you are before 'Given a shared context', whose
+context keeps the token it was created with.
+
 A Then 'has' asserts and a Given or When 'has' saves, and readers
 are only read that way: 'gets a' and 'attempts a' refuse readers the
 way 'has' refuses writers, and a reader's abort is asserted with
@@ -221,16 +227,16 @@ def _saved_value(world: World, name: str) -> JsonValue:
     return world.saved[name]
 
 
-def _resolve_state_id(world: World, state_id: str) -> str:
-    """The state ID a step names: the saved value when the ID is of
-    the form '$name', otherwise the ID itself."""
-    if not re.fullmatch(r'\$\w+', state_id):
-        return state_id
-    value = _saved_value(world, state_id[1:])
+def _maybe_saved(world: World, text: str) -> str:
+    """The saved value the text names when it is of the form
+    '$name', which must be a string, otherwise the text itself."""
+    if not re.fullmatch(r'\$\w+', text):
+        return text
+    value = _saved_value(world, text[1:])
     if not isinstance(value, str):
         raise ValueError(
-            f'The value saved as "${state_id[1:]}" must be a string '
-            f"to name a state, but it is {value!r}"
+            f'Expecting the value saved as "${text[1:]}" to be a '
+            f"string, but it is {value!r}"
         )
     return value
 
@@ -719,6 +725,27 @@ async def _the_application_is_up(
     world.name = request.node.name
 
 
+@given(parsers.re(r'I am "(?P<user_id>[^"]*)"$'))
+@when(parsers.re(r'I am "(?P<user_id>[^"]*)"$'))
+async def _i_am(world: World, user_id: str) -> None:
+    if world.rbt is None:
+        raise ValueError(
+            "The application is not up; start the scenario with "
+            "'Given the application is up'"
+        )
+    world.set_bearer_token(
+        await world.rbt.make_valid_oauth_access_token(
+            user_id=_maybe_saved(world, user_id),
+        )
+    )
+
+
+@given(parsers.re(r'the bearer token is "(?P<bearer_token>[^"]*)"$'))
+@when(parsers.re(r'the bearer token is "(?P<bearer_token>[^"]*)"$'))
+def _the_bearer_token_is(world: World, bearer_token: str) -> None:
+    world.set_bearer_token(_maybe_saved(world, bearer_token))
+
+
 @given('a shared context')
 def _a_shared_context(world: World) -> None:
     world.shared_context = world.context()
@@ -745,7 +772,7 @@ async def _gets_created_via(
 ) -> None:
     factory = world.factory(state_type=state_type, method=method)
     assignments = _parse_assignments(world, clauses)
-    arguments = [world.context(), _resolve_state_id(world, state_id)]
+    arguments = [world.context(), _maybe_saved(world, state_id)]
     if assignments:
         arguments.append(
             world.request(
@@ -778,7 +805,7 @@ async def _gets_a(
     try:
         world.response = await world.call(
             state_type=state_type,
-            state_id=_resolve_state_id(world, state_id),
+            state_id=_maybe_saved(world, state_id),
             method=method,
             assignments=_parse_assignments(world, clauses),
         )
@@ -808,7 +835,7 @@ async def _attempts_a(
     try:
         world.response = await world.call(
             state_type=state_type,
-            state_id=_resolve_state_id(world, state_id),
+            state_id=_maybe_saved(world, state_id),
             method=method,
             assignments=_parse_assignments(world, clauses),
         )
@@ -867,7 +894,7 @@ async def _read(
     try:
         world.response = await world.call(
             state_type=state_type,
-            state_id=_resolve_state_id(world, state_id),
+            state_id=_maybe_saved(world, state_id),
             method=method,
             assignments={},
         )
@@ -945,7 +972,7 @@ async def _aborts_with(
     try:
         await world.call(
             state_type=state_type,
-            state_id=_resolve_state_id(world, state_id),
+            state_id=_maybe_saved(world, state_id),
             method=method,
             assignments={},
         )
