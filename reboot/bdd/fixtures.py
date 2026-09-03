@@ -84,6 +84,18 @@ class PropertyPath:
         return PropertyPath(text=text, expression=expression)
 
 
+@dataclass(frozen=True)
+class Assignment:
+    """A `path=value` clause in a call's 'with' list: the value put
+    at the property's path when building the request."""
+
+    # The property assigned.
+    path: PropertyPath
+
+    # The value put there, as written (JSON).
+    value: JsonValue
+
+
 def _json_type(value: Any) -> type:
     """The JSON type of a value: `int` and `float` are one number
     type, and `bool` is its own."""
@@ -235,23 +247,22 @@ class World:
         *,
         state_type: str,
         method: str,
-        properties: Union[dict[str, JsonValue], list[tuple[PropertyPath,
-                                                           JsonValue]]],
+        assignments: Union[dict[str, JsonValue], list[Assignment]],
     ) -> Any:
-        """The request the properties describe, validated by the named
-        method's request type. A dotted property name nests, e.g.
-        'owner.name' describes the request's `owner` message's
-        `name`."""
+        """Returns a request with properties derived from the assignments,
+        validated by the named method's request type. A dotted
+        property name nests, e.g., 'owner.name' describes the
+        request's `owner` message's `name`."""
         request_type = self.request_type(state_type=state_type, method=method)
         if request_type is None:
             raise ValueError(
                 f"`{state_type}`'s `{method}` takes no properties"
             )
 
-        if isinstance(properties, dict):
-            properties = [
-                (PropertyPath.create(text), value)
-                for text, value in properties.items()
+        if isinstance(assignments, dict):
+            assignments = [
+                Assignment(path=PropertyPath.create(text), value=value)
+                for text, value in assignments.items()
             ]
 
         # Build the JSON object a property at a time, where a property
@@ -283,13 +294,14 @@ class World:
 
             confirmed(path.expression)
 
-        for path, value in properties:
+        for assignment in assignments:
             # For creating a JSON object we disallow certain kinds of
             # paths that just don't make sense or are not useful.
-            validate(path)
-            if path.expression.find(result):
+            validate(assignment.path)
+            if assignment.path.expression.find(result):
                 raise ValueError(
-                    f"Property `{path.text}` collides with another property"
+                    f"Property `{assignment.path.text}` collides with "
+                    "another property"
                 )
 
             def update(
@@ -316,9 +328,11 @@ class World:
                     for index, element in enumerate(parent):
                         if index == field:
                             continue
-                        if _json_type(element) is not _json_type(value):
+                        if _json_type(element) is not _json_type(
+                            assignment.value
+                        ):
                             raise ValueError(
-                                f"Property `{path.text}` indexes "
+                                f"Property `{assignment.path.text}` indexes "
                                 f"into a list whose element "
                                 f"{element!r} is not the same type "
                                 "as its value"
@@ -327,8 +341,8 @@ class World:
                 # returning a value does not always store it correctly
                 # so we need to store it ourselves and return it until
                 # h2non/jsonpath-ng#238 gets fixed.
-                parent[field] = value
-                return value
+                parent[field] = assignment.value
+                return assignment.value
 
             try:
                 # NOTE: we are using the version of `update_or_create`
@@ -336,10 +350,11 @@ class World:
                 # jsonpath-ng to raise a KeyError if a path attempts
                 # to do a list index in an already existing dict
                 # (i.e., treating the dict like a list incorrectly).
-                path.expression.update_or_create(result, update)
+                assignment.path.expression.update_or_create(result, update)
             except (KeyError, TypeError) as error:
                 raise ValueError(
-                    f"Property `{path.text}` cannot be applied to "
+                    f"Property `{assignment.path.text}` cannot be "
+                    "applied to "
                     "what is already built"
                 ) from error
         # If the request is a Pydantic model, we use `model_validate`.
@@ -376,23 +391,22 @@ class World:
         state_type: str,
         state_id: str,
         method: str,
-        properties: Union[dict[str, JsonValue], list[tuple[PropertyPath,
-                                                           JsonValue]]],
+        assignments: Union[dict[str, JsonValue], list[Assignment]],
     ) -> Any:
-        """Calls the named method on the named state, with the
-        properties as the request's, and returns its response."""
+        """Returns the response from calling the named method on the named
+        state using the specified `assignments` to create a request."""
         reference = self.client_type(state_type).ref(state_id)
         method_callable = getattr(reference, method, None)
         if not callable(method_callable):
             raise ValueError(f"`{state_type}` has no method `{method}`")
-        if not properties:
+        if not assignments:
             return await method_callable(self.context())
         return await method_callable(
             self.context(),
             self.request(
                 state_type=state_type,
                 method=method,
-                properties=properties,
+                assignments=assignments,
             ),
         )
 

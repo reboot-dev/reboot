@@ -10,9 +10,9 @@ driven by the scenarios in `accounts.feature`."""
 import pytest
 from pytest_bdd import parsers, scenarios
 from reboot.bdd import when
-from reboot.bdd.fixtures import JsonValue, PropertyPath, World
+from reboot.bdd.fixtures import Assignment, JsonValue, PropertyPath, World
 from reboot.bdd.steps import *
-from reboot.bdd.steps import _assert_properties
+from reboot.bdd.steps import Assertion, Equals, _assert_properties
 from tests.reboot.bdd.pydantic.account_api import (
     GetOwnerResponse,
     GetOwnersResponse,
@@ -36,7 +36,7 @@ async def _makes_deposits(
             state_type='Account',
             state_id=state_id,
             method='deposit',
-            properties={'amount': amount},
+            assignments={'amount': amount},
         )
 
 
@@ -46,7 +46,7 @@ def test_unknown_property_raises() -> None:
         world.request(
             state_type='Account',
             method='deposit',
-            properties={'amunt': 50},
+            assignments={'amunt': 50},
         )
     assert 'has no property `amunt`' in str(raised.value)
 
@@ -56,7 +56,7 @@ def test_list_indices_build_requests() -> None:
     request = world.request(
         state_type='Account',
         method='set_owner',
-        properties={
+        assignments={
             'owner.name': 'Frank',
             'owner.tags[0]': 'a',
             'owner.tags[1]': 'b',
@@ -69,7 +69,7 @@ def test_list_indices_build_requests() -> None:
         world.request(
             state_type='Account',
             method='set_owner',
-            properties={
+            assignments={
                 'owner.name': 'F',
                 'owner.tags[1]': 'b'
             },
@@ -80,7 +80,7 @@ def test_list_indices_build_requests() -> None:
         world.request(
             state_type='Account',
             method='set_owner',
-            properties={
+            assignments={
                 'owner.tags[0]': 'a',
                 'owner.tags[1]': 5
             },
@@ -93,7 +93,7 @@ def test_list_indices_build_requests() -> None:
         world.request(
             state_type='Account',
             method='set_owner',
-            properties={
+            assignments={
                 'owner.name': 'F',
                 'co_owners[1].name': 'x'
             },
@@ -108,7 +108,7 @@ def test_colliding_properties_raise() -> None:
         world.request(
             state_type='Account',
             method='set_owner',
-            properties={
+            assignments={
                 'owner': {
                     'name': 'a'
                 },
@@ -122,50 +122,50 @@ def test_colliding_properties_raise() -> None:
         world.request(
             state_type='Account',
             method='set_owner',
-            properties=[
-                (PropertyPath.create('owner.name'), 'a'),
-                (PropertyPath.create('owner.name'), 'b'),
+            assignments=[
+                Assignment(path=PropertyPath.create('owner.name'), value='a'),
+                Assignment(path=PropertyPath.create('owner.name'), value='b'),
             ],
         )
     assert 'collides' in str(raised.value)
 
 
-def _properties(
+def _assertions(
     properties: dict[str, JsonValue],
-) -> list[tuple[PropertyPath, JsonValue]]:
+) -> list[Assertion]:
     return [
-        (PropertyPath.create(text), value)
+        Equals(path=PropertyPath.create(text), value=value)
         for text, value in properties.items()
     ]
 
 
 def test_assert_properties_pydantic_semantics() -> None:
     response = GetOwnerResponse(owner=Owner(name='Frank'))
-    _assert_properties(response, _properties({'owner': {'name': 'Frank'}}))
-    _assert_properties(response, _properties({'owner.name': 'Frank'}))
+    _assert_properties(response, _assertions({'owner': {'name': 'Frank'}}))
+    _assert_properties(response, _assertions({'owner.name': 'Frank'}))
     with pytest.raises(AssertionError):
         _assert_properties(
             response,
-            _properties({'owner': {
+            _assertions({'owner': {
                 'name': 'Frank',
                 'tags': ['x']
             }}),
         )
     _assert_properties(
-        GetOwnerResponse(owner=None), _properties({'owner': None})
+        GetOwnerResponse(owner=None), _assertions({'owner': None})
     )
     owners = GetOwnersResponse(owners={'main': Owner(name='Heidi')})
-    _assert_properties(owners, _properties({'owners["main"].name': 'Heidi'}))
-    _assert_properties(owners, _properties({'owners.main.name': 'Heidi'}))
+    _assert_properties(owners, _assertions({'owners["main"].name': 'Heidi'}))
+    _assert_properties(owners, _assertions({'owners.main.name': 'Heidi'}))
     _assert_properties(
-        owners, _properties({'owners': {
+        owners, _assertions({'owners': {
             'main': {
                 'name': 'Heidi'
             }
         }})
     )
     with pytest.raises(AssertionError):
-        _assert_properties(owners, _properties({'owners': {}}))
+        _assert_properties(owners, _assertions({'owners': {}}))
 
 
 scenarios('accounts.feature')

@@ -17,6 +17,8 @@ from reboot.bdd.steps import (
     _MIXED_CLAUSES,
     _PROPERTY_CLAUSES,
     _SAVE_CLAUSES,
+    Assertion,
+    Equals,
     _almost_asserting_under_given_or_when,
     _almost_missing_backticks,
     _almost_mixing_clauses,
@@ -26,7 +28,7 @@ from reboot.bdd.steps import (
     _almost_unclosed_backtick,
     _assert_aborted,
     _assert_properties,
-    _parse_properties,
+    _parse_assignments,
     _parse_saves,
 )
 from tests.reboot.bdd.account_pb2 import (
@@ -83,16 +85,16 @@ def test_clause_grammar_routing() -> None:
 def test_almost_clause_messages() -> None:
     world = World()
     with pytest.raises(ValueError, match="with '=', not ':'"):
-        _parse_properties(world, '`amount: 50`')
+        _parse_assignments(world, '`amount: 50`')
     with pytest.raises(ValueError, match="without spaces around the '='"):
-        _parse_properties(world, '`amount = 50`')
+        _parse_assignments(world, '`amount = 50`')
     with pytest.raises(ValueError, match="without spaces around the '='"):
-        _parse_properties(world, '`amount= 50`')
+        _parse_assignments(world, '`amount= 50`')
     with pytest.raises(ValueError, match="the value is missing"):
-        _parse_properties(world, '`amount=`')
+        _parse_assignments(world, '`amount=`')
     with pytest.raises(ValueError, match="must be JSON"):
-        _parse_properties(world, '`amount=abc`')
-    assert _parse_properties(world, '`owner={name: "F"}`')[0][1] == {
+        _parse_assignments(world, '`amount=abc`')
+    assert _parse_assignments(world, '`owner={name: "F"}`')[0].value == {
         'name': 'F'
     }
     with pytest.raises(ValueError, match="'saved as', not 'saved to'"):
@@ -138,7 +140,7 @@ def test_list_indices_build_requests() -> None:
     request = world.request(
         state_type='Account',
         method='set_owner',
-        properties={
+        assignments={
             'owner.name': 'F',
             'co_owners[1].name': 'x'
         },
@@ -151,47 +153,47 @@ def test_list_indices_build_requests() -> None:
         world.request(
             state_type='Account',
             method='deposit',
-            properties={'amount': 'abc'},
+            assignments={'amount': 'abc'},
         )
     assert 'Could not build a `DepositRequest` from' in str(raised.value)
     assert '"amount": "abc"' in str(raised.value)
 
 
-def _properties(
+def _assertions(
     properties: dict[str, JsonValue],
-) -> list[tuple[PropertyPath, JsonValue]]:
+) -> list[Assertion]:
     return [
-        (PropertyPath.create(text), value)
+        Equals(path=PropertyPath.create(text), value=value)
         for text, value in properties.items()
     ]
 
 
 def test_assert_properties_proto_semantics() -> None:
     _assert_properties(
-        BalanceResponse(balance=150), _properties({'balance': 150})
+        BalanceResponse(balance=150), _assertions({'balance': 150})
     )
     with pytest.raises(AssertionError):
         _assert_properties(
-            BalanceResponse(balance=150), _properties({'balance': 151})
+            BalanceResponse(balance=150), _assertions({'balance': 151})
         )
     response = GetOwnerResponse(owner=Owner(name='Frank'))
-    _assert_properties(response, _properties({'owner': {'name': 'Frank'}}))
-    _assert_properties(response, _properties({'owner.name': 'Frank'}))
+    _assert_properties(response, _assertions({'owner': {'name': 'Frank'}}))
+    _assert_properties(response, _assertions({'owner.name': 'Frank'}))
     tagged = GetOwnerResponse(owner=Owner(name='Frank', tags=['vip', 'beta']))
-    _assert_properties(tagged, _properties({'owner.tags[1]': 'beta'}))
+    _assert_properties(tagged, _assertions({'owner.tags[1]': 'beta'}))
     with pytest.raises(AssertionError):
-        _assert_properties(tagged, _properties({'owner.tags[2]': 'x'}))
+        _assert_properties(tagged, _assertions({'owner.tags[2]': 'x'}))
     with pytest.raises(AssertionError):
         _assert_properties(
             response,
-            _properties({'owner': {
+            _assertions({'owner': {
                 'name': 'Frank',
                 'tags': ['x']
             }}),
         )
     with pytest.raises(AssertionError):
         _assert_properties(
-            OpenResponse(account_id='150'), _properties({'account_id': 150})
+            OpenResponse(account_id='150'), _assertions({'account_id': 150})
         )
 
 
