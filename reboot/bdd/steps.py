@@ -56,6 +56,7 @@ import json5
 import jsonpath_ng
 import pytest
 import re
+from dataclasses import dataclass
 from google.protobuf import json_format
 from google.protobuf.message import Message
 # Re-exported so that `from reboot.bdd.steps import *` brings in the
@@ -68,6 +69,7 @@ from reboot.aio.tests import Reboot
 from reboot.api import Model
 from reboot.bdd import given, then, when
 from reboot.bdd.fixtures import (
+    Assignment,
     JsonValue,
     PropertyPath,
     World,
@@ -128,6 +130,22 @@ _MIXED_CLAUSES = (
 # The 'the `Account` for "alice"' phrase naming the state a step acts
 # on.
 _STATE = r'the `(?P<state_type>[\w.]+)` for "(?P<state_id>[^"]*)"'
+
+
+@dataclass(frozen=True)
+class Equals:
+    """A `path=value` clause in an asserting list: the property
+    equals the value under the response type's semantics."""
+
+    # The property asserted on.
+    path: PropertyPath
+
+    # The value it must equal, as written (JSON).
+    value: JsonValue
+
+
+# What one clause of an asserting list parses to.
+Assertion = Equals
 
 # A step's optional trailing property list.
 _PROPERTIES = rf'(?: with (?P<clauses>{_PROPERTY_CLAUSES}))?'
@@ -191,18 +209,18 @@ def _almost_save_message(clause: str) -> str:
     )
 
 
-def _parse_properties(
+def _parse_assignments(
     world: World,
     clauses: Optional[str],
-) -> list[tuple[PropertyPath, JsonValue]]:
-    """Parses a step's property list, e.g. '`amount=50` and
-    `reason="promo"`', into a dictionary of JSON values; a property
-    value of the form '$name' becomes the saved value going by that
-    name. The step patterns admit lexical near-misses of a clause,
-    so each clause is confirmed strict here, raising the fix."""
-    parsed: list[tuple[PropertyPath, JsonValue]] = []
+) -> list[Assignment]:
+    """Parses a call's 'with' list, e.g. '`amount=50` and
+    `reason="promo"`', into `Assignment`s; a property value of the
+    form '$name' becomes the saved value going by that name. The step
+    patterns admit lexical near-misses of a clause, so each clause is
+    confirmed strict here, raising the fix."""
+    assignments: list[Assignment] = []
     if clauses is None:
-        return parsed
+        return assignments
     for clause_match in re.finditer(_PROPERTY_CLAUSE, clauses):
         property_match = _PROPERTY_PATTERN.fullmatch(clause_match[0])
         if property_match is None:
@@ -219,8 +237,13 @@ def _parse_properties(
                     '{name: "value"}, but got: '
                     f"{property_match['value']}"
                 ) from error
-        parsed.append((PropertyPath.create(property_match['path']), value))
-    return parsed
+        assignments.append(
+            Assignment(
+                path=PropertyPath.create(property_match['path']),
+                value=value,
+            )
+        )
+    return assignments
 
 
 def _parse_saves(clauses: str) -> dict[str, PropertyPath]:
@@ -414,25 +437,25 @@ def _pydantic_property_matches(
 
 def _assert_properties(
     subject: Union[Message, Model],
-    properties: list[tuple[PropertyPath, JsonValue]],
+    assertions: list[Assertion],
 ) -> None:
-    """Asserts that each of the given property paths reaches the
-    expected value on the given response or error, comparing under
-    the subject type's semantics."""
+    """Asserts that each of the given assertions holds on the given
+    response or error, comparing under the subject type's
+    semantics."""
     subject_json = _json_object(subject)
-    for path, expected in properties:
-        actual = _resolve_json_property(subject_json, path)
+    for assertion in assertions:
+        actual = _resolve_json_property(subject_json, assertion.path)
         if isinstance(subject, Message):
             matches = _proto_property_matches(
-                type(subject), path, actual, expected
+                type(subject), assertion.path, actual, assertion.value
             )
         else:
             matches = _pydantic_property_matches(
-                type(subject), path, actual, expected
+                type(subject), assertion.path, actual, assertion.value
             )
         assert matches, (
-            f"Expected `{path.text}` to be {expected!r}, but it is "
-            f"{actual!r}"
+            f"Expected `{assertion.path.text}` to be "
+            f"{assertion.value!r}, but it is {actual!r}"
         )
 
 
@@ -474,12 +497,12 @@ async def _gets_created_via(
     clauses: Optional[str],
 ) -> None:
     factory = world.factory(state_type=state_type, method=method)
-    properties = _parse_properties(world, clauses)
+    assignments = _parse_assignments(world, clauses)
     arguments = [world.context(), _resolve_state_id(world, state_id)]
-    if properties:
+    if assignments:
         arguments.append(
             world.request(
-                state_type=state_type, method=method, properties=properties
+                state_type=state_type, method=method, assignments=assignments
             )
         )
     try:
@@ -510,7 +533,7 @@ async def _gets_a(
             state_type=state_type,
             state_id=_resolve_state_id(world, state_id),
             method=method,
-            properties=_parse_properties(world, clauses),
+            assignments=_parse_assignments(world, clauses),
         )
     except Aborted as aborted:
         raise AssertionError(
@@ -540,7 +563,7 @@ async def _attempts_a(
             state_type=state_type,
             state_id=_resolve_state_id(world, state_id),
             method=method,
-            properties=_parse_properties(world, clauses),
+            assignments=_parse_assignments(world, clauses),
         )
         world.aborted = None
     except Aborted as aborted:
@@ -560,7 +583,13 @@ def _assert_aborted(
         f"Expected an abort with `{error_type}`, but it aborted "
         f"with `{type(error).__name__}`: {aborted}"
     )
-    _assert_properties(error, _parse_properties(world, clauses))
+    _assert_properties(
+        error,
+        [
+            Equals(path=assignment.path, value=assignment.value)
+            for assignment in _parse_assignments(world, clauses)
+        ],
+    )
 
 
 @then(
@@ -599,7 +628,7 @@ async def _read(
             state_type=state_type,
             state_id=_resolve_state_id(world, state_id),
             method=method,
-            properties={},
+            assignments={},
         )
         return world.response
     except Aborted as aborted:
@@ -623,7 +652,13 @@ async def _then_has(
     clauses: str,
 ) -> None:
     response = await _read(world, method, state_type, state_id)
-    _assert_properties(response, _parse_properties(world, clauses))
+    _assert_properties(
+        response,
+        [
+            Equals(path=assignment.path, value=assignment.value)
+            for assignment in _parse_assignments(world, clauses)
+        ],
+    )
 
 
 @given(
@@ -677,7 +712,7 @@ async def _aborts_with(
             state_type=state_type,
             state_id=_resolve_state_id(world, state_id),
             method=method,
-            properties={},
+            assignments={},
         )
     except Aborted as aborted:
         _assert_aborted(world, aborted, error_type, clauses)
@@ -695,7 +730,13 @@ def _the_result_has(world: World, clauses: str) -> None:
         "Expected a preceding step to have made a call that returned "
         "a response, but there is none"
     )
-    _assert_properties(world.response, _parse_properties(world, clauses))
+    _assert_properties(
+        world.response,
+        [
+            Equals(path=assignment.path, value=assignment.value)
+            for assignment in _parse_assignments(world, clauses)
+        ],
+    )
 
 
 @given(
