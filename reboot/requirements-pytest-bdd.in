@@ -1,0 +1,9 @@
+# Requirements of the `reboot[pytest-bdd]` extra: what `reboot.bdd`
+# needs beyond the `reboot` package itself. Every line must also be
+# in `requirements.in`, which stays the complete list that the Bazel
+# lock compiles; the wheel build strips these from the package's
+# dependencies and ships them as the extra.
+json5==0.15.0 # For `reboot.bdd`; latest as of 2026/09/03.
+jsonpath-ng==1.8.0 # For `reboot.bdd`; latest as of 2026/09/03.
+pytest==8.4.2 # For `reboot.bdd`; latest 8.x as of 2026/09/01.
+pytest-bdd==8.1.0 # For `reboot.bdd`; latest as of 2026/09/01.

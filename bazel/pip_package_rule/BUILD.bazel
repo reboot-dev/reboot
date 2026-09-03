@@ -22,6 +22,12 @@ exports_files(
 # A trampoline for the `pip_package` Bazel rule to invoke Python's `build` tool.
 # Should only be used via the `pip_package` Bazel rule.
 py_binary(
+    name = "strip_requirements",
+    srcs = ["strip_requirements.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
     name = "build_trampoline",
     srcs = ["build_trampoline.py"],
     main = "build_trampoline.py",
