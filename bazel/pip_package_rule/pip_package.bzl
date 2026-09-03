@@ -560,16 +560,56 @@ def _pip_package_impl(ctx):
     staged_requirements_txt = ctx.actions.declare_file(
         "%s/requirements.txt" % STAGING_DIRECTORY_NAME,
     )
-    ctx.actions.run_shell(
-        mnemonic = "StageRequirements",
-        command = "cp %s %s" % (
+    extras_requirements_txts = {}
+    for extra_target, extra_name in ctx.attr.extras.items():
+        extra_files = extra_target[DefaultInfo].files.to_list()
+        if len(extra_files) != 1:
+            fail("Expected exactly one requirements file for extra '%s'" %
+                 extra_name)
+        extras_requirements_txts[extra_name] = extra_files[0]
+    if extras_requirements_txts:
+        strip_arguments = [
+            "--requirements-txt",
             input_requirements_txt.path,
+            "--output",
             staged_requirements_txt.path,
-        ),
-        inputs = [input_requirements_txt],
-        outputs = [staged_requirements_txt],
-    )
+        ]
+        for extra_file in extras_requirements_txts.values():
+            strip_arguments.append(
+                "--extra-requirements-txt=%s" % extra_file.path,
+            )
+        ctx.actions.run(
+            mnemonic = "StripExtrasRequirements",
+            executable = ctx.executable._strip_requirements_tool,
+            arguments = strip_arguments,
+            inputs = [input_requirements_txt] +
+                     extras_requirements_txts.values(),
+            outputs = [staged_requirements_txt],
+        )
+    else:
+        ctx.actions.run_shell(
+            mnemonic = "StageRequirements",
+            command = "cp %s %s" % (
+                input_requirements_txt.path,
+                staged_requirements_txt.path,
+            ),
+            inputs = [input_requirements_txt],
+            outputs = [staged_requirements_txt],
+        )
     metadata_files.append(staged_requirements_txt)
+    staged_extras_requirements_txts = []
+    for extra_name, extra_file in extras_requirements_txts.items():
+        staged_extra = ctx.actions.declare_file(
+            "%s/requirements-%s.txt" % (STAGING_DIRECTORY_NAME, extra_name),
+        )
+        ctx.actions.run_shell(
+            mnemonic = "StageExtraRequirements",
+            command = "cp %s %s" % (extra_file.path, staged_extra.path),
+            inputs = [extra_file],
+            outputs = [staged_extra],
+        )
+        metadata_files.append(staged_extra)
+        staged_extras_requirements_txts.append(staged_extra)
 
     ### pyproject.toml
     # The `pyproject.toml` file is the main configuration file that will control
@@ -623,14 +663,28 @@ def _pip_package_impl(ctx):
     version = ctx.attr.version
     license = ctx.attr.license
     pyproject_toml_file = ctx.actions.declare_file("%s/pyproject.toml" % STAGING_DIRECTORY_NAME)
+    dynamic_fields = '["dependencies"]'
+    optional_dependencies = ""
+    if extras_requirements_txts:
+        dynamic_fields = '["dependencies", "optional-dependencies"]'
+        optional_dependencies = (
+            "[tool.setuptools.dynamic.optional-dependencies]\n"
+        )
+        for extra_name in extras_requirements_txts.keys():
+            optional_dependencies += (
+                '%s = { file = ["requirements-%s.txt"] }\n' %
+                (extra_name, extra_name)
+            )
     ctx.actions.expand_template(
         template = ctx.file._toml_template,
         output = pyproject_toml_file,
         substitutions = {
             "{CLASSIFIERS}": str(classifiers),
             "{DESCRIPTION}": ctx.attr.description,
+            "{DYNAMIC_FIELDS}": dynamic_fields,
             "{LICENSE}": license,
             "{NAME}": ctx.attr.distribution_name,
+            "{OPTIONAL_DEPENDENCIES}": optional_dependencies,
             "{PACKAGE_DATA}": package_data,
             "{SCRIPTS}": scripts,
             "{VERSION}": version,
@@ -711,8 +765,11 @@ def _pip_package_impl(ctx):
             output_directory,
             "--verify-python-version",
             ctx.attr._python_version,
-            "--requirements-txt",
-            staged_requirements_txt.path,
+        ] + [
+            "--requirements-txt=%s" % requirements.path
+            for requirements in (
+                [staged_requirements_txt] + staged_extras_requirements_txts
+            )
         ] + [
             "--verify-dependency-in-requirements=%s" % dependency
             for dependency in pypi_dependencies.keys()
@@ -768,6 +825,16 @@ _pip_package = rule(
             doc = "The name of the distribution to generate.",
             mandatory = True,
         ),
+        "extras": attr.label_keyed_string_dict(
+            allow_files = True,
+            default = {},
+            doc = "Optional-dependency extras: each key is a " +
+                  "requirements file and each value the extra's name; " +
+                  "the file's packages ship as that extra instead of " +
+                  "as dependencies, and every one of them must also " +
+                  "be in `requirements_txt`, which stays the " +
+                  "complete list.",
+        ),
         "license": attr.string(
             doc = "The license to use for the pip package.",
             mandatory = True,
@@ -822,6 +889,11 @@ _pip_package = rule(
             # A pointer to the template for the `setup.py` file.
             default = Label("//bazel/pip_package_rule:setup.py.template"),
             allow_single_file = True,
+        ),
+        "_strip_requirements_tool": attr.label(
+            default = Label("//bazel/pip_package_rule:strip_requirements"),
+            executable = True,
+            cfg = "exec",
         ),
         "_toml_template": attr.label(
             # A pointer to the template for the `pyproject.toml` file.
