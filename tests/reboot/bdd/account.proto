@@ -31,6 +31,11 @@ service AccountMethods {
     };
   }
 
+  rpc Whoami(WhoamiRequest) returns (WhoamiResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
   rpc SetOwner(SetOwnerRequest) returns (SetOwnerResponse) {
     option (rbt.v1alpha1.method).writer = {
     };
@@ -74,6 +79,13 @@ message OpenResponse {
 }
 
 message BalanceRequest {}
+
+message WhoamiRequest {}
+
+message WhoamiResponse {
+  // ID of the authenticated caller; empty when anonymous.
+  string user_id = 1;
+}
 
 message SetOwnerRequest {
   Owner owner = 1;

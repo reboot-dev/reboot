@@ -40,6 +40,11 @@ class BalanceResponse(Model):
     balance: int = Field(tag=1)
 
 
+class WhoamiResponse(Model):
+    # ID of the authenticated caller; empty when anonymous.
+    user_id: str = Field(tag=1, default='')
+
+
 class SetOwnerRequest(Model):
     owner: Owner = Field(tag=1)
     # Owners in addition to `owner`.
@@ -85,6 +90,11 @@ AccountMethods = Methods(
     balance=Reader(
         request=None,
         response=BalanceResponse,
+        mcp=None,
+    ),
+    whoami=Reader(
+        request=None,
+        response=WhoamiResponse,
         mcp=None,
     ),
     set_owner=Writer(
