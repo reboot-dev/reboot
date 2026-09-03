@@ -23,18 +23,18 @@ Feature: Accounts
 
   Scenario: Steps can save result properties
     Given an `Account` for "eve" gets created via `open` with `initial_balance=9`
-    And the resulting `account_id` is saved as "$eve_account"
-    When the `Account` for "$eve_account" gets a `deposit` with `amount=1`
-    And the resulting `updated_balance` is saved as "$balance"
-    And the `Account` for "$eve_account" gets a `deposit` with `amount=$balance`
-    When `balance` on the `Account` for "$eve_account" has `balance` saved as "$current"
-    And the `Account` for "$eve_account" gets a `deposit` with `amount=$current`
-    Then `balance` on the `Account` for "$eve_account" has `balance=40`
+    And the resulting `account_id` is saved as `eve_account`
+    When the `Account` for "${eve_account}" gets a `deposit` with `amount=1`
+    And the resulting `updated_balance` is saved as `balance`
+    And the `Account` for "${eve_account}" gets a `deposit` with `amount=${balance}`
+    When `balance` on the `Account` for "${eve_account}" has `balance` saved as `current`
+    And the `Account` for "${eve_account}" gets a `deposit` with `amount=${current}`
+    Then `balance` on the `Account` for "${eve_account}" has `balance=40`
 
   Scenario: Saving during setup
     Given an `Account` for "gus" gets created via `open` with `initial_balance=7`
-    And `balance` on the `Account` for "gus" has `balance` saved as "$initial" and `balance` saved as "$twin"
-    When the `Account` for "gus" gets a `deposit` with `amount=$initial`
+    And `balance` on the `Account` for "gus" has `balance` saved as `initial` and `balance` saved as `twin`
+    When the `Account` for "gus" gets a `deposit` with `amount=${initial}`
     Then `balance` on the `Account` for "gus" has `balance=14`
 
   Scenario: Properties can be messages
@@ -47,12 +47,12 @@ Feature: Accounts
     And `get_owner` on the `Account` for "frank" has `owner.tags[0]="pro"`
     And `get_owner` on the `Account` for "frank" has `owner.name` containing "rank" and `owner.tags` of length 1
     And `get_owner` on the `Account` for "frank" has `owner.tags` containing "pro"
-    When `get_owner` on the `Account` for "frank" has `owner.name` saved as "$owner_name"
-    And an `Account` for "$owner_name" gets created via `open` with `initial_balance=1`
+    When `get_owner` on the `Account` for "frank" has `owner.name` saved as `owner_name`
+    And an `Account` for "${owner_name}" gets created via `open` with `initial_balance=1`
     Then `balance` on the `Account` for "Frankie" has `balance=1`
-    When `get_owner` on the `Account` for "frank" has `owner` saved as "$owner"
+    When `get_owner` on the `Account` for "frank" has `owner` saved as `owner`
     And an `Account` for "franklin" gets created via `open`
-    And the `Account` for "franklin" gets a `set_owner` with `owner=$owner`
+    And the `Account` for "franklin" gets a `set_owner` with `owner=${owner}`
     Then `get_owner` on the `Account` for "franklin" has `owner={name: "Frankie", tags: ["pro"]}`
 
   Scenario: Readers can abort

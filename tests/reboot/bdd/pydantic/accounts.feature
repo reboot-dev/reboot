@@ -30,9 +30,9 @@ Feature: Accounts with a pydantic API
     And `get_owner` on the `Account` for "frank" has `owner.tags[0]="pro"`
     And `get_owner` on the `Account` for "frank" has `owner.name` containing "rank" and `owner.tags` of length 1
     And `get_owner` on the `Account` for "frank" has `owner.tags` containing "pro"
-    When `get_owner` on the `Account` for "frank" has `owner` saved as "$owner"
+    When `get_owner` on the `Account` for "frank" has `owner` saved as `owner`
     And an `Account` for "franklin" gets created via `open`
-    And the `Account` for "franklin" gets a `set_owner` with `owner=$owner`
+    And the `Account` for "franklin" gets a `set_owner` with `owner=${owner}`
     Then `get_owner` on the `Account` for "franklin" has `owner={name: "Frankie", tags: ["pro"]}`
 
   Scenario: Properties reach through maps
