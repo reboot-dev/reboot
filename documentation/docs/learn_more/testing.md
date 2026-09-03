@@ -11,10 +11,6 @@ To write a test, you can use the `reboot.aio.tests.Reboot` class. This allows
 you to start your servicer, create a context, and call the method you want to
 test.
 
-<!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/backend/tests/chat_room_servicer_test.py&lines=10-40) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/backend/tests/chat_room_servicer_test.py -->
-
 ```py
 async def asyncSetUp(self) -> None:
     self.rbt = Reboot()
@@ -47,8 +43,6 @@ async def test_chat_room(self) -> None:
         ],
     )
 ```
-
-<!-- MARKDOWN-AUTO-DOCS:END -->
 
 #### Setting Secrets
 
