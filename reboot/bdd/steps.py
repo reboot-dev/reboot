@@ -13,6 +13,10 @@ The steps run against the `Application` returned by the
     def application() -> Application:
         return Application(servicers=[AccountServicer])
 
+A custom step is plain Reboot code: take the `world` fixture, get
+a context from `world.context()`, which carries the scenario's
+authenticated user, and call the generated clients directly.
+
 A scenario runs a different application by naming it: 'Given the
 "proxy" application is up' runs the one the `proxy_application`
 fixture returns (the quoted name, spaces as underscores, plus
