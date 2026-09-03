@@ -28,9 +28,9 @@ from tests.reboot.bdd.pydantic.account_api import (
 from tests.reboot.bdd.pydantic.account_api_rbt import Account
 
 
-# A custom `async def` step, the way a developer would write one: it
-# calls through `World.call()` rather than importing the generated
-# code.
+# A custom `async def` step, the way a developer would write one:
+# plain Reboot code, a context from the world and calls on the
+# generated clients.
 @when(parsers.parse('"{state_id}" makes {count:d} deposits of {amount:d}'))
 async def _makes_deposits(
     world: World,
@@ -38,13 +38,9 @@ async def _makes_deposits(
     count: int,
     amount: int,
 ) -> None:
+    context = world.context()
     for _ in range(count):
-        await world.call(
-            state_type='Account',
-            state_id=state_id,
-            method='deposit',
-            assignments={'amount': amount},
-        )
+        await Account.ref(state_id).deposit(context, amount=amount)
 
 
 def test_unknown_property_raises() -> None:
