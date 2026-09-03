@@ -187,7 +187,8 @@ class World:
         if self.shared_context is not None:
             raise ValueError(
                 "The shared context already carries an identity; say "
-                "who you are before 'Given a shared context'"
+                "who the authenticated user is before 'Given a "
+                "shared context'"
             )
         self.bearer_token = bearer_token
 

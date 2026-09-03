@@ -71,11 +71,11 @@ Feature: Accounts
     When the `Account` for "dave" gets a `deposit` with `amount=5`
     Then `balance` on the `Account` for "dave" has `balance=5`
 
-  Scenario: Steps call as who I am
-    Given I am "alice"
+  Scenario: Steps call as the authenticated user
+    Given the authenticated user is "alice"
     And an `Account` for "joint" gets created via `open`
     Then `whoami` on the `Account` for "joint" has `user_id="alice"`
-    When I am "bob"
+    When the authenticated user is "bob"
     Then `whoami` on the `Account` for "joint" has `user_id="bob"`
 
   Scenario: Effects land eventually
