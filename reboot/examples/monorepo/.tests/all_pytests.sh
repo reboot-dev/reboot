@@ -36,7 +36,7 @@ function runPyTest () {
 
 # Install the `reboot` package from the specified path explicitly, over-
 # writing the version from `pyproject.toml`.
-uv add --no-sync "${SANDBOX_ROOT}$REBOOT_WHL_FILE"
+uv add --no-sync "reboot[pytest-bdd] @ ${SANDBOX_ROOT}$REBOOT_WHL_FILE"
 
 # Force a fresh virtualenv. A pre-existing `.venv/` (e.g., carried
 # over from a pre-baked image, or copied between containers/host
