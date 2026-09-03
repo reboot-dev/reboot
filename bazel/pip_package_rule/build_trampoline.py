@@ -76,6 +76,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--requirements-txt",
         type=str,
+        action="append",
         help="the path to the requirements.txt file",
         required=True,
     )
@@ -114,17 +115,19 @@ if __name__ == '__main__':
         normalize_package_name(dep)
         for dep in args.verify_dependency_in_requirements
     ]
-    with open(args.requirements_txt) as requirements_txt:
-        for line in requirements_txt:
-            if line.startswith("#"):
-                continue
-            dependency = normalize_package_name(find_package_name(line))
-            try:
-                # This dependency is no longer missing!
-                missing_dependencies.remove(dependency)
-            except ValueError:
-                # Turns out we don't need this dependency. That's fine.
-                pass
+    for requirements_txt_path in args.requirements_txt:
+        with open(requirements_txt_path) as requirements_txt:
+            for line in requirements_txt:
+                if line.startswith("#"):
+                    continue
+                dependency = normalize_package_name(find_package_name(line))
+                try:
+                    # This dependency is no longer missing!
+                    missing_dependencies.remove(dependency)
+                except ValueError:
+                    # Turns out we don't need this dependency. That's
+                    # fine.
+                    pass
     if len(missing_dependencies) > 0:
         raise MissingDependenciesError(
             f"Expected dependencies {missing_dependencies} to be in the "

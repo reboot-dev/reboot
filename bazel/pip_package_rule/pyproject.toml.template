@@ -3,7 +3,7 @@ name = "{NAME}"
 version = "{VERSION}"
 # TODO: See https://github.com/reboot-dev/mono/issues/4200.
 requires-python = ">=3.10,<3.13"
-dynamic = ["dependencies"]
+dynamic = {DYNAMIC_FIELDS}
 readme = "README.md"
 description = "{DESCRIPTION}"
 classifiers = {CLASSIFIERS}
@@ -11,6 +11,8 @@ license = "{LICENSE}"
 
 [tool.setuptools.dynamic]
 dependencies = { file = "requirements.txt" }
+
+{OPTIONAL_DEPENDENCIES}
 
 [build-system]
 requires = ["setuptools"]

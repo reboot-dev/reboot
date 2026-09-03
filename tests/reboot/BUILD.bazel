@@ -893,6 +893,7 @@ exports_files([
     "greeter_rbt.golden.py",
     "index.html.j2",
     "ping_api_rbt.golden.py",
+    "pytest_main.py",
 ])
 
 js_reboot_web_library(

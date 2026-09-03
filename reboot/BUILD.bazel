@@ -10,6 +10,7 @@ exports_files([
     "LICENSE.txt",
     "versions.bzl",
     "requirements.in",
+    "requirements-pytest-bdd.in",
 ])
 
 py_library(
@@ -543,6 +544,7 @@ py_library(
         ":python_std",
         ":python_thirdparty",
         "//reboot/aio:python",
+        "//reboot/bdd:steps_py",
         "//reboot/cli:main_py",
         "//reboot/dashboard/backend:main_py",
         "//reboot/mcp:python",
@@ -562,6 +564,9 @@ pip_package(
     #       coincidence and does not refer to the company name.
     name = "reboot",
     description = "The Reboot library",
+    extras = {
+        "//reboot:requirements-pytest-bdd.in": "pytest-bdd",
+    },
     license = "Apache-2.0",
     license_txt = ":LICENSE.txt",
     readme_md = "//:README.md",

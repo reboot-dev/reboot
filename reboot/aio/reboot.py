@@ -40,6 +40,7 @@ from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
 )
+from reboot.wait_for_tasks import wait_for_tasks
 from typing import Awaitable, Callable, Optional, Sequence, overload
 
 # The default number of servers run by a Reboot instance (including in
@@ -91,6 +92,7 @@ class Reboot:
         self._local_envoy_tls: Optional[bool] = None
         self._local_envoy_picked_port: Optional[int] = None
         self._channel_manager: Optional[_ChannelManager] = None
+        self._monitor_event_loop_task: Optional[asyncio.Task] = None
 
         self._application_name = application_name or DEFAULT_APPLICATION_NAME
         application_id = os.environ.get(ENVVAR_REBOOT_APPLICATION_ID)
@@ -703,11 +705,21 @@ class Reboot:
                 try:
                     await self._placement_planner.stop()
                 finally:
-                    # Stop the local Envoy if one was started. This is
-                    # critical for test isolation - the Envoy has a
-                    # grpc.aio server that must be stopped before the
-                    # event loop closes.
-                    await self._server_manager.stop_local_envoy()
+                    try:
+                        # Stop the local Envoy if one was started.
+                        # This is critical for test isolation - the
+                        # Envoy has a grpc.aio server that must be
+                        # stopped before the event loop closes.
+                        await self._server_manager.stop_local_envoy()
+                    finally:
+                        # The event loop monitoring started in
+                        # `start()` runs until cancelled; without this
+                        # its task would outlive this instance on a
+                        # long-lived event loop.
+                        await wait_for_tasks(
+                            [self._monitor_event_loop_task],
+                            cancel=True,
+                        )
 
         if self._database_server is not None:
             # Shutdown the sidecar server. We only do this during
