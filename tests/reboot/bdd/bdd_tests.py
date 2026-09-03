@@ -78,7 +78,7 @@ def test_the_bearer_token_is() -> None:
     _the_bearer_token_is(world, 'admin-key')
     assert world.bearer_token == 'admin-key'
     world.saved['token'] = 'saved-key'
-    _the_bearer_token_is(world, '$token')
+    _the_bearer_token_is(world, '${token}')
     assert world.bearer_token == 'saved-key'
 
 
@@ -93,8 +93,8 @@ def test_set_bearer_token_guard() -> None:
 
 def test_clause_grammar_routing() -> None:
     properties = '`balance=50` and `owner.name="F"`'
-    saves = '`balance` saved as "$b", and `owner` saved as "$o"'
-    mixed = '`balance=50` and `owner` saved as "$o"'
+    saves = '`balance` saved as `b`, and `owner` saved as `o`'
+    mixed = '`balance=50` and `owner` saved as `o`'
     assert re.fullmatch(_PROPERTY_CLAUSES, properties)
     assert not re.fullmatch(_PROPERTY_CLAUSES, saves)
     assert not re.fullmatch(_PROPERTY_CLAUSES, mixed)
@@ -113,8 +113,9 @@ def test_clause_grammar_routing() -> None:
     # Lexical near-misses still route to their kind.
     assert re.fullmatch(_PROPERTY_CLAUSES, '`amount: 50`')
     assert re.fullmatch(_PROPERTY_CLAUSES, '`amount = 50`')
-    assert re.fullmatch(_SAVE_CLAUSES, '`balance` saved to "$b"')
-    assert re.fullmatch(_SAVE_CLAUSES, '`balance` saved as $b')
+    assert re.fullmatch(_SAVE_CLAUSES, '`balance` saved to `b`')
+    assert re.fullmatch(_SAVE_CLAUSES, '`balance` saved as "$b"')
+    assert re.fullmatch(_SAVE_CLAUSES, '`balance` saved as b')
 
 
 def test_almost_clause_messages() -> None:
@@ -133,11 +134,15 @@ def test_almost_clause_messages() -> None:
         'name': 'F'
     }
     with pytest.raises(ValueError, match="'saved as', not 'saved to'"):
-        _parse_saves('`balance` saved to "$b"')
-    with pytest.raises(ValueError, match="quote the name"):
-        _parse_saves('`balance` saved as $b')
-    with pytest.raises(ValueError, match=r"the name needs a '\$'"):
+        _parse_saves('`balance` saved to `b`')
+    with pytest.raises(ValueError, match=r"drop the '\$'"):
+        _parse_saves('`balance` saved as "$b"')
+    with pytest.raises(ValueError, match="backticks, not quotes"):
         _parse_saves('`balance` saved as "b"')
+    with pytest.raises(ValueError, match="name goes in backticks"):
+        _parse_saves('`balance` saved as b')
+    with pytest.raises(ValueError, match=r"recall a save as \$\{amount\}"):
+        _parse_assignments(world, '`amount=$amount`')
 
 
 def test_almost_steps_raise() -> None:

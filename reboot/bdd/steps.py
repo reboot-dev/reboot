@@ -50,14 +50,14 @@ way 'has' refuses writers, and a reader's abort is asserted with
 An asserting list can also say the predicates `path` containing
 <value> (a substring of a string, an element of a list, or a key of
 a map) and `path` of length <n>. A Given or When 'has' instead
-saves a property under a name, which later steps say as `$name`, in
-a state's ID or as a property value (a quoted "$name" stays the
-literal string):
+saves a property under a backticked name, which later steps recall
+as `${name}`, in a state's ID, a user's ID, a bearer token, or a
+property value (a quoted "${name}" stays the literal string):
 
     When `get_owner` on the `Account` for "frank" has
-      `owner.name` saved as "$owner_name"
-    And the resulting `updated_balance` is saved as "$balance"
-    And the `Account` for "$owner_name" gets a `deposit` with
+      `owner.name` saved as `owner_name`
+    And the resulting `updated_balance` is saved as `balance`
+    And the `Account` for "${owner_name}" gets a `deposit` with
       `amount=1`
 """
 
@@ -112,18 +112,19 @@ _PATH = r'\w+(?:\.\w+|\[\d+\]|\["[^"]*"\])*'
 _PROPERTY_CLAUSE = rf'`{_PATH}\s*[:=]\s*[^`]*`'
 _PROPERTY_PATTERN = re.compile(rf'`(?P<path>{_PATH})=(?P<value>\S[^`]*)`')
 
-# One saving clause: the (possibly dotted) property name in
-# backticks, saved under a '$name'. The groupless form embeds in
-# step patterns and deliberately also matches lexical near-misses
-# ('saved to', a missing '$' or missing quotes) so that those route
-# to a step whose parser raises the fix; the compiled form is the
-# strict shape, for extraction.
-_SAVE_CLAUSE = rf'`{_PATH}`\s+saved\s+(?:as|to)\s+"?\$?\w+"?'
-_SAVE_PATTERN = re.compile(rf'`(?P<path>{_PATH})` saved as "\$(?P<saved>\w+)"')
+# One saving clause: the (possibly dotted) property path in
+# backticks, saved under a backticked name. The groupless form
+# embeds in step patterns and deliberately also matches lexical
+# near-misses ('saved to', a quoted or '$'-prefixed name) so that
+# those route to a step whose parser raises the fix; the compiled
+# form is the strict shape, for extraction.
+_SAVE_CLAUSE = rf'`{_PATH}`\s+saved\s+(?:as|to)\s+(?:`\w+`|"?\$?\w+"?)'
+_SAVE_PATTERN = re.compile(rf'`(?P<path>{_PATH})` saved as `(?P<saved>\w+)`')
 
 # A predicate clause's argument: a scalar JSON value (a quoted
-# string may contain separators), or a '$name' recall.
-_ARGUMENT = r'(?:"(?:[^"\\]|\\.)*"|\$\w+|[-+.\w]+)'
+# string may contain separators), or a '${name}' recall (a bare
+# '$name' also matches, so its near-miss routes to the fix).
+_ARGUMENT = r'(?:"(?:[^"\\]|\\.)*"|\$\{\w+\}|\$?[-+.\w]+)'
 
 # One containing clause: asserts a substring of a string, an element
 # of a list, or a key of a map. The groupless form embeds in step
@@ -228,21 +229,25 @@ def _saved_value(world: World, name: str) -> JsonValue:
     none."""
     if name not in world.saved:
         raise ValueError(
-            f'Nothing saved as "${name}"; saved: ' +
-            (', '.join(f'"${n}"' for n in sorted(world.saved)) or "nothing")
+            f"Nothing saved as `{name}`; saved: " +
+            (', '.join(f'`{n}`' for n in sorted(world.saved)) or "nothing")
         )
     return world.saved[name]
 
 
 def _maybe_saved(world: World, text: str) -> str:
     """The saved value the text names when it is of the form
-    '$name', which must be a string, otherwise the text itself."""
-    if not re.fullmatch(r'\$\w+', text):
+    '${name}', which must be a string, otherwise the text itself."""
+    if re.fullmatch(r'\$\w+', text):
+        raise ValueError(
+            f"Almost: recall a save as ${{{text[1:]}}}, not {text}"
+        )
+    if not re.fullmatch(r'\$\{\w+\}', text):
         return text
-    value = _saved_value(world, text[1:])
+    value = _saved_value(world, text[2:-1])
     if not isinstance(value, str):
         raise ValueError(
-            f'Expecting the value saved as "${text[1:]}" to be a '
+            f"Expecting the value saved as `{text[2:-1]}` to be a "
             f"string, but it is {value!r}"
         )
     return value
@@ -306,19 +311,27 @@ def _almost_within_message(within: str) -> str:
 
 def _almost_save_message(clause: str) -> str:
     """The 'Almost' error for a saving clause that is a lexical
-    near-miss of `name` saved as "$name"."""
+    near-miss of `path` saved as `name`."""
     if re.search(r'\bsaved\s+to\b', clause):
         return f"Almost: say 'saved as', not 'saved to': {clause}"
-    if re.search(r'\bsaved\s+as\s+\$\w+$', clause):
-        return f'Almost: quote the name, e.g. saved as "$name": {clause}'
+    if re.search(r'\bsaved\s+as\s+"?\$\w+"?$', clause):
+        return (
+            "Almost: drop the '$' and say the name in backticks, "
+            f"e.g. saved as `name`: {clause}"
+        )
     if re.search(r'\bsaved\s+as\s+"\w+"$', clause):
         return (
-            "Almost: the name needs a '$', e.g. saved as "
-            f'"$name": {clause}'
+            "Almost: the name goes in backticks, not quotes, e.g. "
+            f"saved as `name`: {clause}"
+        )
+    if re.search(r'\bsaved\s+as\s+\w+$', clause):
+        return (
+            "Almost: the name goes in backticks, e.g. saved as "
+            f"`name`: {clause}"
         )
     return (
-        'Expected a saving clause of the form `name` saved as "$name", '
-        f'but got: {clause}'
+        "Expected a saving clause of the form `path` saved as "
+        f"`name`, but got: {clause}"
     )
 
 
@@ -328,7 +341,8 @@ def _parse_assignments(
 ) -> list[Assignment]:
     """Parses a call's 'with' list, e.g. '`amount=50` and
     `reason="promo"`', into `Assignment`s; a property value of the
-    form '$name' becomes the saved value going by that name. The step
+    form '${name}' becomes the saved value going by that name. The
+    step
     patterns admit lexical near-misses of a clause, so each clause is
     confirmed strict here, raising the fix."""
     assignments: list[Assignment] = []
@@ -339,7 +353,13 @@ def _parse_assignments(
         if property_match is None:
             raise ValueError(_almost_property_message(clause_match[0]))
         if re.fullmatch(r'\$\w+', property_match['value']):
-            value = _saved_value(world, property_match['value'][1:])
+            raise ValueError(
+                "Almost: recall a save as "
+                f"${{{property_match['value'][1:]}}}, not "
+                f"{property_match['value']}"
+            )
+        if re.fullmatch(r'\$\{\w+\}', property_match['value']):
+            value = _saved_value(world, property_match['value'][2:-1])
         else:
             try:
                 value = json5.loads(property_match['value'])
@@ -360,10 +380,15 @@ def _parse_assignments(
 
 
 def _parsed_argument(world: World, argument: str) -> JsonValue:
-    """The JSON value a predicate clause's argument says; a '$name'
-    becomes the saved value going by that name."""
+    """The JSON value a predicate clause's argument says; a
+    '${name}' becomes the saved value going by that name."""
     if re.fullmatch(r'\$\w+', argument):
-        return _saved_value(world, argument[1:])
+        raise ValueError(
+            f"Almost: recall a save as ${{{argument[1:]}}}, not "
+            f"{argument}"
+        )
+    if re.fullmatch(r'\$\{\w+\}', argument):
+        return _saved_value(world, argument[2:-1])
     try:
         return json5.loads(argument)
     except ValueError as error:
@@ -415,7 +440,13 @@ def _parse_assertions(
         if property_match is None:
             raise ValueError(_almost_property_message(clause))
         if re.fullmatch(r'\$\w+', property_match['value']):
-            value = _saved_value(world, property_match['value'][1:])
+            raise ValueError(
+                "Almost: recall a save as "
+                f"${{{property_match['value'][1:]}}}, not "
+                f"{property_match['value']}"
+            )
+        if re.fullmatch(r'\$\{\w+\}', property_match['value']):
+            value = _saved_value(world, property_match['value'][2:-1])
         else:
             try:
                 value = json5.loads(property_match['value'])
@@ -437,7 +468,7 @@ def _parse_assertions(
 
 def _parse_saves(clauses: str) -> dict[str, PropertyPath]:
     """Parses a Given or When 'has' list of saving clauses, e.g.
-    '`amount` saved as "$amount"', into the property to save under
+    '`amount` saved as `amount`', into the property to save under
     each name. The step patterns admit lexical near-misses of a
     clause, so each clause is confirmed strict here, raising the
     fix."""
@@ -1087,13 +1118,13 @@ def _the_result_has(world: World, clauses: str) -> None:
 @given(
     parsers.re(
         rf'the resulting `(?P<property_name>{_PATH})` '
-        r'is saved as "\$(?P<name>\w+)"$'
+        r'is saved as `(?P<name>\w+)`$'
     )
 )
 @when(
     parsers.re(
         rf'the resulting `(?P<property_name>{_PATH})` '
-        r'is saved as "\$(?P<name>\w+)"$'
+        r'is saved as `(?P<name>\w+)`$'
     )
 )
 def _the_resulting_property_is_saved_as(
@@ -1146,9 +1177,8 @@ def _almost_eventually_under_given_or_when() -> None:
 @when(parsers.re(rf'.+ has {_ASSERT_CLAUSES}$'))
 def _almost_asserting_under_given_or_when() -> None:
     raise ValueError(
-        "Almost: a Given or When 'has' saves, e.g. `name` saved as "
-        "\"$name\"; assert `path=value` properties with a Then "
-        "instead"
+        "Almost: a Given or When 'has' saves, e.g. `path` saved as "
+        "`name`; assert `path=value` properties with a Then instead"
     )
 
 
@@ -1229,7 +1259,7 @@ _UNCLOSED_CLAUSES = r'`[^`]*(?:`[^`]*`[^`]*)*'
 def _almost_missing_backticks() -> None:
     raise ValueError(
         "Almost: each clause goes in backticks, e.g. `amount=50` "
-        'or `amount` saved as "$amount"'
+        "or `amount` saved as `amount`"
     )
 
 
