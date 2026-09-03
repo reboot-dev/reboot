@@ -500,6 +500,14 @@ compile_pip_requirements(
 )
 
 py_library(
+    name = "bdd_plugin_py",
+    srcs = ["bdd_plugin.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = ["//reboot/bdd:steps_py"],
+)
+
+py_library(
     name = "python_std",
     deps = [
         "//reboot/std/ciphertext/v1:ciphertext_py",
@@ -533,6 +541,7 @@ py_library(
     ],
     deps = [
         ":api_py",
+        ":bdd_plugin_py",
         ":protobuf_py",
         ":protoc_gen_es_with_deps_py",
         ":protoc_gen_reboot_nodejs_boilerplate_py",
@@ -544,7 +553,6 @@ py_library(
         ":python_std",
         ":python_thirdparty",
         "//reboot/aio:python",
-        "//reboot/bdd:steps_py",
         "//reboot/cli:main_py",
         "//reboot/dashboard/backend:main_py",
         "//reboot/mcp:python",
@@ -564,6 +572,9 @@ pip_package(
     #       coincidence and does not refer to the company name.
     name = "reboot",
     description = "The Reboot library",
+    entry_points = {
+        "pytest11": ["reboot-bdd = reboot.bdd_plugin"],
+    },
     extras = {
         "//reboot:requirements-pytest-bdd.in": "pytest-bdd",
     },
