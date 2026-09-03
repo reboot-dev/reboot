@@ -13,7 +13,7 @@ Feature: Accounts with a pydantic API
     Given an `Account` for "bob" gets created via `open`
     And the `Account` for "bob" gets a `deposit` with `amount=30`
     When the `Account` for "bob" attempts a `withdraw` with `amount=50`
-    Then the attempt aborts with `OverdraftError` where `amount=20`
+    Then the attempt aborts with `OverdraftError` with `amount=20`
     And `balance` on the `Account` for "bob" has `balance=30`
 
   Scenario: Custom async steps can call through the world
@@ -28,6 +28,8 @@ Feature: Accounts with a pydantic API
     When the `Account` for "frank" gets a `set_owner` with `owner.name="Frankie"` and `owner.tags=["pro"]`
     Then `get_owner` on the `Account` for "frank" has `owner={name: "Frankie", tags: ["pro"]}`
     And `get_owner` on the `Account` for "frank" has `owner.tags[0]="pro"`
+    And `get_owner` on the `Account` for "frank" has `owner.name` containing "rank" and `owner.tags` of length 1
+    And `get_owner` on the `Account` for "frank" has `owner.tags` containing "pro"
     When `get_owner` on the `Account` for "frank" has `owner` saved as "$owner"
     And an `Account` for "franklin" gets created via `open`
     And the `Account` for "franklin" gets a `set_owner` with `owner=$owner`
@@ -38,3 +40,4 @@ Feature: Accounts with a pydantic API
     When the `Account` for "heidi" gets a `put_owner` with `key="main"` and `owner={name: "Heidi", tags: ["a"]}`
     Then `get_owners` on the `Account` for "heidi" has `owners["main"].name="Heidi"`
     And `get_owners` on the `Account` for "heidi" has `owners={main: {name: "Heidi", tags: ["a"]}}`
+    And `get_owners` on the `Account` for "heidi" has `owners` containing "main" and `owners` of length 1
