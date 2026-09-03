@@ -35,8 +35,13 @@ export const Counter = {
       }),
       response: z.void(),
     }),
+    // Takes the name of the driver that called it, because it runs
+    // on the peer's state rather than the driver's and so cannot work
+    // that out from its own context.
     inner: transaction({
-      request: z.object({}),
+      request: z.object({
+        driverId: z.string().meta({ tag: 1 }),
+      }),
       response: z.object({
         count: z.number().meta({ tag: 1 }),
       }),

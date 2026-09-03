@@ -29,23 +29,31 @@ class Gate {
   }
 }
 
-// A meeting point that only opens once `expected` callers have
-// arrived, so a caller can only get through if all of them are inside
-// at the same time. Serialized callers deadlock instead.
+// A meeting point that only opens once callers with `expected`
+// distinct names have arrived, so a caller can only get through if all
+// of them are inside at the same time. Serialized callers deadlock
+// instead.
 class Rendezvous {
   expected = 0;
-  arrived = 0;
+  arrived = new Set<string>();
   #everyoneArrived = new Gate();
 
   reset(expected: number): void {
     this.expected = expected;
-    this.arrived = 0;
+    this.arrived = new Set();
     this.#everyoneArrived.reset();
   }
 
-  async arrive(): Promise<void> {
-    this.arrived += 1;
-    if (this.arrived >= this.expected) {
+  async arrive(name: string): Promise<void> {
+    // Names rather than a count, because a transaction that aborts is
+    // retried from the top and so runs a method it already ran again:
+    // Reboot promises that a transaction happens once, not that the
+    // code in it is invoked once. A count of invocations would climb
+    // past `expected`, and worse, could open the meeting point on one
+    // caller counted twice standing in for another that has not
+    // arrived at all.
+    this.arrived.add(name);
+    if (this.arrived.size >= this.expected) {
       this.#everyoneArrived.open();
     }
     await this.#everyoneArrived.opened;
@@ -95,14 +103,19 @@ export class CounterServicer extends Counter.Servicer {
     context: TransactionContext,
     request: Counter.CallInnerRequest
   ): Promise<void> {
-    await Counter.ref(request.peerId).inner(context, {});
+    // Every driver calls `inner` on the same peer, so the name of the
+    // state `inner` runs on says nothing about which driver is inside
+    // it; hand `inner` this driver's name instead.
+    await Counter.ref(request.peerId).inner(context, {
+      driverId: context.stateId,
+    });
   }
 
   async inner(
     context: TransactionContext,
     request: Counter.InnerRequest
   ): Promise<Counter.InnerResponse> {
-    await rendezvous.arrive();
+    await rendezvous.arrive(request.driverId);
     return { count: this.state.count };
   }
 

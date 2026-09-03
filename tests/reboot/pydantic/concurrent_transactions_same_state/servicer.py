@@ -7,6 +7,7 @@ from reboot.aio.contexts import (
 )
 from tests.reboot.pydantic.concurrent_transactions_same_state.servicer_api import (
     CountResponse,
+    DriverRequest,
     PeerRequest,
 )
 from tests.reboot.pydantic.concurrent_transactions_same_state.servicer_api_rbt import (
@@ -17,23 +18,31 @@ COUNTER_ID = "the-one-counter"
 
 
 class Rendezvous:
-    """A meeting point that only opens once `expected` callers have
-    arrived, so a caller can only get through if all of them are
-    inside at the same time. Serialized callers deadlock instead."""
+    """A meeting point that only opens once callers with `expected`
+    distinct names have arrived, so a caller can only get through if
+    all of them are inside at the same time. Serialized callers
+    deadlock instead."""
 
     def __init__(self) -> None:
         self.expected = 0
-        self.arrived = 0
+        self.arrived: set[str] = set()
         self.everyone_arrived = asyncio.Event()
 
     def reset(self, expected: int) -> None:
         self.expected = expected
-        self.arrived = 0
+        self.arrived = set()
         self.everyone_arrived.clear()
 
-    async def arrive(self) -> None:
-        self.arrived += 1
-        if self.arrived >= self.expected:
+    async def arrive(self, name: str) -> None:
+        # Names rather than a count, because a transaction that aborts
+        # is retried from the top and so runs a method it already ran
+        # again: Reboot promises that a transaction happens once, not
+        # that the code in it is invoked once. A count of invocations
+        # would climb past `expected`, and worse, could open the
+        # meeting point on one caller counted twice standing in for
+        # another that has not arrived at all.
+        self.arrived.add(name)
+        if len(self.arrived) >= self.expected:
             self.everyone_arrived.set()
         await self.everyone_arrived.wait()
 
@@ -80,13 +89,20 @@ class CounterServicer(Counter.Servicer):
         context: TransactionContext,
         request: PeerRequest,
     ) -> None:
-        await Counter.ref(request.peer_id).inner(context)
+        # Every driver calls `inner` on the same peer, so the name of
+        # the state `inner` runs on says nothing about which driver is
+        # inside it; hand `inner` this driver's name instead.
+        await Counter.ref(request.peer_id).inner(
+            context,
+            driver_id=context.state_id,
+        )
 
     async def inner(
         self,
         context: TransactionContext,
+        request: DriverRequest,
     ) -> CountResponse:
-        await rendezvous.arrive()
+        await rendezvous.arrive(request.driver_id)
         return CountResponse(count=self.state.count)
 
     async def call_parked_increment(
