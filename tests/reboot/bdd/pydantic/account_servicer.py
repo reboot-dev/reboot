@@ -5,6 +5,7 @@ from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import ReaderContext, WriterContext
 from tests.reboot.bdd.pydantic.account_api import (
     BalanceResponse,
+    DepositLaterRequest,
     DepositRequest,
     DepositResponse,
     GetOwnerResponse,
@@ -58,6 +59,13 @@ class AccountServicer(Account.Servicer):
         context: ReaderContext,
     ) -> BalanceResponse:
         return BalanceResponse(balance=self.state.balance)
+
+    async def deposit_later(
+        self,
+        context: WriterContext,
+        request: DepositLaterRequest,
+    ) -> None:
+        await self.ref().schedule().deposit(context, amount=request.amount)
 
     async def whoami(
         self,

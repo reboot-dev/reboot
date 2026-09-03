@@ -7,6 +7,8 @@ from tests.reboot.bdd.account_rbt import (
     Account,
     BalanceRequest,
     BalanceResponse,
+    DepositLaterRequest,
+    DepositLaterResponse,
     DepositRequest,
     DepositResponse,
     GetOwnerRequest,
@@ -45,6 +47,14 @@ class AccountServicer(Account.Servicer):
         request: BalanceRequest,
     ) -> BalanceResponse:
         return BalanceResponse(balance=self.state.balance)
+
+    async def deposit_later(
+        self,
+        context: WriterContext,
+        request: DepositLaterRequest,
+    ) -> DepositLaterResponse:
+        await self.ref().schedule().deposit(context, amount=request.amount)
+        return DepositLaterResponse()
 
     async def whoami(
         self,

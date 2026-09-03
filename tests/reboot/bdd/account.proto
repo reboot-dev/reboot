@@ -31,6 +31,11 @@ service AccountMethods {
     };
   }
 
+  rpc DepositLater(DepositLaterRequest) returns (DepositLaterResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
   rpc Whoami(WhoamiRequest) returns (WhoamiResponse) {
     option (rbt.v1alpha1.method).reader = {
     };
@@ -79,6 +84,13 @@ message OpenResponse {
 }
 
 message BalanceRequest {}
+
+message DepositLaterRequest {
+  // Amount a scheduled task will deposit.
+  int64 amount = 1;
+}
+
+message DepositLaterResponse {}
 
 message WhoamiRequest {}
 

@@ -48,3 +48,8 @@ Feature: Accounts with a pydantic API
     Then `whoami` on the `Account` for "joint" has `user_id="alice"`
     When I am "bob"
     Then `whoami` on the `Account` for "joint" has `user_id="bob"`
+
+  Scenario: Effects land eventually
+    Given an `Account` for "slow" gets created via `open`
+    When the `Account` for "slow" gets a `deposit_later` with `amount=75`
+    Then `balance` on the `Account` for "slow" eventually has `balance=75` within 30 seconds

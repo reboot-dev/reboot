@@ -28,6 +28,11 @@ class DepositResponse(Model):
     updated_balance: int = Field(tag=1)
 
 
+class DepositLaterRequest(Model):
+    # Amount a scheduled task will deposit.
+    amount: int = Field(tag=1)
+
+
 class WithdrawRequest(Model):
     amount: int = Field(tag=1)
 
@@ -79,6 +84,11 @@ AccountMethods = Methods(
     deposit=Writer(
         request=DepositRequest,
         response=DepositResponse,
+        mcp=None,
+    ),
+    deposit_later=Writer(
+        request=DepositLaterRequest,
+        response=None,
         mcp=None,
     ),
     withdraw=Writer(
