@@ -48,6 +48,23 @@ export ANDROID_HOME
 export ANDROID_SDK_ROOT="${ANDROID_HOME}"
 export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/emulator:${HOME}/.maestro/bin:${PATH}"
 
+# Keep a degraded npm registry from consuming this test's budget.
+# `prefer-offline` takes any package already in the cache without
+# revalidating it against the registry, which covers the `.rbt`
+# packages the devcontainer image pre-caches; only what the cache
+# lacks is fetched at all. Those fetches are bounded three ways:
+# `fetch-timeout` (milliseconds) caps one attempt at a minute rather
+# than npm's five-minute default; `fetch-retries` is a count of
+# retries AFTER the first attempt, so three of them means four
+# attempts; and `fetch-retry-maxtimeout` caps the backoff between
+# attempts, which npm otherwise grows by a factor of ten up to a
+# minute. A wedged fetch therefore gives up after roughly five
+# minutes, well inside the fifteen a `large` test gets.
+export npm_config_prefer_offline=true
+export npm_config_fetch_timeout=60000
+export npm_config_fetch_retries=3
+export npm_config_fetch_retry_maxtimeout=20000
+
 # The long-running background processes redirect their output to these
 # files (so their detached children can't hold `bazel test`'s output
 # pipe open; see the emulator launch below). That redirection means a
