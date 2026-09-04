@@ -57,14 +57,23 @@ const config: Config = {
             to: "/get_started/quickstart",
           },
           {
-            from: "/full_stack_apps/get_started_claude_code",
+            from: [
+              "/ai_chat_apps/get_started_claude_code",
+              "/full_stack_apps/get_started_claude_code",
+            ],
             to: "/get_started/claude_code",
           },
           {
-            from: "/full_stack_apps/get_started_codex",
+            from: [
+              "/ai_chat_apps/get_started_codex",
+              "/full_stack_apps/get_started_codex",
+            ],
             to: "/get_started/codex",
           },
-          { from: "/full_stack_apps/examples", to: "/get_started/examples" },
+          {
+            from: ["/ai_chat_apps/examples", "/full_stack_apps/examples"],
+            to: "/get_started/examples",
+          },
           { from: "/full_stack_apps/python", to: "/get_started/python" },
           {
             from: "/full_stack_apps/typescript",
