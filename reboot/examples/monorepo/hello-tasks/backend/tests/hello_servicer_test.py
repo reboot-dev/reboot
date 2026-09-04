@@ -1,50 +1,29 @@
+"""Hello's tests: the Gherkin scenarios in `hello.feature`."""
+
 import hello_servicer
-import unittest
+import pytest
 from hello_servicer import HelloServicer
-from hello_tasks.v1.hello_rbt import Hello
 from reboot.aio.applications import Application
-from reboot.aio.tests import Reboot
+from reboot.bdd import scenarios
+from typing import Iterator
 
 
-class TestHello(unittest.IsolatedAsyncioTestCase):
+# To make scenarios run quickly, remove the delays before warning
+# about and before erasing a message.
+@pytest.fixture(autouse=True)
+def no_delays() -> Iterator[None]:
+    secs_until_warning = hello_servicer.SECS_UNTIL_WARNING
+    additional_secs_until_erase = hello_servicer.ADDITIONAL_SECS_UNTIL_ERASE
+    hello_servicer.SECS_UNTIL_WARNING = 0
+    hello_servicer.ADDITIONAL_SECS_UNTIL_ERASE = 0
+    yield
+    hello_servicer.SECS_UNTIL_WARNING = secs_until_warning
+    hello_servicer.ADDITIONAL_SECS_UNTIL_ERASE = additional_secs_until_erase
 
-    async def asyncSetUp(self) -> None:
-        self.rbt = Reboot()
-        await self.rbt.start()
 
-    async def asyncTearDown(self) -> None:
-        await self.rbt.stop()
+@pytest.fixture
+def application() -> Application:
+    return Application(servicers=[HelloServicer])
 
-    async def test_hello_tasks(self) -> None:
-        # To make our test run quickly, remove delays before erasing the
-        # message.
-        hello_servicer.SECS_UNTIL_WARNING = 0
-        hello_servicer.ADDITIONAL_SECS_UNTIL_ERASE = 0
-        await self.rbt.up(
-            Application(servicers=[HelloServicer]),
-        )
 
-        context = self.rbt.create_external_context(name=f"test-{self.id()}")
-
-        hello = Hello.ref("testing-hello")
-
-        # Send a message.
-        send_response = await hello.send(context, message="Hello, World!")
-
-        # Wait for the message to be erased.
-        warning_response = await Hello.WarningTask.retrieve(
-            context,
-            task_id=send_response.task_id,
-        )
-        await Hello.EraseTask.retrieve(
-            context,
-            task_id=warning_response.task_id,
-        )
-
-        # Check that the current list of messages reflects the erasure.
-        messages_response = await hello.messages(context)
-        self.assertEqual(len(messages_response.messages), 1)
-        self.assertEqual(
-            messages_response.messages[0],
-            "Number of messages erased so far: 1",
-        )
+scenarios('hello.feature')
