@@ -132,7 +132,7 @@ def test_clause_grammar_routing() -> None:
     assert re.fullmatch(_MIXED_CLAUSES, mixed)
     assert not re.fullmatch(_MIXED_CLAUSES, properties)
     assert not re.fullmatch(_MIXED_CLAUSES, saves)
-    predicates = '`name` containing "a and b" and `tags` of length 2'
+    predicates = '`name` containing `"a and b"` and `tags` of length `2`'
     assert re.fullmatch(_ASSERT_CLAUSES, predicates)
     assert re.fullmatch(_ASSERT_CLAUSES, properties)
     assert not re.fullmatch(_ASSERT_CLAUSES, saves)
@@ -204,7 +204,7 @@ def test_parse_assertions() -> None:
     world = World()
     assert _parse_assertions(
         world,
-        '`name` containing "a and b", `tags` of length 2, and '
+        '`name` containing `"a and b"`, `tags` of length `2`, and '
         '`balance=50`',
     ) == [
         Containing(path=PropertyPath.create('name'), value='a and b'),
@@ -216,7 +216,11 @@ def test_parse_assertions() -> None:
     with pytest.raises(ValueError, match="'of length', not 'length'"):
         _parse_assertions(world, '`tags` length 2')
     with pytest.raises(ValueError, match="takes a whole number"):
-        _parse_assertions(world, '`tags` of length "2"')
+        _parse_assertions(world, '`tags` of length `"2"`')
+    with pytest.raises(ValueError, match="the length goes in backticks"):
+        _parse_assertions(world, '`tags` of length 2')
+    with pytest.raises(ValueError, match="the value goes in backticks"):
+        _parse_assertions(world, '`name` containing "a"')
 
 
 def test_assert_predicates() -> None:

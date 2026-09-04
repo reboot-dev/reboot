@@ -46,8 +46,8 @@ Feature: Accounts
     Then `get_owner` on the `Account` for "frank" has `owner={name: "Frankie", tags: ["pro"]}`
     And `get_owner` on the `Account` for "frank" has `owner.name="Frankie"`
     And `get_owner` on the `Account` for "frank" has `owner.tags[0]="pro"`
-    And `get_owner` on the `Account` for "frank" has `owner.name` containing "rank" and `owner.tags` of length 1
-    And `get_owner` on the `Account` for "frank" has `owner.tags` containing "pro"
+    And `get_owner` on the `Account` for "frank" has `owner.name` containing `"rank"` and `owner.tags` of length `1`
+    And `get_owner` on the `Account` for "frank" has `owner.tags` containing `"pro"`
     When `get_owner` on the `Account` for "frank" has `owner.name` saved as `owner_name`
     And an `Account` for "${owner_name}" gets created via `open` with `initial_balance=1`
     Then `balance` on the `Account` for "Frankie" has `balance=1`
@@ -64,7 +64,7 @@ Feature: Accounts
     When the `Account` for "heidi" gets a `put_owner` with `key="main"` and `owner={name: "Heidi", tags: ["a"]}`
     Then `get_owners` on the `Account` for "heidi" has `owners["main"].name="Heidi"`
     And `get_owners` on the `Account` for "heidi" has `owners={main: {name: "Heidi", tags: ["a"]}}`
-    And `get_owners` on the `Account` for "heidi" has `owners` containing "main" and `owners` of length 1
+    And `get_owners` on the `Account` for "heidi" has `owners` containing `"main"` and `owners` of length `1`
 
   Scenario: Steps can share one context
     Given a shared context
