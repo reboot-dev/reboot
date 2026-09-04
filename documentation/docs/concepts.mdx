@@ -1,0 +1,256 @@
+# How Reboot works
+
+Most application stacks are assembled: a web framework, a database, an
+ORM, a cache, a queue, a session store, an auth provider, and a pile of
+glue holding them together. Every seam is somewhere a bug can hide, and
+every one of them is something you or your coding agent has to get
+right.
+
+Reboot replaces that assembly with one thing — a backend built out of
+**durable data structures** — and then constrains what you can do with
+them, so whole classes of bug are impossible by construction rather
+than merely discouraged. It is the same trade Rust's borrow checker
+makes for memory management and React makes for component-based
+frontends, applied to your backend.
+
+This page is the mental model. It is worth ten minutes before you write
+any code; everything else in these docs is a detail of something here.
+
+## Types, state, and methods
+
+A Reboot application is a set of **types**. A type has:
+
+- **State** — the data an instance of that type holds. Fields are
+  ordinary Python or TypeScript values, declared with
+  [Pydantic](/define/pydantic) in Python or
+  [Zod](/define/zod) in TypeScript.
+- **Methods** — the only way to read or change that state.
+
+That is the whole model. A `ChatRoom` holds messages and has a `send`
+method. An `Account` holds a balance and has `deposit` and `withdraw`.
+A `User` holds whatever you want to remember about a person.
+
+Reboot persists state for you. This is what a **durable application**
+means: the moment a function returns, its state is saved. If the
+process dies a millisecond later, the next one picks up exactly where
+it left off. You never write a query, open a transaction against a
+database, or think about connection pools.
+
+That is a step past a durable execution engine, which makes your
+*workflow* recoverable but leaves your data somewhere else. Here the
+application itself is durable, all the way down.
+
+## Instances and state IDs
+
+Each type has many **instances**, each identified by a **state ID** —
+a string that is unique within your application. Think of it as a
+primary key.
+
+### Let Reboot generate the ID
+
+Most of the time, don't choose the ID yourself. Give the type a
+constructor — a method declared with `factory=True` — and call it
+without an ID; Reboot mints a fresh, unique one for you:
+
+```python
+account, _ = await Account.open(context, customer_name="Ada")
+
+account.state_id  # The generated ID — hold on to this.
+```
+
+This is the recommended default, and it is what you should reach for
+unless you have a specific reason not to. A generated ID is unique by
+construction, so there is no "is this name already taken?" check to
+write, no collision between two users who both wanted `acme`, and
+nothing guessable for someone else to try.
+
+What you do with the ID is store it wherever the user will look it up
+from again — usually on their [`User`](/users/overview), which is the
+one instance the framework can always find.
+
+### When to write an ID yourself
+
+Two cases justify it:
+
+- **The ID already exists somewhere else.** `User` is the built-in
+  example: its state ID *is* the identity your auth provider issued,
+  which is exactly why Reboot can find a person's `User` without being
+  told who they are.
+- **There is genuinely only one.** A singleton — one `Bank`, one
+  site-wide `Leaderboard` — is easier to reach by a well-known ID than
+  to look up. Construct singletons in your application's
+  [`initialize`](/implement/application#initialize-functions)
+  function, and keep them small: everything in one instance is
+  everything that cannot be worked on in parallel.
+
+```python
+account = Account.ref("account-1234")
+```
+
+`ref()` gives you a handle, not a guarantee that the instance exists;
+see [Constructing instances](/call/overview#constructing-instances) for
+how instances come into being.
+
+### Why IDs matter beyond naming
+
+Reboot uses state IDs to partition your instances across CPU cores and
+machines. Two different `Account` instances never contend with each
+other, which is why a Reboot backend scales without you sharding
+anything by hand.
+
+## Method kinds
+
+Every method declares a [kind](/define/methods), and Reboot enforces
+what that kind is allowed to do:
+
+| Kind | What it may do |
+| --- | --- |
+| [`reader`](/implement/readers) | Read state, without changing any. A `reader` sees its own instance's state and can call other `reader` methods, so it can read across as many instances as it needs. Many readers run concurrently, and a reader can be subscribed to — which is what makes React clients reactive. |
+| [`writer`](/implement/writers) | Read and mutate its own instance's state, atomically; it can call `reader` methods to read others. Writers on an instance run one at a time. |
+| [`transaction`](/implement/transactions) | Read and mutate *several* instances atomically. Either all of it happens or none of it does. |
+| [`workflow`](/implement/workflows) | Run a long-lived, retryable process — minutes, days, or forever — without holding a lock. |
+| [`UI`](/surfaces/ui_methods) | Declare a React component an AI chat client can open. It has no backend implementation. |
+
+Kinds form a hierarchy: a method may only call methods with the same
+or stronger guarantees. A `reader` cannot call a `writer`, so a read
+can never sneak in a mutation. A `writer` cannot call another `writer`
+at all, so write atomicity is never quietly violated — reach for a
+`transaction` when you need to change several instances together.
+
+This is the trade Reboot asks you to make: you say a little more about
+each method up front, and in exchange the framework can guarantee
+correctness, run things in parallel safely, and recover from failures
+without your help. It is also what keeps the diff reviewable — a
+method's kind tells you what it can possibly do, whether a human or an
+agent wrote it.
+
+## Servicers: where you write the code
+
+An API definition declares *what* the methods are. A
+[servicer](/implement/servicers) implements them:
+
+```python
+class AccountServicer(Account.Servicer):
+
+    async def deposit(
+        self,
+        context: WriterContext,
+        request: Account.DepositRequest,
+    ) -> None:
+        self.state.balance += request.amount
+```
+
+`self.state` is the instance's state. Mutate it, and when the method
+returns successfully the new state is saved — all of your changes or,
+if the method fails, none of them. Nothing is written half-way.
+
+The `context` tells you who is calling (`context.auth`) and which
+instance you are in (`context.state_id`), and you pass it to every
+Reboot call you make from here, which is how those calls inherit this
+method's guarantees.
+
+## Users are the entry point
+
+Almost every application starts from "who is this?". Reboot builds
+that in.
+
+Declare a type named `User`, hand your `Application` an
+[`OAuth`](/users/oauth) configuration, and Reboot runs an OAuth server
+for you. When somebody signs in, Reboot **auto-constructs their
+`User`**: an instance whose state ID is that person's stable identity,
+created on first sign-in and found again on every sign-in after that.
+
+```python
+api = API(
+    User=Type(state=UserState, methods=UserMethods),
+    # ... your other types.
+)
+```
+
+You plug in your favorite auth provider — Google, GitHub, Auth0, Ory —
+and Reboot runs the flow in front of it, so you never write a session
+table or a "get or create user" helper. From the first line of your
+application code there is a `User` to hang everything else off: their
+documents, their orders, their chat rooms, their settings.
+
+`User` is also where per-user authorization comes from for free — by
+default a `User`'s methods are callable by that user and by your own
+application code, and by nobody else. See
+[Users and sign-in](/users/overview).
+
+## One backend, many frontends
+
+A Reboot backend does not care where a call comes from. One app serves
+every user — human or machine:
+
+- **Humans** reach it through a [web app](/surfaces/web), a
+  [React Native app](/surfaces/react_native), or an
+  [AI chat app](/surfaces/ai_chat), where
+  [`UI` methods](/surfaces/ui_methods) render React components inside
+  the conversation.
+- **Agents** reach it over [MCP](/surfaces/ai_chat), where the methods
+  you mark `mcp=Tool()` appear as tools.
+- **Services** reach it from
+  [your own backend code](/call/from_within_your_app), another
+  process, a script, or a
+  [plain HTTP request](/call/via_http).
+
+An agent can also run *inside* the app: see [Agents](/agents) for
+Pydantic AI agents whose model and tool calls are durable and
+replay-safe.
+
+Because identity is established by the backend rather than by any one
+client, a user who signs in on the web is the same user — the same
+`User` instance, the same state — in the mobile app and in the chat
+client.
+
+## Reactivity
+
+`reader` methods can be *subscribed to* rather than polled. A React
+component calls a generated hook, and Reboot pushes a new response
+every time the underlying state changes — whether the change came from
+that user, another user, a background workflow, or an AI calling a
+tool.
+
+```tsx
+const { useMessages, send } = useChatRoom({ id });
+const { response } = useMessages();
+```
+
+There is no cache to invalidate and no event bus to subscribe to. The
+read *is* the subscription. See
+[Call your API from React](/call/from_react).
+
+## When things take time, or fail
+
+Real applications wait: on a human, on a payment processor, on
+tomorrow. Reboot has durable primitives for each of these, so "the
+process restarted" is never a correctness problem:
+
+- [Tasks](/tasks) run work in the background, and can be scheduled for
+  later or on a recurring basis.
+- [Workflows](/implement/workflows) survive restarts: a failed
+  workflow is retried until it completes, and the steps that already
+  finished are memoized rather than run a second time.
+- [Side effects](/side_effects) wrap calls to the outside world in
+  `at_least_once` / `at_most_once` so a retry cannot double-charge
+  somebody.
+- [Idempotency](/idempotency) makes a retried mutation apply once, even
+  across clients and restarts.
+
+## What you still write yourself
+
+Reboot is not a no-code tool. You still design your types, write your
+business logic, and build your UI. What it takes off your plate is the
+infrastructure underneath: persistence, transactions, concurrency
+control, reactive fan-out, background execution, sign-in, and per-user
+authorization — the hard problems, solved once at the framework level,
+so neither you nor your coding agent ever has to solve them again.
+
+## Next
+
+- [Users and sign-in](/users/overview) — the entry point every app
+  starts from.
+- [Define your API](/define/overview) — declare your types.
+- [Build with Claude Code](/get_started/claude_code) — get a running
+  app in minutes.

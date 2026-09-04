@@ -1,11 +1,17 @@
-# Agents
+# Agents inside your app
+
+An AI agent can reach your application from outside, over
+[MCP](/surfaces/ai_chat). It can also run *inside* it, as part of your
+own business logic — that is what this page is about.
 
 Reboot's `reboot.agents` package lets you run [Pydantic AI](https://ai.pydantic.dev/)
 agents inside Reboot [workflows](/implement/workflows) with
 **durable, replay-safe execution
 of model calls and tool calls** -- you get back the same answer on
 re-runs without re-hitting the LLM provider, and tool side-effects
-that have already completed are not repeated.
+that have already completed are not repeated. A model call is the most
+expensive, least deterministic thing your app does; running it in a
+workflow means a crash never pays for it twice.
 
 This page covers what's specific to running a Pydantic AI agent on
 Reboot. For everything that isn't Reboot-specific (model providers,

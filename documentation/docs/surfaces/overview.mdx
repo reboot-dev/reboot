@@ -1,0 +1,107 @@
+# One backend, many frontends
+
+One app to serve every user — human or machine. A Reboot backend does
+not know or care what kind of client is calling it: the same types,
+the same methods, and the same durable state are reachable from every
+front door.
+
+## Humans
+
+| Surface | What it is | Start here |
+| --- | --- | --- |
+| **Web** | A React app in the browser, talking to your Reboot backend. | [Web apps](/surfaces/web) |
+| **React Native** | A React Native app on iOS and Android, using the same generated hooks as the web app. In alpha. | [React Native apps](/surfaces/react_native) |
+| **AI chat** | Your methods as MCP tools, and React components rendered in the conversation as MCP Apps, inside ChatGPT, Claude, or VS Code. | [AI chat apps](/surfaces/ai_chat) |
+
+## Agents
+
+An AI agent reaches your app over [MCP](/surfaces/ai_chat). Every
+method, `User` methods included, says whether it is a tool:
+`mcp=Tool()` exposes it to the agent, `mcp=None` keeps it out of
+reach.
+
+An agent can also run *inside* your app, rather than calling in from
+outside: see [Agents](/agents) for Pydantic AI agents whose model and
+tool calls are durable and replay-safe inside a
+[workflow](/implement/workflows).
+
+## Services
+
+Another service, a script, or your own backend code calls your
+application directly — see
+[from within your app](/call/from_within_your_app),
+[from outside your app](/call/from_outside_your_app), and
+[over HTTP](/call/via_http). You can also add
+[custom HTTP routes](/implement/application#http-custom-routes) for
+webhooks and anything else that cannot call a method.
+
+## What stays the same
+
+Whichever front door a call comes through, three things do not change.
+
+**One identity per user.** [Sign-in](/users/overview) is handled by
+the backend's OAuth server, not by any one client. A person who signs
+in on the web is the same `User`, with the same state, in your mobile
+app and in their chat client. There is no account linking to build.
+
+**One set of generated hooks, and one way in.** `rbt generate
+--react=<dir>` emits one typed React client that the web app, the
+native app, and any [`UI` methods](/surfaces/ui_methods) all import
+from. On the client, sign-in is just `useSignIn()` — on the web and in
+a native app; a chat client signs the person in before any `UI` loads
+— and the generated `useUser()`, which resolves the caller's own
+`User`:
+
+```tsx
+const { user, isLoading } = useUser();
+const { response } = user.useListTodoLists();
+```
+
+See [On the client](/users/overview#on-the-client) for the whole
+pattern.
+
+**One authorization model.** [Authorizers](/users/authorization) run
+on the backend, so a method restricted to its owner is restricted the
+same way whether the caller is a browser, a phone, an AI, or another
+service.
+
+## What differs
+
+Only the mechanics at the very edge:
+
+- **Where the backend URL comes from.** The web app reads it from an
+  environment variable at build time; a native app reads it from its
+  own config; a `UI` method needs no URL at all, because the provider
+  detects the chat host.
+- **How the sign-in flow runs.** A browser redirects and comes back. A
+  native app opens a system browser. A chat client runs the flow when
+  the user connects your app.
+- **What the user sees.** A full page, a native screen, or a component
+  embedded in a conversation.
+
+## Serving several at once
+
+Nothing stops one application from doing all of it. The
+[`bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic)
+example (described under [Examples](/get_started/examples#bank-pydantic))
+does: one backend, one `User` type, and three front ends that all
+import the same generated client.
+
+| Front end | In the example | Docs |
+| --- | --- | --- |
+| Browser app | `frontend/web/` | [Web apps](/surfaces/web) |
+| React Native (Expo) app | `frontend/mobile/` | [React Native apps](/surfaces/react_native) |
+| MCP UIs, one directory per `UI` method | `frontend/mcp/` | [`UI` methods](/surfaces/ui_methods) |
+| Generated client, shared by all three | `frontend/api/` | [Call your API from React](/call/from_react) |
+
+That is the layout worth copying when you expect more than one
+surface.
+
+## Next
+
+- [Web apps](/surfaces/web)
+- [React Native apps](/surfaces/react_native)
+- [AI chat apps](/surfaces/ai_chat)
+- [Agents](/agents) — an agent running inside your app.
+- [Call your API from React](/call/from_react) — the hooks reference
+  shared by all of them.

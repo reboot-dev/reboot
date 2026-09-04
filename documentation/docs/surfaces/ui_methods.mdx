@@ -1,15 +1,18 @@
-# UIs for AI Chat Apps
+# UI methods
 
-UI methods declare a React component that opens in the AI chat
-interface when the AI calls the associated tool. Unlike `reader`,
-`writer`, `transaction`, and `workflow` methods, UI methods have
-no backend servicer code — the React `App.tsx` component **is**
-the implementation.
+A `UI` method declares a React component that an
+[AI chat client](/surfaces/ai_chat) opens inside the conversation when
+the AI calls the associated tool. Unlike `reader`, `writer`,
+`transaction`, and `workflow` methods, a `UI` method has no backend
+servicer code — the React `App.tsx` component **is** the
+implementation.
 
-:::info MCP only
-UI methods are only callable over [MCP](/learn_more/mcp_apps) —
-they appear as tools in AI chat interfaces. There is no way to
-invoke a `UI` method from a browser or backend.
+:::info The AI chat surface only
+`UI` methods exist for [MCP](/surfaces/ai_chat), where they appear as
+tools. There is no way to invoke one from a browser or from your
+backend. Your [web](/surfaces/web) and
+[React Native](/surfaces/react_native) frontends render their own
+components and call ordinary methods.
 :::
 
 ## Syntax
@@ -160,7 +163,7 @@ const Clicker: React.FC<{ counter: UseCounterApi }> = ({ counter }) => {
 };
 ```
 
-## How it works under the hood
+## How it works
 
 When you define a `UI` method, Reboot generates two MCP
 artifacts:
@@ -171,9 +174,9 @@ artifacts:
 2. **An MCP resource** that serves the compiled HTML/JS/CSS. The
    AI client loads this resource in an embedded browser.
 
-The React app communicates with your Reboot backend via
-WebSocket subscriptions (for reads) and the appropriate write
-channel (for mutations).
+The React app talks to your backend through the same
+[generated hooks](/call/from_react) as any other front end, so its
+reads are reactive and its mutations retry safely.
 
 ## Bundling UI methods
 
@@ -184,6 +187,11 @@ file so that the Reboot server can serve it as an MCP resource.
 Use [Vite](https://vite.dev/) with
 [`vite-plugin-singlefile`](https://www.npmjs.com/package/vite-plugin-singlefile).
 
+The [agent skills](/get_started/claude_code) write the
+`vite.config.ts` and `build.mjs` below for you. If you are setting a
+project up by hand, copy them from an example such as
+[`bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic/tree/main/frontend).
+
 ### Dependencies
 
 ```sh
@@ -192,14 +200,20 @@ npm install -D @vitejs/plugin-react vite vite-plugin-singlefile
 
 ### Vite configuration
 
-Create a `vite.config.ts`. One config drives three jobs: the dev
-server, and two builds selected by the `RBT_BUILD_TARGET` env var (set
-per UI by `build.mjs`) — a per-UI MCP build
-(`RBT_BUILD_TARGET=mcp:<name>`) and the standalone `web/` SPA build
-(`RBT_BUILD_TARGET=web`). It auto-discovers MCP UIs from the `mcp/`
-directory (each subdirectory with an `index.html`):
+One `vite.config.ts` drives three jobs: the dev server, and two
+builds selected by the `RBT_BUILD_TARGET` env var (set per UI by
+`build.mjs`) — a per-UI MCP build (`RBT_BUILD_TARGET=mcp:<name>`) and
+the standalone `web/` SPA build (`RBT_BUILD_TARGET=web`). It
+auto-discovers MCP UIs from the `mcp/` directory (each subdirectory
+with an `index.html`).
 
-```ts title=frontend/vite.config.ts
+<details>
+<summary>The full <code>frontend/vite.config.ts</code></summary>
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/frontend/vite.config.ts&syntax=typescript) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/frontend/vite.config.ts -->
+
+```typescript
 // Vite configuration for Reboot UIs.
 //
 // One config drives three jobs. The dev server is selected by
@@ -432,6 +446,10 @@ export default defineConfig(({ command }) => {
   };
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+</details>
 
 ### Building
 

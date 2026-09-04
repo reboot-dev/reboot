@@ -1,0 +1,231 @@
+# Web apps
+
+A Reboot web app is an ordinary React single-page app. What Reboot
+adds is that it talks to your backend through generated, typed hooks
+that are *reactive* — React components re-render when backend state
+changes, without polling — and that its users sign in through your
+backend's own OAuth server.
+
+This page covers how a web front end is put together. For the full hooks
+reference, see [Call your API from React](/call/from_react).
+
+## Install and generate
+
+Add the React client to your front end's `package.json`:
+
+```sh
+npm install -S @reboot-dev/reboot-react
+```
+
+Tell `rbt generate` where to emit the typed client, in your
+[`.rbtrc`](/develop_locally#rbtrc-and-flags):
+
+```
+generate --react=frontend/api
+```
+
+Generating into `frontend/api/` — a sibling of the app itself — means
+every front end of your application (web, mobile, MCP UIs) shares one
+client. Keep your bundler's root at `frontend/` so that directory is
+inside it; if your app root is `frontend/web/` instead, Vite needs
+`server.fs.allow: [".."]` to read a sibling.
+
+## Point the client at your backend
+
+Wrap your app in a `RebootClientProvider` with the backend's URL:
+
+```tsx
+// frontend/web/src/main.tsx
+import { RebootClientProvider } from "@reboot-dev/reboot-react";
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <RebootClientProvider url={import.meta.env.VITE_REBOOT_URL}>
+      <Root />
+    </RebootClientProvider>
+  </StrictMode>
+);
+```
+
+Read the URL from the environment rather than hard-coding it. A web
+app is served from its own origin — a CDN or static host — almost
+never the same origin as the backend, so a real deployment *must* set
+it:
+
+```
+# frontend/web/.env.development
+VITE_REBOOT_URL="http://localhost:9991"
+```
+
+```
+# frontend/web/.env.production
+VITE_REBOOT_URL="https://your-backend-host.example.com"
+```
+
+## Signing in
+
+Reboot's OAuth server does the work; your app needs three hooks.
+
+```tsx
+import { useUser } from "@api/todos/v1/todos_rbt_react";
+import { useSignIn, useSignOut } from "@reboot-dev/reboot-react";
+
+export const Root = () => {
+  const { user, isLoading } = useUser();
+  const signIn = useSignIn();
+  const signOut = useSignOut();
+
+  // The provider renders immediately and resolves the session in the
+  // background, so `isLoading` holds until it lands.
+  if (isLoading) {
+    return <p>Checking session…</p>;
+  }
+
+  if (user === undefined) {
+    return <button onClick={() => signIn()}>Sign in</button>;
+  }
+
+  return <App user={user} onSignOut={() => void signOut()} />;
+};
+```
+
+- **`useSignIn()`** returns a function that starts the sign-in flow.
+  The browser goes to your identity provider and comes back signed
+  in, to where the user was. Pass a `returnTo` to send them somewhere
+  else.
+- **`useSignOut()`** drops this device's session. The identity
+  provider's own session is left alone.
+- **`useUser()`** is *generated from your `User` type*, so it is typed
+  to your API. Called with no ID it resolves the signed-in user's own
+  `User` — the instance Reboot
+  [auto-constructed](/users/overview) at sign-in. `user` is
+  `undefined` when nobody is signed in.
+
+The `user` handle exposes your `User` methods: reads as nested hooks,
+mutations as plain calls.
+
+```tsx
+const { response } = user.useListTodoLists();
+await user.createTodoList({ title: "Groceries" });
+```
+
+:::tip Check `isLoading` first
+While `isLoading` is `true`, `user` is still `undefined`. Reaching the
+`undefined` check after loading has finished is what genuinely means
+"nobody is signed in".
+:::
+
+### Other state types
+
+Generated hooks exist for every state type, not just `User`:
+
+```tsx
+const todoList = useTodoList({ id: todoListId });
+const { response } = todoList.useTodos();
+await todoList.add({ todo: "Milk" });
+```
+
+Where does `todoListId` come from? From the person's `User`, the one
+instance you can reach without an ID: it records what they own, and a
+component reads those IDs off it and passes each one down.
+
+```tsx
+const TodoLists = ({ user }: { user: UseUserApi }) => {
+  const { response } = user.useListTodoLists();
+  return (response?.todoLists ?? []).map((todoList) => (
+    <TodoListView key={todoList.todoListId} id={todoList.todoListId} />
+  ));
+};
+
+const TodoListView = ({ id }: { id: string }) => {
+  const todoList = useTodoList({ id });
+  const { response } = todoList.useTodos();
+  return (
+    <ul>
+      {(response?.todos ?? []).map((todo) => (
+        <li key={todo}>{todo}</li>
+      ))}
+    </ul>
+  );
+};
+```
+
+## Backend configuration
+
+Two things on the backend matter to a web front end.
+
+**1. `allowed_origins`.** Your SPA is on a different origin than the
+backend, so it must be allow-listed for credentialed requests:
+
+```python
+oauth=OAuth(
+    provider=...,
+    allowed_origins=["https://app.example.com"],
+)
+```
+
+In development, `http://localhost` and `http://127.0.0.1` on any port
+are allowed automatically. In production, omitting `allowed_origins`
+is a startup error. See [Configure OAuth](/users/oauth#allowed_origins).
+
+**2. The callback URL.** Register
+`<your-app-base-url>/__/oauth/callback` with your identity provider.
+
+## Local development
+
+Run two processes: the backend, and the Vite dev server.
+
+```sh
+rbt dev run
+```
+
+```sh
+cd frontend && npm run dev
+```
+
+`rbt dev run` generates the React client before it starts, so the dev
+server always has an up-to-date `frontend/api/`.
+
+If you want Reboot to serve the front end too — so both are on one
+origin, and so `UI` methods work — point it at your frontend root in
+`.rbtrc`:
+
+```
+# The frontend root, shared by the `:hmr` and `:dist` configs below.
+dev run --frontend-root-path=frontend
+
+# HMR: proxy `/__/frontend/**` to the Vite dev server.
+dev run:hmr --frontend-host=http://localhost:4444
+dev run --default-config=hmr
+
+# Dist: serve pre-built assets instead. `rbt dev run --config=dist`.
+dev run:dist --frontend-dist-path=frontend/dist
+```
+
+See [Develop locally](/develop_locally#frontend-flags) for what each
+flag does.
+
+## Going to production
+
+1. Build the SPA (`npm run build`) and publish it to any static host.
+2. Set `VITE_REBOOT_URL` to the backend's public origin at build time.
+3. Deploy the backend — [Reboot Cloud](/deploy_on_reboot_cloud) or
+   [your own infrastructure](/deploy_on_your_own).
+4. Add the SPA's origin to `allowed_origins`, and its base URL's
+   `/__/oauth/callback` to your identity provider.
+
+:::tip Use TLS
+HTTP/2 multiplexing needs a TLS endpoint, and browsers cap the number
+of plain-HTTP connections to one host. An app with many outstanding
+calls — reactive readers count — will hit that cap and needs HTTPS.
+See [the `rbt` CLI](/rbt_cli#bring-your-own-certificate-with-rbt-dev-run)
+for local certificates.
+:::
+
+## Next
+
+- [Call your API from React](/call/from_react) — reactive reads,
+  optimistic updates, offline caching, Next.js server components.
+- [Users and sign-in](/users/overview) — what `useUser()` is resolving.
+- [React Native apps](/surfaces/react_native) — the same code on a
+  phone (alpha).
