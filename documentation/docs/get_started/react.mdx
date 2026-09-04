@@ -2,7 +2,7 @@ import { CodeStepByStep, Step } from "../../src/components/Steps";
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
-# React
+# React frontend
 
 <CodeStepByStep>
 <Step
@@ -34,7 +34,7 @@ npx rbt dev run
 </Step>
 
 <Step
-  title="Setup your frontend folder"
+  title="Set up your frontend folder"
   description={`
 
 Create a folder for your React frontend and \`cd\` into it.
@@ -350,17 +350,21 @@ backend sleep for a few seconds in the `send` method!
 </CodeStepByStep>
 
 <!-- TODO: use `## Next steps` instead of `<h1>Next steps</h1>` once
-we figure out to hide the right side navigation/table of contents. -->
+there is a way to hide the right side navigation / table of
+contents. -->
 
 <h1>Next steps</h1>
 
 Well done! You made it! Check out these links to continue your exploration:
 
+* **[Add sign-in](/surfaces/web#signing-in)** - `useSignIn()` and
+  the generated `useUser()` hook, once your backend has a
+  [`User` type](/users/overview).
 * **[Learn advanced React usage](/call/from_react)** - like [error
   handling](/call/from_react#errors), or [Next.js and Server
   Components](/call/from_react#nextjs-and-server-components).
 * **[Learn about transactions](/define/methods#kinds)** - so far,
-  we've covered `reader` and
+  you've seen `reader` and
   `writer` methods, but Reboot's power
   extends to `transactions`. [Learn about
   `transactions` and all of the other method kinds

@@ -117,7 +117,7 @@ A few rules the harness enforces:
 ##### Failing inside a method, not between calls
 
 A restart _between_ two calls only exercises a boundary the app
-would survive anyway. To make the failure land in the middle of a
+would survive anyway. To make the failure happen in the middle of a
 method — half a workflow done, a task picked up but unfinished —
 replace that method with one that blocks until the test has taken
 the app down:
@@ -187,6 +187,70 @@ revision = await self.rbt.up(
     effect_validation=EffectValidation.DISABLED,
 )
 ```
+
+### Testing signed-in users
+
+Applications with a [`User` type](/users/overview) need their tests to
+act as somebody. `create_external_context_as` mints a real access
+token — through the same code path a real sign-in goes through, so the
+caller's `User` is auto-constructed as a side effect — and returns an
+`ExternalContext` authenticated as that user:
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../tests/reboot/documentation/test_ai_chat_counter.py&lines=27-30) -->
+<!-- The below code snippet is automatically added from ../../tests/reboot/documentation/test_ai_chat_counter.py -->
+
+```py
+self.context = await self.rbt.create_external_context_as(
+    name=f"test-{self.id()}",
+    user_id=_OWNER_ID,
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+Call `up()` first: it guarantees an OAuth server to mint through,
+auto-supplying a test provider when your application has no `oauth=`
+of its own.
+
+Every call made with that context arrives authenticated as `user_id`,
+so this is also how you check that
+[authorizers](/users/authorization) really do keep users apart — mint
+a second context as somebody else and assert that it is refused:
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../tests/reboot/documentation/test_ai_chat_counter.py&lines=72-91) -->
+<!-- The below code snippet is automatically added from ../../tests/reboot/documentation/test_ai_chat_counter.py -->
+
+```py
+async def test_non_owner_cannot_read_counter(self) -> None:
+    create_response = await User.ref(_OWNER_ID).create_counter(
+        self.context,
+        description="private counter",
+    )
+
+    # A second signed-in user, with a valid token but a different
+    # `user_id`, must not be able to read a counter they do not
+    # own: the `_caller_is_owner` authorizer refuses them. A fresh
+    # `ref` is required per context.
+    other_context = await self.rbt.create_external_context_as(
+        name=f"other-{self.id()}",
+        user_id="other-user",
+    )
+    with self.assertRaises(Aborted):
+        await Counter.ref(create_response.counter_id).get(other_context)
+
+    # The owner still can.
+    owner_counter = Counter.ref(create_response.counter_id)
+    self.assertEqual((await owner_counter.get(self.context)).value, 0)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+Two lower-level helpers are available when you need them:
+
+| Helper | Use it for |
+| --- | --- |
+| `make_valid_oauth_access_token(user_id=..., claims=...)` | A raw bearer token. Pass `claims=` to exercise a servicer's [`set_claims`](/users/claims). |
+| `make_jwt(**claims)` | An arbitrary JWT signed with the test signing secret, for testing your own [`TokenVerifier`](/users/tokens). |
 
 ### TypeScript
 
