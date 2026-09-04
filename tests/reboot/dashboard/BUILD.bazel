@@ -49,6 +49,17 @@ py_test(
 )
 
 py_test(
+    name = "behaviors_watcher_tests_py",
+    srcs = ["behaviors_watcher_tests.py"],
+    main = "behaviors_watcher_tests.py",
+    deps = [
+        "//reboot/aio:tests_py",
+        "//reboot/dashboard/backend:behaviors_watcher_py",
+        "//reboot/dashboard/backend:main_py",
+    ],
+)
+
+py_test(
     name = "code_watcher_tests_py",
     srcs = ["code_watcher_tests.py"],
     data = [

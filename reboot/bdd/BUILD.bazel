@@ -20,6 +20,28 @@ py_library(
 )
 
 py_library(
+    name = "feature_py",
+    srcs = ["feature.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":grammar_py",
+        requirement("gherkin-official"),
+        "//rbt/v1alpha1/bdd:feature_py_proto",
+    ],
+)
+
+py_library(
+    name = "grammar_py",
+    srcs = ["grammar.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//rbt/v1alpha1/bdd:grammar_py_proto",
+    ],
+)
+
+py_library(
     name = "registry_py",
     srcs = ["registry.py"],
     srcs_version = "PY3",
@@ -56,6 +78,7 @@ py_library(
     deps = [
         ":__init___py",
         ":fixtures_py",
+        ":grammar_py",
         ":registry_py",
         requirement("json5"),
         requirement("jsonpath-ng"),

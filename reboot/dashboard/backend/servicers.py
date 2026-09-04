@@ -6,6 +6,8 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     DashboardGetResponse,
     DashboardUpdateApiRequest,
     DashboardUpdateApiResponse,
+    DashboardUpdateBehaviorsRequest,
+    DashboardUpdateBehaviorsResponse,
     DashboardUpdateCodeRequest,
     DashboardUpdateCodeResponse,
     PreferencesGetRequest,
@@ -26,7 +28,11 @@ from reboot.aio.contexts import (
     WorkflowContext,
     WriterContext,
 )
-from reboot.dashboard.backend import api_watcher, code_watcher
+from reboot.dashboard.backend import (
+    api_watcher,
+    behaviors_watcher,
+    code_watcher,
+)
 from reboot.dashboard.backend.constants import (
     CHANGELOG_ID,
     ENVVAR_RBT_API_DIRECTORY,
@@ -63,6 +69,7 @@ class DashboardServicer(Dashboard.Servicer):
             servicers=self.state.servicers,
             generated=self.state.generated,
             needs_generate_reason=needs_generate_reason(self.state),
+            features=self.state.features,
         )
 
     @classmethod
@@ -95,11 +102,9 @@ class DashboardServicer(Dashboard.Servicer):
         del self.state.servicers[:]
         self.state.servicers.extend(request.servicers)
         self.state.code_files.clear()
-        for filename, file in request.code_files.items():
-            self.state.code_files[filename].CopyFrom(file)
+        self.state.code_files.MergeFrom(request.code_files)
         self.state.generated.clear()
-        for filename, generated in request.generated.items():
-            self.state.generated[filename].CopyFrom(generated)
+        self.state.generated.MergeFrom(request.generated)
 
         if len(request.changes) > 0:
             await OrderedMap.ref(CHANGELOG_ID).Insert(
@@ -141,6 +146,29 @@ class DashboardServicer(Dashboard.Servicer):
 
         return Dashboard.WatchCodeResponse()
 
+    async def UpdateBehaviors(
+        self,
+        context: WriterContext,
+        request: DashboardUpdateBehaviorsRequest,
+    ) -> DashboardUpdateBehaviorsResponse:
+        """Replaces what the developer's `.feature` files declare."""
+        self.state.features.clear()
+        self.state.features.MergeFrom(request.features)
+
+        return DashboardUpdateBehaviorsResponse()
+
+    @classmethod
+    async def WatchBehaviors(
+        cls,
+        context: WorkflowContext,
+        request: Dashboard.WatchBehaviorsRequest,
+    ) -> Dashboard.WatchBehaviorsResponse:
+        """Returns only when the dashboard stops, parsing the
+        developer's `.feature` files whenever they change."""
+        await behaviors_watcher.watch(context)
+
+        return Dashboard.WatchBehaviorsResponse()
+
     async def UpdateApi(
         self,
         context: TransactionContext,
@@ -154,13 +182,11 @@ class DashboardServicer(Dashboard.Servicer):
         else:
             self.state.ClearField('error')
         self.state.api_files.clear()
-        for filename, file in request.api_files.items():
-            self.state.api_files[filename].CopyFrom(file)
+        self.state.api_files.MergeFrom(request.api_files)
         self.state.apis.clear()
-        for filename, api in request.apis.items():
-            self.state.apis[filename].CopyFrom(api)
+        self.state.apis.MergeFrom(request.apis)
         self.state.api_digests.clear()
-        self.state.api_digests.update(request.api_digests)
+        self.state.api_digests.MergeFrom(request.api_digests)
 
         if len(request.changes) > 0:
             await OrderedMap.ref(CHANGELOG_ID).Insert(

@@ -115,6 +115,8 @@ async def initialize(context: InitializeContext) -> None:
 
     _ = await dashboard.idempotently().spawn().WatchCode(context)
 
+    _ = await dashboard.idempotently().spawn().WatchBehaviors(context)
+
 
 async def main():
     await application().run()

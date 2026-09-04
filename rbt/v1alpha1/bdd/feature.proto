@@ -1,0 +1,136 @@
+syntax = "proto3";
+
+package rbt.v1alpha1.bdd;
+
+import "rbt/v1alpha1/bdd/grammar.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+// What one of the developer's `.feature` files declares: the
+// feature, the scenarios that belong to it directly, and the rules
+// it groups the rest of its scenarios under.
+message Feature {
+  // The keyword as written, e.g. "Feature"; Gherkin lets a file
+  // write its keywords in its own language.
+  string keyword = 1;
+
+  // Absent for a bare heading naming nothing.
+  optional string name = 2;
+
+  // The prose under the heading, dedented; absent for none.
+  optional string description = 3;
+
+  // Tag names as written, `@` included, e.g. "@wip".
+  repeated string tags = 4;
+
+  // The steps every scenario in the file begins with; absent when
+  // the file declares none.
+  optional Background background = 5;
+
+  // The scenarios before the first rule, which belong to the
+  // feature directly: once a rule starts, every scenario after it
+  // belongs to a rule.
+  repeated Scenario scenarios = 6;
+
+  repeated Rule rules = 7;
+
+  // Why the file could not be parsed, when it could not be; a
+  // half-written file is the normal cause while someone is typing.
+  // A feature carrying an error carries nothing else.
+  optional string error = 8;
+}
+
+// One business rule of a feature, illustrated by the scenarios
+// grouped under it.
+message Rule {
+  string keyword = 1;
+
+  // Absent for a bare heading naming nothing.
+  optional string name = 2;
+
+  optional string description = 3;
+
+  repeated string tags = 4;
+
+  // The steps every scenario under this rule begins with, run after
+  // the feature's own background; absent when the rule declares
+  // none.
+  optional Background background = 5;
+
+  repeated Scenario scenarios = 6;
+}
+
+// The steps a feature's or a rule's scenarios share, run before
+// each scenario's own.
+message Background {
+  string keyword = 1;
+
+  // Absent for a bare heading naming nothing.
+  optional string name = 2;
+
+  optional string description = 3;
+
+  repeated Step steps = 4;
+}
+
+// One scenario, which runs as one test. The keyword may be
+// "Scenario", its synonym "Example", or "Scenario Outline" for one
+// templated over examples tables.
+message Scenario {
+  string keyword = 1;
+
+  // Absent for a bare heading naming nothing.
+  optional string name = 2;
+
+  optional string description = 3;
+
+  repeated string tags = 4;
+
+  repeated Step steps = 5;
+
+  // The line the scenario is declared on, counting from one.
+  uint32 line = 6;
+
+  // The examples tables a "Scenario Outline" is templated over;
+  // empty for a plain scenario.
+  repeated Examples examples = 7;
+}
+
+// One step of a scenario or a background.
+message Step {
+  // The keyword as written but without its trailing space, e.g.
+  // "Given" or "And".
+  string keyword = 1;
+
+  string text = 2;
+
+  // The step's doc string argument, when it has one.
+  optional string doc_string = 3;
+
+  // The step's data table argument, when it has one.
+  optional Table table = 4;
+
+  // The text's syntax tree under the built-in steps' grammar; absent
+  // for a step the grammar does not define, such as one the
+  // application defines itself.
+  optional BuiltInSyntax built_in = 5;
+}
+
+// Rows of cells: a step's data table, or an examples table.
+message Table {
+  message Row {
+    repeated string cells = 1;
+  }
+
+  repeated Row rows = 1;
+}
+
+// One examples table of a "Scenario Outline", its header row first.
+message Examples {
+  string keyword = 1;
+
+  // Absent for a bare heading naming nothing.
+  optional string name = 2;
+
+  Table table = 3;
+}

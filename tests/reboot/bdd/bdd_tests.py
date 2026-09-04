@@ -15,12 +15,14 @@ from reboot.aio.external import ExternalContext
 from reboot.aio.tests import Reboot
 from reboot.bdd import when
 from reboot.bdd.fixtures import JsonValue, PropertyPath, World
+from reboot.bdd.grammar import (
+    ASSERT_CLAUSES,
+    MIXED_CLAUSES,
+    PROPERTY_CLAUSES,
+    SAVE_CLAUSES,
+)
 from reboot.bdd.steps import *
 from reboot.bdd.steps import (
-    _ASSERT_CLAUSES,
-    _MIXED_CLAUSES,
-    _PROPERTY_CLAUSES,
-    _SAVE_CLAUSES,
     Assertion,
     Containing,
     Equals,
@@ -123,27 +125,27 @@ def test_clause_grammar_routing() -> None:
     properties = '`balance=50` and `owner.name="F"`'
     saves = '`balance` saved as `b`, and `owner` saved as `o`'
     mixed = '`balance=50` and `owner` saved as `o`'
-    assert re.fullmatch(_PROPERTY_CLAUSES, properties)
-    assert not re.fullmatch(_PROPERTY_CLAUSES, saves)
-    assert not re.fullmatch(_PROPERTY_CLAUSES, mixed)
-    assert re.fullmatch(_SAVE_CLAUSES, saves)
-    assert not re.fullmatch(_SAVE_CLAUSES, properties)
-    assert not re.fullmatch(_SAVE_CLAUSES, mixed)
-    assert re.fullmatch(_MIXED_CLAUSES, mixed)
-    assert not re.fullmatch(_MIXED_CLAUSES, properties)
-    assert not re.fullmatch(_MIXED_CLAUSES, saves)
+    assert re.fullmatch(PROPERTY_CLAUSES, properties)
+    assert not re.fullmatch(PROPERTY_CLAUSES, saves)
+    assert not re.fullmatch(PROPERTY_CLAUSES, mixed)
+    assert re.fullmatch(SAVE_CLAUSES, saves)
+    assert not re.fullmatch(SAVE_CLAUSES, properties)
+    assert not re.fullmatch(SAVE_CLAUSES, mixed)
+    assert re.fullmatch(MIXED_CLAUSES, mixed)
+    assert not re.fullmatch(MIXED_CLAUSES, properties)
+    assert not re.fullmatch(MIXED_CLAUSES, saves)
     predicates = '`name` containing `"a and b"` and `tags` of length `2`'
-    assert re.fullmatch(_ASSERT_CLAUSES, predicates)
-    assert re.fullmatch(_ASSERT_CLAUSES, properties)
-    assert not re.fullmatch(_ASSERT_CLAUSES, saves)
-    assert not re.fullmatch(_PROPERTY_CLAUSES, predicates)
-    assert not re.fullmatch(_SAVE_CLAUSES, predicates)
+    assert re.fullmatch(ASSERT_CLAUSES, predicates)
+    assert re.fullmatch(ASSERT_CLAUSES, properties)
+    assert not re.fullmatch(ASSERT_CLAUSES, saves)
+    assert not re.fullmatch(PROPERTY_CLAUSES, predicates)
+    assert not re.fullmatch(SAVE_CLAUSES, predicates)
     # Lexical near-misses still route to their kind.
-    assert re.fullmatch(_PROPERTY_CLAUSES, '`amount: 50`')
-    assert re.fullmatch(_PROPERTY_CLAUSES, '`amount = 50`')
-    assert re.fullmatch(_SAVE_CLAUSES, '`balance` saved to `b`')
-    assert re.fullmatch(_SAVE_CLAUSES, '`balance` saved as "$b"')
-    assert re.fullmatch(_SAVE_CLAUSES, '`balance` saved as b')
+    assert re.fullmatch(PROPERTY_CLAUSES, '`amount: 50`')
+    assert re.fullmatch(PROPERTY_CLAUSES, '`amount = 50`')
+    assert re.fullmatch(SAVE_CLAUSES, '`balance` saved to `b`')
+    assert re.fullmatch(SAVE_CLAUSES, '`balance` saved as "$b"')
+    assert re.fullmatch(SAVE_CLAUSES, '`balance` saved as b')
 
 
 def test_almost_clause_messages() -> None:
