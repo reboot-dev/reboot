@@ -9,6 +9,7 @@ ts_config(
 ts_project(
     name = "dashboard_ts",
     srcs = [
+        "src/behaviors.ts",
         "src/callgraph.ts",
         "src/changelog.ts",
         "src/constants.ts",
@@ -38,6 +39,8 @@ ts_project(
         "//rbt/std/collections/ordered_map/v1:ordered_map_js_reboot_react",
         "//rbt/v1alpha1/api:api_js_proto",
         "//rbt/v1alpha1/api:schema_js_proto",
+        "//rbt/v1alpha1/bdd:feature_js_proto",
+        "//rbt/v1alpha1/bdd:grammar_js_proto",
     ],
 )
 

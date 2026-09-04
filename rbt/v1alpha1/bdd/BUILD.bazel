@@ -1,0 +1,47 @@
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
+load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "js_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+
+proto_library(
+    name = "grammar_proto",
+    srcs = [":grammar.proto"],
+    visibility = ["//visibility:public"],
+)
+
+py_proto_library(
+    name = "grammar_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":grammar_proto"],
+)
+
+js_proto_library(
+    name = "grammar_js_proto",
+    package_json = ":package.json",
+    proto = ":grammar.proto",
+    proto_deps = [":grammar_proto"],
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
+    name = "feature_proto",
+    srcs = [":feature.proto"],
+    visibility = ["//visibility:public"],
+    deps = [":grammar_proto"],
+)
+
+py_proto_library(
+    name = "feature_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":feature_proto"],
+)
+
+js_proto_library(
+    name = "feature_js_proto",
+    package_json = ":package.json",
+    proto = ":feature.proto",
+    proto_deps = [
+        ":feature_proto",
+        ":grammar_proto",
+    ],
+    visibility = ["//visibility:public"],
+)

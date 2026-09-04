@@ -6,6 +6,7 @@ import { useOrderedMap } from "@reboot-dev/reboot-std-api/collections/ordered_ma
 import { RebootClientProvider } from "@reboot-dev/reboot-react";
 import { Presence } from "@reboot-dev/reboot-std-react/presence";
 import {
+  type CSSProperties,
   type FC,
   Fragment,
   StrictMode,
@@ -38,6 +39,19 @@ import {
   PRESENCE_ID,
 } from "./constants";
 import type * as api_pb from "../../../../rbt/v1alpha1/api/api_pb";
+import type * as dashboard_pb from "../../../../rbt/dashboard/v1/dashboard_pb";
+import type { Features, Printed, Span, StepLinks } from "./behaviors";
+import {
+  directoryOfFeature,
+  hueKeyOfSpan,
+  huesOfSpans,
+  linkOfCodeSpan,
+  linkOfMethod,
+  printBuiltInSyntax,
+  scenariosOfFeature,
+  sortedFeatures,
+  stepLinks,
+} from "./behaviors";
 import type {
   APIs,
   LinkedDataType,
@@ -64,6 +78,8 @@ import {
   timeAgo,
 } from "./changelog";
 import { DashboardGetResponse_NeedsGenerateReason as NeedsGenerateReason } from "../../../../rbt/dashboard/v1/dashboard_pb";
+import type * as feature_pb from "../../../../rbt/v1alpha1/bdd/feature_pb";
+import type * as grammar_pb from "../../../../rbt/v1alpha1/bdd/grammar_pb";
 import { joinStateTypes } from "./callgraph";
 import { drawnCallCount, GraphPage } from "./graph";
 
@@ -98,6 +114,18 @@ const DEFINITIONS: Record<string, string> = {
     "A type the developer wrote that Reboot does not persist: what a " +
     "method takes, returns or raises, and anything those contain. It " +
     "exists while a call is in flight.",
+  feature:
+    "One .feature file: scenarios written in Gherkin that describe " +
+    "how the application behaves, and run as tests.",
+  rule:
+    "One business rule of the feature, illustrated by the " +
+    "scenarios grouped under it.",
+  scenario:
+    "One example of how the application behaves. Its steps run in " +
+    "order as one test.",
+  background:
+    "The steps every scenario in this group begins with, run before " +
+    "the scenario's own.",
 };
 
 // The gap between a pill and its definition. It must equal the `8px`
@@ -198,11 +226,12 @@ const Description: FC<{ className: string; text: string }> = ({
 const isStandardLibrary = (packageName: string): boolean =>
   packageName.startsWith("rbt.");
 
-// Each page indexes the same API: `changelog` is its history, `state`
-// is the state types it declares, `data` is the types those declare
-// in turn, and `graph` is the calls the state types' implementations
-// make to each other.
-const PAGES = ["changelog", "data", "state", "graph"] as const;
+// Each page indexes the same application: `changelog` is its history,
+// `state` is the state types its API declares, `data` is the types
+// those declare in turn, `behaviors` is the scenarios its `.feature`
+// files describe, and `graph` is the calls the state types'
+// implementations make to each other.
+const PAGES = ["changelog", "data", "state", "behaviors", "graph"] as const;
 
 type Page = typeof PAGES[number];
 
@@ -210,6 +239,7 @@ const PAGE_NAMES: Record<Page, string> = {
   changelog: "Changelog",
   data: "Data Types",
   state: "State Types",
+  behaviors: "Behaviors",
   graph: "Call Graph",
 };
 
@@ -746,6 +776,465 @@ const LinkedDataTypeCard: FC<{
   </section>
 );
 
+// A custom step, one the application defines itself, which the
+// grammar cannot parse: its text with the spans its author wrote in
+// `backticks` as code, and a span naming a state type or a method
+// linking to it on the state page.
+const CustomStep: FC<{ text: string; links: StepLinks }> = ({
+  text,
+  links,
+}) => {
+  const parts = text.split("`");
+  return (
+    <>
+      {parts.map((part, index) => {
+        // `split` alternates text and code, so odd indexes are code,
+        // except a last part at an odd index, whose backtick was
+        // never closed.
+        const unclosed = index === parts.length - 1 && parts.length % 2 === 0;
+        if (index % 2 === 1 && !unclosed) {
+          const link = linkOfCodeSpan(part, text, links);
+          return link === undefined ? (
+            <code key={index}>{part}</code>
+          ) : (
+            <Link
+              className="type-link"
+              to={pathOfTypeOnPage("state", link)}
+              key={index}
+            >
+              <code>{part}</code>
+            </Link>
+          );
+        }
+        return <span key={index}>{unclosed ? "`" + part : part}</span>;
+      })}
+    </>
+  );
+};
+
+const GherkinTable: FC<{ table: feature_pb.Table }> = ({ table }) => (
+  <table className="gherkin-table">
+    <tbody>
+      {table.rows.map((row, index) => (
+        <tr key={index}>
+          {row.cells.map((cell, cellIndex) => (
+            <td key={cellIndex}>{cell}</td>
+          ))}
+        </tr>
+      ))}
+    </tbody>
+  </table>
+);
+
+// How a scenario shows its saved values and state ids: the hue
+// each is set in, keyed the way `hueKeyOfSpan` keys them, and which
+// key the spans are lit up for, which a hover changes.
+interface Related {
+  hues: Map<string, number>;
+  key: string | null;
+  onRelate: (key: string | null) => void;
+}
+
+// One span of a built-in step printed from its syntax tree, styled
+// by its role:
+// a state type or method links to the state page, and a save, a
+// recall, or a state id is set in its own hue and lights up every
+// other span about the same saved value or state.
+const SpanText: FC<{
+  span: Span;
+  stateType: string | undefined;
+  links: StepLinks;
+  related: Related;
+}> = ({ span, stateType, links, related }) => {
+  if (span.role === "text") {
+    return <>{span.text}</>;
+  }
+  const className = `span span-${span.role}`;
+  const link =
+    span.role === "state-type"
+      ? links.stateTypes.get(span.text)
+      : span.role === "method"
+      ? linkOfMethod(span.text, stateType, links)
+      : undefined;
+  if (link !== undefined) {
+    return (
+      <Link className="type-link" to={pathOfTypeOnPage("state", link)}>
+        <code className={className}>{span.text}</code>
+      </Link>
+    );
+  }
+  const key = hueKeyOfSpan(span);
+  if (key !== undefined) {
+    return (
+      <code
+        className={related.key === key ? `${className} is-related` : className}
+        style={{ "--hue": related.hues.get(key) } as CSSProperties}
+        onPointerEnter={() => related.onRelate(key)}
+        onPointerLeave={() => related.onRelate(null)}
+      >
+        {span.text}
+      </code>
+    );
+  }
+  return <code className={className}>{span.text}</code>;
+};
+
+// A clause list up to this long stays on the step's line; a longer
+// one puts each clause on a line of its own.
+const CLAUSES_INLINE = 2;
+
+const Spans: FC<{
+  spans: Span[];
+  stateType: string | undefined;
+  links: StepLinks;
+  related: Related;
+}> = ({ spans, stateType, links, related }) => (
+  <>
+    {spans.map((span, index) => (
+      <SpanText
+        span={span}
+        stateType={stateType}
+        links={links}
+        related={related}
+        key={index}
+      />
+    ))}
+  </>
+);
+
+// A built-in step, printed from its syntax tree. The state type the
+// step names is what says which state type's method a method name
+// means.
+const BuiltInStep: FC<{
+  syntax: grammar_pb.BuiltInSyntax;
+  links: StepLinks;
+  related: Related;
+}> = ({ syntax, links, related }) => {
+  const printed: Printed = printBuiltInSyntax(syntax);
+  const stateType = printed.head.find(
+    (span) => span.role === "state-type"
+  )?.text;
+  const spans = (spans: Span[]) => (
+    <Spans
+      spans={spans}
+      stateType={stateType}
+      links={links}
+      related={related}
+    />
+  );
+  if (printed.clauses.length <= CLAUSES_INLINE) {
+    return (
+      <>
+        {spans(printed.head)}
+        {printed.clauses.map((clause, index) => (
+          <Fragment key={index}>
+            {index > 0 && " and "}
+            {spans(clause)}
+          </Fragment>
+        ))}
+        {spans(printed.tail)}
+      </>
+    );
+  }
+  return (
+    <>
+      {spans(printed.head)}
+      {printed.clauses.map((clause, index) => (
+        <div className="clause" key={index}>
+          {spans(clause)}
+          {index === printed.clauses.length - 1 && spans(printed.tail)}
+        </div>
+      ))}
+    </>
+  );
+};
+
+// `And` and `But` continue the step before them, so their keyword
+// is set lighter, and a background's steps are set lighter still
+// when shown as part of the scenario they run before.
+const StepRow: FC<{
+  step: feature_pb.Step;
+  links: StepLinks;
+  related: Related;
+  background?: boolean;
+}> = ({ step, links, related, background }) => {
+  const continuation = step.keyword === "And" || step.keyword === "But";
+  return (
+    <div className={background ? "step step-background" : "step"}>
+      <span
+        className={
+          continuation ? "step-keyword step-continuation" : "step-keyword"
+        }
+      >
+        {step.keyword}
+      </span>
+      <div className="step-text">
+        {step.builtIn !== undefined ? (
+          <BuiltInStep syntax={step.builtIn} links={links} related={related} />
+        ) : (
+          <CustomStep text={step.text} links={links} />
+        )}
+        {step.docString !== undefined && (
+          <pre className="type-block">
+            <code>{step.docString}</code>
+          </pre>
+        )}
+        {step.table !== undefined && <GherkinTable table={step.table} />}
+      </div>
+    </div>
+  );
+};
+
+// One row of a feature's or a rule's scenario list: a scenario, or
+// the background the list's scenarios share. Closed, it is one line;
+// open, its steps.
+const ScenarioRow: FC<{
+  keyword: string;
+  // Absent for a bare heading naming nothing.
+  name?: string;
+  description: string;
+  tags: string[];
+  // The backgrounds whose steps run before this scenario's own:
+  // the feature's, then its rule's. Shown dimmed above the steps,
+  // so an open scenario reads whole.
+  backgrounds: feature_pb.Background[];
+  steps: feature_pb.Step[];
+  examples: feature_pb.Examples[];
+  meaning: string;
+  links: StepLinks;
+}> = ({
+  keyword,
+  name,
+  description,
+  tags,
+  backgrounds,
+  steps,
+  examples,
+  meaning,
+  links,
+}) => {
+  const [expanded, setExpanded] = useState(false);
+  const [relatedKey, setRelatedKey] = useState<string | null>(null);
+  const hues = useMemo(
+    () =>
+      huesOfSpans([
+        ...backgrounds.flatMap((background) => background.steps),
+        ...steps,
+      ]),
+    [backgrounds, steps]
+  );
+  const related: Related = {
+    hues,
+    key: relatedKey,
+    onRelate: setRelatedKey,
+  };
+  return (
+    <div className={expanded ? "scenario is-expanded" : "scenario"}>
+      <div
+        className="scenario-head"
+        onClick={() => setExpanded(!expanded)}
+        role="button"
+        aria-expanded={expanded}
+      >
+        <span className="caret scenario-caret">{expanded ? "▾" : "▸"}</span>
+        <Pill className="scenario-keyword" label={keyword} meaning={meaning} />
+        <span className="scenario-name">{name}</span>
+        {tags.length > 0 && (
+          <span className="tags">
+            {tags.map((tag) => (
+              <span className="tag" key={tag}>
+                {tag}
+              </span>
+            ))}
+          </span>
+        )}
+      </div>
+      {/* Rendered while the row is closed too: opening is a CSS
+          transition on this element, not a mount. */}
+      <div className="scenario-detail">
+        <div className="scenario-detail-inner">
+          {description !== undefined && (
+            <Description className="method-description" text={description} />
+          )}
+          <div className="steps">
+            {backgrounds.flatMap((background, backgroundIndex) =>
+              background.steps.map((step, index) => (
+                <StepRow
+                  step={step}
+                  links={links}
+                  related={related}
+                  background={true}
+                  key={`background-${backgroundIndex}-${index}`}
+                />
+              ))
+            )}
+            {steps.map((step, index) => (
+              <StepRow
+                step={step}
+                links={links}
+                related={related}
+                key={index}
+              />
+            ))}
+          </div>
+          {examples.map((example, index) => (
+            <div className="examples" key={index}>
+              <div className="eyebrow">
+                {example.keyword.toLowerCase()}
+                {example.name !== undefined && ` · ${example.name}`}
+              </div>
+              <GherkinTable table={example.table} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const BackgroundRow: FC<{
+  background: feature_pb.Background;
+  links: StepLinks;
+}> = ({ background, links }) => (
+  <ScenarioRow
+    keyword={background.keyword}
+    name={background.name}
+    description={background.description}
+    tags={[]}
+    backgrounds={[]}
+    steps={background.steps}
+    examples={[]}
+    meaning={DEFINITIONS.background}
+    links={links}
+  />
+);
+
+// A list's own background is listed as a row of its own and folded,
+// dimmed, into each of its scenarios along with any background
+// inherited from the feature.
+const ScenarioRows: FC<{
+  inherited: feature_pb.Background[];
+  background?: feature_pb.Background;
+  scenarios: feature_pb.Scenario[];
+  links: StepLinks;
+}> = ({ inherited, background, scenarios, links }) => (
+  <div className="scenarios">
+    {background !== undefined && (
+      <BackgroundRow background={background} links={links} />
+    )}
+    {scenarios.map((scenario) => (
+      <ScenarioRow
+        keyword={scenario.keyword}
+        name={scenario.name}
+        description={scenario.description}
+        tags={scenario.tags}
+        backgrounds={
+          background === undefined ? inherited : [...inherited, background]
+        }
+        steps={scenario.steps}
+        examples={scenario.examples}
+        meaning={DEFINITIONS.scenario}
+        links={links}
+        key={scenario.line}
+      />
+    ))}
+  </div>
+);
+
+const RuleSection: FC<{
+  rule: feature_pb.Rule;
+  inherited: feature_pb.Background[];
+  links: StepLinks;
+}> = ({ rule, inherited, links }) => (
+  <div className="rule">
+    <div className="rule-heading">
+      <Pill
+        className="eyebrow"
+        label={rule.keyword.toLowerCase()}
+        meaning={DEFINITIONS.rule}
+      />
+      <h3>{rule.name}</h3>
+      <span className="summary-line">
+        {countWithNoun(rule.scenarios.length, "scenario")}
+      </span>
+    </div>
+    {rule.description !== undefined && (
+      <Description className="state-type-description" text={rule.description} />
+    )}
+    <ScenarioRows
+      inherited={inherited}
+      background={rule.background}
+      scenarios={rule.scenarios}
+      links={links}
+    />
+  </div>
+);
+
+const FeatureCard: FC<{
+  filename: string;
+  feature: feature_pb.Feature;
+  links: StepLinks;
+}> = ({ filename, feature, links }) => {
+  const scenarios = scenariosOfFeature(feature);
+  return (
+    <section
+      className="state-type"
+      id={pathOfTypeOnPage("behaviors", filename)}
+    >
+      <div>
+        <Pill
+          className="eyebrow"
+          label={feature.keyword.toLowerCase() || "feature"}
+          meaning={DEFINITIONS.feature}
+        />
+      </div>
+      <div className="state-type-head">
+        <div className="state-type-heading">
+          <h2>{feature.name ?? filename}</h2>
+          <Anchor page="behaviors" id={filename} />
+          <span className="summary-line">
+            {countWithNoun(scenarios.length, "scenario")}
+            {feature.rules.length > 0 &&
+              ` · ${countWithNoun(feature.rules.length, "rule")}`}
+          </span>
+        </div>
+      </div>
+      <div className="file">{filename}</div>
+      {feature.error !== undefined ? (
+        <div className="error">{feature.error}</div>
+      ) : (
+        <>
+          {feature.description !== undefined && (
+            <Description
+              className="state-type-description"
+              text={feature.description}
+            />
+          )}
+          {(feature.background !== undefined ||
+            feature.scenarios.length > 0) && (
+            <ScenarioRows
+              inherited={[]}
+              background={feature.background}
+              scenarios={feature.scenarios}
+              links={links}
+            />
+          )}
+          {feature.rules.map((rule, index) => (
+            <RuleSection
+              rule={rule}
+              inherited={
+                feature.background === undefined ? [] : [feature.background]
+              }
+              links={links}
+              key={index}
+            />
+          ))}
+        </>
+      )}
+    </section>
+  );
+};
+
 const ChangeRow: FC<{ entry: Entry; now: Date }> = ({ entry, now }) => {
   const row = rowOfChange(entry.change);
   return (
@@ -885,7 +1374,13 @@ const Overview: FC<{
     // drags: the drag already moves the panel.
   }, [navWidth, navPanel]);
 
-  const { id: target } = useParams();
+  // The behaviors page names its sections by file path, whose
+  // slashes a `:id` segment cannot hold, so its route matches the
+  // rest of the URL as a splat instead.
+  const params = useParams();
+  const target =
+    params.id ??
+    (params["*"] === "" || params["*"] === undefined ? undefined : params["*"]);
 
   // The dashboard's own state: what it read of the developer's API
   // files. Nothing here calls the developer's application, so the
@@ -937,6 +1432,28 @@ const Overview: FC<{
 
   const linkedDataTypes = useMemo(() => linkDataTypes({ apis }), [apis]);
 
+  // What the developer's `.feature` files describe.
+  const features: Features = useMemo(
+    () => response?.features ?? {},
+    [response?.features]
+  );
+
+  const featureEntries = useMemo(() => sortedFeatures(features), [features]);
+
+  const scenarioCount = useMemo(
+    () =>
+      featureEntries.reduce(
+        (total, entry) => total + scenariosOfFeature(entry.feature).length,
+        0
+      ),
+    [featureEntries]
+  );
+
+  // Where the backticked spans of steps link, derived from the same
+  // APIs the state page shows, so a link can never point at a state
+  // type the page does not have.
+  const links = useMemo(() => stepLinks(apis), [apis]);
+
   // A referrer is either a state type or a data type, and its link
   // must open the page that lists it.
   const pageOfTypeId = useMemo(() => {
@@ -950,6 +1467,8 @@ const Overview: FC<{
 
   // The changelog is one list rather than a set of packages, and
   // the graph is one canvas, so the sidebar has nothing to index.
+  // The behaviors page's "packages" are the directories the feature
+  // files are in.
   const entries: NavEntry[] = useMemo(
     () =>
       page === "changelog" || page === "graph"
@@ -963,13 +1482,23 @@ const Overview: FC<{
               count: countWithNoun(stateType.methods.length, "method"),
             }))
           )
+        : page === "behaviors"
+        ? featureEntries.map(({ filename, feature }) => ({
+            id: filename,
+            name: feature.name ?? filename,
+            package: directoryOfFeature(filename),
+            count: countWithNoun(
+              scenariosOfFeature(feature).length,
+              "scenario"
+            ),
+          }))
         : linkedDataTypes.map((linkedDataType) => ({
             id: linkedDataType.id,
             name: linkedDataType.name,
             package: linkedDataType.package,
             count: countWithNoun(linkedDataType.properties.length, "property"),
           })),
-    [page, apis, linkedDataTypes]
+    [page, apis, featureEntries, linkedDataTypes]
   );
 
   const packages = useMemo(() => groupByPackage(entries), [entries]);
@@ -1001,7 +1530,12 @@ const Overview: FC<{
     [graphStateTypes]
   );
 
-  const eyebrow = page === "changelog" ? "history" : "application domain";
+  const eyebrow =
+    page === "changelog"
+      ? "history"
+      : page === "behaviors"
+      ? "application behavior"
+      : "application domain";
 
   const heading =
     page === "changelog"
@@ -1015,6 +1549,11 @@ const Overview: FC<{
       ? `${countWithNoun(stateTypeCount, "state type")} in ${countWithNoun(
           packages.length,
           "package"
+        )}`
+      : page === "behaviors"
+      ? `${countWithNoun(scenarioCount, "scenario")} in ${countWithNoun(
+          featureEntries.length,
+          "feature"
         )}`
       : `${countWithNoun(
           linkedDataTypes.length,
@@ -1043,7 +1582,7 @@ const Overview: FC<{
       element.scrollIntoView();
       scrolledToTarget = true;
     }
-  }, [navigationType, page, target, apis, linkedDataTypes]);
+  }, [navigationType, page, target, apis, linkedDataTypes, featureEntries]);
 
   const navigate = useNavigate();
 
@@ -1117,6 +1656,7 @@ const Overview: FC<{
   const counts: Record<Page, number> = {
     state: stateTypeCount,
     data: linkedDataTypes.length,
+    behaviors: scenarioCount,
     changelog: shownChangelog.length,
     graph: calls,
   };
@@ -1150,7 +1690,13 @@ const Overview: FC<{
             <Package
               package={group.package}
               page={page}
-              noun={page === "state" ? "state type" : "data type"}
+              noun={
+                page === "state"
+                  ? "state type"
+                  : page === "behaviors"
+                  ? "feature"
+                  : "data type"
+              }
               entries={group.entries}
               key={group.package}
             />
@@ -1231,6 +1777,22 @@ const Overview: FC<{
                   />
                 );
               })
+            )
+          ) : page === "behaviors" ? (
+            featureEntries.length === 0 ? (
+              <div className="empty">
+                No <code>.feature</code> files found. Write one and its
+                scenarios will show up here.
+              </div>
+            ) : (
+              featureEntries.map(({ filename, feature }) => (
+                <FeatureCard
+                  filename={filename}
+                  feature={feature}
+                  links={links}
+                  key={filename}
+                />
+              ))
             )
           ) : linkedDataTypes.length === 0 ? (
             <div className="empty">
@@ -1332,7 +1894,10 @@ const App: FC = () => {
         <Routes>
           {PAGES.map((page) => (
             <Route
-              path={`/${page}/:id?`}
+              // A feature file's path has slashes, which a `:id`
+              // segment cannot hold, so the behaviors page matches
+              // the rest of the URL as a splat.
+              path={page === "behaviors" ? `/${page}/*` : `/${page}/:id?`}
               element={
                 <Overview
                   page={page}

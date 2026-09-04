@@ -6,6 +6,7 @@ import "google/protobuf/timestamp.proto";
 import "rbt/v1alpha1/options.proto";
 import "rbt/v1alpha1/api/api.proto";
 import "rbt/v1alpha1/api/schema.proto";
+import "rbt/v1alpha1/bdd/feature.proto";
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -66,6 +67,11 @@ message Dashboard {
   // code is missing or out of date, which is what suggests running
   // `rbt generate`.
   map<string, Generated> generated = 8;
+
+  // What each of the developer's `.feature` files declares, keyed
+  // by the file's path relative to the working directory, as of the
+  // last write.
+  map<string, rbt.v1alpha1.bdd.Feature> features = 9;
 }
 
 message DashboardGetRequest {}
@@ -94,6 +100,8 @@ message DashboardGetResponse {
   // The worst reason over all the API files, and absent when
   // nothing says to run `rbt generate`.
   optional NeedsGenerateReason needs_generate_reason = 8;
+
+  map<string, rbt.v1alpha1.bdd.Feature> features = 9;
 }
 
 message DashboardUpdateApiRequest {
@@ -388,6 +396,17 @@ message DashboardWatchCodeRequest {}
 
 message DashboardWatchCodeResponse {}
 
+message DashboardUpdateBehaviorsRequest {
+  // Keyed the way `Dashboard.features` is.
+  map<string, rbt.v1alpha1.bdd.Feature> features = 1;
+}
+
+message DashboardUpdateBehaviorsResponse {}
+
+message DashboardWatchBehaviorsRequest {}
+
+message DashboardWatchBehaviorsResponse {}
+
 ////////////////////////////////////////////////////////////////////////
 
 // One servicer found in the developer's application, and the state
@@ -641,6 +660,23 @@ service DashboardMethods {
   // implements each state type whenever one of those files changes.
   rpc WatchCode(DashboardWatchCodeRequest)
       returns (DashboardWatchCodeResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  // Replaces what the developer's `.feature` files declare. Its own
+  // writer, so that recording behaviors never writes back what the
+  // other two updates record.
+  rpc UpdateBehaviors(DashboardUpdateBehaviorsRequest)
+      returns (DashboardUpdateBehaviorsResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Watches the developer's `.feature` files for as long as the
+  // dashboard application runs, parsing each one that changes.
+  rpc WatchBehaviors(DashboardWatchBehaviorsRequest)
+      returns (DashboardWatchBehaviorsResponse) {
     option (rbt.v1alpha1.method).workflow = {
     };
   }

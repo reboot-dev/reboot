@@ -115,92 +115,39 @@ from reboot.bdd.fixtures import (
 from reboot.bdd.fixtures import rbt as rbt
 from reboot.bdd.fixtures import reboot_event_loop as reboot_event_loop
 from reboot.bdd.fixtures import world as world
+from reboot.bdd.grammar import (
+    ABORTS_WITH,
+    APPLICATION_IS_UP,
+    ASSERT_CLAUSE,
+    ASSERT_CLAUSES,
+    ATTEMPT_ABORTS_WITH,
+    ATTEMPTS,
+    AUTHENTICATED_USER_IS,
+    BEARER_TOKEN_IS,
+    CLAUSE,
+    CONTAINING_PATTERN,
+    EVENTUALLY_HAS,
+    GETS,
+    GETS_CREATED_VIA,
+    HAS,
+    HAS_SAVED_AS,
+    LENGTH_PATTERN,
+    MIXED_CLAUSES,
+    PATH,
+    PROPERTY_CLAUSE,
+    PROPERTY_PATTERN,
+    RESULT_HAS,
+    RESULTING_IS_SAVED_AS,
+    SAVE_CLAUSE,
+    SAVE_CLAUSES,
+    SAVE_PATTERN,
+    SEPARATOR,
+    SHARED_CONTEXT,
+    TASK_COMPLETES,
+    USER_IS_UNAUTHENTICATED,
+)
 from reboot.bdd.registry import client_types_by_name
 from typing import Any, Optional, Union, get_args, get_origin
-
-# A property path in step text: a leading field, then dotted fields,
-# bracketed list indices, and bracketed map keys.
-_PATH = r'\w+(?:\.\w+|\[\d+\]|\["[^"]*"\])*'
-
-# One 'path=value' property clause: the property's path and value
-# in backticks, the value being anything up to the closing backtick.
-# The groupless form embeds in step patterns and deliberately also
-# matches lexical near-misses (':' for '=', spaces around the '=',
-# an empty value) so that those route to a step whose parser
-# raises the fix; the compiled form is the strict shape, for
-# extraction.
-_PROPERTY_CLAUSE = rf'`{_PATH}\s*[:=]\s*[^`]*`'
-_PROPERTY_PATTERN = re.compile(rf'`(?P<path>{_PATH})=(?P<value>\S[^`]*)`')
-
-# One saving clause: the (possibly dotted) property path in
-# backticks, saved under a backticked name. The groupless form
-# embeds in step patterns and deliberately also matches lexical
-# near-misses ('saved to', a quoted or '$'-prefixed name) so that
-# those route to a step whose parser raises the fix; the compiled
-# form is the strict shape, for extraction.
-_SAVE_CLAUSE = rf'`{_PATH}`\s+saved\s+(?:as|to)\s+(?:`\w+`|"?\$?\w+"?)'
-_SAVE_PATTERN = re.compile(rf'`(?P<path>{_PATH})` saved as `(?P<saved>\w+)`')
-
-# One containing clause: asserts a substring of a string, an element
-# of a list, or a key of a map; the argument is a backticked JSON
-# value, the same grammar as a property's value. The groupless form
-# embeds in step patterns and also matches 'contains' and a bare
-# argument, so those near-misses route to a step whose parser raises
-# the fix; the compiled form is the strict shape, for extraction.
-_CONTAINING_CLAUSE = (
-    rf'`{_PATH}`\s+contain(?:s|ing)\s+'
-    r'(?:`[^`]*`|"(?:[^"\\]|\\.)*"|\$?[-+.\w{{}}]+)'
-)
-_CONTAINING_PATTERN = re.compile(
-    rf'`(?P<path>{_PATH})` containing `(?P<argument>\S[^`]*)`'
-)
-
-# One length clause: asserts the length of a string, list, or map;
-# the length is a backticked value too, so it can recall a save. The
-# groupless form embeds in step patterns and also matches a missing
-# 'of' or a bare length, for diagnosis; the compiled form is the
-# strict shape, for extraction.
-_LENGTH_CLAUSE = rf'`{_PATH}`\s+(?:of\s+)?length\s+(?:`[^`]*`|\S+)'
-_LENGTH_PATTERN = re.compile(
-    rf'`(?P<path>{_PATH})` of length `(?P<length>\S[^`]*)`'
-)
-
-# What separates two clauses in step text: a comma, an 'and', or a
-# comma followed by an 'and'.
-_SEPARATOR = r'\s*(?:,\s*and|,|and)\s+'
-
-# A clause list of only 'path=value' properties: what a call's
-# 'with' passes.
-_PROPERTY_CLAUSES = rf'{_PROPERTY_CLAUSE}(?:{_SEPARATOR}{_PROPERTY_CLAUSE})*'
-
-# One asserting clause: an equality or a predicate.
-_ASSERT_CLAUSE = (
-    rf'(?:{_PROPERTY_CLAUSE}|{_CONTAINING_CLAUSE}|{_LENGTH_CLAUSE})'
-)
-
-# A clause list of asserting clauses: what a Then 'has' and an
-# abort's 'with' assert.
-_ASSERT_CLAUSES = rf'{_ASSERT_CLAUSE}(?:{_SEPARATOR}{_ASSERT_CLAUSE})*'
-
-# A clause list of only saving clauses: what a Given or When 'has'
-# saves.
-_SAVE_CLAUSES = rf'{_SAVE_CLAUSE}(?:{_SEPARATOR}{_SAVE_CLAUSE})*'
-
-# A clause list mixing both kinds, which no step accepts; it exists
-# so the mistake gets a pointed error instead of an unmatched step.
-# A property value can never contain a backtick, so the lookaheads
-# can only hit an actual clause of each kind.
-_CLAUSE = rf'(?:{_ASSERT_CLAUSE}|{_SAVE_CLAUSE})'
-_MIXED_CLAUSES = (
-    rf'(?=.*`\s+saved\s)'
-    rf'(?=.*(?:`{_PATH}\s*[:=]|`{_PATH}`\s+contain|'
-    rf'`{_PATH}`\s+(?:of\s+)?length))'
-    rf'{_CLAUSE}(?:{_SEPARATOR}{_CLAUSE})*'
-)
-
-# The 'the `Account` for "alice"' phrase naming the state a step acts
-# on.
-_STATE = r'the `(?P<state_type>[\w.]+)` for "(?P<state_id>[^"]*)"'
 
 
 @dataclass(frozen=True)
@@ -242,9 +189,6 @@ class OfLength:
 # What one clause of an asserting list parses to.
 Assertion = Union[Equals, Containing, OfLength]
 
-# A step's optional trailing property list.
-_PROPERTIES = rf'(?: with (?P<clauses>{_PROPERTY_CLAUSES}))?'
-
 
 def _saved_value(world: World, name: str) -> JsonValue:
     """The saved value going by the given name; raises if there is
@@ -278,11 +222,11 @@ def _maybe_saved(world: World, text: str) -> str:
 def _almost_property_message(clause: str) -> str:
     """The 'Almost' error for a property clause that is a lexical
     near-miss of `path=value`."""
-    if re.match(rf'`{_PATH}\s*:', clause):
+    if re.match(rf'`{PATH}\s*:', clause):
         return f"Almost: say `path=value` with '=', not ':': {clause}"
-    if re.fullmatch(rf'`{_PATH}\s*=\s*`', clause):
+    if re.fullmatch(rf'`{PATH}\s*=\s*`', clause):
         return f"Almost: the value is missing: {clause}"
-    if re.match(rf'`{_PATH}\s+=', clause) or re.match(rf'`{_PATH}=\s', clause):
+    if re.match(rf'`{PATH}\s+=', clause) or re.match(rf'`{PATH}=\s', clause):
         return (
             "Almost: write `path=value` without spaces around the "
             f"'=': {clause}"
@@ -403,8 +347,8 @@ def _parse_assignments(
     assignments: list[Assignment] = []
     if clauses is None:
         return assignments
-    for clause_match in re.finditer(_PROPERTY_CLAUSE, clauses):
-        property_match = _PROPERTY_PATTERN.fullmatch(clause_match[0])
+    for clause_match in re.finditer(PROPERTY_CLAUSE, clauses):
+        property_match = PROPERTY_PATTERN.fullmatch(clause_match[0])
         if property_match is None:
             raise ValueError(_almost_property_message(clause_match[0]))
         value = _parsed_value(
@@ -433,9 +377,9 @@ def _parse_assertions(
     assertions: list[Assertion] = []
     if clauses is None:
         return assertions
-    for clause_match in re.finditer(_ASSERT_CLAUSE, clauses):
+    for clause_match in re.finditer(ASSERT_CLAUSE, clauses):
         clause = clause_match[0]
-        containing_match = _CONTAINING_PATTERN.fullmatch(clause)
+        containing_match = CONTAINING_PATTERN.fullmatch(clause)
         if containing_match is not None:
             assertions.append(
                 Containing(
@@ -448,7 +392,7 @@ def _parse_assertions(
                 )
             )
             continue
-        length_match = _LENGTH_PATTERN.fullmatch(clause)
+        length_match = LENGTH_PATTERN.fullmatch(clause)
         if length_match is not None:
             length = _parsed_value(
                 world,
@@ -471,7 +415,7 @@ def _parse_assertions(
             raise ValueError(_almost_containing_message(clause))
         if re.search(r'\blength\b', clause):
             raise ValueError(_almost_length_message(clause))
-        property_match = _PROPERTY_PATTERN.fullmatch(clause)
+        property_match = PROPERTY_PATTERN.fullmatch(clause)
         if property_match is None:
             raise ValueError(_almost_property_message(clause))
         value = _parsed_value(
@@ -495,8 +439,8 @@ def _parse_saves(clauses: str) -> dict[str, PropertyPath]:
     clause, so each clause is confirmed strict here, raising the
     fix."""
     saves: dict[str, PropertyPath] = {}
-    for clause_match in re.finditer(_SAVE_CLAUSE, clauses):
-        save_match = _SAVE_PATTERN.fullmatch(clause_match[0])
+    for clause_match in re.finditer(SAVE_CLAUSE, clauses):
+        save_match = SAVE_PATTERN.fullmatch(clause_match[0])
         if save_match is None:
             raise ValueError(_almost_save_message(clause_match[0]))
         saves[save_match['saved']] = PropertyPath.create(save_match['path'])
@@ -786,7 +730,7 @@ def _assert_properties(
                 _assert_of_length(path, actual, length)
 
 
-@given(parsers.re(r'the (?:"(?P<name>[^"]*)" )?application is up$'))
+@given(parsers.re(APPLICATION_IS_UP))
 async def _the_application_is_up(
     rbt: Reboot,
     world: World,
@@ -816,8 +760,8 @@ async def _the_application_is_up(
     world.name = request.node.name
 
 
-@given(parsers.re(r'the authenticated user is "(?P<user_id>[^"]*)"$'))
-@when(parsers.re(r'the authenticated user is "(?P<user_id>[^"]*)"$'))
+@given(parsers.re(AUTHENTICATED_USER_IS))
+@when(parsers.re(AUTHENTICATED_USER_IS))
 async def _the_authenticated_user_is(world: World, user_id: str) -> None:
     if world.rbt is None:
         raise ValueError(
@@ -831,35 +775,25 @@ async def _the_authenticated_user_is(world: World, user_id: str) -> None:
     )
 
 
-@given('the user is unauthenticated')
-@when('the user is unauthenticated')
+@given(USER_IS_UNAUTHENTICATED)
+@when(USER_IS_UNAUTHENTICATED)
 def _the_user_is_unauthenticated(world: World) -> None:
     world.set_bearer_token(None)
 
 
-@given(parsers.re(r'the bearer token is "(?P<bearer_token>[^"]*)"$'))
-@when(parsers.re(r'the bearer token is "(?P<bearer_token>[^"]*)"$'))
+@given(parsers.re(BEARER_TOKEN_IS))
+@when(parsers.re(BEARER_TOKEN_IS))
 def _the_bearer_token_is(world: World, bearer_token: str) -> None:
     world.set_bearer_token(_maybe_saved(world, bearer_token))
 
 
-@given('a shared context')
+@given(SHARED_CONTEXT)
 def _a_shared_context(world: World) -> None:
     world.shared_context = world.context()
 
 
-@given(
-    parsers.re(
-        r'(?:a|an) `(?P<state_type>[\w.]+)` for "(?P<state_id>[^"]*)" '
-        rf'gets created via `(?P<method>\w+)`{_PROPERTIES}$'
-    )
-)
-@when(
-    parsers.re(
-        r'(?:a|an) `(?P<state_type>[\w.]+)` for "(?P<state_id>[^"]*)" '
-        rf'gets created via `(?P<method>\w+)`{_PROPERTIES}$'
-    )
-)
+@given(parsers.re(GETS_CREATED_VIA))
+@when(parsers.re(GETS_CREATED_VIA))
 async def _gets_created_via(
     world: World,
     state_type: str,
@@ -885,19 +819,9 @@ async def _gets_created_via(
         ) from aborted
 
 
-@given(
-    parsers.re(
-        rf'{_STATE} gets a `(?P<method>\w+)`{_PROPERTIES}'
-        r'(?: spawned with its task id saved as `(?P<task>\w+)`)?$'
-    )
-)
-@when(
-    parsers.re(
-        rf'{_STATE} gets a `(?P<method>\w+)`{_PROPERTIES}'
-        r'(?: spawned with its task id saved as `(?P<task>\w+)`)?$'
-    )
-)
-async def _gets_a(
+@given(parsers.re(GETS))
+@when(parsers.re(GETS))
+async def _gets(
     world: World,
     state_type: str,
     state_id: str,
@@ -935,8 +859,8 @@ async def _gets_a(
         ) from aborted
 
 
-@when(parsers.re(rf'{_STATE} attempts a `(?P<method>\w+)`{_PROPERTIES}$'))
-async def _attempts_a(
+@when(parsers.re(ATTEMPTS))
+async def _attempts(
     world: World,
     state_type: str,
     state_id: str,
@@ -961,20 +885,8 @@ async def _attempts_a(
         world.aborted = aborted
 
 
-@when(
-    parsers.re(
-        r'the `(?P<method>\w+)` task with id "\$\{(?P<name>\w+)\}" '
-        r'of the `(?P<state_type>[\w.]+)` completes within '
-        r'(?P<within>.+)$'
-    )
-)
-@then(
-    parsers.re(
-        r'the `(?P<method>\w+)` task with id "\$\{(?P<name>\w+)\}" '
-        r'of the `(?P<state_type>[\w.]+)` completes within '
-        r'(?P<within>.+)$'
-    )
-)
+@when(parsers.re(TASK_COMPLETES))
+@then(parsers.re(TASK_COMPLETES))
 async def _the_saved_task_completes(
     world: World,
     method: str,
@@ -1021,12 +933,7 @@ def _assert_aborted(
     _assert_properties(error, _parse_assertions(world, clauses))
 
 
-@then(
-    parsers.re(
-        r'the attempt aborts with `(?P<error_type>\w+)`'
-        rf'(?: with (?P<clauses>{_ASSERT_CLAUSES}))?$'
-    )
-)
+@then(parsers.re(ATTEMPT_ABORTS_WITH))
 def _the_attempt_aborts_with(
     world: World,
     error_type: str,
@@ -1067,12 +974,7 @@ async def _read(
         ) from aborted
 
 
-@then(
-    parsers.re(
-        rf'`(?P<method>\w+)` on {_STATE} '
-        rf'has (?P<clauses>{_ASSERT_CLAUSES})$'
-    )
-)
+@then(parsers.re(HAS))
 async def _then_has(
     world: World,
     method: str,
@@ -1084,13 +986,7 @@ async def _then_has(
     _assert_properties(response, _parse_assertions(world, clauses))
 
 
-@then(
-    parsers.re(
-        rf'`(?P<method>\w+)` on {_STATE} '
-        rf'eventually has (?P<clauses>{_ASSERT_CLAUSES}) '
-        r'within (?P<within>.+)$'
-    )
-)
+@then(parsers.re(EVENTUALLY_HAS))
 async def _eventually_has(
     world: World,
     method: str,
@@ -1149,18 +1045,8 @@ async def _eventually_has(
         await responses.aclose()
 
 
-@given(
-    parsers.re(
-        rf'`(?P<method>\w+)` on {_STATE} '
-        rf'has (?P<clauses>{_SAVE_CLAUSES})$'
-    )
-)
-@when(
-    parsers.re(
-        rf'`(?P<method>\w+)` on {_STATE} '
-        rf'has (?P<clauses>{_SAVE_CLAUSES})$'
-    )
-)
+@given(parsers.re(HAS_SAVED_AS))
+@when(parsers.re(HAS_SAVED_AS))
 async def _has_saved_as(
     world: World,
     method: str,
@@ -1174,13 +1060,7 @@ async def _has_saved_as(
         world.saved[name] = _resolve_json_property(response_json, path)
 
 
-@then(
-    parsers.re(
-        rf'`(?P<method>\w+)` on {_STATE} '
-        r'aborts with `(?P<error_type>\w+)`'
-        rf'(?: with (?P<clauses>{_ASSERT_CLAUSES}))?$'
-    )
-)
+@then(parsers.re(ABORTS_WITH))
 async def _aborts_with(
     world: World,
     method: str,
@@ -1212,7 +1092,7 @@ async def _aborts_with(
     )
 
 
-@then(parsers.re(rf'the result has (?P<clauses>{_ASSERT_CLAUSES})$'))
+@then(parsers.re(RESULT_HAS))
 def _the_result_has(world: World, clauses: str) -> None:
     assert world.response is not None, (
         "Expected a preceding step to have made a call that returned "
@@ -1221,18 +1101,8 @@ def _the_result_has(world: World, clauses: str) -> None:
     _assert_properties(world.response, _parse_assertions(world, clauses))
 
 
-@given(
-    parsers.re(
-        rf'the resulting `(?P<property_name>{_PATH})` '
-        r'is saved as `(?P<name>\w+)`$'
-    )
-)
-@when(
-    parsers.re(
-        rf'the resulting `(?P<property_name>{_PATH})` '
-        r'is saved as `(?P<name>\w+)`$'
-    )
-)
+@given(parsers.re(RESULTING_IS_SAVED_AS))
+@when(parsers.re(RESULTING_IS_SAVED_AS))
 def _the_resulting_property_is_saved_as(
     world: World,
     property_name: str,
@@ -1269,7 +1139,7 @@ def _almost_completes_needs_within() -> None:
     )
 
 
-@then(parsers.re(rf'.+ eventually has {_ASSERT_CLAUSES}$'))
+@then(parsers.re(rf'.+ eventually has {ASSERT_CLAUSES}$'))
 def _almost_eventually_needs_within() -> None:
     raise ValueError(
         "Almost: say how long 'eventually has' keeps its reactive "
@@ -1277,7 +1147,7 @@ def _almost_eventually_needs_within() -> None:
     )
 
 
-@then(parsers.re(rf'.+(?<!eventually) has {_ASSERT_CLAUSES} within .+$'))
+@then(parsers.re(rf'.+(?<!eventually) has {ASSERT_CLAUSES} within .+$'))
 def _almost_within_needs_eventually() -> None:
     raise ValueError(
         "Almost: 'within' goes with 'eventually has'; a plain 'has' "
@@ -1315,8 +1185,8 @@ def _almost_eventually_under_given_or_when() -> None:
     )
 
 
-@given(parsers.re(rf'.+ has {_ASSERT_CLAUSES}$'))
-@when(parsers.re(rf'.+ has {_ASSERT_CLAUSES}$'))
+@given(parsers.re(rf'.+ has {ASSERT_CLAUSES}$'))
+@when(parsers.re(rf'.+ has {ASSERT_CLAUSES}$'))
 def _almost_asserting_under_given_or_when() -> None:
     raise ValueError(
         "Almost: a Given or When 'has' saves, e.g. `path` saved as "
@@ -1324,7 +1194,7 @@ def _almost_asserting_under_given_or_when() -> None:
     )
 
 
-@then(parsers.re(rf'.+ has {_SAVE_CLAUSES}$'))
+@then(parsers.re(rf'.+ has {SAVE_CLAUSES}$'))
 def _almost_saving_under_then() -> None:
     raise ValueError(
         "Almost: a Then 'has' asserts `path=value` properties; "
@@ -1332,9 +1202,9 @@ def _almost_saving_under_then() -> None:
     )
 
 
-@given(parsers.re(rf'.+ has {_MIXED_CLAUSES}$'))
-@when(parsers.re(rf'.+ has {_MIXED_CLAUSES}$'))
-@then(parsers.re(rf'.+ has {_MIXED_CLAUSES}$'))
+@given(parsers.re(rf'.+ has {MIXED_CLAUSES}$'))
+@when(parsers.re(rf'.+ has {MIXED_CLAUSES}$'))
+@then(parsers.re(rf'.+ has {MIXED_CLAUSES}$'))
 def _almost_mixing_clauses() -> None:
     raise ValueError(
         "Almost: a 'has' list is all one kind; a Given or When "
@@ -1345,20 +1215,20 @@ def _almost_mixing_clauses() -> None:
 
 @given(
     parsers.re(
-        rf'.+ with (?=.*`\s+saved\s){_CLAUSE}'
-        rf'(?:{_SEPARATOR}{_CLAUSE})*$'
+        rf'.+ with (?=.*`\s+saved\s){CLAUSE}'
+        rf'(?:{SEPARATOR}{CLAUSE})*$'
     )
 )
 @when(
     parsers.re(
-        rf'.+ with (?=.*`\s+saved\s){_CLAUSE}'
-        rf'(?:{_SEPARATOR}{_CLAUSE})*$'
+        rf'.+ with (?=.*`\s+saved\s){CLAUSE}'
+        rf'(?:{SEPARATOR}{CLAUSE})*$'
     )
 )
 @then(
     parsers.re(
-        rf'.+ with (?=.*`\s+saved\s){_CLAUSE}'
-        rf'(?:{_SEPARATOR}{_CLAUSE})*$'
+        rf'.+ with (?=.*`\s+saved\s){CLAUSE}'
+        rf'(?:{SEPARATOR}{CLAUSE})*$'
     )
 )
 def _almost_saving_in_with() -> None:
@@ -1371,13 +1241,13 @@ def _almost_saving_in_with() -> None:
 @given(
     parsers.re(
         rf'.+ with (?=.*`\s+contain|.*`\s+(?:of\s+)?length)'
-        rf'{_ASSERT_CLAUSES}$'
+        rf'{ASSERT_CLAUSES}$'
     )
 )
 @when(
     parsers.re(
         rf'.+ with (?=.*`\s+contain|.*`\s+(?:of\s+)?length)'
-        rf'{_ASSERT_CLAUSES}$'
+        rf'{ASSERT_CLAUSES}$'
     )
 )
 def _almost_predicate_in_call_with() -> None:

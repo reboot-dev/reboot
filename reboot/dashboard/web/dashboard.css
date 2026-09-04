@@ -1630,3 +1630,240 @@ header h1 {
   height: 8px;
   color: hsl(211 25% 60%);
 }
+
+/* --- Behaviors --- */
+
+.scenarios {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.scenario {
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+}
+
+.scenario-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 14px 18px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.scenario-caret {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  color: hsl(240 3.8% 55%);
+}
+
+.scenario-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Slate: the keyword is structure, not one of the four kinds, so it
+   stays as muted as the base pill while keeping the pill shape that
+   makes the rows scan as a column. */
+.scenario-keyword {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  border: 1px solid hsl(240 5.9% 84%);
+  color: hsl(var(--muted-foreground));
+}
+
+/* The same open-and-close animation as `.method-detail`, on the
+   scenario's own class so that the subgrid layout `.methods` gives
+   its rows never applies here. */
+.scenario-detail {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 240ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 120ms ease-out;
+}
+
+.scenario-detail-inner {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scenario.is-expanded .scenario-detail {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows 240ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 180ms ease-in 60ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scenario-detail,
+  .scenario.is-expanded .scenario-detail {
+    transition-duration: 1ms;
+  }
+}
+
+.scenario-detail-inner > :first-child {
+  margin-top: 0;
+}
+
+.scenario-detail-inner > * {
+  margin: 0 18px;
+}
+
+.scenario-detail-inner > :last-child {
+  margin-bottom: 14px;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The keyword in a gutter of its own, right-aligned, so every step's
+   text starts at one x and the keywords read down the side; `And`
+   and `But` continue the step above, so theirs is set lighter. */
+.step {
+  display: grid;
+  grid-template-columns: 4.5em minmax(0, 1fr);
+  column-gap: 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: hsl(var(--prose));
+}
+
+.step-keyword {
+  text-align: right;
+  font-weight: 600;
+  color: hsl(211 72% 32%);
+}
+
+.step-continuation {
+  font-weight: 500;
+  color: hsl(211 30% 60%);
+}
+
+.step-text {
+  min-width: 0;
+}
+
+/* A background's steps, shown as part of the scenario they run
+   before: present, but not what the scenario is about. */
+.step-background {
+  opacity: 0.55;
+}
+
+/* Each clause of a long clause list on a line of its own, indented
+   under the step's text. */
+.clause {
+  padding-left: 1.5em;
+}
+
+/* What the grammar read a span of a step as. A span is set as code
+   whatever its role; the role picks its colour. */
+.step code.span {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.9em;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: hsl(var(--surface-sunken));
+  border: 1px solid hsl(var(--border-soft));
+}
+
+/* Blue: what the step names in the API, which links there. */
+.step code.span-state-type,
+.step code.span-method {
+  color: hsl(211 72% 32%);
+}
+
+/* Violet: a property being set, read, or saved. */
+.step code.span-property-path {
+  color: hsl(275 50% 40%);
+}
+
+/* Teal: a literal value. */
+.step code.span-value {
+  color: hsl(166 55% 27%);
+}
+
+/* A saved value, where it is saved and where it is recalled, and a
+   state id, wherever it is named, each in a hue of its own
+   (`--hue`, set per name by the page), so the same one reads as one
+   thing across a scenario and the next reads as another; hovering
+   any lights up every span about the same one. The fallback hue is
+   for a span the page gave none. */
+.step code.span-saved-name,
+.step code.span-variable,
+.step code.span-state-id {
+  color: hsl(var(--hue, 28) 70% 32%);
+  background: hsl(var(--hue, 28) 85% 55% / 0.14);
+  border-color: hsl(var(--hue, 28) 70% 50% / 0.4);
+  cursor: default;
+}
+
+.step code.is-related {
+  background: hsl(var(--hue, 28) 85% 55% / 0.45);
+  border-color: hsl(var(--hue, 28) 70% 40%);
+}
+
+/* Magenta: an error type. */
+.step code.span-error-type {
+  color: hsl(318 55% 38%);
+}
+
+/* Muted: who is calling, which application, and how long to wait. */
+.step code.span-user,
+.step code.span-application,
+.step code.span-duration {
+  color: hsl(var(--muted-foreground));
+}
+
+.gherkin-table {
+  margin-top: 6px;
+  border-collapse: collapse;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+}
+
+.gherkin-table td {
+  border: 1px solid hsl(var(--border-soft));
+  padding: 3px 10px;
+}
+
+/* The first row of an examples table is its header. */
+.examples .gherkin-table tr:first-child td {
+  font-weight: 600;
+  background: hsl(var(--surface-sunken));
+}
+
+.rule {
+  margin-top: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rule-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.rule-heading h3 {
+  margin: 0;
+  font-size: 17px;
+}

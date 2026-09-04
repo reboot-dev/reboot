@@ -1,0 +1,234 @@
+syntax = "proto3";
+
+package rbt.v1alpha1.bdd;
+
+////////////////////////////////////////////////////////////////////////
+
+// A value as a step writes it: JSON (JSON5, so keys need no quotes),
+// parsed against the property it is set on or asserted against when
+// the scenario runs, since what `1` means depends on that property's
+// type. May hold a variable, `${name}`, whose saved value is spliced
+// in first; a value that is only a variable is the saved value
+// itself.
+message Value {
+  string json = 1;
+}
+
+// The state a step acts on: 'the `Account` for "alice"'.
+message State {
+  // The state type as the step spells it, e.g. `Account`, which a
+  // step may qualify with its package.
+  string type = 1;
+
+  // The id as written, without its quotes; may be a variable,
+  // `${name}`, whose saved value is the id.
+  string id = 2;
+}
+
+// A `path=value` clause of a call's `with`: the property set and
+// what it is set to.
+message Assignment {
+  string path = 1;
+
+  Value value = 2;
+}
+
+// A `path=value` clause of an asserting list: the property equals
+// the value.
+message Equals {
+  string path = 1;
+
+  Value value = 2;
+}
+
+// A `path` containing `argument` clause: a substring of a string, an
+// element of a list, or a key of a map.
+message Containing {
+  string path = 1;
+
+  Value argument = 2;
+}
+
+// A `path` of length `length` clause: the length of a string, list,
+// or map.
+message OfLength {
+  string path = 1;
+
+  Value length = 2;
+}
+
+// One clause of an asserting list.
+message Assertion {
+  oneof assertion {
+    Equals equals = 1;
+    Containing containing = 2;
+    OfLength of_length = 3;
+  }
+}
+
+// A `path` saved as `name` clause: the property read and the name it
+// is saved under.
+message Save {
+  string path = 1;
+
+  string name = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// 'the application is up', or 'the "name" application is up' for one
+// of several.
+message ApplicationIsUp {
+  optional string name = 1;
+}
+
+// 'the authenticated user is "user_id"'.
+message AuthenticatedUserIs {
+  string user_id = 1;
+}
+
+// 'the user is unauthenticated'.
+message UserIsUnauthenticated {}
+
+// 'the bearer token is "bearer_token"'.
+message BearerTokenIs {
+  string bearer_token = 1;
+}
+
+// 'a shared context'.
+message SharedContext {}
+
+// 'a `Account` for "alice" gets created via `open` with ...'.
+message GetsCreatedVia {
+  State state = 1;
+
+  string method = 2;
+
+  repeated Assignment assignments = 3;
+}
+
+// 'the `Account` for "alice" gets a `deposit` with ...', and
+// optionally 'spawned with its task id saved as `name`'.
+message Gets {
+  State state = 1;
+
+  string method = 2;
+
+  repeated Assignment assignments = 3;
+
+  // The name the spawned task's id is saved under; absent for a
+  // call that is not spawned.
+  optional string task_id_saved_as = 4;
+}
+
+// 'the `Account` for "alice" attempts a `withdraw` with ...'.
+message Attempts {
+  State state = 1;
+
+  string method = 2;
+
+  repeated Assignment assignments = 3;
+}
+
+// 'the `deposit` task with id "${name}" of the `Account` completes
+// within 30 seconds'.
+message TaskCompletes {
+  string method = 1;
+
+  // The name the task's id was saved under.
+  string task_id_saved_as = 2;
+
+  string state_type = 3;
+
+  double seconds = 4;
+}
+
+// 'the attempt aborts with `OverdraftError` with ...'.
+message AttemptAbortsWith {
+  string error_type = 1;
+
+  repeated Assertion assertions = 2;
+}
+
+// '`balance` on the `Account` for "alice" has ...': a reader, whose
+// response is asserted on. A writer, transaction, or workflow is
+// called with `Gets` and its result asserted with `ResultHas`.
+message Has {
+  string method = 1;
+
+  State state = 2;
+
+  repeated Assertion assertions = 3;
+}
+
+// '`balance` on the `Account` for "alice" eventually has ... within
+// 30 seconds': a reader, read reactively until its response
+// satisfies the assertions or the bound passes.
+message EventuallyHas {
+  string method = 1;
+
+  State state = 2;
+
+  repeated Assertion assertions = 3;
+
+  double seconds = 4;
+}
+
+// '`get` on the `Account` for "alice" has `owner` saved as `o`': a
+// reader, whose response is saved from.
+message HasSavedAs {
+  string method = 1;
+
+  State state = 2;
+
+  repeated Save saves = 3;
+}
+
+// '`balance` on the `Account` for "alice" aborts with
+// `OverdraftError` with ...': a reader that aborts. A writer,
+// transaction, or workflow that aborts is called with `Attempts`
+// and its abort asserted with `AttemptAbortsWith`.
+message AbortsWith {
+  string method = 1;
+
+  State state = 2;
+
+  string error_type = 3;
+
+  repeated Assertion assertions = 4;
+}
+
+// 'the result has ...'.
+message ResultHas {
+  repeated Assertion assertions = 1;
+}
+
+// 'the resulting `account_id` is saved as `alice_account_id`'.
+message ResultingIsSavedAs {
+  Save save = 1;
+}
+
+// The syntax tree of a step's text under the grammar of the built-in
+// `reboot.bdd` steps: which built-in step it is, and the parts the
+// step takes. Only a text one of the built-in steps matches has one;
+// a step an application defines itself does not.
+message BuiltInSyntax {
+  oneof step {
+    ApplicationIsUp application_is_up = 1;
+    AuthenticatedUserIs authenticated_user_is = 2;
+    UserIsUnauthenticated user_is_unauthenticated = 3;
+    BearerTokenIs bearer_token_is = 4;
+    SharedContext shared_context = 5;
+    GetsCreatedVia gets_created_via = 6;
+    Gets gets = 7;
+    Attempts attempts = 8;
+    TaskCompletes task_completes = 9;
+    AttemptAbortsWith attempt_aborts_with = 10;
+    Has has = 11;
+    EventuallyHas eventually_has = 12;
+    HasSavedAs has_saved_as = 13;
+    AbortsWith aborts_with = 14;
+    ResultHas result_has = 15;
+    ResultingIsSavedAs resulting_is_saved_as = 16;
+  }
+}

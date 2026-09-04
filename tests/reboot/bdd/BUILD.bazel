@@ -31,6 +31,25 @@ py_library(
 )
 
 py_test(
+    name = "feature_tests_py",
+    srcs = ["feature_tests.py"],
+    main = "feature_tests.py",
+    deps = [
+        "//reboot/bdd:feature_py",
+    ],
+)
+
+py_test(
+    name = "grammar_tests_py",
+    srcs = ["grammar_tests.py"],
+    main = "grammar_tests.py",
+    deps = [
+        "//rbt/v1alpha1/bdd:grammar_py_proto",
+        "//reboot/bdd:grammar_py",
+    ],
+)
+
+py_test(
     name = "bdd_tests_py",
     srcs = [
         ":bdd_tests.py",
