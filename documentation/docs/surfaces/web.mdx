@@ -215,9 +215,10 @@ flag does.
    `/__/oauth/callback` to your identity provider.
 
 :::tip Use TLS
-HTTP/2 multiplexing needs a TLS endpoint, and browsers cap the number
-of plain-HTTP connections to one host. An app with many outstanding
-calls — reactive readers count — will hit that cap and needs HTTPS.
+Browsers only use HTTP/2 over TLS. Over plain HTTP, every reactive
+reader holds its own WebSocket, and browsers allow only around 200
+of those per page (255 in Chrome), so an app with many concurrent
+readers needs HTTPS.
 See [the `rbt` CLI](/rbt_cli#bring-your-own-certificate-with-rbt-dev-run)
 for local certificates.
 :::
