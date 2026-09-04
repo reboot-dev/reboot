@@ -55,8 +55,9 @@ const config: Config = {
           },
           {
             from: "/ai_chat_apps/get_started",
-            to: "/get_started/quickstart",
+            to: "/get_started/claude_code",
           },
+          { from: "/get_started/quickstart", to: "/get_started/claude_code" },
           {
             from: [
               "/ai_chat_apps/get_started_claude_code",

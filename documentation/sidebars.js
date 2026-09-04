@@ -58,11 +58,6 @@ const sidebars = {
         },
         {
           type: "doc",
-          id: "get_started/quickstart",
-          label: "Quickstart (hand-written AI chat app)",
-        },
-        {
-          type: "doc",
           id: "get_started/examples",
           label: "Examples",
         },
