@@ -68,6 +68,14 @@ build --aspects @mypy_integration//:mypy.bzl%mypy_aspect
 build --output_groups=+mypy
 build --@mypy_integration//:mypy_config=//:mypy.ini
 
+# A repository that depends on this one gets its Python code from an
+# external Bazel repository, but imports it under the same module names
+# the code has here (`reboot.*`, `rbt.*`, `log.*`). Naming that repository
+# here puts its sources on mypy's search path, so those imports resolve to
+# real types instead of `Any`. Errors inside them are reported by this
+# repository's own build, not by the depending one.
+build --@mypy_integration//:first_party_external_repos=com_github_reboot_dev_reboot
+
 # In Python there is the concept of a "namespace package", which is a single
 # package that's spread across multiple directories. This is useful for e.g. all
 # of the various Google libraries, that come in different PyPI packages like
