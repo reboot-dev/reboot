@@ -96,9 +96,11 @@ designated certain methods as _constructors_ in your `.proto`, or as
 a _factory_ in your Pydantic or Zod schema.
 
 :::tip
-If your state can be default constructed, prefer _implicit_
-construction! Only use explicit construction if you have some
-_initialization that must be performed_.
+Prefer an explicit constructor for the types your application creates
+many of: it lets Reboot
+[generate the state ID](/concepts#let-reboot-generate-the-id) and
+gives you one place to initialize state. Implicit construction suits
+singletons and other instances whose ID you choose yourself.
 :::
 
 ### Implicit construction
@@ -142,7 +144,7 @@ once).
 If you've defined a constructor/factory for your data type then you
 must use it for constructing an instance.
 
-Here's an example, in both Zod and Pydantic, that designates
+Here's an example, in both Pydantic and Zod, that designates
 the `Open` method as an explicit constructor for `Account`:
 
 <!-- TODO: update this snippet to use the basic bank example once it lands. -->

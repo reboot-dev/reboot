@@ -3,17 +3,103 @@ import TabItem from "@theme/TabItem";
 
 # Pydantic
 
-When building AI Chat Apps, your API is defined with
-[Pydantic](https://docs.pydantic.dev/). You can also use Pydantic
-for full-stack apps with Python backends.
+For Python backends, you define your API with
+[Pydantic](https://docs.pydantic.dev/). A Reboot API is centered on
+_types_, which contain _state_ and _methods_.
 
-## AI Chat App
+## A simple type
 
-A Reboot API is centered on _types_, which contain _state_ and
-_methods_. When building an AI Chat App, you define a `User`
-type (auto-constructed per authenticated user) whose methods
-create other state types. Methods with `mcp=Tool()` become
-[tools the AI can call](/surfaces/ai_chat):
+Here is a `ChatRoom` with a `reader` and a `writer`:
+
+```python
+from typing import Optional
+from reboot.api import (
+    API,
+    Field,
+    Methods,
+    Reader,
+    Model,
+    Writer,
+    Type,
+)
+
+class ChatRoomState(Model):
+    messages: Optional[list[str]] = Field(tag=1)
+
+class MessagesResponse(Model):
+    messages: list[str] = Field(tag=1)
+
+class SendRequest(Model):
+    message: str = Field(tag=1)
+
+ChatRoomMethods = Methods(
+    messages=Reader(
+        request=None,
+        response=MessagesResponse,
+        description="Every message posted to the room so far.",
+    ),
+    send=Writer(
+        request=SendRequest,
+        response=None,
+        description="Post one message to the room.",
+    ),
+)
+
+api = API(
+    ChatRoom=Type(
+        state=ChatRoomState,
+        methods=ChatRoomMethods,
+    ),
+)
+```
+
+Reboot uses standard
+[Pydantic BaseModel](https://docs.pydantic.dev/latest/concepts/models/),
+with `Model` as the base class for your durable state types,
+request and response types.
+
+:::important
+All Pydantic fields must include a `tag` parameter using
+`Field(tag=N)`. This is required for safe backwards compatibility.
+:::
+
+:::info Naming conventions
+Your state class should end in `State`, e.g., `UserState`,
+`CounterState`.
+:::
+
+## Special state: `User`
+
+Naming a type `User` in your `API(User=Type(...))` definition triggers
+special behavior:
+
+1. **Auto-construction**: a `User` instance is automatically created
+   for each person who signs in. You do not need an `initialize`
+   function or manual `create()` calls. Every field on `UserState`
+   must have a default value, or be optional, since instances are
+   created without arguments.
+2. **Automatic ID resolution**: callers never specify a state ID for
+   `User` methods — it is resolved from the authenticated user. That
+   is what lets `useUser()` in React, and an AI calling a tool, both
+   reach the right instance without being told who the user is.
+3. **Default authorization**: `User` methods are accessible to that
+   user and to app-internal calls. No `authorizer()` override is
+   needed. See
+   [Authorization](/users/authorization#defaults-you-get-for-free).
+
+`User` typically acts as an entry point: its methods create or look
+up other state types (like `Counter`) and return their IDs.
+
+Auto-construction needs to know who is signing in, so an application
+with a `User` type must configure
+[`Application(oauth=...)`](/users/oauth). See
+[Users and sign-in](/users/overview) for the whole picture.
+
+## A complete example
+
+`User` plus an application type, with a
+[`UI` method](/surfaces/ui_methods) and methods marked `mcp=Tool()`
+so an [AI chat client](/surfaces/ai_chat) can call them:
 
 <!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py&syntax=python) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py -->
@@ -150,45 +236,6 @@ api = API(
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
-Reboot uses standard
-[Pydantic BaseModel](https://docs.pydantic.dev/latest/concepts/models/),
-with `Model` as the base class for your durable state types,
-request and response types.
-
-:::important
-All Pydantic fields must include a `tag` parameter using
-`Field(tag=N)`. This is required for safe backwards compatibility.
-:::
-
-:::info Naming conventions
-Your state class should end in `State`, e.g., `UserState`,
-`CounterState`.
-:::
-
-## Special state: `User`
-
-Naming a type `User` in your `API(User=Type(...))`
-definition triggers special behavior:
-
-1. **Auto-construction**: a `User` instance is automatically
-   created for each authenticated user. You do not need an
-   `initialize` function or manual `create()` calls. All fields
-   on `UserState` must have default values, since instances
-   are created without arguments.
-2. **Automatic ID resolution**: the AI never needs to specify a
-   state ID for `User` methods — it is resolved from the
-   authenticated user.
-3. **Default authorization**: `User` methods are accessible to
-   the owning user (whose `user_id` matches the state ID) and
-   to app-internal calls. No `authorizer()` override is needed.
-   See [Default authorizer](/users/authorization#default-authorizer)
-   for details.
-
-`User` typically acts as an entry point: its methods create or look
-up other state types (like `Counter`) and return their IDs. The AI
-tracks those IDs in its context window and passes them in subsequent
-tool calls.
-
 ## Creating tools for the AI
 
 ### Explicit `mcp=` on every method
@@ -289,59 +336,10 @@ Not every method should be an MCP tool:
 
 ## Method kinds
 
-Depending on its [kind](/define/methods), a method
-might be able to only read (e.g., `Reader`) or both read and
-write (e.g., `Writer`) the state. A type can have any number of
-`Reader`, `Writer`, `Transaction`, `Workflow`, and
-[`UI`](/surfaces/ui_methods) methods.
+Depending on its [kind](/define/methods), a method might be able to
+only read (e.g., `Reader`) or both read and write (e.g., `Writer`) the
+state. A type can have any number of `Reader`, `Writer`,
+`Transaction`, `Workflow`, and [`UI`](/surfaces/ui_methods) methods.
 
-## Full-stack
-
-You can also use Pydantic for full-stack apps that are not AI Chat Apps.
-In that case you do not need the `User` type, `UI` methods, or
-`description` fields:
-
-```python
-from typing import Optional
-from reboot.api import (
-    API,
-    Field,
-    Methods,
-    Reader,
-    Model,
-    Writer,
-    Type,
-)
-
-class ChatRoomState(Model):
-    messages: Optional[list[str]] = Field(tag=1)
-
-class MessagesResponse(Model):
-    messages: list[str] = Field(tag=1)
-
-class SendRequest(Model):
-    message: str = Field(tag=1)
-
-ChatRoomMethods = Methods(
-    messages=Reader(
-        request=None,
-        response=MessagesResponse,
-        description="Every message posted to the room so far.",
-    ),
-    send=Writer(
-        request=SendRequest,
-        response=None,
-        description="Post one message to the room.",
-    ),
-)
-
-api = API(
-    ChatRoom=Type(
-        state=ChatRoomState,
-        methods=ChatRoomMethods,
-    ),
-)
-```
-
-To learn more about how you implement each data type's methods
-see [Implement your API](/implement/servicers).
+To learn more about how you implement each data type's methods see
+[Implement your API](/implement/servicers).

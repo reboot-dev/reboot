@@ -11,7 +11,7 @@ In Reboot, those data types are actually _durable state_, meaning that
 when you update them they get persisted for you. And the methods are
 of a specific [_kind_](/define/methods), either a
 `reader`, `writer`, `transaction`, `workflow`, or
-[`ui`](/surfaces/ui_methods).
+[`UI`](/surfaces/ui_methods).
 
 The combination of these data types and methods is called **durable
 data structures** (think durable objects, but so much more).
@@ -21,9 +21,16 @@ data structures** (think durable objects, but so much more).
 With Reboot, you define the API for your durable data structures up
 front:
 
-- [Define your API using Pydantic](/define/pydantic) (Python — the only option for AI Chat Apps)
-- [Define your API using Zod](/define/zod) (TypeScript only)
-- [Define your API using protobuf](/define/protobuf) (TypeScript or Python — for full control)
+- [Define your API using Pydantic](/define/pydantic) — Python
+- [Define your API using Zod](/define/zod) — TypeScript
+- [Define your API using protobuf](/define/protobuf) — TypeScript or Python
+
+### The `User` type
+
+One type name is special. A type named
+[`User`](/define/pydantic#special-state-user) is auto-constructed for
+each person who signs in, so it is where per-user state and per-user
+methods belong. See [Users and sign-in](/users/overview).
 
 ### Code generation
 
@@ -32,10 +39,10 @@ Reboot generates:
 - Type-safe, language-specific code for:
   - [Python and TypeScript servers](/implement/servicers)
   - [Python and TypeScript clients](/call/from_within_your_app)
-  - [React](/call/from_react)
-- AI chat tools (from
-  [`User`](/define/pydantic#special-state-user) methods and
-  [`UI`](/surfaces/ui_methods) annotations)
+  - [React](/call/from_react), shared by web, React Native, and AI
+    chat frontends
+- AI chat tools, from methods marked `mcp=Tool()` and from
+  [`UI`](/surfaces/ui_methods) annotations
 
 :::note
 

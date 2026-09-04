@@ -229,11 +229,33 @@ framework or library you use.
 Reboot generates TypeScript code. [Learn how to use Reboot in a vanilla JS environment.](#vanilla-javascript)
 :::
 
-## AI Chat App context
+## Signing users in
 
-When building [AI Chat Apps](/get_started/quickstart), the same
-generated React hooks work in both AI chat and browser contexts.
-The key differences:
+When your application configures [`oauth=`](/users/oauth), three more
+hooks come into play:
+
+- `useSignIn()` and `useSignOut()` from `@reboot-dev/reboot-react`.
+- The generated `use<User>()` hook for your
+  [`User` type](/users/overview), which resolves the signed-in user
+  with no ID passed.
+
+```tsx
+const { user, isLoading } = useUser();
+const signIn = useSignIn();
+
+if (isLoading) return <p>Checking session…</p>;
+if (user === undefined) return <button onClick={() => signIn()}>Sign in</button>;
+```
+
+See [Web apps](/surfaces/web#signing-in) for the browser flow, and
+[React Native apps](/surfaces/react_native) for the native one.
+
+## In AI chat UIs
+
+The same generated hooks work unchanged inside an
+[AI chat client](/surfaces/ai_chat), where a
+[`UI` method](/surfaces/ui_methods) renders your component. A few
+things differ:
 
 - **No `url` prop needed.** In the AI chat context,
   `RebootClientProvider` automatically detects the environment.
