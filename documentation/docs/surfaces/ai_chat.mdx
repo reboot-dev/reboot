@@ -1,0 +1,171 @@
+# AI chat apps
+
+A Reboot application can serve an AI chat client — ChatGPT, Claude,
+VS Code, Goose — as one more front end alongside your
+[web](/surfaces/web) and [React Native](/surfaces/react_native) apps.
+Your methods become tools the AI can call, and your React components
+open **inside the conversation** as interactive UIs.
+
+It is the same backend, the same state, and the same signed-in
+[`User`](/users/overview). Nothing about a chat surface is a separate
+kind of application.
+
+## What you get
+
+- **Show, don't tell.** Instead of a wall of text, the AI opens a real
+  UI: buttons, forms, live data.
+- **React to state changes.** Those UIs update in real time as backend
+  state changes — whether the user, the AI, or another client made the
+  change.
+- **Persist across conversations.** State is durable. Close the chat,
+  come back next week, and everything is still there, under the same
+  `User`.
+
+## How it works
+
+The protocol is [MCP, the Model Context
+Protocol](https://modelcontextprotocol.io) — the open standard AI
+clients use to discover and talk to external servers. An MCP server
+exposes *tools*: actions the AI can call.
+
+You do not write any MCP protocol code: `Application` serves the MCP
+endpoint at `/mcp`. Configure [`oauth=`](/users/oauth) and that
+endpoint requires — and establishes — a signed-in user.
+
+Three things map across:
+
+**Methods become tools.** Any method on any type is exposed as an MCP
+tool when you declare it with `mcp=Tool()`:
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py&lines=63-88&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py -->
+
+```python
+api = API(
+    User=Type(
+        state=UserState,
+        methods=Methods(
+            create_counter=Transaction(
+                request=CreateCounterRequest,
+                response=CreateCounterResponse,
+                description="Create a new Counter with a "
+                "description of what it counts. Returns "
+                "the `counter_id`, which is not "
+                "human-readable but should be passed to "
+                "future tool calls that need it.",
+                mcp=Tool(),
+            ),
+            list_counters=Reader(
+                request=None,
+                response=ListCountersResponse,
+                description="List all counters created "
+                "by this user. Returns `counter_id` and "
+                "description for each. The `counter_id` "
+                "is not human-readable, but use it when "
+                "calling tools that take a `counter_id`.",
+                mcp=Tool(),
+            ),
+        ),
+    ),
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+**`User` methods need no state ID.** Reboot resolves the right `User`
+from the authenticated caller, so the AI never has to know — or be
+told — who it is acting for. Methods on other types take the
+instance's state ID, which the AI receives when the instance is
+created and passes back on later calls.
+
+**[`UI` methods](/surfaces/ui_methods) become tools that open a React
+component.** When the AI calls one, the chat client displays your
+component inline.
+
+## Users on the chat surface
+
+Chat clients sign in through the same OAuth server as everything else.
+The client discovers it, registers itself, and runs the flow when the
+user connects your app; Reboot then
+[auto-constructs their `User`](/users/overview) exactly as it would
+for a browser.
+
+This is what makes `User` the natural entry point on this surface in
+particular. The AI's memory of a conversation is its context window,
+which does not survive into the next conversation. State IDs it was
+handed — a `counter_id`, an `order_id` — are gone with it. So:
+
+- Record what the user owns in `User` state.
+- Give `User` a `list_…` method with `mcp=Tool()` so the AI can find
+  its way back in a fresh conversation.
+
+Do that, and a user who opened an order last week can say "show me my
+order" today and the AI can actually find it.
+
+## Choosing which methods the AI can call
+
+Every method must declare its MCP exposure explicitly:
+`mcp=Tool()` to expose it, `mcp=None` to hide it. There is no implicit
+default, so nothing is exposed to an AI by accident.
+
+Not every method should be a tool:
+
+1. **Human-only actions.** Some things should only happen when a
+   person clicks — a "Yes, confirm" button in a UI. Give that method
+   `mcp=None`: the human's click still calls it, the AI cannot.
+2. **Context bloat.** Every tool you expose is added to the AI's
+   context window. Too many tools makes the model worse at choosing
+   among them.
+
+`Tool()` takes optional overrides:
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `name` | `str` or `None` | Custom tool name; defaults to the method name. |
+| `title` | `str` or `None` | Human-readable title; defaults to the method name. |
+
+The method's `description` is what the AI reads to decide when and how
+to call it, so write it as instructions to the AI, not as a comment to
+your colleagues. See
+[Creating tools](/define/pydantic#creating-tools-for-the-ai).
+
+## Presenting your app
+
+`Application` takes three fields that a chat client shows to users:
+
+```python
+Application(
+    title="Chat Counter",
+    description=(
+        "Lets a chat client create, list, increment, and show "
+        "counters on your behalf."
+    ),
+    example_prompts=example_prompts,
+    servicers=[UserServicer, CounterServicer],
+    oauth=OAuth(...),
+)
+```
+
+`example_prompts` are rendered as copyable cards by the setup wizard
+your app serves at its root URL, giving a first-time visitor something
+to try.
+
+## Connecting a client
+
+Your app serves a **setup wizard** at its root URL — `http://localhost:9991`
+under `rbt dev run`, or the public URL of a deployed app. It walks you
+through connecting the chat client of your choice, including the public
+tunnel that cloud-hosted clients need to reach a development machine,
+and confirms once the first request arrives.
+
+For the same steps written out, see
+[From an MCP client](/call/from_mcp_client).
+
+## Next
+
+- [`UI` methods](/surfaces/ui_methods) — React components rendered in
+  the conversation.
+- [Define your API](/define/pydantic) — declaring types, methods, and
+  tools.
+- [From an MCP client](/call/from_mcp_client) — connecting Claude,
+  ChatGPT, and inspectors.
+- [Users and sign-in](/users/overview) — the `User` the AI acts for.

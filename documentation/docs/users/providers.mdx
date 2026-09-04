@@ -1,0 +1,305 @@
+# OAuth providers
+
+An **OAuth provider** is the thing that tells Reboot who a user is.
+You pass one (or one per environment) to
+[`OAuth(provider=...)`](/users/oauth); Reboot's own OAuth server does
+everything else.
+
+All of these live in `reboot.aio.auth.oauth_providers`.
+
+| Provider | Use it when |
+| --- | --- |
+| `Development()` | Local development. Shows a fake account picker; no registration anywhere. |
+| `Anonymous()` | You want no sign-in at all. Every visitor is a new person. |
+| `Google(...)` | Users sign in with Google. |
+| `GitHub(...)` | Users sign in with GitHub. |
+| `Auth0(...)` | You want several sign-in methods, or user management, behind one provider. |
+| `Ory(...)` | Same, on Ory Network or self-hosted Ory. |
+
+:::important Pick before you have production users
+Whichever you pick issues the IDs that become your
+[`User` state IDs](/users/overview#choose-your-identity-provider-deliberately).
+Each provider issues IDs in its own space, with no mapping between
+them, so switching providers once you have real users strands every
+user-keyed piece of state you have. If you expect to need several
+sign-in methods, or user management beyond a bare ID, start with a
+broker like `Auth0` or `Ory`: they let you add and change upstream
+login methods without changing the IDs your application sees.
+:::
+
+## `Development`
+
+```python
+from reboot.aio.auth.oauth_providers import Development
+
+Development(
+    # Identity claims to deliver on each sign-in (optional). See
+    # the claims below for what it can fabricate.
+    claims=["email", "name"],
+)
+```
+
+Shows a fake "pick an account" page with a handful of identities. No
+passwords, no registration, nothing to configure.
+
+Picking the same identity twice signs you in as the *same* user, so
+you can exercise returning users, multi-user behavior, and two clients
+signed in as the same person, all locally.
+
+The user IDs it issues are opaque, so do not hardcode one into
+authorization logic; read the signed-in user's ID at runtime instead,
+as described in
+[Using the signed-in user](/users/overview#using-the-signed-in-user).
+
+:::caution Development only
+`Development` authenticates nobody. Never use it as the `prod` arm of
+your selector.
+:::
+
+### Setup
+
+None.
+
+### Claims
+
+| Claim | What it holds |
+| --- | --- |
+| `email` | A made-up address for the identity. |
+| `email_verified` | Always `true`. |
+| `name` | The identity's display name. |
+
+## `Anonymous`
+
+```python
+from reboot.aio.auth.oauth_providers import Anonymous
+
+Anonymous()
+```
+
+No sign-in page at all: every visitor becomes a fresh user. Useful for
+a demo or a kiosk-style app where per-session state is all you need. A
+returning visitor is a brand-new user, with a brand-new, empty `User`,
+so nothing can outlive a session.
+
+### Setup
+
+None.
+
+### Claims
+
+None.
+
+## `Google`
+
+```python
+from reboot.aio.auth.oauth_providers import Google
+
+Google(
+    # From the Google Cloud console. Deliver both as secrets.
+    client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
+    client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"),
+    # Identity claims to deliver on each sign-in (optional). See the
+    # claims below.
+    claims=["email", "name"],
+    # Extra OAuth scopes, so your app can call Google's APIs on the
+    # user's behalf, and whether to keep Google's tokens for that
+    # (both optional). See Call external APIs as the user.
+    scopes=["https://www.googleapis.com/auth/calendar.events"],
+    store_tokens=True,
+)
+```
+
+### Setup
+
+In the Google Cloud console, create an OAuth 2.0 Client ID of type
+"Web application" and add `<your-app-base-url>/__/oauth/callback` to
+its authorized redirect URIs. Deliver the client ID and secret as
+[secrets](/secrets).
+
+### Claims
+
+| Claim | What it holds |
+| --- | --- |
+| `email` | The account's email address. |
+| `email_verified` | Whether Google has verified that address. |
+| `name` | Full name. |
+| `given_name` | First name. |
+| `family_name` | Last name. |
+| `picture` | URL of the profile picture. |
+| `locale` | The account's locale, e.g. `en`. |
+| `profile` | URL of the profile page. |
+
+## `GitHub`
+
+```python
+from reboot.aio.auth.oauth_providers import GitHub
+
+GitHub(
+    # From the app's page in GitHub's developer settings. Deliver both
+    # as secrets.
+    client_id=os.environ.get("GITHUB_OAUTH_CLIENT_ID"),
+    client_secret=os.environ.get("GITHUB_OAUTH_CLIENT_SECRET"),
+    # Identity claims to deliver on each sign-in (optional). See the
+    # claims below.
+    claims=["email"],
+    # Extra OAuth scopes, so your app can call GitHub's API on the
+    # user's behalf, and whether to keep GitHub's tokens for that
+    # (both optional). See Call external APIs as the user.
+    scopes=["repo"],
+    store_tokens=True,
+)
+```
+
+### Setup
+
+Register an OAuth App (or a GitHub App) in GitHub's developer settings
+and set its authorization callback URL to
+`<your-app-base-url>/__/oauth/callback`. Deliver the client ID and
+secret as [secrets](/secrets).
+
+### Claims
+
+| Claim | What it holds |
+| --- | --- |
+| `email` | The account's primary email address, once GitHub has verified it. |
+| `email_verified` | `true` whenever `email` is delivered. |
+
+## `Auth0`
+
+```python
+from reboot.aio.auth.oauth_providers import Auth0
+
+Auth0(
+    # Your Auth0 tenant, e.g. "your-tenant.us.auth0.com".
+    domain=os.environ.get("AUTH0_DOMAIN"),
+    # From the application's settings in the Auth0 dashboard. Deliver
+    # both as secrets.
+    client_id=os.environ.get("AUTH0_CLIENT_ID"),
+    client_secret=os.environ.get("AUTH0_CLIENT_SECRET"),
+    # Identity claims to deliver on each sign-in (optional). See the
+    # claims below.
+    claims=["email", "name"],
+    # Extra OAuth scopes, so your app can call Auth0's APIs on the
+    # user's behalf, and whether to keep Auth0's tokens for that
+    # (both optional). See Call external APIs as the user.
+    scopes=[],
+    store_tokens=False,
+)
+```
+
+One Auth0 application lets people sign in through any connection you
+enable in the Auth0 dashboard — Google, GitHub, username and password,
+enterprise SSO — and your application sees one provider.
+
+### Setup
+
+Register a "Regular Web Application" in Auth0 and add
+`<your-app-base-url>/__/oauth/callback` to its allowed callback URLs.
+Deliver the client ID and secret as [secrets](/secrets).
+
+### Claims
+
+Which of these are populated depends on the connection the person
+signed in through.
+
+| Claim | What it holds |
+| --- | --- |
+| `email` | The user's email address. |
+| `email_verified` | Whether the connection has verified that address. |
+| `name` | Full name. |
+| `given_name` | First name. |
+| `family_name` | Last name. |
+| `middle_name` | Middle name. |
+| `nickname` | Nickname. |
+| `picture` | URL of the profile picture. |
+| `updated_at` | When the profile was last updated. |
+
+## `Ory`
+
+```python
+from reboot.aio.auth.oauth_providers import Ory
+
+Ory(
+    # Your Ory project, e.g. "your-slug.projects.oryapis.com".
+    domain=os.environ.get("ORY_DOMAIN"),
+    # From the OAuth2 client you created in the project. Deliver both
+    # as secrets.
+    client_id=os.environ.get("ORY_CLIENT_ID"),
+    client_secret=os.environ.get("ORY_CLIENT_SECRET"),
+    # Identity claims to deliver on each sign-in (optional). See the
+    # claims below.
+    claims=["email", "name"],
+    # Shared secret for an Ory Action that tells Reboot when a user
+    # edits their profile (optional; requires `claims`). See Keeping
+    # claims fresh with Ory.
+    webhook_secret=os.environ.get("ORY_WEBHOOK_SECRET"),
+    # Where the browser is sent for the authorization request when it
+    # reaches Ory at a different origin than your server does
+    # (optional). In local development, typically an `ory tunnel`.
+    browser_facing_url="http://localhost:4000",
+    # Extra OAuth scopes, so your app can call Ory's APIs on the
+    # user's behalf, and whether to keep Ory's tokens for that (both
+    # optional). See Call external APIs as the user.
+    scopes=[],
+    store_tokens=False,
+)
+```
+
+Works with an Ory Network project or a self-hosted Ory deployment.
+Like `Auth0`, it lets people sign in through whichever methods the
+project enables, and your application sees one provider.
+
+### Setup
+
+Create an OAuth2 client in the Ory project with the authorization-code
+grant, add `<your-app-base-url>/__/oauth/callback` to its redirect
+URIs, and make sure it is allowed to request the scopes your claims
+need. Deliver the client ID and secret as [secrets](/secrets). To keep
+claims current between sign-ins, also configure the Ory Action
+described in
+[Keeping claims fresh with Ory](/users/claims#keeping-claims-fresh-with-ory).
+
+### Claims
+
+Which of these are populated depends on the project's identity schema.
+
+| Claim | What it holds |
+| --- | --- |
+| `email` | The identity's email address. |
+| `email_verified` | Whether Ory has verified that address. |
+| `name` | Full name. |
+| `given_name` | First name. |
+| `family_name` | Last name. |
+| `username` | The username. |
+| `website` | URL of the identity's website. |
+| `updated_at` | When the identity was last updated. |
+
+## Writing your own provider
+
+If none of the above fits — your users live in a self-hosted Keycloak,
+an internal SSO, or an identity provider no broker covers — subclass
+`RegisteredOAuthProvider` and pass an instance in the same `dev=` /
+`prod=` arms. You implement two methods; Reboot's OAuth server does
+the rest, including `state` verification, PKCE, and minting your
+application's own tokens:
+
+- `authorization_url(state, redirect_uri)` — build the identity
+  provider's authorize URL, passing `state` and `redirect_uri` through
+  verbatim.
+- `exchange_code(code, redirect_uri)` — exchange the code at the
+  identity provider's token endpoint and return an `ExchangeResult`
+  carrying the user's ID (and, optionally, their tokens and
+  [claims](/users/claims)).
+
+You can also override `validate()` to fail fast on missing
+configuration, and `mount_routes()` to add provider-specific HTTP
+routes.
+
+:::important
+The user ID you return must be **stable**: the same person must get
+the same ID on every sign-in. An account ID qualifies; an email
+address does not, because people change theirs. That ID becomes the
+state ID of their `User`, so the
+[namespace-permanence warning](/users/overview#choose-your-identity-provider-deliberately)
+applies to your provider too.
+:::

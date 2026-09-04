@@ -1,0 +1,264 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Build with Codex
+
+Build a Reboot app with [Codex](https://developers.openai.com/codex/)
+and the Reboot plugin. You describe what you want, approve the design,
+and Codex scaffolds the whole project: API definition, backend
+servicers, frontend, sign-in, tests, and local development setup.
+
+## Install the Reboot plugin
+
+The plugin bundles everything Reboot needs, so the only prerequisite
+is [Codex](https://developers.openai.com/codex/cli) itself, installed
+and authenticated.
+
+<Tabs groupId="install-method">
+  <TabItem value="quick" label="Quick install">
+
+Install the Reboot plugin for Codex with a single command:
+
+```sh
+curl -fsSL https://reboot.dev/install.sh | bash
+```
+
+The installer detects Codex, registers the Reboot plugin marketplace,
+installs the plugin, enables Codex hooks, and pre-installs the pinned
+tool shims used by the skill.
+
+:::warning Temporary Codex sandbox opt-out
+The installer currently asks to disable Codex's sandbox globally by
+writing `sandbox_mode = "danger-full-access"` into
+`~/.codex/config.toml`. This is a temporary workaround for an upstream
+Codex issue that breaks Python asyncio cross-thread wakeups inside the
+sandbox. Reboot's main commands (`rbt generate`, `rbt dev run`, and
+related commands) rely on that asyncio behavior.
+
+If you accept the prompt, the installer tags the setting with a
+`# reboot-plugin (managed)` comment so it is easy to find and remove
+later. If you decline, the Codex install is skipped because the
+plugin's main commands will not work reliably under the current
+sandbox behavior.
+:::
+
+Restart Codex after installation so the new plugin, skills, hooks, and
+PATH configuration are loaded.
+
+  </TabItem>
+  <TabItem value="manual" label="Manual install">
+
+Register the Reboot plugin marketplace and install the plugin
+yourself:
+
+```sh
+codex plugin marketplace add reboot-dev/reboot-plugin
+```
+
+```sh
+codex plugin add reboot@reboot-plugin
+```
+
+Then add the required Codex settings to `~/.codex/config.toml`. Codex
+prints the plugin install path in `codex plugin list`; use it to build
+the PATH entry for your machine:
+
+```sh
+REBOOT_PLUGIN_ROOT="$(codex plugin list \
+  | awk '$1 == "reboot@reboot-plugin" {print $NF; exit}')"
+
+printf 'features.hooks = true\n'
+printf 'shell_environment_policy.set.PATH = "%s/bin:%s"\n' \
+  "$REBOOT_PLUGIN_ROOT" "$PATH"
+printf 'sandbox_mode = "danger-full-access"\n'
+```
+
+Copy the output into `~/.codex/config.toml`, at the **top** of the
+file (dotted keys pasted below a `[table]` header would become part of
+that table). It should look like this, with your actual plugin path:
+
+```toml
+features.hooks = true
+shell_environment_policy.set.PATH = "/path/from/codex/plugin/list/bin:/your/existing/path"
+sandbox_mode = "danger-full-access"
+```
+
+:::warning Merge with your existing config
+TOML forbids defining the same key or table twice, and Codex refuses
+to start on such a config ("duplicate key"). If your config already
+has a `[features]` or `[shell_environment_policy]` table, or already
+sets `sandbox_mode`, set the values inside your existing tables
+instead of pasting the dotted keys above — e.g. add `hooks = true`
+under your `[features]` table.
+:::
+
+Restart Codex after changing the config.
+
+  </TabItem>
+</Tabs>
+
+## Describe your app
+
+In Codex you do not need a slash command. Start from a normal prompt:
+
+```
+Build me a Reboot todo-list app I can use from a browser and from Claude and ChatGPT
+```
+
+That prompt gets you one backend with two front doors: a React web app
+you open in a browser, and an [AI chat app](/surfaces/ai_chat) that
+Claude and ChatGPT can drive as tools — sharing one set of todos and
+one signed-in [`User`](/users/overview) per person.
+
+Codex picks the right Reboot skill from your description. The one thing
+it will not guess from the subject matter is **where the app lives**,
+so say it:
+
+| You say | You get |
+| --- | --- |
+| "web app", "website", "SPA", "in the browser", a URL | A [web app](/surfaces/web): a React frontend on its own origin. |
+| "MCP", "in Claude", "in ChatGPT", "chat app" | An [AI chat app](/surfaces/ai_chat): tools and `UI` methods over MCP. |
+| Both, as above | One backend serving both surfaces, with one `User` per person. |
+
+The skills scaffold web and AI chat front ends. A
+[React Native app](/surfaces/react_native) (alpha) is added by hand.
+
+If your description doesn't say, it asks first.
+
+## What it does before it writes code
+
+The builder settles the design first. It will:
+
+1. Analyze your description and propose a state model.
+2. Map out the types, methods, the pages or UIs the frontend needs,
+   and how users sign in.
+3. State that design back to you — so you can redirect it before the
+   code exists.
+
+Then it scaffolds the project, builds it, writes and runs backend
+tests, and starts the app.
+
+:::info The agent-driven path builds a Python backend
+The skills scaffold a Python backend. If you want a **TypeScript**
+backend, follow the hand-written
+[TypeScript guide](/get_started/typescript) instead — but note that
+TypeScript backend support is in alpha.
+:::
+
+## What gets created
+
+A complete Reboot project. The most relevant files:
+
+```
+my-app/
+├── .rbtrc                    # Reboot CLI config
+├── pyproject.toml            # Python deps (uv)
+├── api/
+│   └── my_app/v1/
+│       └── my_app.py         # API definition (Pydantic)
+├── backend/
+│   ├── api/                  # Generated Python bindings
+│   ├── src/
+│   │   ├── main.py           # Application entrypoint, including `oauth=`
+│   │   ├── example_prompts.py  # Chat apps: setup-wizard prompts
+│   │   └── servicers/
+│   │       └── my_app.py     # Servicer implementations
+│   └── tests/
+│       └── my_app_test.py    # Backend behavior tests
+└── frontend/
+    ├── package.json
+    ├── build.mjs             # Discovers + builds every UI
+    ├── vite.config.ts        # Vite dev server + build config
+    ├── index.css             # Theme variables
+    ├── api/                  # Generated React bindings
+    ├── web/                  # The browser SPA
+    │   ├── index.html
+    │   ├── .env.development  # VITE_REBOOT_URL=http://localhost:9991
+    │   └── src/
+    │       ├── main.tsx      # RebootClientProvider entry
+    │       └── App.tsx       # Routes + top-level component
+    └── mcp/                  # Chat apps: one directory per `UI` method
+        └── my-ui/
+            ├── index.html
+            ├── main.tsx
+            └── App.tsx
+```
+
+### Reading the code it wrote
+
+| File | What it is | Learn more |
+| --- | --- | --- |
+| `api/my_app/v1/my_app.py` | Your API: one [durable state type](/define/overview) per entity, each with its methods, declared with Pydantic. | [Define your API](/define/pydantic) |
+| `backend/src/servicers/` | The code behind those methods. | [Implement your API](/implement/servicers) |
+| `backend/src/main.py` | Constructs the `Application` and passes `oauth=`, so people can sign in and Reboot auto-constructs their `User`. | [Users and sign-in](/users/overview) |
+| `frontend/api/` | Typed React hooks generated from your API, shared by every front end. | [Call your API from React](/call/from_react) |
+| `frontend/web/` | The browser app. | [Web apps](/surfaces/web) |
+| `frontend/mcp/` | One React app per `UI` method, rendered inside the chat client. | [AI chat apps](/surfaces/ai_chat) |
+| `backend/tests/` | Backend tests, run against an in-process Reboot. | [Testing](/testing) |
+
+In development the sign-in flow uses `Development()`, a fake account
+picker, so you can sign in as any of a handful of identities without
+registering a provider anywhere. Before you deploy, pick a
+[real provider](/users/providers).
+
+## Test and run
+
+Codex writes backend unit tests covering your app's user stories and
+runs them before handing the app off — they help make sure the app
+works, and keeps working.
+
+Once the tests pass it starts everything the app needs:
+
+* the Reboot backend (`rbt dev run`), serving your API at
+  `http://localhost:9991`;
+* the Vite dev server, on `http://localhost:4444`; and
+* for chat apps, a Cloudflare quick tunnel, so cloud-hosted MCP
+  clients can reach your machine.
+
+For a web app it gives you `http://localhost:4444` to open. Click **Sign in**,
+pick a `Development` identity, and Reboot
+[auto-constructs your `User`](/users/overview).
+
+For a chat app it opens the **setup wizard** at
+`http://localhost:9991` — a page your app serves that walks you
+through connecting Claude, ChatGPT, or an inspector, and suggests
+example prompts.
+
+## Iterate
+
+The same skill modifies an existing app:
+
+```
+Add due dates to todos, and a filter for what's overdue.
+```
+
+Codex reads the current Reboot project, proposes a plan, waits for
+your approval, then updates the API, servicers, React pages, and
+tests.
+
+## Run it again later
+
+Coming back to the project later:
+
+```
+Run my Reboot app in ./my-app
+```
+
+Or just say "Run this Reboot app" from the project directory.
+
+## Next steps
+
+* **[Build with Claude Code](/get_started/claude_code)** — the
+  equivalent agent-driven workflow for Claude Code.
+* **[Python backend](/get_started/python)** and
+  **[React frontend](/get_started/react)** — build it by hand, to see
+  every file.
+* **[Users and sign-in](/users/overview)** — what the `User` type the
+  skill generated is doing.
+* **[Call your API from React](/call/from_react)** — the full
+  reference for the generated hooks.
+* **[Examples](/get_started/examples)** — more apps to explore.
+* **[Deploy to Reboot Cloud](/deploy_on_reboot_cloud)** — ship it with
+  `rbt cloud up`.
+* **[Join the Discord](https://discord.gg/cRbdcS94Nr)** — ask
+  questions and share what you're building!

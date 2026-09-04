@@ -1,0 +1,215 @@
+# React Native apps
+
+:::warning[React Native support is in alpha]
+
+The client runs on iOS and Android, and the
+[`bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic)
+example ships a complete Expo app, but it has had far less use than the web
+client, and the [agent skills](/get_started/claude_code) do not
+scaffold a native app yet. Expect rough edges, and please report them
+on [Discord](https://discord.gg/cRbdcS94Nr) or
+[GitHub](https://github.com/reboot-dev/reboot/issues).
+
+:::
+
+The Reboot React client runs in React Native, on iOS and Android, as
+well as in the browser. Your components, your generated hooks, and
+your reactive reads are the same code you would write for the
+[web](/surfaces/web).
+
+One thing genuinely differs: signing in. A native app cannot use the
+browser's redirect flow, so Reboot's OAuth server also speaks the flow
+native apps use, and the result is the same signed-in `User`.
+
+## Install
+
+```sh
+npm install -S @reboot-dev/reboot-react
+```
+
+An Expo app additionally needs the three modules Reboot delegates to:
+
+```sh
+npx expo install expo-web-browser expo-secure-store expo-linking
+npx expo install react-native-get-random-values
+```
+
+Register the last one before anything else loads: Reboot needs
+`crypto.getRandomValues` at import time, and React Native's runtime
+does not provide it:
+
+```js
+// index.js
+import "react-native-get-random-values";
+
+import { registerRootComponent } from "expo";
+import App from "./src/App";
+
+registerRootComponent(App);
+```
+
+On web that import is a no-op, since browsers already have Web Crypto.
+
+## Sign-in with `expoAuth`
+
+Build an auth object and hand it to `RebootClientProvider` as
+`nativeAuth`. Everything above the provider is written exactly as it
+is for the web.
+
+```tsx
+import { RebootClientProvider } from "@reboot-dev/reboot-react";
+import { expoAuth } from "@reboot-dev/reboot-react/native";
+import * as Linking from "expo-linking";
+import * as SecureStore from "expo-secure-store";
+import * as WebBrowser from "expo-web-browser";
+
+// Built once at module scope, not inline in the JSX: the provider
+// rebuilds its session machinery whenever this value changes
+// identity.
+const auth = expoAuth({
+  WebBrowser,
+  SecureStore,
+  Linking,
+  clientName: "Rebank Mobile",
+});
+
+const App = () => (
+  <RebootClientProvider url={REBOOT_URL} nativeAuth={auth}>
+    <Root />
+  </RebootClientProvider>
+);
+```
+
+`expoAuth` needs three things from Expo, and nothing else:
+
+| Module | What Reboot uses it for |
+| --- | --- |
+| `expo-web-browser` | Opening the identity provider's page in a system browser and detecting the redirect back. |
+| `expo-secure-store` | Keeping the refresh token and this installation's client registration in the device keychain. |
+| `expo-linking` | Deriving the redirect URI from the `scheme` in `app.json`. |
+
+`ExpoAuthOptions` also takes `redirectPath` (default `"redirect"`,
+giving `myapp://redirect`), `clientName` (shown on the consent screen,
+when there is one), and `storageKeyPrefix` (so two Reboot apps on one
+device do not overwrite each other's session).
+
+Reboot itself takes no dependency on Expo — the modules are typed
+structurally and passed in.
+
+### Bare React Native
+
+If you are not using Expo, use `nativeAuth` directly and supply the
+two primitives yourself:
+
+```ts
+import { nativeAuth } from "@reboot-dev/reboot-react/native";
+
+const auth = nativeAuth({
+  redirectUri: "myapp://redirect",
+  openAuthSession: myOpenAuthSession,  // Open a URL; resolve on redirect.
+  storage: myKeychainStorage,          // getItemAsync/setItemAsync/deleteItemAsync.
+});
+```
+
+The whole OAuth protocol lives inside Reboot; only opening a browser
+tab and persisting a secret are passed in.
+
+## Then it is the same as the web
+
+```tsx
+const Root = () => {
+  const signIn = useSignIn();
+  const signOut = useSignOut();
+  // No id is passed: the signed-in user's own `User` is this state
+  // type's default, resolved from the backend.
+  const { user, isLoading } = useUser();
+
+  if (isLoading) return <Notice text="Checking session…" />;
+  if (user === undefined) return <SignIn onSignIn={() => signIn()} />;
+  return <BankInterface user={user} onSignOut={() => void signOut()} />;
+};
+```
+
+The same [`useSignIn()`, `useSignOut()`, and generated
+`useUser()`](/surfaces/web#signing-in) hooks, against the same OAuth
+server, resolving the same `User`. `returnTo` is ignored on native,
+because there is no page to come back to.
+
+## Skip the consent screen
+
+A native app registers itself with the OAuth server dynamically, and
+registration proves nothing about who is registering — so by default
+Reboot shows the user a [consent
+screen](/users/oauth#skip_consent_for_redirect_uris) naming the client
+and the redirect URI its tokens will go to.
+
+List your own app's redirect URI to skip it:
+
+```python
+oauth=OAuth(
+    provider=...,
+    allowed_origins=[...],
+    skip_consent_for_redirect_uris=["bankpydanticmobile://redirect"],
+)
+```
+
+The URI comes from your `app.json` `scheme` plus the `redirectPath`.
+Under `rbt dev run`, Expo Go's `exp://<host>/--/...` development URI
+skips consent automatically — its host and port change from machine to
+machine, so there is no stable spelling to list — which means
+`npm start` needs no configuration at all.
+
+:::tip Prefer a verified link in production
+A custom scheme can be claimed by another app on the same device. An
+`https://` App Link or Universal Link, which the operating system
+verifies against your domain, cannot.
+:::
+
+## Pointing at the backend
+
+A simulator can reach `http://localhost:9991`; a physical phone
+cannot. Read the URL from the environment and set it per target:
+
+```tsx
+const REBOOT_URL =
+  process.env.EXPO_PUBLIC_REBOOT_URL ?? "http://localhost:9991";
+```
+
+| Target | `EXPO_PUBLIC_REBOOT_URL` |
+| --- | --- |
+| Browser (`expo start --web`) or iOS simulator | Unset — `localhost` works. |
+| Android emulator | `http://10.0.2.2:9991` |
+| Physical device on the same Wi-Fi | `http://<your-LAN-IP>:9991` |
+
+`rbt dev run` binds all interfaces, so it is reachable from a
+simulator and from a phone on the same network without extra flags.
+
+## Sharing generated code with a web app
+
+Point `rbt generate` at a directory both front ends can import from:
+
+```
+generate --react=frontend/api
+```
+
+Metro (React Native's bundler) resolves imports without file
+extensions, so leave `--react-extensions` off; the generated client's
+relative imports then resolve under both Vite and Metro.
+
+## Compatibility notes
+
+React Native does not provide every web API the client relies on. Two
+things are yours to cover, both shown above:
+
+- **`crypto.getRandomValues`** — import
+  `react-native-get-random-values` first, in `index.js`.
+- **Streaming `fetch` responses**, which reactive readers need. Use
+  Expo SDK 52 or newer, whose `fetch` supports them.
+
+## A complete example
+
+The [`bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic)
+example ships a full Expo front end under
+[`frontend/mobile/`](https://github.com/reboot-dev/reboot-bank-pydantic/tree/main/frontend/mobile),
+alongside a browser SPA and MCP UIs — all three against one backend
+and one `User`. See [Examples](/get_started/examples#bank-pydantic).

@@ -571,7 +571,9 @@ export class WebSockets {
             "number of concurrent streams. Reboot uses HTTP/2 by default " +
             "when you use TLS. You should definitely use TLS when you deploy " +
             "your application in the cloud, but you can also use TLS when " +
-            "running `rbt dev`, please see the documentation for how to do so."
+            "running `rbt dev`. See " +
+            "https://docs.reboot.dev/rbt_cli#bring-your-own-certificate-with-rbt-dev-run " +
+            "for how to do so."
         );
       }
     });
@@ -927,7 +929,7 @@ function trackFetch(url: URL) {
           )} are either long-running or ` +
           `queued because your browser limits the total number of simultaneous connections ` +
           `to the same host (${host}). You can solve this by ensuring you use HTTP/2 which ` +
-          `requires TLS. See https://docs.reboot.dev/tools/cli/#bring-your-own-certificate-with-rbt-dev-run ` +
+          `requires TLS. See https://docs.reboot.dev/rbt_cli#bring-your-own-certificate-with-rbt-dev-run ` +
           `for details on how to use TLS with 'rbt dev' (which works similarly for 'rbt serve').`
       );
 

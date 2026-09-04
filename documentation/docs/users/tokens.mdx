@@ -1,0 +1,294 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Bearer tokens
+
+Reboot authenticates calls with the standard
+`Authorization: Bearer` header. When you configure
+[`oauth=`](/users/oauth), Reboot mints those tokens and the generated
+clients attach them for you, so there is nothing to do.
+
+There are two situations in which you manage bearer tokens yourself
+instead of Reboot doing it all for you: attaching a token by hand
+(from a script, a server-to-server call, or a test), and accepting
+tokens that come from somewhere other than Reboot's `OAuth` server.
+This page covers both.
+
+## Attaching a token
+
+### From within your application
+
+To carry a bearer token on every call to a particular instance,
+pass it to `ref()`:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+```py
+from_account = Account.ref(
+    request.from_account_id,
+    bearer_token=bearer_token,
+)
+```
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const fromAccount = Account.ref(request.fromAccountId, { bearerToken });
+```
+  </TabItem>
+</Tabs>
+
+You can also pass it as an option when doing
+[explicit construction](/call/overview#explicit-construction):
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../tests/reboot/auth_tests.py&lines=399-403) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/auth_tests.py -->
+
+```py
+bank, _ = await Bank.create(
+    context,
+    SINGLETON_BANK_ID,
+    Options(bearer_token=VALID_JWT),
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const [bank] = await Bank.create(
+  context,
+  SINGLETON_BANK_ID,
+  {},
+  { bearerToken: VALID_JWT }
+);
+```
+  </TabItem>
+</Tabs>
+
+### From an `ExternalContext`
+
+To carry a token on every call made from an
+[`ExternalContext`](/call/from_outside_your_app):
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+  ```py
+  context = ExternalContext(
+      name='Example',
+      url='http://localhost:9991',
+      bearer_token=token,
+  )
+  ```
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+  ```typescript
+  const context = new ExternalContext({
+    name: "Example",
+    url: "http://localhost:9991",
+    bearerToken: token,
+  });
+  ```
+  </TabItem>
+</Tabs>
+
+### From React
+
+When you use Reboot's own sign-in, the token is handled for you:
+[`useSignIn()`](/surfaces/web#signing-in) establishes the session and
+the provider attaches the bearer. If the token comes from somewhere
+else, though, set it yourself:
+
+```tsx
+import { useRebootClient } from "@reboot-dev/reboot-react";
+
+const { setBearerToken } = useRebootClient();
+
+setBearerToken(token);
+```
+
+To start out with a token you already have, pass it to
+`RebootClientProvider` instead:
+
+```tsx
+<RebootClientProvider url={url} token={token}>
+  <App />
+</RebootClientProvider>
+```
+
+### From `initialize`
+
+An [`initialize` function](/implement/application#initialize-functions)
+runs with application-internal privileges by default. To have its
+calls authenticated as a particular caller instead, give
+`Application` the token to use:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+  ```py
+  application = Application(
+      servicers=[...],
+      initialize=initialize,
+      initialize_bearer_token=os.environ.get("INITIALIZE_BEARER_TOKEN"),
+  )
+  ```
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+  ```typescript
+  new Application({
+    servicers: [...],
+    initialize,
+    initializeBearerToken: process.env.INITIALIZE_BEARER_TOKEN,
+  }).run();
+  ```
+  </TabItem>
+</Tabs>
+
+## Verifying tokens yourself
+
+The `OAuth` server verifies the tokens it minted. To accept tokens
+minted by something else — an existing identity provider, an API-key
+scheme of your own, a legacy service — supply a `TokenVerifier`.
+
+Set it on your [`Application`](/implement/application):
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+  ```py
+  async def main():
+      application = Application(
+          servicers=[...],
+          token_verifier=MyTokenVerifier(...),
+      )
+      await application.run()
+  ```
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+  ```typescript
+  new Application({
+    servicers: [...],
+    ...,
+    tokenVerifier: new MyTokenVerifier(...),
+  }).run();
+  ```
+  </TabItem>
+
+</Tabs>
+
+In unit tests, hand that same `Application` to the test harness's
+`up`:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+  ```py
+  await self.rbt.up(
+      Application(
+          servicers=[...],
+          token_verifier=MyTokenVerifier(...),
+      )
+  )
+  ```
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+  ```typescript
+  await rbt.up(
+    new Application({
+      servicers: [...],
+      tokenVerifier: new MyTokenVerifier(...),
+    })
+  );
+  ```
+  </TabItem>
+</Tabs>
+
+The interface has a single method. It receives the token from the
+`Authorization: Bearer` header and returns an `Auth` object when the
+token is valid:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/aio/auth/token_verifiers.py&lines=26-31) -->
+<!-- The below code snippet is automatically added from ../../../reboot/aio/auth/token_verifiers.py -->
+
+```py
+@abstractmethod
+async def verify_token(
+    self,
+    context: ReaderContext,
+    token: Optional[str],
+) -> VerifyTokenResult:
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/nodejs/index.ts&lines=668-671) -->
+<!-- The below code snippet is automatically added from ../../../reboot/nodejs/index.ts -->
+
+```ts
+abstract verifyToken(
+  context: ReaderContext,
+  token?: string
+): Promise<Auth | null>;
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+Set any properties you like on the returned `Auth`
+([Python](https://github.com/reboot-dev/reboot/blob/main/reboot/aio/auth/__init__.py#L45),
+[TypeScript](https://github.com/reboot-dev/reboot/blob/main/reboot/nodejs/index.ts#L618))
+for your [authorizers](/users/authorization) to consume. The `user_id`
+(Python) / `userId` (TypeScript) property is special: it is what marks
+this as a valid user, and what `state_id_is_user_id` and the `User`
+default compare against.
+
+:::tip
+
+**Token verification does not necessarily mean user authentication!**
+
+Depending on where and how tokens are generated, a valid token may
+only mean "this is a valid user *of that provider*" — not "this is a
+user of *your* application". Read your provider's documentation
+carefully, and make sure you are validating tokens in a way that is
+specific to your application (audience checks, issuer checks, and so
+on).
+
+:::
+
+## Combining a verifier with Reboot's OAuth
+
+`oauth=` and `token_verifier=` can be set together. The `OAuth`
+server's verifier runs first: a token it minted is accepted, or
+rejected if it has expired; any other token is passed on to your
+`TokenVerifier`.
+
+Tokens your `TokenVerifier` accepts authenticate Reboot RPCs. They do
+not authenticate the [`/mcp` endpoint](/surfaces/ai_chat), because
+MCP clients sign in through OAuth rather than presenting a bearer
+token of their own, so that endpoint takes only tokens the `OAuth`
+server minted.
+
+## Third-party identity providers without Reboot's OAuth server
+
+If you would rather not use `oauth=` at all — for example because your
+users already sign in through an existing system that hands your front
+end an access token — the integration is:
+
+1. Implement a `TokenVerifier` that validates that provider's access
+   tokens and produces `Auth` objects with the right `user_id`.
+2. Provide [authorizer rules](/users/authorization) for your
+   servicers.
+
+Note that [`User` auto-construction](/users/overview) needs `oauth=`:
+a `token_verifier=` authenticates requests but never constructs users,
+so an application with a `User` type and no `oauth=` refuses to start.

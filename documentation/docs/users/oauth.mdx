@@ -1,0 +1,178 @@
+# Configure OAuth
+
+Reboot runs an OAuth 2.1 authorization server as part of your
+application. You do not stand one up, register your app with it, or
+write a callback handler — you hand `Application` an `OAuth` and it
+mounts the whole thing.
+
+```python
+from reboot.aio.applications import Application
+from reboot.aio.auth.oauth import OAuth
+from reboot.aio.auth.oauth_providers import (
+    Development,
+    Google,
+    OAuthProviderByEnvironment,
+)
+
+await Application(
+    servicers=[UserServicer, ...],
+    oauth=OAuth(
+        provider=OAuthProviderByEnvironment(
+            dev=Development(),
+            prod=Google(
+                client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
+                client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"),
+            ),
+        ),
+        allowed_origins=["https://app.example.com"],
+    ),
+).run()
+```
+
+That gives you sign-in for browsers, native apps, and AI chat clients,
+sessions that stay signed in, sign-out, and
+[`User` auto-construction](/users/overview) — from those few lines.
+
+:::note Python today
+`Application(oauth=...)` is currently Python-only. TypeScript backends
+authenticate callers with
+[`token_verifier=`](/users/tokens) instead.
+:::
+
+## `OAuth` options
+
+| Parameter | Description |
+| --- | --- |
+| `provider` | Required. An `OAuthProviderSelector` that picks which [OAuth provider](/users/providers) identifies users. |
+| `allowed_origins` | The browser origins allowed to make credentialed requests to your backend. Required in production. |
+| `skip_consent_for_redirect_uris` | Redirect URIs whose clients you already trust, so their users sign in without a consent screen. |
+
+### `provider`
+
+`provider` takes a *selector*, not a provider, so the choice can depend
+on where the application is running:
+
+```python
+provider=OAuthProviderByEnvironment(
+    dev=Development(),
+    prod=Google(...),
+)
+```
+
+`OAuthProviderByEnvironment` returns the `dev` arm under `rbt dev run`
+and the `prod` arm everywhere else — `rbt serve`, Reboot Cloud, and
+any environment Reboot cannot classify.
+
+Both arms must be passed explicitly, so the choice for each
+environment is deliberate, but either may be `None`. A `None` arm that
+is actually selected fails at startup. A provider checks its
+credentials only when it is selected, too, which is why the examples
+read them with `os.environ.get(...)`: the `prod` arm can be written
+down before its environment variables exist.
+
+```python
+provider=OAuthProviderByEnvironment(
+    dev=Development(),
+    # TODO: pick a real provider before deploying; `None` makes a
+    # production start fail loudly until you do.
+    prod=None,
+)
+```
+
+### `allowed_origins`
+
+`allowed_origins` is the exact-match list of HTTP origins
+(`scheme://host[:port]`) that browsers may make signed-in requests
+from.
+
+Your backend's own origin is always trusted, so a same-origin browser
+client works no matter what. `allowed_origins` only ever widens trust
+to additional, cross-origin front ends:
+
+```python
+allowed_origins=["https://app.example.com", "https://staging.example.com"]
+```
+
+- **In development** (`rbt dev run`), `http://localhost` and
+  `http://127.0.0.1` on any port are allowed automatically, so a Vite
+  or webpack dev server works without configuration.
+- **In production**, leaving `allowed_origins` unset is a hard error
+  at construction time. Pass your web app's real origin, or pass an
+  explicit empty list (`allowed_origins=[]`) to opt into
+  same-origin-only browser auth.
+
+Entries must be bare origins (`scheme://host[:port]`): a trailing
+slash, path, query, or fragment is rejected. Matching is exact;
+wildcards are not supported.
+
+### `skip_consent_for_redirect_uris`
+
+A client that cannot use the browser sign-in flow — an AI chat client,
+a native app — registers itself with Reboot's OAuth server.
+
+Registration proves nothing about who is registering, so by default
+Reboot shows the user a **consent screen** naming the client and the
+redirect URI its tokens will be sent to.
+
+List a redirect URI here to say you already trust whoever receives a
+code at it — typically your own first-party apps:
+
+```python
+skip_consent_for_redirect_uris=[
+    "myapp://redirect",                    # Custom scheme.
+    "https://myapp.example.com/redirect",  # App Link / Universal Link.
+]
+```
+
+Entries are compared for exact equality, and wildcards are refused.
+Under `rbt dev run`, Expo's `exp://<host>/--/...` development URIs skip
+consent automatically.
+
+:::tip Prefer a verified link
+A custom scheme like `myapp://` can be claimed by another app on the
+same device. An `https://` App Link or Universal Link, which the
+operating system verifies against your domain, cannot.
+:::
+
+## Going to production
+
+Four things to get right before you deploy:
+
+**1. Register Reboot's callback URL.** In your identity provider's own
+console, add
+
+```
+https://<your-app-base-url>/__/oauth/callback
+```
+
+as an authorized redirect URI. This is the single most common cause of
+a sign-in that works locally and fails in production.
+
+**2. Deliver client credentials as secrets.** Client IDs and secrets
+belong in environment variables, never in source. See
+[Secrets](/secrets), and `rbt cloud secret set` if you deploy on
+[Reboot Cloud](/deploy_on_reboot_cloud).
+
+**3. Set `allowed_origins`.** See
+[above](#allowed_origins) — production refuses to start without it.
+
+**4. Set `REBOOT_CRYPTO_ROOT_KEYS`.** Reboot derives the key it signs
+session tokens with from your application's cryptographic root keys,
+and every server process must agree on them. `rbt dev run` and Reboot
+Cloud set this for you; if you run
+[`rbt serve`](/deploy_on_your_own) yourself, you must provide it.
+
+:::caution Rotating root keys signs everyone out
+Rotating the root keys invalidates every outstanding token and sends
+every client back through the sign-in flow.
+:::
+
+## Next
+
+- [OAuth providers](/users/providers) — what to put in `dev=` and
+  `prod=`.
+- [Identity claims](/users/claims) — get the user's email and name.
+- [Users and sign-in](/users/overview) — what happens to your `User`
+  when somebody signs in.
+- [Bearer tokens](/users/tokens) — accepting tokens minted somewhere
+  else, alongside or instead of Reboot's own.

@@ -390,9 +390,9 @@ class DefaultAuthorizer(Authorizer[Message | Model, Message | Model | None]):
                 f"*** {self._state_name}.{method_name.split('.')[-1]} IS "
                 "MISSING AUTHORIZATION *** Calls to this method are ONLY "
                 "ALLOWED during development and will be DENIED in "
-                f"production. See {DOCS_BASE_URL}/learn_more/auth#default-authorizer "
-                "for more details. Will silence this message for the next 1 "
-                "minute."
+                f"production. See {DOCS_BASE_URL}/users/authorization"
+                "#relaxed-during-development for more details. Will "
+                "silence this message for the next 1 minute."
             )
         )
 

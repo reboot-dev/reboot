@@ -1,0 +1,195 @@
+# Call external APIs as the user
+
+Signing a user in tells you *who* they are. Sometimes you also want to
+act *as them* somewhere else: read their Google Calendar, open a pull
+request on their GitHub, post to their Slack.
+
+That always has two halves:
+
+1. **Capture** the external service's OAuth tokens once, stored
+   encrypted in an
+   [`OAuthTokenManager`](/library_services/oauth_token_manager) — one
+   manager per external service.
+2. **Use** them: fetch the tokens back and make the outbound call from
+   a [workflow](/implement/workflows).
+
+How you capture depends on *whose* API you want to call.
+
+## Your identity provider's own API
+
+If the API belongs to the provider your users already sign in with,
+Reboot captures its tokens for you. Ask for the extra OAuth
+`scopes=[...]` your calls need — on top of the identity scope the
+provider always requests — and pass `store_tokens=True`:
+
+```py
+oauth=OAuth(
+    provider=OAuthProviderByEnvironment(
+        # `Development()` issues no tokens, so to exercise the
+        # provider's API locally use the real provider in `dev=` too.
+        dev=_google(),
+        prod=_google(),
+    ),
+    allowed_origins=["https://app.example.com"],
+)
+
+def _google() -> Google:
+    return Google(
+        client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
+        client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"),
+        # Request the least you need.
+        scopes=["https://www.googleapis.com/auth/calendar.events"],
+        store_tokens=True,
+    )
+```
+
+On each sign-in, Reboot captures the provider's access and refresh
+tokens and stores them, encrypted, in the `OAuthTokenManager` for that
+provider. Your code reads them back with
+[`OAuthTokenManager.fetch`](/library_services/oauth_token_manager#fetch),
+as shown under [Using the tokens](#using-the-tokens) below.
+
+This needs the `OAuthTokenManager` library on your `Application`; see
+[Imports and servicers](/library_services/oauth_token_manager#imports-and-servicers)
+for the lines to add.
+
+:::important
+
+**Reboot stores only the provider's *own* tokens.** This matters most
+with a broker like `Auth0` or `Ory`: when a user signs in "with
+Google" through Auth0, what gets stored is an **Auth0** token. It
+authorizes Auth0's APIs, not Google's.
+
+To call the upstream service in that case, either retrieve the
+federated provider's token from the broker (Auth0 keeps it on the
+user's profile, retrievable via its Management API with the
+`read:user_idp_tokens` scope), or capture the upstream service's
+tokens yourself, as described next.
+
+:::
+
+## Any other OAuth service
+
+When the service is *not* your identity provider — your users sign in
+with Google but you want their Slack — there is no shortcut. A Google
+grant only authorizes Google's APIs.
+
+Run the other service's OAuth flow yourself with your own HTTP
+routes, then store what it issues in that service's
+`OAuthTokenManager`, so that **all** of your application's OAuth
+tokens live in the same kind of store:
+
+1. Register an **authorize** route that redirects the browser to the
+   service's authorize URL — your client ID, the scopes you need, your
+   callback as the redirect URI, and a signed `state` carrying the
+   signed-in user's ID.
+2. Register a **callback** route that verifies the `state`, exchanges
+   the `code` at the service's token endpoint, and calls
+   [`OAuthTokenManager.store`](/library_services/oauth_token_manager#store)
+   under a service ID of your choosing (e.g. `"slack.com"`).
+
+`OAuthTokenManager`'s methods are application-internal, so the
+callback route must opt into an application-internal context:
+
+```py
+# In `main()`, after constructing `application`:
+application.http.get("/__/oauth/slack/authorize")(slack_authorize)
+application.http.get("/__/oauth/slack/callback", app_internal=True)(
+    slack_callback
+)
+```
+
+:::caution
+
+`app_internal=True` makes the route's calls count as your own
+application's, so the [default authorizer](/users/authorization#defaults-you-get-for-free),
+and any `is_app_internal` rule you wrote, lets them through. Only set
+it on a route you are certain serves trusted traffic — here, a
+callback that runs only after you have verified the OAuth `state` you
+issued. Never set it on a route that acts on unvalidated request
+input.
+
+:::
+
+## Using the tokens
+
+Reading tokens back and calling the service is the same however they
+were captured. The outbound HTTP call belongs in a
+[workflow](/implement/workflows), wrapped in
+[`at_least_once` or `at_most_once`](/implement/workflows#at-least-or-at-most-once)
+like any other [side effect](/side_effects):
+
+```py
+from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager
+from reboot.aio.workflows import at_least_once
+from reboot.std.oauth.v1.oauth import GOOGLE
+
+@classmethod
+async def create_event(
+    cls,
+    context: WorkflowContext,
+    request: User.CreateEventRequest,
+) -> User.CreateEventResponse:
+    stored = await OAuthTokenManager.ref(GOOGLE).fetch(
+        context, user_id=context.state_id,
+    )
+    if not stored.found:
+        # Not connected yet: surface a "connect" path, don't crash.
+        return User.CreateEventResponse(connected=False)
+
+    async def do_create():
+        return await calendar_api.create_event(
+            access_token=stored.tokens.access_token,
+            summary=request.summary,
+        )
+
+    result = await at_least_once("Create event", context, do_create)
+    return User.CreateEventResponse(connected=True)
+```
+
+## Services that use an API key instead
+
+Some services have no per-user OAuth; the user gives your application
+an API key or personal access token instead.
+
+:::note
+
+This section is about a key **the user** provides so your application
+can act *as that user* — a per-user secret, stored per user. A key
+**you, the developer,** hold for the whole application (your Stripe
+secret key, your OpenAI key) is not per-user state and does not belong
+in application state at all: deliver it as an application
+[secret](/secrets) via environment variables.
+
+:::
+
+`OAuthTokenManager` is purpose-built for OAuth tokens; do not shoehorn
+an API key into it. The key is still a secret at rest, so encrypt it
+with [`Ciphertext`](/library_services/ciphertext) and keep the
+returned `Ciphertext` state ID — itself a harmless string — in your
+state as the reference to the encrypted value:
+
+```py
+ciphertext, _ = await Ciphertext.encrypt(
+    context,
+    plaintext=request.api_key.encode(),
+    associated_data=make_associated_data(
+        user_id=user_id, purpose="acme-api-key",
+    ),
+    scope=f"user:{user_id}",  # The crypto-shred unit.
+    key_manager_id=APP_SHARED_KEY_MANAGER_ID,
+)
+# The reference to the encrypted key; never the key itself.
+self.state.acme_api_key_id = ciphertext.state_id
+```
+
+To use it, `decrypt` (with the same `associated_data`) and make the
+call from a workflow, exactly as above.
+
+## Erasing a user's credentials
+
+Both stores support per-user erasure by crypto-shredding: see
+[erasing a user's tokens](/library_services/oauth_token_manager#erasing-a-users-tokens)
+for `OAuthTokenManager`, and
+[crypto-shred](/library_services/ciphertext#crypto-shred-shred) for
+`Ciphertext`-encrypted API keys.

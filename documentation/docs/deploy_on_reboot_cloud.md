@@ -62,6 +62,36 @@ You must have Docker installed locally to build the container.
 (`linux/amd64`) and pushes it to a registry managed by Reboot Cloud, so
 you don't need your own container registry.
 
+### Get your auth ready for production
+
+If your application signs users in — that is, if it configures
+[`oauth=`](/users/oauth) — three things need to be true before you
+deploy:
+
+1. **A real provider in the `prod` arm.** `Development()` must never
+   serve production traffic, and `prod=None` makes the deployment fail
+   to start on purpose. Pick a
+   [provider](/users/providers) and pass its credentials from
+   environment variables.
+2. **`allowed_origins` set explicitly.** List your web app's origin,
+   or pass `[]` for same-origin-only. Omitting it is a startup error
+   in production.
+3. **Reboot's callback URL registered** with your identity provider:
+   `https://<your-app-url>/__/oauth/callback`.
+
+Deliver client IDs and secrets as [secrets](/secrets), never in
+source:
+
+```console
+$ rbt cloud secret set \
+    --application-name=my-app \
+    --organization=my-org \
+    GOOGLE_OAUTH_CLIENT_SECRET
+```
+
+Reboot Cloud provides the cryptographic root keys your application
+signs sessions with, so there is nothing to configure for that here.
+
 ## Deploy with `rbt cloud up`
 
 `rbt cloud up` builds your container, pushes it, and deploys it as a
@@ -143,7 +173,7 @@ tracked in [this issue](https://github.com/reboot-dev/reboot/issues/71).
 - `rbt cloud secret set`, `rbt cloud secret list`, and
   `rbt cloud secret delete` manage the secrets that your deployed
   application can read as environment variables. See
-  [Secrets](/learn_more/secrets) for details.
+  [Secrets](/secrets) for details.
 - `rbt cloud logs` streams the logs of your deployed application. Use
   `--follow` to keep following new log lines as they are produced, and
   `--revisions` to select which revisions to show logs for.

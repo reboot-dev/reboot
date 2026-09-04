@@ -1,0 +1,158 @@
+# Identity claims
+
+Sign-in gives you a stable user ID. Often you want a little more: the
+person's verified email address so you can mail them, their name so
+you can greet them, their picture so you can show an avatar.
+
+Those are **identity claims** — facts about the user that your
+[OAuth provider](/users/providers) has verified. Ask for them on the
+provider, and Reboot delivers them to your `User` on every sign-in.
+
+## Asking for claims
+
+Pass `claims=` to the OAuth provider:
+
+```python
+Google(
+    client_id=...,
+    client_secret=...,
+    claims=["email", "email_verified", "name"],
+)
+```
+
+Which claims a provider can deliver is fixed and checked at
+construction time. See [OAuth providers](/users/providers) for the
+claims each one can deliver.
+
+Pass a mapping instead of a list to present a claim under a different
+name:
+
+```python
+claims={"email": "verified_email"}
+```
+
+Leaving `claims=` off entirely — the default — turns claim delivery
+off. Reboot then knows only the user's ID.
+
+## Receiving claims
+
+Claims arrive through a `set_claims` method that the framework injects
+on your `User` type. Override it in your servicer:
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../tests/reboot/documentation/backend/src/servicers/todos.py&lines=57-66&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/backend/src/servicers/todos.py -->
+
+```python
+async def set_claims(
+    self,
+    context: TransactionContext,
+    request: User.SetClaimsRequest,
+) -> None:
+    """Runs on every sign-in with the identity provider's verified
+    claims, which are the complete, current set: derive all
+    claim-backed state from them rather than merging."""
+    self.state.name = request.claims.get("name", "")
+    self.state.email = request.claims.get("email", "")
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+`request.claims` is a `dict[str, Any]`, keyed by the presented claim
+names, carrying the values verbatim as the provider sent them.
+
+Three rules govern it:
+
+1. **It is a full replace.** Every delivery carries the *complete,
+   current* set of verified claims. Derive all your claim-backed state
+   from it, rather than merging into what you had.
+2. **It must be idempotent.** `set_claims` runs on *every* sign-in,
+   not just the first, so re-delivering identical claims has to be
+   harmless.
+3. **A claim can be missing.** Providers omit claims they do not have
+   for a user. Use `.get()` with a default rather than indexing.
+
+:::note
+If claims are delivered and your servicer has not overridden
+`set_claims`, Reboot raises. Either override the method, or stop
+requesting claims.
+:::
+
+## When claims are delivered
+
+Claims are delivered on a sign-in, not on a token refresh, and the
+previously delivered claims stand until the next sign-in. So a user
+who changes their email address at the provider propagates that change
+to your application when they next sign in. If that is too late for
+your application and you use Ory, read on.
+
+## Keeping claims fresh with Ory
+
+[`Ory`](/users/providers#ory) can push identity changes to your
+application as they happen. Pass a `webhook_secret` (it requires
+`claims=`) and Reboot exposes `POST /__/oauth/ory/webhook`:
+
+```python
+Ory(
+    domain=os.environ.get("ORY_DOMAIN"),
+    client_id=os.environ.get("ORY_CLIENT_ID"),
+    client_secret=os.environ.get("ORY_CLIENT_SECRET"),
+    claims=["email", "email_verified"],
+    webhook_secret=os.environ.get("ORY_WEBHOOK_SECRET"),
+)
+```
+
+Then configure an Ory Action to call it after the settings flow. In
+the Ory project config, under `selfservice.flows.settings.after`:
+
+```yaml
+hooks:
+  - hook: web_hook
+    config:
+      url: https://<your-app-base-url>/__/oauth/ory/webhook
+      method: POST
+      # Jsonnet: function(ctx) { identity: ctx.identity }
+      body: base64://ZnVuY3Rpb24oY3R4KSB7IGlkZW50aXR5OiBjdHguaWRlbnRpdHkgfQ==
+      auth:
+        type: api_key
+        config:
+          name: x-ory-webhook-key
+          value: <webhook_secret>
+          in: header
+```
+
+The webhook expects a JSON body shaped like
+`{"identity": {"id": ..., "traits": {...}, ...}}`, which the Jsonnet
+above produces, and delivers the identity's claims to the same
+`set_claims` method a sign-in does.
+
+Two limits:
+
+- **It never creates a `User`.** Claims are delivered only to a `User`
+  that already exists; an identity that has never signed in is left
+  alone.
+- **Admin-API edits do not fire it.** Identity changes made through
+  Ory's admin API do not run flow-scoped actions, so those still
+  propagate at the user's next sign-in.
+
+Treat `webhook_secret` like `client_secret`: deliver it as a
+[secret](/secrets). Leave it off to keep the route unexposed.
+
+## Claims in local development
+
+[`Development`](/users/providers#development) fabricates `email`,
+`email_verified`, and `name` for its fake identities, so you can
+exercise `set_claims` without registering with a real provider:
+
+```python
+OAuthProviderByEnvironment(
+    dev=Development(claims=["email", "name"]),
+    prod=Google(..., claims=["email", "name"]),
+)
+```
+
+## Claims are not authorization
+
+A claim tells you something the provider has verified about the user.
+It is not a permission. Decide what a caller may do in an
+[authorizer](/users/authorization), keyed on the user's ID — not on an
+email domain or a name you happened to receive.

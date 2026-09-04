@@ -6,8 +6,12 @@ import TabItem from "@theme/TabItem";
 This page provides an overview of getting your development environment
 ready for building Reboot applications. Once your development
 environment is ready you can then start to
-[define](/learn_more/define/overview) and
-[implement](/learn_more/implement/servicers) your API.
+[define](/define/overview) and
+[implement](/implement/servicers) your API.
+
+New to Reboot? [Build with Claude Code](/get_started/claude_code) or
+[Codex](/get_started/codex) gets you a running app in minutes; this
+page is the reference behind what they set up.
 
 ## Set up your environment
 
@@ -77,12 +81,19 @@ them correctly to `rbt`.
 
 Here is a suggested file layout:
 
-| Files    | Directory |
+| Files | Directory |
 | -------- | ------- |
-| `*.proto`  | `api/`    |
+| API definitions (`*.py`, `*.ts`) | `api/` |
 | Backend source `*.py`, `*.ts/js` | `backend/src` |
 | Backend tests `*.py`, `*.ts/js` | `backend/tests` |
-| Frontend | `web` |
+| Generated React client | `frontend/api` |
+| Browser app | `frontend/web` |
+| React Native app | `frontend/mobile` |
+| `UI` method apps, one per method | `frontend/mcp/<name>` |
+
+Putting the generated client in `frontend/api` lets every frontend of
+your application share one copy of it. See
+[One backend, many frontends](/surfaces/overview).
 
 ## `.rbtrc` and flags
 
@@ -171,30 +182,32 @@ rbt generate --python=backend/api/ api/ -- --mypy_out=backend/api/
 In `.rbtrc`:
 
 ```shell
-# Find '.proto' files in 'api/'.
+# Find API definitions in 'api/'.
 generate api/
 
-# Generate 'python' code from our '.proto' files in 'backend/api/'.
+# Generate Python code into 'backend/api/'.
 generate --python=backend/api/
 
-# Generate 'mypy' code from our '.proto' files in 'backend/api/mypy/'.
+# Generate 'mypy' stubs into 'backend/api/mypy/'.
 generate -- --mypy_out=backend/api/mypy/
 ```
 
-In these examples, the order of the flags is crucial. All flags that appear
-after `--` are passed directly to the underlying tool (in this case,
-`protoc`).
+In these examples, the order of the flags is crucial. All flags that
+appear after `--` are passed directly to the underlying code
+generator.
 
-#### AI Chat App flags
+#### Frontend flags
 
-When building [AI Chat Apps](/ai_chat_apps/get_started), add these
-to your `.rbtrc`:
+When your application has a React frontend — a
+[web app](/surfaces/web), a
+[React Native app](/surfaces/react_native), or
+[`UI` methods](/surfaces/ui_methods) — add these to your `.rbtrc`:
 
 ```shell
-# Generate React hooks for AI Chat App UIs.
+# Generate typed React hooks, shared by every frontend.
 generate --react=frontend/api
 
-# Proxy UIs through Vite for hot module replacement.
+# Proxy the frontend through Vite for hot module replacement.
 dev run --frontend-root-path=frontend
 
 dev run:hmr --frontend-host=http://localhost:4444
@@ -213,8 +226,8 @@ dev run --default-config=hmr
 
 <!-- ## Boilerplate code
 
-The `rbt generate` command can generate boilerplate code based on your `.proto`
-files, giving you copy-paste-able Python/TypeScript method definitions for which
+The `rbt generate` command can generate boilerplate code based on your API
+definitions, giving you copy-paste-able Python/TypeScript method definitions for which
 you only need to fill in the implementation. To generate the boilerplate code,
 use the `--boilerplate` flag followed by the path to the directory where you
 want the boilerplate code to be placed:
@@ -266,9 +279,9 @@ By default your application state will not be persisted across
 restarts. To persist state, you can pass an `--application-name=...` flag to `rbt dev
 run`.
 
-When state is persisted, backwards incompatible changes in your `.proto` files
-are detected, and will trigger errors to encourage resolving them before they
-reach production. The `--on-backwards-incompatibility` flag allows you to control
+When state is persisted, backwards incompatible changes to your API
+definitions are detected, and will trigger errors to encourage
+resolving them before they reach production. The `--on-backwards-incompatibility` flag allows you to control
 what happens when backwards incompatibility is encountered:
 
 * `ask`: (default) Asks whether you would like to expunge the stored state to

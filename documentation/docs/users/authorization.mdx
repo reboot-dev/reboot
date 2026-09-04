@@ -1,0 +1,348 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Authorization
+
+[Sign-in](/users/overview) establishes *who* is calling. Authorization
+decides *what they may do*. In Reboot you declare that once per
+servicer, as a rule for each of its methods, and Reboot enforces the
+rule before the method runs — rather than an `if` statement buried in
+every method body.
+
+Every call is checked in two steps:
+
+1. **Token verification** turns the caller's credential into an `Auth`
+   object with a `user_id` (and any other properties you put on it).
+   With [`oauth=`](/users/oauth) configured, Reboot does this for you;
+   see [Bearer tokens](/users/tokens) for doing it yourself.
+2. **Authorizers** decide, per method, whether that caller may
+   proceed.
+
+## Defaults you get for free
+
+Before writing any authorizer, know what you already have:
+
+- **`User` methods** are callable by that user, and by your own
+  application code. Nobody else.
+- **Every other state type** is callable only by your own application
+  code. A call arriving from outside is denied.
+
+For a great many applications that is the entire authorization model:
+users reach their own `User`, `User` methods reach everything else on
+their behalf, and no external caller can address your internal types
+directly.
+
+### Overriding the defaults
+
+Implementing `authorizer()` on a servicer replaces that type's default
+entirely; nothing from it carries over. If your own application code
+should still be able to call a method, allow that explicitly with
+`is_app_internal`. On a `User` servicer, likewise re-state the owner
+rule with `state_id_is_user_id` if you still want it:
+
+```python
+return User.Authorizer(
+    profile=allow_if(any=[state_id_is_user_id, is_app_internal]),
+    # ...
+)
+```
+
+Both callables are described under
+[Built-in callables](#built-in-callables) below.
+
+### Relaxed during development
+
+Under `rbt dev run`, a call from outside to a type that has no
+`authorizer()` is **allowed** rather than denied, so you can build the
+app before deciding who may call what. Each such call logs a warning:
+
+```
+*** TodoList.todos IS MISSING AUTHORIZATION *** Calls to this method are ONLY ALLOWED during development and will be DENIED in production. See https://docs.reboot.dev/users/authorization#relaxed-during-development for more details. Will silence this message for the next 1 minute.
+```
+
+Under `rbt serve` and on Reboot Cloud those calls are denied.
+Implementing `authorizer()` on the servicer silences the warning. The
+`User` default is not relaxed; it applies in development too.
+
+## Writing an authorizer
+
+Implement `authorizer()` on your [servicer](/implement/servicers) and
+give a rule per method:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/backend/src/servicers/counter.py&lines=72-84&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/backend/src/servicers/counter.py -->
+
+```python
+class CounterServicer(Counter.Servicer):
+    """Servicer for the Counter state machine."""
+
+    def authorizer(self) -> Authorizer:
+        return Counter.Authorizer(
+            # `create` is restricted to trusted app code and records
+            # the counter's owner; every other method is restricted to
+            # that owner (or, again, to trusted app code).
+            create=allow_if(all=[is_app_internal]),
+            get=allow_if(any=[_caller_is_owner, is_app_internal]),
+            increment=allow_if(any=[_caller_is_owner, is_app_internal]),
+            description=allow_if(any=[_caller_is_owner, is_app_internal]),
+        )
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { allow, allowIf } from "@reboot-dev/reboot";
+
+class AccountServicer extends Account.Servicer {
+
+  authorizer() {
+    return new Account.Authorizer({
+      balance: allowIf({ any: [isAdmin, isAccountOwner] }),
+      deposit: allow(),
+      withdraw: allowIf({ all: [isAccountOwner] }),
+      ...
+    });
+  }
+
+  ...
+```
+  </TabItem>
+</Tabs>
+
+You can also return a single rule directly from `authorizer()`, which
+then applies to every method on the type:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+```py
+from reboot.aio.auth.authorizers import allow_if
+
+class AccountServicer(Account.Servicer):
+
+    def authorizer(self):
+        return allow_if(all=[is_admin])
+
+    ...
+```
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { allowIf } from "@reboot-dev/reboot";
+
+class AccountServicer extends Account.Servicer {
+
+  authorizer() {
+    return allowIf({ all: [isAdmin] });
+  }
+
+  ...
+```
+  </TabItem>
+</Tabs>
+
+## Rules
+
+Rules come from `reboot.aio.auth.authorizers` (Python) or
+`@reboot-dev/reboot` (TypeScript).
+
+### `deny()`
+
+Denies every request, your own application's included. Use it to
+take a method out of service without removing it:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+```python
+from reboot.aio.auth.authorizers import deny
+
+class TodoListServicer(TodoList.Servicer):
+
+    def authorizer(self):
+        return TodoList.Authorizer(
+            # Not ready yet: nobody may call it.
+            share=deny(),
+            # ...
+        )
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { deny } from "@reboot-dev/reboot";
+
+class TodoListServicer extends TodoList.Servicer {
+  authorizer() {
+    return new TodoList.Authorizer({
+      // Not ready yet: nobody may call it.
+      share: deny(),
+      // ...
+    });
+  }
+}
+```
+  </TabItem>
+</Tabs>
+
+### `allow()`
+
+Allows every request. Use it deliberately — it makes the method
+callable by anyone who can reach your backend, signed in or not:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+```python
+from reboot.aio.auth.authorizers import allow
+
+class TodoListServicer(TodoList.Servicer):
+
+    def authorizer(self):
+        return TodoList.Authorizer(
+            # Anyone may read a list.
+            todos=allow(),
+            # ...
+        )
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { allow } from "@reboot-dev/reboot";
+
+class TodoListServicer extends TodoList.Servicer {
+  authorizer() {
+    return new TodoList.Authorizer({
+      // Anyone may read a list.
+      todos: allow(),
+      // ...
+    });
+  }
+}
+```
+  </TabItem>
+</Tabs>
+
+### `allow_if()`
+
+Takes a set of *authorizer callables* — the functions that make the
+actual decision. Each returns an `Authorizer.Decision`: `Ok`,
+`PermissionDenied`, or `Unauthenticated`.
+
+Pass them via `all` to require that *every* callable decides `Ok`, or
+via `any` to allow the call when *at least one* does:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+```python
+from reboot.aio.auth.authorizers import allow_if, is_app_internal
+
+class TodoListServicer(TodoList.Servicer):
+
+    def authorizer(self):
+        return TodoList.Authorizer(
+            # Only your own application code may create a list.
+            create=allow_if(all=[is_app_internal]),
+            # The list's owner may add to it; so may your own code.
+            add=allow_if(any=[_caller_is_owner, is_app_internal]),
+        )
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { allowIf, isAppInternal } from "@reboot-dev/reboot";
+
+class TodoListServicer extends TodoList.Servicer {
+  authorizer() {
+    return new TodoList.Authorizer({
+      // Only your own application code may create a list.
+      create: allowIf({ all: [isAppInternal] }),
+      // The list's owner may add to it; so may your own code.
+      add: allowIf({ any: [callerIsOwner, isAppInternal] }),
+    });
+  }
+}
+```
+  </TabItem>
+</Tabs>
+
+`_caller_is_owner` (`callerIsOwner`) is written in the next section.
+
+## Authorizer callables
+
+A callable receives the `context`, the instance's `state`, and the
+`request`, and returns a decision. Here is one that allows the owner
+of a `Counter` and nobody else:
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/backend/src/servicers/counter.py&lines=20-33&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/backend/src/servicers/counter.py -->
+
+```python
+def _caller_is_owner(
+    *,
+    context: ReaderContext,
+    state: Optional[Counter.State],
+    **kwargs,
+):
+    """Allow when the caller's `user_id` matches the Counter's recorded
+    `owner_id`. A not-yet-constructed Counter (`state is None`) falls
+    through to deny."""
+    if context.auth is None or not context.auth.user_id:
+        return Unauthenticated()
+    if state is not None and context.auth.user_id == state.owner_id:
+        return Ok()
+    return PermissionDenied()
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+Note the pattern: it reads the caller's identity off `context.auth`,
+compares it against durable state, and returns a decision. It does not
+raise, and it does not mutate anything.
+
+### Built-in callables
+
+Reboot ships the ones almost every application needs:
+
+| Callable | Decides `Ok` when |
+| --- | --- |
+| `is_app_internal` | The call originates inside your own application rather than from a client. |
+| `state_id_is_user_id` | The caller's `user_id` equals the instance's state ID — the rule behind the `User` default. |
+| `has_verified_token` | The caller presented a token that verified. Says nothing about *which* user it is. |
+
+:::note
+
+Verifying a token and running authorizers *must not have effects*, so
+they always receive a `ReaderContext` regardless of the
+[kind of method](/define/methods) being authorized.
+
+:::
+
+## A pattern that works
+
+The combination in the `Counter` example above generalizes well:
+
+```py
+create=allow_if(all=[is_app_internal]),
+get=allow_if(any=[_caller_is_owner, is_app_internal]),
+```
+
+- Construction is **application-internal only**, so instances are only
+  ever created through a `User` method that records who owns them.
+- Every other method allows the recorded owner, or trusted application
+  code.
+
+That gives you per-instance ownership without a permissions table, and
+it holds no matter which surface the call arrives from — web, native,
+or an AI chat client.
+
+## Next
+
+- [Bearer tokens and token verification](/users/tokens) — bringing
+  your own credentials.
+- [Users and sign-in](/users/overview) — where `context.auth.user_id`
+  comes from.
+- [Errors](/errors) — what a denied call looks like to the caller.
