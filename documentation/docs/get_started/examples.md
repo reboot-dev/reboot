@@ -124,7 +124,8 @@ Start with `hello`, `counter`, or `bank` before this one.
 
 ### `ai-chat-counter`
 
-_Python backend, React AI chat UIs and a web app_
+[`reboot-dev/reboot/…/ai-chat-counter`](https://github.com/reboot-dev/reboot/tree/main/reboot/examples/ai-chat-counter)
+— _Python backend, React AI chat UIs and a web app_
 
 A counter with visual UIs that run inside ChatGPT, Claude, VS Code, or
 Goose — plus a standalone browser SPA that the chat UI deep-links to.
