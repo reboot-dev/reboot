@@ -49,6 +49,17 @@ export ANDROID_HOME
 export ANDROID_SDK_ROOT="${ANDROID_HOME}"
 export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/emulator:${HOME}/.maestro/bin:${PATH}"
 
+# npm's default `fetch-timeout` is five minutes, which a degraded
+# registry can burn twice over in one run: once for the `.rbt` install
+# that `rbt dev run` performs and once for the app's own dependencies.
+# That alone outlasts this test's budget, so fail a stalled request
+# quickly and retry it instead. `prefer-offline` then serves the
+# `.rbt` packages from the cache the devcontainer image warms, rather
+# than revalidating them against the registry.
+export npm_config_fetch_timeout=60000
+export npm_config_fetch_retries=5
+export npm_config_prefer_offline=true
+
 # The long-running background processes redirect their output to these
 # files (so their detached children can't hold `bazel test`'s output
 # pipe open; see the emulator launch below). That redirection means a
