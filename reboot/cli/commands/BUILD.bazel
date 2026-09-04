@@ -37,6 +37,7 @@ py_library(
         "//rbt/std/presence/v1:presence_py_reboot",
         "//reboot/aio:aborted_py",
         "//reboot/aio:external_py",
+        "//reboot/cli/common:blob_data_plane_py",
         "//reboot/cli/common:directories_py",
         "//reboot/cli/common:frontend_py",
         "//reboot/cli/common:monkeys_py",
@@ -121,6 +122,7 @@ py_library(
     deps = [
         requirement("aiofiles"),
         ":dev_py",
+        "//reboot/cli/common:blob_data_plane_py",
         "//reboot/cli/common:detect_cores_py",
         "//reboot/cli/common:directories_py",
         "//reboot/cli/common:frontend_py",
