@@ -710,6 +710,22 @@ RUN if [ "${TARGETARCH}" = "amd64" ]; then \
     && bash /tmp/maestro-install.sh \
     && rm /tmp/maestro-install.sh; \
     fi
+
+# Warm the npm cache with the packages `rbt generate` installs into a
+# project's `.rbt` directory, and with their dependencies. This
+# version must match the one `_check_or_install_npm_packages` asks for
+# in `reboot/cli/commands/generate.py`. When a test runs `rbt dev run`
+# against a fresh state directory it installs these packages, and a
+# warm cache lets it do that without a registry round-trip. A real
+# resolution is what walks the dependency graph, so this installs the
+# three into a throwaway prefix, leaving the whole closure in the
+# cache; it also fails the build if the pin stops resolving.
+ARG BUFBUILD_VERSION=1.10.1
+RUN npm install --prefix /tmp/npm-cache-warm \
+    @bufbuild/protoplugin@${BUFBUILD_VERSION} \
+    @bufbuild/protoc-gen-es@${BUFBUILD_VERSION} \
+    @bufbuild/protobuf@${BUFBUILD_VERSION} \
+    && rm -rf /tmp/npm-cache-warm
 USER root
 
 ###############################################################################
