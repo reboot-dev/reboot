@@ -131,19 +131,16 @@ const sidebars = {
           label: "React Native apps",
         },
         {
-          type: "doc",
-          id: "surfaces/ai_chat",
+          type: "category",
           label: "AI chat apps",
-        },
-        {
-          type: "doc",
-          id: "surfaces/ui_methods",
-          label: "UI methods",
-        },
-        {
-          type: "doc",
-          id: "agents",
-          label: "Agents inside your app",
+          link: { type: "doc", id: "surfaces/ai_chat" },
+          items: [
+            {
+              type: "doc",
+              id: "surfaces/ui_methods",
+              label: "UI methods",
+            },
+          ],
         },
       ],
     },
@@ -195,6 +192,11 @@ const sidebars = {
       items: [
         "tasks",
         "side_effects",
+        {
+          type: "doc",
+          id: "agents",
+          label: "Agents inside your app",
+        },
         "idempotency",
         "errors",
         "secrets",
