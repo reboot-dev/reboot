@@ -37,11 +37,13 @@ ChatRoomMethods = Methods(
         request=None,
         response=MessagesResponse,
         description="Every message posted to the room so far.",
+        mcp=None,
     ),
     send=Writer(
         request=SendRequest,
         response=None,
         description="Post one message to the room.",
+        mcp=None,
     ),
 )
 
@@ -61,6 +63,12 @@ request and response types.
 :::important
 All Pydantic fields must include a `tag` parameter using
 `Field(tag=N)`. This is required for safe backwards compatibility.
+:::
+
+:::important
+Every method must say whether an AI may call it: `mcp=Tool()` or
+`mcp=None`. There is no default, so leaving it off is an error. See
+[Creating tools for the AI](#creating-tools-for-the-ai).
 :::
 
 :::info Naming conventions
