@@ -11,7 +11,8 @@ import { themes as prismThemes } from "prism-react-renderer";
 /** @type {import('@docusaurus/types').Config} */
 const config: Config = {
   title: "Reboot Docs",
-  tagline: "Distributed Data - Batteries Included - Learn How!",
+  tagline:
+    "A full-stack framework for the AI era: durable applications, correct concurrency, retry safety, and signed-in users.",
   favicon: "img/favicon.svg",
 
   // Set the production url of your site here
