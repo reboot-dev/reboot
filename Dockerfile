@@ -710,6 +710,20 @@ RUN if [ "${TARGETARCH}" = "amd64" ]; then \
     && bash /tmp/maestro-install.sh \
     && rm /tmp/maestro-install.sh; \
     fi
+
+# Warm the npm cache with the packages `rbt generate` installs into a
+# project's `.rbt` directory. These versions must match the ones
+# `_check_or_install_npm_packages` asks for in
+# `reboot/cli/commands/generate.py`. The Maestro tests run `rbt dev
+# run` against a fresh state directory, so that install happens on
+# every run; a warm cache plus `prefer-offline` in the test harness
+# serves it without a registry round-trip. Only on amd64, matching the
+# SDK install above.
+RUN if [ "${TARGETARCH}" = "amd64" ]; then \
+    npm cache add @bufbuild/protoplugin@1.10.1 \
+    && npm cache add @bufbuild/protoc-gen-es@1.10.1 \
+    && npm cache add @bufbuild/protobuf@1.10.1; \
+    fi
 USER root
 
 ###############################################################################

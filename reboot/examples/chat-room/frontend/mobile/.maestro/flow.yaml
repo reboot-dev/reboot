@@ -14,11 +14,16 @@
 # text) so they are precise about what they match.
 appId: host.exp.exponent
 ---
-# Wait for the app to finish mounting before driving it.
+# Wait for the app to load and mount before driving it. The harness
+# starts this flow when Metro reports "Android Bundled", i.e. once the
+# bundle is built; the device then has to fetch it over the emulator's
+# user-mode NAT, parse ~900 modules in Hermes, and mount them. That
+# takes 0.7s on an idle emulator and minutes on one still finishing a
+# cold boot alongside Play Services, so budget for the slow case.
 - extendedWaitUntil:
     visible:
       id: "message-input"
-    timeout: 30000
+    timeout: 180000
 
 # On a fresh Expo Go install, the first project open shows Expo Go's
 # onboarding developer-menu bottom sheet over the app, and its scrim
