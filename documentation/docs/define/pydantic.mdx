@@ -1,0 +1,347 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Pydantic
+
+When building AI Chat Apps, your API is defined with
+[Pydantic](https://docs.pydantic.dev/). You can also use Pydantic
+for full-stack apps with Python backends.
+
+## AI Chat App
+
+A Reboot API is centered on _types_, which contain _state_ and
+_methods_. When building an AI Chat App, you define a `User`
+type (auto-constructed per authenticated user) whose methods
+create other state types. Methods with `mcp=Tool()` become
+[tools the AI can call](/learn_more/mcp_apps):
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py -->
+
+```python
+# api/ai_chat_counter/v1/counter.py
+from reboot.api import (
+    API,
+    UI,
+    Field,
+    Methods,
+    Model,
+    Reader,
+    Tool,
+    Transaction,
+    Type,
+    Writer,
+)
+
+
+class CreateCounterRequest(Model):
+    description: str = Field(tag=1)
+
+
+class CreateCounterResponse(Model):
+    counter_id: str = Field(tag=1)
+
+
+class CounterEntry(Model):
+    counter_id: str = Field(tag=1)
+    description: str = Field(tag=2)
+
+
+class ListCountersResponse(Model):
+    counters: list[CounterEntry] = Field(tag=1, default_factory=list)
+
+
+class UserState(Model):
+    counter_ids: list[str] = Field(tag=1, default_factory=list)
+
+
+class InitializeCounterRequest(Model):
+    description: str = Field(tag=1)
+    # The `user_id` of the Counter's owner, recorded so that only the
+    # owner may call the Counter later.
+    owner_id: str = Field(tag=2)
+
+
+class DescriptionResponse(Model):
+    description: str = Field(tag=1)
+
+
+class CounterState(Model):
+    value: int = Field(tag=1, default=0)
+    description: str = Field(tag=2, default="")
+    owner_id: str = Field(tag=3, default="")
+
+
+class GetResponse(Model):
+    value: int = Field(tag=1)
+
+
+class IncrementRequest(Model):
+    """Request with an amount parameter."""
+    amount: int | None = Field(tag=1, default=None)
+
+
+api = API(
+    User=Type(
+        state=UserState,
+        methods=Methods(
+            create_counter=Transaction(
+                request=CreateCounterRequest,
+                response=CreateCounterResponse,
+                description="Create a new Counter with a "
+                "description of what it counts. Returns "
+                "the `counter_id`, which is not "
+                "human-readable but should be passed to "
+                "future tool calls that need it.",
+                mcp=Tool(),
+            ),
+            list_counters=Reader(
+                request=None,
+                response=ListCountersResponse,
+                description="List all counters created "
+                "by this user. Returns `counter_id` and "
+                "description for each. The `counter_id` "
+                "is not human-readable, but use it when "
+                "calling tools that take a `counter_id`.",
+                mcp=Tool(),
+            ),
+        ),
+    ),
+    Counter=Type(
+        state=CounterState,
+        methods=Methods(
+            show_clicker=UI(
+                request=None,
+                path="frontend/mcp/clicker",
+                title="Counter Clicker",
+                description="Interactive clicker UI "
+                "for the counter.",
+            ),
+            create=Writer(
+                request=InitializeCounterRequest,
+                response=None,
+                factory=True,
+                description="Create the counter at its initial value.",
+                mcp=None,
+            ),
+            get=Reader(
+                request=None,
+                response=GetResponse,
+                description="Get the current counter "
+                "value.",
+                mcp=Tool(),
+            ),
+            increment=Writer(
+                request=IncrementRequest,
+                response=None,
+                description="Increment the counter by "
+                "the specified amount.",
+                mcp=Tool(),
+            ),
+            description=Reader(
+                request=None,
+                response=DescriptionResponse,
+                mcp=None,
+            ),
+        ),
+    ),
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+Reboot uses standard
+[Pydantic BaseModel](https://docs.pydantic.dev/latest/concepts/models/),
+with `Model` as the base class for your durable state types,
+request and response types.
+
+:::important
+All Pydantic fields must include a `tag` parameter using
+`Field(tag=N)`. This is required for safe backwards compatibility.
+:::
+
+:::info Naming conventions
+Your state class should end in `State`, e.g., `UserState`,
+`CounterState`.
+:::
+
+## Special state: `User`
+
+Naming a type `User` in your `API(User=Type(...))`
+definition triggers special behavior:
+
+1. **Auto-construction**: a `User` instance is automatically
+   created for each authenticated user. You do not need an
+   `initialize` function or manual `create()` calls. All fields
+   on `UserState` must have default values, since instances
+   are created without arguments.
+2. **Automatic ID resolution**: the AI never needs to specify a
+   state ID for `User` methods — it is resolved from the
+   authenticated user.
+3. **Default authorization**: `User` methods are accessible to
+   the owning user (whose `user_id` matches the state ID) and
+   to app-internal calls. No `authorizer()` override is needed.
+   See [Default authorizer](/users/authorization#default-authorizer)
+   for details.
+
+`User` typically acts as an entry point: its methods create or look
+up other state types (like `Counter`) and return their IDs. The AI
+tracks those IDs in its context window and passes them in subsequent
+tool calls.
+
+## Creating tools for the AI
+
+### Explicit `mcp=` on every method
+
+Every method must declare its MCP exposure explicitly:
+
+- `mcp=Tool()` — expose the method as an AI-callable tool.
+- `mcp=None` — hide the method from the AI.
+
+This applies to all state types, including `User`. The
+`description` field is what the AI reads to decide when and
+how to call a tool:
+
+```python
+from reboot.api import Tool
+
+UserMethods = Methods(
+    # AI-callable — the AI can call this.
+    create_counter=Transaction(
+        request=None,
+        response=CreateCounterResponse,
+        description="Create a new Counter. Returns "
+        "the ID of the new counter.",
+        mcp=Tool(),
+    ),
+    # NOT AI-callable — internal use only.
+    cleanup=Writer(
+        request=None,
+        response=None,
+        description="Clean up old state.",
+        mcp=None,
+    ),
+)
+
+CounterMethods = Methods(
+    # AI-callable because of `mcp=Tool()`.
+    get=Reader(
+        request=None,
+        response=GetResponse,
+        description="Get the current counter value.",
+        mcp=Tool(),
+    ),
+    # NOT AI-callable.
+    create=Writer(
+        request=None,
+        response=None,
+        factory=True,
+        description="Create the counter at zero.",
+        mcp=None,
+    ),
+)
+
+api = API(
+    User=Type(
+        state=UserState,
+        methods=UserMethods,
+    ),
+    Counter=Type(
+        state=CounterState,
+        methods=CounterMethods,
+    ),
+)
+```
+
+For non-`User` types, the AI must specify a state ID when
+calling the tool. It receives the ID when it creates the
+instance (e.g., from `create_counter`).
+
+### `Tool()` options
+
+`Tool()` accepts optional overrides:
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `name` | `str` or `None` | Custom tool name. If `None`: defaults to the method name. |
+| `title` | `str` or `None` | Human-readable title. If `None`: defaults to the method name. |
+
+```python
+check_stock=Reader(
+    request=CheckStockRequest,
+    response=StockResponse,
+    description="Check stock for an item.",
+    mcp=Tool(name="inventory_check", title="Check Inventory"),
+),
+```
+
+### Why hide methods from the AI?
+
+Not every method should be an MCP tool:
+
+1. **Human-only actions.** Some actions should only be triggered
+   by a human — for example, a "Yes, confirm" button in a React
+   UI. The human clicks it to call the method, but the AI
+   cannot.
+2. **Context bloat.** Every tool you expose is added to the AI's
+   context window. Exposing too many tools can overwhelm the AI
+   and degrade its performance.
+
+## Method kinds
+
+Depending on its [kind](/define/methods), a method
+might be able to only read (e.g., `Reader`) or both read and
+write (e.g., `Writer`) the state. A type can have any number of
+`Reader`, `Writer`, `Transaction`, `Workflow`, and
+[`UI`](/surfaces/ui_methods) methods.
+
+## Full-stack
+
+You can also use Pydantic for full-stack apps that are not AI Chat Apps.
+In that case you do not need the `User` type, `UI` methods, or
+`description` fields:
+
+```python
+from typing import Optional
+from reboot.api import (
+    API,
+    Field,
+    Methods,
+    Reader,
+    Model,
+    Writer,
+    Type,
+)
+
+class ChatRoomState(Model):
+    messages: Optional[list[str]] = Field(tag=1)
+
+class MessagesResponse(Model):
+    messages: list[str] = Field(tag=1)
+
+class SendRequest(Model):
+    message: str = Field(tag=1)
+
+ChatRoomMethods = Methods(
+    messages=Reader(
+        request=None,
+        response=MessagesResponse,
+        description="Every message posted to the room so far.",
+    ),
+    send=Writer(
+        request=SendRequest,
+        response=None,
+        description="Post one message to the room.",
+    ),
+)
+
+api = API(
+    ChatRoom=Type(
+        state=ChatRoomState,
+        methods=ChatRoomMethods,
+    ),
+)
+```
+
+To learn more about how you implement each data type's methods
+see [Implement your API](/implement/servicers).

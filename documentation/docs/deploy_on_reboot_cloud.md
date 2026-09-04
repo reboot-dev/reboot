@@ -143,7 +143,7 @@ tracked in [this issue](https://github.com/reboot-dev/reboot/issues/71).
 - `rbt cloud secret set`, `rbt cloud secret list`, and
   `rbt cloud secret delete` manage the secrets that your deployed
   application can read as environment variables. See
-  [Secrets](/learn_more/secrets) for details.
+  [Secrets](/secrets) for details.
 - `rbt cloud logs` streams the logs of your deployed application. Use
   `--follow` to keep following new log lines as they are produced, and
   `--revisions` to select which revisions to show logs for.

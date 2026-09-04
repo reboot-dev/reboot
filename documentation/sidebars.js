@@ -22,51 +22,66 @@ const sidebars = {
     {
       type: "category",
       collapsed: false,
-      label: "Full-stack apps",
+      label: "Get started",
       items: [
         {
           type: "doc",
-          id: "full_stack_apps/get_started_claude_code",
-          label: "Get Started (with Claude Code)",
+          id: "get_started/claude_code",
+          label: "Build with Claude Code",
         },
         {
           type: "doc",
-          id: "full_stack_apps/get_started_codex",
-          label: "Get Started (with Codex)",
+          id: "get_started/codex",
+          label: "Build with Codex",
         },
         {
           type: "category",
           collapsed: true,
-          label: "Get Started (hand-written)",
+          label: "Step by step",
           items: [
-            "full_stack_apps/typescript",
-            "full_stack_apps/python",
-            "full_stack_apps/react",
+            {
+              type: "doc",
+              id: "get_started/python",
+              label: "Python backend",
+            },
+            {
+              type: "doc",
+              id: "get_started/typescript",
+              label: "TypeScript backend",
+            },
+            {
+              type: "doc",
+              id: "get_started/react",
+              label: "React frontend",
+            },
           ],
         },
-        "full_stack_apps/examples",
+        {
+          type: "doc",
+          id: "get_started/quickstart",
+          label: "Quickstart (hand-written AI chat app)",
+        },
+        {
+          type: "doc",
+          id: "get_started/examples",
+          label: "Examples",
+        },
       ],
     },
     {
       type: "category",
       collapsed: true,
-      label: "AI Chat Apps",
+      label: "AI chat apps",
       items: [
-        "ai_chat_apps/what_is",
         {
           type: "doc",
           id: "ai_chat_apps/get_started_claude_code",
-          label: "Get Started (with Claude Code)",
+          label: "Get started (with Claude Code)",
         },
         {
           type: "doc",
           id: "ai_chat_apps/get_started_codex",
-          label: "Get Started (with Codex)",
-        },
-        {
-          type: "doc",
-          id: "ai_chat_apps/get_started",
-          label: "Get Started (hand-written)",
+          label: "Get started (with Codex)",
         },
         {
           type: "doc",
@@ -78,61 +93,100 @@ const sidebars = {
     {
       type: "category",
       collapsed: true,
-      label: "Learn More",
+      label: "Users and auth",
       items: [
-        "learn_more/mcp_apps",
         {
-          type: "category",
-          collapsed: true,
-          label: "Define your API",
-          items: [
-            "learn_more/define/overview",
-            "learn_more/define/methods",
-            "learn_more/define/pydantic",
-            "learn_more/define/zod",
-            "learn_more/define/protobuf",
-          ],
+          type: "doc",
+          id: "users/authorization",
+          label: "Authorization",
         },
         {
-          type: "category",
-          collapsed: true,
-          label: "Implement your API",
-          items: [
-            "learn_more/implement/servicers",
-            "learn_more/implement/readers",
-            "learn_more/implement/writers",
-            "learn_more/implement/transactions",
-            "learn_more/implement/workflows",
-            {
-              type: "doc",
-              id: "learn_more/implement/ui_methods",
-              label: "UIs for AI Chat Apps",
-            },
-          ],
+          type: "doc",
+          id: "users/external_apis",
+          label: "Identity and external APIs",
         },
-        "learn_more/applications",
+      ],
+    },
+    {
+      type: "category",
+      collapsed: true,
+      label: "One backend, many frontends",
+      items: [
         {
-          type: "category",
-          collapsed: true,
-          label: "Call your API",
-          items: [
-            "learn_more/call/overview",
-            "learn_more/call/from_react",
-            "learn_more/call/from_within_your_app",
-            "learn_more/call/from_outside_your_app",
-            "learn_more/call/via_http",
-            "learn_more/call/from_mcp_client",
-          ],
+          type: "doc",
+          id: "surfaces/ai_chat",
+          label: "AI chat apps",
         },
-        "learn_more/testing",
-        "learn_more/auth",
-        "learn_more/identity_and_external_apis",
-        "learn_more/secrets",
-        "learn_more/errors",
-        "learn_more/tasks",
-        "learn_more/side_effects",
-        "learn_more/idempotency",
-        "learn_more/agents",
+        {
+          type: "doc",
+          id: "learn_more/mcp_apps",
+          label: "MCP apps",
+        },
+        {
+          type: "doc",
+          id: "surfaces/ui_methods",
+          label: "UI methods",
+        },
+        {
+          type: "doc",
+          id: "agents",
+          label: "Agents",
+        },
+      ],
+    },
+    {
+      type: "category",
+      collapsed: true,
+      label: "Define your API",
+      items: [
+        "define/overview",
+        "define/methods",
+        "define/pydantic",
+        "define/zod",
+        "define/protobuf",
+      ],
+    },
+    {
+      type: "category",
+      collapsed: true,
+      label: "Implement your API",
+      items: [
+        "implement/servicers",
+        "implement/readers",
+        "implement/writers",
+        "implement/transactions",
+        "implement/workflows",
+        {
+          type: "doc",
+          id: "implement/application",
+          label: "Run your application",
+        },
+      ],
+    },
+    {
+      type: "category",
+      collapsed: true,
+      label: "Call your API",
+      items: [
+        "call/overview",
+        "call/from_react",
+        "call/from_within_your_app",
+        "call/from_outside_your_app",
+        "call/via_http",
+        "call/from_mcp_client",
+      ],
+    },
+    {
+      type: "category",
+      collapsed: true,
+      label: "Going further",
+      items: [
+        "tasks",
+        "side_effects",
+        "idempotency",
+        "errors",
+        "secrets",
+        "testing",
       ],
     },
     {
@@ -152,25 +206,46 @@ const sidebars = {
       ],
     },
     {
-      type: "doc",
-      id: "develop_locally",
-      label: "Develop locally",
-    },
-    {
-      type: "doc",
-      id: "upgrade",
-      label: "Upgrade Reboot",
-    },
-    "tools/cli",
-    {
-      type: "doc",
-      id: "deploy_on_your_own",
-      label: "Deploy on your own",
-    },
-    {
-      type: "doc",
-      id: "deploy_on_reboot_cloud",
-      label: "Deploy on Reboot Cloud",
+      type: "category",
+      collapsed: true,
+      label: "Develop and deploy",
+      items: [
+        {
+          type: "doc",
+          id: "develop_locally",
+          label: "Develop locally",
+        },
+        {
+          type: "doc",
+          id: "nonlocal",
+          label: "Non-local development",
+        },
+        {
+          type: "doc",
+          id: "rbt_cli",
+          label: "The rbt CLI",
+        },
+        {
+          type: "doc",
+          id: "deploy_on_reboot_cloud",
+          label: "Deploy on Reboot Cloud",
+        },
+        {
+          type: "doc",
+          id: "deploy_on_your_own",
+          label: "Deploy on your own",
+        },
+        {
+          type: "doc",
+          id: "upgrade",
+          label: "Upgrade Reboot",
+        },
+        {
+          type: "doc",
+          id: "known_issues",
+          label: "Known issues",
+        },
+      ],
     },
     // {
     //   type: "category",
@@ -178,12 +253,6 @@ const sidebars = {
     //   items: ["deploy_operate/import_export"],
     // },
     // TODO: #3363.
-
-    {
-      type: "doc",
-      id: "known_issues",
-      label: "Known issues",
-    },
   ],
 };
 
