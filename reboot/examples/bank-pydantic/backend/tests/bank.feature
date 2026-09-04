@@ -15,8 +15,8 @@ Feature: Bank
     And the `Bank` for "test-bank" gets a `transfer` with `from_account_id=${first_account_id}` and `to_account_id=${second_account_id}` and `amount=250.0`
     Then `balance` on the `Account` for "${first_account_id}" has `amount=750.0`
     And `balance` on the `Account` for "${second_account_id}" has `amount=250.0`
-    And `all_customer_ids` on the `Bank` for "test-bank" has `customer_ids` of length 2 and `customer_ids` containing "test@reboot.dev" and `customer_ids` containing "test2@reboot.dev"
-    And `account_balances` on the `Bank` for "test-bank" has `balances` of length 2 and `balances[0].customer_id="test@reboot.dev"` and `balances[0].accounts` of length 1 and `balances[0].accounts[0].balance=750.0` and `balances[1].customer_id="test2@reboot.dev"` and `balances[1].accounts` of length 1 and `balances[1].accounts[0].balance=250.0`
+    And `all_customer_ids` on the `Bank` for "test-bank" has `customer_ids` of length `2` and `customer_ids` containing `"test@reboot.dev"` and `customer_ids` containing `"test2@reboot.dev"`
+    And `account_balances` on the `Bank` for "test-bank" has `balances` of length `2` and `balances[0].customer_id="test@reboot.dev"` and `balances[0].accounts` of length `1` and `balances[0].accounts[0].balance=750.0` and `balances[1].customer_id="test2@reboot.dev"` and `balances[1].accounts` of length `1` and `balances[1].accounts[0].balance=250.0`
 
   Scenario: Overdrafts are refused
     Given an `Account` for "overdraft-account" gets created via `open`

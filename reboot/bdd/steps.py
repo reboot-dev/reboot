@@ -66,8 +66,9 @@ way 'has' refuses writers, and a reader's abort is asserted with
 '`reader` on ... aborts with ...'.
 
 An asserting list can also say the predicates `path` containing
-<value> (a substring of a string, an element of a list, or a key of
-a map) and `path` of length <n>. A Given or When 'has' instead
+`value` (a substring of a string, an element of a list, or a key of
+a map) and `path` of length `n`; the backticked argument is a JSON
+value the way a property's value is, so it can recall ${name}. A Given or When 'has' instead
 saves a property under a backticked name, which later steps recall
 as `${name}`, in a state's ID, a user's ID, a bearer token, or a
 property value (a quoted "${name}" stays the literal string):
@@ -140,27 +141,29 @@ _PROPERTY_PATTERN = re.compile(rf'`(?P<path>{_PATH})=(?P<value>\S[^`]*)`')
 _SAVE_CLAUSE = rf'`{_PATH}`\s+saved\s+(?:as|to)\s+(?:`\w+`|"?\$?\w+"?)'
 _SAVE_PATTERN = re.compile(rf'`(?P<path>{_PATH})` saved as `(?P<saved>\w+)`')
 
-# A predicate clause's argument: a scalar JSON value (a quoted
-# string may contain separators), or a '${name}' recall (a bare
-# '$name' also matches, so its near-miss routes to the fix).
-_ARGUMENT = r'(?:"(?:[^"\\]|\\.)*"|\$\{\w+\}|\$?[-+.\w]+)'
-
 # One containing clause: asserts a substring of a string, an element
-# of a list, or a key of a map. The groupless form embeds in step
-# patterns and also matches 'contains', so that near-miss routes to
-# a step whose parser raises the fix; the compiled form is the
-# strict shape, for extraction.
-_CONTAINING_CLAUSE = rf'`{_PATH}`\s+contain(?:s|ing)\s+{_ARGUMENT}'
+# of a list, or a key of a map; the argument is a backticked JSON
+# value, the same grammar as a property's value. The groupless form
+# embeds in step patterns and also matches 'contains' and a bare
+# argument, so those near-misses route to a step whose parser raises
+# the fix; the compiled form is the strict shape, for extraction.
+_CONTAINING_CLAUSE = (
+    rf'`{_PATH}`\s+contain(?:s|ing)\s+'
+    r'(?:`[^`]*`|"(?:[^"\\]|\\.)*"|\$?[-+.\w{{}}]+)'
+)
 _CONTAINING_PATTERN = re.compile(
-    rf'`(?P<path>{_PATH})` containing (?P<argument>{_ARGUMENT})'
+    rf'`(?P<path>{_PATH})` containing `(?P<argument>\S[^`]*)`'
 )
 
-# One length clause: asserts the length of a string, list, or map.
-# The groupless form embeds in step patterns and also matches a
-# missing 'of' or a non-integer length, for diagnosis; the compiled
-# form is the strict shape, for extraction.
-_LENGTH_CLAUSE = rf'`{_PATH}`\s+(?:of\s+)?length\s+{_ARGUMENT}'
-_LENGTH_PATTERN = re.compile(rf'`(?P<path>{_PATH})` of length (?P<length>\d+)')
+# One length clause: asserts the length of a string, list, or map;
+# the length is a backticked value too, so it can recall a save. The
+# groupless form embeds in step patterns and also matches a missing
+# 'of' or a bare length, for diagnosis; the compiled form is the
+# strict shape, for extraction.
+_LENGTH_CLAUSE = rf'`{_PATH}`\s+(?:of\s+)?length\s+(?:`[^`]*`|\S+)'
+_LENGTH_PATTERN = re.compile(
+    rf'`(?P<path>{_PATH})` of length `(?P<length>\S[^`]*)`'
+)
 
 # What separates two clauses in step text: a comma, an 'and', or a
 # comma followed by an 'and'.
@@ -289,29 +292,53 @@ def _almost_property_message(clause: str) -> str:
 
 def _almost_containing_message(clause: str) -> str:
     """The 'Almost' error for a containing clause that is a lexical
-    near-miss of `path` containing <value>."""
+    near-miss of `path` containing `value`."""
     if re.search(r'\bcontains\b', clause):
         return f"Almost: say 'containing', not 'contains': {clause}"
+    if re.search(r'\bcontaining\s+(?!`)\S', clause):
+        return (
+            "Almost: the value goes in backticks, e.g. containing "
+            f'`"text"`: {clause}'
+        )
     return (
         "Expected a containing clause of the form `path` containing "
-        f'"value", but got: {clause}'
+        f"`value`, but got: {clause}"
     )
 
 
 def _almost_length_message(clause: str) -> str:
     """The 'Almost' error for a length clause that is a lexical
-    near-miss of `path` of length <n>."""
+    near-miss of `path` of length `n`."""
     if re.search(r'`\s+length\b', clause):
         return f"Almost: say 'of length', not 'length': {clause}"
-    if not re.search(r'\blength\s+\d+$', clause):
+    if re.search(r'\blength\s+(?!`)\S', clause):
         return (
-            "Almost: 'of length' takes a whole number, e.g. of "
-            f"length 2: {clause}"
+            "Almost: the length goes in backticks, e.g. of length "
+            f"`2`: {clause}"
         )
     return (
-        "Expected a length clause of the form `path` of length 2, "
+        "Expected a length clause of the form `path` of length `2`, "
         f"but got: {clause}"
     )
+
+
+def _parsed_value(world: World, label: str, text: str) -> JsonValue:
+    """The JSON value the text says, a '${name}' recalling a save; a
+    lexical near-miss raises the fix."""
+    if re.fullmatch(r'\$\w+', text):
+        raise ValueError(
+            f"Almost: recall a save as ${{{text[1:]}}}, not {text}"
+        )
+    if re.fullmatch(r'\$\{\w+\}', text):
+        return _saved_value(world, text[2:-1])
+    try:
+        return json5.loads(text)
+    except ValueError as error:
+        raise ValueError(
+            f"The value of {label} must be JSON, e.g. 50, 2.5, "
+            '"text", true, or {name: "value"}, but got: '
+            f"{text}"
+        ) from error
 
 
 def _almost_within_message(within: str) -> str:
@@ -380,24 +407,11 @@ def _parse_assignments(
         property_match = _PROPERTY_PATTERN.fullmatch(clause_match[0])
         if property_match is None:
             raise ValueError(_almost_property_message(clause_match[0]))
-        if re.fullmatch(r'\$\w+', property_match['value']):
-            raise ValueError(
-                "Almost: recall a save as "
-                f"${{{property_match['value'][1:]}}}, not "
-                f"{property_match['value']}"
-            )
-        if re.fullmatch(r'\$\{\w+\}', property_match['value']):
-            value = _saved_value(world, property_match['value'][2:-1])
-        else:
-            try:
-                value = json5.loads(property_match['value'])
-            except ValueError as error:
-                raise ValueError(
-                    f"The value of `{property_match['path']}` must "
-                    "be JSON, e.g. 50, 2.5, \"text\", true, or "
-                    '{name: "value"}, but got: '
-                    f"{property_match['value']}"
-                ) from error
+        value = _parsed_value(
+            world,
+            f"`{property_match['path']}`",
+            property_match['value'],
+        )
         assignments.append(
             Assignment(
                 path=PropertyPath.create(property_match['path']),
@@ -405,25 +419,6 @@ def _parse_assignments(
             )
         )
     return assignments
-
-
-def _parsed_argument(world: World, argument: str) -> JsonValue:
-    """The JSON value a predicate clause's argument says; a
-    '${name}' becomes the saved value going by that name."""
-    if re.fullmatch(r'\$\w+', argument):
-        raise ValueError(
-            f"Almost: recall a save as ${{{argument[1:]}}}, not "
-            f"{argument}"
-        )
-    if re.fullmatch(r'\$\{\w+\}', argument):
-        return _saved_value(world, argument[2:-1])
-    try:
-        return json5.loads(argument)
-    except ValueError as error:
-        raise ValueError(
-            f"The argument {argument} must be JSON, e.g. 50, 2.5, "
-            '"text", or true'
-        ) from error
 
 
 def _parse_assertions(
@@ -445,18 +440,30 @@ def _parse_assertions(
             assertions.append(
                 Containing(
                     path=PropertyPath.create(containing_match['path']),
-                    value=_parsed_argument(
-                        world, containing_match['argument']
+                    value=_parsed_value(
+                        world,
+                        f"`{containing_match['path']}` containing",
+                        containing_match['argument'],
                     ),
                 )
             )
             continue
         length_match = _LENGTH_PATTERN.fullmatch(clause)
         if length_match is not None:
+            length = _parsed_value(
+                world,
+                f"`{length_match['path']}` of length",
+                length_match['length'],
+            )
+            if isinstance(length, bool) or not isinstance(length, int):
+                raise ValueError(
+                    f"`{length_match['path']}` of length takes a "
+                    f"whole number, but got: {length!r}"
+                )
             assertions.append(
                 OfLength(
                     path=PropertyPath.create(length_match['path']),
-                    length=int(length_match['length']),
+                    length=length,
                 )
             )
             continue
@@ -467,24 +474,11 @@ def _parse_assertions(
         property_match = _PROPERTY_PATTERN.fullmatch(clause)
         if property_match is None:
             raise ValueError(_almost_property_message(clause))
-        if re.fullmatch(r'\$\w+', property_match['value']):
-            raise ValueError(
-                "Almost: recall a save as "
-                f"${{{property_match['value'][1:]}}}, not "
-                f"{property_match['value']}"
-            )
-        if re.fullmatch(r'\$\{\w+\}', property_match['value']):
-            value = _saved_value(world, property_match['value'][2:-1])
-        else:
-            try:
-                value = json5.loads(property_match['value'])
-            except ValueError as error:
-                raise ValueError(
-                    f"The value of `{property_match['path']}` must "
-                    "be JSON, e.g. 50, 2.5, \"text\", true, or "
-                    '{name: "value"}, but got: '
-                    f"{property_match['value']}"
-                ) from error
+        value = _parsed_value(
+            world,
+            f"`{property_match['path']}`",
+            property_match['value'],
+        )
         assertions.append(
             Equals(
                 path=PropertyPath.create(property_match['path']),
