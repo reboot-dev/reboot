@@ -70,8 +70,8 @@ See `Send`.
 | sender | string | The email address of the sender of the message. |
 | subject | string | The subject of the message. |
 | domain | string | The domain to send from. |
-| [**oneof**](https://developers.google.com/protocol-buffers/docs/proto3#oneof) body.text | string | The body content of the message, as text. |
-| [**oneof**](https://developers.google.com/protocol-buffers/docs/proto3#oneof) body.html | string | The body content of the message, as HTML. |
+| body.text | string | The body content of the message, as text. Set exactly one of `body.text` and `body.html`. |
+| body.html | string | The body content of the message, as HTML. |
 
 
 ### SendResponse {#sendresponse}

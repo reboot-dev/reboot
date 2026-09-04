@@ -100,47 +100,6 @@ api = API(
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
-  <TabItem value="proto" label="Proto">
-<!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto&&lines=9-41&syntax=protobuf) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto -->
-
-```protobuf
-message ChatRoom {
-  option (rbt.v1alpha1.state) = {
-  };
-  repeated string messages = 1;
-}
-
-service ChatRoomMethods {
-  // Returns the current list of recorded messages.
-  rpc Messages(MessagesRequest) returns (MessagesResponse) {
-    option (rbt.v1alpha1.method).reader = {
-    };
-  }
-
-  // Adds a new message to the list of recorded messages.
-  rpc Send(SendRequest) returns (SendResponse) {
-    option (rbt.v1alpha1.method).writer = {
-    };
-  }
-}
-
-message MessagesRequest {}
-
-message MessagesResponse {
-  repeated string messages = 1;
-}
-
-message SendRequest {
-  string message = 1;  // E.g. "Hello, World".
-}
-
-message SendResponse {}
-```
-
-<!-- MARKDOWN-AUTO-DOCS:END -->
-  </TabItem>
 </Tabs>
 
 The rest of this document will discuss the React code that is generated from
@@ -383,8 +342,8 @@ Reboot methods are accessed by their name in lower camel case, e.g.,
 `deleteAllMessages`.
 
 This line calls the
-[`writer`](/define/methods#kinds) method, declared
-in the `.proto` as `Send`, using the lower camel case name `send`:
+[`writer`](/define/methods#kinds) method declared as `send` in the API
+definition, using its lower camel case name:
 
 <!-- MARKDOWN-AUTO-DOCS:START
 (CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=37-37) -->
@@ -453,8 +412,8 @@ if (aborted !== undefined) {
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
-In this case, because the `Send` method in `chat_room.proto` does not define any
-specific error types, the only error that can be returned in the `aborted`
+In this case, because the `send` method does not define any specific
+error types, the only error that can be returned in the `aborted`
 object will be Reboot system errors such as `StateAlreadyConstructed`.
 
 :::info

@@ -13,8 +13,7 @@ There are three ways of formatting data for an `Item`.
     A producer of value is expected to set one of that variants, absence of any
     variant indicates an error. This type is meant to represent all possible JSON values.
   * `bytes` is used to store a string of `bytes`.
-  * `Any` refers to the `Any` protobuf and is the best choice if you are using protobufs
-    to structure your data.
+  * `Any` wraps a protobuf message, for code that already has one.
 
 
 ## Imports
@@ -46,8 +45,8 @@ Since this is a data type that is not stored individually, you do not need a ser
 
 ## Value
 
-`Value` is the recommended way to use `Item` if you have structured data that is
-not already a string of `bytes` or a protobuf.
+`Value` is the recommended way to use `Item` for structured data:
+anything you could express as JSON.
 
 To marshal your data
 * in Python, you can use helper methods from `reboot.protobuf`
@@ -179,8 +178,8 @@ console.log(item.bytes);
 
 ##  Any
 
-If you use protobufs to format your data, you can directly store that
-into an `Item`.
+If you already have a protobuf message, you can store it directly in
+an `Item`.
 
 To pack and unpack from an `Any` protobuf,
 * in Python, you can use helper methods from `reboot.protobuf`

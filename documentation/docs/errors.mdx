@@ -31,9 +31,8 @@ Throwing any unexpected error can then be treated as a bug to be reported (class
 
 Reboot methods should enumerate all errors that are expected as part of normal
 business in their API definitions — whether you [define your
-API](/define/overview) with
-[Pydantic](/define/pydantic), [Zod](/define/zod), or
-[protobuf](/define/protobuf).
+API](/define/overview) with [Pydantic](/define/pydantic) or
+[Zod](/define/zod).
 
 For example, a `Withdraw` method for a bank account might raise an
 `OverdraftError` if the account doesn't have sufficient funds for the requested
@@ -108,38 +107,6 @@ export const Account = {
     // ...
   },
 };
-```
-
-<!-- MARKDOWN-AUTO-DOCS:END -->
-  </TabItem>
-  <TabItem value="proto" label="Proto">
-<!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../reboot/examples/monorepo/api/bank/v1/account.proto&syntax=protobuf&lines=37-42) -->
-<!-- The below code snippet is automatically added from ../../reboot/examples/monorepo/api/bank/v1/account.proto -->
-
-```protobuf
-rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {
-  option (rbt.v1alpha1.method) = {
-    writer: {},
-    errors: [ "OverdraftError" ],
-  };
-}
-```
-
-<!-- MARKDOWN-AUTO-DOCS:END -->
-
-These errors are themselves defined by proto messages.
-
-<!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../reboot/examples/monorepo/api/bank/v1/errors.proto&syntax=protobuf&lines=12-16) -->
-<!-- The below code snippet is automatically added from ../../reboot/examples/monorepo/api/bank/v1/errors.proto -->
-
-```protobuf
-// Error returned when a withdrawal would overdraft the account.
-message OverdraftError {
-  // Amount that we would have overdraft by.
-  uint32 amount = 1;
-}
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->

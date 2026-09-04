@@ -86,7 +86,8 @@ const config: Config = {
           { from: "/learn_more/define/methods", to: "/define/methods" },
           { from: "/learn_more/define/pydantic", to: "/define/pydantic" },
           { from: "/learn_more/define/zod", to: "/define/zod" },
-          { from: "/learn_more/define/protobuf", to: "/define/protobuf" },
+          { from: "/learn_more/define/protobuf", to: "/define/overview" },
+          { from: "/define/protobuf", to: "/define/overview" },
           {
             from: "/learn_more/implement/servicers",
             to: "/implement/servicers",
