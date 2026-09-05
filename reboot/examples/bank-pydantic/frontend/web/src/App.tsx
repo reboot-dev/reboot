@@ -36,12 +36,16 @@ const OpenAccount: FC<{ user: UseUserApi }> = ({ user }) => {
       </div>
       <div className="space-y-6">
         <div>
-          <label className="block text-purple-200 text-sm font-medium mb-2">
+          <label
+            htmlFor="initial-deposit"
+            className="block text-purple-200 text-sm font-medium mb-2"
+          >
             Initial Deposit ($)
           </label>
           <div className="relative">
             <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-purple-400" />
             <input
+              id="initial-deposit"
               type="number"
               value={initialDeposit}
               onChange={(e) =>
@@ -101,13 +105,18 @@ const Transfer: FC<{ user: UseUserApi }> = ({ user }) => {
   const accountSelect = (
     value: string,
     onChange: (value: string) => void,
-    label: string
+    label: string,
+    id: string
   ) => (
     <div>
-      <label className="block text-purple-200 text-sm font-medium mb-2">
+      <label
+        htmlFor={id}
+        className="block text-purple-200 text-sm font-medium mb-2"
+      >
         {label}
       </label>
       <select
+        id={id}
         value={value}
         onChange={(e) => onChange((e.target as HTMLSelectElement).value)}
         className="w-full px-4 py-3 bg-white/5 border border-purple-500/30 rounded-lg text-white focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-400/20 transition-all"
@@ -136,15 +145,29 @@ const Transfer: FC<{ user: UseUserApi }> = ({ user }) => {
         </p>
       ) : (
         <div className="space-y-6">
-          {accountSelect(fromAccountId, setFromAccountId, "From Account")}
-          {accountSelect(toAccountId, setToAccountId, "To Account")}
+          {accountSelect(
+            fromAccountId,
+            setFromAccountId,
+            "From Account",
+            "from-account"
+          )}
+          {accountSelect(
+            toAccountId,
+            setToAccountId,
+            "To Account",
+            "to-account"
+          )}
           <div>
-            <label className="block text-purple-200 text-sm font-medium mb-2">
+            <label
+              htmlFor="amount"
+              className="block text-purple-200 text-sm font-medium mb-2"
+            >
               Amount ($)
             </label>
             <div className="relative">
               <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-purple-400" />
               <input
+                id="amount"
                 type="number"
                 value={amount}
                 onChange={(e) =>
@@ -177,9 +200,15 @@ const AccountRow: FC<{
 }> = ({ accountId, balance, pending }) => {
   return (
     <tr className="border-b border-purple-500/10 hover:bg-white/5 transition-colors">
-      <td className="py-4 px-6 text-white font-medium">{accountId}</td>
+      <td
+        data-testid={pending ? undefined : "account-id"}
+        className="py-4 px-6 text-white font-medium"
+      >
+        {accountId}
+      </td>
       <td className="py-4 px-6 text-right">
         <span
+          data-testid="balance"
           className={
             pending
               ? "font-semibold text-lg bg-gradient-to-r from-purple-400 via-pink-400 to-purple-400 bg-clip-text text-transparent animate-pulse"
@@ -204,7 +233,10 @@ const AccountsTable: FC<{ user: UseUserApi }> = ({ user }) => {
 
   return (
     <div className="bg-white/10 backdrop-blur-md rounded-2xl shadow-2xl p-8 border border-purple-500/20">
-      <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+      <h2
+        id="your-accounts"
+        className="text-2xl font-bold text-white mb-6 flex items-center gap-3"
+      >
         <DollarSign className="w-8 h-8 text-purple-400" />
         Your Accounts
       </h2>
@@ -214,7 +246,7 @@ const AccountsTable: FC<{ user: UseUserApi }> = ({ user }) => {
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table aria-labelledby="your-accounts" className="w-full">
             <thead>
               <tr className="border-b border-purple-500/20">
                 <th className="text-left py-4 px-6 text-purple-200 font-semibold text-sm uppercase tracking-wider">
