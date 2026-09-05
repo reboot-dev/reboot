@@ -18,17 +18,6 @@ Feature: Bank
     And `all_customer_ids` on the `Bank` for "test-bank" has `customer_ids` of length `2` and `customer_ids` containing `"test@reboot.dev"` and `customer_ids` containing `"test2@reboot.dev"`
     And `account_balances` on the `Bank` for "test-bank" has `balances` of length `2` and `balances[0].customer_id="test@reboot.dev"` and `balances[0].accounts` of length `1` and `balances[0].accounts[0].balance=750.0` and `balances[1].customer_id="test2@reboot.dev"` and `balances[1].accounts` of length `1` and `balances[1].accounts[0].balance=250.0`
 
-  Scenario Outline: Overdrafts are refused
-    Given an `Account` for "<account>" gets created via `open`
-    When the `Account` for "<account>" gets a `deposit` with `amount=<deposit>`
-    And the `Account` for "<account>" attempts a `withdraw` with `amount=<withdrawal>`
-    Then the attempt aborts with `OverdraftError` with `amount=<shortfall>`
-
-    Examples:
-      | account          | deposit | withdrawal | shortfall |
-      | empty-account    | 0.0     | 50.50      | 50.50     |
-      | funded-account   | 20.0    | 50.50      | 30.50     |
-
   Scenario: Spawned deposits and reads complete
     Given an `Account` for "spawning-account" gets created via `open`
     When the `Account` for "spawning-account" gets a `deposit` with `amount=10.0` spawned with its task id saved as `deposit_task_id`
@@ -36,3 +25,18 @@ Feature: Bank
     When the `Account` for "spawning-account" gets a `balance` spawned with its task id saved as `balance_task_id`
     Then the `balance` task with id "<balance_task_id>" of the `Account` completes within 30 seconds
     And the result has `amount=10.0`
+
+  Rule: Overdrafts are refused
+    An account never goes below zero: a withdrawal for more than the
+    balance aborts, saying by how much it fell short.
+
+    Scenario Outline: Withdrawing more than the balance aborts with the shortfall
+      Given an `Account` for "<account>" gets created via `open`
+      When the `Account` for "<account>" gets a `deposit` with `amount=<deposit>`
+      And the `Account` for "<account>" attempts a `withdraw` with `amount=<withdrawal>`
+      Then the attempt aborts with `OverdraftError` with `amount=<shortfall>`
+
+      Examples:
+        | account        | deposit | withdrawal | shortfall |
+        | empty-account  | 0.0     | 50.50      | 50.50     |
+        | funded-account | 20.0    | 50.50      | 30.50     |
