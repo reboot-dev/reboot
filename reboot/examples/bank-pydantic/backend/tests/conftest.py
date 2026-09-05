@@ -16,6 +16,34 @@ from typing import Iterator
 # video shows what the screenshots show.
 VIDEO_SIZE = {'width': 1280, 'height': 720}
 
+# How long Playwright waits after each browser operation, so that a
+# viewer of the video can follow each click and keystroke, and how
+# long an assertion step's result stays on screen after the step
+# passes, so that it can be seen before the next step changes it.
+# Both in milliseconds, and both `0` for a run that records without
+# pacing.
+DEFAULT_SLOW_MO_MS = 500
+DEFAULT_ASSERTION_DWELL_MS = 1000
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    group = parser.getgroup('recordings')
+    group.addoption(
+        '--recording-slowmo',
+        type=int,
+        default=DEFAULT_SLOW_MO_MS,
+        help='Milliseconds Playwright waits after each browser operation '
+        f'while recording (default {DEFAULT_SLOW_MO_MS}); `--slowmo` '
+        'takes precedence when given',
+    )
+    group.addoption(
+        '--recording-dwell',
+        type=int,
+        default=DEFAULT_ASSERTION_DWELL_MS,
+        help="Milliseconds an assertion step's result stays on screen "
+        f'after the step passes (default {DEFAULT_ASSERTION_DWELL_MS})',
+    )
+
 
 def _scenario_directory(feature_filename: str, scenario_name: str) -> Path:
     """Where the named scenario's recordings go. Beside the feature
@@ -32,6 +60,22 @@ def _scenario_directory(feature_filename: str, scenario_name: str) -> Path:
 def _scenario_of(request: pytest.FixtureRequest):
     """The pytest-bdd scenario the requesting test runs."""
     return request.node.obj.__scenario__
+
+
+@pytest.fixture(scope='session')
+def browser_type_launch_args(
+    browser_type_launch_args: dict,
+    pytestconfig: pytest.Config,
+) -> dict:
+    """pytest-playwright's launch arguments, paced by
+    `--recording-slowmo` unless its own `--slowmo` was given."""
+    if 'slow_mo' in browser_type_launch_args:
+        return browser_type_launch_args
+    return {
+        **browser_type_launch_args,
+        'slow_mo':
+            pytestconfig.getoption('--recording-slowmo'),
+    }
 
 
 @pytest.fixture
@@ -69,7 +113,8 @@ def pytest_bdd_after_step(
     step_func_args: dict,
 ) -> None:
     """Screenshots the browser after each assertion step that drives
-    one: a `Then`, or an `And` or `But` continuing one."""
+    one, a `Then` or an `And` or `But` continuing one, then leaves
+    what the step asserted on screen for `--recording-dwell`."""
     page = step_func_args.get('page')
     if page is None or step.type != 'then':
         return
@@ -78,3 +123,4 @@ def pytest_bdd_after_step(
     page.screenshot(
         path=str(directory / recordings.screenshot_filename(step.line_number)),
     )
+    page.wait_for_timeout(request.config.getoption('--recording-dwell'))
