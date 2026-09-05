@@ -567,8 +567,6 @@ async def generate_from_api(
     `protoc` is handed."""
     schemas = api.schemas
 
-    generated_errors_names = set()
-
     await proto.write('syntax = "proto3";\n')
     await proto.write(f'package {api.package};\n')
     await proto.write('import "google/protobuf/empty.proto";\n')
@@ -673,27 +671,28 @@ async def generate_from_api(
         for method in state_type.methods:
             method_name = method.name
             if method.errors:
+                # Match the Zod errors definition by creating a
+                # top-level message for the method which has declared
+                # errors. That message has a 'oneof' field with all
+                # possible error types, each a message nested in it: a
+                # copy per method, the way every other model a method
+                # mentions is copied, so that an error model shared
+                # between methods or API files is never defined twice
+                # in one package. The Pydantic model, named by
+                # `pydantic_type`, is what identifies the error; a
+                # propagated abort is rebuilt from it.
+                await proto.write('\n')
+                await proto.write(
+                    f'message {type_name}{to_pascal_case(method_name)}Errors {{\n'
+                )
                 for error in method.errors:
-                    error_type_name = schemas[error.name].name
-                    if error_type_name in generated_errors_names:
-                        continue
-                    generated_errors_names.add(error_type_name)
                     await generate_from_schema(
                         proto,
                         schemas[error.name],
-                        name=error_type_name,
+                        name=schemas[error.name].name,
                         schemas=schemas,
                     )
-                    await proto.write('\n')
-
-                # Match the Zod errors definition by creating a
-                # top-level message for the method which has declared errors.
-                # That message will have a 'oneof' field with all possible
-                # error types.
-                await proto.write('\n')
-                await proto.write(
-                    f'message {type_name}{to_pascal_case(method_name)}Errors {{ oneof type {{\n'
-                )
+                await proto.write('\n  oneof type {\n')
 
                 error_tag = 1
                 for error in method.errors:
@@ -703,7 +702,7 @@ async def generate_from_api(
                         f' [ (rbt.v1alpha1.field).pydantic_type = "{error.name}"];\n'
                     )
                     error_tag += 1
-                await proto.write('}}\n\n')
+                await proto.write('  }\n}\n\n')
 
         # Generate RPC service block (regular methods
         # only — UI methods have no RPC).

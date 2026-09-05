@@ -3352,6 +3352,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.Reply') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -3851,6 +3860,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.Replay') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -4322,6 +4340,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.WaitFor') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -4778,6 +4805,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.Stream') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -5098,6 +5134,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.RegexStream') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -5440,6 +5485,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.SearchAndReplace') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -5944,6 +5998,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.FailOnceShouldBeRetried') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -6443,6 +6506,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.FailOnceShouldBeRetriedWorkflow') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -6848,6 +6920,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.TooManyTasks') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -7347,6 +7428,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.Hanging') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -7747,6 +7837,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.ReactiveWorkflow') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -8147,6 +8246,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.ControlLoop') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -8547,6 +8655,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.AtMostOnceWorkflow') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -8947,6 +9064,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.WorkflowCallingWorkflow') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -9352,6 +9478,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.RaiseValueError') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -9856,6 +9991,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.RaiseSpecifiedError') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -10355,6 +10499,15 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'tests.reboot.Echo.FailingWorkflow') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)

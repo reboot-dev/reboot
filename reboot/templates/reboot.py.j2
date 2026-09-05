@@ -1147,6 +1147,15 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                         logger.warning(
                             f"Propagating unhandled but declared error (in '{{ state.proto.full_name }}.{{ method.proto.name }}') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)

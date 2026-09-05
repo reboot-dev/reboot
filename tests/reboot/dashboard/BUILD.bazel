@@ -31,6 +31,7 @@ py_test(
     main = "pydantic_api_tests.py",
     deps = [
         "//reboot:pydantic_api_py",
+        "//reboot:pydantic_schema_to_proto_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:api_py_proto",
     ],
 )
