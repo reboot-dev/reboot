@@ -8,9 +8,11 @@ A spike of what `reboot.bdd` would do for every browser scenario.
 import os
 import pytest
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
+from playwright.sync_api import Locator
 from reboot.bdd import recordings
-from typing import Iterator
+from typing import Iterator, Optional
 
 # The size Playwright records at: the default viewport, so that the
 # video shows what the screenshots show.
@@ -24,6 +26,10 @@ VIDEO_SIZE = {'width': 1280, 'height': 720}
 # pacing.
 DEFAULT_SLOW_MO_MS = 500
 DEFAULT_ASSERTION_DWELL_MS = 1000
+
+# The outline drawn around the element an assertion step looked at
+# while its screenshot is taken and its result dwells on screen.
+OUTLINE = '3px solid #f59e0b'
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -43,6 +49,21 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Milliseconds an assertion step's result stays on screen "
         f'after the step passes (default {DEFAULT_ASSERTION_DWELL_MS})',
     )
+
+
+@dataclass
+class Asserted:
+    """What the scenario's latest assertion step looked at in the
+    browser, so that its screenshot can show it."""
+
+    # The element the step asserted on; `None` before any step has,
+    # or when the step asserted on the page as a whole.
+    element: Optional[Locator] = None
+
+
+@pytest.fixture
+def asserted() -> Asserted:
+    return Asserted()
 
 
 def _scenario_directory(feature_filename: str, scenario_name: str) -> Path:
@@ -113,14 +134,36 @@ def pytest_bdd_after_step(
     step_func_args: dict,
 ) -> None:
     """Screenshots the browser after each assertion step that drives
-    one, a `Then` or an `And` or `But` continuing one, then leaves
-    what the step asserted on screen for `--recording-dwell`."""
+    one, a `Then` or an `And` or `But` continuing one, with the element
+    the step asserted on scrolled to the middle of the view and
+    outlined, then leaves it on screen for `--recording-dwell`."""
     page = step_func_args.get('page')
     if page is None or step.type != 'then':
         return
+    asserted = step_func_args.get('asserted')
+    element = asserted.element if asserted is not None else None
+    if element is not None:
+        # A small element, such as a figure, is outlined just outside
+        # its box; a large one, such as a table, just inside, since a
+        # container that scrolls would clip an outline outside it.
+        element.evaluate(
+            'element => {'
+            '  element.scrollIntoView({block: "center", inline: "nearest"});'
+            f'  element.style.outline = "{OUTLINE}";'
+            '  element.style.outlineOffset = '
+            '    element.getBoundingClientRect().height > 60 ? "-3px" : "4px";'
+            '}'
+        )
     directory = _scenario_directory(feature.filename, scenario.name)
     directory.mkdir(parents=True, exist_ok=True)
     page.screenshot(
         path=str(directory / recordings.screenshot_filename(step.line_number)),
     )
     page.wait_for_timeout(request.config.getoption('--recording-dwell'))
+    if element is not None:
+        element.evaluate(
+            'element => {'
+            '  element.style.outline = "";'
+            '  element.style.outlineOffset = "";'
+            '}'
+        )

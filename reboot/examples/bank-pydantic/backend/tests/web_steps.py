@@ -9,6 +9,7 @@ the scenario's event loop thread.
 """
 import json5
 import re
+from conftest import Asserted
 from playwright.sync_api import BrowserContext, Page, expect
 from pytest_bdd import parsers, then, when
 from reboot.aio.auth import SESSION_COOKIE_NAME
@@ -138,32 +139,35 @@ def _the_user_selects(
 def _the_page_shows(
     world: World,
     page: Page,
+    asserted: Asserted,
     eventually: Optional[str],
     text: str,
     seconds: Optional[str],
 ) -> None:
-    expect(page.get_by_text(_text(world, text))).to_be_visible(
-        timeout=_timeout(seconds),
-    )
+    element = page.get_by_text(_text(world, text))
+    expect(element).to_be_visible(timeout=_timeout(seconds))
+    asserted.element = element
 
 
 @then(parsers.re(ELEMENT_SHOWS))
 def _the_element_shows(
     world: World,
     page: Page,
+    asserted: Asserted,
     name: str,
     role: str,
     eventually: Optional[str],
     text: str,
     seconds: Optional[str],
 ) -> None:
-    expect(
-        page.get_by_role(
-            role,  # type: ignore[arg-type]
-            name=_text(world, name),
-            exact=True,
-        ),
-    ).to_contain_text(_text(world, text), timeout=_timeout(seconds))
+    element = page.get_by_role(
+        role,  # type: ignore[arg-type]
+        name=_text(world, name),
+        exact=True,
+    )
+    expect(element
+          ).to_contain_text(_text(world, text), timeout=_timeout(seconds))
+    asserted.element = element
 
 
 @when(parsers.re(TEXT_IS_SAVED_AS))
