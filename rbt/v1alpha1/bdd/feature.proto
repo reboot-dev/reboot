@@ -97,8 +97,14 @@ message Scenario {
 
   // The video of the scenario's last run in a browser, as a path
   // relative to the working directory, kept beside the feature file
-  // (see `reboot.bdd.recordings`); absent when no run was recorded.
+  // (see `reboot.bdd.recordings`); absent when no run of the scenario
+  // as it is now was recorded.
   optional string video = 8;
+
+  // Whether recordings exist only of an earlier version of the
+  // scenario: it, or a background it runs under, changed since its
+  // last run in a browser was recorded.
+  bool recordings_stale = 9;
 }
 
 // One step of a scenario or a background.
@@ -123,10 +129,10 @@ message Step {
   // The line the step is written on, counting from one.
   uint32 line = 6;
 
-  // The screenshot taken after the step in the scenario's last run
-  // in a browser, as a path relative to the working directory, kept
-  // beside the feature file (see `reboot.bdd.recordings`); absent
-  // when none was taken.
+  // The screenshot taken after the step in the last recorded run of
+  // its scenario as it is now, as a path relative to the working
+  // directory, kept beside the feature file (see
+  // `reboot.bdd.recordings`); absent when none was taken.
   optional string screenshot = 7;
 }
 

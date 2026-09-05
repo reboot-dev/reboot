@@ -46,6 +46,9 @@ py_library(
     srcs = ["recordings.py"],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
+    deps = [
+        "//rbt/v1alpha1/bdd:feature_py_proto",
+    ],
 )
 
 py_library(

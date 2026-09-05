@@ -1693,6 +1693,13 @@ header h1 {
   border-color: hsl(var(--border-strong));
 }
 
+/* Recordings that show an earlier version of the scenario: named,
+   not offered. */
+.scenario-video.is-stale {
+  border-style: dashed;
+  cursor: help;
+}
+
 /* The same open-and-close animation as `.method-detail`, on the
    scenario's own class so that the subgrid layout `.methods` gives
    its rows never applies here. */

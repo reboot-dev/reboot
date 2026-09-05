@@ -14,13 +14,14 @@ why it shows no behaviors.
 
 Each scenario is also checked for the recordings of its last run in
 a browser, kept beside the feature file the way `reboot.bdd.recordings`
-lays them out, and the video and screenshots found are named against
-the scenario and its steps.
+lays them out: the video and screenshots of the scenario as it is
+now are named against it and its steps, and a scenario whose only
+recordings are of an earlier version is marked stale.
 """
 from functools import partial
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import Dashboard
-from rbt.v1alpha1.bdd.feature_pb2 import Feature
+from rbt.v1alpha1.bdd.feature_pb2 import Background, Feature, Scenario
 from reboot.aio.contexts import WorkflowContext
 from reboot.aio.workflows import at_least_once
 from reboot.bdd import recordings
@@ -37,9 +38,9 @@ except ImportError:
 # `pytest-bdd` and every other Gherkin tool reads.
 FEATURE_GLOB = '**/*.feature'
 
-# The glob every recording matches: a file in a scenario's directory
-# under the recordings directory beside a feature file.
-RECORDINGS_GLOB = f'**/*{recordings.RECORDINGS_SUFFIX}/*/*'
+# The glob every recording matches: a file in a scenario's digest
+# directory under the recordings directory beside a feature file.
+RECORDINGS_GLOB = f'**/*{recordings.RECORDINGS_SUFFIX}/*/*/*'
 
 
 def _feature_files(directory: Path) -> list[Path]:
@@ -64,26 +65,45 @@ def _with_recordings(
     """The given feature with each scenario's video and each of its
     steps' screenshots named, as paths relative to the working
     directory, where the files exist beside the feature file at
-    `path`."""
+    `path` for the scenario as it is now, and each scenario whose
+    recordings are of an earlier version marked stale."""
     result = Feature()
     result.CopyFrom(feature)
-    scenarios = [
-        *result.scenarios,
-        *(scenario for rule in result.rules for scenario in rule.scenarios),
+    feature_backgrounds = (
+        [result.background] if result.HasField('background') else []
+    )
+    scenarios_and_backgrounds: list[tuple[Scenario, list[Background]]] = [
+        (scenario, feature_backgrounds) for scenario in result.scenarios
     ]
-    for scenario in scenarios:
+    for rule in result.rules:
+        rule_backgrounds = feature_backgrounds + (
+            [rule.background] if rule.HasField('background') else []
+        )
+        scenarios_and_backgrounds.extend(
+            (scenario, rule_backgrounds) for scenario in rule.scenarios
+        )
+    for scenario, backgrounds in scenarios_and_backgrounds:
         if not scenario.HasField('name'):
             continue
-        scenario_directory = recordings.scenario_directory(
+        recording_directory = recordings.recording_directory(
             path,
-            scenario.name,
+            scenario,
+            backgrounds,
         )
-        video = scenario_directory / recordings.VIDEO_FILENAME
+        if not recording_directory.is_dir():
+            scenario.recordings_stale = any(
+                child.is_dir() for child in recordings.scenario_directory(
+                    path,
+                    scenario.name,
+                ).glob('*')
+            )
+            continue
+        video = recording_directory / recordings.VIDEO_FILENAME
         if video.is_file():
             scenario.video = str(video.relative_to(directory))
-        for step in scenario.steps:
-            screenshot = scenario_directory / recordings.screenshot_filename(
-                step.line
+        for position, step in enumerate(scenario.steps, start=1):
+            screenshot = recording_directory / recordings.screenshot_filename(
+                position
             )
             if screenshot.is_file():
                 step.screenshot = str(screenshot.relative_to(directory))

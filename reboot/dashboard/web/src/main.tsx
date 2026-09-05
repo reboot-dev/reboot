@@ -1088,6 +1088,9 @@ const ScenarioRow: FC<{
   // The video of the scenario's last run in a browser, absent when
   // none was recorded.
   video?: string;
+  // Whether the only recordings are of an earlier version of the
+  // scenario.
+  recordingsStale?: boolean;
 }> = ({
   keyword,
   name,
@@ -1099,6 +1102,7 @@ const ScenarioRow: FC<{
   meaning,
   links,
   video,
+  recordingsStale,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [relatedKey, setRelatedKey] = useState<string | null>(null);
@@ -1146,6 +1150,14 @@ const ScenarioRow: FC<{
             </svg>
             video
           </a>
+        )}
+        {recordingsStale && (
+          <span
+            className="scenario-video is-stale"
+            title="Recorded from an earlier version of this scenario, or of a background it runs under; run it again to record it as it is now"
+          >
+            recording stale
+          </span>
         )}
         {tags.length > 0 && (
           <span className="tags">
@@ -1249,6 +1261,7 @@ const ScenarioRows: FC<{
         meaning={DEFINITIONS.scenario}
         links={links}
         video={scenario.video}
+        recordingsStale={scenario.recordingsStale}
         key={scenario.line}
       />
     ))}

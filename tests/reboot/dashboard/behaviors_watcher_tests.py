@@ -6,6 +6,7 @@ directory of their own.
 """
 import asyncio
 import os
+import shutil
 import tempfile
 import unittest
 import urllib.error
@@ -13,6 +14,7 @@ import urllib.request
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import Dashboard
 from reboot.aio.tests import Reboot
+from reboot.bdd import feature, recordings
 from reboot.dashboard.backend.constants import (
     DASHBOARD_ID,
     ENVVAR_RBT_API_DIRECTORY,
@@ -170,15 +172,29 @@ class BehaviorsWatcherTest(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         """A scenario's video and its steps' screenshots, kept beside
-        the feature file, are named by their paths, appear when
-        recorded while the dashboard is watching, and are served."""
+        the feature file under the digest of the scenario as it is
+        now, are named by their paths, appear when recorded while the
+        dashboard is watching, and are served; recordings under an
+        earlier digest mark the scenario stale instead."""
         self._write_feature_file('backend/tests/bank.feature', BANK)
-        recordings = self.directory / 'backend/tests/bank.recordings'
-        deposit = recordings / 'depositing-moves-the-balance'
+        parsed = feature.parse(BANK)
+        assert parsed is not None
+        deposit = recordings.recording_directory(
+            self.directory / 'backend/tests/bank.feature',
+            parsed.scenarios[0],
+            [parsed.background],
+        )
         deposit.mkdir(parents=True)
         (deposit / 'scenario.webm').write_bytes(b'webm')
-        # The `Then` step of the scenario is on line 9.
-        (deposit / '9.png').write_bytes(b'png')
+        # The scenario's second step is its `Then`.
+        (deposit / '2.png').write_bytes(b'png')
+        # The rule's scenario was recorded before its steps changed.
+        withdrawal = recordings.scenario_directory(
+            self.directory / 'backend/tests/bank.feature',
+            'Withdrawing more than the balance',
+        ) / ('0' * 16)
+        withdrawal.mkdir(parents=True)
+        (withdrawal / 'scenario.webm').write_bytes(b'webm')
 
         await self._start_dashboard()
         features = await self._wait_for_features(
@@ -186,21 +202,15 @@ class BehaviorsWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
 
         scenario = features['backend/tests/bank.feature'].scenarios[0]
-        self.assertEqual(
-            scenario.video,
-            'backend/tests/bank.recordings/depositing-moves-the-balance/'
-            'scenario.webm',
-        )
+        relative = str(deposit.relative_to(self.directory))
+        self.assertEqual(scenario.video, f'{relative}/scenario.webm')
+        self.assertFalse(scenario.recordings_stale)
         self.assertEqual([step.line for step in scenario.steps], [8, 9])
         self.assertFalse(scenario.steps[0].HasField('screenshot'))
-        self.assertEqual(
-            scenario.steps[1].screenshot,
-            'backend/tests/bank.recordings/depositing-moves-the-balance/'
-            '9.png',
-        )
-        withdrawal = features['backend/tests/bank.feature'].rules[0].scenarios[
-            0]
-        self.assertFalse(withdrawal.HasField('video'))
+        self.assertEqual(scenario.steps[1].screenshot, f'{relative}/2.png')
+        stale = features['backend/tests/bank.feature'].rules[0].scenarios[0]
+        self.assertFalse(stale.HasField('video'))
+        self.assertTrue(stale.recordings_stale)
 
         # The page fetches a recording by the path it was named by,
         # and nothing else under the project is served that way.
@@ -217,10 +227,16 @@ class BehaviorsWatcherTest(unittest.IsolatedAsyncioTestCase):
             None,
         )
 
-        # A run recorded while the dashboard is watching.
-        withdrawal_directory = recordings / 'withdrawing-more-than-the-balance'
-        withdrawal_directory.mkdir()
-        (withdrawal_directory / 'scenario.webm').write_bytes(b'webm')
+        # A run of the scenario as it is now, recorded while the
+        # dashboard is watching, replaces the stale one.
+        shutil.rmtree(withdrawal)
+        current = recordings.recording_directory(
+            self.directory / 'backend/tests/bank.feature',
+            parsed.rules[0].scenarios[0],
+            [parsed.background],
+        )
+        current.mkdir(parents=True)
+        (current / 'scenario.webm').write_bytes(b'webm')
 
         await self._wait_for_features(
             lambda features: len(features) == 1 and features[

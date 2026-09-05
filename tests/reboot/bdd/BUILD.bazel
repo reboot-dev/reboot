@@ -44,6 +44,7 @@ py_test(
     srcs = ["recordings_tests.py"],
     main = "recordings_tests.py",
     deps = [
+        "//rbt/v1alpha1/bdd:feature_py_proto",
         "//reboot/bdd:recordings_py",
     ],
 )

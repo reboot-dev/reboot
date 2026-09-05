@@ -55,16 +55,16 @@ _RECORDING_SUFFIXES = frozenset({'.png', '.webm'})
 def _recording(directory: Path, relative: str) -> Path:
     """The recording at the given path relative to the working
     directory, which must be a video or screenshot in a scenario's
-    directory under a recordings directory beside a feature file, so
-    that nothing else under the project is served."""
+    digest directory under a recordings directory beside a feature
+    file, so that nothing else under the project is served."""
     path = (directory / relative).resolve()
     try:
         parts = path.relative_to(directory.resolve()).parts
     except ValueError:
         raise HTTPException(status_code=404)
     if (
-        len(parts) < 3 or
-        not parts[-3].endswith(recordings.RECORDINGS_SUFFIX) or
+        len(parts) < 4 or
+        not parts[-4].endswith(recordings.RECORDINGS_SUFFIX) or
         path.suffix not in _RECORDING_SUFFIXES or not path.is_file()
     ):
         raise HTTPException(status_code=404)

@@ -11,6 +11,8 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from playwright.sync_api import Locator
+from rbt.v1alpha1.bdd.feature_pb2 import Background, Feature, Scenario
+from reboot.bdd import feature as bdd_feature
 from reboot.bdd import recordings
 from typing import Iterator, Optional
 
@@ -66,21 +68,95 @@ def asserted() -> Asserted:
     return Asserted()
 
 
-def _scenario_directory(feature_filename: str, scenario_name: str) -> Path:
-    """Where the named scenario's recordings go. Beside the feature
-    file, except under a Bazel test, whose source tree is read only
-    and which keeps whatever a test writes under
+@dataclass(frozen=True)
+class Recorded:
+    """The scenario being recorded, as the feature file declares it
+    now, and where its recordings go."""
+
+    # The feature file, parsed the way the dashboard parses it, so
+    # that both name the same digest directory.
+    feature: Feature
+
+    # The scenario, and the backgrounds it runs under.
+    scenario: Scenario
+    backgrounds: list[Background]
+
+    # The digest directory the run's recordings go in.
+    directory: Path
+
+
+def _feature_path(feature_filename: str) -> Path:
+    """Where the feature file's recordings are laid out from. The
+    file itself, except under a Bazel test, whose source tree is read
+    only and which keeps whatever a test writes under
     `TEST_UNDECLARED_OUTPUTS_DIR`."""
     feature = Path(feature_filename)
     outputs = os.environ.get('TEST_UNDECLARED_OUTPUTS_DIR')
     if outputs is not None:
-        feature = Path(outputs) / feature.relative_to(Path.cwd())
-    return recordings.scenario_directory(feature, scenario_name)
+        return Path(outputs) / feature.relative_to(Path.cwd())
+    return feature
+
+
+def _recorded(feature_filename: str, scenario_name: str) -> Recorded:
+    """The named scenario of the given feature file, as it is now."""
+    parsed = bdd_feature.parse(Path(feature_filename).read_text())
+    assert parsed is not None, f"{feature_filename} declares no feature"
+    feature_backgrounds = (
+        [parsed.background] if parsed.HasField('background') else []
+    )
+    candidates: list[tuple[Scenario, list[Background]]] = [
+        (scenario, feature_backgrounds) for scenario in parsed.scenarios
+    ]
+    for rule in parsed.rules:
+        rule_backgrounds = feature_backgrounds + (
+            [rule.background] if rule.HasField('background') else []
+        )
+        candidates.extend(
+            (scenario, rule_backgrounds) for scenario in rule.scenarios
+        )
+    for scenario, backgrounds in candidates:
+        if scenario.name == scenario_name:
+            return Recorded(
+                feature=parsed,
+                scenario=scenario,
+                backgrounds=backgrounds,
+                directory=recordings.recording_directory(
+                    _feature_path(feature_filename),
+                    scenario,
+                    backgrounds,
+                ),
+            )
+    raise AssertionError(
+        f"{feature_filename} declares no scenario named {scenario_name!r}"
+    )
 
 
 def _scenario_of(request: pytest.FixtureRequest):
     """The pytest-bdd scenario the requesting test runs."""
     return request.node.obj.__scenario__
+
+
+def _sweep(recorded: Recorded, feature_filename: str) -> None:
+    """Removes what earlier runs left that the feature file no longer
+    accounts for: the directory of any scenario it no longer declares,
+    and the recorded scenario's own directory, so that its one digest
+    directory is this run's."""
+    recordings_directory = recordings.recordings_directory(
+        _feature_path(feature_filename)
+    )
+    declared = {
+        recordings.scenario_slug(scenario.name) for scenario in [
+            *recorded.feature.scenarios,
+            *(
+                scenario for rule in recorded.feature.rules
+                for scenario in rule.scenarios
+            ),
+        ] if scenario.HasField('name')
+    }
+    for child in recordings_directory.glob('*'):
+        if child.is_dir() and child.name not in declared:
+            shutil.rmtree(child)
+    shutil.rmtree(recorded.directory.parent, ignore_errors=True)
 
 
 @pytest.fixture(scope='session')
@@ -105,24 +181,23 @@ def browser_context_args(
     request: pytest.FixtureRequest,
 ) -> Iterator[dict]:
     """pytest-playwright's context arguments plus recording the
-    scenario's video into its directory, emptied first so that nothing
-    from an earlier run outlives the scenario that made it. Once the
-    context has closed, the video Playwright named at random is
-    renamed to the scenario's."""
+    scenario's video into its digest directory, after sweeping what
+    earlier runs left. Once the context has closed, the video
+    Playwright named at random is renamed to the scenario's."""
     scenario = _scenario_of(request)
-    directory = _scenario_directory(scenario.feature.filename, scenario.name)
-    shutil.rmtree(directory, ignore_errors=True)
-    directory.mkdir(parents=True)
+    recorded = _recorded(scenario.feature.filename, scenario.name)
+    _sweep(recorded, scenario.feature.filename)
+    recorded.directory.mkdir(parents=True)
     yield {
         **browser_context_args,
-        'record_video_dir': str(directory),
+        'record_video_dir': str(recorded.directory),
         'record_video_size': VIDEO_SIZE,
     }
-    videos = sorted(directory.glob('*.webm'), key=os.path.getmtime)
+    videos = sorted(recorded.directory.glob('*.webm'), key=os.path.getmtime)
     for video in videos[:-1]:
         video.unlink()
     if videos:
-        videos[-1].rename(directory / recordings.VIDEO_FILENAME)
+        videos[-1].rename(recorded.directory / recordings.VIDEO_FILENAME)
 
 
 def pytest_bdd_after_step(
@@ -140,6 +215,16 @@ def pytest_bdd_after_step(
     page = step_func_args.get('page')
     if page is None or step.type != 'then':
         return
+    recorded = _recorded(feature.filename, scenario.name)
+    positions = [
+        position for position, recorded_step in enumerate(
+            recorded.scenario.steps,
+            start=1,
+        ) if recorded_step.line == step.line_number
+    ]
+    if not positions:
+        # A background's step, which is not the scenario's own.
+        return
     asserted = step_func_args.get('asserted')
     element = asserted.element if asserted is not None else None
     if element is not None:
@@ -154,10 +239,11 @@ def pytest_bdd_after_step(
             '    element.getBoundingClientRect().height > 60 ? "-3px" : "4px";'
             '}'
         )
-    directory = _scenario_directory(feature.filename, scenario.name)
-    directory.mkdir(parents=True, exist_ok=True)
+    recorded.directory.mkdir(parents=True, exist_ok=True)
     page.screenshot(
-        path=str(directory / recordings.screenshot_filename(step.line_number)),
+        path=str(
+            recorded.directory / recordings.screenshot_filename(positions[0])
+        ),
     )
     page.wait_for_timeout(request.config.getoption('--recording-dwell'))
     if element is not None:
