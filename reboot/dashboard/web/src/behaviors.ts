@@ -30,13 +30,6 @@ export const scenariosOfFeature = (
   ...feature.rules.flatMap((rule) => rule.scenarios),
 ];
 
-// The directory a feature file is in, which is how the sidebar groups
-// features, the way packages group types.
-export const directoryOfFeature = (filename: string): string => {
-  const slash = filename.lastIndexOf("/");
-  return slash === -1 ? "." : filename.slice(0, slash);
-};
-
 // Where the backticked spans of steps can link: each state type's
 // short name mapped to its id on the state page, and each method name
 // mapped to every state type declaring one by that name.

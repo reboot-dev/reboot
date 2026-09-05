@@ -40,10 +40,15 @@ import {
 } from "./constants";
 import type * as api_pb from "../../../../rbt/v1alpha1/api/api_pb";
 import type * as dashboard_pb from "../../../../rbt/dashboard/v1/dashboard_pb";
-import type { Features, Printed, Span, StepLinks } from "./behaviors";
+import type {
+  FeatureEntry,
+  Features,
+  Printed,
+  Span,
+  StepLinks,
+} from "./behaviors";
 import {
   columnsOfExamples,
-  directoryOfFeature,
   hueKeyOfSpan,
   hueKeyOfVariable,
   huesOfScenario,
@@ -136,17 +141,20 @@ const DEFINITIONS: Record<string, string> = {
 const DEFINITION_GAP = 8;
 
 // A pill that shows its definition on hover, when it has one. The
-// mark on the pill tells the reader a definition exists.
+// mark on the pill tells the reader a definition exists; a label
+// set as an eyebrow leaves the mark off, since a row of eyebrows
+// each trailing a mark reads as clutter.
 //
 // The definition opens above the pill so it does not cover the row
 // the reader is on. The pane clips content outside it, so when the
 // pane is scrolled and there is no room above, the definition opens
 // below the pill instead.
-const Pill: FC<{ className: string; label: string; meaning?: string }> = ({
-  className,
-  label,
-  meaning,
-}) => {
+const Pill: FC<{
+  className: string;
+  label: string;
+  meaning?: string;
+  mark?: boolean;
+}> = ({ className, label, meaning, mark = true }) => {
   const pill = useRef<HTMLSpanElement>(null);
   const [below, setBelow] = useState(false);
 
@@ -177,9 +185,11 @@ const Pill: FC<{ className: string; label: string; meaning?: string }> = ({
       onFocus={place}
     >
       {label}
-      <span className="define-mark" aria-hidden="true">
-        ?
-      </span>
+      {mark && (
+        <span className="define-mark" aria-hidden="true">
+          ?
+        </span>
+      )}
       <span
         className={below ? "definition below" : "definition"}
         role="tooltip"
@@ -1098,7 +1108,12 @@ const ScenarioRow: FC<{
         aria-expanded={expanded}
       >
         <span className="caret scenario-caret">{expanded ? "▾" : "▸"}</span>
-        <Pill className="scenario-keyword" label={keyword} meaning={meaning} />
+        <Pill
+          className="eyebrow scenario-keyword"
+          label={keyword}
+          meaning={meaning}
+          mark={false}
+        />
         <span className="scenario-name">{name}</span>
         {tags.length > 0 && (
           <span className="tags">
@@ -1187,7 +1202,10 @@ const ScenarioRows: FC<{
     )}
     {scenarios.map((scenario) => (
       <ScenarioRow
-        keyword={scenario.keyword}
+        // Always "Scenario", whether the file says "Scenario", its
+        // synonym "Example", or "Scenario Outline": an outline shows
+        // itself by the examples table under it.
+        keyword="Scenario"
         name={scenario.name}
         description={scenario.description}
         tags={scenario.tags}
@@ -1204,25 +1222,35 @@ const ScenarioRows: FC<{
   </div>
 );
 
+// Both the route a link to a rule goes to and the `id` of its
+// section: the feature's file, then which of its rules, counting
+// from one, since a rule may have no name.
+const ruleId = (filename: string, index: number): string =>
+  `${filename}/rules/${index + 1}`;
+
 const RuleSection: FC<{
   rule: feature_pb.Rule;
+  // The rule's id on the page, a `ruleId`.
+  id: string;
   inherited: feature_pb.Background[];
   links: StepLinks;
-}> = ({ rule, inherited, links }) => (
-  <div className="rule">
+}> = ({ rule, id, inherited, links }) => (
+  <div className="rule" id={pathOfTypeOnPage("behaviors", id)}>
     <div className="rule-heading">
       <Pill
         className="eyebrow"
         label={rule.keyword.toLowerCase()}
         meaning={DEFINITIONS.rule}
+        mark={false}
       />
       <h3>{rule.name}</h3>
+      <Anchor page="behaviors" id={id} />
       <span className="summary-line">
         {countWithNoun(rule.scenarios.length, "scenario")}
       </span>
     </div>
     {rule.description !== undefined && (
-      <Description className="state-type-description" text={rule.description} />
+      <Description className="rule-description" text={rule.description} />
     )}
     <ScenarioRows
       inherited={inherited}
@@ -1233,68 +1261,115 @@ const RuleSection: FC<{
   </div>
 );
 
+// A feature on its own page. The pane's header names it and carries
+// its file, counts, and description, so the card holds the
+// scenarios and rules.
 const FeatureCard: FC<{
   filename: string;
   feature: feature_pb.Feature;
   links: StepLinks;
-}> = ({ filename, feature, links }) => {
-  const scenarios = scenariosOfFeature(feature);
+}> = ({ filename, feature, links }) => (
+  <section className="state-type" id={pathOfTypeOnPage("behaviors", filename)}>
+    {feature.error !== undefined ? (
+      <div className="error">{feature.error}</div>
+    ) : (
+      <>
+        {(feature.background !== undefined || feature.scenarios.length > 0) && (
+          <ScenarioRows
+            inherited={[]}
+            background={feature.background}
+            scenarios={feature.scenarios}
+            links={links}
+          />
+        )}
+        {feature.rules.map((rule, index) => (
+          <RuleSection
+            rule={rule}
+            id={ruleId(filename, index)}
+            inherited={
+              feature.background === undefined ? [] : [feature.background]
+            }
+            links={links}
+            key={index}
+          />
+        ))}
+      </>
+    )}
+  </section>
+);
+
+// One name that links to a page, on the behaviors index and in its
+// sidebar.
+interface NamedLink {
+  id: string;
+  name: string;
+}
+
+// Every feature, and every rule, each linking to its page.
+const namedLinksOf = (
+  features: FeatureEntry[]
+): { features: NamedLink[]; rules: NamedLink[] } => ({
+  features: features.map(({ filename, feature }) => ({
+    id: filename,
+    name: feature.name ?? filename,
+  })),
+  rules: features.flatMap(({ filename, feature }) =>
+    feature.rules.map((rule, index) => ({
+      id: ruleId(filename, index),
+      name: rule.name ?? `Rule ${index + 1}`,
+    }))
+  ),
+});
+
+// The sidebar's list of names linking to their pages, under a
+// heading: rows of the sidebar's grid, so an eyebrow and a name cell
+// each, with no count.
+const NavLinks: FC<{ heading: string; links: NamedLink[] }> = ({
+  heading,
+  links,
+}) => (
+  <>
+    <div className="eyebrow">{heading}</div>
+    {links.map((link) => (
+      <Link
+        to={pathOfTypeOnPage("behaviors", link.id)}
+        title={link.name}
+        key={link.id}
+      >
+        <span className="nav-name">{link.name}</span>
+      </Link>
+    ))}
+  </>
+);
+
+// The index's list of names linking to their pages, under a heading.
+const LinkList: FC<{ heading: string; links: NamedLink[] }> = ({
+  heading,
+  links,
+}) => (
+  <div className="link-list">
+    <div className="eyebrow">{heading}</div>
+    {links.length === 0 ? (
+      <div className="empty">None yet.</div>
+    ) : (
+      links.map((link) => (
+        <Link to={pathOfTypeOnPage("behaviors", link.id)} key={link.id}>
+          {link.name}
+        </Link>
+      ))
+    )}
+  </div>
+);
+
+// The behaviors page with no feature chosen: the features and the
+// rules, side by side, each name linking to its page.
+const FeaturesIndex: FC<{ features: FeatureEntry[] }> = ({ features }) => {
+  const links = namedLinksOf(features);
   return (
-    <section
-      className="state-type"
-      id={pathOfTypeOnPage("behaviors", filename)}
-    >
-      <div>
-        <Pill
-          className="eyebrow"
-          label={feature.keyword.toLowerCase() || "feature"}
-          meaning={DEFINITIONS.feature}
-        />
-      </div>
-      <div className="state-type-head">
-        <div className="state-type-heading">
-          <h2>{feature.name ?? filename}</h2>
-          <Anchor page="behaviors" id={filename} />
-          <span className="summary-line">
-            {countWithNoun(scenarios.length, "scenario")}
-            {feature.rules.length > 0 &&
-              ` · ${countWithNoun(feature.rules.length, "rule")}`}
-          </span>
-        </div>
-      </div>
-      <div className="file">{filename}</div>
-      {feature.error !== undefined ? (
-        <div className="error">{feature.error}</div>
-      ) : (
-        <>
-          {feature.description !== undefined && (
-            <Description
-              className="state-type-description"
-              text={feature.description}
-            />
-          )}
-          {(feature.background !== undefined ||
-            feature.scenarios.length > 0) && (
-            <ScenarioRows
-              inherited={[]}
-              background={feature.background}
-              scenarios={feature.scenarios}
-              links={links}
-            />
-          )}
-          {feature.rules.map((rule, index) => (
-            <RuleSection
-              rule={rule}
-              inherited={
-                feature.background === undefined ? [] : [feature.background]
-              }
-              links={links}
-              key={index}
-            />
-          ))}
-        </>
-      )}
-    </section>
+    <div className="behaviors-index">
+      <LinkList heading="features" links={links.features} />
+      <LinkList heading="rules" links={links.rules} />
+    </div>
   );
 };
 
@@ -1503,6 +1578,20 @@ const Overview: FC<{
 
   const featureEntries = useMemo(() => sortedFeatures(features), [features]);
 
+  // The feature the URL names, by its file or by one of its rules
+  // (`ruleId`); `undefined` for the page with no feature chosen,
+  // which lists them all.
+  const chosenFeature = useMemo(
+    () =>
+      target === undefined
+        ? undefined
+        : featureEntries.find(
+            ({ filename }) =>
+              target === filename || target.startsWith(`${filename}/rules/`)
+          ),
+    [featureEntries, target]
+  );
+
   const scenarioCount = useMemo(
     () =>
       featureEntries.reduce(
@@ -1511,6 +1600,21 @@ const Overview: FC<{
       ),
     [featureEntries]
   );
+
+  // Rules are what the page counts by once a project writes them;
+  // until then, scenarios.
+  const ruleCount = useMemo(
+    () =>
+      featureEntries.reduce(
+        (total, entry) => total + entry.feature.rules.length,
+        0
+      ),
+    [featureEntries]
+  );
+  const behaviorsCount =
+    ruleCount > 0
+      ? countWithNoun(ruleCount, "rule")
+      : countWithNoun(scenarioCount, "scenario");
 
   // Where the backticked spans of steps link, derived from the same
   // APIs the state page shows, so a link can never point at a state
@@ -1529,9 +1633,9 @@ const Overview: FC<{
   }, [apis]);
 
   // The changelog is one list rather than a set of packages, and
-  // the graph is one canvas, so the sidebar has nothing to index.
-  // The behaviors page's "packages" are the directories the feature
-  // files are in.
+  // the graph is one canvas, so the sidebar has nothing to index;
+  // the behaviors page indexes its features and rules as two flat
+  // lists of its own, below.
   const entries: NavEntry[] = useMemo(
     () =>
       page === "changelog" || page === "graph"
@@ -1546,15 +1650,7 @@ const Overview: FC<{
             }))
           )
         : page === "behaviors"
-        ? featureEntries.map(({ filename, feature }) => ({
-            id: filename,
-            name: feature.name ?? filename,
-            package: directoryOfFeature(filename),
-            count: countWithNoun(
-              scenariosOfFeature(feature).length,
-              "scenario"
-            ),
-          }))
+        ? []
         : linkedDataTypes.map((linkedDataType) => ({
             id: linkedDataType.id,
             name: linkedDataType.name,
@@ -1565,6 +1661,12 @@ const Overview: FC<{
   );
 
   const packages = useMemo(() => groupByPackage(entries), [entries]);
+
+  // The behaviors sidebar's two lists.
+  const behaviorLinks = useMemo(
+    () => namedLinksOf(featureEntries),
+    [featureEntries]
+  );
 
   // The changelog, read here rather than in its page so that the
   // nav's count is right before the page is ever opened.
@@ -1597,7 +1699,9 @@ const Overview: FC<{
     page === "changelog"
       ? "history"
       : page === "behaviors"
-      ? "application behavior"
+      ? chosenFeature === undefined
+        ? "application behavior"
+        : "feature"
       : "application domain";
 
   const heading =
@@ -1614,10 +1718,12 @@ const Overview: FC<{
           "package"
         )}`
       : page === "behaviors"
-      ? `${countWithNoun(scenarioCount, "scenario")} in ${countWithNoun(
-          featureEntries.length,
-          "feature"
-        )}`
+      ? chosenFeature === undefined
+        ? `${behaviorsCount} in ${countWithNoun(
+            featureEntries.length,
+            "feature"
+          )}`
+        : chosenFeature.feature.name ?? chosenFeature.filename
       : `${countWithNoun(
           linkedDataTypes.length,
           "data type"
@@ -1719,7 +1825,7 @@ const Overview: FC<{
   const counts: Record<Page, number> = {
     state: stateTypeCount,
     data: linkedDataTypes.length,
-    behaviors: scenarioCount,
+    behaviors: ruleCount > 0 ? ruleCount : scenarioCount,
     changelog: shownChangelog.length,
     graph: calls,
   };
@@ -1747,19 +1853,19 @@ const Overview: FC<{
         <nav>
           <RebootBrand live={live} />
           <PageSelector counts={counts} />
+          {page === "behaviors" && (
+            <>
+              <NavLinks heading="features" links={behaviorLinks.features} />
+              <NavLinks heading="rules" links={behaviorLinks.rules} />
+            </>
+          )}
           {/* The changelog has none. */}
           {packages.length > 0 && <div className="eyebrow">packages</div>}
           {packages.map((group) => (
             <Package
               package={group.package}
               page={page}
-              noun={
-                page === "state"
-                  ? "state type"
-                  : page === "behaviors"
-                  ? "feature"
-                  : "data type"
-              }
+              noun={page === "state" ? "state type" : "data type"}
               entries={group.entries}
               key={group.package}
             />
@@ -1775,6 +1881,32 @@ const Overview: FC<{
           <header>
             <div className="eyebrow">{eyebrow}</div>
             <h1>{heading}</h1>
+            {/* A feature's page names the feature up here, so its
+                file, counts, and description belong here too. */}
+            {page === "behaviors" && chosenFeature !== undefined && (
+              <>
+                <div className="feature-file-line">
+                  <div className="file">{chosenFeature.filename}</div>
+                  <span className="summary-line">
+                    {countWithNoun(
+                      scenariosOfFeature(chosenFeature.feature).length,
+                      "scenario"
+                    )}
+                    {chosenFeature.feature.rules.length > 0 &&
+                      ` · ${countWithNoun(
+                        chosenFeature.feature.rules.length,
+                        "rule"
+                      )}`}
+                  </span>
+                </div>
+                {chosenFeature.feature.description !== undefined && (
+                  <Description
+                    className="state-type-description"
+                    text={chosenFeature.feature.description}
+                  />
+                )}
+              </>
+            )}
           </header>
           {error && <div className="error">{error}</div>}
           {page === "changelog" ? (
@@ -1847,15 +1979,15 @@ const Overview: FC<{
                 No <code>.feature</code> files found. Write one and its
                 scenarios will show up here.
               </div>
+            ) : chosenFeature === undefined ? (
+              <FeaturesIndex features={featureEntries} />
             ) : (
-              featureEntries.map(({ filename, feature }) => (
-                <FeatureCard
-                  filename={filename}
-                  feature={feature}
-                  links={links}
-                  key={filename}
-                />
-              ))
+              <FeatureCard
+                filename={chosenFeature.filename}
+                feature={chosenFeature.feature}
+                links={links}
+                key={chosenFeature.filename}
+              />
             )
           ) : linkedDataTypes.length === 0 ? (
             <div className="empty">

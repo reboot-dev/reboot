@@ -89,6 +89,9 @@ Feature: Accounts
     When the `Account` for "spawned" gets a `deposit` with `amount=15` spawned with its task id saved as `first`
     Then the `deposit` task with id "<first>" of the `Account` completes within 30 seconds
     And the result has `updated_balance=15`
+    When the `Account` for "spawned" gets a `balance` spawned with its task id saved as `read`
+    Then the `balance` task with id "<read>" of the `Account` completes within 30 seconds
+    And the result has `balance=15`
 
   Scenario: Scheduled tasks are awaited by ID
     Given an `Account` for "later" gets created via `open`
