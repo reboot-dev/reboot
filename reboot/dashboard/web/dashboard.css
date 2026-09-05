@@ -1814,6 +1814,22 @@ header h1 {
 }
 
 /* Muted: who is calling, which application, and how long to wait. */
+.scenario-detail code.span-element-name,
+.scenario-detail code.span-label,
+.scenario-detail code.span-page-text,
+.scenario-detail code.span-key,
+.scenario-detail code.span-path {
+  color: hsl(var(--foreground));
+  background: hsl(var(--muted));
+}
+
+.scenario-detail code.span-element-role {
+  color: hsl(var(--muted-foreground));
+  background: none;
+  padding: 0;
+  font-style: italic;
+}
+
 .scenario-detail code.span-user,
 .scenario-detail code.span-application,
 .scenario-detail code.span-duration {

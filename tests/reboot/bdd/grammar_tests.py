@@ -1,7 +1,7 @@
 """What `reboot.bdd.grammar.parse` makes of each built-in step's
 text: which built-in step it is, and the parts the step takes."""
 import unittest
-from rbt.v1alpha1.bdd.grammar_pb2 import Assertion
+from rbt.v1alpha1.bdd.grammar_pb2 import Assertion, Element
 from reboot.bdd.grammar import parse
 
 
@@ -229,6 +229,99 @@ class ReadTest(unittest.TestCase):
         syntax = parse('as "bob" an `Account` for "a" gets created via `open`')
         assert syntax is not None
         self.assertEqual(syntax.gets_created_via.user, 'bob')
+
+    def test_web_app_steps(self) -> None:
+        syntax = parse('"alice" opens the web app')
+        assert syntax is not None
+        self.assertEqual(syntax.opens_web_app.user, 'alice')
+        self.assertFalse(syntax.opens_web_app.HasField('path'))
+
+        syntax = parse('"alice" opens the web app at "/accounts"')
+        assert syntax is not None
+        self.assertEqual(syntax.opens_web_app.path, '/accounts')
+
+        syntax = parse(
+            '"alice" clicks the "Open Account" button in the web app'
+        )
+        assert syntax is not None
+        self.assertEqual(syntax.clicks_in_web_app.user, 'alice')
+        self.assertEqual(
+            syntax.clicks_in_web_app.element.role, Element.Role.BUTTON
+        )
+        self.assertEqual(syntax.clicks_in_web_app.element.name, 'Open Account')
+        # A role outside the closed list is no step of the grammar.
+        self.assertIsNone(
+            parse('"alice" clicks the "Open Account" widget in the web app')
+        )
+
+        syntax = parse(
+            '"alice" fills "Initial Deposit ($)" in the web app with `1000`'
+        )
+        assert syntax is not None
+        self.assertEqual(syntax.fills_in_web_app.label, 'Initial Deposit ($)')
+        self.assertEqual(syntax.fills_in_web_app.value.json, '1000')
+
+        syntax = parse(
+            '"alice" selects "<first_account_id>" in "From Account" in the '
+            'web app'
+        )
+        assert syntax is not None
+        self.assertEqual(
+            syntax.selects_in_web_app.option, '<first_account_id>'
+        )
+        self.assertEqual(syntax.selects_in_web_app.label, 'From Account')
+
+        syntax = parse('"alice" unchecks "Remember me" in the web app')
+        assert syntax is not None
+        self.assertFalse(syntax.checks_in_web_app.checked)
+
+        syntax = parse('"alice" presses "Enter" in the web app')
+        assert syntax is not None
+        self.assertEqual(syntax.presses_in_web_app.key, 'Enter')
+
+        syntax = parse('"alice" sees "Signed in as alice" in the web app')
+        assert syntax is not None
+        self.assertEqual(syntax.sees_in_web_app.text, 'Signed in as alice')
+        self.assertFalse(syntax.sees_in_web_app.HasField('within'))
+        self.assertFalse(syntax.sees_in_web_app.negated)
+        self.assertFalse(syntax.sees_in_web_app.HasField('seconds'))
+
+        syntax = parse(
+            '"alice" eventually sees "$1000" in the "Your Accounts" table in '
+            'the web app within 10 seconds'
+        )
+        assert syntax is not None
+        self.assertEqual(
+            syntax.sees_in_web_app.within.role, Element.Role.TABLE
+        )
+        self.assertEqual(syntax.sees_in_web_app.within.name, 'Your Accounts')
+        self.assertEqual(syntax.sees_in_web_app.seconds, 10)
+
+        syntax = parse('"alice" does not see "pending" in the web app')
+        assert syntax is not None
+        self.assertTrue(syntax.sees_in_web_app.negated)
+
+        syntax = parse(
+            '"alice" sees the "Transfer Funds" button in the web app is '
+            'disabled'
+        )
+        assert syntax is not None
+        self.assertFalse(syntax.sees_enabled_in_web_app.enabled)
+        self.assertEqual(
+            syntax.sees_enabled_in_web_app.element.name, 'Transfer Funds'
+        )
+
+        syntax = parse('"alice" sees the web app at "/accounts/<account_id>"')
+        assert syntax is not None
+        self.assertEqual(syntax.sees_web_app_at.path, '/accounts/<account_id>')
+
+        syntax = parse(
+            '"alice" saves the text of the "account-id" element in the web '
+            'app as `account_id`'
+        )
+        assert syntax is not None
+        self.assertEqual(syntax.saves_text_in_web_app_as.test_id, 'account-id')
+        self.assertEqual(syntax.saves_text_in_web_app_as.name, 'account_id')
 
     def test_a_step_the_grammar_does_not_define_is_none(self) -> None:
         self.assertIsNone(parse('the welcome email was sent'))

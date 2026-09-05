@@ -48,7 +48,9 @@ rbt $RBT_FLAGS generate
 
 mypy backend/
 
-pytest backend/
+# The web app's scenarios need its npm dependencies and a browser,
+# which this script does not install.
+pytest backend/ --ignore=backend/tests/web_test.py
 
 if [ -n "$EXPECTED_RBT_DEV_OUTPUT_FILE" ]; then
   actual_output_file=$(mktemp)

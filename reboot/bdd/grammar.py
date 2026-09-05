@@ -17,9 +17,13 @@ from rbt.v1alpha1.bdd.grammar_pb2 import (
     AttemptAbortsWith,
     Attempts,
     BuiltInSyntax,
+    ChecksInWebApp,
+    ClicksInWebApp,
     Containing,
+    Element,
     Equals,
     EventuallyHas,
+    FillsInWebApp,
     Gets,
     GetsCreatedVia,
     Has,
@@ -27,9 +31,16 @@ from rbt.v1alpha1.bdd.grammar_pb2 import (
     HasSavedAs,
     IsAnAuthenticatedUser,
     OfLength,
+    OpensWebApp,
+    PressesInWebApp,
     ResultHas,
     ResultingIsSavedAs,
     Save,
+    SavesTextInWebAppAs,
+    SeesEnabledInWebApp,
+    SeesInWebApp,
+    SeesWebAppAt,
+    SelectsInWebApp,
     SharedContext,
     State,
     TaskCompletes,
@@ -165,6 +176,43 @@ ABORTS_WITH = (
     rf'(?: with (?P<clauses>{ASSERT_CLAUSES}))?$'
 )
 RESULT_HAS = rf'the result has (?P<clauses>{ASSERT_CLAUSES})$'
+
+# The web app's steps: what a named user does in it and sees in it.
+USER = r'"(?P<user>[^"]*)"'
+# What an element may be, as a step writes it: each of `Element.Role`
+# in lower case, so that the proto is the one list.
+ROLES = tuple(
+    name.lower()
+    for name, number in Element.Role.items()
+    if number != Element.Role.ROLE_UNSPECIFIED
+)
+ELEMENT = rf'the "(?P<name>[^"]*)" (?P<role>{"|".join(ROLES)})'
+WEB_APP = 'in the web app'
+OPENS_WEB_APP = rf'{USER} opens the web app(?: at "(?P<path>[^"]*)")?$'
+CLICKS_IN_WEB_APP = rf'{USER} clicks {ELEMENT} {WEB_APP}$'
+FILLS_IN_WEB_APP = (
+    rf'{USER} fills "(?P<label>[^"]*)" {WEB_APP} with `(?P<value>[^`]*)`$'
+)
+SELECTS_IN_WEB_APP = (
+    rf'{USER} selects "(?P<option>[^"]*)" in "(?P<label>[^"]*)" {WEB_APP}$'
+)
+CHECKS_IN_WEB_APP = (
+    rf'{USER} (?P<action>checks|unchecks) "(?P<label>[^"]*)" {WEB_APP}$'
+)
+PRESSES_IN_WEB_APP = rf'{USER} presses "(?P<key>[^"]*)" {WEB_APP}$'
+SEES_IN_WEB_APP = (
+    rf'{USER} (?:(?P<eventually>eventually )?sees|(?P<negated>does not see)) '
+    rf'"(?P<text>[^"]*)"(?: in {ELEMENT})? {WEB_APP}'
+    r'(?: within (?P<within>.+))?$'
+)
+SEES_ENABLED_IN_WEB_APP = (
+    rf'{USER} sees {ELEMENT} {WEB_APP} is (?P<state>enabled|disabled)$'
+)
+SEES_WEB_APP_AT = rf'{USER} sees the web app at "(?P<path>[^"]*)"$'
+SAVES_TEXT_IN_WEB_APP_AS = (
+    rf'{USER} saves the text of the "(?P<test_id>[^"]*)" element {WEB_APP} '
+    r'as `(?P<name>\w+)`$'
+)
 RESULTING_IS_SAVED_AS = (
     rf'the resulting `(?P<property_name>{PATH})` is saved as `(?P<name>\w+)`$'
 )
@@ -179,6 +227,17 @@ def _value(text: str) -> Value:
 
 def _state(match: re.Match[str]) -> State:
     return State(type=match['state_type'], id=match['state_id'])
+
+
+def _element(match: re.Match[str]) -> Optional[Element]:
+    """The element a step names, `None` when its optional element is
+    not written."""
+    if match['name'] is None:
+        return None
+    return Element(
+        role=Element.Role.Value(match['role'].upper()),
+        name=match['name'],
+    )
 
 
 def _clauses(clauses: Optional[str]) -> list[str]:
@@ -389,6 +448,96 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
     if match is not None:
         return BuiltInSyntax(
             result_has=ResultHas(assertions=_assertions(match['clauses']))
+        )
+    match = re.match(OPENS_WEB_APP, text)
+    if match is not None:
+        return BuiltInSyntax(
+            opens_web_app=OpensWebApp(user=match['user'], path=match['path'])
+        )
+    match = re.match(CLICKS_IN_WEB_APP, text)
+    if match is not None:
+        return BuiltInSyntax(
+            clicks_in_web_app=ClicksInWebApp(
+                user=match['user'],
+                element=_element(match),
+            )
+        )
+    match = re.match(FILLS_IN_WEB_APP, text)
+    if match is not None:
+        return BuiltInSyntax(
+            fills_in_web_app=FillsInWebApp(
+                user=match['user'],
+                label=match['label'],
+                value=_value(match['value']),
+            )
+        )
+    match = re.match(SELECTS_IN_WEB_APP, text)
+    if match is not None:
+        return BuiltInSyntax(
+            selects_in_web_app=SelectsInWebApp(
+                user=match['user'],
+                option=match['option'],
+                label=match['label'],
+            )
+        )
+    match = re.match(CHECKS_IN_WEB_APP, text)
+    if match is not None:
+        return BuiltInSyntax(
+            checks_in_web_app=ChecksInWebApp(
+                user=match['user'],
+                label=match['label'],
+                checked=match['action'] == 'checks',
+            )
+        )
+    match = re.match(PRESSES_IN_WEB_APP, text)
+    if match is not None:
+        return BuiltInSyntax(
+            presses_in_web_app=PressesInWebApp(
+                user=match['user'],
+                key=match['key'],
+            )
+        )
+    match = re.match(SEES_IN_WEB_APP, text)
+    if match is not None:
+        seconds = None
+        if match['within'] is not None:
+            seconds = _seconds(match['within'])
+            if seconds is None:
+                return None
+        return BuiltInSyntax(
+            sees_in_web_app=SeesInWebApp(
+                user=match['user'],
+                text=match['text'],
+                within=_element(match),
+                negated=match['negated'] is not None,
+                seconds=seconds,
+            )
+        )
+    match = re.match(SEES_ENABLED_IN_WEB_APP, text)
+    if match is not None:
+        return BuiltInSyntax(
+            sees_enabled_in_web_app=SeesEnabledInWebApp(
+                user=match['user'],
+                element=_element(match),
+                enabled=match['state'] == 'enabled',
+            )
+        )
+    match = re.match(SEES_WEB_APP_AT, text)
+    if match is not None:
+        return BuiltInSyntax(
+            sees_web_app_at=SeesWebAppAt(
+                user=match['user'],
+                path=match['path'],
+            )
+        )
+    match = re.match(SAVES_TEXT_IN_WEB_APP_AS, text)
+    if match is not None:
+        return BuiltInSyntax(
+            saves_text_in_web_app_as=SavesTextInWebAppAs(
+                user=match['user'],
+                test_id=match['test_id'],
+                name=match['name'],
+            )
         )
     match = re.match(RESULTING_IS_SAVED_AS, text)
     if match is not None:

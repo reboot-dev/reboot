@@ -65,7 +65,7 @@ from reboot.settings import (
     ENVVAR_RBT_FRONTEND_HOST,
     ENVVAR_RBT_FRONTEND_ROOT_PATH,
 )
-from typing import Any, Optional
+from typing import Any, Optional, Union
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -100,8 +100,10 @@ _resource_meta: contextvars.ContextVar[dict[str, Any] |
 # One entry per UI resource (e.g., clicker, chat); most apps
 # have only a handful.
 @functools.lru_cache(maxsize=_MAX_UI_CACHE_ENTRIES)
-def find_project_root_from(caller_file: str) -> Path:
-    """Walk up from `caller_file` to find a directory with `.rbtrc`.
+def find_project_root_from(caller_file: Union[str, Path]) -> Path:
+    """Walk up from `caller_file`, a file or a directory, to find a
+    directory with `.rbtrc`; a directory is itself the first place
+    looked.
 
     Exported so generated code can resolve the project root from its own
     `__file__` without relying on caller-frame inspection.
@@ -117,7 +119,9 @@ def find_project_root_from(caller_file: str) -> Path:
     # `.rbtrc` exists, while `.rbtrc` sits beside it in runfiles).
     # `.exists()` below still follows symlinks, so a symlinked `.rbtrc`
     # marker is found correctly.
-    current = Path(caller_file).absolute().parent
+    current = Path(caller_file).absolute()
+    if not current.is_dir():
+        current = current.parent
     while True:
         if (current / ".rbtrc").exists():
             return current

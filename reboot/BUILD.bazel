@@ -553,6 +553,8 @@ py_library(
         ":python_std",
         ":python_thirdparty",
         "//reboot/aio:python",
+        "//reboot/bdd:vite_py",
+        "//reboot/bdd:web_py",
         "//reboot/cli:main_py",
         "//reboot/dashboard/backend:main_py",
         "//reboot/mcp:python",

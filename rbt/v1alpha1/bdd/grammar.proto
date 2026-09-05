@@ -233,6 +233,125 @@ message ResultHas {
   repeated Assertion assertions = 1;
 }
 
+// An element of the web app a step names by what it is and what it
+// says: 'the "Open Account" button'. The name is the element's
+// accessible name as written, which may hold a <name> variable.
+message Element {
+  // What an element may be: the ARIA roles a step may name, each
+  // written in a step as its name in lower case.
+  enum Role {
+    ROLE_UNSPECIFIED = 0;
+    BUTTON = 1;
+    LINK = 2;
+    TAB = 3;
+    CHECKBOX = 4;
+    RADIO = 5;
+    MENUITEM = 6;
+    OPTION = 7;
+    ROW = 8;
+    TABLE = 9;
+  }
+
+  Role role = 1;
+
+  string name = 2;
+}
+
+// '"alice" opens the web app', optionally 'at "/path"'.
+message OpensWebApp {
+  string user = 1;
+
+  optional string path = 2;
+}
+
+// '"alice" clicks the "Open Account" button in the web app'.
+message ClicksInWebApp {
+  string user = 1;
+
+  Element element = 2;
+}
+
+// '"alice" fills "Amount ($)" in the web app with `250`': the field
+// named by its label.
+message FillsInWebApp {
+  string user = 1;
+
+  string label = 2;
+
+  Value value = 3;
+}
+
+// '"alice" selects "<id>" in "From Account" in the web app': the
+// option, by its text, of the select named by its label.
+message SelectsInWebApp {
+  string user = 1;
+
+  string option = 2;
+
+  string label = 3;
+}
+
+// '"alice" checks "Remember me" in the web app', or unchecks.
+message ChecksInWebApp {
+  string user = 1;
+
+  string label = 2;
+
+  bool checked = 3;
+}
+
+// '"alice" presses "Enter" in the web app'.
+message PressesInWebApp {
+  string user = 1;
+
+  string key = 2;
+}
+
+// '"alice" sees "$1000" in the web app', optionally 'in the "Your
+// Accounts" table' before 'in the web app'; 'does not see' for the
+// text's absence; 'eventually sees ... within 10 seconds' for text
+// that arrives.
+message SeesInWebApp {
+  string user = 1;
+
+  string text = 2;
+
+  // The element the text is looked for in; absent for the page.
+  optional Element within = 3;
+
+  bool negated = 4;
+
+  // Absent for a plain 'sees'.
+  optional double seconds = 5;
+}
+
+// '"alice" sees the "Transfer Funds" button in the web app is
+// disabled', or enabled.
+message SeesEnabledInWebApp {
+  string user = 1;
+
+  Element element = 2;
+
+  bool enabled = 3;
+}
+
+// '"alice" sees the web app at "/accounts"'.
+message SeesWebAppAt {
+  string user = 1;
+
+  string path = 2;
+}
+
+// '"alice" saves the text of the "account-id" element in the web app
+// as `account_id`': the element named by its test id.
+message SavesTextInWebAppAs {
+  string user = 1;
+
+  string test_id = 2;
+
+  string name = 3;
+}
+
 // 'the resulting `account_id` is saved as `alice_account_id`'.
 message ResultingIsSavedAs {
   Save save = 1;
@@ -259,5 +378,15 @@ message BuiltInSyntax {
     AbortsWith aborts_with = 13;
     ResultHas result_has = 14;
     ResultingIsSavedAs resulting_is_saved_as = 15;
+    OpensWebApp opens_web_app = 16;
+    ClicksInWebApp clicks_in_web_app = 17;
+    FillsInWebApp fills_in_web_app = 18;
+    SelectsInWebApp selects_in_web_app = 19;
+    ChecksInWebApp checks_in_web_app = 20;
+    PressesInWebApp presses_in_web_app = 21;
+    SeesInWebApp sees_in_web_app = 22;
+    SeesEnabledInWebApp sees_enabled_in_web_app = 23;
+    SeesWebAppAt sees_web_app_at = 24;
+    SavesTextInWebAppAs saves_text_in_web_app_as = 25;
   }
 }

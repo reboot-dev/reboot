@@ -9,7 +9,9 @@ dependencies = [
 [dependency-groups]
 dev = [
     "mypy==1.18.1",
+    "playwright>=1.55.0",
     "pytest>=7.4.2",
+    "pytest-playwright>=0.7.1",
     "types-protobuf>=4.24.0.20240129",
 ]
 

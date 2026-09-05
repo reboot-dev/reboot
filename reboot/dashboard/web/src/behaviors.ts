@@ -4,6 +4,7 @@
 
 import type * as feature_pb from "../../../../rbt/v1alpha1/bdd/feature_pb";
 import type * as grammar_pb from "../../../../rbt/v1alpha1/bdd/grammar_pb";
+import { Element_Role } from "../../../../rbt/v1alpha1/bdd/grammar_pb";
 import type { APIs } from "./link_properties_to_data_types";
 import { qualifiedName } from "./link_properties_to_data_types";
 
@@ -130,7 +131,13 @@ export type Role =
   | "error-type"
   | "user"
   | "application"
-  | "duration";
+  | "duration"
+  | "element-name"
+  | "element-role"
+  | "label"
+  | "page-text"
+  | "key"
+  | "path";
 
 export interface Span {
   text: string;
@@ -176,6 +183,31 @@ const spansOfValue = (value: grammar_pb.Value | undefined): Span[] =>
   spansOfText(value?.json ?? "", "value");
 
 const spansOfStateId = (id: string): Span[] => spansOfText(id, "state-id");
+
+// The user a web app step names as its subject.
+const spanOfUser = (user: string): Span => ({
+  text: `"${user}"`,
+  role: "user",
+});
+
+// An element of the web app, by what it says and what it is: 'the
+// "Open Account" button'. A <name> in what it says is a variable.
+const spansOfElement = (element: grammar_pb.Element | undefined): Span[] => [
+  text("the "),
+  ...spansOfText(`"${element?.name ?? ""}"`, "element-name"),
+  text(" "),
+  {
+    text: Element_Role[
+      element?.role ?? Element_Role.ROLE_UNSPECIFIED
+    ].toLowerCase(),
+    role: "element-role",
+  },
+];
+
+const spanOfLabel = (label: string): Span => ({
+  text: `"${label}"`,
+  role: "label",
+});
 
 // The 'as "alice"' a step starts with when it calls as a user; nothing
 // for a step that calls anonymously.
@@ -448,6 +480,134 @@ export const printBuiltInSyntax = (
       return {
         head: [text("the result has ")],
         clauses: step.value.assertions.map(spansOfAssertion),
+        tail: [],
+      };
+    case "opensWebApp": {
+      const who: Span = spanOfUser(step.value.user);
+      const at: Span[] =
+        step.value.path === undefined
+          ? []
+          : [text(" at "), { text: `"${step.value.path}"`, role: "path" }];
+      return {
+        head: [who, text(" opens the web app"), ...at],
+        clauses: [],
+        tail: [],
+      };
+    }
+    case "clicksInWebApp":
+      return {
+        head: [
+          spanOfUser(step.value.user),
+          text(" clicks "),
+          ...spansOfElement(step.value.element),
+          text(" in the web app"),
+        ],
+        clauses: [],
+        tail: [],
+      };
+    case "fillsInWebApp":
+      return {
+        head: [
+          spanOfUser(step.value.user),
+          text(" fills "),
+          spanOfLabel(step.value.label),
+          text(" in the web app with "),
+          ...spansOfValue(step.value.value),
+        ],
+        clauses: [],
+        tail: [],
+      };
+    case "selectsInWebApp":
+      return {
+        head: [
+          spanOfUser(step.value.user),
+          text(" selects "),
+          ...spansOfText(`"${step.value.option}"`, "element-name"),
+          text(" in "),
+          spanOfLabel(step.value.label),
+          text(" in the web app"),
+        ],
+        clauses: [],
+        tail: [],
+      };
+    case "checksInWebApp":
+      return {
+        head: [
+          spanOfUser(step.value.user),
+          text(step.value.checked ? " checks " : " unchecks "),
+          spanOfLabel(step.value.label),
+          text(" in the web app"),
+        ],
+        clauses: [],
+        tail: [],
+      };
+    case "pressesInWebApp":
+      return {
+        head: [
+          spanOfUser(step.value.user),
+          text(" presses "),
+          { text: `"${step.value.key}"`, role: "key" },
+          text(" in the web app"),
+        ],
+        clauses: [],
+        tail: [],
+      };
+    case "seesInWebApp":
+      return {
+        head: [
+          spanOfUser(step.value.user),
+          text(
+            step.value.negated
+              ? " does not see "
+              : step.value.seconds === undefined
+              ? " sees "
+              : " eventually sees "
+          ),
+          ...spansOfText(`"${step.value.text}"`, "page-text"),
+          ...(step.value.within === undefined
+            ? []
+            : [text(" in "), ...spansOfElement(step.value.within)]),
+          text(" in the web app"),
+        ],
+        clauses: [],
+        tail:
+          step.value.seconds === undefined
+            ? []
+            : [text(" within "), spanOfSeconds(step.value.seconds)],
+      };
+    case "seesEnabledInWebApp":
+      return {
+        head: [
+          spanOfUser(step.value.user),
+          text(" sees "),
+          ...spansOfElement(step.value.element),
+          text(
+            ` in the web app is ${step.value.enabled ? "enabled" : "disabled"}`
+          ),
+        ],
+        clauses: [],
+        tail: [],
+      };
+    case "seesWebAppAt":
+      return {
+        head: [
+          spanOfUser(step.value.user),
+          text(" sees the web app at "),
+          ...spansOfText(`"${step.value.path}"`, "path"),
+        ],
+        clauses: [],
+        tail: [],
+      };
+    case "savesTextInWebAppAs":
+      return {
+        head: [
+          spanOfUser(step.value.user),
+          text(" saves the text of the "),
+          { text: `"${step.value.testId}"`, role: "element-name" },
+          text(" element in the web app as "),
+          { text: step.value.name, role: "saved-name" },
+        ],
+        clauses: [],
         tail: [],
       };
     case "resultingIsSavedAs":
