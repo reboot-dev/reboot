@@ -1666,21 +1666,9 @@ header h1 {
   font-weight: 600;
 }
 
-/* Slate: the keyword is structure, not one of the four kinds, so it
-   stays as muted as the base pill while keeping the pill shape that
-   makes the rows scan as a column. */
+/* The keyword as an eyebrow, the way a rule's is. */
 .scenario-keyword {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 92px;
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: hsl(var(--muted));
-  border: 1px solid hsl(240 5.9% 84%);
-  color: hsl(var(--muted-foreground));
+  display: inline-block;
 }
 
 /* The same open-and-close animation as `.method-detail`, on the
@@ -1855,11 +1843,16 @@ header h1 {
   background: hsl(var(--hue, 28) 85% 55% / 0.25);
 }
 
+/* A rule is a block with a rail down its left: its heading, its
+   description, and its scenarios all sit inside it, so where one
+   rule ends and the next begins is plain. */
 .rule {
   margin-top: 26px;
+  padding-left: 18px;
+  border-left: 3px solid hsl(var(--border-strong));
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
 }
 
 .rule-heading {
@@ -1872,4 +1865,66 @@ header h1 {
 .rule-heading h3 {
   margin: 0;
   font-size: 17px;
+}
+
+/* The rule's description as its subtitle: close under the heading,
+   smaller and muted, so it reads as being about the rule. */
+.rule-description {
+  margin: -8px 0 0;
+  max-width: 62ch;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: hsl(var(--muted-foreground));
+}
+
+.rule-description code {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.92em;
+}
+
+/* --- The behaviors index --- */
+
+/* On a feature's own page the pane's header names it and carries its
+   file, counts, and description, above the line. */
+header .feature-file-line {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+header .state-type-description {
+  margin-top: 14px;
+}
+
+/* Names linking to their pages under a heading: the behaviors
+   index's two columns. */
+.link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.link-list a {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.link-list a:hover {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+}
+
+/* The two lists side by side, each taking half the pane. */
+.behaviors-index {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  max-width: 840px;
+  margin: 0 auto;
+}
+
+.behaviors-index .link-list a {
+  font-size: 15px;
 }

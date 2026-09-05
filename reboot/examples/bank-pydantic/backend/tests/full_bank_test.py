@@ -1,4 +1,5 @@
-"""The bank's tests: the Gherkin scenarios in `bank.feature`.
+"""The bank's tests: the Gherkin scenarios in the `.feature` files
+beside this module.
 
 The scenarios run against servicer subclasses that wire up
 authorizers, showing how a test exercises authorization, and that
@@ -138,4 +139,4 @@ def application() -> Application:
     )
 
 
-scenarios('bank.feature')
+scenarios('transfers.feature', 'deposits.feature', 'withdrawals.feature')
