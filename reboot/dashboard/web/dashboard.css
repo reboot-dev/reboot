@@ -1772,9 +1772,10 @@ header h1 {
   padding-left: 1.5em;
 }
 
-/* What the grammar read a span of a step as. A span is set as code
+/* What the grammar read a span of a step as, and an Examples table's
+   header cells, which are variables too. A span is set as code
    whatever its role; the role picks its colour. */
-.step code.span {
+.scenario-detail code.span {
   font-family: ui-monospace, Menlo, monospace;
   font-size: 0.9em;
   padding: 0 4px;
@@ -1784,18 +1785,18 @@ header h1 {
 }
 
 /* Blue: what the step names in the API, which links there. */
-.step code.span-state-type,
-.step code.span-method {
+.scenario-detail code.span-state-type,
+.scenario-detail code.span-method {
   color: hsl(211 72% 32%);
 }
 
 /* Violet: a property being set, read, or saved. */
-.step code.span-property-path {
+.scenario-detail code.span-property-path {
   color: hsl(275 50% 40%);
 }
 
 /* Teal: a literal value. */
-.step code.span-value {
+.scenario-detail code.span-value {
   color: hsl(166 55% 27%);
 }
 
@@ -1805,29 +1806,29 @@ header h1 {
    thing across a scenario and the next reads as another; hovering
    any lights up every span about the same one. The fallback hue is
    for a span the page gave none. */
-.step code.span-saved-name,
-.step code.span-variable,
-.step code.span-state-id {
+.scenario-detail code.span-saved-name,
+.scenario-detail code.span-variable,
+.scenario-detail code.span-state-id {
   color: hsl(var(--hue, 28) 70% 32%);
   background: hsl(var(--hue, 28) 85% 55% / 0.14);
   border-color: hsl(var(--hue, 28) 70% 50% / 0.4);
   cursor: default;
 }
 
-.step code.is-related {
+.scenario-detail code.is-related {
   background: hsl(var(--hue, 28) 85% 55% / 0.45);
   border-color: hsl(var(--hue, 28) 70% 40%);
 }
 
 /* Magenta: an error type. */
-.step code.span-error-type {
+.scenario-detail code.span-error-type {
   color: hsl(318 55% 38%);
 }
 
 /* Muted: who is calling, which application, and how long to wait. */
-.step code.span-user,
-.step code.span-application,
-.step code.span-duration {
+.scenario-detail code.span-user,
+.scenario-detail code.span-application,
+.scenario-detail code.span-duration {
   color: hsl(var(--muted-foreground));
 }
 
@@ -1847,6 +1848,11 @@ header h1 {
 .examples .gherkin-table tr:first-child td {
   font-weight: 600;
   background: hsl(var(--surface-sunken));
+}
+
+/* The cells under a column whose variable is hovered. */
+.gherkin-table td.is-related {
+  background: hsl(var(--hue, 28) 85% 55% / 0.25);
 }
 
 .rule {

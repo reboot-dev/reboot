@@ -100,7 +100,7 @@ def test_the_bearer_token_is() -> None:
     _the_bearer_token_is(world, 'admin-key')
     assert world.bearer_token == 'admin-key'
     world.saved['token'] = 'saved-key'
-    _the_bearer_token_is(world, '${token}')
+    _the_bearer_token_is(world, '<token>')
     assert world.bearer_token == 'saved-key'
 
 
@@ -171,8 +171,18 @@ def test_almost_clause_messages() -> None:
         _parse_saves('`balance` saved as "b"')
     with pytest.raises(ValueError, match="name goes in backticks"):
         _parse_saves('`balance` saved as b')
-    with pytest.raises(ValueError, match=r"recall a save as \$\{amount\}"):
+    with pytest.raises(ValueError, match=r"say a saved value as <amount>"):
         _parse_assignments(world, '`amount=$amount`')
+
+
+def test_a_save_may_not_use_an_examples_column() -> None:
+    """A Scenario Outline's column is what <name> already says, so a
+    save under its name would never be said."""
+    world = World(example_columns=frozenset({'amount'}))
+    with pytest.raises(ValueError, match="column of the scenario's"):
+        world.save('amount', 5)
+    world.save('total', 5)
+    assert world.saved == {'total': 5}
 
 
 def test_almost_steps_raise() -> None:

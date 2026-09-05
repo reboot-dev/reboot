@@ -50,7 +50,7 @@ with.
 
 A call runs as a task instead by saying 'gets a `method` ...
 spawned with its task id saved as `name`'; the task then awaits as
-'the `method` task with id "${name}" of the `Account` completes
+'the `method` task with id "<name>" of the `Account` completes
 within 10 seconds', recording its response as the result. A task ID
 a response carries saves and awaits the same way.
 
@@ -68,15 +68,17 @@ way 'has' refuses writers, and a reader's abort is asserted with
 An asserting list can also say the predicates `path` containing
 `value` (a substring of a string, an element of a list, or a key of
 a map) and `path` of length `n`; the backticked argument is a JSON
-value the way a property's value is, so it can recall ${name}. A Given or When 'has' instead
-saves a property under a backticked name, which later steps recall
-as `${name}`, in a state's ID, a user's ID, a bearer token, or a
-property value (a quoted "${name}" stays the literal string):
+value the way a property's value is, so it can say <name>. A Given
+or When 'has' instead saves a property under a backticked name,
+which later steps say as <name>, the way a Scenario Outline says a
+column of its Examples table, in a state's ID, a user's ID, a bearer
+token, or a property value (a quoted "<name>" stays the literal
+string); a save may not use a column's name:
 
     When `get_owner` on the `Account` for "frank" has
       `owner.name` saved as `owner_name`
     And the resulting `updated_balance` is saved as `balance`
-    And the `Account` for "${owner_name}" gets a `deposit` with
+    And the `Account` for "<owner_name>" gets a `deposit` with
       `amount=1`
 """
 
@@ -201,16 +203,25 @@ def _saved_value(world: World, name: str) -> JsonValue:
     return world.saved[name]
 
 
+def _almost_variable_message(text: str) -> Optional[str]:
+    """The 'Almost' error for a text that is a lexical near-miss of
+    the variable <name>, and `None` for a text that is not."""
+    if re.fullmatch(r'\$\{\w+\}', text):
+        return f"Almost: say a saved value as <{text[2:-1]}>, not {text}"
+    if re.fullmatch(r'\$\w+', text):
+        return f"Almost: say a saved value as <{text[1:]}>, not {text}"
+    return None
+
+
 def _maybe_saved(world: World, text: str) -> str:
     """The saved value the text names when it is of the form
-    '${name}', which must be a string, otherwise the text itself."""
-    if re.fullmatch(r'\$\w+', text):
-        raise ValueError(
-            f"Almost: recall a save as ${{{text[1:]}}}, not {text}"
-        )
-    if not re.fullmatch(r'\$\{\w+\}', text):
+    '<name>', which must be a string, otherwise the text itself."""
+    almost = _almost_variable_message(text)
+    if almost is not None:
+        raise ValueError(almost)
+    if not re.fullmatch(r'<\w+>', text):
         return text
-    value = _saved_value(world, text[2:-1])
+    value = _saved_value(world, text[1:-1])
     if not isinstance(value, str):
         raise ValueError(
             f"Expecting the value saved as `{text[2:-1]}` to be a "
@@ -267,14 +278,13 @@ def _almost_length_message(clause: str) -> str:
 
 
 def _parsed_value(world: World, label: str, text: str) -> JsonValue:
-    """The JSON value the text says, a '${name}' recalling a save; a
-    lexical near-miss raises the fix."""
-    if re.fullmatch(r'\$\w+', text):
-        raise ValueError(
-            f"Almost: recall a save as ${{{text[1:]}}}, not {text}"
-        )
-    if re.fullmatch(r'\$\{\w+\}', text):
-        return _saved_value(world, text[2:-1])
+    """The JSON value the text says, a '<name>' being the saved value
+    going by that name; a lexical near-miss raises the fix."""
+    almost = _almost_variable_message(text)
+    if almost is not None:
+        raise ValueError(almost)
+    if re.fullmatch(r'<\w+>', text):
+        return _saved_value(world, text[1:-1])
     try:
         return json5.loads(text)
     except ValueError as error:
@@ -318,6 +328,12 @@ def _almost_save_message(clause: str) -> str:
             "Almost: drop the '$' and say the name in backticks, "
             f"e.g. saved as `name`: {clause}"
         )
+    if re.search(r'\bsaved\s+as\s+"?<\w+>"?$', clause):
+        return (
+            "Almost: the name goes in backticks without angle brackets, "
+            f"e.g. saved as `name`; <name> is how a later step says it: "
+            f"{clause}"
+        )
     if re.search(r'\bsaved\s+as\s+"\w+"$', clause):
         return (
             "Almost: the name goes in backticks, not quotes, e.g. "
@@ -340,10 +356,9 @@ def _parse_assignments(
 ) -> list[Assignment]:
     """Parses a call's 'with' list, e.g. '`amount=50` and
     `reason="promo"`', into `Assignment`s; a property value of the
-    form '${name}' becomes the saved value going by that name. The
-    step
-    patterns admit lexical near-misses of a clause, so each clause is
-    confirmed strict here, raising the fix."""
+    form '<name>' becomes the saved value going by that name. The
+    step patterns admit lexical near-misses of a clause, so each
+    clause is confirmed strict here, raising the fix."""
     assignments: list[Assignment] = []
     if clauses is None:
         return assignments
@@ -836,7 +851,7 @@ async def _gets(
             method=method,
             assignments=_parse_assignments(world, clauses),
         )
-        world.saved[task] = _json_object(handle.task_id)
+        world.save(task, _json_object(handle.task_id))
         return
     if world.is_reader(state_type=state_type, method=method):
         raise ValueError(
@@ -1057,7 +1072,7 @@ async def _has_saved_as(
     response = await _read(world, method, state_type, state_id)
     response_json = _json_object(response)
     for name, path in _parse_saves(clauses).items():
-        world.saved[name] = _resolve_json_property(response_json, path)
+        world.save(name, _resolve_json_property(response_json, path))
 
 
 @then(parsers.re(ABORTS_WITH))
@@ -1112,8 +1127,11 @@ def _the_resulting_property_is_saved_as(
         "Expected a preceding step to have made a call that returned "
         "a response, but there is none"
     )
-    world.saved[name] = _resolve_json_property(
-        _json_object(world.response), PropertyPath.create(property_name)
+    world.save(
+        name,
+        _resolve_json_property(
+            _json_object(world.response), PropertyPath.create(property_name)
+        ),
     )
 
 
@@ -1124,14 +1142,8 @@ def _the_resulting_property_is_saved_as(
 # step's tail never matches one of these.
 
 
-@when(
-    parsers.
-    re(r'the `\w+` task with id "\$\{\w+\}" of the `[\w.]+` completes$')
-)
-@then(
-    parsers.
-    re(r'the `\w+` task with id "\$\{\w+\}" of the `[\w.]+` completes$')
-)
+@when(parsers.re(r'the `\w+` task with id "<\w+>" of the `[\w.]+` completes$'))
+@then(parsers.re(r'the `\w+` task with id "<\w+>" of the `[\w.]+` completes$'))
 def _almost_completes_needs_within() -> None:
     raise ValueError(
         "Almost: say how long to wait for the task, e.g. within 10 "

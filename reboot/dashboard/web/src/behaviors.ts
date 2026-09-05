@@ -155,20 +155,22 @@ export interface Printed {
 
 const text = (words: string): Span => ({ text: words, role: "text" });
 
-// A variable in a step's text, `${name}`, whose saved value is spliced
-// in when the scenario runs.
-const VARIABLE = /\$\{\w+\}/g;
+// A variable in a step's text, `<name>`: a column of a Scenario
+// Outline's Examples table, or a value a step before it saved, spliced
+// in when the scenario runs. The same shape pytest-bdd substitutes.
+const VARIABLE = /<[^<>]+>/g;
 
-// Text that may hold variables, as spans: each variable as one, and
-// the text between as spans of `role`.
-const spansOfText = (words: string, role: Role): Span[] => {
+// Text that may hold variables, as spans: each variable as one, its
+// name without the angle brackets, since the page sets a variable
+// apart by its role; and the text between as spans of `role`.
+export const spansOfText = (words: string, role: Role): Span[] => {
   const spans: Span[] = [];
   let at = 0;
   for (const match of words.matchAll(VARIABLE)) {
     if (match.index > at) {
       spans.push({ text: words.slice(at, match.index), role });
     }
-    spans.push({ text: match[0], role: "variable" });
+    spans.push({ text: match[0].slice(1, -1), role: "variable" });
     at = match.index + match[0].length;
   }
   if (at < words.length) {
@@ -360,7 +362,7 @@ export const printBuiltInSyntax = (
           text("the "),
           { text: step.value.method, role: "method" },
           text(" task with id "),
-          { text: "${" + step.value.taskIdSavedAs + "}", role: "variable" },
+          { text: step.value.taskIdSavedAs, role: "variable" },
           text(" of the "),
           { text: step.value.stateType, role: "state-type" },
           text(" completes within "),
@@ -464,50 +466,74 @@ export const spansOfPrinted = (printed: Printed): Span[] => [
   ...printed.tail,
 ];
 
-// The spans a scenario sets in a hue of their own: each saved value,
-// where it is saved and where it is recalled, and each state id,
+// The key a variable's hue is under: the same for the column of an
+// Examples table, a save, and every `<name>` saying either, since a
+// save may not use a column's name.
+export const hueKeyOfVariable = (name: string): string => `variable:${name}`;
+
+// The spans a scenario sets in a hue of their own: each variable,
+// where it is saved and wherever it is said, and each state id,
 // wherever it is named. What the hue is keyed by says which of the
-// two a span is, since a state id and a saved name may be spelled
-// the same.
+// two a span is, since a state id and a variable may be spelled the
+// same.
 export const hueKeyOfSpan = (span: Span): string | undefined =>
   span.role === "state-id"
     ? `state:${span.text}`
-    : span.role === "variable"
-    ? `saved:${span.text.slice(2, -1)}`
-    : span.role === "saved-name"
-    ? `saved:${span.text}`
+    : span.role === "variable" || span.role === "saved-name"
+    ? hueKeyOfVariable(span.text)
     : undefined;
 
-// Hues far enough apart to tell one saved value from the next, and
-// one state id from the next; the two palettes share no hue, and
-// both keep clear of the hues the other roles are set in.
-const SAVED_HUES = [28, 350, 110, 190, 300, 55];
+// Hues far enough apart to tell one variable from the next, and one
+// state id from the next; the two palettes share no hue, and both
+// keep clear of the hues the other roles are set in.
+const VARIABLE_HUES = [28, 350, 110, 190, 300, 55];
 const STATE_ID_HUES = [150, 245, 80, 325, 5, 215];
 
-// The hue each saved value and each state id of a scenario is set
-// in, keyed the way `hueKeyOfSpan` keys them and assigned in the
-// order the keys first appear across the steps, each kind from its
-// own palette.
-export const huesOfSpans = (steps: feature_pb.Step[]): Map<string, number> => {
+// The spans of a step as the page prints it: from its syntax tree for
+// a built-in step, and from its text, with only the variables picked
+// out, for a custom step.
+export const spansOfStep = (step: feature_pb.Step): Span[] =>
+  step.builtIn === undefined
+    ? spansOfText(step.text, "text")
+    : spansOfPrinted(printBuiltInSyntax(step.builtIn));
+
+// The hue each variable and each state id of a scenario is set in,
+// keyed the way `hueKeyOfSpan` keys them: the Examples table's
+// columns first, left to right, then the rest in the order they first
+// appear across the steps, each kind from its own palette.
+export const huesOfScenario = (
+  columns: string[],
+  steps: feature_pb.Step[]
+): Map<string, number> => {
   const hues = new Map<string, number>();
-  const counts = { saved: 0, state: 0 };
-  for (const step of steps) {
-    if (step.builtIn === undefined) {
-      continue;
+  const counts = { variable: 0, state: 0 };
+  const assign = (key: string) => {
+    if (hues.has(key)) {
+      return;
     }
-    for (const span of spansOfPrinted(printBuiltInSyntax(step.builtIn))) {
+    if (key.startsWith("state:")) {
+      hues.set(key, STATE_ID_HUES[counts.state % STATE_ID_HUES.length]);
+      counts.state += 1;
+    } else {
+      hues.set(key, VARIABLE_HUES[counts.variable % VARIABLE_HUES.length]);
+      counts.variable += 1;
+    }
+  };
+  for (const column of columns) {
+    assign(hueKeyOfVariable(column));
+  }
+  for (const step of steps) {
+    for (const span of spansOfStep(step)) {
       const key = hueKeyOfSpan(span);
-      if (key === undefined || hues.has(key)) {
-        continue;
-      }
-      if (key.startsWith("state:")) {
-        hues.set(key, STATE_ID_HUES[counts.state % STATE_ID_HUES.length]);
-        counts.state += 1;
-      } else {
-        hues.set(key, SAVED_HUES[counts.saved % SAVED_HUES.length]);
-        counts.saved += 1;
+      if (key !== undefined) {
+        assign(key);
       }
     }
   }
   return hues;
 };
+
+// The columns of a scenario's Examples tables: each table's header
+// row, in order.
+export const columnsOfExamples = (examples: feature_pb.Examples[]): string[] =>
+  examples.flatMap((example) => example.table?.rows[0]?.cells ?? []);

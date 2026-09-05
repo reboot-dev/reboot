@@ -141,7 +141,7 @@ GETS = (
 )
 ATTEMPTS = rf'{STATE} attempts (?:a|an) `(?P<method>\w+)`{PROPERTIES}$'
 TASK_COMPLETES = (
-    r'the `(?P<method>\w+)` task with id "\$\{(?P<name>\w+)\}" '
+    r'the `(?P<method>\w+)` task with id "<(?P<name>\w+)>" '
     r'of the `(?P<state_type>[\w.]+)` completes within (?P<within>.+)$'
 )
 ATTEMPT_ABORTS_WITH = (

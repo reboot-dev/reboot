@@ -42,14 +42,17 @@ import type * as api_pb from "../../../../rbt/v1alpha1/api/api_pb";
 import type * as dashboard_pb from "../../../../rbt/dashboard/v1/dashboard_pb";
 import type { Features, Printed, Span, StepLinks } from "./behaviors";
 import {
+  columnsOfExamples,
   directoryOfFeature,
   hueKeyOfSpan,
-  huesOfSpans,
+  hueKeyOfVariable,
+  huesOfScenario,
   linkOfCodeSpan,
   linkOfMethod,
   printBuiltInSyntax,
   scenariosOfFeature,
   sortedFeatures,
+  spansOfText,
   stepLinks,
 } from "./behaviors";
 import type {
@@ -778,12 +781,13 @@ const LinkedDataTypeCard: FC<{
 
 // A custom step, one the application defines itself, which the
 // grammar cannot parse: its text with the spans its author wrote in
-// `backticks` as code, and a span naming a state type or a method
-// linking to it on the state page.
-const CustomStep: FC<{ text: string; links: StepLinks }> = ({
-  text,
-  links,
-}) => {
+// `backticks` as code, a span naming a state type or a method linking
+// to it on the state page, and each `<variable>` set in its hue.
+const CustomStep: FC<{
+  text: string;
+  links: StepLinks;
+  related: Related;
+}> = ({ text, links, related }) => {
   const parts = text.split("`");
   return (
     <>
@@ -806,25 +810,82 @@ const CustomStep: FC<{ text: string; links: StepLinks }> = ({
             </Link>
           );
         }
-        return <span key={index}>{unclosed ? "`" + part : part}</span>;
+        return (
+          <Fragment key={index}>
+            {spansOfText(unclosed ? "`" + part : part, "text").map(
+              (span, spanIndex) => (
+                <SpanText
+                  span={span}
+                  stateType={undefined}
+                  links={links}
+                  related={related}
+                  key={spanIndex}
+                />
+              )
+            )}
+          </Fragment>
+        );
       })}
     </>
   );
 };
 
-const GherkinTable: FC<{ table: feature_pb.Table }> = ({ table }) => (
-  <table className="gherkin-table">
-    <tbody>
-      {table.rows.map((row, index) => (
-        <tr key={index}>
-          {row.cells.map((cell, cellIndex) => (
-            <td key={cellIndex}>{cell}</td>
-          ))}
-        </tr>
-      ))}
-    </tbody>
-  </table>
-);
+// A step's data table, or an examples table with its header row
+// first. An examples table's columns are variables: each header cell
+// is set in the column's hue and lights up with every `<name>` saying
+// it, and the cells under it light up too.
+const GherkinTable: FC<{
+  table: feature_pb.Table;
+  examples?: Related;
+}> = ({ table, examples }) => {
+  const columns = table.rows[0]?.cells ?? [];
+  return (
+    <table className="gherkin-table">
+      <tbody>
+        {table.rows.map((row, index) => (
+          <tr key={index}>
+            {row.cells.map((cell, cellIndex) => {
+              if (examples === undefined) {
+                return <td key={cellIndex}>{cell}</td>;
+              }
+              const key = hueKeyOfVariable(columns[cellIndex] ?? "");
+              const isRelated = examples.key === key;
+              if (index === 0) {
+                return (
+                  <td key={cellIndex}>
+                    <code
+                      className={
+                        isRelated
+                          ? "span span-variable is-related"
+                          : "span span-variable"
+                      }
+                      style={
+                        { "--hue": examples.hues.get(key) } as CSSProperties
+                      }
+                      onPointerEnter={() => examples.onRelate(key)}
+                      onPointerLeave={() => examples.onRelate(null)}
+                    >
+                      {cell}
+                    </code>
+                  </td>
+                );
+              }
+              return (
+                <td
+                  className={isRelated ? "is-related" : undefined}
+                  style={{ "--hue": examples.hues.get(key) } as CSSProperties}
+                  key={cellIndex}
+                >
+                  {cell}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+};
 
 // How a scenario shows its saved values and state ids: the hue
 // each is set in, keyed the way `hueKeyOfSpan` keys them, and which
@@ -972,7 +1033,7 @@ const StepRow: FC<{
         {step.builtIn !== undefined ? (
           <BuiltInStep syntax={step.builtIn} links={links} related={related} />
         ) : (
-          <CustomStep text={step.text} links={links} />
+          <CustomStep text={step.text} links={links} related={related} />
         )}
         {step.docString !== undefined && (
           <pre className="type-block">
@@ -1017,11 +1078,11 @@ const ScenarioRow: FC<{
   const [relatedKey, setRelatedKey] = useState<string | null>(null);
   const hues = useMemo(
     () =>
-      huesOfSpans([
+      huesOfScenario(columnsOfExamples(examples), [
         ...backgrounds.flatMap((background) => background.steps),
         ...steps,
       ]),
-    [backgrounds, steps]
+    [backgrounds, steps, examples]
   );
   const related: Related = {
     hues,
@@ -1083,7 +1144,9 @@ const ScenarioRow: FC<{
                 {example.keyword.toLowerCase()}
                 {example.name !== undefined && ` · ${example.name}`}
               </div>
-              <GherkinTable table={example.table} />
+              {example.table !== undefined && (
+                <GherkinTable table={example.table} examples={related} />
+              )}
             </div>
           ))}
         </div>
