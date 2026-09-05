@@ -7,14 +7,14 @@ Feature: Wiki, page, and transcript CRUD
   Scenario: A created wiki appears in the user's list
     When the `User` for "alice" gets a `create_wiki` with `name="my notes"` and `description="my personal notes"`
     And the resulting `wiki_id` is saved as `wiki_id`
-    Then `list_wikis` on the `User` for "alice" has `wikis` of length `1` and `wikis[0].wiki_id=${wiki_id}` and `wikis[0].name="my notes"` and `wikis[0].description="my personal notes"`
+    Then `list_wikis` on the `User` for "alice" has `wikis` of length `1` and `wikis[0].wiki_id=<wiki_id>` and `wikis[0].name="my notes"` and `wikis[0].description="my personal notes"`
 
   Scenario: A fresh wiki updates its markdown body
     Given the `User` for "alice" gets a `create_wiki` with `name="my notes"` and `description="my personal notes"`
     And the resulting `wiki_id` is saved as `wiki_id`
-    Then `get` on the `Wiki` for "${wiki_id}" has `name="my notes"` and `description="my personal notes"` and `content=""`
-    When the `Wiki` for "${wiki_id}" gets a `update` with `content="# Hello\n"`
-    Then `get` on the `Wiki` for "${wiki_id}" has `content="# Hello\n"`
+    Then `get` on the `Wiki` for "<wiki_id>" has `name="my notes"` and `description="my personal notes"` and `content=""`
+    When the `Wiki` for "<wiki_id>" gets a `update` with `content="# Hello\n"`
+    Then `get` on the `Wiki` for "<wiki_id>" has `content="# Hello\n"`
 
   Scenario: Pages round-trip their title and body
     Given a `Page` for "my-page" gets created via `create` with `title="My Page"` and `content="Initial body."` and `owner_id="alice"`

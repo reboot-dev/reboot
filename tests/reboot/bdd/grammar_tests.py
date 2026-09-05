@@ -24,7 +24,7 @@ class ReadTest(unittest.TestCase):
     def test_a_call_with_assignments(self) -> None:
         syntax = parse(
             'the `Bank` for "test-bank" gets a `transfer` with '
-            '`from_account_id=${first_account_id}` and `amount=250.0` '
+            '`from_account_id=<first_account_id>` and `amount=250.0` '
             'spawned with its task id saved as `transfer_task_id`'
         )
         assert syntax is not None
@@ -39,7 +39,7 @@ class ReadTest(unittest.TestCase):
                 for assignment in gets.assignments
             ],
             [
-                ('from_account_id', '${first_account_id}'),
+                ('from_account_id', '<first_account_id>'),
                 ('amount', '250.0'),
             ],
         )
@@ -95,15 +95,15 @@ class ReadTest(unittest.TestCase):
 
     def test_a_state_id_can_be_a_variable(self) -> None:
         syntax = parse(
-            '`balance` on the `Account` for "${first_account_id}" has '
+            '`balance` on the `Account` for "<first_account_id>" has '
             '`amount=750.0`'
         )
         assert syntax is not None
-        self.assertEqual(syntax.has.state.id, '${first_account_id}')
+        self.assertEqual(syntax.has.state.id, '<first_account_id>')
 
     def test_a_task_completing_recalls_its_id(self) -> None:
         syntax = parse(
-            'the `deposit` task with id "${deposit_task_id}" of the '
+            'the `deposit` task with id "<deposit_task_id>" of the '
             '`Account` completes within 30 seconds'
         )
         assert syntax is not None
@@ -117,7 +117,7 @@ class ReadTest(unittest.TestCase):
         # A wait bound not of the grammar's form is not a syntax.
         self.assertIsNone(
             parse(
-                'the `deposit` task with id "${deposit_task_id}" of the '
+                'the `deposit` task with id "<deposit_task_id>" of the '
                 '`Account` completes within 30s'
             )
         )

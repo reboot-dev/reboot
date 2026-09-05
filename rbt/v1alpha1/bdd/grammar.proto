@@ -7,9 +7,10 @@ package rbt.v1alpha1.bdd;
 // A value as a step writes it: JSON (JSON5, so keys need no quotes),
 // parsed against the property it is set on or asserted against when
 // the scenario runs, since what `1` means depends on that property's
-// type. May hold a variable, `${name}`, whose saved value is spliced
-// in first; a value that is only a variable is the saved value
-// itself.
+// type. May hold a variable, `<name>`, whose value is spliced in
+// first: a column of a Scenario Outline's Examples table, or a value
+// a step before it saved; a value that is only a variable is the
+// saved value itself.
 message Value {
   string json = 1;
 }
@@ -21,7 +22,7 @@ message State {
   string type = 1;
 
   // The id as written, without its quotes; may be a variable,
-  // `${name}`, whose saved value is the id.
+  // `<name>`, whose value is the id.
   string id = 2;
 }
 
@@ -130,7 +131,7 @@ message Attempts {
   repeated Assignment assignments = 3;
 }
 
-// 'the `deposit` task with id "${name}" of the `Account` completes
+// 'the `deposit` task with id "<name>" of the `Account` completes
 // within 30 seconds'.
 message TaskCompletes {
   string method = 1;

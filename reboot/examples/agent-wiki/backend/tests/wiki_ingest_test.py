@@ -63,8 +63,8 @@ class ScriptedLibrarian:
                 if part.tool_name == "create_page":
                     self.page_id = str(part.content)
                     # Save the ID so the scenario can recall it
-                    # as ${page_id}.
-                    self.world.saved['page_id'] = self.page_id
+                    # as <page_id>.
+                    self.world.save('page_id', self.page_id)
 
         if "get_wiki" not in returned_tools:
             return ModelResponse(

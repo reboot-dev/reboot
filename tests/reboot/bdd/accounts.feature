@@ -25,17 +25,17 @@ Feature: Accounts
   Scenario: Steps can save result properties
     Given an `Account` for "eve" gets created via `open` with `initial_balance=9`
     And the resulting `account_id` is saved as `eve_account`
-    When the `Account` for "${eve_account}" gets a `deposit` with `amount=1`
+    When the `Account` for "<eve_account>" gets a `deposit` with `amount=1`
     And the resulting `updated_balance` is saved as `balance`
-    And the `Account` for "${eve_account}" gets a `deposit` with `amount=${balance}`
-    When `balance` on the `Account` for "${eve_account}" has `balance` saved as `current`
-    And the `Account` for "${eve_account}" gets a `deposit` with `amount=${current}`
-    Then `balance` on the `Account` for "${eve_account}" has `balance=40`
+    And the `Account` for "<eve_account>" gets a `deposit` with `amount=<balance>`
+    When `balance` on the `Account` for "<eve_account>" has `balance` saved as `current`
+    And the `Account` for "<eve_account>" gets a `deposit` with `amount=<current>`
+    Then `balance` on the `Account` for "<eve_account>" has `balance=40`
 
   Scenario: Saving during setup
     Given an `Account` for "gus" gets created via `open` with `initial_balance=7`
     And `balance` on the `Account` for "gus" has `balance` saved as `initial` and `balance` saved as `twin`
-    When the `Account` for "gus" gets a `deposit` with `amount=${initial}`
+    When the `Account` for "gus" gets a `deposit` with `amount=<initial>`
     Then `balance` on the `Account` for "gus" has `balance=14`
 
   Scenario: Properties can be messages
@@ -49,11 +49,11 @@ Feature: Accounts
     And `get_owner` on the `Account` for "frank" has `owner.name` containing `"rank"` and `owner.tags` of length `1`
     And `get_owner` on the `Account` for "frank" has `owner.tags` containing `"pro"`
     When `get_owner` on the `Account` for "frank" has `owner.name` saved as `owner_name`
-    And an `Account` for "${owner_name}" gets created via `open` with `initial_balance=1`
+    And an `Account` for "<owner_name>" gets created via `open` with `initial_balance=1`
     Then `balance` on the `Account` for "Frankie" has `balance=1`
     When `get_owner` on the `Account` for "frank" has `owner` saved as `owner`
     And an `Account` for "franklin" gets created via `open`
-    And the `Account` for "franklin" gets a `set_owner` with `owner=${owner}`
+    And the `Account` for "franklin" gets a `set_owner` with `owner=<owner>`
     Then `get_owner` on the `Account` for "franklin" has `owner={name: "Frankie", tags: ["pro"]}`
 
   Scenario: Readers can abort
@@ -87,12 +87,12 @@ Feature: Accounts
   Scenario: Spawned tasks complete
     Given an `Account` for "spawned" gets created via `open`
     When the `Account` for "spawned" gets a `deposit` with `amount=15` spawned with its task id saved as `first`
-    Then the `deposit` task with id "${first}" of the `Account` completes within 30 seconds
+    Then the `deposit` task with id "<first>" of the `Account` completes within 30 seconds
     And the result has `updated_balance=15`
 
   Scenario: Scheduled tasks are awaited by ID
     Given an `Account` for "later" gets created via `open`
     When the `Account` for "later" gets a `deposit_later` with `amount=20`
     And the resulting `task_id` is saved as `deposit_task_id`
-    And the `deposit` task with id "${deposit_task_id}" of the `Account` completes within 30 seconds
+    And the `deposit` task with id "<deposit_task_id>" of the `Account` completes within 30 seconds
     Then the result has `updated_balance=20`

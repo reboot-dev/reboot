@@ -57,10 +57,10 @@ Feature: Swag store
     And the authenticated user is "test-user"
     And a `Cart` for "cart-1" gets created via `create` with `owner_id="test-user"`
     And the `Cart` for "cart-1" gets a `add_item` with `quantity=2` and `product_id="hoodie-1"` and `variant_id="hoodie-1-l"` and `name="Reboot Hoodie"` and `price_cents=4000` and `image_url=""` and `size="L"`
-    When the `Cart` for "cart-1" gets a `checkout` with `coupon_code=${coupon_code}` and `shipping_address={name: "Jane Doe", email: "jane@example.com", address1: "123 Main St", address2: "", city: "Seattle", state_code: "WA", zip_code: "98101", country_code: "US"}`
+    When the `Cart` for "cart-1" gets a `checkout` with `coupon_code=<coupon_code>` and `shipping_address={name: "Jane Doe", email: "jane@example.com", address1: "123 Main St", address2: "", city: "Seattle", state_code: "WA", zip_code: "98101", country_code: "US"}`
     And the resulting `order_id` is saved as `order_id`
     Then `get_cart` on the `Cart` for "cart-1" has `items=[]`
-    And `get_details` on the `Order` for "${order_id}" has `order_id=${order_id}` and `items` of length `1` and `items[0].product_id="hoodie-1"` and `items[0].quantity=2` and `subtotal_cents=8000` and `total_cents=0`
+    And `get_details` on the `Order` for "<order_id>" has `order_id=<order_id>` and `items` of length `1` and `items[0].product_id="hoodie-1"` and `items[0].quantity=2` and `subtotal_cents=8000` and `total_cents=0`
 
   Scenario: A redeemed coupon cannot be reused
     Given the bearer token is "test-admin-key"
@@ -69,10 +69,10 @@ Feature: Swag store
     And the authenticated user is "test-user"
     And a `Cart` for "cart-1" gets created via `create` with `owner_id="test-user"`
     And the `Cart` for "cart-1" gets a `add_item` with `quantity=1` and `product_id="hoodie-1"` and `variant_id="hoodie-1-l"` and `name="Reboot Hoodie"` and `price_cents=4000` and `image_url=""` and `size="L"`
-    And the `Cart` for "cart-1" gets a `checkout` with `coupon_code=${coupon_code}` and `shipping_address={name: "Jane Doe", email: "jane@example.com", address1: "123 Main St", address2: "", city: "Seattle", state_code: "WA", zip_code: "98101", country_code: "US"}`
+    And the `Cart` for "cart-1" gets a `checkout` with `coupon_code=<coupon_code>` and `shipping_address={name: "Jane Doe", email: "jane@example.com", address1: "123 Main St", address2: "", city: "Seattle", state_code: "WA", zip_code: "98101", country_code: "US"}`
     And a `Cart` for "cart-2" gets created via `create` with `owner_id="test-user"`
     And the `Cart` for "cart-2" gets a `add_item` with `quantity=1` and `product_id="hoodie-1"` and `variant_id="hoodie-1-l"` and `name="Reboot Hoodie"` and `price_cents=4000` and `image_url=""` and `size="L"`
-    When the `Cart` for "cart-2" attempts a `checkout` with `coupon_code=${coupon_code}` and `shipping_address={name: "Jane Doe", email: "jane@example.com", address1: "123 Main St", address2: "", city: "Seattle", state_code: "WA", zip_code: "98101", country_code: "US"}`
+    When the `Cart` for "cart-2" attempts a `checkout` with `coupon_code=<coupon_code>` and `shipping_address={name: "Jane Doe", email: "jane@example.com", address1: "123 Main St", address2: "", city: "Seattle", state_code: "WA", zip_code: "98101", country_code: "US"}`
     Then the attempt aborts with `InvalidCoupon`
 
   Scenario: Generating coupon codes requires the admin bearer token

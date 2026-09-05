@@ -18,5 +18,5 @@ Feature: Accounts
   Scenario: Opening sends a welcome email
     Given an `Account` for "bob" gets created via `open` with `customer_name="Bob"`
     And the resulting `welcome_email_task_id` is saved as `welcome_email_task_id`
-    Then the `welcome_email` task with id "${welcome_email_task_id}" of the `Account` completes within 30 seconds
+    Then the `welcome_email` task with id "<welcome_email_task_id>" of the `Account` completes within 30 seconds
     And the welcome email was sent

@@ -151,9 +151,15 @@ class World:
     # The response of the most recent call a step made.
     response: Optional[Any] = None
 
-    # Values saved under a name, as JSON; later steps say '$name' to
+    # Values saved under a name, as JSON; later steps say '<name>' to
     # use.
     saved: dict[str, JsonValue] = field(default_factory=dict)
+
+    # The columns of the scenario's Examples table, for a Scenario
+    # Outline; empty for a plain scenario. A '<name>' naming a column
+    # is the table's value, substituted before any step runs, so a
+    # save may not use a column's name.
+    example_columns: frozenset[str] = frozenset()
 
     # The error the most recent 'attempts' step's call aborted with,
     # or `None` if that call succeeded.
@@ -189,6 +195,18 @@ class World:
             name=f"{self.name}-{self.contexts_created}",
             bearer_token=self.bearer_token,
         )
+
+    def save(self, name: str, value: JsonValue) -> None:
+        """Saves the value under the name, for later steps to say
+        '<name>' to use; raises for a name that is a column of the
+        scenario's Examples table, whose value '<name>' already is."""
+        if name in self.example_columns:
+            raise ValueError(
+                f"`{name}` is a column of the scenario's Examples table, "
+                f"so <{name}> in a step is the table's value, never this "
+                "one; save it under another name"
+            )
+        self.saved[name] = value
 
     def set_bearer_token(self, bearer_token: Optional[str]) -> None:
         """Sets the bearer token every context created from here on
@@ -485,6 +503,8 @@ class World:
 
 
 @pytest.fixture
-def world() -> World:
-    """The scenario's world: the mutable record its steps share."""
-    return World()
+def world(_pytest_bdd_example: dict[str, str]) -> World:
+    """The scenario's world: the mutable record its steps share. The
+    example is pytest-bdd's: the Examples row a Scenario Outline runs
+    with, and empty for a plain scenario."""
+    return World(example_columns=frozenset(_pytest_bdd_example))
