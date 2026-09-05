@@ -1618,6 +1618,15 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'reboot.ping.Ping.DoPing') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -2118,6 +2127,15 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'reboot.ping.Ping.DoPingPeriodically') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -2519,6 +2537,15 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'reboot.ping.Ping.Describe') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -2994,6 +3021,15 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'reboot.ping.Ping.NumPings') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -4082,6 +4118,15 @@ class PongServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'reboot.ping.Pong.DoPong') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -4582,6 +4627,15 @@ class PongServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'reboot.ping.Pong.NumPongs') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -6098,6 +6152,15 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'reboot.ping.User.CreateCounter') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -6601,6 +6664,15 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'reboot.ping.User.ListCounters') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -7076,6 +7148,15 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'reboot.ping.User.Whoami') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -7555,6 +7636,15 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'reboot.ping.User.Create') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -8061,6 +8151,15 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'reboot.ping.User.SetClaims') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -9492,6 +9591,15 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'reboot.ping.Counter.Create') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -10007,6 +10115,15 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'reboot.ping.Counter.Increment') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -10507,6 +10624,15 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'reboot.ping.Counter.Value') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
@@ -10982,6 +11108,15 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         logger.warning(
                             f"Propagating unhandled but declared error (in 'reboot.ping.Counter.Description') {aborted}"
                         )
+                    # Raised as this method's own aborted so that the
+                    # error travels the wire the way this method
+                    # declares it, which for a pydantic API is inside
+                    # a message of this method's own; the caller's
+                    # client only decodes that.
+                    raise aborted_type(
+                        aborted.error,
+                        message=aborted.message,
+                    ) from aborted
                 elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)

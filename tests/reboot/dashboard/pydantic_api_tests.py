@@ -1,5 +1,7 @@
 """`api_of` reads an API file into the grammar `rbt generate` prints
-from and the dashboard describes."""
+from and the dashboard describes; `generate_from_api` prints the
+proto from it."""
+import asyncio
 import importlib
 import os
 import sys
@@ -7,6 +9,7 @@ import unittest
 from pathlib import Path
 from rbt.v1alpha1.api.api_pb2 import API
 from reboot.pydantic_api import api_of
+from reboot.pydantic_schema_to_proto import generate_from_api
 
 API_DIRECTORY = str(Path(__file__).parent / 'api')
 
@@ -20,7 +23,58 @@ def _read(filename: str) -> API:
     return api_of(module.api, filename=filename)
 
 
+class _Written:
+    """What `generate_from_api` wrote, as one string."""
+
+    def __init__(self) -> None:
+        self.parts: list[str] = []
+
+    async def write(self, part: str) -> None:
+        self.parts.append(part)
+
+    def __str__(self) -> str:
+        return ''.join(self.parts)
+
+
+def _proto_of(filename: str) -> str:
+    written = _Written()
+    asyncio.run(generate_from_api(written, _read(filename)))
+    return str(written)
+
+
 class PydanticApiTest(unittest.TestCase):
+
+    def test_reads_an_error_another_file_defines(self) -> None:
+        declared = _read('shop/v1/warehouse.py')
+
+        [warehouse] = declared.state_types
+        _, pick = warehouse.methods
+        self.assertEqual(
+            [error.name for error in pick.errors],
+            ['shop.v1.shop.OutOfStockError'],
+        )
+
+    def test_prints_each_error_inside_its_methods_message(self) -> None:
+        """An error is a message nested in the declaring method's own,
+        so one defined in another file is copied, not imported."""
+        proto = _proto_of('shop/v1/warehouse.py')
+
+        self.assertNotIn('import "shop/v1/', proto)
+        self.assertIn(
+            'message WarehousePickErrors {\n'
+            'message OutOfStockError {\n'
+            '  optional string item = 1 [(rbt.v1alpha1.field).required = true];\n'
+            '}\n'
+            '\n'
+            '  oneof type {\n'
+            '  OutOfStockError out_of_stock_error = 1 '
+            ' [ (rbt.v1alpha1.field).pydantic_type = '
+            '"shop.v1.shop.OutOfStockError"];\n'
+            '  }\n'
+            '}\n',
+            proto,
+        )
+        self.assertEqual(proto.count('message OutOfStockError {'), 1)
 
     def test_reads_what_the_file_declares(self) -> None:
         declared = _read('shop/v1/shop.py')
