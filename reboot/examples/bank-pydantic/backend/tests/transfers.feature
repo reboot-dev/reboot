@@ -39,6 +39,6 @@ Feature: Transferring money between accounts
       And the `Customer` for "payee@reboot.dev" gets an `open_account` with `initial_deposit=0.0`
       And the resulting `account_id` is saved as `payee_account_id`
       And the `Bank` for "test-bank" attempts a `transfer` with `from_account_id=<payer_account_id>` and `to_account_id=<payee_account_id>` and `amount=250.0`
-      Then the attempt aborts with `Unknown`
+      Then the attempt aborts with `OverdraftError` with `amount=150.0`
       And `balance` on the `Account` for "<payer_account_id>" has `amount=100.0`
       And `balance` on the `Account` for "<payee_account_id>" has `amount=0.0`

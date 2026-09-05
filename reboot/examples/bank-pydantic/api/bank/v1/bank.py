@@ -1,3 +1,4 @@
+from bank.v1.account import OverdraftError
 from reboot.api import (
     API,
     UI,
@@ -74,8 +75,11 @@ BankMethods = Methods(
     transfer=Transaction(
         request=TransferRequest,
         response=None,
-        description="Transfer an amount between two accounts. "
-        "Get `from_account_id` and `to_account_id` from "
+        errors=[OverdraftError],
+        description="Transfer an amount between two accounts; fails "
+        "with an overdraft error, leaving both accounts unchanged, if "
+        "the balance of `from_account_id` is insufficient. Get "
+        "`from_account_id` and `to_account_id` from "
         "`bank_account_balances`.",
         mcp=Tool(),
     ),
