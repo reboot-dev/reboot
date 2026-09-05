@@ -55,6 +55,7 @@ import {
   linkOfCodeSpan,
   linkOfMethod,
   printBuiltInSyntax,
+  recordingUrl,
   scenariosOfFeature,
   sortedFeatures,
   spansOfText,
@@ -1040,6 +1041,17 @@ const StepRow: FC<{
         {step.keyword}
       </span>
       <div className="step-text">
+        {step.screenshot !== undefined && (
+          <a
+            className="step-screenshot"
+            href={recordingUrl(step.screenshot)}
+            target="_blank"
+            rel="noreferrer"
+            title="The browser after this step, in the scenario's last run"
+          >
+            <img src={recordingUrl(step.screenshot)} alt="" />
+          </a>
+        )}
         {step.builtIn !== undefined ? (
           <BuiltInStep syntax={step.builtIn} links={links} related={related} />
         ) : (
@@ -1073,6 +1085,9 @@ const ScenarioRow: FC<{
   examples: feature_pb.Examples[];
   meaning: string;
   links: StepLinks;
+  // The video of the scenario's last run in a browser, absent when
+  // none was recorded.
+  video?: string;
 }> = ({
   keyword,
   name,
@@ -1083,6 +1098,7 @@ const ScenarioRow: FC<{
   examples,
   meaning,
   links,
+  video,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [relatedKey, setRelatedKey] = useState<string | null>(null);
@@ -1115,6 +1131,22 @@ const ScenarioRow: FC<{
           mark={false}
         />
         <span className="scenario-name">{name}</span>
+        {video !== undefined && (
+          <a
+            className="scenario-video"
+            href={recordingUrl(video)}
+            target="_blank"
+            rel="noreferrer"
+            title="The scenario's last run in a browser"
+            // A click here opens the video, not the scenario.
+            onClick={(event) => event.stopPropagation()}
+          >
+            <svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true">
+              <path d="M1.5 1 L9 5 L1.5 9 Z" fill="currentColor" />
+            </svg>
+            video
+          </a>
+        )}
         {tags.length > 0 && (
           <span className="tags">
             {tags.map((tag) => (
@@ -1216,6 +1248,7 @@ const ScenarioRows: FC<{
         examples={scenario.examples}
         meaning={DEFINITIONS.scenario}
         links={links}
+        video={scenario.video}
         key={scenario.line}
       />
     ))}

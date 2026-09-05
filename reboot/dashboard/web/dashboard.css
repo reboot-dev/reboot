@@ -1671,6 +1671,28 @@ header h1 {
   display: inline-block;
 }
 
+/* The video of the scenario's last run, a small link beside its
+   name. */
+.scenario-video {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  text-decoration: none;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.scenario-video:hover {
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--border-strong));
+}
+
 /* The same open-and-close animation as `.method-detail`, on the
    scenario's own class so that the subgrid layout `.methods` gives
    its rows never applies here. */
@@ -1746,6 +1768,25 @@ header h1 {
 
 .step-text {
   min-width: 0;
+}
+
+/* The browser after an assertion step, as a thumbnail at the step's
+   right that opens the screenshot. */
+.step-screenshot {
+  float: right;
+  margin: 2px 0 4px 12px;
+  line-height: 0;
+}
+
+.step-screenshot img {
+  height: 44px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
+  background: hsl(var(--background));
+}
+
+.step-screenshot:hover img {
+  border-color: hsl(var(--border-strong));
 }
 
 /* A background's steps, shown as part of the scenario they run

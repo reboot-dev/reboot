@@ -113,6 +113,7 @@ py_library(
         "//reboot/aio:contexts_py",
         "//reboot/aio:workflows_py",
         "//reboot/bdd:feature_py",
+        "//reboot/bdd:recordings_py",
         "//reboot/cli/common:watch_py",
     ],
 )
@@ -209,6 +210,7 @@ py_library(
         "//reboot/aio:external_py",
         "//reboot/aio:headers_py",
         "//reboot/aio/backoff:python",
+        "//reboot/bdd:recordings_py",
         requirement("starlette"),
     ],
 )
@@ -230,6 +232,7 @@ py_binary(
         "//reboot/aio:external_py",
         "//reboot/aio:headers_py",
         "//reboot/aio/backoff:python",
+        "//reboot/bdd:recordings_py",
         requirement("starlette"),
     ],
 )

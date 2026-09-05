@@ -11,6 +11,11 @@ pytest-bdd and whose parser is `gherkin-official`; both arrive with
 `reboot[pytest-bdd]`. Without the extra, each feature file found is
 recorded with an error saying to install it, so the page can say
 why it shows no behaviors.
+
+Each scenario is also checked for the recordings of its last run in
+a browser, kept beside the feature file the way `reboot.bdd.recordings`
+lays them out, and the video and screenshots found are named against
+the scenario and its steps.
 """
 from functools import partial
 from pathlib import Path
@@ -18,6 +23,7 @@ from rbt.dashboard.v1.dashboard_rbt import Dashboard
 from rbt.v1alpha1.bdd.feature_pb2 import Feature
 from reboot.aio.contexts import WorkflowContext
 from reboot.aio.workflows import at_least_once
+from reboot.bdd import recordings
 from reboot.cli.common.watch import file_watcher
 from typing import Mapping
 
@@ -31,6 +37,10 @@ except ImportError:
 # `pytest-bdd` and every other Gherkin tool reads.
 FEATURE_GLOB = '**/*.feature'
 
+# The glob every recording matches: a file in a scenario's directory
+# under the recordings directory beside a feature file.
+RECORDINGS_GLOB = f'**/*{recordings.RECORDINGS_SUFFIX}/*/*'
+
 
 def _feature_files(directory: Path) -> list[Path]:
     """Every feature file under the working directory, sorted, with
@@ -43,6 +53,41 @@ def _feature_files(directory: Path) -> list[Path]:
             for part in path.relative_to(directory).parts
         )
     )
+
+
+def _with_recordings(
+    feature: Feature,
+    *,
+    path: Path,
+    directory: Path,
+) -> Feature:
+    """The given feature with each scenario's video and each of its
+    steps' screenshots named, as paths relative to the working
+    directory, where the files exist beside the feature file at
+    `path`."""
+    result = Feature()
+    result.CopyFrom(feature)
+    scenarios = [
+        *result.scenarios,
+        *(scenario for rule in result.rules for scenario in rule.scenarios),
+    ]
+    for scenario in scenarios:
+        if not scenario.HasField('name'):
+            continue
+        scenario_directory = recordings.scenario_directory(
+            path,
+            scenario.name,
+        )
+        video = scenario_directory / recordings.VIDEO_FILENAME
+        if video.is_file():
+            scenario.video = str(video.relative_to(directory))
+        for step in scenario.steps:
+            screenshot = scenario_directory / recordings.screenshot_filename(
+                step.line
+            )
+            if screenshot.is_file():
+                step.screenshot = str(screenshot.relative_to(directory))
+    return result
 
 
 async def _read_and_parse(*, directory: Path) -> dict[str, Feature]:
@@ -70,7 +115,11 @@ async def _read_and_parse(*, directory: Path) -> dict[str, Feature]:
             continue
         parsed = feature.parse(source)
         if parsed is not None:
-            features[filename] = parsed
+            features[filename] = _with_recordings(
+                parsed,
+                path=path,
+                directory=directory,
+            )
     return features
 
 
@@ -100,7 +149,7 @@ async def watch(context: WorkflowContext) -> None:
             # save made during a read resolves `event` instead of
             # firing between watches, where nothing would notice it.
             async with watcher.watch(
-                [FEATURE_GLOB],
+                [FEATURE_GLOB, RECORDINGS_GLOB],
                 root_dir=str(directory),
             ) as event:
 

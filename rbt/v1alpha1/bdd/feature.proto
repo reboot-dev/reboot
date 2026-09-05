@@ -94,6 +94,11 @@ message Scenario {
   // The examples tables a "Scenario Outline" is templated over;
   // empty for a plain scenario.
   repeated Examples examples = 7;
+
+  // The video of the scenario's last run in a browser, as a path
+  // relative to the working directory, kept beside the feature file
+  // (see `reboot.bdd.recordings`); absent when no run was recorded.
+  optional string video = 8;
 }
 
 // One step of a scenario or a background.
@@ -114,6 +119,15 @@ message Step {
   // for a step the grammar does not define, such as one the
   // application defines itself.
   optional BuiltInSyntax built_in = 5;
+
+  // The line the step is written on, counting from one.
+  uint32 line = 6;
+
+  // The screenshot taken after the step in the scenario's last run
+  // in a browser, as a path relative to the working directory, kept
+  // beside the feature file (see `reboot.bdd.recordings`); absent
+  // when none was taken.
+  optional string screenshot = 7;
 }
 
 // Rows of cells: a step's data table, or an examples table.

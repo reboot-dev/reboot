@@ -62,6 +62,7 @@ def _step(parsed: dict[str, Any]) -> Step:
             _table(parsed['dataTable']['rows'])
             if 'dataTable' in parsed else None
         ),
+        line=parsed['location']['line'],
         built_in=grammar.parse(parsed['text']),
     )
 

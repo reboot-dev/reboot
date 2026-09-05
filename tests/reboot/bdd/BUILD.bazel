@@ -40,6 +40,15 @@ py_test(
 )
 
 py_test(
+    name = "recordings_tests_py",
+    srcs = ["recordings_tests.py"],
+    main = "recordings_tests.py",
+    deps = [
+        "//reboot/bdd:recordings_py",
+    ],
+)
+
+py_test(
     name = "grammar_tests_py",
     srcs = ["grammar_tests.py"],
     main = "grammar_tests.py",
