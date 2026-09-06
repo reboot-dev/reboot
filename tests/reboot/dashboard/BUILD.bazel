@@ -55,6 +55,8 @@ py_test(
     main = "behaviors_watcher_tests.py",
     deps = [
         "//reboot/aio:tests_py",
+        "//reboot/bdd:feature_py",
+        "//reboot/bdd:recordings_py",
         "//reboot/dashboard/backend:behaviors_watcher_py",
         "//reboot/dashboard/backend:main_py",
     ],

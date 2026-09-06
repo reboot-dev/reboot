@@ -6,11 +6,15 @@ directory of their own.
 """
 import asyncio
 import os
+import shutil
 import tempfile
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import Dashboard
 from reboot.aio.tests import Reboot
+from reboot.bdd import feature, recordings
 from reboot.dashboard.backend.constants import (
     DASHBOARD_ID,
     ENVVAR_RBT_API_DIRECTORY,
@@ -167,6 +171,101 @@ class BehaviorsWatcherTest(unittest.IsolatedAsyncioTestCase):
             len(features['backend/tests/bank.feature'].rules) == 1 and
             len(features['backend/tests/bank.feature'].rules[0].scenarios) == 2
         )
+
+    async def test_recordings_are_named_against_scenarios_and_steps(
+        self,
+    ) -> None:
+        """A scenario's videos and its steps' screenshots, kept beside
+        the feature file under the digest of the scenario as it is
+        now, are named by their paths, appear when recorded while the
+        dashboard is watching, and are served; recordings under an
+        earlier digest mark the scenario stale instead."""
+        self._write_feature_file('backend/tests/bank.feature', BANK)
+        parsed = feature.parse(BANK)
+        assert parsed is not None
+        deposit = recordings.recording_directory(
+            self.directory / 'backend/tests/bank.feature',
+            parsed.scenarios[0],
+            [parsed.background],
+        )
+        deposit.mkdir(parents=True)
+        (deposit / 'anonymous.webm').write_bytes(b'webm')
+        # The scenario's second step is its `Then`.
+        (deposit / '2.png').write_bytes(b'png')
+        # The rule's scenario was recorded before its steps changed.
+        withdrawal = recordings.scenario_directory(
+            self.directory / 'backend/tests/bank.feature',
+            'Withdrawing more than the balance',
+        ) / ('0' * 16)
+        withdrawal.mkdir(parents=True)
+        (withdrawal / 'anonymous.webm').write_bytes(b'webm')
+
+        await self._start_dashboard()
+        features = await self._wait_for_features(
+            lambda features: len(features) == 1
+        )
+
+        scenario = features['backend/tests/bank.feature'].scenarios[0]
+        relative = str(deposit.relative_to(self.directory))
+        self.assertEqual(
+            [(video.user, video.path) for video in scenario.videos],
+            [('anonymous', f'{relative}/anonymous.webm')],
+        )
+        self.assertFalse(scenario.recordings_stale)
+        self.assertEqual([step.line for step in scenario.steps], [9, 10])
+        self.assertFalse(scenario.steps[0].HasField('screenshot'))
+        self.assertEqual(scenario.steps[1].screenshot, f'{relative}/2.png')
+        stale = features['backend/tests/bank.feature'].rules[0].scenarios[0]
+        self.assertEqual(len(stale.videos), 0)
+        self.assertTrue(stale.recordings_stale)
+
+        # The page fetches a recording by the path it was named by,
+        # and nothing else under the project is served that way.
+        self.assertEqual(
+            await self._fetch(f'/recordings/{scenario.videos[0].path}'),
+            b'webm',
+        )
+        self.assertEqual(
+            await self._fetch(f'/recordings/{scenario.steps[1].screenshot}'),
+            b'png',
+        )
+        self.assertEqual(
+            await self._fetch('/recordings/backend/tests/bank.feature'),
+            None,
+        )
+
+        # A run of the scenario as it is now, recorded while the
+        # dashboard is watching, replaces the stale one.
+        shutil.rmtree(withdrawal)
+        current = recordings.recording_directory(
+            self.directory / 'backend/tests/bank.feature',
+            parsed.rules[0].scenarios[0],
+            [parsed.background],
+        )
+        current.mkdir(parents=True)
+        (current / 'anonymous.webm').write_bytes(b'webm')
+
+        await self._wait_for_features(
+            lambda features: len(features) == 1 and len(
+                features['backend/tests/bank.feature'].rules[0].scenarios[0].
+                videos
+            ) == 1
+        )
+
+    async def _fetch(self, path: str) -> Optional[bytes]:
+        """What the dashboard serves at the given path, and `None` for
+        a path it does not serve."""
+
+        def fetch() -> Optional[bytes]:
+            try:
+                with urllib.request.urlopen(self.rbt.url(path)) as response:
+                    return response.read()
+            except urllib.error.HTTPError as error:
+                if error.code == 404:
+                    return None
+                raise
+
+        return await asyncio.to_thread(fetch)
 
     async def test_a_file_that_will_not_parse_says_so(self) -> None:
         """Why a file could not be parsed is recorded against that

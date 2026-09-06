@@ -66,10 +66,26 @@ py_library(
         ":frontend_py",
         ":grammar_py",
         ":loop_py",
+        ":recording_py",
+        ":recordings_py",
         ":steps_py",
         requirement("pytest"),
         requirement("pytest-bdd"),
         "//reboot/aio/auth:__init___py",
+    ],
+)
+
+# Recording browser scenarios goes into the plugin with the web
+# app's steps, and needs the same.
+py_library(
+    name = "recording_py",
+    srcs = ["recording.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":feature_py",
+        ":recordings_py",
+        requirement("pytest"),
     ],
 )
 
@@ -83,6 +99,16 @@ py_library(
         ":loop_py",
         requirement("aiohttp"),
         "//reboot/mcp:ui_py",
+    ],
+)
+
+py_library(
+    name = "recordings_py",
+    srcs = ["recordings.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//rbt/v1alpha1/bdd:feature_py_proto",
     ],
 )
 

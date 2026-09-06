@@ -37,6 +37,22 @@ class ReadTest(unittest.TestCase):
             [['x'], ['1']],
         )
 
+    def test_steps_carry_their_lines(self) -> None:
+        parsed = parse(
+            'Feature: F\n'
+            '\n'
+            '  Scenario: S\n'
+            '    Given a\n'
+            '\n'
+            '    Then b\n'
+        )
+        assert parsed is not None
+        self.assertEqual(parsed.scenarios[0].line, 3)
+        self.assertEqual(
+            [step.line for step in parsed.scenarios[0].steps],
+            [4, 6],
+        )
+
     def test_bare_headings_name_nothing(self) -> None:
         feature = parse('Feature:\n  Scenario:\n    Given ok\n')
         assert feature is not None

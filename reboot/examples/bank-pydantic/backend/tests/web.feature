@@ -51,3 +51,18 @@ Feature: Opening an account from the web app
       Then "ben" is signed out of the web app
       And "ben" sees the "Sign in" button in the web app is enabled
       And as "ben" `balances` on the `User` for "<ben_user_id>" aborts with `Unauthenticated`
+
+  Rule: A customer sees only their own accounts
+
+    Scenario: Two customers in the app at once
+      Given "carol" is an authenticated user
+      And as "alice" the `User` for "alice" gets an `open_account` with `initial_deposit=100.0`
+      And the resulting `account_id` is saved as `alice_account_id`
+      And as "carol" the `User` for "carol" gets an `open_account` with `initial_deposit=200.0`
+      And the resulting `account_id` is saved as `carol_account_id`
+      When "alice" opens the web app
+      And "carol" opens the web app
+      Then "alice" sees "<alice_account_id>" in the "Your Accounts" table in the web app
+      And "alice" does not see "<carol_account_id>" in the web app
+      And "carol" sees "<carol_account_id>" in the "Your Accounts" table in the web app
+      And "carol" does not see "<alice_account_id>" in the web app

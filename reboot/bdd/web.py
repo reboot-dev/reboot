@@ -23,11 +23,12 @@ import pytest
 import re
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from playwright.sync_api import Locator, Page, expect
 from pytest_bdd import parsers
 from pytest_playwright.pytest_playwright import CreateContextCallback
 from reboot.aio.auth import SESSION_COOKIE_NAME, WHOAMI_PATH
-from reboot.bdd import given, then, when
+from reboot.bdd import given, recordings, then, when
 from reboot.bdd.fixtures import World
 from reboot.bdd.frontend import Frontend, backend_url
 from reboot.bdd.grammar import (
@@ -45,8 +46,9 @@ from reboot.bdd.grammar import (
     SELECTS_IN_WEB_APP,
 )
 from reboot.bdd.loop import run
+from reboot.bdd.recording import VIDEO_SIZE, Recording
 from reboot.bdd.steps import _parsed_seconds, _parsed_value, _saved_value
-from typing import Any, Optional, cast
+from typing import Any, Iterator, Optional, cast
 from urllib.parse import urlparse
 
 # Where a saved value is named inside quoted text: 'Signed in as
@@ -73,14 +75,20 @@ def _with_saved(world: World, text: str) -> str:
 @dataclass
 class WebApp:
     """The web app as the scenario's users see it: a browser page per
-    user who has opened it."""
+    user who has opened it, each recorded."""
 
     world: World
     frontend: Frontend
     new_context: CreateContextCallback
+    recording: Recording
 
     # The page of each user who opened the app.
     pages: dict[str, Page] = field(default_factory=dict)
+
+    # The element the latest assertion step looked at, so that its
+    # screenshot can show it; `None` when the step looked at the page
+    # as a whole, or between steps.
+    asserted: Optional[Locator] = None
 
     def open(self, *, user: str, path: str) -> Page:
         """Opens the app at the given path in a browser of the user's
@@ -96,7 +104,10 @@ class WebApp:
             'The frontend has no origin for a browser to load it from'
         )
         run(self.frontend.ready())
-        context = self.new_context()
+        context = self.new_context(
+            record_video_dir=str(self.recording.directory),
+            record_video_size=VIDEO_SIZE,
+        )
         token = self.world.token(user)
         if token is not None:
             host = urlparse(backend_url(self.world.rbt)).hostname
@@ -122,6 +133,18 @@ class WebApp:
         page.goto(self.frontend.origin + path)
         self.pages[user] = page
         return page
+
+    def close(self) -> None:
+        """Closes each user's browser, which finishes its video, and
+        names the video after the user."""
+        for user, page in self.pages.items():
+            video = page.video
+            page.context.close()
+            if video is not None:
+                Path(video.path()).rename(
+                    self.recording.directory / recordings.video_filename(user)
+                )
+        self.pages.clear()
 
     def whoami(self, *, user: str) -> dict[str, Any]:
         """The backend's answer to `/__/oauth/whoami` for the user's
@@ -151,8 +174,80 @@ def web_app(
     world: World,
     frontend: Frontend,
     new_context: CreateContextCallback,
-) -> WebApp:
-    return WebApp(world=world, frontend=frontend, new_context=new_context)
+    recording: Recording,
+) -> Iterator[WebApp]:
+    web_app = WebApp(
+        world=world,
+        frontend=frontend,
+        new_context=new_context,
+        recording=recording,
+    )
+    yield web_app
+    web_app.close()
+
+
+# The outline drawn around the element an assertion step looked at
+# while its screenshot is taken and its result dwells on screen.
+_OUTLINE = '3px solid #f59e0b'
+
+
+def pytest_bdd_after_step(
+    request: pytest.FixtureRequest,
+    feature: Any,
+    scenario: Any,
+    step: Any,
+    step_func: Any,
+    step_func_args: dict[str, Any],
+) -> None:
+    """Screenshots a user's browser after the step that opened the
+    app for them, which shows where they start, and after each
+    assertion step that drives their browser, a `Then` or an `And` or
+    `But` continuing one, with the element the step asserted on
+    scrolled to the middle of the view and outlined; then leaves it
+    on screen for `--recording-dwell`."""
+    web_app = step_func_args.get('web_app')
+    user = step_func_args.get('user')
+    if not isinstance(web_app, WebApp) or not isinstance(user, str):
+        return
+    page = web_app.pages.get(user)
+    if page is None:
+        return
+    recording = web_app.recording
+    opened = user not in recording.opened
+    recording.opened.add(user)
+    element = web_app.asserted
+    web_app.asserted = None
+    if not opened and step.type != 'then':
+        return
+    position = recording.position(step.line_number)
+    if position is None:
+        # A background's step, which is not the scenario's own.
+        return
+    if element is not None:
+        # A small element, such as a figure, is outlined just outside
+        # its box; a large one, such as a table, just inside, since a
+        # container that scrolls would clip an outline outside it.
+        element.evaluate(
+            'element => {'
+            '  element.scrollIntoView({block: "center", inline: "nearest"});'
+            f'  element.style.outline = "{_OUTLINE}";'
+            '  element.style.outlineOffset = '
+            '    element.getBoundingClientRect().height > 60 ? "-3px" : "4px";'
+            '}'
+        )
+    page.screenshot(
+        path=str(
+            recording.directory / recordings.screenshot_filename(position)
+        ),
+    )
+    page.wait_for_timeout(recording.dwell_ms)
+    if element is not None:
+        element.evaluate(
+            'element => {'
+            '  element.style.outline = "";'
+            '  element.style.outlineOffset = "";'
+            '}'
+        )
 
 
 def _element(page: Page, role: str, name: str) -> Locator:
@@ -265,12 +360,14 @@ def _sees_in_web_app(
             expect(element).not_to_contain_text(text, timeout=timeout)
         else:
             expect(element).to_contain_text(text, timeout=timeout)
+        web_app.asserted = element
         return
     shown = page.get_by_text(text)
     if negated is not None:
         expect(shown).not_to_be_visible(timeout=timeout)
     else:
         expect(shown).to_be_visible(timeout=timeout)
+        web_app.asserted = shown
 
 
 @then(parsers.re(SEES_ENABLED_IN_WEB_APP))
@@ -287,6 +384,7 @@ def _sees_enabled_in_web_app(
         expect(element).to_be_enabled()
     else:
         expect(element).to_be_disabled()
+    web_app.asserted = element
 
 
 @then(parsers.re(SEES_WEB_APP_AT))

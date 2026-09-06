@@ -55,6 +55,7 @@ import {
   linkOfCodeSpan,
   linkOfMethod,
   printBuiltInSyntax,
+  recordingUrl,
   scenariosOfFeature,
   sortedFeatures,
   spansOfText,
@@ -1040,6 +1041,17 @@ const StepRow: FC<{
         {step.keyword}
       </span>
       <div className="step-text">
+        {step.screenshot !== undefined && (
+          <a
+            className="step-screenshot"
+            href={recordingUrl(step.screenshot)}
+            target="_blank"
+            rel="noreferrer"
+            title="The browser after this step, in the scenario's last run"
+          >
+            <img src={recordingUrl(step.screenshot)} alt="" />
+          </a>
+        )}
         {step.builtIn !== undefined ? (
           <BuiltInStep syntax={step.builtIn} links={links} related={related} />
         ) : (
@@ -1073,6 +1085,12 @@ const ScenarioRow: FC<{
   examples: feature_pb.Examples[];
   meaning: string;
   links: StepLinks;
+  // The videos of the scenario's last run in a browser, one per
+  // user whose browser it drove; empty when none was recorded.
+  videos: feature_pb.Video[];
+  // Whether the only recordings are of an earlier version of the
+  // scenario.
+  recordingsStale?: boolean;
 }> = ({
   keyword,
   name,
@@ -1083,6 +1101,8 @@ const ScenarioRow: FC<{
   examples,
   meaning,
   links,
+  videos,
+  recordingsStale,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [relatedKey, setRelatedKey] = useState<string | null>(null);
@@ -1115,6 +1135,31 @@ const ScenarioRow: FC<{
           mark={false}
         />
         <span className="scenario-name">{name}</span>
+        {videos.map((video) => (
+          <a
+            className="scenario-video"
+            href={recordingUrl(video.path)}
+            target="_blank"
+            rel="noreferrer"
+            title={`"${video.user}"'s browser in the scenario's last run`}
+            // A click here opens the video, not the scenario.
+            onClick={(event) => event.stopPropagation()}
+            key={video.user}
+          >
+            <svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true">
+              <path d="M1.5 1 L9 5 L1.5 9 Z" fill="currentColor" />
+            </svg>
+            {videos.length > 1 ? `video · ${video.user}` : "video"}
+          </a>
+        ))}
+        {recordingsStale && (
+          <span
+            className="scenario-video is-stale"
+            title="Recorded from an earlier version of this scenario, or of a background it runs under; run it again to record it as it is now"
+          >
+            recording stale
+          </span>
+        )}
         {tags.length > 0 && (
           <span className="tags">
             {tags.map((tag) => (
@@ -1184,6 +1229,7 @@ const BackgroundRow: FC<{
     examples={[]}
     meaning={DEFINITIONS.background}
     links={links}
+    videos={[]}
   />
 );
 
@@ -1216,6 +1262,8 @@ const ScenarioRows: FC<{
         examples={scenario.examples}
         meaning={DEFINITIONS.scenario}
         links={links}
+        videos={scenario.videos}
+        recordingsStale={scenario.recordingsStale}
         key={scenario.line}
       />
     ))}
