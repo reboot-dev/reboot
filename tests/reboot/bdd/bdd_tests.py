@@ -120,6 +120,22 @@ def test_token_of_an_undeclared_user() -> None:
     assert world.token('bob') == 'token'
 
 
+def test_signing_in_and_out() -> None:
+    world = World()
+    with pytest.raises(ValueError, match='"bob" is not a user the scenario'):
+        world.user_id('bob')
+    world.declare_user('bob', None)
+    with pytest.raises(ValueError, match='does not know "bob"\'s user id'):
+        world.user_id('bob')
+    world.sign_in('bob', user_id='dev-1234', bearer_token='token')
+    assert world.token('bob') == 'token'
+    assert world.user_id('bob') == 'dev-1234'
+    world.sign_out('bob')
+    assert world.token('bob') is None
+    with pytest.raises(ValueError, match='does not know "bob"\'s user id'):
+        world.user_id('bob')
+
+
 def test_shared_context_calls_as_one_user() -> None:
     world = World()
     world.declare_user('alice', 'token')

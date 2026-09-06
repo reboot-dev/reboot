@@ -173,6 +173,12 @@ class World:
     # The user the shared context calls as, once one exists.
     shared_user: Optional[str] = None
 
+    # The user id, as the backend knows it, of each declared user
+    # whose id the scenario knows: a user declared authenticated has
+    # the id their token was minted for, and one who signed in
+    # through a frontend has the id the sign-in learned.
+    user_ids: dict[str, str] = field(default_factory=dict)
+
     def context(self, user: str) -> ExternalContext:
         """The context for one step's call as the given user: the
         scenario's shared context once an 'as "..." a shared context'
@@ -196,10 +202,8 @@ class World:
             bearer_token=self.token(user),
         )
 
-    def token(self, user: str) -> Optional[str]:
-        """The bearer token of the named user, `None` for one declared
-        unauthenticated; raises for a user the scenario has not
-        declared."""
+    def _require_declared(self, user: str) -> None:
+        """Raises unless the scenario has declared the named user."""
         if user not in self.tokens:
             raise ValueError(
                 f'"{user}" is not a user the scenario has declared; say '
@@ -207,6 +211,12 @@ class World:
                 f'\'Given "{user}" is an unauthenticated user\' or '
                 f'\'Given "{user}" has the bearer token "..."\' first'
             )
+
+    def token(self, user: str) -> Optional[str]:
+        """The bearer token of the named user, `None` for one declared
+        unauthenticated; raises for a user the scenario has not
+        declared."""
+        self._require_declared(user)
         return self.tokens[user]
 
     def declare_user(
@@ -218,6 +228,33 @@ class World:
         bearer token their calls carry, `None` for none; declaring a
         user again changes what they carry."""
         self.tokens[user_id] = bearer_token
+
+    def user_id(self, user: str) -> str:
+        """The backend's id for the named user; raises for a user
+        whose id the scenario does not know."""
+        self._require_declared(user)
+        if user not in self.user_ids:
+            raise ValueError(
+                f'The scenario does not know "{user}"\'s user id: they '
+                'have neither been declared an authenticated user nor '
+                'signed in'
+            )
+        return self.user_ids[user]
+
+    def sign_in(self, user: str, *, user_id: str, bearer_token: str) -> None:
+        """Records that the named user signed in through a frontend
+        as the given user id, carrying the given token from here
+        on."""
+        self._require_declared(user)
+        self.tokens[user] = bearer_token
+        self.user_ids[user] = user_id
+
+    def sign_out(self, user: str) -> None:
+        """Records that the named user signed out: their calls carry
+        no token from here on, and their id is forgotten."""
+        self._require_declared(user)
+        self.tokens[user] = None
+        self.user_ids.pop(user, None)
 
     def share_context(self, user: str) -> None:
         """Makes every call from here on share one context, calling

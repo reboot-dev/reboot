@@ -22,6 +22,7 @@ from reboot.aio.auth import (
     PENDING_COOKIE_NAME,
     REFRESH_COOKIE_NAME,
     SESSION_COOKIE_NAME,
+    WHOAMI_PATH,
     Auth,
 )
 from reboot.aio.auth.allowed_origins import is_allowed_origin
@@ -97,7 +98,7 @@ _START_PATH = "/__/oauth/start"
 _FINISH_PATH = "/__/oauth/finish"
 _REFRESH_PATH = "/__/oauth/refresh"
 _SIGNOUT_PATH = "/__/oauth/signout"
-_WHOAMI_PATH = "/__/oauth/whoami"
+_WHOAMI_PATH = WHOAMI_PATH
 
 # `client_id` JWT type used for the internal "browser client" we
 # register on the fly in `/start`. Kept distinct from the MCP-client

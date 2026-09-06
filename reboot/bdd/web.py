@@ -21,18 +21,21 @@ backend steps run on the scenario's event loop.
 """
 import pytest
 import re
+import time
 from dataclasses import dataclass, field
 from playwright.sync_api import Locator, Page, expect
 from pytest_bdd import parsers
 from pytest_playwright.pytest_playwright import CreateContextCallback
-from reboot.aio.auth import SESSION_COOKIE_NAME
-from reboot.bdd import then, when
+from reboot.aio.auth import SESSION_COOKIE_NAME, WHOAMI_PATH
+from reboot.bdd import given, then, when
 from reboot.bdd.fixtures import World
 from reboot.bdd.frontend import Frontend, backend_url
 from reboot.bdd.grammar import (
     CHECKS_IN_WEB_APP,
     CLICKS_IN_WEB_APP,
     FILLS_IN_WEB_APP,
+    IS_SIGNED_IN_TO_WEB_APP,
+    IS_SIGNED_OUT_OF_WEB_APP,
     OPENS_WEB_APP,
     PRESSES_IN_WEB_APP,
     SAVES_TEXT_IN_WEB_APP_AS,
@@ -119,6 +122,17 @@ class WebApp:
         page.goto(self.frontend.origin + path)
         self.pages[user] = page
         return page
+
+    def whoami(self, *, user: str) -> dict[str, Any]:
+        """The backend's answer to `/__/oauth/whoami` for the user's
+        browser session, fetched from inside their page with the
+        session cookie the way the app fetches it."""
+        assert self.world.rbt is not None
+        return self.page(user=user).evaluate(
+            "(url) => fetch(url, {credentials: 'include'})"
+            ".then((response) => response.json())",
+            backend_url(self.world.rbt) + WHOAMI_PATH,
+        )
 
     def page(self, *, user: str) -> Page:
         """The page of the user who opened the app; raises for one who
@@ -286,6 +300,65 @@ def _sees_web_app_at(
     expect(web_app.page(user=user)).to_have_url(
         web_app.frontend.origin + _with_saved(world, path),
     )
+
+
+# How long a sign-in or sign-out started in the app may take to
+# reach the backend: the redirects of signing in, the request of
+# signing out.
+_SESSION_CHANGE_TIMEOUT_MILLISECONDS = 30_000
+
+
+@given(parsers.re(IS_SIGNED_IN_TO_WEB_APP))
+@when(parsers.re(IS_SIGNED_IN_TO_WEB_APP))
+@then(parsers.re(IS_SIGNED_IN_TO_WEB_APP))
+def _is_signed_in_to_web_app(world: World, web_app: WebApp, user: str) -> None:
+    """The user's browser has come back to the web app signed in,
+    after the sign-in the scenario clicked through: the backend
+    answers their session with a user, whom the user calls as from
+    here on."""
+    page = web_app.page(user=user)
+    origin = web_app.frontend.origin
+    assert origin is not None
+    # Signing in ends in redirects back to the app; the session is
+    # settled once the browser is back on the app's origin.
+    expect(page).to_have_url(
+        re.compile('^' + re.escape(origin)),
+        timeout=_SESSION_CHANGE_TIMEOUT_MILLISECONDS,
+    )
+    session = web_app.whoami(user=user)
+    if not session.get('authenticated'):
+        raise AssertionError(
+            f'"{user}" is not signed in to the web app: the backend '
+            'answers their browser session with nobody'
+        )
+    world.sign_in(
+        user,
+        user_id=session['user_id'],
+        bearer_token=session['access_token'],
+    )
+
+
+@given(parsers.re(IS_SIGNED_OUT_OF_WEB_APP))
+@when(parsers.re(IS_SIGNED_OUT_OF_WEB_APP))
+@then(parsers.re(IS_SIGNED_OUT_OF_WEB_APP))
+def _is_signed_out_of_web_app(
+    world: World,
+    web_app: WebApp,
+    user: str,
+) -> None:
+    """The user's browser session is nobody's, after the sign-out
+    the scenario clicked, which the app reports to the backend in
+    its own time; the user calls with no token from here on."""
+    page = web_app.page(user=user)
+    deadline = time.monotonic() + _SESSION_CHANGE_TIMEOUT_MILLISECONDS / 1000
+    while web_app.whoami(user=user).get('authenticated'):
+        if time.monotonic() >= deadline:
+            raise AssertionError(
+                f'"{user}" is still signed in to the web app: the backend '
+                'answers their browser session with a user'
+            )
+        page.wait_for_timeout(100)
+    world.sign_out(user)
 
 
 @when(parsers.re(SAVES_TEXT_IN_WEB_APP_AS))

@@ -325,6 +325,26 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(syntax.saves_text_in_web_app_as.test_id, 'account-id')
         self.assertEqual(syntax.saves_text_in_web_app_as.name, 'account_id')
 
+    def test_signing_in_and_out(self) -> None:
+        """A user is signed in to or out of the web app, and saves
+        the user id signing in gave them."""
+        syntax = parse('"alice" is signed in to the web app')
+        assert syntax is not None
+        self.assertEqual(syntax.WhichOneof('step'), 'is_signed_in_to_web_app')
+        self.assertEqual(syntax.is_signed_in_to_web_app.user, 'alice')
+
+        syntax = parse('"alice" is signed out of the web app')
+        assert syntax is not None
+        self.assertEqual(syntax.is_signed_out_of_web_app.user, 'alice')
+
+        syntax = parse('"alice" saves their user id as `alice_user_id`')
+        assert syntax is not None
+        self.assertEqual(syntax.saves_user_id_as.user, 'alice')
+        self.assertEqual(syntax.saves_user_id_as.name, 'alice_user_id')
+
+        # Signing in is clicked through the app, so no step does it.
+        self.assertIsNone(parse('"alice" signs in as "Alice"'))
+
     def test_a_step_the_grammar_does_not_define_is_none(self) -> None:
         self.assertIsNone(parse('the welcome email was sent'))
 

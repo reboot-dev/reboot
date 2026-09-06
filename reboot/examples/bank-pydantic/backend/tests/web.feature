@@ -33,3 +33,21 @@ Feature: Opening an account from the web app
       Then "alice" eventually sees "$750" in the web app within 10 seconds
       And as "alice" `balance` on the `Account` for "<first_account_id>" has `amount=750.0`
       And as "alice" `balance` on the `Account` for "<second_account_id>" has `amount=250.0`
+
+  Rule: A customer who signs in in the browser is the customer the bank knows
+
+    Scenario: Signing in and out with the Development picker
+      Given "ben" is an unauthenticated user
+      When "ben" opens the web app
+      And "ben" clicks the "Sign in" button in the web app
+      And "ben" clicks the "Ben" link in the web app
+      Then "ben" is signed in to the web app
+      When "ben" saves their user id as `ben_user_id`
+      And "ben" fills "Initial Deposit ($)" in the web app with `500`
+      And "ben" clicks the "Open Account" button in the web app
+      Then "ben" eventually sees "$500" in the "Your Accounts" table in the web app within 10 seconds
+      And as "ben" `balances` on the `User` for "<ben_user_id>" eventually has `balances` of length `1` and `balances[0].balance=500.0` within 10 seconds
+      When "ben" clicks the "Sign out" button in the web app
+      Then "ben" is signed out of the web app
+      And "ben" sees the "Sign in" button in the web app is enabled
+      And as "ben" `balances` on the `User` for "<ben_user_id>" aborts with `Unauthenticated`

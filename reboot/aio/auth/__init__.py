@@ -23,6 +23,12 @@ SESSION_COOKIE_NAME = "rbt_session"
 REFRESH_COOKIE_NAME = "rbt_refresh"
 PENDING_COOKIE_NAME = "rbt_oauth_pending"
 
+# The path of the OAuth server's endpoint answering who a browser
+# session is, from the `SESSION_COOKIE_NAME` cookie: whether it is
+# signed in, and if so the user id and the access token the SPA
+# sends as its bearer.
+WHOAMI_PATH = "/__/oauth/whoami"
+
 
 def __getattr__(name: str) -> Any:
     """Lazily re-export the OAuth token public API so
