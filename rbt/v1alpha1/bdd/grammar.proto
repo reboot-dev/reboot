@@ -83,21 +83,26 @@ message ApplicationIsUp {
   optional string name = 1;
 }
 
-// 'the authenticated user is "user_id"'.
-message AuthenticatedUserIs {
+// '"alice" is an authenticated user': declares a user the scenario's
+// steps may call as, minting a token for the user id.
+message IsAnAuthenticatedUser {
   string user_id = 1;
 }
 
-// 'the user is unauthenticated'.
-message UserIsUnauthenticated {}
+// '"admin" has the bearer token "..."': declares a user by a token
+// the scenario obtained some other way.
+message HasBearerToken {
+  string user_id = 1;
 
-// 'the bearer token is "bearer_token"'.
-message BearerTokenIs {
-  string bearer_token = 1;
+  string bearer_token = 2;
 }
 
-// 'a shared context'.
-message SharedContext {}
+// 'as "alice" a shared context'.
+message SharedContext {
+  // The user the shared context's calls are made as; absent for
+  // anonymous calls.
+  optional string user = 1;
+}
 
 // 'a `Account` for "alice" gets created via `open` with ...'.
 message GetsCreatedVia {
@@ -106,10 +111,13 @@ message GetsCreatedVia {
   string method = 2;
 
   repeated Assignment assignments = 3;
+
+  // The user the call is made as; absent for an anonymous call.
+  optional string user = 4;
 }
 
-// 'the `Account` for "alice" gets a `deposit` with ...', and
-// optionally 'spawned with its task id saved as `name`'.
+// 'as "alice" the `Account` for "alice" gets a `deposit` with ...',
+// and optionally 'spawned with its task id saved as `name`'.
 message Gets {
   State state = 1;
 
@@ -120,6 +128,9 @@ message Gets {
   // The name the spawned task's id is saved under; absent for a
   // call that is not spawned.
   optional string task_id_saved_as = 4;
+
+  // The user the call is made as; absent for an anonymous call.
+  optional string user = 5;
 }
 
 // 'the `Account` for "alice" attempts a `withdraw` with ...'.
@@ -129,6 +140,9 @@ message Attempts {
   string method = 2;
 
   repeated Assignment assignments = 3;
+
+  // The user the call is made as; absent for an anonymous call.
+  optional string user = 4;
 }
 
 // 'the `deposit` task with id "<name>" of the `Account` completes
@@ -142,6 +156,9 @@ message TaskCompletes {
   string state_type = 3;
 
   double seconds = 4;
+
+  // The user the call is made as; absent for an anonymous call.
+  optional string user = 5;
 }
 
 // 'the attempt aborts with `OverdraftError` with ...'.
@@ -160,6 +177,9 @@ message Has {
   State state = 2;
 
   repeated Assertion assertions = 3;
+
+  // The user the call is made as; absent for an anonymous call.
+  optional string user = 4;
 }
 
 // '`balance` on the `Account` for "alice" eventually has ... within
@@ -173,6 +193,9 @@ message EventuallyHas {
   repeated Assertion assertions = 3;
 
   double seconds = 4;
+
+  // The user the call is made as; absent for an anonymous call.
+  optional string user = 5;
 }
 
 // '`get` on the `Account` for "alice" has `owner` saved as `o`': a
@@ -183,6 +206,9 @@ message HasSavedAs {
   State state = 2;
 
   repeated Save saves = 3;
+
+  // The user the call is made as; absent for an anonymous call.
+  optional string user = 4;
 }
 
 // '`balance` on the `Account` for "alice" aborts with
@@ -197,6 +223,9 @@ message AbortsWith {
   string error_type = 3;
 
   repeated Assertion assertions = 4;
+
+  // The user the call is made as; absent for an anonymous call.
+  optional string user = 5;
 }
 
 // 'the result has ...'.
@@ -216,20 +245,19 @@ message ResultingIsSavedAs {
 message BuiltInSyntax {
   oneof step {
     ApplicationIsUp application_is_up = 1;
-    AuthenticatedUserIs authenticated_user_is = 2;
-    UserIsUnauthenticated user_is_unauthenticated = 3;
-    BearerTokenIs bearer_token_is = 4;
-    SharedContext shared_context = 5;
-    GetsCreatedVia gets_created_via = 6;
-    Gets gets = 7;
-    Attempts attempts = 8;
-    TaskCompletes task_completes = 9;
-    AttemptAbortsWith attempt_aborts_with = 10;
-    Has has = 11;
-    EventuallyHas eventually_has = 12;
-    HasSavedAs has_saved_as = 13;
-    AbortsWith aborts_with = 14;
-    ResultHas result_has = 15;
-    ResultingIsSavedAs resulting_is_saved_as = 16;
+    IsAnAuthenticatedUser is_an_authenticated_user = 2;
+    HasBearerToken has_bearer_token = 3;
+    SharedContext shared_context = 4;
+    GetsCreatedVia gets_created_via = 5;
+    Gets gets = 6;
+    Attempts attempts = 7;
+    TaskCompletes task_completes = 8;
+    AttemptAbortsWith attempt_aborts_with = 9;
+    Has has = 10;
+    EventuallyHas eventually_has = 11;
+    HasSavedAs has_saved_as = 12;
+    AbortsWith aborts_with = 13;
+    ResultHas result_has = 14;
+    ResultingIsSavedAs resulting_is_saved_as = 15;
   }
 }

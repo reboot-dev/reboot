@@ -2,7 +2,6 @@ Feature: Accounts with a pydantic API
 
   Background:
     Given the application is up
-    And the user is unauthenticated
 
   Scenario: Depositing adds to the balance
     Given an `Account` for "alice" gets created via `open` with `initial_balance=100`
@@ -43,12 +42,12 @@ Feature: Accounts with a pydantic API
     And `get_owners` on the `Account` for "heidi" has `owners={main: {name: "Heidi", tags: ["a"]}}`
     And `get_owners` on the `Account` for "heidi" has `owners` containing `"main"` and `owners` of length `1`
 
-  Scenario: Steps call as the authenticated user
-    Given the authenticated user is "alice"
-    And an `Account` for "joint" gets created via `open`
-    Then `whoami` on the `Account` for "joint" has `user_id="alice"`
-    When the authenticated user is "bob"
-    Then `whoami` on the `Account` for "joint" has `user_id="bob"`
+  Scenario: Steps call as the user they name
+    Given "alice" is an authenticated user
+    And "bob" is an authenticated user
+    And as "alice" an `Account` for "joint" gets created via `open`
+    Then as "alice" `whoami` on the `Account` for "joint" has `user_id="alice"`
+    And as "bob" `whoami` on the `Account` for "joint" has `user_id="bob"`
 
   Scenario: Effects land eventually
     Given an `Account` for "slow" gets created via `open`

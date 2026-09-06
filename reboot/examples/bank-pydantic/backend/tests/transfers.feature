@@ -5,7 +5,6 @@ Feature: Transferring money between accounts
 
   Background:
     Given the application is up
-    And the user is unauthenticated
 
   Rule: A transfer moves exactly the amount from one account to the other
     Neither account sees any other change, and the bank's view of

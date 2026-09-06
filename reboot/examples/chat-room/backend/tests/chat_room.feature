@@ -2,7 +2,6 @@ Feature: Chat room
 
   Background:
     Given the application is up
-    And the user is unauthenticated
 
   Scenario: Messages record in order
     When the `ChatRoom` for "testing-chat-room" gets a `send` with `message="Hello, World"`

@@ -3,7 +3,6 @@ Feature: Depositing into an account
 
   Background:
     Given the application is up
-    And the user is unauthenticated
 
   Rule: A deposit raises the balance by the amount
 

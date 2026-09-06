@@ -40,13 +40,14 @@ value's type parses it as. A dotted path nests when calling, e.g.
     Then `balance` on the `Account` for "alice" has
       `balance=50`
 
-Every scenario says who calls before its first call: 'Given the
-authenticated user is "alice"' mints a test token for that user ID
-and puts it on every context created from then on, 'Given the user
-is unauthenticated' calls with no token, and 'the bearer token is
-"..."' instead sets a raw token; say who calls before 'Given a
-shared context', whose context keeps the token it was created
-with.
+Every step that calls says who calls, or calls anonymously: a step
+starting 'as "alice"' calls as a user the scenario declared, with
+'Given "alice" is an authenticated user', which mints a test token
+for that user ID, or 'Given "admin" has the bearer token "..."',
+which names a user by a raw token; a step without 'as "..."' calls
+with no token. 'Given a shared context' takes the same prefix, and
+every call from then on must name the same user, since the context
+keeps the token it was created with.
 
 A call runs as a task instead by saying 'gets a `method` ...
 spawned with its task id saved as `name`'; the task then awaits as
@@ -124,15 +125,15 @@ from reboot.bdd.grammar import (
     ASSERT_CLAUSES,
     ATTEMPT_ABORTS_WITH,
     ATTEMPTS,
-    AUTHENTICATED_USER_IS,
-    BEARER_TOKEN_IS,
     CLAUSE,
     CONTAINING_PATTERN,
     EVENTUALLY_HAS,
     GETS,
     GETS_CREATED_VIA,
     HAS,
+    HAS_BEARER_TOKEN,
     HAS_SAVED_AS,
+    IS_AN_AUTHENTICATED_USER,
     LENGTH_PATTERN,
     MIXED_CLAUSES,
     PATH,
@@ -146,7 +147,6 @@ from reboot.bdd.grammar import (
     SEPARATOR,
     SHARED_CONTEXT,
     TASK_COMPLETES,
-    USER_IS_UNAUTHENTICATED,
 )
 from reboot.bdd.registry import client_types_by_name
 from typing import Any, Optional, Union, get_args, get_origin
@@ -775,42 +775,40 @@ async def _the_application_is_up(
     world.name = request.node.name
 
 
-@given(parsers.re(AUTHENTICATED_USER_IS))
-@when(parsers.re(AUTHENTICATED_USER_IS))
-async def _the_authenticated_user_is(world: World, user_id: str) -> None:
+@given(parsers.re(IS_AN_AUTHENTICATED_USER))
+@when(parsers.re(IS_AN_AUTHENTICATED_USER))
+async def _is_an_authenticated_user(world: World, user_id: str) -> None:
     if world.rbt is None:
         raise ValueError(
             "The application is not up; start the scenario with "
             "'Given the application is up'"
         )
-    world.set_bearer_token(
-        await world.rbt.make_valid_oauth_access_token(
-            user_id=_maybe_saved(world, user_id),
-        )
+    user_id = _maybe_saved(world, user_id)
+    world.declare_user(
+        user_id,
+        await world.rbt.make_valid_oauth_access_token(user_id=user_id),
     )
 
 
-@given(USER_IS_UNAUTHENTICATED)
-@when(USER_IS_UNAUTHENTICATED)
-def _the_user_is_unauthenticated(world: World) -> None:
-    world.set_bearer_token(None)
+@given(parsers.re(HAS_BEARER_TOKEN))
+@when(parsers.re(HAS_BEARER_TOKEN))
+def _has_bearer_token(world: World, user_id: str, bearer_token: str) -> None:
+    world.declare_user(
+        _maybe_saved(world, user_id),
+        _maybe_saved(world, bearer_token),
+    )
 
 
-@given(parsers.re(BEARER_TOKEN_IS))
-@when(parsers.re(BEARER_TOKEN_IS))
-def _the_bearer_token_is(world: World, bearer_token: str) -> None:
-    world.set_bearer_token(_maybe_saved(world, bearer_token))
-
-
-@given(SHARED_CONTEXT)
-def _a_shared_context(world: World) -> None:
-    world.shared_context = world.context()
+@given(parsers.re(SHARED_CONTEXT))
+def _a_shared_context(world: World, user: Optional[str]) -> None:
+    world.share_context(user)
 
 
 @given(parsers.re(GETS_CREATED_VIA))
 @when(parsers.re(GETS_CREATED_VIA))
 async def _gets_created_via(
     world: World,
+    user: Optional[str],
     state_type: str,
     state_id: str,
     method: str,
@@ -818,7 +816,7 @@ async def _gets_created_via(
 ) -> None:
     factory = world.factory(state_type=state_type, method=method)
     assignments = _parse_assignments(world, clauses)
-    arguments = [world.context(), _maybe_saved(world, state_id)]
+    arguments = [world.context(user), _maybe_saved(world, state_id)]
     if assignments:
         arguments.append(
             world.request(
@@ -838,6 +836,7 @@ async def _gets_created_via(
 @when(parsers.re(GETS))
 async def _gets(
     world: World,
+    user: Optional[str],
     state_type: str,
     state_id: str,
     method: str,
@@ -850,6 +849,7 @@ async def _gets(
             state_id=_maybe_saved(world, state_id),
             method=method,
             assignments=_parse_assignments(world, clauses),
+            user=user,
         )
         world.save(task, _json_object(handle.task_id))
         return
@@ -864,6 +864,7 @@ async def _gets(
             state_id=_maybe_saved(world, state_id),
             method=method,
             assignments=_parse_assignments(world, clauses),
+            user=user,
         )
     except Aborted as aborted:
         raise AssertionError(
@@ -877,6 +878,7 @@ async def _gets(
 @when(parsers.re(ATTEMPTS))
 async def _attempts(
     world: World,
+    user: Optional[str],
     state_type: str,
     state_id: str,
     method: str,
@@ -894,6 +896,7 @@ async def _attempts(
             state_id=_maybe_saved(world, state_id),
             method=method,
             assignments=_parse_assignments(world, clauses),
+            user=user,
         )
         world.aborted = None
     except Aborted as aborted:
@@ -904,6 +907,7 @@ async def _attempts(
 @then(parsers.re(TASK_COMPLETES))
 async def _the_saved_task_completes(
     world: World,
+    user: Optional[str],
     method: str,
     name: str,
     state_type: str,
@@ -920,7 +924,7 @@ async def _the_saved_task_completes(
     if task_type is None:
         raise ValueError(f"`{state_type}` has no `{method}` task")
     task = getattr(task_type, 'retrieve')(
-        world.context(),
+        world.context(user),
         task_id=json_format.ParseDict(saved, tasks_pb2.TaskId()),
     )
     try:
@@ -963,12 +967,14 @@ def _the_attempt_aborts_with(
 
 async def _read(
     world: World,
+    user: Optional[str],
     method: str,
     state_type: str,
     state_id: str,
 ) -> Any:
-    """Calls the named reader on the named state, recording and
-    returning its response; raises if the method is not a reader."""
+    """Calls the named reader on the named state as the given user,
+    or anonymously, recording and returning its response; raises if
+    the method is not a reader."""
     if not world.is_reader(state_type=state_type, method=method):
         raise ValueError(
             f"`{method}` is not a reader; call it with 'the "
@@ -980,6 +986,7 @@ async def _read(
             state_id=_maybe_saved(world, state_id),
             method=method,
             assignments={},
+            user=user,
         )
         return world.response
     except Aborted as aborted:
@@ -992,18 +999,20 @@ async def _read(
 @then(parsers.re(HAS))
 async def _then_has(
     world: World,
+    user: Optional[str],
     method: str,
     state_type: str,
     state_id: str,
     clauses: str,
 ) -> None:
-    response = await _read(world, method, state_type, state_id)
+    response = await _read(world, user, method, state_type, state_id)
     _assert_properties(response, _parse_assertions(world, clauses))
 
 
 @then(parsers.re(EVENTUALLY_HAS))
 async def _eventually_has(
     world: World,
+    user: Optional[str],
     method: str,
     state_type: str,
     state_id: str,
@@ -1020,7 +1029,7 @@ async def _eventually_has(
     reference = world.client_type(state_type).ref(
         _maybe_saved(world, state_id)
     )
-    responses = getattr(reference.reactively(), method)(world.context())
+    responses = getattr(reference.reactively(), method)(world.context(user))
     deadline = asyncio.get_running_loop().time() + seconds
     last_error: Optional[AssertionError] = None
     try:
@@ -1064,12 +1073,13 @@ async def _eventually_has(
 @when(parsers.re(HAS_SAVED_AS))
 async def _has_saved_as(
     world: World,
+    user: Optional[str],
     method: str,
     state_type: str,
     state_id: str,
     clauses: str,
 ) -> None:
-    response = await _read(world, method, state_type, state_id)
+    response = await _read(world, user, method, state_type, state_id)
     response_json = _json_object(response)
     for name, path in _parse_saves(clauses).items():
         world.save(name, _resolve_json_property(response_json, path))
@@ -1078,6 +1088,7 @@ async def _has_saved_as(
 @then(parsers.re(ABORTS_WITH))
 async def _aborts_with(
     world: World,
+    user: Optional[str],
     method: str,
     state_type: str,
     state_id: str,
@@ -1096,6 +1107,7 @@ async def _aborts_with(
             state_id=_maybe_saved(world, state_id),
             method=method,
             assignments={},
+            user=user,
         )
     except Aborted as aborted:
         _assert_aborted(world, aborted, error_type, clauses)
@@ -1179,13 +1191,38 @@ def _almost_unquoted_application() -> None:
 @given(parsers.re(r'I am "[^"]*"$'))
 @when(parsers.re(r'I am "[^"]*"$'))
 def _almost_i_am() -> None:
-    raise ValueError("Almost: say 'the authenticated user is \"...\"'")
+    raise ValueError(
+        "Almost: say '\"...\" is an authenticated user', then start each "
+        "step that calls as them with 'as \"...\"'"
+    )
 
 
-@given('the user is anonymous')
-@when('the user is anonymous')
+@given(parsers.re(r'the authenticated user is "[^"]*"$'))
+@when(parsers.re(r'the authenticated user is "[^"]*"$'))
+def _almost_the_authenticated_user_is() -> None:
+    raise ValueError(
+        "Almost: say '\"...\" is an authenticated user', then start each "
+        "step that calls as them with 'as \"...\"'; a step without "
+        "'as \"...\"' calls anonymously"
+    )
+
+
+@given(parsers.re(r'the bearer token is "[^"]*"$'))
+@when(parsers.re(r'the bearer token is "[^"]*"$'))
+def _almost_the_bearer_token_is() -> None:
+    raise ValueError(
+        "Almost: say '\"...\" has the bearer token \"...\"', naming the "
+        "user, then start each step that calls as them with 'as \"...\"'"
+    )
+
+
+@given(parsers.re(r'the user is (?:anonymous|unauthenticated)$'))
+@when(parsers.re(r'the user is (?:anonymous|unauthenticated)$'))
 def _almost_anonymous() -> None:
-    raise ValueError("Almost: say 'the user is unauthenticated'")
+    raise ValueError(
+        "Almost: no step declares that; a step without 'as \"...\"' "
+        "calls anonymously"
+    )
 
 
 @given(parsers.re(r'.+ eventually has .+$'))
@@ -1272,8 +1309,10 @@ def _almost_predicate_in_call_with() -> None:
 # A clause list with no backticks at all, and one whose backticks do
 # not pair up (a leading backtick followed by zero or more closed
 # pairs leaves one unclosed): every valid clause list pairs its
-# backticks, so both shapes are disjoint from every step above.
-_UNBACKTICKED_CLAUSES = r'[^`]+'
+# backticks, so both shapes are disjoint from every step above. The
+# one step whose 'has' is followed by no clauses, '"admin" has the
+# bearer token "..."', is left out.
+_UNBACKTICKED_CLAUSES = r'(?!the bearer token ")[^`]+'
 _UNCLOSED_CLAUSES = r'`[^`]*(?:`[^`]*`[^`]*)*'
 
 

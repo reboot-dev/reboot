@@ -16,8 +16,6 @@ from rbt.v1alpha1.bdd.grammar_pb2 import (
     Assignment,
     AttemptAbortsWith,
     Attempts,
-    AuthenticatedUserIs,
-    BearerTokenIs,
     BuiltInSyntax,
     Containing,
     Equals,
@@ -25,7 +23,9 @@ from rbt.v1alpha1.bdd.grammar_pb2 import (
     Gets,
     GetsCreatedVia,
     Has,
+    HasBearerToken,
     HasSavedAs,
+    IsAnAuthenticatedUser,
     OfLength,
     ResultHas,
     ResultingIsSavedAs,
@@ -33,7 +33,6 @@ from rbt.v1alpha1.bdd.grammar_pb2 import (
     SharedContext,
     State,
     TaskCompletes,
-    UserIsUnauthenticated,
     Value,
 )
 from typing import Optional
@@ -120,6 +119,10 @@ MIXED_CLAUSES = (
 # on.
 STATE = r'the `(?P<state_type>[\w.]+)` for "(?P<state_id>[^"]*)"'
 
+# The user a step calls as, 'as "alice" ' at the step's start; a step
+# without it calls anonymously.
+AS = r'(?:as "(?P<user>[^"]*)" )?'
+
 # A step's optional trailing property list.
 PROPERTIES = rf'(?: with (?P<clauses>{PROPERTY_CLAUSES}))?'
 
@@ -127,37 +130,38 @@ PROPERTIES = rf'(?: with (?P<clauses>{PROPERTY_CLAUSES}))?'
 # with pytest-bdd, and what `read` reads a step by. Named for the
 # phrase that distinguishes the step.
 APPLICATION_IS_UP = r'the (?:"(?P<name>[^"]*)" )?application is up$'
-AUTHENTICATED_USER_IS = r'the authenticated user is "(?P<user_id>[^"]*)"$'
-USER_IS_UNAUTHENTICATED = 'the user is unauthenticated'
-BEARER_TOKEN_IS = r'the bearer token is "(?P<bearer_token>[^"]*)"$'
-SHARED_CONTEXT = 'a shared context'
+IS_AN_AUTHENTICATED_USER = r'"(?P<user_id>[^"]*)" is an authenticated user$'
+HAS_BEARER_TOKEN = (
+    r'"(?P<user_id>[^"]*)" has the bearer token "(?P<bearer_token>[^"]*)"$'
+)
+SHARED_CONTEXT = rf'{AS}a shared context$'
 GETS_CREATED_VIA = (
-    r'(?:a|an) `(?P<state_type>[\w.]+)` for "(?P<state_id>[^"]*)" '
+    rf'{AS}(?:a|an) `(?P<state_type>[\w.]+)` for "(?P<state_id>[^"]*)" '
     rf'gets created via `(?P<method>\w+)`{PROPERTIES}$'
 )
 GETS = (
-    rf'{STATE} gets (?:a|an) `(?P<method>\w+)`{PROPERTIES}'
+    rf'{AS}{STATE} gets (?:a|an) `(?P<method>\w+)`{PROPERTIES}'
     r'(?: spawned with its task id saved as `(?P<task>\w+)`)?$'
 )
-ATTEMPTS = rf'{STATE} attempts (?:a|an) `(?P<method>\w+)`{PROPERTIES}$'
+ATTEMPTS = rf'{AS}{STATE} attempts (?:a|an) `(?P<method>\w+)`{PROPERTIES}$'
 TASK_COMPLETES = (
-    r'the `(?P<method>\w+)` task with id "<(?P<name>\w+)>" '
+    rf'{AS}the `(?P<method>\w+)` task with id "<(?P<name>\w+)>" '
     r'of the `(?P<state_type>[\w.]+)` completes within (?P<within>.+)$'
 )
 ATTEMPT_ABORTS_WITH = (
     r'the attempt aborts with `(?P<error_type>\w+)`'
     rf'(?: with (?P<clauses>{ASSERT_CLAUSES}))?$'
 )
-HAS = rf'`(?P<method>\w+)` on {STATE} has (?P<clauses>{ASSERT_CLAUSES})$'
+HAS = rf'{AS}`(?P<method>\w+)` on {STATE} has (?P<clauses>{ASSERT_CLAUSES})$'
 EVENTUALLY_HAS = (
-    rf'`(?P<method>\w+)` on {STATE} '
+    rf'{AS}`(?P<method>\w+)` on {STATE} '
     rf'eventually has (?P<clauses>{ASSERT_CLAUSES}) within (?P<within>.+)$'
 )
 HAS_SAVED_AS = (
-    rf'`(?P<method>\w+)` on {STATE} has (?P<clauses>{SAVE_CLAUSES})$'
+    rf'{AS}`(?P<method>\w+)` on {STATE} has (?P<clauses>{SAVE_CLAUSES})$'
 )
 ABORTS_WITH = (
-    rf'`(?P<method>\w+)` on {STATE} aborts with `(?P<error_type>\w+)`'
+    rf'{AS}`(?P<method>\w+)` on {STATE} aborts with `(?P<error_type>\w+)`'
     rf'(?: with (?P<clauses>{ASSERT_CLAUSES}))?$'
 )
 RESULT_HAS = rf'the result has (?P<clauses>{ASSERT_CLAUSES})$'
@@ -265,22 +269,24 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
         if match['name'] is not None:
             application_is_up.name = match['name']
         return BuiltInSyntax(application_is_up=application_is_up)
-    match = re.match(AUTHENTICATED_USER_IS, text)
+    match = re.match(IS_AN_AUTHENTICATED_USER, text)
     if match is not None:
         return BuiltInSyntax(
-            authenticated_user_is=AuthenticatedUserIs(
+            is_an_authenticated_user=IsAnAuthenticatedUser(
                 user_id=match['user_id']
             )
         )
-    if text == USER_IS_UNAUTHENTICATED:
-        return BuiltInSyntax(user_is_unauthenticated=UserIsUnauthenticated())
-    match = re.match(BEARER_TOKEN_IS, text)
+    match = re.match(HAS_BEARER_TOKEN, text)
     if match is not None:
         return BuiltInSyntax(
-            bearer_token_is=BearerTokenIs(bearer_token=match['bearer_token'])
+            has_bearer_token=HasBearerToken(
+                user_id=match['user_id'],
+                bearer_token=match['bearer_token'],
+            )
         )
-    if text == SHARED_CONTEXT:
-        return BuiltInSyntax(shared_context=SharedContext())
+    match = re.match(SHARED_CONTEXT, text)
+    if match is not None:
+        return BuiltInSyntax(shared_context=SharedContext(user=match['user']))
     match = re.match(GETS_CREATED_VIA, text)
     if match is not None:
         return BuiltInSyntax(
@@ -288,6 +294,7 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
                 state=_state(match),
                 method=match['method'],
                 assignments=_assignments(match['clauses']),
+                user=match['user'],
             )
         )
     match = re.match(GETS, text)
@@ -296,6 +303,7 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
             state=_state(match),
             method=match['method'],
             assignments=_assignments(match['clauses']),
+            user=match['user'],
         )
         if match['task'] is not None:
             gets.task_id_saved_as = match['task']
@@ -307,6 +315,7 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
                 state=_state(match),
                 method=match['method'],
                 assignments=_assignments(match['clauses']),
+                user=match['user'],
             )
         )
     match = re.match(TASK_COMPLETES, text)
@@ -320,6 +329,7 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
                 task_id_saved_as=match['name'],
                 state_type=match['state_type'],
                 seconds=seconds,
+                user=match['user'],
             )
         )
     match = re.match(ATTEMPT_ABORTS_WITH, text)
@@ -337,6 +347,7 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
                 method=match['method'],
                 state=_state(match),
                 assertions=_assertions(match['clauses']),
+                user=match['user'],
             )
         )
     match = re.match(EVENTUALLY_HAS, text)
@@ -350,6 +361,7 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
                 state=_state(match),
                 assertions=_assertions(match['clauses']),
                 seconds=seconds,
+                user=match['user'],
             )
         )
     match = re.match(HAS_SAVED_AS, text)
@@ -359,6 +371,7 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
                 method=match['method'],
                 state=_state(match),
                 saves=_saves(match['clauses']),
+                user=match['user'],
             )
         )
     match = re.match(ABORTS_WITH, text)
@@ -369,6 +382,7 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
                 state=_state(match),
                 error_type=match['error_type'],
                 assertions=_assertions(match['clauses']),
+                user=match['user'],
             )
         )
     match = re.match(RESULT_HAS, text)

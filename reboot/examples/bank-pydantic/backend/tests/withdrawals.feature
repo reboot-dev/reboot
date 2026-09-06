@@ -4,7 +4,6 @@ Feature: Withdrawing from an account
 
   Background:
     Given the application is up
-    And the user is unauthenticated
 
   Scenario: Withdrawing part of the balance leaves the rest
     Given an `Account` for "part-account" gets created via `open`

@@ -165,36 +165,68 @@ class World:
     # or `None` if that call succeeded.
     aborted: Optional[Aborted] = None
 
-    # The bearer token every context created from here on carries;
-    # `None` calls unauthenticated.
-    bearer_token: Optional[str] = None
+    # The bearer token of each user the scenario has declared, by
+    # user id; a step says 'as "user id"' to call as one.
+    tokens: dict[str, str] = field(default_factory=dict)
 
-    # Whether the scenario has said who calls, authenticated or
-    # not; every call requires it.
-    user_declared: bool = False
+    # The user the shared context calls as, once one exists; `None`
+    # for one that calls anonymously.
+    shared_user: Optional[str] = None
 
-    def context(self) -> ExternalContext:
-        """The context for one step's call: the scenario's shared
-        context once a 'Given a shared context' step has created it,
-        otherwise a fresh context."""
+    def context(self, user: Optional[str] = None) -> ExternalContext:
+        """The context for one step's call as the given user, or
+        anonymously for `None`: the scenario's shared context once a
+        'Given a shared context' step has created it, which must be
+        for the same user, otherwise a fresh context."""
         if self.shared_context is not None:
+            if user != self.shared_user:
+                raise ValueError(
+                    "The shared context calls as " +
+                    self._user_description(self.shared_user) +
+                    ", so this step cannot call as " +
+                    self._user_description(user)
+                )
             return self.shared_context
         if self.rbt is None:
             raise ValueError(
                 "The application is not up; start the scenario with "
                 "'Given the application is up'"
             )
-        if not self.user_declared:
-            raise ValueError(
-                "The scenario has not declared a user; say 'Given "
-                'the authenticated user is "..."\' or \'Given the '
-                "user is unauthenticated'"
-            )
         self.contexts_created += 1
         return self.rbt.create_external_context(
             name=f"{self.name}-{self.contexts_created}",
-            bearer_token=self.bearer_token,
+            bearer_token=self.token(user),
         )
+
+    @staticmethod
+    def _user_description(user: Optional[str]) -> str:
+        return 'nobody' if user is None else f'"{user}"'
+
+    def token(self, user: Optional[str]) -> Optional[str]:
+        """The bearer token of the named user, `None` for the
+        anonymous user; raises for a user the scenario has not
+        declared."""
+        if user is None:
+            return None
+        token = self.tokens.get(user)
+        if token is None:
+            raise ValueError(
+                f'"{user}" is not a user the scenario has declared; say '
+                f'\'Given "{user}" is an authenticated user\' or '
+                f'\'Given "{user}" has the bearer token "..."\' first'
+            )
+        return token
+
+    def declare_user(self, user_id: str, bearer_token: str) -> None:
+        """Declares a user the scenario's steps may call as, by the
+        bearer token their calls carry."""
+        self.tokens[user_id] = bearer_token
+
+    def share_context(self, user: Optional[str]) -> None:
+        """Makes every call from here on share one context, calling
+        as the given user, or anonymously for `None`."""
+        self.shared_context = self.context(user)
+        self.shared_user = user
 
     def save(self, name: str, value: JsonValue) -> None:
         """Saves the value under the name, for later steps to say
@@ -207,20 +239,6 @@ class World:
                 "one; save it under another name"
             )
         self.saved[name] = value
-
-    def set_bearer_token(self, bearer_token: Optional[str]) -> None:
-        """Sets the bearer token every context created from here on
-        carries, `None` for unauthenticated, satisfying the say-who-
-        calls requirement either way; raises once a shared context
-        exists, which keeps the token it was created with."""
-        if self.shared_context is not None:
-            raise ValueError(
-                "The shared context already carries an identity; say "
-                "who the authenticated user is before 'Given a "
-                "shared context'"
-            )
-        self.bearer_token = bearer_token
-        self.user_declared = True
 
     def client_type(self, state_type: str) -> Any:
         """The generated client class of the named state type, named
@@ -314,18 +332,20 @@ class World:
         state_id: str,
         method: str,
         assignments: Union[dict[str, JsonValue], list[Assignment]],
+        user: Optional[str] = None,
     ) -> Any:
-        """Spawns the named method as a task on the named state,
-        using the specified `assignments` to create a request, and
-        returns the task handle to await for its response."""
+        """Spawns the named method as a task on the named state, as
+        the given user or anonymously, using the specified
+        `assignments` to create a request, and returns the task
+        handle to await for its response."""
         reference = self.client_type(state_type).ref(state_id)
         spawn = getattr(reference.spawn(), method, None)
         if not callable(spawn):
             raise ValueError(f"`{state_type}` has no method `{method}`")
         if not assignments:
-            return await spawn(self.context())
+            return await spawn(self.context(user))
         return await spawn(
-            self.context(),
+            self.context(user),
             self.request(
                 state_type=state_type,
                 method=method,
@@ -483,17 +503,19 @@ class World:
         state_id: str,
         method: str,
         assignments: Union[dict[str, JsonValue], list[Assignment]],
+        user: Optional[str] = None,
     ) -> Any:
-        """Returns the response from calling the named method on the named
-        state using the specified `assignments` to create a request."""
+        """Returns the response from calling the named method on the
+        named state, as the given user or anonymously, using the
+        specified `assignments` to create a request."""
         reference = self.client_type(state_type).ref(state_id)
         method_callable = getattr(reference, method, None)
         if not callable(method_callable):
             raise ValueError(f"`{state_type}` has no method `{method}`")
         if not assignments:
-            return await method_callable(self.context())
+            return await method_callable(self.context(user))
         return await method_callable(
-            self.context(),
+            self.context(user),
             self.request(
                 state_type=state_type,
                 method=method,

@@ -2,7 +2,6 @@ Feature: Accounts
 
   Background:
     Given the application is up
-    And the user is unauthenticated
 
   Scenario: Depositing and withdrawing move the balance
     Given an `Account` for "alice" gets created via `open` with `customer_name="Alice"`

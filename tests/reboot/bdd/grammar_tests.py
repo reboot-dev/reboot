@@ -178,17 +178,57 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(syntax.WhichOneof('step'), 'application_is_up')
         self.assertFalse(syntax.application_is_up.HasField('name'))
 
-        syntax = parse('the authenticated user is "alice"')
+        syntax = parse('"alice" is an authenticated user')
         assert syntax is not None
-        self.assertEqual(syntax.authenticated_user_is.user_id, 'alice')
+        self.assertEqual(syntax.is_an_authenticated_user.user_id, 'alice')
 
-        syntax = parse('the user is unauthenticated')
+        syntax = parse('"admin" has the bearer token "S3CR3T!"')
         assert syntax is not None
-        self.assertEqual(syntax.WhichOneof('step'), 'user_is_unauthenticated')
+        self.assertEqual(syntax.has_bearer_token.user_id, 'admin')
+        self.assertEqual(syntax.has_bearer_token.bearer_token, 'S3CR3T!')
 
-        syntax = parse('the bearer token is "S3CR3T!"')
+        syntax = parse('a shared context')
         assert syntax is not None
-        self.assertEqual(syntax.bearer_token_is.bearer_token, 'S3CR3T!')
+        self.assertEqual(syntax.WhichOneof('step'), 'shared_context')
+        self.assertFalse(syntax.shared_context.HasField('user'))
+
+        syntax = parse('as "alice" a shared context')
+        assert syntax is not None
+        self.assertEqual(syntax.shared_context.user, 'alice')
+
+    def test_a_step_names_who_calls(self) -> None:
+        """A step starting 'as "..."' calls as that user; one without
+        calls anonymously."""
+        syntax = parse(
+            'as "alice" the `Account` for "a" gets a `deposit` with '
+            '`amount=1`'
+        )
+        assert syntax is not None
+        self.assertEqual(syntax.gets.user, 'alice')
+        self.assertEqual(syntax.gets.state.id, 'a')
+
+        syntax = parse(
+            'the `Account` for "a" gets a `deposit` with `amount=1`'
+        )
+        assert syntax is not None
+        self.assertFalse(syntax.gets.HasField('user'))
+
+        syntax = parse(
+            'as "bob" `balance` on the `Account` for "a" has `balance=1`'
+        )
+        assert syntax is not None
+        self.assertEqual(syntax.has.user, 'bob')
+
+        syntax = parse(
+            'as "bob" `balance` on the `Account` for "a" aborts with '
+            '`PermissionDenied`'
+        )
+        assert syntax is not None
+        self.assertEqual(syntax.aborts_with.user, 'bob')
+
+        syntax = parse('as "bob" an `Account` for "a" gets created via `open`')
+        assert syntax is not None
+        self.assertEqual(syntax.gets_created_via.user, 'bob')
 
     def test_a_step_the_grammar_does_not_define_is_none(self) -> None:
         self.assertIsNone(parse('the welcome email was sent'))

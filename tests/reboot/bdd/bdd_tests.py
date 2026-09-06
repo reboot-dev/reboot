@@ -12,7 +12,6 @@ import re
 from pytest_bdd import parsers, scenarios
 from reboot.aio.applications import Application
 from reboot.aio.external import ExternalContext
-from reboot.aio.tests import Reboot
 from reboot.bdd import when
 from reboot.bdd.fixtures import JsonValue, PropertyPath, World
 from reboot.bdd.grammar import (
@@ -41,10 +40,10 @@ from reboot.bdd.steps import (
     _almost_within_needs_eventually,
     _assert_aborted,
     _assert_properties,
+    _has_bearer_token,
     _parse_assertions,
     _parse_assignments,
     _parse_saves,
-    _the_bearer_token_is,
 )
 from tests.reboot.bdd.account_pb2 import (
     BalanceResponse,
@@ -95,30 +94,32 @@ def test_is_reader() -> None:
     assert not world.is_reader(state_type='Account', method='deposit')
 
 
-def test_the_bearer_token_is() -> None:
+def test_has_bearer_token() -> None:
     world = World()
-    _the_bearer_token_is(world, 'admin-key')
-    assert world.bearer_token == 'admin-key'
+    _has_bearer_token(world, 'admin', 'admin-key')
+    assert world.token('admin') == 'admin-key'
     world.saved['token'] = 'saved-key'
-    _the_bearer_token_is(world, '<token>')
-    assert world.bearer_token == 'saved-key'
+    _has_bearer_token(world, 'other', '<token>')
+    assert world.token('other') == 'saved-key'
 
 
-def test_context_requires_user_declared() -> None:
-    world = World(rbt=cast(Reboot, object()), name='test')
-    with pytest.raises(ValueError, match="has not declared a user"):
-        world.context()
-    world.set_bearer_token(None)
-    assert world.user_declared
-
-
-def test_set_bearer_token_guard() -> None:
+def test_token_of_an_undeclared_user() -> None:
     world = World()
-    world.set_bearer_token('token')
-    assert world.bearer_token == 'token'
+    assert world.token(None) is None
+    with pytest.raises(ValueError, match='"bob" is not a user the scenario'):
+        world.token('bob')
+
+
+def test_shared_context_calls_as_one_user() -> None:
+    world = World()
+    world.declare_user('alice', 'token')
     world.shared_context = cast(ExternalContext, object())
-    with pytest.raises(ValueError, match="before 'Given a shared context'"):
-        world.set_bearer_token('other')
+    world.shared_user = 'alice'
+    assert world.context('alice') is world.shared_context
+    with pytest.raises(ValueError, match='cannot call as nobody'):
+        world.context()
+    with pytest.raises(ValueError, match='cannot call as "bob"'):
+        world.context('bob')
 
 
 def test_clause_grammar_routing() -> None:

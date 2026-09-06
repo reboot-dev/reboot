@@ -177,6 +177,13 @@ const spansOfValue = (value: grammar_pb.Value | undefined): Span[] =>
 
 const spansOfStateId = (id: string): Span[] => spansOfText(id, "state-id");
 
+// The 'as "alice"' a step starts with when it calls as a user; nothing
+// for a step that calls anonymously.
+const spansOfUser = (user: string | undefined): Span[] =>
+  user === undefined
+    ? []
+    : [text("as "), { text: `"${user}"`, role: "user" }, text(" ")];
+
 // 'the `Account` for "alice"', as the grammar's `STATE` phrase.
 const spansOfState = (state: grammar_pb.State | undefined): Span[] => [
   text("the "),
@@ -264,32 +271,31 @@ export const printBuiltInSyntax = (
         clauses: [],
         tail: [],
       };
-    case "authenticatedUserIs":
+    case "isAnAuthenticatedUser":
       return {
         head: [
-          text("the authenticated user is "),
           { text: `"${step.value.userId}"`, role: "user" },
+          text(" is an authenticated user"),
         ],
         clauses: [],
         tail: [],
       };
-    case "userIsUnauthenticated":
-      return {
-        head: [text("the user is unauthenticated")],
-        clauses: [],
-        tail: [],
-      };
-    case "bearerTokenIs":
+    case "hasBearerToken":
       return {
         head: [
-          text("the bearer token is "),
+          { text: `"${step.value.userId}"`, role: "user" },
+          text(" has the bearer token "),
           { text: `"${step.value.bearerToken}"`, role: "value" },
         ],
         clauses: [],
         tail: [],
       };
     case "sharedContext":
-      return { head: [text("a shared context")], clauses: [], tail: [] };
+      return {
+        head: [...spansOfUser(step.value.user), text("a shared context")],
+        clauses: [],
+        tail: [],
+      };
     case "getsCreatedVia": {
       const state = step.value.state;
       const article = articleOf(state?.type ?? "");
@@ -299,6 +305,7 @@ export const printBuiltInSyntax = (
       );
       return {
         head: [
+          ...spansOfUser(step.value.user),
           text(article),
           { text: state?.type ?? "", role: "state-type" },
           text(" for "),
@@ -318,6 +325,7 @@ export const printBuiltInSyntax = (
       );
       return {
         head: [
+          ...spansOfUser(step.value.user),
           ...spansOfState(step.value.state),
           text(` gets ${articleOf(step.value.method)}`),
           { text: step.value.method, role: "method" },
@@ -340,6 +348,7 @@ export const printBuiltInSyntax = (
       );
       return {
         head: [
+          ...spansOfUser(step.value.user),
           ...spansOfState(step.value.state),
           text(` attempts ${articleOf(step.value.method)}`),
           { text: step.value.method, role: "method" },
@@ -352,6 +361,7 @@ export const printBuiltInSyntax = (
     case "taskCompletes":
       return {
         head: [
+          ...spansOfUser(step.value.user),
           text("the "),
           { text: step.value.method, role: "method" },
           text(" task with id "),
@@ -382,6 +392,7 @@ export const printBuiltInSyntax = (
     case "has":
       return {
         head: [
+          ...spansOfUser(step.value.user),
           { text: step.value.method, role: "method" },
           text(" on "),
           ...spansOfState(step.value.state),
@@ -393,6 +404,7 @@ export const printBuiltInSyntax = (
     case "eventuallyHas":
       return {
         head: [
+          ...spansOfUser(step.value.user),
           { text: step.value.method, role: "method" },
           text(" on "),
           ...spansOfState(step.value.state),
@@ -404,6 +416,7 @@ export const printBuiltInSyntax = (
     case "hasSavedAs":
       return {
         head: [
+          ...spansOfUser(step.value.user),
           { text: step.value.method, role: "method" },
           text(" on "),
           ...spansOfState(step.value.state),
@@ -419,6 +432,7 @@ export const printBuiltInSyntax = (
       );
       return {
         head: [
+          ...spansOfUser(step.value.user),
           { text: step.value.method, role: "method" },
           text(" on "),
           ...spansOfState(step.value.state),

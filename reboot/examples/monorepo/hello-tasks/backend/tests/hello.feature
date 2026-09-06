@@ -2,7 +2,6 @@ Feature: Hello with tasks
 
   Background:
     Given the application is up
-    And the user is unauthenticated
 
   Scenario: Sent messages get a warning and then erase
     When the `Hello` for "testing-hello" gets a `send` with `message="Hello, World!"`

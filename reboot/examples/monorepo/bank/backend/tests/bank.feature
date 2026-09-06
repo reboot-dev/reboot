@@ -2,7 +2,6 @@ Feature: Bank
 
   Background:
     Given the application is up
-    And the user is unauthenticated
 
   Scenario: Signing up opens an account
     When the `Bank` for "my-bank" gets a `sign_up` with `customer_name="Alice"`
