@@ -27,7 +27,7 @@ from reboot.bdd.steps import (
     Equals,
     OfLength,
     _almost_asserting_under_given_or_when,
-    _almost_completes_needs_within,
+    _almost_awaits_needs_within,
     _almost_eventually_needs_within,
     _almost_eventually_under_given_or_when,
     _almost_missing_backticks,
@@ -71,8 +71,8 @@ def two_accounts_application() -> Application:
 # generated code directly.
 @when(
     parsers.parse(
-        'as "{user}", the `Account` for "{state_id}" gets {count:d} deposits '
-        'of {amount:d}'
+        '"{user}" does {count:d} deposits of {amount:d} on `Account` of '
+        '"{state_id}"'
     )
 )
 async def _makes_deposits(
@@ -208,7 +208,7 @@ def test_almost_steps_raise() -> None:
     with pytest.raises(ValueError, match="say how long"):
         _almost_eventually_needs_within()
     with pytest.raises(ValueError, match="how long to wait for the task"):
-        _almost_completes_needs_within()
+        _almost_awaits_needs_within()
     with pytest.raises(ValueError, match="goes with 'eventually has'"):
         _almost_within_needs_eventually()
     with pytest.raises(ValueError, match="asserts, under a Then"):

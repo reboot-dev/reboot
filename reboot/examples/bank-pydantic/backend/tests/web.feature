@@ -21,9 +21,9 @@ Feature: Opening an account from the web app
   Rule: A transfer made in the browser moves the money at the bank
 
     Scenario: Transferring between two of the customer's accounts
-      Given as "alice", the `User` for "alice" gets an `open_account` with `initial_deposit=1000.0`
+      Given "alice" does an `open_account` on `User` of "alice" with `initial_deposit=1000.0`
       And the resulting `account_id` is saved as `first_account_id`
-      And as "alice", the `User` for "alice" gets an `open_account` with `initial_deposit=0.0`
+      And "alice" does an `open_account` on `User` of "alice" with `initial_deposit=0.0`
       And the resulting `account_id` is saved as `second_account_id`
       When "alice" opens the web app
       And "alice" selects "<first_account_id>" in "From Account" in the web app
@@ -55,9 +55,9 @@ Feature: Opening an account from the web app
 
     Scenario: Two customers in the app at once
       Given "carol" is an authenticated user
-      And as "alice", the `User` for "alice" gets an `open_account` with `initial_deposit=100.0`
+      And "alice" does an `open_account` on `User` of "alice" with `initial_deposit=100.0`
       And the resulting `account_id` is saved as `alice_account_id`
-      And as "carol", the `User` for "carol" gets an `open_account` with `initial_deposit=200.0`
+      And "carol" does an `open_account` on `User` of "carol" with `initial_deposit=200.0`
       And the resulting `account_id` is saved as `carol_account_id`
       When "alice" opens the web app
       And "carol" opens the web app

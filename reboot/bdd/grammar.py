@@ -16,16 +16,17 @@ from rbt.v1alpha1.bdd.grammar_pb2 import (
     Assignment,
     AttemptAbortsWith,
     Attempts,
+    AwaitsTask,
     BuiltInSyntax,
     ChecksInWebApp,
     ClicksInWebApp,
     Containing,
+    CreatesVia,
+    Does,
     Element,
     Equals,
     EventuallyHas,
     FillsInWebApp,
-    Gets,
-    GetsCreatedVia,
     Has,
     HasBearerToken,
     HasSavedAs,
@@ -46,7 +47,6 @@ from rbt.v1alpha1.bdd.grammar_pb2 import (
     SelectsInWebApp,
     SharedContext,
     State,
-    TaskCompletes,
     Value,
 )
 from typing import Optional
@@ -129,14 +129,17 @@ MIXED_CLAUSES = (
     rf'{CLAUSE}(?:{SEPARATOR}{CLAUSE})*'
 )
 
-# The 'the `Account` for "alice"' phrase naming the state a step acts
-# on.
+# The 'the `Account` for "alice"' phrase naming the state a read is
+# of, and the 'on `Account` of "alice"' phrase naming the state a call
+# is on.
 STATE = r'the `(?P<state_type>[\w.]+)` for "(?P<state_id>[^"]*)"'
+ON_STATE = r'on `(?P<state_type>[\w.]+)` of "(?P<state_id>[^"]*)"'
 
-# The user a step calls as, 'as "alice", ' at the step's start, the
-# comma setting the caller off from the call: every step that calls
-# says who, a user the scenario declared authenticated or not.
+# Who a step calls as, a user the scenario declared authenticated or
+# not: a call starts with the user, '"alice" does ...', and a read
+# with 'as "alice", ', the comma setting the reader off from the read.
 AS = r'as "(?P<user>[^"]*)", '
+USER = r'"(?P<user>[^"]*)"'
 
 # A step's optional trailing property list.
 PROPERTIES = rf'(?: with (?P<clauses>{PROPERTY_CLAUSES}))?'
@@ -151,18 +154,21 @@ HAS_BEARER_TOKEN = (
 )
 IS_AN_UNAUTHENTICATED_USER = r'"(?P<user_id>[^"]*)" is an unauthenticated user$'
 SHARED_CONTEXT = rf'{AS}a shared context$'
-GETS_CREATED_VIA = (
-    rf'{AS}(?:a|an) `(?P<state_type>[\w.]+)` for "(?P<state_id>[^"]*)" '
-    rf'gets created via `(?P<method>\w+)`{PROPERTIES}$'
+CREATES_VIA = (
+    rf'{USER} creates (?:a|an) `(?P<state_type>[\w.]+)` of '
+    rf'"(?P<state_id>[^"]*)" via `(?P<method>\w+)`{PROPERTIES}$'
 )
-GETS = (
-    rf'{AS}{STATE} gets (?:a|an) `(?P<method>\w+)`{PROPERTIES}'
-    r'(?: spawned with its task id saved as `(?P<task>\w+)`)?$'
+# 'does' calls and 'spawns' runs the call as a task, saving its id.
+DOES = (
+    rf'{USER} (?P<verb>does|spawns) (?:a|an) `(?P<method>\w+)` {ON_STATE}'
+    rf'{PROPERTIES}(?: and saves its task id as `(?P<task>\w+)`)?$'
 )
-ATTEMPTS = rf'{AS}{STATE} attempts (?:a|an) `(?P<method>\w+)`{PROPERTIES}$'
-TASK_COMPLETES = (
-    rf'{AS}the `(?P<method>\w+)` task with id "<(?P<name>\w+)>" '
-    r'of the `(?P<state_type>[\w.]+)` completes within (?P<within>.+)$'
+ATTEMPTS = (
+    rf'{USER} attempts (?:a|an) `(?P<method>\w+)` {ON_STATE}{PROPERTIES}$'
+)
+AWAITS_TASK = (
+    rf'{USER} awaits the `(?P<method>\w+)` task "<(?P<name>\w+)>" on '
+    r'`(?P<state_type>[\w.]+)` within (?P<within>.+)$'
 )
 ATTEMPT_ABORTS_WITH = (
     r'the attempt aborts with `(?P<error_type>\w+)`'
@@ -183,7 +189,6 @@ ABORTS_WITH = (
 RESULT_HAS = rf'the result has (?P<clauses>{ASSERT_CLAUSES})$'
 
 # The web app's steps: what a named user does in it and sees in it.
-USER = r'"(?P<user>[^"]*)"'
 # What an element may be, as a step writes it: each of `Element.Role`
 # in lower case, so that the proto is the one list.
 ROLES = tuple(
@@ -363,27 +368,30 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
     match = re.match(SHARED_CONTEXT, text)
     if match is not None:
         return BuiltInSyntax(shared_context=SharedContext(user=match['user']))
-    match = re.match(GETS_CREATED_VIA, text)
+    match = re.match(CREATES_VIA, text)
     if match is not None:
         return BuiltInSyntax(
-            gets_created_via=GetsCreatedVia(
+            creates_via=CreatesVia(
                 state=_state(match),
                 method=match['method'],
                 assignments=_assignments(match['clauses']),
                 user=match['user'],
             )
         )
-    match = re.match(GETS, text)
+    match = re.match(DOES, text)
     if match is not None:
-        gets = Gets(
+        # A spawned call saves its task id, and only a spawned one.
+        if (match['verb'] == 'spawns') != (match['task'] is not None):
+            return None
+        does = Does(
             state=_state(match),
             method=match['method'],
             assignments=_assignments(match['clauses']),
             user=match['user'],
         )
         if match['task'] is not None:
-            gets.task_id_saved_as = match['task']
-        return BuiltInSyntax(gets=gets)
+            does.task_id_saved_as = match['task']
+        return BuiltInSyntax(does=does)
     match = re.match(ATTEMPTS, text)
     if match is not None:
         return BuiltInSyntax(
@@ -394,13 +402,13 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
                 user=match['user'],
             )
         )
-    match = re.match(TASK_COMPLETES, text)
+    match = re.match(AWAITS_TASK, text)
     if match is not None:
         seconds = _seconds(match['within'])
         if seconds is None:
             return None
         return BuiltInSyntax(
-            task_completes=TaskCompletes(
+            awaits_task=AwaitsTask(
                 method=match['method'],
                 task_id_saved_as=match['name'],
                 state_type=match['state_type'],

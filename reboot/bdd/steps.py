@@ -37,26 +37,27 @@ value's type parses it as. A dotted path nests when calling, e.g.
 
     Given the application is up
     And "alice" is an authenticated user
-    And as "alice", an `Account` for "alice" gets created via `open`
-    When as "alice", the `Account` for "alice" gets a `deposit` with
+    And "alice" creates an `Account` of "alice" via `open`
+    When "alice" does a `deposit` on `Account` of "alice" with
       `amount=50`
     Then as "alice", `balance` on the `Account` for "alice" has
       `balance=50`
 
-Every step that calls says who calls: it starts 'as "alice",', naming
-a user the scenario declared with 'Given "alice" is an authenticated
-user', which mints a test token for that user ID, 'Given "admin" has
-the bearer token "..."', which names a user by a raw token, or
-'Given "bob" is an unauthenticated user', whose calls carry no
-token. 'Given as "alice", a shared context' takes the same prefix,
-and every call from then on must name the same user, since the
-context keeps the token it was created with.
+Every step that calls says who calls, a user the scenario declared
+with 'Given "alice" is an authenticated user', which mints a test
+token for that user ID, 'Given "admin" has the bearer token "..."',
+which names a user by a raw token, or 'Given "bob" is an
+unauthenticated user', whose calls carry no token. A call starts
+with the user, '"alice" does ...', and a read with 'as "alice",'.
+'Given as "alice", a shared context' takes the reads' prefix, and
+every call from then on must name the same user, since the context
+keeps the token it was created with.
 
-A call runs as a task instead by saying 'gets a `method` ...
-spawned with its task id saved as `name`'; the task then awaits as
-'the `method` task with id "<name>" of the `Account` completes
-within 10 seconds', recording its response as the result. A task ID
-a response carries saves and awaits the same way.
+A call runs as a task instead by saying '"alice" spawns a `method`
+on ... and saves its task id as `name`'; the task then awaits as
+'"alice" awaits the `method` task "<name>" on `Account` within 10
+seconds', recording its response as the result. A task ID a response
+carries saves and awaits the same way.
 
 A Then 'eventually has' holds a reactive read open until its
 assertions hold, waiting at most its required bound, e.g.:
@@ -65,7 +66,7 @@ assertions hold, waiting at most its required bound, e.g.:
       has `balance=150` within 30 seconds
 
 A Then 'has' asserts and a Given or When 'has' saves, and readers
-are only read that way: 'gets a' and 'attempts a' refuse readers the
+are only read that way: 'does a' and 'attempts a' refuse readers the
 way 'has' refuses writers, and a reader's abort is asserted with
 '`reader` on ... aborts with ...'.
 
@@ -82,8 +83,8 @@ string); a save may not use a column's name:
     When as "alice", `get_owner` on the `Account` for "frank" has
       `owner.name` saved as `owner_name`
     And the resulting `updated_balance` is saved as `balance`
-    And as "alice", the `Account` for "<owner_name>" gets a `deposit`
-      with `amount=1`
+    And "alice" does a `deposit` on `Account` of "<owner_name>" with
+      `amount=1`
 """
 
 # The step functions below take the `rbt` and `world`
@@ -129,11 +130,12 @@ from reboot.bdd.grammar import (
     ASSERT_CLAUSES,
     ATTEMPT_ABORTS_WITH,
     ATTEMPTS,
+    AWAITS_TASK,
     CLAUSE,
     CONTAINING_PATTERN,
+    CREATES_VIA,
+    DOES,
     EVENTUALLY_HAS,
-    GETS,
-    GETS_CREATED_VIA,
     HAS,
     HAS_BEARER_TOKEN,
     HAS_SAVED_AS,
@@ -151,7 +153,6 @@ from reboot.bdd.grammar import (
     SAVE_PATTERN,
     SEPARATOR,
     SHARED_CONTEXT,
-    TASK_COMPLETES,
 )
 from reboot.bdd.registry import client_types_by_name
 from typing import Any, Optional, Union, get_args, get_origin
@@ -829,9 +830,9 @@ def _a_shared_context(world: World, user: str) -> None:
     world.share_context(user)
 
 
-@given(parsers.re(GETS_CREATED_VIA))
-@when(parsers.re(GETS_CREATED_VIA))
-async def _gets_created_via(
+@given(parsers.re(CREATES_VIA))
+@when(parsers.re(CREATES_VIA))
+async def _creates_via(
     world: World,
     user: str,
     state_type: str,
@@ -857,17 +858,28 @@ async def _gets_created_via(
         ) from aborted
 
 
-@given(parsers.re(GETS))
-@when(parsers.re(GETS))
-async def _gets(
+@given(parsers.re(DOES))
+@when(parsers.re(DOES))
+async def _does(
     world: World,
     user: str,
+    verb: str,
     state_type: str,
     state_id: str,
     method: str,
     clauses: Optional[str],
     task: Optional[str],
 ) -> None:
+    if verb == 'spawns' and task is None:
+        raise ValueError(
+            "Almost: a spawned call saves its task id; end the step with "
+            "'and saves its task id as `...`'"
+        )
+    if verb == 'does' and task is not None:
+        raise ValueError(
+            "Almost: a call that saves its task id is spawned; say "
+            "'spawns' instead of 'does'"
+        )
     if task is not None:
         handle = await world.spawn(
             state_type=state_type,
@@ -881,7 +893,8 @@ async def _gets(
     if world.is_reader(state_type=state_type, method=method):
         raise ValueError(
             f"`{method}` is a reader; read it with "
-            f"'`{method}` on the `{state_type}` for \"...\" has ...'"
+            f"'as \"...\", `{method}` on the `{state_type}` for \"...\" has "
+            "...'"
         )
     try:
         world.response = await world.call(
@@ -893,9 +906,9 @@ async def _gets(
         )
     except Aborted as aborted:
         raise AssertionError(
-            f"The `{state_type}` for \"{state_id}\" getting a "
-            f"`{method}` {aborted}; to assert an expected abort, "
-            "write 'attempts a' with 'Then the attempt aborts with "
+            f"Doing a `{method}` on `{state_type}` of \"{state_id}\" "
+            f"{aborted}; to assert an expected abort, write 'attempts' "
+            "with 'Then the attempt aborts with "
             f"`{type(aborted.error).__name__}`'"
         ) from aborted
 
@@ -912,8 +925,8 @@ async def _attempts(
     if world.is_reader(state_type=state_type, method=method):
         raise ValueError(
             f"`{method}` is a reader; assert its abort with "
-            f"'`{method}` on the `{state_type}` for \"...\" aborts "
-            "with ...'"
+            f"'as \"...\", `{method}` on the `{state_type}` for \"...\" "
+            "aborts with ...'"
         )
     try:
         world.response = await world.call(
@@ -928,9 +941,9 @@ async def _attempts(
         world.aborted = aborted
 
 
-@when(parsers.re(TASK_COMPLETES))
-@then(parsers.re(TASK_COMPLETES))
-async def _the_saved_task_completes(
+@when(parsers.re(AWAITS_TASK))
+@then(parsers.re(AWAITS_TASK))
+async def _awaits_task(
     world: World,
     user: str,
     method: str,
@@ -1002,8 +1015,8 @@ async def _read(
     the method is not a reader."""
     if not world.is_reader(state_type=state_type, method=method):
         raise ValueError(
-            f"`{method}` is not a reader; call it with 'the "
-            f"`{state_type}` for \"...\" gets a `{method}`'"
+            f"`{method}` is not a reader; call it with '\"...\" does a "
+            f"`{method}` on `{state_type}` of \"...\"'"
         )
     try:
         world.response = await world.call(
@@ -1123,8 +1136,8 @@ async def _aborts_with(
     if not world.is_reader(state_type=state_type, method=method):
         raise ValueError(
             f"`{method}` is not a reader; assert its abort with "
-            f"'attempts a `{method}`' and 'the attempt aborts with "
-            "...'"
+            f"'\"...\" attempts a `{method}` on `{state_type}` of \"...\"' "
+            "and 'the attempt aborts with ...'"
         )
     try:
         await world.call(
@@ -1179,9 +1192,9 @@ def _the_resulting_property_is_saved_as(
 # step's tail never matches one of these.
 
 
-@when(parsers.re(r'the `\w+` task with id "<\w+>" of the `[\w.]+` completes$'))
-@then(parsers.re(r'the `\w+` task with id "<\w+>" of the `[\w.]+` completes$'))
-def _almost_completes_needs_within() -> None:
+@when(parsers.re(r'"[^"]*" awaits the `\w+` task "<\w+>" on `[\w.]+`$'))
+@then(parsers.re(r'"[^"]*" awaits the `\w+` task "<\w+>" on `[\w.]+`$'))
+def _almost_awaits_needs_within() -> None:
     raise ValueError(
         "Almost: say how long to wait for the task, e.g. within 10 "
         "seconds"
@@ -1285,17 +1298,31 @@ def _almost_caller_without_comma() -> None:
     )
 
 
-# A calling step written without saying who calls: the shapes the
-# calling steps take, without their 'as "...",' start.
-_CALL_WITHOUT_USER = (
-    r'(?!as ")(?:'
+# A call in its former spelling, the state first and the caller, if
+# any, before it: 'the `Account` for "alice" gets a `deposit`'.
+_CALL_STATE_FIRST = (
+    r'(?:as "[^"]*", )?(?:'
     r'(?:a|an) `[\w.]+` for "[^"]*" gets created via|'
     r'the `[\w.]+` for "[^"]*" (?:gets|attempts) (?:a|an) `|'
-    r'the `\w+` task with id "<\w+>" of the `|'
-    r'`\w+` on the `[\w.]+` for "[^"]*" (?:has|eventually has|aborts with)|'
-    r'a shared context$'
-    r')'
+    r'the `\w+` task with id "<\w+>" of the `'
+    r').*'
 )
+
+
+@given(parsers.re(_CALL_STATE_FIRST))
+@when(parsers.re(_CALL_STATE_FIRST))
+@then(parsers.re(_CALL_STATE_FIRST))
+def _almost_call_state_first() -> None:
+    raise ValueError(
+        "Almost: a call starts with who calls: '\"...\" does a `method` on "
+        "`Type` of \"id\" with ...', '\"...\" creates a `Type` of \"id\" via "
+        "`method`', '\"...\" attempts a `method` on `Type` of \"id\"', or "
+        "'\"...\" awaits the `method` task \"<name>\" on `Type` within ...'"
+    )
+
+
+# A call written without saying who calls.
+_CALL_WITHOUT_USER = r'(?:does|spawns|creates|attempts|awaits) .*'
 
 
 @given(parsers.re(_CALL_WITHOUT_USER))
@@ -1303,7 +1330,27 @@ _CALL_WITHOUT_USER = (
 @then(parsers.re(_CALL_WITHOUT_USER))
 def _almost_call_without_user() -> None:
     raise ValueError(
-        "Almost: say who calls by starting the step with 'as \"...\",', "
+        "Almost: say who calls by starting the step with '\"...\"', naming "
+        "a user the scenario declared, e.g. with '\"...\" is an "
+        "unauthenticated user'"
+    )
+
+
+# A read, or a shared context, written without saying who reads.
+_READ_WITHOUT_USER = (
+    r'(?!as ")(?:'
+    r'`\w+` on the `[\w.]+` for "[^"]*" (?:has|eventually has|aborts with)|'
+    r'a shared context$'
+    r')'
+)
+
+
+@given(parsers.re(_READ_WITHOUT_USER))
+@when(parsers.re(_READ_WITHOUT_USER))
+@then(parsers.re(_READ_WITHOUT_USER))
+def _almost_read_without_user() -> None:
+    raise ValueError(
+        "Almost: say who reads by starting the step with 'as \"...\",', "
         "naming a user the scenario declared, e.g. with '\"...\" is an "
         "unauthenticated user'"
     )

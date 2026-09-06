@@ -23,48 +23,60 @@ class ReadTest(unittest.TestCase):
 
     def test_a_call_with_assignments(self) -> None:
         syntax = parse(
-            'as "u", the `Bank` for "test-bank" gets a `transfer` with '
+            '"u" spawns a `transfer` on `Bank` of "test-bank" with '
             '`from_account_id=<first_account_id>` and `amount=250.0` '
-            'spawned with its task id saved as `transfer_task_id`'
+            'and saves its task id as `transfer_task_id`'
         )
         assert syntax is not None
-        self.assertEqual(syntax.WhichOneof('step'), 'gets')
-        gets = syntax.gets
-        self.assertEqual(gets.state.type, 'Bank')
-        self.assertEqual(gets.state.id, 'test-bank')
-        self.assertEqual(gets.method, 'transfer')
+        self.assertEqual(syntax.WhichOneof('step'), 'does')
+        does = syntax.does
+        self.assertEqual(does.user, 'u')
+        self.assertEqual(does.state.type, 'Bank')
+        self.assertEqual(does.state.id, 'test-bank')
+        self.assertEqual(does.method, 'transfer')
         self.assertEqual(
             [
                 (assignment.path, assignment.value.json)
-                for assignment in gets.assignments
+                for assignment in does.assignments
             ],
             [
                 ('from_account_id', '<first_account_id>'),
                 ('amount', '250.0'),
             ],
         )
-        self.assertEqual(gets.task_id_saved_as, 'transfer_task_id')
+        self.assertEqual(does.task_id_saved_as, 'transfer_task_id')
+
+        syntax = parse('"u" creates an `Account` of "alice" via `open`')
+        assert syntax is not None
+        self.assertEqual(syntax.WhichOneof('step'), 'creates_via')
+        self.assertEqual(syntax.creates_via.user, 'u')
+        self.assertEqual(syntax.creates_via.state.id, 'alice')
+        self.assertEqual(syntax.creates_via.method, 'open')
+        self.assertEqual(len(syntax.creates_via.assignments), 0)
 
         syntax = parse(
-            'as "u", a `Account` for "alice" gets created via `open`'
+            '"u" does a `deposit` on `Account` of "alice" with `amount=1`'
         )
         assert syntax is not None
-        self.assertEqual(syntax.WhichOneof('step'), 'gets_created_via')
-        self.assertEqual(len(syntax.gets_created_via.assignments), 0)
+        self.assertFalse(syntax.does.HasField('task_id_saved_as'))
 
-        syntax = parse(
-            'as "u", the `Account` for "alice" gets a `deposit` with `amount=1`'
+        # A spawned call saves its task id, and only a spawned one.
+        self.assertIsNone(parse('"u" spawns a `deposit` on `Account` of "a"'))
+        self.assertIsNone(
+            parse(
+                '"u" does a `deposit` on `Account` of "a" and saves its task '
+                'id as `t`'
+            )
         )
-        assert syntax is not None
-        self.assertFalse(syntax.gets.HasField('task_id_saved_as'))
 
         # Either article, as English reads.
-        syntax = parse('as "u", the `Customer` for "c" gets an `open_account`')
+        syntax = parse('"u" does an `open_account` on `Customer` of "c"')
         assert syntax is not None
-        self.assertEqual(syntax.gets.method, 'open_account')
-        syntax = parse('as "u", the `Account` for "a" attempts an `overdraw`')
+        self.assertEqual(syntax.does.method, 'open_account')
+        syntax = parse('"u" attempts an `overdraw` on `Account` of "a"')
         assert syntax is not None
         self.assertEqual(syntax.attempts.method, 'overdraw')
+        self.assertEqual(syntax.attempts.user, 'u')
 
     def test_predicates_and_saves(self) -> None:
         syntax = parse(
@@ -105,22 +117,23 @@ class ReadTest(unittest.TestCase):
 
     def test_a_task_completing_recalls_its_id(self) -> None:
         syntax = parse(
-            'as "u", the `deposit` task with id "<deposit_task_id>" of the '
-            '`Account` completes within 30 seconds'
+            '"u" awaits the `deposit` task "<deposit_task_id>" on `Account` '
+            'within 30 seconds'
         )
         assert syntax is not None
-        self.assertEqual(syntax.WhichOneof('step'), 'task_completes')
-        task_completes = syntax.task_completes
-        self.assertEqual(task_completes.method, 'deposit')
-        self.assertEqual(task_completes.task_id_saved_as, 'deposit_task_id')
-        self.assertEqual(task_completes.state_type, 'Account')
-        self.assertEqual(task_completes.seconds, 30.0)
+        self.assertEqual(syntax.WhichOneof('step'), 'awaits_task')
+        awaits_task = syntax.awaits_task
+        self.assertEqual(awaits_task.user, 'u')
+        self.assertEqual(awaits_task.method, 'deposit')
+        self.assertEqual(awaits_task.task_id_saved_as, 'deposit_task_id')
+        self.assertEqual(awaits_task.state_type, 'Account')
+        self.assertEqual(awaits_task.seconds, 30.0)
 
         # A wait bound not of the grammar's form is not a syntax.
         self.assertIsNone(
             parse(
-                'as "u", the `deposit` task with id "<deposit_task_id>" of the '
-                '`Account` completes within 30s'
+                '"u" awaits the `deposit` task "<deposit_task_id>" on '
+                '`Account` within 30s'
             )
         )
 
@@ -201,16 +214,18 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(syntax.shared_context.user, 'alice')
 
     def test_a_step_names_who_calls(self) -> None:
-        """A step starting 'as "...",' calls as that user; a calling
-        step without it is no step of the grammar."""
+        """A call starts with the user it calls as and a read with
+        'as "...",'; a step with neither is no step of the grammar."""
         syntax = parse(
-            'as "alice", the `Account` for "a" gets a `deposit` with '
-            '`amount=1`'
+            '"alice" does a `deposit` on `Account` of "a" with `amount=1`'
         )
         assert syntax is not None
-        self.assertEqual(syntax.gets.user, 'alice')
-        self.assertEqual(syntax.gets.state.id, 'a')
+        self.assertEqual(syntax.does.user, 'alice')
+        self.assertEqual(syntax.does.state.id, 'a')
 
+        self.assertIsNone(
+            parse('does a `deposit` on `Account` of "a" with `amount=1`')
+        )
         self.assertIsNone(
             parse('the `Account` for "a" gets a `deposit` with `amount=1`')
         )
@@ -220,6 +235,9 @@ class ReadTest(unittest.TestCase):
         )
         assert syntax is not None
         self.assertEqual(syntax.has.user, 'bob')
+        self.assertIsNone(
+            parse('`balance` on the `Account` for "a" has `balance=1`')
+        )
 
         syntax = parse(
             'as "bob", `balance` on the `Account` for "a" aborts with '
@@ -228,11 +246,9 @@ class ReadTest(unittest.TestCase):
         assert syntax is not None
         self.assertEqual(syntax.aborts_with.user, 'bob')
 
-        syntax = parse(
-            'as "bob", an `Account` for "a" gets created via `open`'
-        )
+        syntax = parse('"bob" creates an `Account` of "a" via `open`')
         assert syntax is not None
-        self.assertEqual(syntax.gets_created_via.user, 'bob')
+        self.assertEqual(syntax.creates_via.user, 'bob')
 
     def test_web_app_steps(self) -> None:
         syntax = parse('"alice" opens the web app')

@@ -31,13 +31,13 @@ BANK = '''Feature: Bank accounts
     And "anonymous" is an unauthenticated user
 
   Scenario: Depositing moves the balance
-    When as "anonymous", the `Account` for "alice" gets a `deposit` with `amount=100`
+    When "anonymous" does a `deposit` on `Account` of "alice" with `amount=100`
     Then as "anonymous", `balance` on the `Account` for "alice" has `balance=100`
 
   Rule: Overdrafts are refused
     @wip
     Example: Withdrawing more than the balance
-      When as "anonymous", the `Account` for "alice" attempts a `withdraw` with `amount=1`
+      When "anonymous" attempts a `withdraw` on `Account` of "alice" with `amount=1`
       Then the attempt aborts with `OverdraftError`
       And the overdraft was logged
 '''
@@ -130,8 +130,8 @@ class BehaviorsWatcherTest(unittest.IsolatedAsyncioTestCase):
             [(step.keyword, step.text) for step in scenario.steps],
             [
                 (
-                    'When', 'as "anonymous", the `Account` for "alice" gets a '
-                    '`deposit` with `amount=100`'
+                    'When', '"anonymous" does a `deposit` on `Account` of '
+                    '"alice" with `amount=100`'
                 ),
                 (
                     'Then', 'as "anonymous", `balance` on the `Account` for '
@@ -141,11 +141,11 @@ class BehaviorsWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
         # Each step the grammar defines is parsed into its parts.
         built_in = scenario.steps[0].built_in
-        self.assertEqual(built_in.WhichOneof('step'), 'gets')
-        self.assertEqual(built_in.gets.state.type, 'Account')
-        self.assertEqual(built_in.gets.state.id, 'alice')
-        self.assertEqual(built_in.gets.method, 'deposit')
-        self.assertEqual(len(built_in.gets.assignments), 1)
+        self.assertEqual(built_in.WhichOneof('step'), 'does')
+        self.assertEqual(built_in.does.state.type, 'Account')
+        self.assertEqual(built_in.does.state.id, 'alice')
+        self.assertEqual(built_in.does.method, 'deposit')
+        self.assertEqual(len(built_in.does.assignments), 1)
         self.assertEqual(len(feature.rules), 1)
         rule = feature.rules[0]
         self.assertEqual(rule.name, 'Overdrafts are refused')
@@ -161,7 +161,7 @@ class BehaviorsWatcherTest(unittest.IsolatedAsyncioTestCase):
             'backend/tests/bank.feature',
             BANK + '''
   Scenario: A second withdrawal is also refused
-    When as "anonymous", the `Account` for "alice" attempts a `withdraw` with `amount=2`
+    When "anonymous" attempts a `withdraw` on `Account` of "alice" with `amount=2`
     Then the attempt aborts with `OverdraftError`
 ''',
         )

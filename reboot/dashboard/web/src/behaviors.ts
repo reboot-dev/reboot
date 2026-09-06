@@ -230,6 +230,14 @@ const spansOfState = (state: grammar_pb.State | undefined): Span[] => [
   ...spansOfStateId(state?.id ?? ""),
 ];
 
+// 'on `Account` of "alice"', as the grammar's `ON_STATE` phrase.
+const spansOfStateOn = (state: grammar_pb.State | undefined): Span[] => [
+  text(" on "),
+  { text: state?.type ?? "", role: "state-type" },
+  text(" of "),
+  ...spansOfStateId(state?.id ?? ""),
+];
+
 const spansOfAssignment = (assignment: grammar_pb.Assignment): Span[] => [
   { text: assignment.path, role: "property-path" },
   text("="),
@@ -343,21 +351,20 @@ export const printBuiltInSyntax = (
         clauses: [],
         tail: [],
       };
-    case "getsCreatedVia": {
+    case "createsVia": {
       const state = step.value.state;
-      const article = articleOf(state?.type ?? "");
       const clauses = withClauses(
         "with",
         step.value.assignments.map(spansOfAssignment)
       );
       return {
         head: [
-          ...spansOfCaller(step.value.user),
-          text(article),
+          ...spansOfUser(step.value.user),
+          text(` creates ${articleOf(state?.type ?? "")}`),
           { text: state?.type ?? "", role: "state-type" },
-          text(" for "),
+          text(" of "),
           ...spansOfStateId(state?.id ?? ""),
-          text(" gets created via "),
+          text(" via "),
           { text: step.value.method, role: "method" },
           ...clauses.head,
         ],
@@ -365,27 +372,29 @@ export const printBuiltInSyntax = (
         tail: [],
       };
     }
-    case "gets": {
+    case "does": {
+      const spawned = step.value.taskIdSavedAs !== undefined;
       const clauses = withClauses(
         "with",
         step.value.assignments.map(spansOfAssignment)
       );
       return {
         head: [
-          ...spansOfCaller(step.value.user),
-          ...spansOfState(step.value.state),
-          text(` gets ${articleOf(step.value.method)}`),
+          ...spansOfUser(step.value.user),
+          text(
+            `${spawned ? " spawns " : " does "}${articleOf(step.value.method)}`
+          ),
           { text: step.value.method, role: "method" },
+          ...spansOfStateOn(step.value.state),
           ...clauses.head,
         ],
         clauses: clauses.clauses,
-        tail:
-          step.value.taskIdSavedAs === undefined
-            ? []
-            : [
-                text(" spawned with its task id saved as "),
-                { text: step.value.taskIdSavedAs, role: "saved-name" },
-              ],
+        tail: spawned
+          ? [
+              text(" and saves its task id as "),
+              { text: step.value.taskIdSavedAs ?? "", role: "saved-name" },
+            ]
+          : [],
       };
     }
     case "attempts": {
@@ -395,27 +404,27 @@ export const printBuiltInSyntax = (
       );
       return {
         head: [
-          ...spansOfCaller(step.value.user),
-          ...spansOfState(step.value.state),
+          ...spansOfUser(step.value.user),
           text(` attempts ${articleOf(step.value.method)}`),
           { text: step.value.method, role: "method" },
+          ...spansOfStateOn(step.value.state),
           ...clauses.head,
         ],
         clauses: clauses.clauses,
         tail: [],
       };
     }
-    case "taskCompletes":
+    case "awaitsTask":
       return {
         head: [
-          ...spansOfCaller(step.value.user),
-          text("the "),
+          ...spansOfUser(step.value.user),
+          text(" awaits the "),
           { text: step.value.method, role: "method" },
-          text(" task with id "),
+          text(" task "),
           { text: step.value.taskIdSavedAs, role: "variable" },
-          text(" of the "),
+          text(" on "),
           { text: step.value.stateType, role: "state-type" },
-          text(" completes within "),
+          text(" within "),
           spanOfSeconds(step.value.seconds),
         ],
         clauses: [],

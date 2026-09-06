@@ -109,8 +109,8 @@ message SharedContext {
   string user = 1;
 }
 
-// 'a `Account` for "alice" gets created via `open` with ...'.
-message GetsCreatedVia {
+// '"alice" creates an `Account` of "alice" via `open` with ...'.
+message CreatesVia {
   State state = 1;
 
   string method = 2;
@@ -121,9 +121,10 @@ message GetsCreatedVia {
   string user = 4;
 }
 
-// 'as "alice", the `Account` for "alice" gets a `deposit` with ...',
-// and optionally 'spawned with its task id saved as `name`'.
-message Gets {
+// '"alice" does a `deposit` on `Account` of "alice" with ...', or
+// '"alice" spawns a `deposit` on `Account` of "alice" with ... and
+// saves its task id as `name`'.
+message Does {
   State state = 1;
 
   string method = 2;
@@ -131,14 +132,14 @@ message Gets {
   repeated Assignment assignments = 3;
 
   // The name the spawned task's id is saved under; absent for a
-  // call that is not spawned.
+  // call that is done, not spawned.
   optional string task_id_saved_as = 4;
 
   // The user the call is made as.
   string user = 5;
 }
 
-// 'the `Account` for "alice" attempts a `withdraw` with ...'.
+// '"alice" attempts a `withdraw` on `Account` of "alice" with ...'.
 message Attempts {
   State state = 1;
 
@@ -150,9 +151,9 @@ message Attempts {
   string user = 4;
 }
 
-// 'the `deposit` task with id "<name>" of the `Account` completes
-// within 30 seconds'.
-message TaskCompletes {
+// '"alice" awaits the `deposit` task "<name>" on `Account` within 30
+// seconds'.
+message AwaitsTask {
   string method = 1;
 
   // The name the task's id was saved under.
@@ -388,10 +389,10 @@ message BuiltInSyntax {
     IsAnAuthenticatedUser is_an_authenticated_user = 2;
     HasBearerToken has_bearer_token = 3;
     SharedContext shared_context = 4;
-    GetsCreatedVia gets_created_via = 5;
-    Gets gets = 6;
+    CreatesVia creates_via = 5;
+    Does does = 6;
     Attempts attempts = 7;
-    TaskCompletes task_completes = 8;
+    AwaitsTask awaits_task = 8;
     AttemptAbortsWith attempt_aborts_with = 9;
     Has has = 10;
     EventuallyHas eventually_has = 11;
