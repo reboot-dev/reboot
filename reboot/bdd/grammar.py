@@ -133,10 +133,10 @@ MIXED_CLAUSES = (
 # on.
 STATE = r'the `(?P<state_type>[\w.]+)` for "(?P<state_id>[^"]*)"'
 
-# The user a step calls as, 'as "alice" ' at the step's start: every
-# step that calls says who, a user the scenario declared authenticated
-# or not.
-AS = r'as "(?P<user>[^"]*)" '
+# The user a step calls as, 'as "alice", ' at the step's start, the
+# comma setting the caller off from the call: every step that calls
+# says who, a user the scenario declared authenticated or not.
+AS = r'as "(?P<user>[^"]*)", '
 
 # A step's optional trailing property list.
 PROPERTIES = rf'(?: with (?P<clauses>{PROPERTY_CLAUSES}))?'

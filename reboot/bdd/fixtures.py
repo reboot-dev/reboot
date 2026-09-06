@@ -167,7 +167,7 @@ class World:
 
     # The bearer token of each user the scenario has declared, by
     # user id, `None` for a user declared unauthenticated; a step says
-    # 'as "user id"' to call as one.
+    # 'as "user id",' to call as one.
     tokens: dict[str, Optional[str]] = field(default_factory=dict)
 
     # The user the shared context calls as, once one exists.
@@ -175,7 +175,7 @@ class World:
 
     def context(self, user: str) -> ExternalContext:
         """The context for one step's call as the given user: the
-        scenario's shared context once an 'as "..." a shared context'
+        scenario's shared context once an 'as "...", a shared context'
         step has created it, which must be for the same user,
         otherwise a fresh context."""
         if self.shared_context is not None:

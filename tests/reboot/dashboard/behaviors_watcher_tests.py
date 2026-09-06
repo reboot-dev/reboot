@@ -31,13 +31,13 @@ BANK = '''Feature: Bank accounts
     And "anonymous" is an unauthenticated user
 
   Scenario: Depositing moves the balance
-    When as "anonymous" the `Account` for "alice" gets a `deposit` with `amount=100`
-    Then as "anonymous" `balance` on the `Account` for "alice" has `balance=100`
+    When as "anonymous", the `Account` for "alice" gets a `deposit` with `amount=100`
+    Then as "anonymous", `balance` on the `Account` for "alice" has `balance=100`
 
   Rule: Overdrafts are refused
     @wip
     Example: Withdrawing more than the balance
-      When as "anonymous" the `Account` for "alice" attempts a `withdraw` with `amount=1`
+      When as "anonymous", the `Account` for "alice" attempts a `withdraw` with `amount=1`
       Then the attempt aborts with `OverdraftError`
       And the overdraft was logged
 '''
@@ -130,11 +130,11 @@ class BehaviorsWatcherTest(unittest.IsolatedAsyncioTestCase):
             [(step.keyword, step.text) for step in scenario.steps],
             [
                 (
-                    'When', 'as "anonymous" the `Account` for "alice" gets a '
+                    'When', 'as "anonymous", the `Account` for "alice" gets a '
                     '`deposit` with `amount=100`'
                 ),
                 (
-                    'Then', 'as "anonymous" `balance` on the `Account` for '
+                    'Then', 'as "anonymous", `balance` on the `Account` for '
                     '"alice" has `balance=100`'
                 ),
             ],
@@ -161,7 +161,7 @@ class BehaviorsWatcherTest(unittest.IsolatedAsyncioTestCase):
             'backend/tests/bank.feature',
             BANK + '''
   Scenario: A second withdrawal is also refused
-    When as "anonymous" the `Account` for "alice" attempts a `withdraw` with `amount=2`
+    When as "anonymous", the `Account` for "alice" attempts a `withdraw` with `amount=2`
     Then the attempt aborts with `OverdraftError`
 ''',
         )

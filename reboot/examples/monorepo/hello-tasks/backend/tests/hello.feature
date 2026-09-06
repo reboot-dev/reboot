@@ -5,11 +5,11 @@ Feature: Hello with tasks
     And "anonymous" is an unauthenticated user
 
   Scenario: Sent messages get a warning and then erase
-    When as "anonymous" the `Hello` for "testing-hello" gets a `send` with `message="Hello, World!"`
+    When as "anonymous", the `Hello` for "testing-hello" gets a `send` with `message="Hello, World!"`
     And the resulting `task_id` is saved as `warning_task_id`
     # A completed task's response is the result, so the erase task's
     # ID saves from it the way any response property does.
-    When as "anonymous" the `warning` task with id "<warning_task_id>" of the `Hello` completes within 30 seconds
+    When as "anonymous", the `warning` task with id "<warning_task_id>" of the `Hello` completes within 30 seconds
     And the resulting `task_id` is saved as `erase_task_id`
-    And as "anonymous" the `erase` task with id "<erase_task_id>" of the `Hello` completes within 30 seconds
-    Then as "anonymous" `messages` on the `Hello` for "testing-hello" has `messages` of length `1` and `messages[0]="Number of messages erased so far: 1"`
+    And as "anonymous", the `erase` task with id "<erase_task_id>" of the `Hello` completes within 30 seconds
+    Then as "anonymous", `messages` on the `Hello` for "testing-hello" has `messages` of length `1` and `messages[0]="Number of messages erased so far: 1"`

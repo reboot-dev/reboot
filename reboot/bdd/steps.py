@@ -36,17 +36,19 @@ value's type parses it as. A dotted path nests when calling, e.g.
 `owner.name="Frank"`, and reaches into the response when asserting:
 
     Given the application is up
-    And an `Account` for "alice" gets created via `open`
-    When the `Account` for "alice" gets a `deposit` with `amount=50`
-    Then `balance` on the `Account` for "alice" has
+    And "alice" is an authenticated user
+    And as "alice", an `Account` for "alice" gets created via `open`
+    When as "alice", the `Account` for "alice" gets a `deposit` with
+      `amount=50`
+    Then as "alice", `balance` on the `Account` for "alice" has
       `balance=50`
 
-Every step that calls says who calls: it starts 'as "alice"', naming
+Every step that calls says who calls: it starts 'as "alice",', naming
 a user the scenario declared with 'Given "alice" is an authenticated
 user', which mints a test token for that user ID, 'Given "admin" has
 the bearer token "..."', which names a user by a raw token, or
 'Given "bob" is an unauthenticated user', whose calls carry no
-token. 'Given as "alice" a shared context' takes the same prefix,
+token. 'Given as "alice", a shared context' takes the same prefix,
 and every call from then on must name the same user, since the
 context keeps the token it was created with.
 
@@ -59,8 +61,8 @@ a response carries saves and awaits the same way.
 A Then 'eventually has' holds a reactive read open until its
 assertions hold, waiting at most its required bound, e.g.:
 
-    Then `balance` on the `Account` for "alice" eventually has
-      `balance=150` within 30 seconds
+    Then as "alice", `balance` on the `Account` for "alice" eventually
+      has `balance=150` within 30 seconds
 
 A Then 'has' asserts and a Given or When 'has' saves, and readers
 are only read that way: 'gets a' and 'attempts a' refuse readers the
@@ -77,11 +79,11 @@ column of its Examples table, in a state's ID, a user's ID, a bearer
 token, or a property value (a quoted "<name>" stays the literal
 string); a save may not use a column's name:
 
-    When `get_owner` on the `Account` for "frank" has
+    When as "alice", `get_owner` on the `Account` for "frank" has
       `owner.name` saved as `owner_name`
     And the resulting `updated_balance` is saved as `balance`
-    And the `Account` for "<owner_name>" gets a `deposit` with
-      `amount=1`
+    And as "alice", the `Account` for "<owner_name>" gets a `deposit`
+      with `amount=1`
 """
 
 # The step functions below take the `rbt` and `world`
@@ -1216,7 +1218,7 @@ def _almost_unquoted_application() -> None:
 def _almost_i_am() -> None:
     raise ValueError(
         "Almost: say '\"...\" is an authenticated user', then start each "
-        "step that calls as them with 'as \"...\"'"
+        "step that calls as them with 'as \"...\",'"
     )
 
 
@@ -1225,7 +1227,7 @@ def _almost_i_am() -> None:
 def _almost_the_authenticated_user_is() -> None:
     raise ValueError(
         "Almost: say '\"...\" is an authenticated user', then start each "
-        "step that calls as them with 'as \"...\"'"
+        "step that calls as them with 'as \"...\",'"
     )
 
 
@@ -1234,7 +1236,7 @@ def _almost_the_authenticated_user_is() -> None:
 def _almost_the_bearer_token_is() -> None:
     raise ValueError(
         "Almost: say '\"...\" has the bearer token \"...\"', naming the "
-        "user, then start each step that calls as them with 'as \"...\"'"
+        "user, then start each step that calls as them with 'as \"...\",'"
     )
 
 
@@ -1265,12 +1267,26 @@ def _almost_signs_in() -> None:
 def _almost_anonymous() -> None:
     raise ValueError(
         "Almost: say '\"...\" is an unauthenticated user', naming the "
-        "user, then start each step that calls as them with 'as \"...\"'"
+        "user, then start each step that calls as them with 'as \"...\",'"
+    )
+
+
+# A calling step written with its caller but no comma after them.
+_CALLER_WITHOUT_COMMA = r'as "[^"]*" .+'
+
+
+@given(parsers.re(_CALLER_WITHOUT_COMMA))
+@when(parsers.re(_CALLER_WITHOUT_COMMA))
+@then(parsers.re(_CALLER_WITHOUT_COMMA))
+def _almost_caller_without_comma() -> None:
+    raise ValueError(
+        "Almost: a comma sets the caller off from the call, 'as \"...\", "
+        "the ...'"
     )
 
 
 # A calling step written without saying who calls: the shapes the
-# calling steps take, without their 'as "..."' start.
+# calling steps take, without their 'as "...",' start.
 _CALL_WITHOUT_USER = (
     r'(?!as ")(?:'
     r'(?:a|an) `[\w.]+` for "[^"]*" gets created via|'
@@ -1287,7 +1303,7 @@ _CALL_WITHOUT_USER = (
 @then(parsers.re(_CALL_WITHOUT_USER))
 def _almost_call_without_user() -> None:
     raise ValueError(
-        "Almost: say who calls by starting the step with 'as \"...\"', "
+        "Almost: say who calls by starting the step with 'as \"...\",', "
         "naming a user the scenario declared, e.g. with '\"...\" is an "
         "unauthenticated user'"
     )

@@ -214,11 +214,12 @@ const spanOfLabel = (label: string): Span => ({
   role: "label",
 });
 
-// The 'as "alice"' a calling step starts with.
+// The 'as "alice",' a calling step starts with, the comma setting the
+// caller off from the call.
 const spansOfCaller = (user: string): Span[] => [
   text("as "),
   ...spansOfUser(user),
-  text(" "),
+  text(", "),
 ];
 
 // 'the `Account` for "alice"', as the grammar's `STATE` phrase.

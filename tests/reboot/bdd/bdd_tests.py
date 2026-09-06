@@ -71,7 +71,7 @@ def two_accounts_application() -> Application:
 # generated code directly.
 @when(
     parsers.parse(
-        'as "{user}" the `Account` for "{state_id}" gets {count:d} deposits '
+        'as "{user}", the `Account` for "{state_id}" gets {count:d} deposits '
         'of {amount:d}'
     )
 )

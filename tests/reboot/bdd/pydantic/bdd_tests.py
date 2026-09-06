@@ -33,7 +33,7 @@ from tests.reboot.bdd.pydantic.account_api_rbt import Account
 # generated clients.
 @when(
     parsers.parse(
-        'as "{user}" the `Account` for "{state_id}" gets {count:d} deposits '
+        'as "{user}", the `Account` for "{state_id}" gets {count:d} deposits '
         'of {amount:d}'
     )
 )

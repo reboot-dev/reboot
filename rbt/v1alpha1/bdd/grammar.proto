@@ -103,7 +103,7 @@ message IsAnUnauthenticatedUser {
   string user_id = 1;
 }
 
-// 'as "alice" a shared context'.
+// 'as "alice", a shared context'.
 message SharedContext {
   // The user the shared context's calls are made as.
   string user = 1;
@@ -121,7 +121,7 @@ message GetsCreatedVia {
   string user = 4;
 }
 
-// 'as "alice" the `Account` for "alice" gets a `deposit` with ...',
+// 'as "alice", the `Account` for "alice" gets a `deposit` with ...',
 // and optionally 'spawned with its task id saved as `name`'.
 message Gets {
   State state = 1;

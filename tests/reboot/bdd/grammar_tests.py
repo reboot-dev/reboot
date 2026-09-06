@@ -23,7 +23,7 @@ class ReadTest(unittest.TestCase):
 
     def test_a_call_with_assignments(self) -> None:
         syntax = parse(
-            'as "u" the `Bank` for "test-bank" gets a `transfer` with '
+            'as "u", the `Bank` for "test-bank" gets a `transfer` with '
             '`from_account_id=<first_account_id>` and `amount=250.0` '
             'spawned with its task id saved as `transfer_task_id`'
         )
@@ -46,29 +46,29 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(gets.task_id_saved_as, 'transfer_task_id')
 
         syntax = parse(
-            'as "u" a `Account` for "alice" gets created via `open`'
+            'as "u", a `Account` for "alice" gets created via `open`'
         )
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'gets_created_via')
         self.assertEqual(len(syntax.gets_created_via.assignments), 0)
 
         syntax = parse(
-            'as "u" the `Account` for "alice" gets a `deposit` with `amount=1`'
+            'as "u", the `Account` for "alice" gets a `deposit` with `amount=1`'
         )
         assert syntax is not None
         self.assertFalse(syntax.gets.HasField('task_id_saved_as'))
 
         # Either article, as English reads.
-        syntax = parse('as "u" the `Customer` for "c" gets an `open_account`')
+        syntax = parse('as "u", the `Customer` for "c" gets an `open_account`')
         assert syntax is not None
         self.assertEqual(syntax.gets.method, 'open_account')
-        syntax = parse('as "u" the `Account` for "a" attempts an `overdraw`')
+        syntax = parse('as "u", the `Account` for "a" attempts an `overdraw`')
         assert syntax is not None
         self.assertEqual(syntax.attempts.method, 'overdraw')
 
     def test_predicates_and_saves(self) -> None:
         syntax = parse(
-            'as "u" `all_customer_ids` on the `Bank` for "b" has '
+            'as "u", `all_customer_ids` on the `Bank` for "b" has '
             '`customer_ids` of length `2` and '
             '`customer_ids` containing `"test@reboot.dev"` and '
             '`total=3`'
@@ -86,7 +86,7 @@ class ReadTest(unittest.TestCase):
         )
 
         syntax = parse(
-            'as "u" `get` on the `Account` for "a" has `owner` saved as `o`'
+            'as "u", `get` on the `Account` for "a" has `owner` saved as `o`'
         )
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'has_saved_as')
@@ -97,7 +97,7 @@ class ReadTest(unittest.TestCase):
 
     def test_a_state_id_can_be_a_variable(self) -> None:
         syntax = parse(
-            'as "u" `balance` on the `Account` for "<first_account_id>" has '
+            'as "u", `balance` on the `Account` for "<first_account_id>" has '
             '`amount=750.0`'
         )
         assert syntax is not None
@@ -105,7 +105,7 @@ class ReadTest(unittest.TestCase):
 
     def test_a_task_completing_recalls_its_id(self) -> None:
         syntax = parse(
-            'as "u" the `deposit` task with id "<deposit_task_id>" of the '
+            'as "u", the `deposit` task with id "<deposit_task_id>" of the '
             '`Account` completes within 30 seconds'
         )
         assert syntax is not None
@@ -119,14 +119,14 @@ class ReadTest(unittest.TestCase):
         # A wait bound not of the grammar's form is not a syntax.
         self.assertIsNone(
             parse(
-                'as "u" the `deposit` task with id "<deposit_task_id>" of the '
+                'as "u", the `deposit` task with id "<deposit_task_id>" of the '
                 '`Account` completes within 30s'
             )
         )
 
     def test_eventually_has(self) -> None:
         syntax = parse(
-            'as "u" `balance` on the `Account` for "alice" eventually has '
+            'as "u", `balance` on the `Account` for "alice" eventually has '
             '`amount=1` within 2.5 seconds'
         )
         assert syntax is not None
@@ -144,7 +144,7 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(len(syntax.attempt_aborts_with.assertions), 0)
 
         syntax = parse(
-            'as "u" `withdraw` on the `Account` for "alice" aborts with '
+            'as "u", `withdraw` on the `Account` for "alice" aborts with '
             '`OverdraftError` with `amount=50.50`'
         )
         assert syntax is not None
@@ -195,16 +195,16 @@ class ReadTest(unittest.TestCase):
 
         # A shared context, like every call, says who.
         self.assertIsNone(parse('a shared context'))
-        syntax = parse('as "alice" a shared context')
+        syntax = parse('as "alice", a shared context')
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'shared_context')
         self.assertEqual(syntax.shared_context.user, 'alice')
 
     def test_a_step_names_who_calls(self) -> None:
-        """A step starting 'as "..."' calls as that user; a calling
+        """A step starting 'as "...",' calls as that user; a calling
         step without it is no step of the grammar."""
         syntax = parse(
-            'as "alice" the `Account` for "a" gets a `deposit` with '
+            'as "alice", the `Account` for "a" gets a `deposit` with '
             '`amount=1`'
         )
         assert syntax is not None
@@ -216,19 +216,21 @@ class ReadTest(unittest.TestCase):
         )
 
         syntax = parse(
-            'as "bob" `balance` on the `Account` for "a" has `balance=1`'
+            'as "bob", `balance` on the `Account` for "a" has `balance=1`'
         )
         assert syntax is not None
         self.assertEqual(syntax.has.user, 'bob')
 
         syntax = parse(
-            'as "bob" `balance` on the `Account` for "a" aborts with '
+            'as "bob", `balance` on the `Account` for "a" aborts with '
             '`PermissionDenied`'
         )
         assert syntax is not None
         self.assertEqual(syntax.aborts_with.user, 'bob')
 
-        syntax = parse('as "bob" an `Account` for "a" gets created via `open`')
+        syntax = parse(
+            'as "bob", an `Account` for "a" gets created via `open`'
+        )
         assert syntax is not None
         self.assertEqual(syntax.gets_created_via.user, 'bob')
 
