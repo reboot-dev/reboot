@@ -166,25 +166,23 @@ class World:
     aborted: Optional[Aborted] = None
 
     # The bearer token of each user the scenario has declared, by
-    # user id; a step says 'as "user id"' to call as one.
-    tokens: dict[str, str] = field(default_factory=dict)
+    # user id, `None` for a user declared unauthenticated; a step says
+    # 'as "user id"' to call as one.
+    tokens: dict[str, Optional[str]] = field(default_factory=dict)
 
-    # The user the shared context calls as, once one exists; `None`
-    # for one that calls anonymously.
+    # The user the shared context calls as, once one exists.
     shared_user: Optional[str] = None
 
-    def context(self, user: Optional[str] = None) -> ExternalContext:
-        """The context for one step's call as the given user, or
-        anonymously for `None`: the scenario's shared context once a
-        'Given a shared context' step has created it, which must be
-        for the same user, otherwise a fresh context."""
+    def context(self, user: str) -> ExternalContext:
+        """The context for one step's call as the given user: the
+        scenario's shared context once an 'as "..." a shared context'
+        step has created it, which must be for the same user,
+        otherwise a fresh context."""
         if self.shared_context is not None:
             if user != self.shared_user:
                 raise ValueError(
-                    "The shared context calls as " +
-                    self._user_description(self.shared_user) +
-                    ", so this step cannot call as " +
-                    self._user_description(user)
+                    f'The shared context calls as "{self.shared_user}", so '
+                    f'this step cannot call as "{user}"'
                 )
             return self.shared_context
         if self.rbt is None:
@@ -198,33 +196,32 @@ class World:
             bearer_token=self.token(user),
         )
 
-    @staticmethod
-    def _user_description(user: Optional[str]) -> str:
-        return 'nobody' if user is None else f'"{user}"'
-
-    def token(self, user: Optional[str]) -> Optional[str]:
-        """The bearer token of the named user, `None` for the
-        anonymous user; raises for a user the scenario has not
+    def token(self, user: str) -> Optional[str]:
+        """The bearer token of the named user, `None` for one declared
+        unauthenticated; raises for a user the scenario has not
         declared."""
-        if user is None:
-            return None
-        token = self.tokens.get(user)
-        if token is None:
+        if user not in self.tokens:
             raise ValueError(
                 f'"{user}" is not a user the scenario has declared; say '
-                f'\'Given "{user}" is an authenticated user\' or '
+                f'\'Given "{user}" is an authenticated user\', '
+                f'\'Given "{user}" is an unauthenticated user\' or '
                 f'\'Given "{user}" has the bearer token "..."\' first'
             )
-        return token
+        return self.tokens[user]
 
-    def declare_user(self, user_id: str, bearer_token: str) -> None:
+    def declare_user(
+        self,
+        user_id: str,
+        bearer_token: Optional[str],
+    ) -> None:
         """Declares a user the scenario's steps may call as, by the
-        bearer token their calls carry."""
+        bearer token their calls carry, `None` for none; declaring a
+        user again changes what they carry."""
         self.tokens[user_id] = bearer_token
 
-    def share_context(self, user: Optional[str]) -> None:
+    def share_context(self, user: str) -> None:
         """Makes every call from here on share one context, calling
-        as the given user, or anonymously for `None`."""
+        as the given user."""
         self.shared_context = self.context(user)
         self.shared_user = user
 
@@ -332,10 +329,10 @@ class World:
         state_id: str,
         method: str,
         assignments: Union[dict[str, JsonValue], list[Assignment]],
-        user: Optional[str] = None,
+        user: str,
     ) -> Any:
         """Spawns the named method as a task on the named state, as
-        the given user or anonymously, using the specified
+        the given user, using the specified
         `assignments` to create a request, and returns the task
         handle to await for its response."""
         reference = self.client_type(state_type).ref(state_id)
@@ -503,10 +500,10 @@ class World:
         state_id: str,
         method: str,
         assignments: Union[dict[str, JsonValue], list[Assignment]],
-        user: Optional[str] = None,
+        user: str,
     ) -> Any:
         """Returns the response from calling the named method on the
-        named state, as the given user or anonymously, using the
+        named state, as the given user, using the
         specified `assignments` to create a request."""
         reference = self.client_type(state_type).ref(state_id)
         method_callable = getattr(reference, method, None)

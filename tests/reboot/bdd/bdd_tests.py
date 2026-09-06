@@ -69,14 +69,20 @@ def two_accounts_application() -> Application:
 # A custom `async def` step, the way a developer would write one: it
 # runs on the same event loop as the built-in steps and can call the
 # generated code directly.
-@when(parsers.parse('"{state_id}" makes {count:d} deposits of {amount:d}'))
+@when(
+    parsers.parse(
+        'as "{user}" the `Account` for "{state_id}" gets {count:d} deposits '
+        'of {amount:d}'
+    )
+)
 async def _makes_deposits(
     world: World,
+    user: str,
     state_id: str,
     count: int,
     amount: int,
 ) -> None:
-    context = world.context()
+    context = world.context(user)
     for _ in range(count):
         await Account.ref(state_id).deposit(context, amount=amount)
 
@@ -105,9 +111,13 @@ def test_has_bearer_token() -> None:
 
 def test_token_of_an_undeclared_user() -> None:
     world = World()
-    assert world.token(None) is None
     with pytest.raises(ValueError, match='"bob" is not a user the scenario'):
         world.token('bob')
+    world.declare_user('bob', None)
+    assert world.token('bob') is None
+    # Declaring a user again changes what they carry.
+    world.declare_user('bob', 'token')
+    assert world.token('bob') == 'token'
 
 
 def test_shared_context_calls_as_one_user() -> None:
@@ -116,8 +126,6 @@ def test_shared_context_calls_as_one_user() -> None:
     world.shared_context = cast(ExternalContext, object())
     world.shared_user = 'alice'
     assert world.context('alice') is world.shared_context
-    with pytest.raises(ValueError, match='cannot call as nobody'):
-        world.context()
     with pytest.raises(ValueError, match='cannot call as "bob"'):
         world.context('bob')
 

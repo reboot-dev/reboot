@@ -97,11 +97,16 @@ message HasBearerToken {
   string bearer_token = 2;
 }
 
+// '"bob" is an unauthenticated user': declares a user whose calls
+// carry no token.
+message IsAnUnauthenticatedUser {
+  string user_id = 1;
+}
+
 // 'as "alice" a shared context'.
 message SharedContext {
-  // The user the shared context's calls are made as; absent for
-  // anonymous calls.
-  optional string user = 1;
+  // The user the shared context's calls are made as.
+  string user = 1;
 }
 
 // 'a `Account` for "alice" gets created via `open` with ...'.
@@ -112,8 +117,8 @@ message GetsCreatedVia {
 
   repeated Assignment assignments = 3;
 
-  // The user the call is made as; absent for an anonymous call.
-  optional string user = 4;
+  // The user the call is made as.
+  string user = 4;
 }
 
 // 'as "alice" the `Account` for "alice" gets a `deposit` with ...',
@@ -129,8 +134,8 @@ message Gets {
   // call that is not spawned.
   optional string task_id_saved_as = 4;
 
-  // The user the call is made as; absent for an anonymous call.
-  optional string user = 5;
+  // The user the call is made as.
+  string user = 5;
 }
 
 // 'the `Account` for "alice" attempts a `withdraw` with ...'.
@@ -141,8 +146,8 @@ message Attempts {
 
   repeated Assignment assignments = 3;
 
-  // The user the call is made as; absent for an anonymous call.
-  optional string user = 4;
+  // The user the call is made as.
+  string user = 4;
 }
 
 // 'the `deposit` task with id "<name>" of the `Account` completes
@@ -157,8 +162,8 @@ message TaskCompletes {
 
   double seconds = 4;
 
-  // The user the call is made as; absent for an anonymous call.
-  optional string user = 5;
+  // The user the call is made as.
+  string user = 5;
 }
 
 // 'the attempt aborts with `OverdraftError` with ...'.
@@ -178,8 +183,8 @@ message Has {
 
   repeated Assertion assertions = 3;
 
-  // The user the call is made as; absent for an anonymous call.
-  optional string user = 4;
+  // The user the call is made as.
+  string user = 4;
 }
 
 // '`balance` on the `Account` for "alice" eventually has ... within
@@ -194,8 +199,8 @@ message EventuallyHas {
 
   double seconds = 4;
 
-  // The user the call is made as; absent for an anonymous call.
-  optional string user = 5;
+  // The user the call is made as.
+  string user = 5;
 }
 
 // '`get` on the `Account` for "alice" has `owner` saved as `o`': a
@@ -207,8 +212,8 @@ message HasSavedAs {
 
   repeated Save saves = 3;
 
-  // The user the call is made as; absent for an anonymous call.
-  optional string user = 4;
+  // The user the call is made as.
+  string user = 4;
 }
 
 // '`balance` on the `Account` for "alice" aborts with
@@ -224,8 +229,8 @@ message AbortsWith {
 
   repeated Assertion assertions = 4;
 
-  // The user the call is made as; absent for an anonymous call.
-  optional string user = 5;
+  // The user the call is made as.
+  string user = 5;
 }
 
 // 'the result has ...'.
@@ -388,5 +393,6 @@ message BuiltInSyntax {
     SeesEnabledInWebApp sees_enabled_in_web_app = 23;
     SeesWebAppAt sees_web_app_at = 24;
     SavesTextInWebAppAs saves_text_in_web_app_as = 25;
+    IsAnUnauthenticatedUser is_an_unauthenticated_user = 26;
   }
 }

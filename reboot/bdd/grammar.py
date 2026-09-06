@@ -30,6 +30,7 @@ from rbt.v1alpha1.bdd.grammar_pb2 import (
     HasBearerToken,
     HasSavedAs,
     IsAnAuthenticatedUser,
+    IsAnUnauthenticatedUser,
     OfLength,
     OpensWebApp,
     PressesInWebApp,
@@ -130,9 +131,10 @@ MIXED_CLAUSES = (
 # on.
 STATE = r'the `(?P<state_type>[\w.]+)` for "(?P<state_id>[^"]*)"'
 
-# The user a step calls as, 'as "alice" ' at the step's start; a step
-# without it calls anonymously.
-AS = r'(?:as "(?P<user>[^"]*)" )?'
+# The user a step calls as, 'as "alice" ' at the step's start: every
+# step that calls says who, a user the scenario declared authenticated
+# or not.
+AS = r'as "(?P<user>[^"]*)" '
 
 # A step's optional trailing property list.
 PROPERTIES = rf'(?: with (?P<clauses>{PROPERTY_CLAUSES}))?'
@@ -145,6 +147,7 @@ IS_AN_AUTHENTICATED_USER = r'"(?P<user_id>[^"]*)" is an authenticated user$'
 HAS_BEARER_TOKEN = (
     r'"(?P<user_id>[^"]*)" has the bearer token "(?P<bearer_token>[^"]*)"$'
 )
+IS_AN_UNAUTHENTICATED_USER = r'"(?P<user_id>[^"]*)" is an unauthenticated user$'
 SHARED_CONTEXT = rf'{AS}a shared context$'
 GETS_CREATED_VIA = (
     rf'{AS}(?:a|an) `(?P<state_type>[\w.]+)` for "(?P<state_id>[^"]*)" '
@@ -341,6 +344,13 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
             has_bearer_token=HasBearerToken(
                 user_id=match['user_id'],
                 bearer_token=match['bearer_token'],
+            )
+        )
+    match = re.match(IS_AN_UNAUTHENTICATED_USER, text)
+    if match is not None:
+        return BuiltInSyntax(
+            is_an_unauthenticated_user=IsAnUnauthenticatedUser(
+                user_id=match['user_id']
             )
         )
     match = re.match(SHARED_CONTEXT, text)

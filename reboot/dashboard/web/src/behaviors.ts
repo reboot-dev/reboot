@@ -209,12 +209,12 @@ const spanOfLabel = (label: string): Span => ({
   role: "label",
 });
 
-// The 'as "alice"' a step starts with when it calls as a user; nothing
-// for a step that calls anonymously.
-const spansOfUser = (user: string | undefined): Span[] =>
-  user === undefined
-    ? []
-    : [text("as "), { text: `"${user}"`, role: "user" }, text(" ")];
+// The 'as "alice"' a calling step starts with.
+const spansOfUser = (user: string): Span[] => [
+  text("as "),
+  { text: `"${user}"`, role: "user" },
+  text(" "),
+];
 
 // 'the `Account` for "alice"', as the grammar's `STATE` phrase.
 const spansOfState = (state: grammar_pb.State | undefined): Span[] => [
@@ -308,6 +308,15 @@ export const printBuiltInSyntax = (
         head: [
           { text: `"${step.value.userId}"`, role: "user" },
           text(" is an authenticated user"),
+        ],
+        clauses: [],
+        tail: [],
+      };
+    case "isAnUnauthenticatedUser":
+      return {
+        head: [
+          { text: `"${step.value.userId}"`, role: "user" },
+          text(" is an unauthenticated user"),
         ],
         clauses: [],
         tail: [],

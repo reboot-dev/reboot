@@ -31,14 +31,20 @@ from tests.reboot.bdd.pydantic.account_api_rbt import Account
 # A custom `async def` step, the way a developer would write one:
 # plain Reboot code, a context from the world and calls on the
 # generated clients.
-@when(parsers.parse('"{state_id}" makes {count:d} deposits of {amount:d}'))
+@when(
+    parsers.parse(
+        'as "{user}" the `Account` for "{state_id}" gets {count:d} deposits '
+        'of {amount:d}'
+    )
+)
 async def _makes_deposits(
     world: World,
+    user: str,
     state_id: str,
     count: int,
     amount: int,
 ) -> None:
-    context = world.context()
+    context = world.context(user)
     for _ in range(count):
         await Account.ref(state_id).deposit(context, amount=amount)
 

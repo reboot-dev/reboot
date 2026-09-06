@@ -14,8 +14,9 @@ The steps run against the `Application` returned by the
         return Application(servicers=[AccountServicer])
 
 A custom step is plain Reboot code: take the `world` fixture, get
-a context from `world.context()`, which carries the scenario's
-authenticated user, and call the generated clients directly.
+a context from `world.context(user)`, naming a user the scenario
+declared, whose token it carries, and call the generated clients
+directly.
 
 A scenario runs a different application by naming it: 'Given the
 "proxy" application is up' runs the one the `proxy_application`
@@ -40,14 +41,14 @@ value's type parses it as. A dotted path nests when calling, e.g.
     Then `balance` on the `Account` for "alice" has
       `balance=50`
 
-Every step that calls says who calls, or calls anonymously: a step
-starting 'as "alice"' calls as a user the scenario declared, with
-'Given "alice" is an authenticated user', which mints a test token
-for that user ID, or 'Given "admin" has the bearer token "..."',
-which names a user by a raw token; a step without 'as "..."' calls
-with no token. 'Given a shared context' takes the same prefix, and
-every call from then on must name the same user, since the context
-keeps the token it was created with.
+Every step that calls says who calls: it starts 'as "alice"', naming
+a user the scenario declared with 'Given "alice" is an authenticated
+user', which mints a test token for that user ID, 'Given "admin" has
+the bearer token "..."', which names a user by a raw token, or
+'Given "bob" is an unauthenticated user', whose calls carry no
+token. 'Given as "alice" a shared context' takes the same prefix,
+and every call from then on must name the same user, since the
+context keeps the token it was created with.
 
 A call runs as a task instead by saying 'gets a `method` ...
 spawned with its task id saved as `name`'; the task then awaits as
@@ -135,6 +136,7 @@ from reboot.bdd.grammar import (
     HAS_BEARER_TOKEN,
     HAS_SAVED_AS,
     IS_AN_AUTHENTICATED_USER,
+    IS_AN_UNAUTHENTICATED_USER,
     LENGTH_PATTERN,
     MIXED_CLAUSES,
     PATH,
@@ -814,8 +816,14 @@ def _has_bearer_token(world: World, user_id: str, bearer_token: str) -> None:
     )
 
 
+@given(parsers.re(IS_AN_UNAUTHENTICATED_USER))
+@when(parsers.re(IS_AN_UNAUTHENTICATED_USER))
+def _is_an_unauthenticated_user(world: World, user_id: str) -> None:
+    world.declare_user(_maybe_saved(world, user_id), None)
+
+
 @given(parsers.re(SHARED_CONTEXT))
-def _a_shared_context(world: World, user: Optional[str]) -> None:
+def _a_shared_context(world: World, user: str) -> None:
     world.share_context(user)
 
 
@@ -823,7 +831,7 @@ def _a_shared_context(world: World, user: Optional[str]) -> None:
 @when(parsers.re(GETS_CREATED_VIA))
 async def _gets_created_via(
     world: World,
-    user: Optional[str],
+    user: str,
     state_type: str,
     state_id: str,
     method: str,
@@ -851,7 +859,7 @@ async def _gets_created_via(
 @when(parsers.re(GETS))
 async def _gets(
     world: World,
-    user: Optional[str],
+    user: str,
     state_type: str,
     state_id: str,
     method: str,
@@ -893,7 +901,7 @@ async def _gets(
 @when(parsers.re(ATTEMPTS))
 async def _attempts(
     world: World,
-    user: Optional[str],
+    user: str,
     state_type: str,
     state_id: str,
     method: str,
@@ -922,7 +930,7 @@ async def _attempts(
 @then(parsers.re(TASK_COMPLETES))
 async def _the_saved_task_completes(
     world: World,
-    user: Optional[str],
+    user: str,
     method: str,
     name: str,
     state_type: str,
@@ -982,13 +990,13 @@ def _the_attempt_aborts_with(
 
 async def _read(
     world: World,
-    user: Optional[str],
+    user: str,
     method: str,
     state_type: str,
     state_id: str,
 ) -> Any:
     """Calls the named reader on the named state as the given user,
-    or anonymously, recording and returning its response; raises if
+    recording and returning its response; raises if
     the method is not a reader."""
     if not world.is_reader(state_type=state_type, method=method):
         raise ValueError(
@@ -1014,7 +1022,7 @@ async def _read(
 @then(parsers.re(HAS))
 async def _then_has(
     world: World,
-    user: Optional[str],
+    user: str,
     method: str,
     state_type: str,
     state_id: str,
@@ -1027,7 +1035,7 @@ async def _then_has(
 @then(parsers.re(EVENTUALLY_HAS))
 async def _eventually_has(
     world: World,
-    user: Optional[str],
+    user: str,
     method: str,
     state_type: str,
     state_id: str,
@@ -1088,7 +1096,7 @@ async def _eventually_has(
 @when(parsers.re(HAS_SAVED_AS))
 async def _has_saved_as(
     world: World,
-    user: Optional[str],
+    user: str,
     method: str,
     state_type: str,
     state_id: str,
@@ -1103,7 +1111,7 @@ async def _has_saved_as(
 @then(parsers.re(ABORTS_WITH))
 async def _aborts_with(
     world: World,
-    user: Optional[str],
+    user: str,
     method: str,
     state_type: str,
     state_id: str,
@@ -1217,8 +1225,7 @@ def _almost_i_am() -> None:
 def _almost_the_authenticated_user_is() -> None:
     raise ValueError(
         "Almost: say '\"...\" is an authenticated user', then start each "
-        "step that calls as them with 'as \"...\"'; a step without "
-        "'as \"...\"' calls anonymously"
+        "step that calls as them with 'as \"...\"'"
     )
 
 
@@ -1235,8 +1242,32 @@ def _almost_the_bearer_token_is() -> None:
 @when(parsers.re(r'the user is (?:anonymous|unauthenticated)$'))
 def _almost_anonymous() -> None:
     raise ValueError(
-        "Almost: no step declares that; a step without 'as \"...\"' "
-        "calls anonymously"
+        "Almost: say '\"...\" is an unauthenticated user', naming the "
+        "user, then start each step that calls as them with 'as \"...\"'"
+    )
+
+
+# A calling step written without saying who calls: the shapes the
+# calling steps take, without their 'as "..."' start.
+_CALL_WITHOUT_USER = (
+    r'(?!as ")(?:'
+    r'(?:a|an) `[\w.]+` for "[^"]*" gets created via|'
+    r'the `[\w.]+` for "[^"]*" (?:gets|attempts) (?:a|an) `|'
+    r'the `\w+` task with id "<\w+>" of the `|'
+    r'`\w+` on the `[\w.]+` for "[^"]*" (?:has|eventually has|aborts with)|'
+    r'a shared context$'
+    r')'
+)
+
+
+@given(parsers.re(_CALL_WITHOUT_USER))
+@when(parsers.re(_CALL_WITHOUT_USER))
+@then(parsers.re(_CALL_WITHOUT_USER))
+def _almost_call_without_user() -> None:
+    raise ValueError(
+        "Almost: say who calls by starting the step with 'as \"...\"', "
+        "naming a user the scenario declared, e.g. with '\"...\" is an "
+        "unauthenticated user'"
     )
 
 
