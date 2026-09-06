@@ -116,8 +116,8 @@
     <h1>Who do you want to be?</h1>
     <p class="subtitle">pick an identity to log in as</p>
     {% for account in accounts %}
-    <a class="account" href="{{ account.href }}">
-      <span class="avatar" style="background: {{ account.color }};">{{ account.initial }}</span>
+    <a class="account" href="{{ account.href }}" aria-label="{{ account.name }}">
+      <span class="avatar" aria-hidden="true" style="background: {{ account.color }};">{{ account.initial }}</span>
       <span class="identity">
         <span class="name">{{ account.name }}</span>
         <span class="email">{{ account.email }}</span>
