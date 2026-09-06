@@ -190,17 +190,16 @@ const spansOfValue = (value: grammar_pb.Value | undefined): Span[] =>
 
 const spansOfStateId = (id: string): Span[] => spansOfText(id, "state-id");
 
-// The user a web app step names as its subject.
-const spanOfUser = (user: string): Span => ({
-  text: `"${user}"`,
-  role: "user",
-});
+// A user the scenario names, without the quotes the step writes
+// them in, since the page sets a user apart by their role, the way it
+// does a state id; a user named by a saved value is a variable.
+const spansOfUser = (user: string): Span[] => spansOfText(user, "user");
 
 // An element of the web app, by what it says and what it is: 'the
 // "Open Account" button'. A <name> in what it says is a variable.
 const spansOfElement = (element: grammar_pb.Element | undefined): Span[] => [
   text("the "),
-  ...spansOfText(`"${element?.name ?? ""}"`, "element-name"),
+  ...spansOfText(element?.name ?? "", "element-name"),
   text(" "),
   {
     text: Element_Role[
@@ -211,14 +210,14 @@ const spansOfElement = (element: grammar_pb.Element | undefined): Span[] => [
 ];
 
 const spanOfLabel = (label: string): Span => ({
-  text: `"${label}"`,
+  text: label,
   role: "label",
 });
 
 // The 'as "alice"' a calling step starts with.
-const spansOfUser = (user: string): Span[] => [
+const spansOfCaller = (user: string): Span[] => [
   text("as "),
-  { text: `"${user}"`, role: "user" },
+  ...spansOfUser(user),
   text(" "),
 ];
 
@@ -303,7 +302,7 @@ export const printBuiltInSyntax = (
             ? [text("the application is up")]
             : [
                 text("the "),
-                { text: `"${step.value.name}"`, role: "application" },
+                { text: step.value.name, role: "application" },
                 text(" application is up"),
               ],
         clauses: [],
@@ -312,7 +311,7 @@ export const printBuiltInSyntax = (
     case "isAnAuthenticatedUser":
       return {
         head: [
-          { text: `"${step.value.userId}"`, role: "user" },
+          ...spansOfUser(step.value.userId),
           text(" is an authenticated user"),
         ],
         clauses: [],
@@ -321,7 +320,7 @@ export const printBuiltInSyntax = (
     case "isAnUnauthenticatedUser":
       return {
         head: [
-          { text: `"${step.value.userId}"`, role: "user" },
+          ...spansOfUser(step.value.userId),
           text(" is an unauthenticated user"),
         ],
         clauses: [],
@@ -330,7 +329,7 @@ export const printBuiltInSyntax = (
     case "hasBearerToken":
       return {
         head: [
-          { text: `"${step.value.userId}"`, role: "user" },
+          ...spansOfUser(step.value.userId),
           text(" has the bearer token "),
           { text: `"${step.value.bearerToken}"`, role: "value" },
         ],
@@ -339,7 +338,7 @@ export const printBuiltInSyntax = (
       };
     case "sharedContext":
       return {
-        head: [...spansOfUser(step.value.user), text("a shared context")],
+        head: [...spansOfCaller(step.value.user), text("a shared context")],
         clauses: [],
         tail: [],
       };
@@ -352,7 +351,7 @@ export const printBuiltInSyntax = (
       );
       return {
         head: [
-          ...spansOfUser(step.value.user),
+          ...spansOfCaller(step.value.user),
           text(article),
           { text: state?.type ?? "", role: "state-type" },
           text(" for "),
@@ -372,7 +371,7 @@ export const printBuiltInSyntax = (
       );
       return {
         head: [
-          ...spansOfUser(step.value.user),
+          ...spansOfCaller(step.value.user),
           ...spansOfState(step.value.state),
           text(` gets ${articleOf(step.value.method)}`),
           { text: step.value.method, role: "method" },
@@ -395,7 +394,7 @@ export const printBuiltInSyntax = (
       );
       return {
         head: [
-          ...spansOfUser(step.value.user),
+          ...spansOfCaller(step.value.user),
           ...spansOfState(step.value.state),
           text(` attempts ${articleOf(step.value.method)}`),
           { text: step.value.method, role: "method" },
@@ -408,7 +407,7 @@ export const printBuiltInSyntax = (
     case "taskCompletes":
       return {
         head: [
-          ...spansOfUser(step.value.user),
+          ...spansOfCaller(step.value.user),
           text("the "),
           { text: step.value.method, role: "method" },
           text(" task with id "),
@@ -439,7 +438,7 @@ export const printBuiltInSyntax = (
     case "has":
       return {
         head: [
-          ...spansOfUser(step.value.user),
+          ...spansOfCaller(step.value.user),
           { text: step.value.method, role: "method" },
           text(" on "),
           ...spansOfState(step.value.state),
@@ -451,7 +450,7 @@ export const printBuiltInSyntax = (
     case "eventuallyHas":
       return {
         head: [
-          ...spansOfUser(step.value.user),
+          ...spansOfCaller(step.value.user),
           { text: step.value.method, role: "method" },
           text(" on "),
           ...spansOfState(step.value.state),
@@ -463,7 +462,7 @@ export const printBuiltInSyntax = (
     case "hasSavedAs":
       return {
         head: [
-          ...spansOfUser(step.value.user),
+          ...spansOfCaller(step.value.user),
           { text: step.value.method, role: "method" },
           text(" on "),
           ...spansOfState(step.value.state),
@@ -479,7 +478,7 @@ export const printBuiltInSyntax = (
       );
       return {
         head: [
-          ...spansOfUser(step.value.user),
+          ...spansOfCaller(step.value.user),
           { text: step.value.method, role: "method" },
           text(" on "),
           ...spansOfState(step.value.state),
@@ -498,13 +497,16 @@ export const printBuiltInSyntax = (
         tail: [],
       };
     case "opensWebApp": {
-      const who: Span = spanOfUser(step.value.user);
       const at: Span[] =
         step.value.path === undefined
           ? []
-          : [text(" at "), { text: `"${step.value.path}"`, role: "path" }];
+          : [text(" at "), { text: step.value.path, role: "path" }];
       return {
-        head: [who, text(" opens the web app"), ...at],
+        head: [
+          ...spansOfUser(step.value.user),
+          text(" opens the web app"),
+          ...at,
+        ],
         clauses: [],
         tail: [],
       };
@@ -512,7 +514,7 @@ export const printBuiltInSyntax = (
     case "clicksInWebApp":
       return {
         head: [
-          spanOfUser(step.value.user),
+          ...spansOfUser(step.value.user),
           text(" clicks "),
           ...spansOfElement(step.value.element),
           text(" in the web app"),
@@ -523,7 +525,7 @@ export const printBuiltInSyntax = (
     case "fillsInWebApp":
       return {
         head: [
-          spanOfUser(step.value.user),
+          ...spansOfUser(step.value.user),
           text(" fills "),
           spanOfLabel(step.value.label),
           text(" in the web app with "),
@@ -535,9 +537,9 @@ export const printBuiltInSyntax = (
     case "selectsInWebApp":
       return {
         head: [
-          spanOfUser(step.value.user),
+          ...spansOfUser(step.value.user),
           text(" selects "),
-          ...spansOfText(`"${step.value.option}"`, "element-name"),
+          ...spansOfText(step.value.option, "element-name"),
           text(" in "),
           spanOfLabel(step.value.label),
           text(" in the web app"),
@@ -548,7 +550,7 @@ export const printBuiltInSyntax = (
     case "checksInWebApp":
       return {
         head: [
-          spanOfUser(step.value.user),
+          ...spansOfUser(step.value.user),
           text(step.value.checked ? " checks " : " unchecks "),
           spanOfLabel(step.value.label),
           text(" in the web app"),
@@ -559,9 +561,9 @@ export const printBuiltInSyntax = (
     case "pressesInWebApp":
       return {
         head: [
-          spanOfUser(step.value.user),
+          ...spansOfUser(step.value.user),
           text(" presses "),
-          { text: `"${step.value.key}"`, role: "key" },
+          { text: step.value.key, role: "key" },
           text(" in the web app"),
         ],
         clauses: [],
@@ -570,7 +572,7 @@ export const printBuiltInSyntax = (
     case "seesInWebApp":
       return {
         head: [
-          spanOfUser(step.value.user),
+          ...spansOfUser(step.value.user),
           text(
             step.value.negated
               ? " does not see "
@@ -578,7 +580,7 @@ export const printBuiltInSyntax = (
               ? " sees "
               : " eventually sees "
           ),
-          ...spansOfText(`"${step.value.text}"`, "page-text"),
+          ...spansOfText(step.value.text, "page-text"),
           ...(step.value.within === undefined
             ? []
             : [text(" in "), ...spansOfElement(step.value.within)]),
@@ -593,7 +595,7 @@ export const printBuiltInSyntax = (
     case "seesEnabledInWebApp":
       return {
         head: [
-          spanOfUser(step.value.user),
+          ...spansOfUser(step.value.user),
           text(" sees "),
           ...spansOfElement(step.value.element),
           text(
@@ -606,9 +608,9 @@ export const printBuiltInSyntax = (
     case "seesWebAppAt":
       return {
         head: [
-          spanOfUser(step.value.user),
+          ...spansOfUser(step.value.user),
           text(" sees the web app at "),
-          ...spansOfText(`"${step.value.path}"`, "path"),
+          ...spansOfText(step.value.path, "path"),
         ],
         clauses: [],
         tail: [],
@@ -616,7 +618,7 @@ export const printBuiltInSyntax = (
     case "isSignedInToWebApp":
       return {
         head: [
-          spanOfUser(step.value.user),
+          ...spansOfUser(step.value.user),
           text(" is signed in to the web app"),
         ],
         clauses: [],
@@ -625,7 +627,7 @@ export const printBuiltInSyntax = (
     case "isSignedOutOfWebApp":
       return {
         head: [
-          spanOfUser(step.value.user),
+          ...spansOfUser(step.value.user),
           text(" is signed out of the web app"),
         ],
         clauses: [],
@@ -634,7 +636,7 @@ export const printBuiltInSyntax = (
     case "savesUserIdAs":
       return {
         head: [
-          spanOfUser(step.value.user),
+          ...spansOfUser(step.value.user),
           text(" saves their user id as "),
           { text: step.value.name, role: "saved-name" },
         ],
@@ -644,9 +646,9 @@ export const printBuiltInSyntax = (
     case "savesTextInWebAppAs":
       return {
         head: [
-          spanOfUser(step.value.user),
+          ...spansOfUser(step.value.user),
           text(" saves the text of the "),
-          { text: `"${step.value.testId}"`, role: "element-name" },
+          { text: step.value.testId, role: "element-name" },
           text(" element in the web app as "),
           { text: step.value.name, role: "saved-name" },
         ],
@@ -682,22 +684,26 @@ export const spansOfPrinted = (printed: Printed): Span[] => [
 export const hueKeyOfVariable = (name: string): string => `variable:${name}`;
 
 // The spans a scenario sets in a hue of their own: each variable,
-// where it is saved and wherever it is said, and each state id,
-// wherever it is named. What the hue is keyed by says which of the
-// two a span is, since a state id and a variable may be spelled the
-// same.
+// where it is saved and wherever it is said, each state id, wherever
+// it is named, and each user, wherever they are named. What the hue
+// is keyed by says which of the three a span is, since a user, a
+// state id and a variable may be spelled the same.
 export const hueKeyOfSpan = (span: Span): string | undefined =>
   span.role === "state-id"
     ? `state:${span.text}`
+    : span.role === "user"
+    ? `user:${span.text}`
     : span.role === "variable" || span.role === "saved-name"
     ? hueKeyOfVariable(span.text)
     : undefined;
 
-// Hues far enough apart to tell one variable from the next, and one
-// state id from the next; the two palettes share no hue, and both
-// keep clear of the hues the other roles are set in.
+// Hues far enough apart to tell one variable from the next, one state
+// id from the next, and one user from the next; the three palettes
+// share no hue, and all keep clear of the hues the other roles are
+// set in.
 const VARIABLE_HUES = [28, 350, 110, 190, 300, 55];
 const STATE_ID_HUES = [150, 245, 80, 325, 5, 215];
+const USER_HUES = [270, 40, 130, 205, 340, 95];
 
 // The spans of a step as the page prints it: from its syntax tree for
 // a built-in step, and from its text, with only the variables picked
@@ -707,7 +713,7 @@ export const spansOfStep = (step: feature_pb.Step): Span[] =>
     ? spansOfText(step.text, "text")
     : spansOfPrinted(printBuiltInSyntax(step.builtIn));
 
-// The hue each variable and each state id of a scenario is set in,
+// The hue each variable, state id and user of a scenario is set in,
 // keyed the way `hueKeyOfSpan` keys them: the Examples table's
 // columns first, left to right, then the rest in the order they first
 // appear across the steps, each kind from its own palette.
@@ -716,7 +722,7 @@ export const huesOfScenario = (
   steps: feature_pb.Step[]
 ): Map<string, number> => {
   const hues = new Map<string, number>();
-  const counts = { variable: 0, state: 0 };
+  const counts = { variable: 0, state: 0, user: 0 };
   const assign = (key: string) => {
     if (hues.has(key)) {
       return;
@@ -724,6 +730,9 @@ export const huesOfScenario = (
     if (key.startsWith("state:")) {
       hues.set(key, STATE_ID_HUES[counts.state % STATE_ID_HUES.length]);
       counts.state += 1;
+    } else if (key.startsWith("user:")) {
+      hues.set(key, USER_HUES[counts.user % USER_HUES.length]);
+      counts.user += 1;
     } else {
       hues.set(key, VARIABLE_HUES[counts.variable % VARIABLE_HUES.length]);
       counts.variable += 1;

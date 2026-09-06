@@ -898,9 +898,9 @@ const GherkinTable: FC<{
   );
 };
 
-// How a scenario shows its saved values and state ids: the hue
-// each is set in, keyed the way `hueKeyOfSpan` keys them, and which
-// key the spans are lit up for, which a hover changes.
+// How a scenario shows its saved values, state ids and users: the
+// hue each is set in, keyed the way `hueKeyOfSpan` keys them, and
+// which key the spans are lit up for, which a hover changes.
 interface Related {
   hues: Map<string, number>;
   key: string | null;
@@ -910,8 +910,8 @@ interface Related {
 // One span of a built-in step printed from its syntax tree, styled
 // by its role:
 // a state type or method links to the state page, and a save, a
-// recall, or a state id is set in its own hue and lights up every
-// other span about the same saved value or state.
+// recall, a state id or a user is set in its own hue and lights up
+// every other span about the same saved value, state or user.
 const SpanText: FC<{
   span: Span;
   stateType: string | undefined;

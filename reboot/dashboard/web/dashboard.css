@@ -1836,15 +1836,16 @@ header h1 {
   color: hsl(166 55% 27%);
 }
 
-/* A saved value, where it is saved and where it is recalled, and a
-   state id, wherever it is named, each in a hue of its own
-   (`--hue`, set per name by the page), so the same one reads as one
-   thing across a scenario and the next reads as another; hovering
-   any lights up every span about the same one. The fallback hue is
-   for a span the page gave none. */
+/* A saved value, where it is saved and where it is recalled, a
+   state id, wherever it is named, and a user, wherever they are
+   named, each in a hue of its own (`--hue`, set per name by the
+   page), so the same one reads as one thing across a scenario and
+   the next reads as another; hovering any lights up every span about
+   the same one. The fallback hue is for a span the page gave none. */
 .scenario-detail code.span-saved-name,
 .scenario-detail code.span-variable,
-.scenario-detail code.span-state-id {
+.scenario-detail code.span-state-id,
+.scenario-detail code.span-user {
   color: hsl(var(--hue, 28) 70% 32%);
   background: hsl(var(--hue, 28) 85% 55% / 0.14);
   border-color: hsl(var(--hue, 28) 70% 50% / 0.4);
@@ -1861,7 +1862,8 @@ header h1 {
   color: hsl(318 55% 38%);
 }
 
-/* Muted: who is calling, which application, and how long to wait. */
+/* What the web app shows or is told: an element's name, a label, text
+   on the page, a key, a path. */
 .scenario-detail code.span-element-name,
 .scenario-detail code.span-label,
 .scenario-detail code.span-page-text,
@@ -1878,7 +1880,7 @@ header h1 {
   font-style: italic;
 }
 
-.scenario-detail code.span-user,
+/* Muted: which application, and how long to wait. */
 .scenario-detail code.span-application,
 .scenario-detail code.span-duration {
   color: hsl(var(--muted-foreground));
