@@ -409,11 +409,16 @@ _SESSION_CHANGE_TIMEOUT_MILLISECONDS = 30_000
 @given(parsers.re(IS_SIGNED_IN_TO_WEB_APP))
 @when(parsers.re(IS_SIGNED_IN_TO_WEB_APP))
 @then(parsers.re(IS_SIGNED_IN_TO_WEB_APP))
-def _is_signed_in_to_web_app(world: World, web_app: WebApp, user: str) -> None:
+def _is_signed_in_to_web_app(
+    world: World,
+    web_app: WebApp,
+    user: str,
+    saved_as: Optional[str],
+) -> None:
     """The user's browser has come back to the web app signed in,
     after the sign-in the scenario clicked through: the backend
     answers their session with a user, whom the user calls as from
-    here on."""
+    here on, and whose id is saved under the given name, if any."""
     page = web_app.page(user=user)
     origin = web_app.frontend.origin
     assert origin is not None
@@ -429,11 +434,9 @@ def _is_signed_in_to_web_app(world: World, web_app: WebApp, user: str) -> None:
             f'"{user}" is not signed in to the web app: the backend '
             'answers their browser session with nobody'
         )
-    world.sign_in(
-        user,
-        user_id=session['user_id'],
-        bearer_token=session['access_token'],
-    )
+    world.declare_user(user, session['access_token'])
+    if saved_as is not None:
+        world.save(saved_as, session['user_id'])
 
 
 @given(parsers.re(IS_SIGNED_OUT_OF_WEB_APP))
@@ -456,7 +459,7 @@ def _is_signed_out_of_web_app(
                 'answers their browser session with a user'
             )
         page.wait_for_timeout(100)
-    world.sign_out(user)
+    world.declare_user(user, None)
 
 
 @when(parsers.re(SAVES_TEXT_IN_WEB_APP_AS))

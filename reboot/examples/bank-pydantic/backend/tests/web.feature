@@ -41,9 +41,8 @@ Feature: Opening an account from the web app
       When "ben" opens the web app
       And "ben" clicks the "Sign in" button in the web app
       And "ben" clicks the "Ben" link in the web app
-      Then "ben" is signed in to the web app
-      When "ben" saves their user id as `ben_user_id`
-      And "ben" fills "Initial Deposit ($)" in the web app with `500`
+      Then "ben" is signed in to the web app with their user id saved as `ben_user_id`
+      When "ben" fills "Initial Deposit ($)" in the web app with `500`
       And "ben" clicks the "Open Account" button in the web app
       Then "ben" eventually sees "$500" in the "Your Accounts" table in the web app within 10 seconds
       And as "ben" `balances` on the `User` for "<ben_user_id>" eventually has `balances` of length `1` and `balances[0].balance=500.0` within 10 seconds

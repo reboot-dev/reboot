@@ -615,30 +615,29 @@ export const printBuiltInSyntax = (
         clauses: [],
         tail: [],
       };
-    case "isSignedInToWebApp":
+    case "isSignedInToWebApp": {
+      const savedAs: Span[] =
+        step.value.savedAs === undefined
+          ? []
+          : [
+              text(" with their user id saved as "),
+              { text: step.value.savedAs, role: "saved-name" },
+            ];
       return {
         head: [
           ...spansOfUser(step.value.user),
           text(" is signed in to the web app"),
+          ...savedAs,
         ],
         clauses: [],
         tail: [],
       };
+    }
     case "isSignedOutOfWebApp":
       return {
         head: [
           ...spansOfUser(step.value.user),
           text(" is signed out of the web app"),
-        ],
-        clauses: [],
-        tail: [],
-      };
-    case "savesUserIdAs":
-      return {
-        head: [
-          ...spansOfUser(step.value.user),
-          text(" saves their user id as "),
-          { text: step.value.name, role: "saved-name" },
         ],
         clauses: [],
         tail: [],

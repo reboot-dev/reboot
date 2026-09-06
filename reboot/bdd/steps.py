@@ -147,7 +147,6 @@ from reboot.bdd.grammar import (
     SAVE_CLAUSE,
     SAVE_CLAUSES,
     SAVE_PATTERN,
-    SAVES_USER_ID_AS,
     SEPARATOR,
     SHARED_CONTEXT,
     TASK_COMPLETES,
@@ -806,7 +805,6 @@ async def _is_an_authenticated_user(world: World, user_id: str) -> None:
         user_id,
         await world.rbt.make_valid_oauth_access_token(user_id=user_id),
     )
-    world.user_ids[user_id] = user_id
 
 
 @given(parsers.re(HAS_BEARER_TOKEN))
@@ -822,13 +820,6 @@ def _has_bearer_token(world: World, user_id: str, bearer_token: str) -> None:
 @when(parsers.re(IS_AN_UNAUTHENTICATED_USER))
 def _is_an_unauthenticated_user(world: World, user_id: str) -> None:
     world.declare_user(_maybe_saved(world, user_id), None)
-
-
-@given(parsers.re(SAVES_USER_ID_AS))
-@when(parsers.re(SAVES_USER_ID_AS))
-@then(parsers.re(SAVES_USER_ID_AS))
-def _saves_user_id_as(world: World, user: str, name: str) -> None:
-    world.save(name, world.user_id(user))
 
 
 @given(parsers.re(SHARED_CONTEXT))
@@ -1244,6 +1235,17 @@ def _almost_the_bearer_token_is() -> None:
     raise ValueError(
         "Almost: say '\"...\" has the bearer token \"...\"', naming the "
         "user, then start each step that calls as them with 'as \"...\"'"
+    )
+
+
+@given(parsers.re(r'"[^"]*" saves their user id as `\w+`$'))
+@when(parsers.re(r'"[^"]*" saves their user id as `\w+`$'))
+@then(parsers.re(r'"[^"]*" saves their user id as `\w+`$'))
+def _almost_saves_user_id() -> None:
+    raise ValueError(
+        "Almost: the user id is saved as the user signs in; say "
+        "'\"...\" is signed in to the web app with their user id saved "
+        "as `...`'"
     )
 
 

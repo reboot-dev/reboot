@@ -326,21 +326,26 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(syntax.saves_text_in_web_app_as.name, 'account_id')
 
     def test_signing_in_and_out(self) -> None:
-        """A user is signed in to or out of the web app, and saves
-        the user id signing in gave them."""
+        """A user is signed in to or out of the web app, saving the
+        user id signing in gave them if the step says so."""
         syntax = parse('"alice" is signed in to the web app')
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'is_signed_in_to_web_app')
         self.assertEqual(syntax.is_signed_in_to_web_app.user, 'alice')
+        self.assertFalse(syntax.is_signed_in_to_web_app.HasField('saved_as'))
+
+        syntax = parse(
+            '"alice" is signed in to the web app with their user id saved '
+            'as `alice_user_id`'
+        )
+        assert syntax is not None
+        self.assertEqual(
+            syntax.is_signed_in_to_web_app.saved_as, 'alice_user_id'
+        )
 
         syntax = parse('"alice" is signed out of the web app')
         assert syntax is not None
         self.assertEqual(syntax.is_signed_out_of_web_app.user, 'alice')
-
-        syntax = parse('"alice" saves their user id as `alice_user_id`')
-        assert syntax is not None
-        self.assertEqual(syntax.saves_user_id_as.user, 'alice')
-        self.assertEqual(syntax.saves_user_id_as.name, 'alice_user_id')
 
         # Signing in is clicked through the app, so no step does it.
         self.assertIsNone(parse('"alice" signs in as "Alice"'))

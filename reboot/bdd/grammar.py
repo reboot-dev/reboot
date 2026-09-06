@@ -40,7 +40,6 @@ from rbt.v1alpha1.bdd.grammar_pb2 import (
     ResultingIsSavedAs,
     Save,
     SavesTextInWebAppAs,
-    SavesUserIdAs,
     SeesEnabledInWebApp,
     SeesInWebApp,
     SeesWebAppAt,
@@ -219,9 +218,11 @@ SAVES_TEXT_IN_WEB_APP_AS = (
     rf'{USER} saves the text of the "(?P<test_id>[^"]*)" element {WEB_APP} '
     r'as `(?P<name>\w+)`$'
 )
-IS_SIGNED_IN_TO_WEB_APP = rf'{USER} is signed in to the web app$'
+IS_SIGNED_IN_TO_WEB_APP = (
+    rf'{USER} is signed in to the web app'
+    r'(?: with their user id saved as `(?P<saved_as>\w+)`)?$'
+)
 IS_SIGNED_OUT_OF_WEB_APP = rf'{USER} is signed out of the web app$'
-SAVES_USER_ID_AS = rf'{USER} saves their user id as `(?P<name>\w+)`$'
 RESULTING_IS_SAVED_AS = (
     rf'the resulting `(?P<property_name>{PATH})` is saved as `(?P<name>\w+)`$'
 )
@@ -549,20 +550,15 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
     match = re.match(IS_SIGNED_IN_TO_WEB_APP, text)
     if match is not None:
         return BuiltInSyntax(
-            is_signed_in_to_web_app=IsSignedInToWebApp(user=match['user'])
+            is_signed_in_to_web_app=IsSignedInToWebApp(
+                user=match['user'],
+                saved_as=match['saved_as'],
+            )
         )
     match = re.match(IS_SIGNED_OUT_OF_WEB_APP, text)
     if match is not None:
         return BuiltInSyntax(
             is_signed_out_of_web_app=IsSignedOutOfWebApp(user=match['user'])
-        )
-    match = re.match(SAVES_USER_ID_AS, text)
-    if match is not None:
-        return BuiltInSyntax(
-            saves_user_id_as=SavesUserIdAs(
-                user=match['user'],
-                name=match['name'],
-            )
         )
     match = re.match(SAVES_TEXT_IN_WEB_APP_AS, text)
     if match is not None:

@@ -357,23 +357,20 @@ message SavesTextInWebAppAs {
   string name = 3;
 }
 
-// '"alice" is signed in to the web app': the browser's session is a
-// signed-in user, whom "alice" calls as from here on.
+// '"alice" is signed in to the web app', optionally 'with their user
+// id saved as `alice_user_id`': the browser's session is a signed-in
+// user, whom "alice" calls as from here on.
 message IsSignedInToWebApp {
   string user = 1;
+
+  // The name the signed-in user's id is saved under, if any.
+  optional string saved_as = 2;
 }
 
 // '"alice" is signed out of the web app': the browser's session is
 // nobody, and "alice" calls with no token from here on.
 message IsSignedOutOfWebApp {
   string user = 1;
-}
-
-// '"alice" saves their user id as `alice_user_id`'.
-message SavesUserIdAs {
-  string user = 1;
-
-  string name = 2;
 }
 
 // 'the resulting `account_id` is saved as `alice_account_id`'.
@@ -415,6 +412,5 @@ message BuiltInSyntax {
     IsAnUnauthenticatedUser is_an_unauthenticated_user = 26;
     IsSignedInToWebApp is_signed_in_to_web_app = 27;
     IsSignedOutOfWebApp is_signed_out_of_web_app = 28;
-    SavesUserIdAs saves_user_id_as = 29;
   }
 }
