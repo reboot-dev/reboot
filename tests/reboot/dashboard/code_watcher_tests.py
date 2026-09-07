@@ -837,9 +837,10 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         application: Path,
         known: Optional[dict[Path, AnalyzedFile]] = None,
         roots: Optional[list[Path]] = None,
+        pyright: Optional[Pyright] = None,
     ) -> dict[Path, AnalyzedFile]:
         """Returns the analysis of an application, asked of the one
-        pyright the test runs."""
+        pyright the test runs, or of the given one."""
         if roots is None:
             roots = [application.parent]
         roots = [*roots, self.generated]
@@ -852,7 +853,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
         analyzed = await _analyze(
             parsed=parsed,
-            pyright=self.pyright,
+            pyright=self.pyright if pyright is None else pyright,
             roots=roots,
         )
 
@@ -1031,6 +1032,59 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 # than the awaited call inside `inner`.
                 ('shop.v1.Shop', 'look', Call.How.CALL),
                 ('shop.v1.Depot', 'look', Call.How.CALL),
+            ],
+        )
+        self.assertEqual(list(method.ambiguous), [])
+
+    async def test_a_call_into_an_installed_state_type(self) -> None:
+        """A call to a state type an installed package brings, such as
+        Reboot's own `OrderedMap`, is recorded: pyright resolves the
+        import through the packages of the interpreter `reboot` runs
+        in, which no root holds, and not through whichever `python`
+        the `PATH` holds, which here is none."""
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'from rbt.std.collections.ordered_map.v1.ordered_map_rbt '
+                'import OrderedMap\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                "        await OrderedMap.ref('m').insert(context, entries=[])\n"
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        no_python = self.directory / 'no-python'
+        no_python.mkdir()
+        with patch.dict(os.environ, {'PATH': str(no_python)}):
+            pyright = Pyright()
+            await pyright.start(
+                root=self.directory,
+                extra_paths=[self.directory, self.generated, self.installed],
+            )
+        try:
+            found = await self._analyze(application, pyright=pyright)
+        finally:
+            await pyright.stop()
+
+        [found_servicer] = found[servicer].servicers
+        [method] = found_servicer.methods
+        Call = Servicer.Method.Call
+        self.assertEqual(
+            [
+                (call.state_type, call.method, call.how)
+                for call in method.calls
+            ],
+            [
+                (
+                    'rbt.std.collections.ordered_map.v1.OrderedMap',
+                    'insert',
+                    Call.How.CALL,
+                ),
             ],
         )
         self.assertEqual(list(method.ambiguous), [])

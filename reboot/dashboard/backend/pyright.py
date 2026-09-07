@@ -98,7 +98,9 @@ class Pyright:
         extra_paths: Sequence[Path],
     ) -> None:
         """Starts the server over `root`, resolving imports through
-        `extra_paths`, such as the directory `rbt generate` writes to."""
+        `extra_paths`, such as the directory `rbt generate` writes to,
+        and through the packages installed for the interpreter
+        `reboot` runs in."""
         # The `pyright` package's own language server entry point,
         # run with the interpreter `reboot` is installed into, so
         # that nothing depends on the `PATH`; the package, a
@@ -148,6 +150,15 @@ class Pyright:
                     {
                         'python':
                             {
+                                # The server resolves imports through
+                                # the search paths of an interpreter
+                                # it is told about, not the one it was
+                                # launched with; without this it asks
+                                # whichever `python` is on the `PATH`,
+                                # whose packages are not `reboot`'s,
+                                # so an import of an installed state
+                                # type resolves to nothing.
+                                'pythonPath': sys.executable,
                                 'analysis':
                                     {
                                         'extraPaths':
