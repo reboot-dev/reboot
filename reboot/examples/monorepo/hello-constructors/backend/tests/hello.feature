@@ -5,6 +5,7 @@ Feature: Hello with a factory
     And "anonymous" is an unauthenticated user
 
   Scenario: Messages record from creation onward
-    Given "anonymous" creates a `Hello` of "greetings" via `create` with `initial_message="first message"`
-    When "anonymous" does a `send` on `Hello` of "greetings" with `message="second message"`
-    Then as "anonymous", `messages` on the `Hello` for "greetings" has `messages=["first message", "second message"]`
+    Given "anonymous" creates a `Hello` via `create` with `initial_message="first message"`
+    And the resulting state id is saved as `hello_id`
+    When "anonymous" does a `send` on `Hello` of "<hello_id>" with `message="second message"`
+    Then as "anonymous", `messages` on the `Hello` for "<hello_id>" has `messages=["first message", "second message"]`

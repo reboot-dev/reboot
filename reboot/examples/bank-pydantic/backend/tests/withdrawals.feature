@@ -7,22 +7,24 @@ Feature: Withdrawing from an account
     And "anonymous" is an unauthenticated user
 
   Scenario: Withdrawing part of the balance leaves the rest
-    Given "anonymous" creates an `Account` of "part-account" via `open`
-    When "anonymous" does a `deposit` on `Account` of "part-account" with `amount=100.0`
-    And "anonymous" does a `withdraw` on `Account` of "part-account" with `amount=40.0`
-    Then as "anonymous", `balance` on the `Account` for "part-account" has `amount=60.0`
+    Given "anonymous" creates an `Account` via `open`
+    And the resulting state id is saved as `account_id`
+    When "anonymous" does a `deposit` on `Account` of "<account_id>" with `amount=100.0`
+    And "anonymous" does a `withdraw` on `Account` of "<account_id>" with `amount=40.0`
+    Then as "anonymous", `balance` on the `Account` for "<account_id>" has `amount=60.0`
 
   Rule: Overdrafts are refused
     An account never goes below zero: a withdrawal for more than the
     balance aborts, saying by how much it fell short.
 
     Scenario Outline: Withdrawing more than the balance aborts with the shortfall
-      Given "anonymous" creates an `Account` of "<account>" via `open`
-      When "anonymous" does a `deposit` on `Account` of "<account>" with `amount=<deposit>`
-      And "anonymous" attempts a `withdraw` on `Account` of "<account>" with `amount=<withdrawal>`
+      Given "anonymous" creates an `Account` via `open`
+      And the resulting state id is saved as `account_id`
+      When "anonymous" does a `deposit` on `Account` of "<account_id>" with `amount=<deposit>`
+      And "anonymous" attempts a `withdraw` on `Account` of "<account_id>" with `amount=<withdrawal>`
       Then the attempt aborts with `OverdraftError` with `amount=<shortfall>`
 
       Examples:
-        | account        | deposit | withdrawal | shortfall |
-        | empty-account  | 0.0     | 50.50      | 50.50     |
-        | funded-account | 20.0    | 50.50      | 30.50     |
+        | deposit | withdrawal | shortfall |
+        | 0.0     | 50.50      | 50.50     |
+        | 20.0    | 50.50      | 30.50     |

@@ -8,6 +8,7 @@ Feature: Depositing into an account
   Rule: A deposit raises the balance by the amount
 
     Scenario: A deposit into a new account
-      Given "anonymous" creates an `Account` of "new-account" via `open`
-      When "anonymous" does a `deposit` on `Account` of "new-account" with `amount=10.0`
-      Then as "anonymous", `balance` on the `Account` for "new-account" has `amount=10.0`
+      Given "anonymous" creates an `Account` via `open`
+      And the resulting state id is saved as `account_id`
+      When "anonymous" does a `deposit` on `Account` of "<account_id>" with `amount=10.0`
+      Then as "anonymous", `balance` on the `Account` for "<account_id>" has `amount=10.0`

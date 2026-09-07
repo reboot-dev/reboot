@@ -34,19 +34,24 @@ from tests.reboot.bdd.pydantic.account_api_rbt import Account
 @when(
     parsers.parse(
         '"{user}" does {count:d} deposits of {amount:d} on `Account` of '
-        '"{state_id}"'
+        '"<{name}>"'
     )
 )
 async def _makes_deposits(
     world: World,
     user: str,
-    state_id: str,
+    name: str,
     count: int,
     amount: int,
 ) -> None:
+    # The account is named by a saved value, the id the factory made
+    # up, which the step reads from what the scenario has saved.
     context = world.context(user)
     for _ in range(count):
-        await Account.ref(state_id).deposit(context, amount=amount)
+        await Account.ref(str(world.saved[name])).deposit(
+            context,
+            amount=amount,
+        )
 
 
 def test_unknown_property_raises() -> None:
