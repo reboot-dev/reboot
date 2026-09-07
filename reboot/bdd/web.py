@@ -53,7 +53,7 @@ from urllib.parse import urlparse
 
 # Where a saved value is named inside quoted text: 'Signed in as
 # <user_id>'.
-_VARIABLE = re.compile(r'<(?P<name>\w+)>')
+_VARIABLE = re.compile(r'<(?P<name>[^<>]+)>')
 
 
 def _with_saved(world: World, text: str) -> str:
@@ -64,7 +64,7 @@ def _with_saved(world: World, text: str) -> str:
         value = _saved_value(world, match['name'])
         if not isinstance(value, str):
             raise ValueError(
-                f"Expecting the value saved as `{match['name']}` to be a "
+                f"Expecting the value saved as \"{match['name']}\" to be a "
                 f"string, but it is {value!r}"
             )
         return value

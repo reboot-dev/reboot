@@ -44,7 +44,7 @@ class ReadTest(unittest.TestCase):
                 ('amount', '250.0'),
             ],
         )
-        syntax = parse('the resulting task id is saved as `transfer_task_id`')
+        syntax = parse('the resulting task id is saved as "transfer_task_id"')
         assert syntax is not None
         self.assertEqual(
             syntax.resulting_task_id_is_saved_as.name, 'transfer_task_id'
@@ -65,7 +65,7 @@ class ReadTest(unittest.TestCase):
         assert syntax is not None
         self.assertEqual(syntax.creates_via.state.type, 'Account')
         self.assertEqual(syntax.creates_via.state.id, '')
-        syntax = parse('the resulting state id is saved as `account_id`')
+        syntax = parse('the resulting state id is saved as "account_id"')
         assert syntax is not None
         self.assertEqual(
             syntax.resulting_state_id_is_saved_as.name, 'account_id'
@@ -106,7 +106,7 @@ class ReadTest(unittest.TestCase):
         )
 
         syntax = parse(
-            'as "u", `get` on the `Account` for "a" has `owner` saved as `o`'
+            'as "u", `get` on the `Account` for "a" has `owner` saved as "o"'
         )
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'has_saved_as')
@@ -182,7 +182,7 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(syntax.WhichOneof('step'), 'result_has')
 
         syntax = parse(
-            'the resulting `account_id` is saved as `alice_account_id`'
+            'the resulting `account_id` is saved as "alice_account_id"'
         )
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'resulting_is_saved_as')
@@ -345,7 +345,7 @@ class ReadTest(unittest.TestCase):
 
         syntax = parse(
             '"alice" saves the text of the "account-id" element in the web '
-            'app as `account_id`'
+            'app as "account_id"'
         )
         assert syntax is not None
         self.assertEqual(syntax.saves_text_in_web_app_as.test_id, 'account-id')
@@ -362,7 +362,7 @@ class ReadTest(unittest.TestCase):
 
         syntax = parse(
             '"alice" is signed in to the web app with their user id saved '
-            'as `alice_user_id`'
+            'as "alice_user_id"'
         )
         assert syntax is not None
         self.assertEqual(

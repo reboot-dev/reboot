@@ -137,8 +137,8 @@ def test_shared_context_calls_as_one_user() -> None:
 
 def test_clause_grammar_routing() -> None:
     properties = '`balance=50` and `owner.name="F"`'
-    saves = '`balance` saved as `b`, and `owner` saved as `o`'
-    mixed = '`balance=50` and `owner` saved as `o`'
+    saves = '`balance` saved as "b", and `owner` saved as "o"'
+    mixed = '`balance=50` and `owner` saved as "o"'
     assert re.fullmatch(PROPERTY_CLAUSES, properties)
     assert not re.fullmatch(PROPERTY_CLAUSES, saves)
     assert not re.fullmatch(PROPERTY_CLAUSES, mixed)
@@ -157,9 +157,12 @@ def test_clause_grammar_routing() -> None:
     # Lexical near-misses still route to their kind.
     assert re.fullmatch(PROPERTY_CLAUSES, '`amount: 50`')
     assert re.fullmatch(PROPERTY_CLAUSES, '`amount = 50`')
-    assert re.fullmatch(SAVE_CLAUSES, '`balance` saved to `b`')
-    assert re.fullmatch(SAVE_CLAUSES, '`balance` saved as "$b"')
+    assert re.fullmatch(SAVE_CLAUSES, '`balance` saved to "b"')
+    assert re.fullmatch(SAVE_CLAUSES, '`balance` saved as $b')
+    assert re.fullmatch(SAVE_CLAUSES, '`balance` saved as `b`')
     assert re.fullmatch(SAVE_CLAUSES, '`balance` saved as b')
+    # A name may have spaces, the way an Examples column may.
+    assert re.fullmatch(SAVE_CLAUSES, '`balance` saved as "first balance"')
 
 
 def test_almost_clause_messages() -> None:
@@ -178,13 +181,16 @@ def test_almost_clause_messages() -> None:
         'name': 'F'
     }
     with pytest.raises(ValueError, match="'saved as', not 'saved to'"):
-        _parse_saves('`balance` saved to `b`')
+        _parse_saves('`balance` saved to "b"')
     with pytest.raises(ValueError, match=r"drop the '\$'"):
-        _parse_saves('`balance` saved as "$b"')
-    with pytest.raises(ValueError, match="backticks, not quotes"):
-        _parse_saves('`balance` saved as "b"')
-    with pytest.raises(ValueError, match="name goes in backticks"):
+        _parse_saves('`balance` saved as $b')
+    with pytest.raises(ValueError, match="quotes, not backticks"):
+        _parse_saves('`balance` saved as `b`')
+    with pytest.raises(ValueError, match="name goes in quotes"):
         _parse_saves('`balance` saved as b')
+    assert 'first balance' in _parse_saves(
+        '`balance` saved as "first balance"'
+    )
     with pytest.raises(ValueError, match=r"say a saved value as <amount>"):
         _parse_assignments(world, '`amount=$amount`')
 

@@ -67,7 +67,7 @@ message Assertion {
   }
 }
 
-// A `path` saved as `name` clause: the property read and the name it
+// A `path` saved as "name" clause: the property read and the name it
 // is saved under.
 message Save {
   string path = 1;
@@ -206,7 +206,7 @@ message EventuallyHas {
   string user = 5;
 }
 
-// '`get` on the `Account` for "alice" has `owner` saved as `o`': a
+// '`get` on the `Account` for "alice" has `owner` saved as "o"': a
 // reader, whose response is saved from.
 message HasSavedAs {
   string method = 1;
@@ -361,7 +361,7 @@ message SavesTextInWebAppAs {
 }
 
 // '"alice" is signed in to the web app', optionally 'with their user
-// id saved as `alice_user_id`': the browser's session is a signed-in
+// id saved as "alice_user_id"': the browser's session is a signed-in
 // user, whom "alice" calls as from here on.
 message IsSignedInToWebApp {
   string user = 1;
@@ -376,18 +376,18 @@ message IsSignedOutOfWebApp {
   string user = 1;
 }
 
-// 'the resulting `account_id` is saved as `alice_account_id`'.
+// 'the resulting `account_id` is saved as "alice_account_id"'.
 message ResultingIsSavedAs {
   Save save = 1;
 }
 
-// 'the resulting state id is saved as `account_id`': the id of the
+// 'the resulting state id is saved as "account_id"': the id of the
 // state the latest 'creates' step created.
 message ResultingStateIdIsSavedAs {
   string name = 1;
 }
 
-// 'the resulting task id is saved as `deposit_task_id`': the id of
+// 'the resulting task id is saved as "deposit_task_id"': the id of
 // the task the latest 'spawns' step spawned.
 message ResultingTaskIdIsSavedAs {
   string name = 1;

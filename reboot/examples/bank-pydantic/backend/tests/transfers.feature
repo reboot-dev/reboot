@@ -13,13 +13,13 @@ Feature: Transferring money between accounts
 
     Scenario: A transfer between two customers' accounts
       Given "anonymous" creates a `Bank` via `create`
-      And the resulting state id is saved as `bank_id`
+      And the resulting state id is saved as "bank_id"
       When "anonymous" does a `sign_up` on `Bank` of "<bank_id>" with `customer_id="test@reboot.dev"`
       And "anonymous" does an `open_account` on `Customer` of "test@reboot.dev" with `initial_deposit=1000.0`
-      And the resulting `account_id` is saved as `first_account_id`
+      And the resulting `account_id` is saved as "first_account_id"
       And "anonymous" does a `sign_up` on `Bank` of "<bank_id>" with `customer_id="test2@reboot.dev"`
       And "anonymous" does an `open_account` on `Customer` of "test2@reboot.dev" with `initial_deposit=0.0`
-      And the resulting `account_id` is saved as `second_account_id`
+      And the resulting `account_id` is saved as "second_account_id"
       And "anonymous" does a `transfer` on `Bank` of "<bank_id>" with `from_account_id=<first_account_id>` and `to_account_id=<second_account_id>` and `amount=250.0`
       Then as "anonymous", `balance` on the `Account` for "<first_account_id>" has `amount=750.0`
       And as "anonymous", `balance` on the `Account` for "<second_account_id>" has `amount=250.0`
@@ -33,13 +33,13 @@ Feature: Transferring money between accounts
 
     Scenario: A transfer for more than the source account holds
       Given "anonymous" creates a `Bank` via `create`
-      And the resulting state id is saved as `bank_id`
+      And the resulting state id is saved as "bank_id"
       When "anonymous" does a `sign_up` on `Bank` of "<bank_id>" with `customer_id="payer@reboot.dev"`
       And "anonymous" does an `open_account` on `Customer` of "payer@reboot.dev" with `initial_deposit=100.0`
-      And the resulting `account_id` is saved as `payer_account_id`
+      And the resulting `account_id` is saved as "payer_account_id"
       And "anonymous" does a `sign_up` on `Bank` of "<bank_id>" with `customer_id="payee@reboot.dev"`
       And "anonymous" does an `open_account` on `Customer` of "payee@reboot.dev" with `initial_deposit=0.0`
-      And the resulting `account_id` is saved as `payee_account_id`
+      And the resulting `account_id` is saved as "payee_account_id"
       And "anonymous" attempts a `transfer` on `Bank` of "<bank_id>" with `from_account_id=<payer_account_id>` and `to_account_id=<payee_account_id>` and `amount=250.0`
       Then the attempt aborts with `OverdraftError` with `amount=150.0`
       And as "anonymous", `balance` on the `Account` for "<payer_account_id>" has `amount=100.0`

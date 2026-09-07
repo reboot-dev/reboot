@@ -55,7 +55,7 @@ keeps the token it was created with.
 
 A factory makes the id up when the step leaves it out, '"alice"
 creates an `Account` via `open` ...', and the next line saves it,
-'the resulting state id is saved as `account_id`', so that later
+'the resulting state id is saved as "account_id"', so that later
 steps can say <account_id>.
 
 A call runs as a task instead by saying '"alice" spawns a `method`
@@ -87,8 +87,8 @@ token, or a property value (a quoted "<name>" stays the literal
 string); a save may not use a column's name:
 
     When as "alice", `get_owner` on the `Account` for "frank" has
-      `owner.name` saved as `owner_name`
-    And the resulting `updated_balance` is saved as `balance`
+      `owner.name` saved as "owner_name"
+    And the resulting `updated_balance` is saved as "balance"
     And "alice" does a `deposit` on `Account` of "<owner_name>" with
       `amount=1`
 """
@@ -211,8 +211,8 @@ def _saved_value(world: World, name: str) -> JsonValue:
     none."""
     if name not in world.saved:
         raise ValueError(
-            f"Nothing saved as `{name}`; saved: " +
-            (', '.join(f'`{n}`' for n in sorted(world.saved)) or "nothing")
+            f'Nothing saved as "{name}"; saved: ' +
+            (', '.join(f'"{n}"' for n in sorted(world.saved)) or "nothing")
         )
     return world.saved[name]
 
@@ -233,12 +233,12 @@ def _maybe_saved(world: World, text: str) -> str:
     almost = _almost_variable_message(text)
     if almost is not None:
         raise ValueError(almost)
-    if not re.fullmatch(r'<\w+>', text):
+    if not re.fullmatch(r'<[^<>]+>', text):
         return text
     value = _saved_value(world, text[1:-1])
     if not isinstance(value, str):
         raise ValueError(
-            f"Expecting the value saved as `{text[2:-1]}` to be a "
+            f'Expecting the value saved as "{text[2:-1]}" to be a '
             f"string, but it is {value!r}"
         )
     return value
@@ -297,7 +297,7 @@ def _parsed_value(world: World, label: str, text: str) -> JsonValue:
     almost = _almost_variable_message(text)
     if almost is not None:
         raise ValueError(almost)
-    if re.fullmatch(r'<\w+>', text):
+    if re.fullmatch(r'<[^<>]+>', text):
         return _saved_value(world, text[1:-1])
     try:
         return json5.loads(text)
@@ -334,33 +334,31 @@ def _parsed_seconds(within: str) -> float:
 
 def _almost_save_message(clause: str) -> str:
     """The 'Almost' error for a saving clause that is a lexical
-    near-miss of `path` saved as `name`."""
+    near-miss of `path` saved as "name"."""
     if re.search(r'\bsaved\s+to\b', clause):
         return f"Almost: say 'saved as', not 'saved to': {clause}"
     if re.search(r'\bsaved\s+as\s+"?\$\w+"?$', clause):
         return (
-            "Almost: drop the '$' and say the name in backticks, "
-            f"e.g. saved as `name`: {clause}"
+            "Almost: drop the '$' and say the name in quotes, e.g. saved "
+            f'as "name": {clause}'
         )
-    if re.search(r'\bsaved\s+as\s+"?<\w+>"?$', clause):
+    if re.search(r'\bsaved\s+as\s+"?<[^<>]+>"?$', clause):
         return (
-            "Almost: the name goes in backticks without angle brackets, "
-            f"e.g. saved as `name`; <name> is how a later step says it: "
-            f"{clause}"
+            "Almost: the name goes in quotes without angle brackets, e.g. "
+            f'saved as "name"; <name> is how a later step says it: {clause}'
         )
-    if re.search(r'\bsaved\s+as\s+"\w+"$', clause):
+    if re.search(r'\bsaved\s+as\s+`[^`]*`$', clause):
         return (
-            "Almost: the name goes in backticks, not quotes, e.g. "
-            f"saved as `name`: {clause}"
+            "Almost: the name goes in quotes, not backticks, e.g. saved as "
+            f'"name": {clause}'
         )
     if re.search(r'\bsaved\s+as\s+\w+$', clause):
         return (
-            "Almost: the name goes in backticks, e.g. saved as "
-            f"`name`: {clause}"
+            f'Almost: the name goes in quotes, e.g. saved as "name": {clause}'
         )
     return (
-        "Expected a saving clause of the form `path` saved as "
-        f"`name`, but got: {clause}"
+        'Expected a saving clause of the form `path` saved as "name", but '
+        f"got: {clause}"
     )
 
 
@@ -463,7 +461,7 @@ def _parse_assertions(
 
 def _parse_saves(clauses: str) -> dict[str, PropertyPath]:
     """Parses a Given or When 'has' list of saving clauses, e.g.
-    '`amount` saved as `amount`', into the property to save under
+    '`amount` saved as "amount"', into the property to save under
     each name. The step patterns admit lexical near-misses of a
     clause, so each clause is confirmed strict here, raising the
     fix."""
@@ -958,7 +956,7 @@ async def _awaits_task(
     saved = _saved_value(world, name)
     if not isinstance(saved, dict):
         raise ValueError(
-            f"The value saved as `{name}` must be a task ID, but it "
+            f'The value saved as "{name}" must be a task ID, but it '
             f"is {saved!r}"
         )
     task_type = world.task_type(state_type=state_type, method=method)
@@ -1217,8 +1215,8 @@ def _the_resulting_property_is_saved_as(
 # step's tail never matches one of these.
 
 
-@when(parsers.re(r'"[^"]*" awaits the `\w+` task "<\w+>" on `[\w.]+`$'))
-@then(parsers.re(r'"[^"]*" awaits the `\w+` task "<\w+>" on `[\w.]+`$'))
+@when(parsers.re(r'"[^"]*" awaits the `\w+` task "<[^<>"]+>" on `[\w.]+`$'))
+@then(parsers.re(r'"[^"]*" awaits the `\w+` task "<[^<>"]+>" on `[\w.]+`$'))
 def _almost_awaits_needs_within() -> None:
     raise ValueError(
         "Almost: say how long to wait for the task, e.g. within 10 "
@@ -1278,14 +1276,14 @@ def _almost_the_bearer_token_is() -> None:
     )
 
 
-@given(parsers.re(r'"[^"]*" saves their user id as `\w+`$'))
-@when(parsers.re(r'"[^"]*" saves their user id as `\w+`$'))
-@then(parsers.re(r'"[^"]*" saves their user id as `\w+`$'))
+@given(parsers.re(r'"[^"]*" saves their user id as ["`][^"`]*["`]$'))
+@when(parsers.re(r'"[^"]*" saves their user id as ["`][^"`]*["`]$'))
+@then(parsers.re(r'"[^"]*" saves their user id as ["`][^"`]*["`]$'))
 def _almost_saves_user_id() -> None:
     raise ValueError(
         "Almost: the user id is saved as the user signs in; say "
         "'\"...\" is signed in to the web app with their user id saved "
-        "as `...`'"
+        "as \"...\"'"
     )
 
 
@@ -1346,13 +1344,13 @@ def _almost_call_state_first() -> None:
     )
 
 
-@given(parsers.re(r'.+ and saves its (?:task )?id as `\w+`$'))
-@when(parsers.re(r'.+ and saves its (?:task )?id as `\w+`$'))
+@given(parsers.re(r'.+ and saves its (?:task )?id as ["`][^"`]*["`]$'))
+@when(parsers.re(r'.+ and saves its (?:task )?id as ["`][^"`]*["`]$'))
 def _almost_saves_on_the_call() -> None:
     raise ValueError(
         "Almost: a call's result is saved on the next line, 'And the "
-        "resulting state id is saved as `...`' after 'creates' or 'And the "
-        "resulting task id is saved as `...`' after 'spawns'"
+        "resulting state id is saved as \"...\"' after 'creates' or 'And the "
+        "resulting task id is saved as \"...\"' after 'spawns'"
     )
 
 
@@ -1476,9 +1474,12 @@ def _almost_predicate_in_call_with() -> None:
 # not pair up (a leading backtick followed by zero or more closed
 # pairs leaves one unclosed): every valid clause list pairs its
 # backticks, so both shapes are disjoint from every step above. The
-# one step whose 'has' is followed by no clauses, '"admin" has the
-# bearer token "..."', is left out.
-_UNBACKTICKED_CLAUSES = r'(?!the bearer token ")[^`]+'
+# two steps whose 'has' or 'with' is followed by a quoted string and
+# no clauses, '"admin" has the bearer token "..."' and 'is signed in
+# to the web app with their user id saved as "..."', are left out.
+_UNBACKTICKED_CLAUSES = (
+    r'(?!the bearer token ")(?!their user id saved as ")[^`]+'
+)
 _UNCLOSED_CLAUSES = r'`[^`]*(?:`[^`]*`[^`]*)*'
 
 
@@ -1488,7 +1489,7 @@ _UNCLOSED_CLAUSES = r'`[^`]*(?:`[^`]*`[^`]*)*'
 def _almost_missing_backticks() -> None:
     raise ValueError(
         "Almost: each clause goes in backticks, e.g. `amount=50` "
-        "or `amount` saved as `amount`"
+        "or `amount` saved as \"amount\""
     )
 
 
