@@ -53,11 +53,17 @@ with the user, '"alice" does ...', and a read with 'as "alice",'.
 every call from then on must name the same user, since the context
 keeps the token it was created with.
 
+A factory makes the id up when the step leaves it out, '"alice"
+creates an `Account` via `open` ...', and the next line saves it,
+'the resulting state id is saved as `account_id`', so that later
+steps can say <account_id>.
+
 A call runs as a task instead by saying '"alice" spawns a `method`
-on ... and saves its task id as `name`'; the task then awaits as
-'"alice" awaits the `method` task "<name>" on `Account` within 10
-seconds', recording its response as the result. A task ID a response
-carries saves and awaits the same way.
+on ...', with the next line saving 'the resulting task id is saved
+as `name`'; the task then awaits as '"alice" awaits the `method`
+task "<name>" on `Account` within 10 seconds', recording its
+response as the result. A task ID a response carries saves and
+awaits the same way.
 
 A Then 'eventually has' holds a reactive read open until its
 assertions hold, waiting at most its required bound, e.g.:
@@ -148,6 +154,8 @@ from reboot.bdd.grammar import (
     PROPERTY_PATTERN,
     RESULT_HAS,
     RESULTING_IS_SAVED_AS,
+    RESULTING_STATE_ID_IS_SAVED_AS,
+    RESULTING_TASK_ID_IS_SAVED_AS,
     SAVE_CLAUSE,
     SAVE_CLAUSES,
     SAVE_PATTERN,
@@ -836,13 +844,17 @@ async def _creates_via(
     world: World,
     user: str,
     state_type: str,
-    state_id: str,
+    state_id: Optional[str],
     method: str,
     clauses: Optional[str],
 ) -> None:
+    """Creates the state via the factory, with the id the step gives
+    or, without one, an id the factory makes up."""
     factory = world.factory(state_type=state_type, method=method)
     assignments = _parse_assignments(world, clauses)
-    arguments = [world.context(user), _maybe_saved(world, state_id)]
+    arguments: list[Any] = [world.context(user)]
+    if state_id is not None:
+        arguments.append(_maybe_saved(world, state_id))
     if assignments:
         arguments.append(
             world.request(
@@ -850,12 +862,14 @@ async def _creates_via(
             )
         )
     try:
-        _, world.response = await factory(*arguments)
+        reference, world.response = await factory(*arguments)
     except Aborted as aborted:
         raise AssertionError(
-            f"Creating the `{state_type}` for \"{state_id}\" via "
-            f"`{method}` {aborted}"
+            f"Creating {'an' if state_id is None else 'the'} `{state_type}`" +
+            ('' if state_id is None else f' of "{state_id}"') +
+            f" via `{method}` {aborted}"
         ) from aborted
+    world.created_state_id = reference.state_id
 
 
 @given(parsers.re(DOES))
@@ -868,19 +882,8 @@ async def _does(
     state_id: str,
     method: str,
     clauses: Optional[str],
-    task: Optional[str],
 ) -> None:
-    if verb == 'spawns' and task is None:
-        raise ValueError(
-            "Almost: a spawned call saves its task id; end the step with "
-            "'and saves its task id as `...`'"
-        )
-    if verb == 'does' and task is not None:
-        raise ValueError(
-            "Almost: a call that saves its task id is spawned; say "
-            "'spawns' instead of 'does'"
-        )
-    if task is not None:
+    if verb == 'spawns':
         handle = await world.spawn(
             state_type=state_type,
             state_id=_maybe_saved(world, state_id),
@@ -888,7 +891,7 @@ async def _does(
             assignments=_parse_assignments(world, clauses),
             user=user,
         )
-        world.save(task, _json_object(handle.task_id))
+        world.spawned_task_id = _json_object(handle.task_id)
         return
     if world.is_reader(state_type=state_type, method=method):
         raise ValueError(
@@ -1166,6 +1169,28 @@ def _the_result_has(world: World, clauses: str) -> None:
     _assert_properties(world.response, _parse_assertions(world, clauses))
 
 
+@given(parsers.re(RESULTING_STATE_ID_IS_SAVED_AS))
+@when(parsers.re(RESULTING_STATE_ID_IS_SAVED_AS))
+def _the_resulting_state_id_is_saved_as(world: World, name: str) -> None:
+    if world.created_state_id is None:
+        raise ValueError(
+            "Expected a preceding 'creates' step to have created a state, "
+            "but there is none"
+        )
+    world.save(name, world.created_state_id)
+
+
+@given(parsers.re(RESULTING_TASK_ID_IS_SAVED_AS))
+@when(parsers.re(RESULTING_TASK_ID_IS_SAVED_AS))
+def _the_resulting_task_id_is_saved_as(world: World, name: str) -> None:
+    if world.spawned_task_id is None:
+        raise ValueError(
+            "Expected a preceding 'spawns' step to have spawned a task, "
+            "but there is none"
+        )
+    world.save(name, world.spawned_task_id)
+
+
 @given(parsers.re(RESULTING_IS_SAVED_AS))
 @when(parsers.re(RESULTING_IS_SAVED_AS))
 def _the_resulting_property_is_saved_as(
@@ -1318,6 +1343,16 @@ def _almost_call_state_first() -> None:
         "`Type` of \"id\" with ...', '\"...\" creates a `Type` of \"id\" via "
         "`method`', '\"...\" attempts a `method` on `Type` of \"id\"', or "
         "'\"...\" awaits the `method` task \"<name>\" on `Type` within ...'"
+    )
+
+
+@given(parsers.re(r'.+ and saves its (?:task )?id as `\w+`$'))
+@when(parsers.re(r'.+ and saves its (?:task )?id as `\w+`$'))
+def _almost_saves_on_the_call() -> None:
+    raise ValueError(
+        "Almost: a call's result is saved on the next line, 'And the "
+        "resulting state id is saved as `...`' after 'creates' or 'And the "
+        "resulting task id is saved as `...`' after 'spawns'"
     )
 
 

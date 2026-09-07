@@ -357,13 +357,17 @@ export const printBuiltInSyntax = (
         "with",
         step.value.assignments.map(spansOfAssignment)
       );
+      // The id is given, or made up by the factory.
+      const of: Span[] =
+        state === undefined || state.id === ""
+          ? []
+          : [text(" of "), ...spansOfStateId(state.id)];
       return {
         head: [
           ...spansOfUser(step.value.user),
           text(` creates ${articleOf(state?.type ?? "")}`),
           { text: state?.type ?? "", role: "state-type" },
-          text(" of "),
-          ...spansOfStateId(state?.id ?? ""),
+          ...of,
           text(" via "),
           { text: step.value.method, role: "method" },
           ...clauses.head,
@@ -373,7 +377,7 @@ export const printBuiltInSyntax = (
       };
     }
     case "does": {
-      const spawned = step.value.taskIdSavedAs !== undefined;
+      const spawned = step.value.spawned;
       const clauses = withClauses(
         "with",
         step.value.assignments.map(spansOfAssignment)
@@ -389,12 +393,7 @@ export const printBuiltInSyntax = (
           ...clauses.head,
         ],
         clauses: clauses.clauses,
-        tail: spawned
-          ? [
-              text(" and saves its task id as "),
-              { text: step.value.taskIdSavedAs ?? "", role: "saved-name" },
-            ]
-          : [],
+        tail: [],
       };
     }
     case "attempts": {
@@ -659,6 +658,24 @@ export const printBuiltInSyntax = (
           text(" saves the text of the "),
           { text: step.value.testId, role: "element-name" },
           text(" element in the web app as "),
+          { text: step.value.name, role: "saved-name" },
+        ],
+        clauses: [],
+        tail: [],
+      };
+    case "resultingStateIdIsSavedAs":
+      return {
+        head: [
+          text("the resulting state id is saved as "),
+          { text: step.value.name, role: "saved-name" },
+        ],
+        clauses: [],
+        tail: [],
+      };
+    case "resultingTaskIdIsSavedAs":
+      return {
+        head: [
+          text("the resulting task id is saved as "),
           { text: step.value.name, role: "saved-name" },
         ],
         clauses: [],

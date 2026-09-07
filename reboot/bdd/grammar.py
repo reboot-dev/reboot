@@ -39,6 +39,8 @@ from rbt.v1alpha1.bdd.grammar_pb2 import (
     PressesInWebApp,
     ResultHas,
     ResultingIsSavedAs,
+    ResultingStateIdIsSavedAs,
+    ResultingTaskIdIsSavedAs,
     Save,
     SavesTextInWebAppAs,
     SeesEnabledInWebApp,
@@ -154,14 +156,16 @@ HAS_BEARER_TOKEN = (
 )
 IS_AN_UNAUTHENTICATED_USER = r'"(?P<user_id>[^"]*)" is an unauthenticated user$'
 SHARED_CONTEXT = rf'{AS}a shared context$'
+# The state's id is given, 'of "alice"', or left for the factory to
+# make up.
 CREATES_VIA = (
-    rf'{USER} creates (?:a|an) `(?P<state_type>[\w.]+)` of '
-    rf'"(?P<state_id>[^"]*)" via `(?P<method>\w+)`{PROPERTIES}$'
+    rf'{USER} creates (?:a|an) `(?P<state_type>[\w.]+)`'
+    rf'(?: of "(?P<state_id>[^"]*)")? via `(?P<method>\w+)`{PROPERTIES}$'
 )
-# 'does' calls and 'spawns' runs the call as a task, saving its id.
+# 'does' calls and 'spawns' runs the call as a task.
 DOES = (
     rf'{USER} (?P<verb>does|spawns) (?:a|an) `(?P<method>\w+)` {ON_STATE}'
-    rf'{PROPERTIES}(?: and saves its task id as `(?P<task>\w+)`)?$'
+    rf'{PROPERTIES}$'
 )
 ATTEMPTS = (
     rf'{USER} attempts (?:a|an) `(?P<method>\w+)` {ON_STATE}{PROPERTIES}$'
@@ -228,6 +232,12 @@ IS_SIGNED_IN_TO_WEB_APP = (
     r'(?: with their user id saved as `(?P<saved_as>\w+)`)?$'
 )
 IS_SIGNED_OUT_OF_WEB_APP = rf'{USER} is signed out of the web app$'
+RESULTING_STATE_ID_IS_SAVED_AS = (
+    r'the resulting state id is saved as `(?P<name>\w+)`$'
+)
+RESULTING_TASK_ID_IS_SAVED_AS = (
+    r'the resulting task id is saved as `(?P<name>\w+)`$'
+)
 RESULTING_IS_SAVED_AS = (
     rf'the resulting `(?P<property_name>{PATH})` is saved as `(?P<name>\w+)`$'
 )
@@ -372,7 +382,10 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
     if match is not None:
         return BuiltInSyntax(
             creates_via=CreatesVia(
-                state=_state(match),
+                state=State(
+                    type=match['state_type'],
+                    id=match['state_id'] or '',
+                ),
                 method=match['method'],
                 assignments=_assignments(match['clauses']),
                 user=match['user'],
@@ -380,18 +393,15 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
         )
     match = re.match(DOES, text)
     if match is not None:
-        # A spawned call saves its task id, and only a spawned one.
-        if (match['verb'] == 'spawns') != (match['task'] is not None):
-            return None
-        does = Does(
-            state=_state(match),
-            method=match['method'],
-            assignments=_assignments(match['clauses']),
-            user=match['user'],
+        return BuiltInSyntax(
+            does=Does(
+                state=_state(match),
+                method=match['method'],
+                assignments=_assignments(match['clauses']),
+                user=match['user'],
+                spawned=match['verb'] == 'spawns',
+            )
         )
-        if match['task'] is not None:
-            does.task_id_saved_as = match['task']
-        return BuiltInSyntax(does=does)
     match = re.match(ATTEMPTS, text)
     if match is not None:
         return BuiltInSyntax(
@@ -575,6 +585,20 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
                 user=match['user'],
                 test_id=match['test_id'],
                 name=match['name'],
+            )
+        )
+    match = re.match(RESULTING_STATE_ID_IS_SAVED_AS, text)
+    if match is not None:
+        return BuiltInSyntax(
+            resulting_state_id_is_saved_as=ResultingStateIdIsSavedAs(
+                name=match['name']
+            )
+        )
+    match = re.match(RESULTING_TASK_ID_IS_SAVED_AS, text)
+    if match is not None:
+        return BuiltInSyntax(
+            resulting_task_id_is_saved_as=ResultingTaskIdIsSavedAs(
+                name=match['name']
             )
         )
     match = re.match(RESULTING_IS_SAVED_AS, text)

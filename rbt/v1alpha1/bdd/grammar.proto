@@ -109,8 +109,11 @@ message SharedContext {
   string user = 1;
 }
 
-// '"alice" creates an `Account` of "alice" via `open` with ...'.
+// '"alice" creates an `Account` of "alice" via `open` with ...', or
+// '"alice" creates an `Account` via `open` with ...' for a state
+// whose id the factory makes up.
 message CreatesVia {
+  // The state created; its id is empty when the factory makes it up.
   State state = 1;
 
   string method = 2;
@@ -122,8 +125,8 @@ message CreatesVia {
 }
 
 // '"alice" does a `deposit` on `Account` of "alice" with ...', or
-// '"alice" spawns a `deposit` on `Account` of "alice" with ... and
-// saves its task id as `name`'.
+// '"alice" spawns a `deposit` on `Account` of "alice" with ...' to
+// run the call as a task.
 message Does {
   State state = 1;
 
@@ -131,9 +134,8 @@ message Does {
 
   repeated Assignment assignments = 3;
 
-  // The name the spawned task's id is saved under; absent for a
-  // call that is done, not spawned.
-  optional string task_id_saved_as = 4;
+  // Whether the call is spawned as a task rather than done.
+  bool spawned = 4;
 
   // The user the call is made as.
   string user = 5;
@@ -379,6 +381,18 @@ message ResultingIsSavedAs {
   Save save = 1;
 }
 
+// 'the resulting state id is saved as `account_id`': the id of the
+// state the latest 'creates' step created.
+message ResultingStateIdIsSavedAs {
+  string name = 1;
+}
+
+// 'the resulting task id is saved as `deposit_task_id`': the id of
+// the task the latest 'spawns' step spawned.
+message ResultingTaskIdIsSavedAs {
+  string name = 1;
+}
+
 // The syntax tree of a step's text under the grammar of the built-in
 // `reboot.bdd` steps: which built-in step it is, and the parts the
 // step takes. Only a text one of the built-in steps matches has one;
@@ -413,5 +427,7 @@ message BuiltInSyntax {
     IsAnUnauthenticatedUser is_an_unauthenticated_user = 26;
     IsSignedInToWebApp is_signed_in_to_web_app = 27;
     IsSignedOutOfWebApp is_signed_out_of_web_app = 28;
+    ResultingStateIdIsSavedAs resulting_state_id_is_saved_as = 29;
+    ResultingTaskIdIsSavedAs resulting_task_id_is_saved_as = 30;
   }
 }

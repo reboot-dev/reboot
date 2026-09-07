@@ -24,12 +24,12 @@ class ReadTest(unittest.TestCase):
     def test_a_call_with_assignments(self) -> None:
         syntax = parse(
             '"u" spawns a `transfer` on `Bank` of "test-bank" with '
-            '`from_account_id=<first_account_id>` and `amount=250.0` '
-            'and saves its task id as `transfer_task_id`'
+            '`from_account_id=<first_account_id>` and `amount=250.0`'
         )
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'does')
         does = syntax.does
+        self.assertTrue(does.spawned)
         self.assertEqual(does.user, 'u')
         self.assertEqual(does.state.type, 'Bank')
         self.assertEqual(does.state.id, 'test-bank')
@@ -44,7 +44,11 @@ class ReadTest(unittest.TestCase):
                 ('amount', '250.0'),
             ],
         )
-        self.assertEqual(does.task_id_saved_as, 'transfer_task_id')
+        syntax = parse('the resulting task id is saved as `transfer_task_id`')
+        assert syntax is not None
+        self.assertEqual(
+            syntax.resulting_task_id_is_saved_as.name, 'transfer_task_id'
+        )
 
         syntax = parse('"u" creates an `Account` of "alice" via `open`')
         assert syntax is not None
@@ -54,20 +58,24 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(syntax.creates_via.method, 'open')
         self.assertEqual(len(syntax.creates_via.assignments), 0)
 
+        # A factory may make the id up, which the next step saves.
+        syntax = parse(
+            '"u" creates an `Account` via `open` with `initial_balance=1`'
+        )
+        assert syntax is not None
+        self.assertEqual(syntax.creates_via.state.type, 'Account')
+        self.assertEqual(syntax.creates_via.state.id, '')
+        syntax = parse('the resulting state id is saved as `account_id`')
+        assert syntax is not None
+        self.assertEqual(
+            syntax.resulting_state_id_is_saved_as.name, 'account_id'
+        )
+
         syntax = parse(
             '"u" does a `deposit` on `Account` of "alice" with `amount=1`'
         )
         assert syntax is not None
-        self.assertFalse(syntax.does.HasField('task_id_saved_as'))
-
-        # A spawned call saves its task id, and only a spawned one.
-        self.assertIsNone(parse('"u" spawns a `deposit` on `Account` of "a"'))
-        self.assertIsNone(
-            parse(
-                '"u" does a `deposit` on `Account` of "a" and saves its task '
-                'id as `t`'
-            )
-        )
+        self.assertFalse(syntax.does.spawned)
 
         # Either article, as English reads.
         syntax = parse('"u" does an `open_account` on `Customer` of "c"')

@@ -151,6 +151,14 @@ class World:
     # The response of the most recent call a step made.
     response: Optional[Any] = None
 
+    # The id of the state the most recent 'creates' step created,
+    # given by the step or made up by the factory.
+    created_state_id: Optional[str] = None
+
+    # The id of the task the most recent 'spawns' step spawned, as
+    # JSON.
+    spawned_task_id: Optional[JsonValue] = None
+
     # Values saved under a name, as JSON; later steps say '<name>' to
     # use.
     saved: dict[str, JsonValue] = field(default_factory=dict)

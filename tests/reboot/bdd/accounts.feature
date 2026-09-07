@@ -10,6 +10,12 @@ Feature: Accounts
     Then the result has `updated_balance=150`
     And as "anonymous", `balance` on the `Account` for "alice" has `balance=150`
 
+  Scenario: A factory can make the id up
+    Given "anonymous" creates an `Account` via `open` with `initial_balance=5`
+    And the resulting state id is saved as `account_id`
+    When "anonymous" does a `deposit` on `Account` of "<account_id>" with `amount=1`
+    Then as "anonymous", `balance` on the `Account` for "<account_id>" has `balance=6`
+
   Scenario: Withdrawing more than the balance is refused
     Given "anonymous" creates an `Account` of "bob" via `open`
     And "anonymous" does a `deposit` on `Account` of "bob" with `amount=30`
@@ -92,10 +98,12 @@ Feature: Accounts
 
   Scenario: Spawned tasks complete
     Given "anonymous" creates an `Account` of "spawned" via `open`
-    When "anonymous" spawns a `deposit` on `Account` of "spawned" with `amount=15` and saves its task id as `first`
+    When "anonymous" spawns a `deposit` on `Account` of "spawned" with `amount=15`
+    And the resulting task id is saved as `first`
     Then "anonymous" awaits the `deposit` task "<first>" on `Account` within 30 seconds
     And the result has `updated_balance=15`
-    When "anonymous" spawns a `balance` on `Account` of "spawned" and saves its task id as `read`
+    When "anonymous" spawns a `balance` on `Account` of "spawned"
+    And the resulting task id is saved as `read`
     Then "anonymous" awaits the `balance` task "<read>" on `Account` within 30 seconds
     And the result has `balance=15`
 
