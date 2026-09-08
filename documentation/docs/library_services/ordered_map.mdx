@@ -13,8 +13,7 @@ when inserted into an `OrderedMap`.
     A producer of a `Value` is expected to set one of these variants; the
     absence of any variant indicates an error. This type is meant to represent all possible JSON values.
   * `bytes` is used to store a string of `bytes`.
-  * `Any` refers to the `Any` protobuf and is the best choice if you are using protobufs
-    to structure your data.
+  * `Any` wraps a protobuf message, for code that already has one.
 
 `OrderedMap`s are frequently used to create indexes of other state types,
 but can also be used to efficiently store large collections of primitive values.
@@ -26,9 +25,8 @@ For example:
   * To index a data type by creation time, you can use time-ordered UUIDs
     (such as UUIDv1 or UUIDv7) as keys and the data type's state-ID as
     values.
-  * To index a large collection of Protobuf message types, you can use a
-    key of your choice and the serialized value of each Protobuf message
-    as a value.
+  * To store a large collection of records, you can use a key of your
+    choice and each record, serialized, as a value.
 
 To use an `OrderedMap` in your application, you typically want to choose an ID for
 the map and store it somewhere (e.g., as a field in the appropriate state data

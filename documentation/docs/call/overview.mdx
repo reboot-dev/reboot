@@ -91,9 +91,8 @@ that you pass to [`Application`](/implement/application).
 ## Constructing instances
 
 You construct an instance of your data types either _implicitly_
-or _explicitly_, depending on whether or not you have explicitly
-designated certain methods as _constructors_ in your `.proto`, or as
-a _factory_ in your Pydantic or Zod schema.
+or _explicitly_, depending on whether or not you have designated a
+method as a _factory_ in your Pydantic or Zod schema.
 
 :::tip
 Prefer an explicit constructor for the types your application creates

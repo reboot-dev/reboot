@@ -156,7 +156,6 @@ const sidebars = {
         "define/methods",
         "define/pydantic",
         "define/zod",
-        "define/protobuf",
       ],
     },
     {
