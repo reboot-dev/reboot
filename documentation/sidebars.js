@@ -91,10 +91,35 @@ const sidebars = {
       ],
     },
     {
+      type: "doc",
+      id: "concepts",
+      label: "How Reboot works",
+    },
+    {
       type: "category",
       collapsed: true,
       label: "Users and auth",
       items: [
+        {
+          type: "doc",
+          id: "users/overview",
+          label: "Users and sign-in",
+        },
+        {
+          type: "doc",
+          id: "users/oauth",
+          label: "Configure OAuth",
+        },
+        {
+          type: "doc",
+          id: "users/providers",
+          label: "OAuth providers",
+        },
+        {
+          type: "doc",
+          id: "users/claims",
+          label: "Identity claims",
+        },
         {
           type: "doc",
           id: "users/authorization",
@@ -102,8 +127,13 @@ const sidebars = {
         },
         {
           type: "doc",
+          id: "users/tokens",
+          label: "Bearer tokens",
+        },
+        {
+          type: "doc",
           id: "users/external_apis",
-          label: "Identity and external APIs",
+          label: "Call external APIs as the user",
         },
       ],
     },
@@ -114,13 +144,23 @@ const sidebars = {
       items: [
         {
           type: "doc",
-          id: "surfaces/ai_chat",
-          label: "AI chat apps",
+          id: "surfaces/overview",
+          label: "Overview",
         },
         {
           type: "doc",
-          id: "learn_more/mcp_apps",
-          label: "MCP apps",
+          id: "surfaces/web",
+          label: "Web apps",
+        },
+        {
+          type: "doc",
+          id: "surfaces/react_native",
+          label: "React Native apps",
+        },
+        {
+          type: "doc",
+          id: "surfaces/ai_chat",
+          label: "AI chat apps",
         },
         {
           type: "doc",
@@ -130,7 +170,7 @@ const sidebars = {
         {
           type: "doc",
           id: "agents",
-          label: "Agents",
+          label: "Agents inside your app",
         },
       ],
     },

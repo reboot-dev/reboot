@@ -3,232 +3,96 @@ import TabItem from "@theme/TabItem";
 
 # Authorization
 
-<!-- TODO: Replace all inline code examples with actual real code! -->
+[Sign-in](/users/overview) establishes *who* is calling. Authorization
+decides *what they may do*. In Reboot you declare that once per
+servicer, as a rule for each of its methods, and Reboot enforces the
+rule before the method runs — rather than an `if` statement buried in
+every method body.
 
-## Overview
+Every call is checked in two steps:
 
-Reboot has native support for authorizing calls using the widely used
-`Authorization: Bearer` header, as well as via mechanisms like
-cookies.
+1. **Token verification** turns the caller's credential into an `Auth`
+   object with a `user_id` (and any other properties you put on it).
+   With [`oauth=`](/users/oauth) configured, Reboot does this for you;
+   see [Bearer tokens](/users/tokens) for doing it yourself.
+2. **Authorizers** decide, per method, whether that caller may
+   proceed.
 
-Depending on your application's requirements, callers might use API
-keys or access tokens (such as JWTs), produced by your choice of
-provider, e.g., [Auth0](https://auth0.com) or
-[Ory](https://www.ory.sh).
+## Defaults you get for free
 
-## Setting bearer tokens
+Before writing any authorizer, know what you already have:
 
-### From within your app
+- **`User` methods** are callable by that user, and by your own
+  application code. Nobody else.
+- **Every other state type** is callable only by your own application
+  code. A call arriving from outside is denied.
 
-To include a bearer token for all calls made to a particular state
-instance, you can specify it in `ref()`:
+For a great many applications that is the entire authorization model:
+users reach their own `User`, `User` methods reach everything else on
+their behalf, and no external caller can address your internal types
+directly.
 
-<Tabs groupId="language">
-  <TabItem value="python" label="Python">
-```py
-from_account = Account.ref(
-    request.from_account_id,
-    bearer_token=bearer_token,
-)
-```
-  </TabItem>
+### Overriding the defaults
 
-  <TabItem value="typescript" label="TypeScript">
-```ts
-const fromAccount = Account.ref(request.fromAccountId, { bearerToken });
-```
-  </TabItem>
-</Tabs>
+Implementing `authorizer()` on a servicer replaces that type's default
+entirely; nothing from it carries over. If your own application code
+should still be able to call a method, allow that explicitly with
+`is_app_internal`. On a `User` servicer, likewise re-state the owner
+rule with `state_id_is_user_id` if you still want it:
 
-You can also pass it as an option when doing [explicit
-construction](/call/overview#explicit-construction):
-
-<Tabs groupId="language">
-  <TabItem value="python" label="Python">
-<!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/auth_tests.py&lines=399-403) -->
-<!-- The below code snippet is automatically added from ../../../tests/reboot/auth_tests.py -->
-
-```py
-bank, _ = await Bank.create(
-    context,
-    SINGLETON_BANK_ID,
-    Options(bearer_token=VALID_JWT),
+```python
+return User.Authorizer(
+    profile=allow_if(any=[state_id_is_user_id, is_app_internal]),
+    # ...
 )
 ```
 
-<!-- MARKDOWN-AUTO-DOCS:END -->
-  </TabItem>
+Both callables are described under
+[Built-in callables](#built-in-callables) below.
 
-  <TabItem value="typescript" label="TypeScript">
-```ts
-const [bank] = await Bank.create(
-  context,
-  SINGLETON_BANK_ID,
-  {},
-  { bearerToken: VALID_JWT }
-);
+### Relaxed during development
+
+Under `rbt dev run`, a call from outside to a type that has no
+`authorizer()` is **allowed** rather than denied, so you can build the
+app before deciding who may call what. Each such call logs a warning:
+
 ```
-<!-- MARKDOWN-AUTO-DOCS:END -->
-  </TabItem>
-</Tabs>
-
-### From React
-
-```tsx
-import { useRebootClient } from "@reboot-dev/reboot-react";
-
-const { setBearerToken } = useRebootClient();
-
-setBearerToken(token);
+*** TodoList.todos IS MISSING AUTHORIZATION *** Calls to this method are ONLY ALLOWED during development and will be DENIED in production. See https://docs.reboot.dev/users/authorization#relaxed-during-development for more details. Will silence this message for the next 1 minute.
 ```
 
-### Using `ExternalContext`
+Under `rbt serve` and on Reboot Cloud those calls are denied.
+Implementing `authorizer()` on the servicer silences the warning. The
+`User` default is not relaxed; it applies in development too.
 
-To include a bearer token on all calls made from an [`ExternalContext`](/call/from_outside_your_app),
-or from React generated code, do the following:
+## Writing an authorizer
+
+Implement `authorizer()` on your [servicer](/implement/servicers) and
+give a rule per method:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
-  ```py
-  context = ExternalContext(
-      name='Example',
-      url='http://localhost:9991',
-      bearer_token=token,
-  )
-  ```
-  </TabItem>
 
-  <TabItem value="typescript" label="TypeScript">
-  ```typescript
-  const context = new ExternalContext({
-    name: "Example",
-    url: "http://localhost:9991",
-    bearerToken: token,
-  });
-  ```
-  </TabItem>
-</Tabs>
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/backend/src/servicers/counter.py&lines=72-84&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/backend/src/servicers/counter.py -->
 
-<!-- TODO: It would be good to be able to link to generated API docs here: #1079. -->
+```python
+class CounterServicer(Counter.Servicer):
+    """Servicer for the Counter state machine."""
 
-## Authorizing calls to your application
-
-Authorization in Reboot is done by first performing [_token
-verification_](/users/authorization#token-verification) and then calling any
-[_authorizers_](/users/authorization#authorizers).
-
-### Token verification
-
-To verify that a provided token is valid you must provide a
-`TokenVerifier`. A `TokenVerifier` is set globally on your Reboot
-[`Application`](/implement/application) (or on `Reboot.up` in the case
-of unit tests):
-
-<Tabs groupId="language">
-  <TabItem value="python" label="Python">
-  ```py
-  async def main():
-      application = Application(
-          servicers=[...],
-          token_verifier=MyTokenVerifier(...),
-      )
-      await application.run()
-  ```
-  </TabItem>
-
-  <TabItem value="typescript" label="TypeScript">
-  ```typescript
-  new Application({
-    servicers: [...],
-    ...,
-    tokenVerifier: new MyTokenVerifier(...),
-  }).run();
-  ```
-  </TabItem>
-
-</Tabs>
-
-The `TokenVerifier` interface has a single method, which receives the `token` from the
-`Authorization: Bearer` header, and which should return an `Auth` object if the token
-was valid:
-
-<Tabs groupId="language">
-  <TabItem value="python" label="Python">
-<!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/aio/auth/token_verifiers.py&lines=26-31) -->
-<!-- The below code snippet is automatically added from ../../../reboot/aio/auth/token_verifiers.py -->
-
-```py
-@abstractmethod
-async def verify_token(
-    self,
-    context: ReaderContext,
-    token: Optional[str],
-) -> VerifyTokenResult:
-```
-
-<!-- MARKDOWN-AUTO-DOCS:END -->
-  </TabItem>
-
-  <TabItem value="typescript" label="TypeScript">
-<!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/nodejs/index.ts&lines=668-671) -->
-<!-- The below code snippet is automatically added from ../../../reboot/nodejs/index.ts -->
-
-```ts
-abstract verifyToken(
-  context: ReaderContext,
-  token?: string
-): Promise<Auth | null>;
-```
-
-<!-- MARKDOWN-AUTO-DOCS:END -->
-  </TabItem>
-</Tabs>
-
-In addition to being able to set any arbitrary `properties` on the
-returned `Auth` object that authorizers can consume, there is a
-specific `user_id` (Python), `userId` (TypeScript) property meant to
-indicate that this is a valid user (and its internally represented ID).
-
-:::tip
-
-**Token verification does not necessarily mean user authentication!**
-
-Depending on where/how tokens are generated they may or may not
-indicate that these tokens represent valid users for _your_
-application, just that this token is valid for a user from a
-particular provider. Read the provider's documentation carefully to
-ensure that you are validating the tokens in such a way that they are
-specific to your application.
-
-:::
-
-### Authorizers
-
-After token verification Reboot will call into any provided
-authorizers. You provide an authorizer by implementing the
-`authorizer()` method on your
-[servicers](/implement/servicers):
-
-<Tabs groupId="language">
-  <TabItem value="python" label="Python">
-```py
-from reboot.aio.auth.authorizers import allow, allow_if
-
-class AccountServicer(Account.Servicer):
-
-    def authorizer(self):
-        return Account.Authorizer(
-            balance=allow_if(any=[is_admin, is_account_owner]),
-            deposit=allow(),
-            withdraw=allow_if(all=[is_account_owner]),
-            ...
+    def authorizer(self) -> Authorizer:
+        return Counter.Authorizer(
+            # `create` is restricted to trusted app code and records
+            # the counter's owner; every other method is restricted to
+            # that owner (or, again, to trusted app code).
+            create=allow_if(all=[is_app_internal]),
+            get=allow_if(any=[_caller_is_owner, is_app_internal]),
+            increment=allow_if(any=[_caller_is_owner, is_app_internal]),
+            description=allow_if(any=[_caller_is_owner, is_app_internal]),
         )
-
-    ...
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
   </TabItem>
 
   <TabItem value="typescript" label="TypeScript">
@@ -251,13 +115,8 @@ class AccountServicer extends Account.Servicer {
   </TabItem>
 </Tabs>
 
-When you create an authorizer for a specific state type you provide
-authorizer "rules" for each method, for example,
-[`deny()`](/users/authorization#deny), [`allow()`](/users/authorization#allow), or
-[`allow_if()`](/users/authorization#allow_if).
-
-You can alternatively return a single authorizer rule directly from
-`authorizer()` which will apply to all methods.
+You can also return a single rule directly from `authorizer()`, which
+then applies to every method on the type:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
@@ -288,124 +147,202 @@ class AccountServicer extends Account.Servicer {
   </TabItem>
 </Tabs>
 
-### Authorizer rules
+## Rules
 
-#### `deny()`
+Rules come from `reboot.aio.auth.authorizers` (Python) or
+`@reboot-dev/reboot` (TypeScript).
 
-An authorizer rule that will deny all requests.
+### `deny()`
 
-#### `allow()`
-
-An authorizer rule that will allow all requests.
-
-#### `allow_if()`
-
-An authorizer rule that takes a set of authorizer callables, i.e.,
-functions that will perform the authorization. These functions return
-an `Authorizer.Decision`, which is either `Ok`, `PermissionDenied`, or
-`Unauthenticated`. For example, here is an authorizer callable for
-making sure that the token was verified for a valid user:
+Denies every request, your own application's included. Use it to
+take a method out of service without removing it:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
-```py
-from rbt.v1alpha1 import errors_pb2
+```python
+from reboot.aio.auth.authorizers import deny
 
-def is_valid_user(
-    *,
-    context: ReaderContext,
-    state: Optional[Message],
-    request: Optional[Message],
-    **kwargs,
-):
-    if context.auth is None:
-        return errors_pb2.Unauthenticated()
+class TodoListServicer(TodoList.Servicer):
 
-    if await validate_user(context.auth.user_id):
-        return errors_pb2.Ok()
-
-    return errors_pb2.PermissionDenied()
+    def authorizer(self):
+        return TodoList.Authorizer(
+            # Not ready yet: nobody may call it.
+            share=deny(),
+            # ...
+        )
 ```
   </TabItem>
-
   <TabItem value="typescript" label="TypeScript">
 ```ts
-import { errors_pb } from "@reboot-dev/reboot-api";
+import { deny } from "@reboot-dev/reboot";
 
-function isValidUser({ context }: {
-  context: ReaderContext;
-  state?: Message;
-  request?: Message;
-}) {
-  if (!context.auth) {
-    return new errors_pb.Unauthenticated();
+class TodoListServicer extends TodoList.Servicer {
+  authorizer() {
+    return new TodoList.Authorizer({
+      // Not ready yet: nobody may call it.
+      share: deny(),
+      // ...
+    });
   }
-
-  if (await validateUser(context.auth.userId)) {
-    return new errors_pb.Ok();
-  }
-
-  return new errors_pb.PermissionDenied();
 }
 ```
   </TabItem>
 </Tabs>
 
-:::important
+### `allow()`
 
-If you want to allow a call only when _all_ of your authorizer
-callables decide `Ok`, pass them via `all`. If you want to allow a
-call if _any_ (even just one) of the authorizer callables decide `Ok`,
-pass them via `any`.
+Allows every request. Use it deliberately — it makes the method
+callable by anyone who can reach your backend, signed in or not:
 
-:::
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+```python
+from reboot.aio.auth.authorizers import allow
+
+class TodoListServicer(TodoList.Servicer):
+
+    def authorizer(self):
+        return TodoList.Authorizer(
+            # Anyone may read a list.
+            todos=allow(),
+            # ...
+        )
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { allow } from "@reboot-dev/reboot";
+
+class TodoListServicer extends TodoList.Servicer {
+  authorizer() {
+    return new TodoList.Authorizer({
+      // Anyone may read a list.
+      todos: allow(),
+      // ...
+    });
+  }
+}
+```
+  </TabItem>
+</Tabs>
+
+### `allow_if()`
+
+Takes a set of *authorizer callables* — the functions that make the
+actual decision. Each returns an `Authorizer.Decision`: `Ok`,
+`PermissionDenied`, or `Unauthenticated`.
+
+Pass them via `all` to require that *every* callable decides `Ok`, or
+via `any` to allow the call when *at least one* does:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+```python
+from reboot.aio.auth.authorizers import allow_if, is_app_internal
+
+class TodoListServicer(TodoList.Servicer):
+
+    def authorizer(self):
+        return TodoList.Authorizer(
+            # Only your own application code may create a list.
+            create=allow_if(all=[is_app_internal]),
+            # The list's owner may add to it; so may your own code.
+            add=allow_if(any=[_caller_is_owner, is_app_internal]),
+        )
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { allowIf, isAppInternal } from "@reboot-dev/reboot";
+
+class TodoListServicer extends TodoList.Servicer {
+  authorizer() {
+    return new TodoList.Authorizer({
+      // Only your own application code may create a list.
+      create: allowIf({ all: [isAppInternal] }),
+      // The list's owner may add to it; so may your own code.
+      add: allowIf({ any: [callerIsOwner, isAppInternal] }),
+    });
+  }
+}
+```
+  </TabItem>
+</Tabs>
+
+`_caller_is_owner` (`callerIsOwner`) is written in the next section.
+
+## Authorizer callables
+
+A callable receives the `context`, the instance's `state`, and the
+`request`, and returns a decision. Here is one that allows the owner
+of a `Counter` and nobody else:
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/backend/src/servicers/counter.py&lines=20-33&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/backend/src/servicers/counter.py -->
+
+```python
+def _caller_is_owner(
+    *,
+    context: ReaderContext,
+    state: Optional[Counter.State],
+    **kwargs,
+):
+    """Allow when the caller's `user_id` matches the Counter's recorded
+    `owner_id`. A not-yet-constructed Counter (`state is None`) falls
+    through to deny."""
+    if context.auth is None or not context.auth.user_id:
+        return Unauthenticated()
+    if state is not None and context.auth.user_id == state.owner_id:
+        return Ok()
+    return PermissionDenied()
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+Note the pattern: it reads the caller's identity off `context.auth`,
+compares it against durable state, and returns a decision. It does not
+raise, and it does not mutate anything.
+
+### Built-in callables
+
+Reboot ships the ones almost every application needs:
+
+| Callable | Decides `Ok` when |
+| --- | --- |
+| `is_app_internal` | The call originates inside your own application rather than from a client. |
+| `state_id_is_user_id` | The caller's `user_id` equals the instance's state ID — the rule behind the `User` default. |
+| `has_verified_token` | The caller presented a token that verified. Says nothing about *which* user it is. |
 
 :::note
 
-Verifying a token and running authorizers _should not have effects_,
-so they always receive a `ReaderContext` regardless of the [kind of
-method](/define/methods) that they are authorizing
-for.
+Verifying a token and running authorizers *must not have effects*, so
+they always receive a `ReaderContext` regardless of the
+[kind of method](/define/methods) being authorized.
 
 :::
 
-### Default authorizer
+## A pattern that works
 
-By default, if you don't provide an authorizer by overriding
-`authorizer()`, **only _application internal_ calls are allowed**.
+The combination in the `Counter` example above generalizes well:
 
-#### `User` type default
+```py
+create=allow_if(all=[is_app_internal]),
+get=allow_if(any=[_caller_is_owner, is_app_internal]),
+```
 
-The [`User`](/define/pydantic#special-state-user) type is
-a special case: its default authorizer also allows calls where
-the caller's `user_id` matches the `User`'s state ID. In other
-words, each user can access their own `User` state without any
-custom authorizer. App-internal calls are allowed as well.
+- Construction is **application-internal only**, so instances are only
+  ever created through a `User` method that records who owns them.
+- Every other method allows the recorded owner, or trusted application
+  code.
 
-If you need different rules, you can override `authorizer()` as
-with any other state type.
+That gives you per-instance ownership without a permissions table, and
+it holds no matter which surface the call arrives from — web, native,
+or an AI chat client.
 
-:::important
+## Next
 
-Why am I seeing log messages about **MISSING AUTHORIZATION**?
-
-To streamline development using `rbt dev`, calls missing authorization
-are **allowed**. When running with `rbt serve` or via `rbt cloud`
-those same calls will be **denied**, so Reboot emits a log warning to
-help you identify those calls.
-
-Implement the `authorizer()` method on your `Servicer` to silence the
-warning.
-
-:::
-
-## Third-party auth providers
-
-Integrating a third-party auth provider like [Auth0](https://auth0.com/docs/quickstarts) or
-[Ory](https://www.ory.sh/docs/getting-started/overview) into your application
-usually involves:
-
-1. Implementing a `TokenVerifier` that [validates access tokens](https://auth0.com/docs/secure/tokens/access-tokens/validate-access-tokens),
-   and produces `Auth` objects containing any relevant properties.
-2. Providing authorizer rules for your servicers.
-
+- [Bearer tokens and token verification](/users/tokens) — bringing
+  your own credentials.
+- [Users and sign-in](/users/overview) — where `context.auth.user_id`
+  comes from.
+- [Errors](/errors) — what a denied call looks like to the caller.

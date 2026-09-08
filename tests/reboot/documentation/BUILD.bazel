@@ -459,6 +459,97 @@ py_test(
     ],
 )
 
+# The todo-list example the users docs pull from: a `User` that is the
+# person (profile plus the lists they own), and the `TodoList` they
+# create. Same layout as the `ai_chat_counter` example above.
+py_library(
+    name = "todos_py",
+    srcs = ["todos.py"],
+    deps = ["//reboot:api_py"],
+)
+
+py_reboot_library_from_pydantic(
+    name = "todos_py_reboot",
+    py_deps = [":todos_py"],
+    pydantic = ":todos.py",
+)
+
+py_library(
+    name = "todos_servicer_py",
+    srcs = [
+        "backend/src/servicers/__init__.py",
+        "backend/src/servicers/todos.py",
+    ],
+    imports = ["backend/src"],
+    deps = [
+        ":todos_py",
+        ":todos_py_reboot",
+    ],
+)
+
+# Exercises first-sign-in seeding (`User.create`), claims delivery
+# (`User.set_claims`), the `User`-as-entry-point methods, and the
+# owner-only authorizer.
+py_test(
+    name = "test_todos_py",
+    srcs = ["test_todos.py"],
+    imports = ["backend/src"],
+    main = "test_todos.py",
+    deps = [
+        ":todos_servicer_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+js_reboot_react_library_from_pydantic(
+    name = "todos_js_reboot_react",
+    package_json = ":package.json",
+    pydantic = ":todos.py",
+)
+
+# Type-checks the `useSignIn()` / `useUser()` entrypoint the users docs
+# show, against the hooks generated from `todos.py`.
+ts_project(
+    name = "todos_main_ts",
+    srcs = [
+        "get_started_env.d.ts",
+        "todos_main.tsx",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "baseUrl": ".",
+            "jsx": "react-jsx",
+            "lib": [
+                "ES2022",
+                "DOM",
+                "DOM.Iterable",
+            ],
+            "module": "esnext",
+            "moduleResolution": "bundler",
+            "paths": {
+                "@api/todos/v1/todos_rbt_react": [
+                    "./todos_zod_rbt_react",
+                ],
+            },
+            "skipLibCheck": True,
+            "strict": True,
+            "target": "es2022",
+        },
+    },
+    deps = [
+        ":todos_js_reboot_react",
+        "//:node_modules/@reboot-dev/reboot-react",
+        "//:node_modules/@reboot-dev/reboot-web",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/zod",
+    ],
+)
+
 js_reboot_react_library_from_pydantic(
     name = "ai_chat_counter_js_reboot_react",
     package_json = ":package.json",
