@@ -10,7 +10,7 @@ exports_files([
     "LICENSE.txt",
     "versions.bzl",
     "requirements.in",
-    "requirements-pytest-bdd.in",
+    "requirements-dev.in",
 ])
 
 py_library(
@@ -579,7 +579,7 @@ pip_package(
         "pytest11": ["reboot-bdd = reboot.bdd_plugin"],
     },
     extras = {
-        "//reboot:requirements-pytest-bdd.in": "pytest-bdd",
+        "//reboot:requirements-dev.in": "dev",
     },
     license = "Apache-2.0",
     license_txt = ":LICENSE.txt",

@@ -7,7 +7,7 @@ cheaper than tracking which one an event was about, so a burst of
 saves loses nothing however many events the watch failed to hear.
 
 Each file is parsed by `reboot.bdd.feature`, whose parser is
-`gherkin-official`, which arrives with `reboot[pytest-bdd]`. Without
+`gherkin-official`, which arrives with `reboot[dev]`. Without
 the extra, each feature file found is recorded with an error saying
 to install it, so the page can say why it shows no features.
 
@@ -128,7 +128,7 @@ async def _read_and_parse(*, directory: Path) -> dict[str, Feature]:
         if not _extra_installed:
             features[filename] = Feature(
                 error='Reading `.feature` files needs the packages '
-                '`reboot[pytest-bdd]` installs; install the extra to see '
+                '`reboot[dev]` installs; install the extra to see '
                 'behaviors here.'
             )
             continue

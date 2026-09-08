@@ -1,5 +1,5 @@
 """The pytest plugin the `reboot` distribution registers: with the
-`reboot[pytest-bdd]` extra installed, every test run gets the
+`reboot[dev]` extra installed, every test run gets the
 `reboot.bdd` steps and fixtures, and with `playwright` and
 `pytest-playwright` installed too, the web app's steps and the
 recording of every browser scenario."""

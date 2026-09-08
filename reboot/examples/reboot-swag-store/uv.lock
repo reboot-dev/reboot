@@ -1918,7 +1918,7 @@ requires-dist = [
     { name = "anyio", specifier = ">=4.0.0" },
     { name = "httpx", specifier = ">=0.27,<1.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "reboot", extras = ["pytest-bdd"], specifier = "==1.5.0" },
+    { name = "reboot", extras = ["dev"], specifier = "==1.5.0" },
     { name = "uuid7", specifier = ">=0.1.0" },
 ]
 

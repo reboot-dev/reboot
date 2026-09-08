@@ -3,7 +3,7 @@ declares it: the feature, its rules, their scenarios, and each step
 parsed by the built-in steps' grammar.
 
 Parsing is `gherkin-official`'s, which arrives with
-`reboot[pytest-bdd]`, as does this package.
+`reboot[dev]`, as does this package.
 """
 import gherkin.errors
 import gherkin.parser

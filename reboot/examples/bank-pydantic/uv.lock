@@ -216,7 +216,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "reboot", extras = ["pytest-bdd"], specifier = "==1.5.0" }]
+requires-dist = [{ name = "reboot", extras = ["dev"], specifier = "==1.5.0" }]
 
 [package.metadata.requires-dev]
 dev = [
