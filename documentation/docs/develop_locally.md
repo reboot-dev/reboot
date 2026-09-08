@@ -182,19 +182,19 @@ rbt generate --python=backend/api/ api/ -- --mypy_out=backend/api/
 In `.rbtrc`:
 
 ```shell
-# Find '.proto' files in 'api/'.
+# Find API definitions in 'api/'.
 generate api/
 
-# Generate 'python' code from our '.proto' files in 'backend/api/'.
+# Generate Python code into 'backend/api/'.
 generate --python=backend/api/
 
-# Generate 'mypy' code from our '.proto' files in 'backend/api/mypy/'.
+# Generate 'mypy' stubs into 'backend/api/mypy/'.
 generate -- --mypy_out=backend/api/mypy/
 ```
 
-In these examples, the order of the flags is crucial. All flags that appear
-after `--` are passed directly to the underlying tool (in this case,
-`protoc`).
+In these examples, the order of the flags is crucial. All flags that
+appear after `--` are passed directly to the underlying code
+generator.
 
 #### Frontend flags
 
@@ -226,8 +226,8 @@ dev run --default-config=hmr
 
 <!-- ## Boilerplate code
 
-The `rbt generate` command can generate boilerplate code based on your `.proto`
-files, giving you copy-paste-able Python/TypeScript method definitions for which
+The `rbt generate` command can generate boilerplate code based on your API
+definitions, giving you copy-paste-able Python/TypeScript method definitions for which
 you only need to fill in the implementation. To generate the boilerplate code,
 use the `--boilerplate` flag followed by the path to the directory where you
 want the boilerplate code to be placed:
@@ -279,9 +279,9 @@ By default your application state will not be persisted across
 restarts. To persist state, you can pass an `--application-name=...` flag to `rbt dev
 run`.
 
-When state is persisted, backwards incompatible changes in your `.proto` files
-are detected, and will trigger errors to encourage resolving them before they
-reach production. The `--on-backwards-incompatibility` flag allows you to control
+When state is persisted, backwards incompatible changes to your API
+definitions are detected, and will trigger errors to encourage
+resolving them before they reach production. The `--on-backwards-incompatibility` flag allows you to control
 what happens when backwards incompatibility is encountered:
 
 * `ask`: (default) Asks whether you would like to expunge the stored state to
