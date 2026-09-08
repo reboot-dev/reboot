@@ -6,92 +6,187 @@ slug: /
 import { Card, CardSection } from "../src/components/Cards";
 import ClaudeLogo from "../static/img/claude-logo.svg";
 import CodexLogo from "../static/img/codex-logo.svg";
-import PythonLogo from "../static/img/python-logo.svg";
-import TSLogo from "../static/img/ts-logo.svg";
 
-# Build Apps with Reboot
+# Build apps with Reboot
 
 <div style={{ fontSize: "1.2rem" }}>
-  Reboot lets you build stateful, multiplayer apps on a durable
-  backend. Build full-stack web apps with React frontends, or AI
-  chat apps that run inside ChatGPT, Claude, and VS Code.
+  A full-stack framework for the AI era. Reboot solves the hard
+  problems once, at the framework level, so neither you nor your
+  coding agent has to.
 </div>
 
-## Where your app runs
+## Trust the code your agent writes
 
-The same backend, two different ways to reach your users. Pick a starting
-point:
+Modern app development is quickly becoming AI-assisted, or entirely
+vibe-coded. Agents are blazingly fast junior engineers. They ship
+concurrency and retry bugs. They skip the things you didn't spell
+out: the reactive frontend, the sign-in flow, the retry that should
+have happened. They don't expect their code to crash. And they
+produce diffs you can't easily review. A harness is not enough. They
+need a rock-solid foundation to stand on.
 
-### As a full-stack web app
+Reboot is that foundation. Constraints make entire classes of bugs
+impossible. Durable state, reactive frontends, and signed-in users
+come built in rather than asked for. A crash loses nothing. And the
+semantics are simple enough, for humans and agents alike, that you
+can review what was written.
+
+What Rust's borrow checker did for memory management, and React did
+for component-based frontends, Reboot does for your backend:
+**backend safety and data encapsulation**, enforced by the framework
+rather than by review.
+
+## What Reboot handles for you
+
+- **Correct concurrency and retry safety.** Every method declares its
+  [kind](/define/methods) — `reader`, `writer`, `transaction`, or
+  `workflow` — and Reboot enforces what each one may do. A read cannot
+  sneak in a write, and a transaction is atomic across state types.
+- **Durable applications.** Not just a durable execution engine:
+  the moment a function returns, its `state` is saved.
+  [Workflows](/implement/workflows) resume where they failed — the
+  steps that already finished are memoized rather than run again — and
+  [transactions](/implement/transactions) keep everything atomic. No
+  database, no cache, no queue.
+- **What agents won't build unless asked.** You asked for a frontend,
+  but what you really wanted was a [reactive](/call/from_react) one.
+  You wanted it to retry on an intermittent network failure, but
+  instead it threw an error and never cleaned up its local React
+  state. With Reboot you get these features, and many more, without
+  ever having to ask.
+- **Signed-in users.** Plug in your favorite auth provider — Google,
+  GitHub, Auth0, Ory — and Reboot runs the OAuth server in front of
+  it, so a person signing in
+  [auto-constructs their `User`](/users/overview): the per-user entry
+  point the rest of your app hangs off. No session table, and no
+  glue between the provider and your data.
+- **Semantics you can actually review.** Even if a harness could get
+  an agent to handle all of the above, you would still have to read
+  the diff. Reboot's semantics are simple enough, for humans and
+  agents alike, that you can.
+
+Python backends are supported today. TypeScript backends and
+[React Native](/surfaces/react_native) frontends are in
+[alpha](/get_started/typescript). More languages are coming.
+
+## Get started
+
+The fastest path is to let an agent build it. Install the Reboot
+plugin for Claude Code or Codex:
+
+```sh
+curl -fsSL https://reboot.dev/install.sh | bash
+```
+
+Then describe what you want — "Build me an AI chat app todo list with
+drag-and-drop to reorder", "Build me a scalable messaging app".
 
 <CardSection
-  id="full-stack-apps"
-  description="A reactive Reboot backend behind a standalone React
-  frontend, on its own or as a full-page extension of your chat
-  app."
+  id="get-started"
+  description="Let an agent build it, or build it by hand to see every
+  file."
 >
   <Card
-    title="Get Started (Claude Code)"
+    title="Build with Claude Code"
     to="/get_started/claude_code"
     icon={<ClaudeLogo />}
   />
   <Card
-    title="Get Started (Codex)"
+    title="Build with Codex"
     to="/get_started/codex"
     icon={<CodexLogo />}
   />
   <Card
-    title="Get Started (Python)"
+    title="Build it by hand"
     to="/get_started/python"
-    icon={<PythonLogo />}
+    description="A Python backend, step by step, to see every file."
   />
   <Card
-    title="Get Started (TypeScript)"
-    icon={<TSLogo />}
-    to="/get_started/typescript"
+    title="Examples"
+    to="/get_started/examples"
+    description="Complete applications to run and take apart."
   />
 </CardSection>
 
-### Inside an AI chat
+## One app to serve every user — human or machine
+
+You and your agents can build any kind of app with Reboot. One
+backend, one identity per person, and as many front doors as you
+need:
 
 <CardSection
-  id="ai-chat-apps"
-  description="Visual, interactive apps that run inside AI chat
-  interfaces like ChatGPT, Claude, and VS Code."
+  id="surfaces"
+  description="Humans reach your app through a browser, a phone, or a
+  chat client. Agents reach it over MCP. Other services reach it over
+  HTTP."
 >
   <Card
-    title="What is an AI Chat App?"
+    title="Web apps"
+    to="/surfaces/web"
+    description="A reactive React app on its own origin."
+  />
+  <Card
+    title="React Native apps"
+    to="/surfaces/react_native"
+    description="The same hooks and the same backend, on a phone."
+    tag={{
+      label: "Alpha",
+      color: "#c2410c",
+      description: "React Native support is in alpha.",
+    }}
+  />
+  <Card
+    title="AI chat apps"
     to="/surfaces/ai_chat"
+    description="Tools and interactive UIs inside ChatGPT, Claude,
+    and VS Code."
   />
   <Card
-    title="Get Started (Claude Code)"
-    to="/get_started/claude_code"
-    icon={<ClaudeLogo />}
-  />
-  <Card
-    title="Get Started (Codex)"
-    to="/get_started/codex"
-    icon={<CodexLogo />}
-  />
-  <Card
-    title="Get Started (Python)"
-    to="/get_started/quickstart"
-    icon={<PythonLogo />}
+    title="Agents inside your app"
+    to="/agents"
+    description="Durable, replay-safe model and tool calls in a
+    workflow."
   />
 </CardSection>
 
-### Examples
+## Learn the essentials
 
 <CardSection
-  id="examples"
-  description="A variety of examples demonstrating Reboot in action."
+  id="essentials"
+  description="The pages to read once, in order."
 >
   <Card
-    title="Full-stack Examples"
-    to="/get_started/examples"
+    title="How Reboot works"
+    to="/concepts"
+    description="Durable data structures, method kinds, and the
+    guarantees behind them."
   />
   <Card
-    title="AI Chat App Examples"
-    to="/get_started/examples"
+    title="Users and sign-in"
+    to="/users/overview"
+    description="Every app's entry point: the auto-constructed
+    User."
+  />
+  <Card
+    title="Define your API"
+    to="/define/overview"
+    description="Declare your state types and their methods."
+  />
+  <Card
+    title="Implement your API"
+    to="/implement/servicers"
+    description="Write the servicers that back those methods."
+  />
+  <Card
+    title="Call your API"
+    to="/call/overview"
+    description="From React, from your backend, from anywhere
+    else."
   />
 </CardSection>
+
+## Run it anywhere
+
+Reboot is open source. Run a Reboot app on
+[your own infrastructure](/deploy_on_your_own) or on
+[Reboot Cloud](/deploy_on_reboot_cloud) today.
