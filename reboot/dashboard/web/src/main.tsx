@@ -56,8 +56,15 @@ import {
   linkOfMethod,
   printBuiltInSyntax,
   recordingUrl,
+  type FeatureFilter,
+  featurePasses,
+  featuresByRecency,
+  rulePasses,
   scenariosOfFeature,
   sortedFeatures,
+  stateTypesOfFeature,
+  stateTypesOfFeatures,
+  webAppScenarioCount,
   spansOfText,
   stepLinks,
 } from "./behaviors";
@@ -89,7 +96,12 @@ import {
 import { DashboardGetResponse_NeedsGenerateReason as NeedsGenerateReason } from "../../../../rbt/dashboard/v1/dashboard_pb";
 import type * as feature_pb from "../../../../rbt/v1alpha1/bdd/feature_pb";
 import type * as grammar_pb from "../../../../rbt/v1alpha1/bdd/grammar_pb";
-import { joinStateTypes } from "./callgraph";
+import { joinStateTypes, type GraphStateType } from "./callgraph";
+import {
+  exercisedMethods,
+  graphStateTypeNamed,
+  undescribedMethods,
+} from "./features";
 import { drawnCallCount, GraphPage } from "./graph";
 
 // One subscriber per tab, for as long as the tab is open.
@@ -242,10 +254,11 @@ const isStandardLibrary = (packageName: string): boolean =>
 
 // Each page indexes the same application: `changelog` is its history,
 // `state` is the state types its API declares, `data` is the types
-// those declare in turn, `behaviors` is the scenarios its `.feature`
-// files describe, and `graph` is the calls the state types'
+// those declare in turn, `features` is what the application lets a
+// person do, each joined with the scenarios, state types and code
+// that make it up, and `graph` is the calls the state types'
 // implementations make to each other.
-const PAGES = ["changelog", "data", "state", "behaviors", "graph"] as const;
+const PAGES = ["changelog", "data", "state", "features", "graph"] as const;
 
 type Page = typeof PAGES[number];
 
@@ -253,7 +266,7 @@ const PAGE_NAMES: Record<Page, string> = {
   changelog: "Changelog",
   data: "Data Types",
   state: "State Types",
-  behaviors: "Behaviors",
+  features: "Features",
   graph: "Call Graph",
 };
 
@@ -1283,7 +1296,7 @@ const RuleSection: FC<{
   inherited: feature_pb.Background[];
   links: StepLinks;
 }> = ({ rule, id, inherited, links }) => (
-  <div className="rule" id={pathOfTypeOnPage("behaviors", id)}>
+  <div className="rule" id={pathOfTypeOnPage("features", id)}>
     <div className="rule-heading">
       <Pill
         className="eyebrow"
@@ -1292,7 +1305,7 @@ const RuleSection: FC<{
         mark={false}
       />
       <h3>{rule.name}</h3>
-      <Anchor page="behaviors" id={id} />
+      <Anchor page="features" id={id} />
       <span className="summary-line">
         {countWithNoun(rule.scenarios.length, "scenario")}
       </span>
@@ -1317,7 +1330,7 @@ const FeatureCard: FC<{
   feature: feature_pb.Feature;
   links: StepLinks;
 }> = ({ filename, feature, links }) => (
-  <section className="state-type" id={pathOfTypeOnPage("behaviors", filename)}>
+  <section className="state-type" id={pathOfTypeOnPage("features", filename)}>
     {feature.error !== undefined ? (
       <div className="error">{feature.error}</div>
     ) : (
@@ -1346,41 +1359,32 @@ const FeatureCard: FC<{
   </section>
 );
 
-// One name that links to a page, on the behaviors index and in its
-// sidebar.
+// One name that links to a page, in the features sidebar.
 interface NamedLink {
   id: string;
   name: string;
 }
 
-// Every feature, and every rule, each linking to its page.
-const namedLinksOf = (
-  features: FeatureEntry[]
-): { features: NamedLink[]; rules: NamedLink[] } => ({
-  features: features.map(({ filename, feature }) => ({
+// Every feature, linking to its page.
+const featureLinksOf = (features: FeatureEntry[]): NamedLink[] =>
+  features.map(({ filename, feature }) => ({
     id: filename,
     name: feature.name ?? filename,
-  })),
-  rules: features.flatMap(({ filename, feature }) =>
-    feature.rules.map((rule, index) => ({
-      id: ruleId(filename, index),
-      name: rule.name ?? `Rule ${index + 1}`,
-    }))
-  ),
-});
+  }));
 
 // The sidebar's list of names linking to their pages, under a
 // heading: rows of the sidebar's grid, so an eyebrow and a name cell
 // each, with no count.
-const NavLinks: FC<{ heading: string; links: NamedLink[] }> = ({
-  heading,
-  links,
-}) => (
+const NavLinks: FC<{
+  heading: string;
+  links: NamedLink[];
+  page: Page;
+}> = ({ heading, links, page }) => (
   <>
     <div className="eyebrow">{heading}</div>
     {links.map((link) => (
       <Link
-        to={pathOfTypeOnPage("behaviors", link.id)}
+        to={pathOfTypeOnPage(page, link.id)}
         title={link.name}
         key={link.id}
       >
@@ -1390,36 +1394,470 @@ const NavLinks: FC<{ heading: string; links: NamedLink[] }> = ({
   </>
 );
 
-// The index's list of names linking to their pages, under a heading.
-const LinkList: FC<{ heading: string; links: NamedLink[] }> = ({
-  heading,
-  links,
-}) => (
-  <div className="link-list">
-    <div className="eyebrow">{heading}</div>
-    {links.length === 0 ? (
-      <div className="empty">None yet.</div>
-    ) : (
-      links.map((link) => (
-        <Link to={pathOfTypeOnPage("behaviors", link.id)} key={link.id}>
-          {link.name}
-        </Link>
-      ))
-    )}
-  </div>
+// That a feature drives the web app in a browser, as the globe;
+// clicking it filters the index to the features that do, and it is
+// lit while that filter is on.
+const WebAppToggle: FC<{
+  active: boolean;
+  onToggle: () => void;
+  title: string;
+}> = ({ active, onToggle, title }) => (
+  <button
+    type="button"
+    className={active ? "web-app-toggle is-active" : "web-app-toggle"}
+    onClick={onToggle}
+    title={title}
+    aria-pressed={active}
+  >
+    <span aria-hidden="true">🌐</span>
+    <span className="visually-hidden">web app</span>
+  </button>
 );
 
-// The behaviors page with no feature chosen: the features and the
-// rules, side by side, each name linking to its page.
-const FeaturesIndex: FC<{ features: FeatureEntry[] }> = ({ features }) => {
-  const links = namedLinksOf(features);
+// A state type as a chip that filters the index by it; lit while it
+// is filtering.
+const StateTypeChip: FC<{
+  type: string;
+  active: boolean;
+  onToggle: (type: string) => void;
+}> = ({ type, active, onToggle }) => (
+  <button
+    type="button"
+    className={active ? "state-type-chip is-active" : "state-type-chip"}
+    onClick={() => onToggle(type)}
+    title={active ? `Stop filtering by ${type}` : `Filter by ${type}`}
+  >
+    {type}
+  </button>
+);
+
+// The state types the index is filtered by, chosen in a box that
+// holds the chosen ones as chips and, at the cursor after them, lists
+// the rest as you type: a click on a listed type adds it and shows
+// the list again, Enter takes the first listed, Escape closes the
+// list, and a click on a chosen chip removes it.
+const StateTypePicker: FC<{
+  stateTypes: string[];
+  selected: string[];
+  onToggle: (type: string) => void;
+}> = ({ stateTypes, selected, onToggle }) => {
+  const [text, setText] = useState("");
+  const [open, setOpen] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const listed = stateTypes.filter(
+    (type) =>
+      !selected.includes(type) &&
+      type.toLowerCase().includes(text.trim().toLowerCase())
+  );
+  const choose = (type: string) => {
+    onToggle(type);
+    setText("");
+    input.current?.focus();
+  };
   return (
-    <div className="behaviors-index">
-      <LinkList heading="features" links={links.features} />
-      <LinkList heading="rules" links={links.rules} />
+    <div
+      className={open ? "type-picker is-open" : "type-picker"}
+      onMouseDown={(event) => {
+        // A click on the box's empty part puts the cursor there; a
+        // click on a chip or the list is theirs to handle.
+        if (event.target === event.currentTarget) {
+          event.preventDefault();
+          input.current?.focus();
+        }
+      }}
+    >
+      {selected.map((type) => (
+        <StateTypeChip type={type} active onToggle={onToggle} key={type} />
+      ))}
+      <input
+        ref={input}
+        type="text"
+        className="type-picker-input"
+        placeholder={
+          selected.length === 0 && stateTypes.length > 0
+            ? `State type, e.g., ${stateTypes[0]} ...`
+            : ""
+        }
+        value={text}
+        size={Math.max(text.length, selected.length === 0 ? 26 : 2)}
+        onChange={(event) => setText(event.target.value)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && listed.length > 0) {
+            event.preventDefault();
+            choose(listed[0]);
+          } else if (event.key === "Escape") {
+            setText("");
+            input.current?.blur();
+          } else if (
+            event.key === "Backspace" &&
+            text === "" &&
+            selected.length > 0
+          ) {
+            onToggle(selected[selected.length - 1]);
+          }
+        }}
+        aria-label="Filter by state type"
+      />
+      {open && (
+        <ul className="type-picker-menu" role="listbox">
+          {listed.length === 0 ? (
+            <li className="type-picker-none">
+              {stateTypes.length === selected.length
+                ? "Every state type is chosen"
+                : "No state type matches"}
+            </li>
+          ) : (
+            listed.map((type) => (
+              <li
+                className="type-picker-item"
+                role="option"
+                aria-selected={false}
+                // Chosen on mouse down, before the input's blur closes
+                // the list.
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  choose(type);
+                }}
+                key={type}
+              >
+                <code className="state-type-chip">{type}</code>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
     </div>
   );
 };
+
+// What the index shows: words to find anywhere in a feature, and
+// the state types a feature must name, chosen from every type the
+// features name.
+const FeaturesSearch: FC<{
+  filter: FeatureFilter;
+  stateTypes: string[];
+  onChange: (filter: FeatureFilter) => void;
+  onToggleStateType: (type: string) => void;
+  onToggleWebApp: () => void;
+}> = ({ filter, stateTypes, onChange, onToggleStateType, onToggleWebApp }) => (
+  <div className="features-search">
+    <input
+      type="search"
+      className="features-search-input"
+      placeholder="Search features, rules, scenarios and steps"
+      value={filter.query}
+      onChange={(event) => onChange({ ...filter, query: event.target.value })}
+      aria-label="Search features"
+    />
+    <div className="features-search-types">
+      <span className="features-search-label">filter by</span>
+      <StateTypePicker
+        stateTypes={stateTypes}
+        selected={filter.stateTypes}
+        onToggle={onToggleStateType}
+      />
+      <WebAppToggle
+        active={filter.webApp}
+        onToggle={onToggleWebApp}
+        title={
+          filter.webApp
+            ? "Showing features with web app scenarios; click to show all"
+            : "Show only features with web app scenarios"
+        }
+      />
+    </div>
+  </div>
+);
+
+// The filter an index has none of, before anyone asks for anything.
+const NO_FILTER: FeatureFilter = {
+  query: "",
+  stateTypes: [],
+  webApp: false,
+};
+
+// The filter the features page keeps while it is open: the words,
+// the state types and whether the web app is asked for, and how a
+// chip turns each on and off.
+const useFeatureFilter = () => {
+  const [filter, setFilter] = useState<FeatureFilter>(NO_FILTER);
+  const toggleWebApp = () =>
+    setFilter((current) => ({ ...current, webApp: !current.webApp }));
+  const toggleStateType = (type: string) =>
+    setFilter((current) => ({
+      ...current,
+      stateTypes: current.stateTypes.includes(type)
+        ? current.stateTypes.filter((other) => other !== type)
+        : [...current.stateTypes, type],
+    }));
+  const filtering =
+    filter.query.trim() !== "" || filter.stateTypes.length > 0 || filter.webApp;
+  return {
+    filter,
+    setFilter,
+    toggleWebApp,
+    toggleStateType,
+    filtering,
+  };
+};
+
+// A method a feature exercises, as a chip linking to its state
+// type's page; lit while the index is filtered by its state type.
+const MethodChip: FC<{
+  stateTypeId: string | undefined;
+  stateTypeName: string;
+  method: string;
+  links: StepLinks;
+  lit?: boolean;
+}> = ({ stateTypeId, stateTypeName, method, links, lit = false }) => {
+  const label = `${stateTypeName}.${method}`;
+  const className = lit ? "method-chip is-lit" : "method-chip";
+  const id =
+    stateTypeId !== undefined
+      ? `${stateTypeId}.${method}`
+      : linkOfMethod(method, stateTypeName, links);
+  return id === undefined ? (
+    <code className={className}>{label}</code>
+  ) : (
+    <Link className="type-link" to={pathOfTypeOnPage("state", id)}>
+      <code className={className}>{label}</code>
+    </Link>
+  );
+};
+
+// What a feature exercises, as chips in alphabetical order, so that
+// one state type's methods sit together; the chips of a state type
+// the index is filtered by are lit.
+const ExercisedMethods: FC<{
+  feature: feature_pb.Feature;
+  graph: GraphStateType[];
+  links: StepLinks;
+  litStateTypes?: string[];
+}> = ({ feature, graph, links, litStateTypes = [] }) => {
+  const exercised = [...exercisedMethods(feature)]
+    .map((method) => ({
+      ...method,
+      label: `${shortNameOfTypeName(method.stateType)}.${method.method}`,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  if (exercised.length === 0) {
+    return null;
+  }
+  return (
+    <div className="feature-methods">
+      <span className="feature-methods-label">uses</span>
+      {exercised.map(({ stateType, method }) => (
+        <MethodChip
+          stateTypeId={graphStateTypeNamed(stateType, graph)?.id}
+          stateTypeName={shortNameOfTypeName(stateType)}
+          method={method}
+          links={links}
+          lit={litStateTypes.includes(stateType)}
+          key={`${stateType}.${method}`}
+        />
+      ))}
+    </div>
+  );
+};
+
+// One feature as a card: what a person can do, what must always
+// hold, how it is shown, and what it uses.
+const FeatureSummaryCard: FC<{
+  entry: FeatureEntry;
+  filter: FeatureFilter;
+  graph: GraphStateType[];
+  links: StepLinks;
+  onToggleWebApp: () => void;
+}> = ({ entry, filter, graph, links, onToggleWebApp }) => {
+  const { filename, feature } = entry;
+  const scenarios = scenariosOfFeature(feature).length;
+  const webApp = webAppScenarioCount(feature);
+  return (
+    <section className="feature-summary">
+      <div className="feature-methods-label">feature</div>
+      <div className="feature-row-head">
+        <Link
+          className="feature-summary-name"
+          to={pathOfTypeOnPage("features", filename)}
+        >
+          {feature.name ?? filename}
+        </Link>
+      </div>
+      {feature.description !== undefined && (
+        <p className="feature-summary-description">{feature.description}</p>
+      )}
+      {feature.rules.length > 0 && (
+        <div className="feature-methods-label">rules</div>
+      )}
+      {feature.rules.length > 0 && (
+        <ul className="feature-summary-rules">
+          {feature.rules.map((rule, index) => (
+            <li key={index}>
+              <Link to={pathOfTypeOnPage("features", ruleId(filename, index))}>
+                {rule.name ?? `Rule ${index + 1}`}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      <ExercisedMethods
+        feature={feature}
+        graph={graph}
+        links={links}
+        litStateTypes={filter.stateTypes}
+      />
+      <div className="feature-row-meta">
+        <Link to={pathOfTypeOnPage("features", filename)}>
+          {countWithNoun(scenarios, "scenario")}
+        </Link>
+        {webApp > 0 && (
+          <WebAppToggle
+            active={filter.webApp}
+            onToggle={onToggleWebApp}
+            title={`${webApp} of ${scenarios} scenarios drive the web app`}
+          />
+        )}
+      </div>
+    </section>
+  );
+};
+
+// What the features leave unexercised: the methods the API declares
+// that no feature exercises, or reaches through what it exercises.
+const FeaturesHealth: FC<{
+  features: FeatureEntry[];
+  graph: GraphStateType[];
+  links: StepLinks;
+}> = ({ features, graph, links }) => {
+  const undescribed = undescribedMethods(features, graph);
+  return (
+    <div className="features-health">
+      <div className="link-list">
+        <div className="eyebrow">not used by any feature</div>
+        {undescribed.length === 0 ? (
+          <div className="empty">Every method is used.</div>
+        ) : (
+          <div className="feature-methods is-stacked">
+            {undescribed.flatMap(({ stateType, methods }) =>
+              methods.map((method) => (
+                <MethodChip
+                  stateTypeId={stateType.id}
+                  stateTypeName={stateType.name}
+                  method={method}
+                  links={links}
+                  key={`${stateType.id}.${method}`}
+                />
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// The features page with no feature chosen: a search, then each
+// feature as a card, most recently worked on first, beside what the
+// features leave undescribed.
+const FeaturesOverview: FC<{
+  features: FeatureEntry[];
+  graph: GraphStateType[];
+  links: StepLinks;
+}> = ({ features, graph, links }) => {
+  const { filter, setFilter, toggleWebApp, toggleStateType, filtering } =
+    useFeatureFilter();
+  const shown = featuresByRecency(features).filter(({ feature }) =>
+    featurePasses(feature, filter)
+  );
+  return (
+    <>
+      <FeaturesSearch
+        filter={filter}
+        stateTypes={stateTypesOfFeatures(features)}
+        onChange={setFilter}
+        onToggleStateType={toggleStateType}
+        onToggleWebApp={toggleWebApp}
+      />
+      <div className="features-overview">
+        <div className="feature-summaries">
+          {filtering && (
+            <div className="eyebrow">
+              {shown.length} of {features.length}
+            </div>
+          )}
+          {shown.length === 0 ? (
+            <div className="empty">No feature matches.</div>
+          ) : (
+            shown.map((entry) => (
+              <FeatureSummaryCard
+                entry={entry}
+                filter={filter}
+                graph={graph}
+                links={links}
+                onToggleWebApp={toggleWebApp}
+                key={entry.filename}
+              />
+            ))
+          )}
+        </div>
+        <FeaturesHealth features={features} graph={graph} links={links} />
+      </div>
+    </>
+  );
+};
+
+// The first screenshot of each scenario that has one, as a gallery
+// of how the feature looks in the browser.
+const FeatureGallery: FC<{ filename: string; feature: feature_pb.Feature }> = ({
+  filename,
+  feature,
+}) => {
+  const shots = scenariosOfFeature(feature).flatMap((scenario) => {
+    const step = scenario.steps.find((step) => step.screenshot !== undefined);
+    return step?.screenshot === undefined
+      ? []
+      : [{ scenario, screenshot: step.screenshot }];
+  });
+  if (shots.length === 0) {
+    return null;
+  }
+  return (
+    <div className="feature-gallery">
+      {shots.map(({ scenario, screenshot }) => (
+        <Link
+          className="feature-gallery-item"
+          to={pathOfTypeOnPage("features", filename)}
+          key={scenario.line}
+        >
+          <img src={recordingUrl(screenshot)} alt="" />
+          <span>{scenario.name}</span>
+        </Link>
+      ))}
+    </div>
+  );
+};
+
+// One feature's page: what it looks like in the browser, what it
+// exercises, and its scenarios.
+const FeaturePage: FC<{
+  entry: FeatureEntry;
+  graph: GraphStateType[];
+  links: StepLinks;
+}> = ({ entry, graph, links }) => (
+  <>
+    <FeatureGallery filename={entry.filename} feature={entry.feature} />
+    <section className="feature-implements">
+      <ExercisedMethods feature={entry.feature} graph={graph} links={links} />
+    </section>
+    <FeatureCard
+      filename={entry.filename}
+      feature={entry.feature}
+      links={links}
+    />
+  </>
+);
 
 const ChangeRow: FC<{ entry: Entry; now: Date }> = ({ entry, now }) => {
   const row = rowOfChange(entry.change);
@@ -1560,7 +1998,7 @@ const Overview: FC<{
     // drags: the drag already moves the panel.
   }, [navWidth, navPanel]);
 
-  // The behaviors page names its sections by file path, whose
+  // The features page names its sections by file path, whose
   // slashes a `:id` segment cannot hold, so its route matches the
   // rest of the URL as a splat instead.
   const params = useParams();
@@ -1640,30 +2078,6 @@ const Overview: FC<{
     [featureEntries, target]
   );
 
-  const scenarioCount = useMemo(
-    () =>
-      featureEntries.reduce(
-        (total, entry) => total + scenariosOfFeature(entry.feature).length,
-        0
-      ),
-    [featureEntries]
-  );
-
-  // Rules are what the page counts by once a project writes them;
-  // until then, scenarios.
-  const ruleCount = useMemo(
-    () =>
-      featureEntries.reduce(
-        (total, entry) => total + entry.feature.rules.length,
-        0
-      ),
-    [featureEntries]
-  );
-  const behaviorsCount =
-    ruleCount > 0
-      ? countWithNoun(ruleCount, "rule")
-      : countWithNoun(scenarioCount, "scenario");
-
   // Where the backticked spans of steps link, derived from the same
   // APIs the state page shows, so a link can never point at a state
   // type the page does not have.
@@ -1682,8 +2096,8 @@ const Overview: FC<{
 
   // The changelog is one list rather than a set of packages, and
   // the graph is one canvas, so the sidebar has nothing to index;
-  // the behaviors page indexes its features and rules as two flat
-  // lists of its own, below.
+  // the features page lists its features as one flat list of its
+  // own, below.
   const entries: NavEntry[] = useMemo(
     () =>
       page === "changelog" || page === "graph"
@@ -1697,7 +2111,7 @@ const Overview: FC<{
               count: countWithNoun(stateType.methods.length, "method"),
             }))
           )
-        : page === "behaviors"
+        : page === "features"
         ? []
         : linkedDataTypes.map((linkedDataType) => ({
             id: linkedDataType.id,
@@ -1710,9 +2124,9 @@ const Overview: FC<{
 
   const packages = useMemo(() => groupByPackage(entries), [entries]);
 
-  // The behaviors sidebar's two lists.
-  const behaviorLinks = useMemo(
-    () => namedLinksOf(featureEntries),
+  // The features sidebar's list.
+  const featureLinks = useMemo(
+    () => featureLinksOf(featureEntries),
     [featureEntries]
   );
 
@@ -1746,9 +2160,9 @@ const Overview: FC<{
   const eyebrow =
     page === "changelog"
       ? "history"
-      : page === "behaviors"
+      : page === "features"
       ? chosenFeature === undefined
-        ? "application behavior"
+        ? "application features"
         : "feature"
       : "application domain";
 
@@ -1765,12 +2179,9 @@ const Overview: FC<{
           packages.length,
           "package"
         )}`
-      : page === "behaviors"
+      : page === "features"
       ? chosenFeature === undefined
-        ? `${behaviorsCount} in ${countWithNoun(
-            featureEntries.length,
-            "feature"
-          )}`
+        ? countWithNoun(featureEntries.length, "feature")
         : chosenFeature.feature.name ?? chosenFeature.filename
       : `${countWithNoun(
           linkedDataTypes.length,
@@ -1873,7 +2284,7 @@ const Overview: FC<{
   const counts: Record<Page, number> = {
     state: stateTypeCount,
     data: linkedDataTypes.length,
-    behaviors: ruleCount > 0 ? ruleCount : scenarioCount,
+    features: featureEntries.length,
     changelog: shownChangelog.length,
     graph: calls,
   };
@@ -1901,11 +2312,8 @@ const Overview: FC<{
         <nav>
           <RebootBrand live={live} />
           <PageSelector counts={counts} />
-          {page === "behaviors" && (
-            <>
-              <NavLinks heading="features" links={behaviorLinks.features} />
-              <NavLinks heading="rules" links={behaviorLinks.rules} />
-            </>
+          {page === "features" && (
+            <NavLinks heading="features" links={featureLinks} page="features" />
           )}
           {/* The changelog has none. */}
           {packages.length > 0 && <div className="eyebrow">packages</div>}
@@ -1931,7 +2339,7 @@ const Overview: FC<{
             <h1>{heading}</h1>
             {/* A feature's page names the feature up here, so its
                 file, counts, and description belong here too. */}
-            {page === "behaviors" && chosenFeature !== undefined && (
+            {page === "features" && chosenFeature !== undefined && (
               <>
                 <div className="feature-file-line">
                   <div className="file">{chosenFeature.filename}</div>
@@ -2021,18 +2429,22 @@ const Overview: FC<{
                 );
               })
             )
-          ) : page === "behaviors" ? (
+          ) : page === "features" ? (
             featureEntries.length === 0 ? (
               <div className="empty">
-                No <code>.feature</code> files found. Write one and its
-                scenarios will show up here.
+                No <code>.feature</code> files found. Write one and the feature
+                it describes will show up here.
               </div>
             ) : chosenFeature === undefined ? (
-              <FeaturesIndex features={featureEntries} />
+              <FeaturesOverview
+                features={featureEntries}
+                graph={graphStateTypes}
+                links={links}
+              />
             ) : (
-              <FeatureCard
-                filename={chosenFeature.filename}
-                feature={chosenFeature.feature}
+              <FeaturePage
+                entry={chosenFeature}
+                graph={graphStateTypes}
                 links={links}
                 key={chosenFeature.filename}
               />
@@ -2138,9 +2550,9 @@ const App: FC = () => {
           {PAGES.map((page) => (
             <Route
               // A feature file's path has slashes, which a `:id`
-              // segment cannot hold, so the behaviors page matches
+              // segment cannot hold, so the features page matches
               // the rest of the URL as a splat.
-              path={page === "behaviors" ? `/${page}/*` : `/${page}/:id?`}
+              path={page === "features" ? `/${page}/*` : `/${page}/:id?`}
               element={
                 <Overview
                   page={page}

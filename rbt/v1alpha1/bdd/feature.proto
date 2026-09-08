@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package rbt.v1alpha1.bdd;
 
+import "google/protobuf/timestamp.proto";
 import "rbt/v1alpha1/bdd/grammar.proto";
 
 ////////////////////////////////////////////////////////////////////////
@@ -38,6 +39,10 @@ message Feature {
   // half-written file is the normal cause while someone is typing.
   // A feature carrying an error carries nothing else.
   optional string error = 8;
+
+  // When the file was last modified, as the filesystem records it:
+  // what orders features by how recently they were worked on.
+  google.protobuf.Timestamp modified = 9;
 }
 
 // One business rule of a feature, illustrated by the scenarios

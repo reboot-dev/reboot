@@ -1948,7 +1948,7 @@ header h1 {
   font-size: 0.92em;
 }
 
-/* --- The behaviors index --- */
+/* --- The features page --- */
 
 /* On a feature's own page the pane's header names it and carries its
    file, counts, and description, above the line. */
@@ -1963,8 +1963,7 @@ header .state-type-description {
   margin-top: 14px;
 }
 
-/* Names linking to their pages under a heading: the behaviors
-   index's two columns. */
+/* Names linking to their pages under a heading. */
 .link-list {
   display: flex;
   flex-direction: column;
@@ -1982,15 +1981,347 @@ header .state-type-description {
   text-decoration: underline;
 }
 
-/* The two lists side by side, each taking half the pane. */
-.behaviors-index {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 32px;
+/* The search over the features, above them. */
+.features-search {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   max-width: 840px;
+  margin: 0 auto 28px;
+}
+
+.features-search-input {
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+.features-search-input:focus {
+  outline: none;
+  border-color: hsl(var(--border-strong));
+}
+
+/* What the index may be filtered by, as chips, set in from the edge
+   the way the search box's text is. */
+.features-search-types {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-left: 12px;
+}
+
+.features-search-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  margin-right: 4px;
+}
+
+/* The box the state types to filter by are chosen in: the chosen
+   ones as chips, then the cursor. */
+.type-picker {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 200px;
+  padding: 3px 6px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: hsl(var(--background));
+  cursor: text;
+}
+
+.type-picker.is-open {
+  border-color: hsl(var(--border-strong));
+}
+
+.type-picker-input {
+  flex: 1;
+  min-width: 24px;
+  font: inherit;
+  font-size: 12px;
+  padding: 1px 2px;
+  border: none;
+  outline: none;
+  background: none;
+  color: hsl(var(--foreground));
+}
+
+/* The state types not yet chosen, listed under the box while the
+   cursor is in it. */
+.type-picker-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 10;
+  min-width: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: hsl(var(--background));
+  box-shadow: 0 6px 20px hsl(0 0% 0% / 0.08);
+}
+
+.type-picker-item {
+  padding: 3px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.type-picker-item:hover {
+  background: hsl(var(--muted));
+}
+
+.type-picker-none {
+  padding: 4px 6px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+
+/* A state type that filters the index: a chip, lit while filtering. */
+.state-type-chip {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+  cursor: pointer;
+}
+
+.state-type-chip:hover {
+  border-color: hsl(var(--border-strong));
+}
+
+.state-type-chip.is-active {
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+/* A feature card's first line: its name and what stands beside it. */
+.feature-row-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* That a feature drives the web app in a browser: the globe, which
+   filters the index to such features when clicked, and is lit while
+   that filter is on. */
+.web-app-toggle {
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  filter: grayscale(1);
+  opacity: 0.7;
+}
+
+.web-app-toggle:hover {
+  border-color: hsl(var(--border));
+  opacity: 1;
+}
+
+.web-app-toggle.is-active {
+  filter: none;
+  opacity: 1;
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.1);
+}
+
+/* When the feature changed, how many scenarios it has, and the
+   state types its steps name. */
+.feature-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+
+/* Text for assistive technology alone. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* The features page: the cards at the left, what the features leave
+   undescribed at the right. */
+.features-overview {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 32px;
+  max-width: 1000px;
   margin: 0 auto;
 }
 
-.behaviors-index .link-list a {
-  font-size: 15px;
+.feature-summaries {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* One feature as a card. */
+.feature-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: hsl(var(--background));
+}
+
+.feature-summary-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: inherit;
+  text-decoration: none;
+}
+
+.feature-summary-name:hover {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+}
+
+.feature-summary-description {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+}
+
+/* The rules, the invariants the feature obeys, each linking to its
+   scenarios. */
+.feature-summary-rules {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.feature-summary-rules a {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.feature-summary-rules a:hover {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+}
+
+/* The methods a feature exercises and reaches, as chips. */
+.feature-methods {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* One method per line. */
+.feature-methods.is-stacked {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.feature-methods-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  margin-right: 2px;
+}
+
+.method-chip {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+
+/* A method of a state type the index is filtered by. */
+.method-chip.is-lit {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.features-overview .feature-row-meta a {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* What the features leave undescribed. */
+.features-health {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+/* A feature's page: how it looks in the browser, then what it
+   exercises. */
+.feature-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  max-width: 840px;
+  margin: 0 auto 24px;
+  padding: 0 48px;
+}
+
+.feature-gallery-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 220px;
+  font-size: 12px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.feature-gallery-item img {
+  width: 220px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: hsl(var(--background));
+}
+
+.feature-gallery-item:hover img {
+  border-color: hsl(var(--border-strong));
+}
+
+.feature-implements {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 840px;
+  margin: 0 auto 24px;
+  padding: 0 48px;
 }

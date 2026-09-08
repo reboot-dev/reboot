@@ -26,7 +26,10 @@ proto_library(
     name = "feature_proto",
     srcs = [":feature.proto"],
     visibility = ["//visibility:public"],
-    deps = [":grammar_proto"],
+    deps = [
+        ":grammar_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
 )
 
 py_proto_library(
@@ -42,6 +45,7 @@ js_proto_library(
     proto_deps = [
         ":feature_proto",
         ":grammar_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
     visibility = ["//visibility:public"],
 )

@@ -140,6 +140,7 @@ async def _read_and_parse(*, directory: Path) -> dict[str, Feature]:
             continue
         parsed = feature.parse(source)
         if parsed is not None:
+            parsed.modified.FromNanoseconds(path.stat().st_mtime_ns)
             features[filename] = _with_recordings(
                 parsed,
                 path=path,

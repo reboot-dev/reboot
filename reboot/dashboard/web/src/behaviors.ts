@@ -28,6 +28,222 @@ export const sortedFeatures = (features: Features): FeatureEntry[] =>
     .map(([filename, feature]) => ({ filename, feature }))
     .sort((a, b) => a.filename.localeCompare(b.filename));
 
+// When a feature file was last modified, and the epoch for one the
+// state records no time for.
+export const modifiedAt = (feature: feature_pb.Feature): Date =>
+  feature.modified === undefined ? new Date(0) : feature.modified.toDate();
+
+// Features most recently worked on first, so that a long-lived
+// project's index leads with what is moving; ties by path.
+export const featuresByRecency = (features: FeatureEntry[]): FeatureEntry[] =>
+  [...features].sort(
+    (a, b) =>
+      modifiedAt(b.feature).getTime() - modifiedAt(a.feature).getTime() ||
+      a.filename.localeCompare(b.filename)
+  );
+
+// Every step a feature runs: its background's, each scenario's, and
+// each rule's background's and scenarios'.
+export const stepsOfFeature = (
+  feature: feature_pb.Feature
+): feature_pb.Step[] => [
+  ...(feature.background?.steps ?? []),
+  ...feature.scenarios.flatMap((scenario) => scenario.steps),
+  ...feature.rules.flatMap((rule) => [
+    ...(rule.background?.steps ?? []),
+    ...rule.scenarios.flatMap((scenario) => scenario.steps),
+  ]),
+];
+
+// The state type a built-in step calls or reads, as the step names
+// it; `undefined` for a step about no state.
+const stateTypeOfStep = (step: feature_pb.Step): string | undefined => {
+  const syntax = step.builtIn?.step;
+  if (syntax === undefined) {
+    return undefined;
+  }
+  switch (syntax.case) {
+    case "createsVia":
+    case "does":
+    case "attempts":
+    case "has":
+    case "eventuallyHas":
+    case "hasSavedAs":
+    case "abortsWith":
+      return syntax.value.state?.type;
+    case "awaitsTask":
+      return syntax.value.stateType;
+    default:
+      return undefined;
+  }
+};
+
+// The state types a feature's steps name, in the order first named.
+export const stateTypesOfFeature = (feature: feature_pb.Feature): string[] => {
+  const types: string[] = [];
+  for (const step of stepsOfFeature(feature)) {
+    const type = stateTypeOfStep(step);
+    if (type !== undefined && !types.includes(type)) {
+      types.push(type);
+    }
+  }
+  return types;
+};
+
+// Whether a step drives the web app: every web app step's syntax is
+// named for it.
+const isWebAppStep = (step: feature_pb.Step): boolean =>
+  /WebApp/.test(step.builtIn?.step.case ?? "");
+
+// How many of a feature's scenarios drive the web app.
+export const webAppScenarioCount = (feature: feature_pb.Feature): number =>
+  scenariosOfFeature(feature).filter((scenario) =>
+    scenario.steps.some(isWebAppStep)
+  ).length;
+
+// Every state type any feature names, in the order first named
+// across the features as given.
+export const stateTypesOfFeatures = (features: FeatureEntry[]): string[] => {
+  const types: string[] = [];
+  for (const { feature } of features) {
+    for (const type of stateTypesOfFeature(feature)) {
+      if (!types.includes(type)) {
+        types.push(type);
+      }
+    }
+  }
+  return types;
+};
+
+// The method a built-in step calls or reads, as the features page
+// prints it, `Account.deposit`; `undefined` for a step about none.
+// The state type is the last segment of the name the step writes, so
+// that a search for `Account.deposit` finds a step naming the type
+// in full.
+const methodLabelOfStep = (step: feature_pb.Step): string | undefined => {
+  const syntax = step.builtIn?.step;
+  if (syntax === undefined) {
+    return undefined;
+  }
+  switch (syntax.case) {
+    case "createsVia":
+    case "does":
+    case "attempts":
+    case "has":
+    case "eventuallyHas":
+    case "hasSavedAs":
+    case "abortsWith":
+      return syntax.value.state === undefined
+        ? undefined
+        : `${syntax.value.state.type.split(".").pop()}.${syntax.value.method}`;
+    case "awaitsTask":
+      return `${syntax.value.stateType.split(".").pop()}.${
+        syntax.value.method
+      }`;
+    default:
+      return undefined;
+  }
+};
+
+const methodLabelsOfSteps = (steps: feature_pb.Step[]): string[] =>
+  steps.flatMap((step) => {
+    const label = methodLabelOfStep(step);
+    return label === undefined ? [] : [label];
+  });
+
+// What the index searches: the words a feature is made of, its name,
+// description, tags, rules, scenarios and steps, and the methods its
+// steps exercise as the page prints them, lowercased and joined, so
+// that a query matches wherever it is written.
+const textOfFeature = (feature: feature_pb.Feature): string =>
+  [
+    feature.name ?? "",
+    feature.description ?? "",
+    ...feature.tags,
+    ...feature.rules.flatMap((rule) => [
+      rule.name ?? "",
+      rule.description ?? "",
+    ]),
+    ...scenariosOfFeature(feature).flatMap((scenario) => [
+      scenario.name ?? "",
+      ...scenario.tags,
+    ]),
+    ...stepsOfFeature(feature).map((step) => step.text),
+    ...methodLabelsOfSteps(stepsOfFeature(feature)),
+  ]
+    .join("\n")
+    .toLowerCase();
+
+const textOfRule = (rule: feature_pb.Rule): string =>
+  [
+    rule.name ?? "",
+    rule.description ?? "",
+    ...(rule.background?.steps ?? []).map((step) => step.text),
+    ...rule.scenarios.flatMap((scenario) => [
+      scenario.name ?? "",
+      ...scenario.tags,
+      ...scenario.steps.map((step) => step.text),
+      ...methodLabelsOfSteps(scenario.steps),
+    ]),
+    ...methodLabelsOfSteps(rule.background?.steps ?? []),
+  ]
+    .join("\n")
+    .toLowerCase();
+
+// The index's filter: words to find, state types the feature must
+// name, every one of them, and whether it must drive the web app.
+export interface FeatureFilter {
+  query: string;
+  stateTypes: string[];
+  webApp: boolean;
+}
+
+// Whether a feature is about what the filter asks for, its words
+// aside: it names every state type asked for, and drives the web app
+// if that is asked.
+const featureIsAbout = (
+  feature: feature_pb.Feature,
+  filter: FeatureFilter
+): boolean => {
+  const types = stateTypesOfFeature(feature);
+  return (
+    filter.stateTypes.every((type) => types.includes(type)) &&
+    (!filter.webApp || webAppScenarioCount(feature) > 0)
+  );
+};
+
+// Whether the filter keeps a feature: it is about what is asked for,
+// and the words appear somewhere in it.
+export const featurePasses = (
+  feature: feature_pb.Feature,
+  filter: FeatureFilter
+): boolean => {
+  if (!featureIsAbout(feature, filter)) {
+    return false;
+  }
+  const query = filter.query.trim().toLowerCase();
+  return query === "" || textOfFeature(feature).includes(query);
+};
+
+// Whether the filter keeps a rule: its feature is about what is
+// asked for, and the words appear in the rule or in its feature's
+// name.
+export const rulePasses = (
+  feature: feature_pb.Feature,
+  rule: feature_pb.Rule,
+  filter: FeatureFilter
+): boolean => {
+  if (!featureIsAbout(feature, filter)) {
+    return false;
+  }
+  const query = filter.query.trim().toLowerCase();
+  return (
+    query === "" ||
+    textOfRule(rule).includes(query) ||
+    (feature.name ?? "").toLowerCase().includes(query)
+  );
+};
+
 // Every scenario of a feature: the ones that belong to it directly,
 // then each rule's, which is the order they are written in the file.
 export const scenariosOfFeature = (

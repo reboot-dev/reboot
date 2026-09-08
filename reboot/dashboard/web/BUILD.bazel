@@ -13,6 +13,7 @@ ts_project(
         "src/callgraph.ts",
         "src/changelog.ts",
         "src/constants.ts",
+        "src/features.ts",
         "src/graph.tsx",
         "src/link_properties_to_data_types.ts",
         "src/main.tsx",
