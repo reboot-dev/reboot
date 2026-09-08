@@ -25,7 +25,7 @@ token erasure — lives in the python skill:
 When the API you want belongs to the **identity provider** in
 `Application(oauth=...)` (`Google` / `GitHub` / `Auth0`), the OAuth
 server captures its tokens for you — no endpoints to write. The same
-shortcut works for web apps: every surface that signs in through
+shortcut works for web apps: every frontend that signs in through
 `oauth=` captures tokens at the same `/__/oauth/callback` exchange.
 
 `scopes=` is the **extra** OAuth scopes to request on top of the base

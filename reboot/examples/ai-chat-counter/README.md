@@ -1,11 +1,11 @@
 # AI Chat Counter
 
 A minimal Reboot app exposed both as an MCP chat app *and* as a
-standalone browser SPA. Both surfaces share one
+standalone browser SPA. Both frontends share one
 `Application(oauth=...)` configuration, one `User` actor per
 upstream identity, and one set of servicers. A user signed in on
-one surface is automatically signed in on the other via shared
-`rbt_session` cookies (cross-surface SSO).
+one frontend is automatically signed in on the other via shared
+`rbt_session` cookies (cross-frontend SSO).
 
 ## Quick Start
 
@@ -46,7 +46,7 @@ identity, land back on the SPA, and create counters. If you also
 launch MCPJam against the same backend, MCPJam's authorize step
 short-circuits (no second IdP picker) because the browser already
 holds a session cookie — same `User` actor, same counter list on
-both surfaces.
+both frontends.
 
 ## Testing with MCPJam Inspector
 

@@ -335,20 +335,20 @@ The common pattern, which the todo-list app follows, is:
 - Everything user-specific is reached from there: their lists, their
   documents, their settings.
 
-This pattern pays off on every surface. A web app renders the list. A
+This pattern pays off on every frontend. A web app renders the list. A
 chat client calls the same method as a tool and remembers the IDs for
 the rest of the conversation. Neither of them has to be told who the
 user is.
 
 ## On the client
 
-On every surface, the client side of all of this is two hooks:
+On every frontend, the client side of all of this is two hooks:
 
 - **`useSignIn()`**, from `@reboot-dev/reboot-react`, starts the
-  sign-in flow: a redirect in a [browser](/surfaces/web#signing-in),
+  sign-in flow: a redirect in a [browser](/frontends/web#signing-in),
   a system-browser round trip in a
-  [React Native app](/surfaces/react_native). An
-  [AI chat client](/surfaces/ai_chat) signs the person in when they
+  [React Native app](/frontends/react_native). An
+  [AI chat client](/frontends/ai_chat) signs the person in when they
   connect your app, before any `UI` loads, so there is nothing to
   call.
 - **`useUser()`**, generated from your `User` type, resolves the
@@ -402,11 +402,11 @@ re-render when state changes, mutators as plain calls. There is
 nothing else to set up. (`useSignOut()` exists for the sign-out
 button.)
 
-| Surface | How the flow runs |
+| Frontend | How the flow runs |
 | --- | --- |
-| [Web](/surfaces/web) | `useSignIn()` sends the browser through your identity provider and back. |
-| [React Native](/surfaces/react_native) | `useSignIn()` opens a system browser for your identity provider; the app passes `nativeAuth({...})` to its provider once, and everything else is the same. |
-| [AI chat (MCP)](/surfaces/ai_chat) | The chat client runs the flow itself when the person connects your app. |
+| [Web](/frontends/web) | `useSignIn()` sends the browser through your identity provider and back. |
+| [React Native](/frontends/react_native) | `useSignIn()` opens a system browser for your identity provider; the app passes `nativeAuth({...})` to its provider once, and everything else is the same. |
+| [AI chat (MCP)](/frontends/ai_chat) | The chat client runs the flow itself when the person connects your app. |
 
 Because identity is established by the backend, a person who signs in
 on the web is the *same* `User`, with the same state, in your mobile

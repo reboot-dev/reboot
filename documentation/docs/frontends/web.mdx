@@ -6,12 +6,12 @@ that are *reactive* — React components re-render when backend state
 changes, without polling — and that its users sign in through your
 backend's own OAuth server.
 
-This page covers how a web front end is put together. For the full hooks
+This page covers how a web frontend is put together. For the full hooks
 reference, see [Call your API from React](/call/from_react).
 
 ## Install and generate
 
-Add the React client to your front end's `package.json`:
+Add the React client to your frontend's `package.json`:
 
 ```sh
 npm install -S @reboot-dev/reboot-react
@@ -25,7 +25,7 @@ generate --react=frontend/api
 ```
 
 Generating into `frontend/api/` — a sibling of the app itself — means
-every front end of your application (web, mobile, MCP UIs) shares one
+every frontend of your application (web, mobile, MCP UIs) shares one
 client. Keep your bundler's root at `frontend/` so that directory is
 inside it; if your app root is `frontend/web/` instead, Vite needs
 `server.fs.allow: [".."]` to read a sibling.
@@ -152,7 +152,7 @@ const TodoListView = ({ id }: { id: string }) => {
 
 ## Backend configuration
 
-Two things on the backend matter to a web front end.
+Two things on the backend matter to a web frontend.
 
 **1. `allowed_origins`.** Your SPA is on a different origin than the
 backend, so it must be allow-listed for credentialed requests:
@@ -187,7 +187,7 @@ cd frontend && npm run dev
 `rbt dev run` generates the React client before it starts, so the dev
 server always has an up-to-date `frontend/api/`.
 
-If you want Reboot to serve the front end too — so both are on one
+If you want Reboot to serve the frontend too — so both are on one
 origin, and so `UI` methods work — point it at your frontend root in
 `.rbtrc`:
 
@@ -229,5 +229,5 @@ for local certificates.
 - [Call your API from React](/call/from_react) — reactive reads,
   optimistic updates, offline caching, Next.js server components.
 - [Users and sign-in](/users/overview) — what `useUser()` is resolving.
-- [React Native apps](/surfaces/react_native) — the same code on a
+- [React Native apps](/frontends/react_native) — the same code on a
   phone (alpha).

@@ -99,7 +99,7 @@ To carry a token on every call made from an
 ### From React
 
 When you use Reboot's own sign-in, the token is handled for you:
-[`useSignIn()`](/surfaces/web#signing-in) establishes the session and
+[`useSignIn()`](/frontends/web#signing-in) establishes the session and
 the provider attaches the bearer. If the token comes from somewhere
 else, though, set it yourself:
 
@@ -273,7 +273,7 @@ rejected if it has expired; any other token is passed on to your
 `TokenVerifier`.
 
 Tokens your `TokenVerifier` accepts authenticate Reboot RPCs. They do
-not authenticate the [`/mcp` endpoint](/surfaces/ai_chat), because
+not authenticate the [`/mcp` endpoint](/frontends/ai_chat), because
 MCP clients sign in through OAuth rather than presenting a bearer
 token of their own, so that endpoint takes only tokens the `OAuth`
 server minted.

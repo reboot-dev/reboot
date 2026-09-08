@@ -99,7 +99,7 @@ The web app requires signing in. In development, click "Sign in" and
 pick (or make up) a `Development` identity. Signing in auto-constructs
 your `User`, which signs you up as a customer of the bank (see
 `backend/src/user_servicer.py`), so the web app shows only your own
-accounts. The web app and the MCP surface share sign-on: signing in on
+accounts. The web app and the MCP frontend share sign-on: signing in on
 one signs you in on the other.
 
 The mobile app signs in too, against the same OAuth server, and with

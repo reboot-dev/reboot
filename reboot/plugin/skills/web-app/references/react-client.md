@@ -110,7 +110,7 @@ when the backend serves the built assets from one origin.
 ## The Generated Client
 
 The hook, mutator, and error declarations `rbt generate --react=`
-emits are identical for every surface, so they live in one place:
+emits are identical for every frontend, so they live in one place:
 [`python/references/react-generated-client.md`](../../python/references/react-generated-client.md).
 Read it before writing components — it has the `useFoo` overloads,
 `UseFooApi`, the three-field reader return, `ResponseOrAborted`, the

@@ -57,7 +57,7 @@ identity available).
   identically in dev and prod; no second pass before shipping. This
   is the typical and recommended pattern for **both** MCP chat apps
   and standalone web apps — the same OAuth server serves both
-  surfaces, browsers via a `rbt_session` cookie and MCP clients via
+  frontends, browsers via a `rbt_session` cookie and MCP clients via
   `Authorization: Bearer`.
 - **`Application(token_verifier=...)` before the verifier is wired** —
   the escape hatch for custom IdPs the built-in `oauth=` providers

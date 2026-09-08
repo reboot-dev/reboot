@@ -133,7 +133,7 @@ verify tokens minted somewhere else instead, see
 ## Presenting your app
 
 Three optional arguments describe your application to the clients that
-connect to it — most visibly [AI chat clients](/surfaces/ai_chat) and
+connect to it — most visibly [AI chat clients](/frontends/ai_chat) and
 the setup wizard your app serves at its root URL:
 
 | Argument | Description |
@@ -145,9 +145,9 @@ the setup wizard your app serves at its root URL:
 ## The MCP endpoint
 
 `Application` mounts an MCP endpoint at `/mcp`, so any
-[AI chat client](/surfaces/ai_chat) can connect. Methods declared with
+[AI chat client](/frontends/ai_chat) can connect. Methods declared with
 `mcp=Tool()` appear there as tools, and
-[`UI`](/surfaces/ui_methods) methods as tools plus resources. No extra
+[`UI`](/frontends/ui_methods) methods as tools plus resources. No extra
 configuration is needed in your `main.py`.
 
 ## HTTP custom routes

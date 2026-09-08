@@ -1390,7 +1390,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
      - `client_has_ui`: this client has `UI()` methods. Forces the
        `mcpApp` dependency below even absent an `mcp=Tool()` method.
      - `client_has_default_id`: this client has a state, so its ID
-       can be resolved from the surface-agnostic default-IDs map.
+       can be resolved from the frontend-agnostic default-IDs map.
        Drives the hook's `id`-handling: the no-id overload, the
        URL-param fallback, and `useDefaultStateIds()`.
      - `client_needs_mcp_app`: this client's hook declares
@@ -1446,7 +1446,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
   const mcpApp = useMcpApp();
 {% endif %}
 {% if client_has_default_id %}
-  // Resolve `id` from the surface-agnostic state-ID map. A `null` map
+  // Resolve `id` from the frontend-agnostic state-ID map. A `null` map
   // means that resolution is still in flight; an empty map means it
   // resolved with no default ID for us.
   const defaultIds = useDefaultStateIds();
@@ -1571,7 +1571,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
         const result = await instance.{{ method.proto.name | to_lower_camel }}(mutation);
 
         // If the server rejected us due to an expired token,
-        // refresh via the surface's bearer-refresh and retry
+        // refresh via the frontend's bearer-refresh and retry
         // once (mirrors the unary-call path).
         if (
           result.aborted !== undefined &&
@@ -1717,7 +1717,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
         setIsLoading,
         (status: reboot_api.Status) => {
           // If the server rejected us due to an expired
-          // token, refresh via the surface's bearer-refresh
+          // token, refresh via the frontend's bearer-refresh
           // (the MCP host, or the web session). The token
           // change triggers a re-render and reconnect.
           if (
@@ -1876,7 +1876,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
     if (aborted) {
       return { aborted };
     } else if (response.status === 401 && refreshBearerToken) {
-      // Token expired — refresh via the surface's bearer-refresh
+      // Token expired — refresh via the frontend's bearer-refresh
       // and retry once.
       const newToken = await refreshBearerToken();
       if (newToken) {
@@ -1934,7 +1934,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
 
         // If the server rejected us due to an expired
-        // token, refresh via the surface's bearer-refresh and
+        // token, refresh via the frontend's bearer-refresh and
         // retry once.
         if (
           status.code === reboot_api.StatusCode.UNAUTHENTICATED &&

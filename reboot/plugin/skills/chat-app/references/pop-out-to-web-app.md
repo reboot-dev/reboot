@@ -2,7 +2,7 @@
 title: Pop-out button — deep-linking an MCP UI widget to your web app
 impact: MEDIUM
 impactDescription: An MCP UI widget runs in a sandboxed iframe that blocks `window.open`, so a naive "open in browser" button silently does nothing in most hosts. Use the bound entity's `state_id` to build a deep link and ask the host to open it via the MCP Apps `openLink` request, with a `window.open` fallback.
-tags: react, app-tsx, pop-out, deep-link, openLink, state_id, useMcpApp, dual-surface, web-app
+tags: react, app-tsx, pop-out, deep-link, openLink, state_id, useMcpApp, dual-frontend, web-app
 ---
 
 ## Pop-out button — deep-linking an MCP UI widget to your web app
@@ -66,7 +66,7 @@ export const ClickerApp = () => {
 
 The web app reads the query param on load and shows just that
 entity — e.g. `?counter=<id>` selects a single-counter view via
-`useCounter({ id })`. Because both surfaces share the
+`useCounter({ id })`. Because both frontends share the
 `oauth=...`-driven session (the `rbt_session` cookie), a user
 signed in to the MCP host is already signed in when the tab opens.
 The entity's authorizer still applies, so the deep-linked entity

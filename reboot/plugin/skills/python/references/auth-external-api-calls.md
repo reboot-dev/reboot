@@ -53,7 +53,7 @@ If the API belongs to the **identity provider you already sign in with**
 via `Application(oauth=...)` (`Google` / `GitHub` / `Auth0`), the OAuth
 server can capture its tokens for you: add the extra `scopes=[...]` your
 calls need and `store_tokens=True` on the provider — no endpoints to
-write. This works on every surface that signs in through `oauth=` —
+write. This works on every frontend that signs in through `oauth=` —
 MCP chat apps and web apps alike. It captures the identity provider's **own**
 tokens only: with `Auth0` you get an Auth0 token, not the upstream
 Google/GitHub token a brokered sign-in went through — to call the

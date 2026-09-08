@@ -11,7 +11,7 @@ In Reboot, those data types are actually _durable state_, meaning that
 when you update them they get persisted for you. And the methods are
 of a specific [_kind_](/define/methods), either a
 `reader`, `writer`, `transaction`, `workflow`, or
-[`UI`](/surfaces/ui_methods).
+[`UI`](/frontends/ui_methods).
 
 The combination of these data types and methods is called **durable
 data structures** (think durable objects, but so much more).
@@ -41,7 +41,7 @@ Reboot generates:
   - [React](/call/from_react), shared by web, React Native, and AI
     chat frontends
 - AI chat tools, from methods marked `mcp=Tool()` and from
-  [`UI`](/surfaces/ui_methods) annotations
+  [`UI`](/frontends/ui_methods) annotations
 
 :::note
 

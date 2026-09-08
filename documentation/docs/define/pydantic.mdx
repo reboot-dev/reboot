@@ -106,8 +106,8 @@ with a `User` type must configure
 ## A complete example
 
 `User` plus an application type, with a
-[`UI` method](/surfaces/ui_methods) and methods marked `mcp=Tool()`
-so an [AI chat client](/surfaces/ai_chat) can call them:
+[`UI` method](/frontends/ui_methods) and methods marked `mcp=Tool()`
+so an [AI chat client](/frontends/ai_chat) can call them:
 
 <!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py&syntax=python) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py -->
@@ -347,7 +347,7 @@ Not every method should be an MCP tool:
 Depending on its [kind](/define/methods), a method might be able to
 only read (e.g., `Reader`) or both read and write (e.g., `Writer`) the
 state. A type can have any number of `Reader`, `Writer`,
-`Transaction`, `Workflow`, and [`UI`](/surfaces/ui_methods) methods.
+`Transaction`, `Workflow`, and [`UI`](/frontends/ui_methods) methods.
 
 To learn more about how you implement each data type's methods see
 [Implement your API](/implement/servicers).

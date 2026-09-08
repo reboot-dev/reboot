@@ -1,6 +1,6 @@
 ---
 name: app
-description: Build a Reboot application from a user description. Routes to the chat-app skill (MCP Chat Apps for ChatGPT, Claude, VSCode, Goose), the web-app skill (standalone web apps with a browser frontend), or BOTH (dual-surface apps sharing one backend and one User per identity via `oauth=...`). Commits to a route only when the prompt verbatim names the front-door (MCP/Claude/ChatGPT for chat-app; a URL/SPA/"website" for web-app; explicit conjunction for both); otherwise asks the user. Does NOT infer the front-door from the app's domain (CRM, todo, dashboard, blog, …) — those describe what the app does, not where it lives.
+description: Build a Reboot application from a user description. Routes to the chat-app skill (MCP Chat Apps for ChatGPT, Claude, VSCode, Goose), the web-app skill (standalone web apps with a browser frontend), or BOTH (dual-frontend apps sharing one backend and one User per identity via `oauth=...`). Commits to a route only when the prompt verbatim names the front-door (MCP/Claude/ChatGPT for chat-app; a URL/SPA/"website" for web-app; explicit conjunction for both); otherwise asks the user. Does NOT infer the front-door from the app's domain (CRM, todo, dashboard, blog, …) — those describe what the app does, not where it lives.
 argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -59,9 +59,9 @@ they probably mean…":
 **Commit to BOTH (load chat-app + web-app together) only if the
 prompt contains an explicit conjunction:** e.g. "and also a
 website", "MCP server **plus** a dashboard", "expose it to Claude
-**and** host it on the web". Dual-surface apps share one backend,
+**and** host it on the web". Dual-frontend apps share one backend,
 one `oauth=...`, and one `User` actor per upstream identity;
-cross-surface SSO is automatic.
+cross-frontend SSO is automatic.
 
 ### Do NOT infer commitment from any of these
 
@@ -95,12 +95,12 @@ chat-y", **ask**.
    [`web-app` skill](../web-app/SKILL.md) and follow it from the
    top, with the user's description as input.
 3. **Both triggers present, or explicit "I want both"** → say one
-   sentence ("Building this as a dual-surface Reboot app — both
+   sentence ("Building this as a dual-frontend Reboot app — both
    MCP and standalone web."), then load the
    [`chat-app` skill](../chat-app/SKILL.md) _and_ the
    [`web-app` skill](../web-app/SKILL.md), and follow them
    together. The backend `Application(oauth=...)` is configured
-   once and serves both surfaces; a single `User` actor per
+   once and serves both frontends; a single `User` actor per
    upstream identity is shared.
 
 4. **Otherwise (default)** → **ask the user** the question below
@@ -117,7 +117,7 @@ chat-y", **ask**.
        normal browser.
      - "Both"     — a single app exposed through both an MCP host
        and a standalone browser SPA, sharing one `User` actor per
-       upstream identity (cross-surface SSO).
+       upstream identity (cross-frontend SSO).
    ```
 
    Then route on the answer per steps 1–3. **"Both" loads both
@@ -174,12 +174,12 @@ chat-y", **ask**.
 | "a tool I can use from Claude to track my reading list"                  | `chat-app`              | "from Claude" names the runtime; "tool" + LLM context.       |
 | "a website where users can sign up and create journals"                  | `web-app`               | "website" is a verbatim trigger.                             |
 | "a kanban board with login"                                              | **ASK**                 | "login" alone is not enough — chat-apps also have auth.      |
-| "expose a CRM as an MCP server, and also a dashboard at crm.example.com" | Both — load both skills | Explicit conjunction; dual-surface app.                      |
+| "expose a CRM as an MCP server, and also a dashboard at crm.example.com" | Both — load both skills | Explicit conjunction; dual-frontend app.                      |
 
 ## Note
 
 Both `chat-app` and `web-app` layer on top of the [`python`
 skill](../python/SKILL.md) for Reboot backend mechanics. You don't need
 to load `python` here — those skills load it themselves. A
-dual-surface app loads both, but they share a single `python`
+dual-frontend app loads both, but they share a single `python`
 layer underneath, so reference files aren't double-loaded.
