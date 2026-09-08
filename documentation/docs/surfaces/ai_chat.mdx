@@ -91,15 +91,17 @@ for a browser.
 
 This is what makes `User` the natural entry point on this surface in
 particular. The AI's memory of a conversation is its context window,
-which does not survive into the next conversation. State IDs it was
-handed — a `counter_id`, an `order_id` — are gone with it. So:
+which does not survive into the next conversation, and neither do the
+state IDs it was handed. Anything the user will want to come back to
+must therefore be reachable from their `User`:
 
 - Record what the user owns in `User` state.
-- Give `User` a `list_…` method with `mcp=Tool()` so the AI can find
-  its way back in a fresh conversation.
+- Give `User` a tool that lists it, so the AI can look it up again in
+  a fresh conversation.
 
-Do that, and a user who opened an order last week can say "show me my
-order" today and the AI can actually find it.
+`list_counters` above is exactly that: a user who created a counter
+last week can say "show me my counters" today, and the AI can find
+them.
 
 ## Choosing which methods the AI can call
 
