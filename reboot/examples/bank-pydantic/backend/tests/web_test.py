@@ -1,5 +1,6 @@
-"""The bank's web app tests: the Gherkin scenarios in `web.feature`,
-driven through a browser by `reboot.bdd`'s web app steps.
+"""The bank's tests that drive its web app: the features whose
+scenarios include a browser, run through `reboot.bdd`'s web app steps.
+Their backend scenarios run here too, against the same application.
 
 The app is served the way it is deployed: from its own origin, here a
 Vite dev server on `localhost` started for each scenario, calling the
@@ -74,4 +75,4 @@ def application(frontend: Frontend) -> Application:
     )
 
 
-scenarios('web.feature')
+scenarios('opening_accounts.feature', 'transfers.feature', 'sign_in.feature')

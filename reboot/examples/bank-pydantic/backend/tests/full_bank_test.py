@@ -139,4 +139,9 @@ def application() -> Application:
     )
 
 
-scenarios('transfers.feature', 'deposits.feature', 'withdrawals.feature')
+scenarios(
+    'sign_up.feature',
+    'deposits.feature',
+    'withdrawals.feature',
+    'bank_balances.feature',
+)
