@@ -209,14 +209,14 @@ if (isLoading) return <p>Checking session…</p>;
 if (user === undefined) return <button onClick={() => signIn()}>Sign in</button>;
 ```
 
-See [Web apps](/surfaces/web#signing-in) for the browser flow, and
-[React Native apps](/surfaces/react_native) for the native one.
+See [Web apps](/frontends/web#signing-in) for the browser flow, and
+[React Native apps](/frontends/react_native) for the native one.
 
 ## In AI chat UIs
 
 The same generated hooks work unchanged inside an
-[AI chat client](/surfaces/ai_chat), where a
-[`UI` method](/surfaces/ui_methods) renders your component. A few
+[AI chat client](/frontends/ai_chat), where a
+[`UI` method](/frontends/ui_methods) renders your component. A few
 things differ:
 
 - **No `url` prop needed.** In the AI chat context,
@@ -242,7 +242,7 @@ things differ:
   an `id`, the hook returns `{ counter, isLoading }`, where
   `counter` is `undefined` until the ID resolves, so check both
   before using the handle (see
-  [`UI` methods](/surfaces/ui_methods) for a complete
+  [`UI` methods](/frontends/ui_methods) for a complete
   component):
 
 <!-- MARKDOWN-AUTO-DOCS:START
@@ -425,8 +425,8 @@ The `aborted` returned is not an exception and the generated React code does not
 
 ## Caching reads
 
-Readers can be cached and persisted in the front end for longer
-durations. In case the front end is disconnected from the network or the
+Readers can be cached and persisted in the frontend for longer
+durations. In case the frontend is disconnected from the network or the
 Reboot backend when loading, the response for a reader will be read from an
 _IndexedDB_ or as a fallback from the _localStorage_ of the
 application's browser. This enables PWAs to start up in __disconnected

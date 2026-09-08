@@ -686,7 +686,7 @@ class Application:
         Kept separate from `_mount_mcp` so that browser-only apps (a
         standalone SPA with no MCP servicers) get the OAuth server
         too; the access JWTs it issues authenticate both the MCP and
-        the web surface.
+        the web frontend.
 
         Returns the state type names that auto-construct per user.
         """
@@ -695,7 +695,7 @@ class Application:
         )
         # Resolve an OAuth provider whenever `Application(oauth=...)` is
         # configured, regardless of whether anything auto-constructs —
-        # an app adopting Reboot auth for its web surface shouldn't have
+        # an app adopting Reboot auth for its web frontend shouldn't have
         # to introduce a `User` type just to get a login flow. The
         # selector's `get()` still raises if the configured provider has
         # nothing for the current environment (e.g. a prod arm left

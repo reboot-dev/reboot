@@ -163,10 +163,10 @@ One app to serve every user — human or machine. You and your agents
 can build any kind of app with Reboot:
 
 - **Humans** reach it through a
-  [web app](https://docs.reboot.dev/surfaces/web), a
-  [React Native app](https://docs.reboot.dev/surfaces/react_native)
+  [web app](https://docs.reboot.dev/frontends/web), a
+  [React Native app](https://docs.reboot.dev/frontends/react_native)
   (alpha), or an
-  [AI chat app](https://docs.reboot.dev/surfaces/ai_chat) inside
+  [AI chat app](https://docs.reboot.dev/frontends/ai_chat) inside
   ChatGPT, Claude, or VS Code, where `UI` methods render React
   components in the conversation.
 - **Agents** reach it over MCP: every method marked `mcp=Tool()` is a
@@ -180,7 +180,7 @@ Signed-in users come built in. Plug in your favorite auth provider —
 Google, GitHub, Auth0, Ory — and Reboot runs the OAuth server in front
 of it, so a person signing in auto-constructs their `User`: the
 per-user entry point the rest of your app hangs off, and the same
-`User` on every surface. See
+`User` on every frontend. See
 [Users and sign-in](https://docs.reboot.dev/users/overview).
 
 ## Status

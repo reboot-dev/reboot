@@ -13,7 +13,7 @@ features:
   (`bazel run //infrastructure/clusters/local:cluster up`), since it is
   installed on those by default.
 
-## Testing the MCP surface
+## Testing the MCP frontend
 
 The application contains MCP functionality. Two inspectors can
 drive it; pick one. Both default to port `6274` — to run them
@@ -64,7 +64,7 @@ The same backend serves the standalone browser SPA in
 [`frontend/web/`](frontend/web/) at `__/frontend/web/`, backed
 by the unified
 `oauth=...` flow. Sign in here and you're also signed in on the
-MCP surface (and vice versa) via shared `rbt_session` cookies.
+MCP frontend (and vice versa) via shared `rbt_session` cookies.
 
 ```bash
 ibazel run //reboot/ping:ping_py_bin

@@ -31,12 +31,12 @@ The five kinds of methods in Reboot are:
 | `writer` | `writer` methods can both read from and mutate state. `writer` execution happens serially on a given state, allowing each update to happen atomically. To enforce write atomicity, `writers` can call any `readers`, but they cannot call other `writers`. |
 | `transaction` | `transactions` combine multiple read/write operations into a single atomic action, often across multiple states. All of the reads and writes included in the `transaction` will happen atomically: once a state is involved in a `transaction`, no other RPCs may mutate its state until that `transaction` is complete. If any part of the `transaction` fails, the entire `transaction` will be rolled back. `transactions` may call `readers`, `writers`, and other `transactions`. |
 | `workflow` | `workflow` methods asynchronously combine multiple read/write operations _without_ holding a lock. State updates may be visible to the outside world before the `workflow` completes. If a failure occurs, the workflow is retried from the beginning until it runs to completion.|
-| `UI` | `UI` methods declare a React component to display in the AI chat interface. The React `App.tsx` is the implementation; there is no backend servicer code. When the AI calls the associated tool, the chat client opens the React app. See [UI methods](/surfaces/ui_methods). |
+| `UI` | `UI` methods declare a React component to display in the AI chat interface. The React `App.tsx` is the implementation; there is no backend servicer code. When the AI calls the associated tool, the chat client opens the React app. See [UI methods](/frontends/ui_methods). |
 
 ## Exposing methods to an AI
 
 Every method is callable from your own code, from a
-[web](/surfaces/web) or [React Native](/surfaces/react_native)
+[web](/frontends/web) or [React Native](/frontends/react_native)
 frontend, and from anywhere else you have a client. Whether an **AI**
 may call it is a separate, explicit decision.
 
@@ -46,4 +46,4 @@ AI-callable tool) or `mcp=None` (hide it from the AI). There is no
 implicit default, so nothing reaches an AI by accident. This applies
 to all state types, including `User`. See
 [Creating tools](/define/pydantic#creating-tools-for-the-ai) and
-[AI chat apps](/surfaces/ai_chat).
+[AI chat apps](/frontends/ai_chat).

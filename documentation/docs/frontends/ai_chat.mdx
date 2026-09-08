@@ -1,13 +1,13 @@
 # AI chat apps
 
 A Reboot application can serve an AI chat client — ChatGPT, Claude,
-VS Code, Goose — as one more front end alongside your
-[web](/surfaces/web) and [React Native](/surfaces/react_native) apps.
+VS Code, Goose — as one more frontend alongside your
+[web](/frontends/web) and [React Native](/frontends/react_native) apps.
 Your methods become tools the AI can call, and your React components
 open **inside the conversation** as interactive UIs.
 
 It is the same backend, the same state, and the same signed-in
-[`User`](/users/overview). Nothing about a chat surface is a separate
+[`User`](/users/overview). Nothing about a chat frontend is a separate
 kind of application.
 
 ## What you get
@@ -77,11 +77,11 @@ told — who it is acting for. Methods on other types take the
 instance's state ID, which the AI receives when the instance is
 created and passes back on later calls.
 
-**[`UI` methods](/surfaces/ui_methods) become tools that open a React
+**[`UI` methods](/frontends/ui_methods) become tools that open a React
 component.** When the AI calls one, the chat client displays your
 component inline.
 
-## Users on the chat surface
+## Users on the chat frontend
 
 Chat clients sign in through the same OAuth server as everything else.
 The client discovers it, registers itself, and runs the flow when the
@@ -89,7 +89,7 @@ user connects your app; Reboot then
 [auto-constructs their `User`](/users/overview) exactly as it would
 for a browser.
 
-This is what makes `User` the natural entry point on this surface in
+This is what makes `User` the natural entry point on this frontend in
 particular. The AI's memory of a conversation is its context window,
 which does not survive into the next conversation, and neither do the
 state IDs it was handed. Anything the user will want to come back to
@@ -164,7 +164,7 @@ For the same steps written out, see
 
 ## Next
 
-- [`UI` methods](/surfaces/ui_methods) — React components rendered in
+- [`UI` methods](/frontends/ui_methods) — React components rendered in
   the conversation.
 - [Define your API](/define/pydantic) — declaring types, methods, and
   tools.

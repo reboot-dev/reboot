@@ -7,9 +7,9 @@ tags: react, hooks, generated, codegen, errors, typescript
 
 ## The Generated React Client Contract
 
-`rbt generate --react=<dir>` emits the same client for every surface,
+`rbt generate --react=<dir>` emits the same client for every frontend,
 so this contract holds whether the component renders in a browser SPA
-or inside an MCP host. What differs between surfaces — where the
+or inside an MCP host. What differs between frontends — where the
 files live, how the backend URL is found, how a user signs in — is in
 the skill you are building with:
 [`web-app/references/react-client.md`](../../web-app/references/react-client.md)

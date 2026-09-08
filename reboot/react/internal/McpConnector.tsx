@@ -262,7 +262,7 @@ export default function McpConnector({
   // State-IDs come out of `toolData.ids` for MCP — same shape
   // the web flow populates from `/__/oauth/whoami`. Generated
   // hooks read them via `useDefaultStateIds()` regardless of
-  // surface. Memoize so unrelated `toolData` updates (e.g. a
+  // frontend. Memoize so unrelated `toolData` updates (e.g. a
   // bearer-token refresh that touches a non-`ids` key) don't
   // re-render every state-ids consumer.
   const stateIdsContextValue = useMemo<DefaultStateIdsContextValue>(

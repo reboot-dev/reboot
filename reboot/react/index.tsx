@@ -234,7 +234,7 @@ export interface RebootSession {
 }
 
 /**
- * How a surface signs users in and keeps their session alive.
+ * How a frontend signs users in and keeps their session alive.
  *
  * `RebootClientProvider` drives the browser's cookie-backed OAuth
  * flow unless it is given one of these. React Native has neither a
@@ -676,7 +676,7 @@ export const RebootClientProvider = ({
   // backoff while the backend can't answer, so user code can branch
   // on the generated `useUser()` hook's `{ user, isLoading }` shape.
   // It is `/whoami` that resolves the default state ids, so both
-  // surfaces go through it: the browser identifies its session with
+  // frontends go through it: the browser identifies its session with
   // the cookie, a driver-backed app with the access token the driver
   // gave us. In MCP mode the bearer and ids are delivered by the host
   // via tool results, so this probe doesn't run.
@@ -793,11 +793,11 @@ export const RebootClientProvider = ({
   }, [mcpTitle, refreshBearerToken, authState.status, authState.expiresAt]);
 
   // Generated hooks (`useCounter()`, `usePing()`, …) read the
-  // state-ID map through `useDefaultStateIds()` — surface-
+  // state-ID map through `useDefaultStateIds()` — frontend-
   // agnostic; populated by either this provider (web mode, via
   // `/whoami`) or the MCP connector (MCP mode, via tool-input/
   // result events). This provider supplies only the context values it
-  // can truthfully compute in web mode — the surface-neutral ones;
+  // can truthfully compute in web mode — the frontend-neutral ones;
   // `McpAppContext` is the MCP connector's to supply.
   //
   // A `null` map surfaces the unanswered `/whoami` probe (in

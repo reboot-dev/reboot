@@ -93,7 +93,7 @@ Here is a suggested file layout:
 
 Putting the generated client in `frontend/api` lets every frontend of
 your application share one copy of it. See
-[One backend, many frontends](/surfaces/overview).
+[One backend, many frontends](/frontends/overview).
 
 ## `.rbtrc` and flags
 
@@ -199,9 +199,9 @@ generator.
 #### Frontend flags
 
 When your application has a React frontend — a
-[web app](/surfaces/web), a
-[React Native app](/surfaces/react_native), or
-[`UI` methods](/surfaces/ui_methods) — add these to your `.rbtrc`:
+[web app](/frontends/web), a
+[React Native app](/frontends/react_native), or
+[`UI` methods](/frontends/ui_methods) — add these to your `.rbtrc`:
 
 ```shell
 # Generate typed React hooks, shared by every frontend.

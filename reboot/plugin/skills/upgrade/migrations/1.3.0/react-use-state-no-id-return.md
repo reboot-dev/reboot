@@ -9,7 +9,7 @@ directly. The handle is `undefined` until a default id resolves, and
 `useCounter({ id })` — are unchanged and still return the handle.
 
 This return shape is what lets the UI render right away. Neither
-surface's provider blocks the subtree waiting for ids: an MCP app's
+frontend's provider blocks the subtree waiting for ids: an MCP app's
 `RebootClientProvider` used to hold everything behind a built-in
 "Connecting to MCP host..." placeholder until the host delivered tool
 input carrying the state-id map, and a web app's provider would

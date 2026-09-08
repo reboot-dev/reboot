@@ -15,7 +15,7 @@ on [Discord](https://discord.gg/cRbdcS94Nr) or
 The Reboot React client runs in React Native, on iOS and Android, as
 well as in the browser. Your components, your generated hooks, and
 your reactive reads are the same code you would write for the
-[web](/surfaces/web).
+[web](/frontends/web).
 
 One thing genuinely differs: signing in. A native app cannot use the
 browser's redirect flow, so Reboot's OAuth server also speaks the flow
@@ -131,7 +131,7 @@ const Root = () => {
 ```
 
 The same [`useSignIn()`, `useSignOut()`, and generated
-`useUser()`](/surfaces/web#signing-in) hooks, against the same OAuth
+`useUser()`](/frontends/web#signing-in) hooks, against the same OAuth
 server, resolving the same `User`. `returnTo` is ignored on native,
 because there is no page to come back to.
 
@@ -186,7 +186,7 @@ simulator and from a phone on the same network without extra flags.
 
 ## Sharing generated code with a web app
 
-Point `rbt generate` at a directory both front ends can import from:
+Point `rbt generate` at a directory both frontends can import from:
 
 ```
 generate --react=frontend/api
@@ -209,7 +209,7 @@ things are yours to cover, both shown above:
 ## A complete example
 
 The [`bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic)
-example ships a full Expo front end under
+example ships a full Expo frontend under
 [`frontend/mobile/`](https://github.com/reboot-dev/reboot-bank-pydantic/tree/main/frontend/mobile),
 alongside a browser SPA and MCP UIs — all three against one backend
 and one `User`. See [Examples](/get_started/examples#bank-pydantic).

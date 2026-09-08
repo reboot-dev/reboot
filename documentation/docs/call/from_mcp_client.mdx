@@ -43,7 +43,7 @@ This opens MCPJam in your browser (if no tab opens, visit
 [http://localhost:6274](http://localhost:6274)), pointed straight at
 your app's MCP endpoint with OAuth enabled. From there you can browse
 your app's tools, call them, and see
-[`UI`](/surfaces/ui_methods) method React apps rendered
+[`UI`](/frontends/ui_methods) method React apps rendered
 inline.
 
 ## Set up a secure tunnel
@@ -95,7 +95,7 @@ its URL for you.
 
 :::warning Free ngrok tunnels don't work with Claude
 
-Claude renders [`UI`](/surfaces/ui_methods) methods as
+Claude renders [`UI`](/frontends/ui_methods) methods as
 HTML with `<script>` tags, and free ngrok tunnels
 (`*.ngrok-free.dev`) serve an HTML interstitial on first request that
 breaks those scripts. When testing with Claude, use `cloudflared` (or

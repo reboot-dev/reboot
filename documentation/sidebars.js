@@ -117,27 +117,27 @@ const sidebars = {
       items: [
         {
           type: "doc",
-          id: "surfaces/overview",
+          id: "frontends/overview",
           label: "Overview",
         },
         {
           type: "doc",
-          id: "surfaces/web",
+          id: "frontends/web",
           label: "Web apps",
         },
         {
           type: "doc",
-          id: "surfaces/react_native",
+          id: "frontends/react_native",
           label: "React Native apps",
         },
         {
           type: "category",
           label: "AI chat apps",
-          link: { type: "doc", id: "surfaces/ai_chat" },
+          link: { type: "doc", id: "frontends/ai_chat" },
           items: [
             {
               type: "doc",
-              id: "surfaces/ui_methods",
+              id: "frontends/ui_methods",
               label: "UI methods",
             },
           ],

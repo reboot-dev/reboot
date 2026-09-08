@@ -172,7 +172,7 @@ you open it as a one-shot step during initial startup (not from a
 loop that watches for the backend coming back up), this is naturally
 satisfied — just don't add any reload-driven re-open.
 
-**Skip this only for a Web App.** A **Web App** has no MCP surface,
+**Skip this only for a Web App.** A **Web App** has no MCP frontend,
 so no wizard is served and there's nothing to connect — don't
 announce or open it. Every other app here is an MCP app, and the
 wizard is how you point a client at it, so open it even for a

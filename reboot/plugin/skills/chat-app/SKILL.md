@@ -24,13 +24,13 @@ Build complete Reboot AI Chat Apps from a user description.
 > method type, the React/Vite scaffolding, and the cross-cutting
 > rules unique to that layer.
 
-> **Dual-surface apps are supported.** A single app can serve both
+> **Dual-frontend apps are supported.** A single app can serve both
 > an MCP front door _and_ a standalone browser SPA from the same
 > backend; they share `oauth=...`, the same `User` per upstream
 > identity, and the same servicer code. For the standalone SPA
 > piece, also load the
 > [web-app skill](../web-app/SKILL.md). A user who signs in on
-> one surface is signed in on both (cross-surface SSO): the OAuth
+> one frontend is signed in on both (cross-frontend SSO): the OAuth
 > server's `/authorize` short-circuits when the browser already
 > carries a session cookie, and `/callback` sets that cookie
 > on every flow.
@@ -219,7 +219,7 @@ under Key Framework Concepts):
   `App.tsx` itself: what an MCP UI component renders, and the full
   Counter `App.tsx` + `App.module.css` example.
 - `python/references/react-generated-client.md` — what
-  `rbt generate --react=` emits, identically for every surface: the
+  `rbt generate --react=` emits, identically for every frontend: the
   `use<Type>()` overloads, the three-field reader return, why
   mutations resolve to `{ response, aborted }` instead of throwing,
   the typed error classes, and the snake→camel naming rules.
@@ -230,7 +230,7 @@ under Key Framework Concepts):
   `useMcpApp().openLink({ url })` (the sandboxed iframe blocks
   `window.open`) with a `window.open` fallback. The web-app side
   reads the ID from the URL; a shared `rbt_session` keeps the user
-  signed in across surfaces.
+  signed in across frontends.
 
 **Before the tests:** the four `python/references/testing-*.md`
 files, plus `python/references/patterns-idempotency.md` — it

@@ -26,11 +26,11 @@ backend behind a standalone React frontend served at a normal URL.
 > cookies / OAuth), and the cross-cutting rules unique to that
 > layer.
 
-> **Dual-surface apps are supported.** A single app can serve both
+> **Dual-frontend apps are supported.** A single app can serve both
 > a standalone web SPA _and_ an MCP front door from the same
 > backend — they share `oauth=...`, the same `User` actor per
 > upstream identity, and the same servicer code. If your app needs
-> both surfaces, also load the
+> both frontends, also load the
 > [chat-app skill](../chat-app/SKILL.md) for the MCP-specific
 > additions (`mcp=Tool()`, `UI()`, MCPJam).
 > This skill alone covers the web side.
@@ -49,7 +49,7 @@ backend behind a standalone React frontend served at a normal URL.
 
 ## How a Web App Differs From a Chat App
 
-The Reboot backend is identical. The deltas are all on the surface:
+The Reboot backend is identical. The deltas are all on the frontend:
 
 | Concern      | Chat App (`chat-app`)                                    | Web App (this skill)                                                                   |
 | ------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------- |
@@ -203,15 +203,15 @@ groups below are in build order, and each reference appears in
 exactly one of them — the step that needs it.
 
 > **Never read `chat-app/references/*` for a web app.** They cover
-> the MCP surface — `UI()` artifacts, the MCPJam inspector, the
+> the MCP frontend — `UI()` artifacts, the MCPJam inspector, the
 > nested `frontend/mcp/<name>/` Vite output, `mcp=Tool()` markers,
 > popping a widget out into a web app. Reaching into them costs
 > context and produces chat-app-shaped code (`mcp=None` on every
-> method of an app with no MCP surface). The web equivalents are
+> method of an app with no MCP frontend). The web equivalents are
 > [`references/react-client.md`](references/react-client.md) and the
 > `python` references named below. The single exception is
 > [chat-app/references/auth-oauth-providers.md](../chat-app/references/auth-oauth-providers.md),
-> which is surface-neutral: read it when you pick a real provider.
+> which is frontend-neutral: read it when you pick a real provider.
 
 **Before the API definition:**
 

@@ -9,7 +9,7 @@
 import { createContext, useContext } from "react";
 
 // ---------------------------------------------------------------------------
-// State-ID context (surface-agnostic).
+// State-ID context (frontend-agnostic).
 //
 // No matter how we communicate with the backend (MCP, web, ...), we
 // need a "default IDs" map so that generated hooks (notably
@@ -20,7 +20,7 @@ import { createContext, useContext } from "react";
 export interface DefaultStateIdsContextValue {
   // Map of fully qualified state type name → default state ID,
   // consulted only when a hook is called without an explicit ID.
-  // `null` while the surface is still resolving it; an empty map once
+  // `null` while the frontend is still resolving it; an empty map once
   // resolved with no default ID available (e.g. for a `User`, signed
   // out); a populated map otherwise.
   defaultIds: Record<string, string> | null;
@@ -30,7 +30,7 @@ export const DefaultStateIdsContext =
   createContext<DefaultStateIdsContextValue | null>(null);
 
 /**
- * @internal Returns the default-ID map: `null` while the surface is
+ * @internal Returns the default-ID map: `null` while the frontend is
  * still resolving it, an empty map once resolved with no default ID
  * available, a populated map otherwise. Outside any provider it
  * resolves to an empty map — there are no default IDs and nothing is
@@ -43,10 +43,10 @@ export function useDefaultStateIds(): Record<string, string> | null {
 }
 
 // ---------------------------------------------------------------------------
-// Bearer-refresh context (surface-agnostic).
+// Bearer-refresh context (frontend-agnostic).
 //
 // Obtaining a fresh bearer token after the current one is rejected
-// works on every surface, but how it works is surface-specific: the
+// works on every frontend, but how it works is frontend-specific: the
 // web provider rotates the cookie session via `/__/oauth/refresh`,
 // while the MCP connector re-invokes the UI tool through the MCP
 // host.
@@ -63,8 +63,8 @@ export const BearerRefreshContext = createContext<RefreshBearerToken | null>(
 
 /**
  * @internal Do not import directly; use the generated hooks instead.
- * Returns the surface's bearer-refresh function, or `null` when no
- * surface provides one.
+ * Returns the frontend's bearer-refresh function, or `null` when no
+ * frontend provides one.
  */
 export function useRefreshBearerToken(): RefreshBearerToken | null {
   return useContext(BearerRefreshContext);
@@ -75,7 +75,7 @@ export function useRefreshBearerToken(): RefreshBearerToken | null {
 //
 // Everything that only makes sense when the backend is reached
 // through an MCP host. Kept deliberately separate from
-// `DefaultStateIdsContext` so non-MCP surfaces (e.g. a standalone
+// `DefaultStateIdsContext` so non-MCP frontends (e.g. a standalone
 // web SPA) can supply default IDs without depending on any MCP
 // concept.
 // ---------------------------------------------------------------------------
@@ -106,7 +106,7 @@ export function useMcpApp(): any | null {
  * tool result). Use this to read tool arguments the server
  * stuffed into the UI's bootstrap payload (e.g. `product_ids`,
  * `cart_id`). For the state-IDs map specifically, prefer the
- * surface-neutral `useDefaultStateIds()` so the same component
+ * frontend-neutral `useDefaultStateIds()` so the same component
  * code works under a standalone web SPA too.
  *
  * Returns `null` outside MCP mode and before the first

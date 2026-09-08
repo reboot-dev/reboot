@@ -3907,7 +3907,7 @@ class GreeterInstance {
 GreeterInstance.instances = {};
 export function useGreeter({ id: providedId } = {}) {
     var _a;
-    // Resolve `id` from the surface-agnostic state-ID map. A `null` map
+    // Resolve `id` from the frontend-agnostic state-ID map. A `null` map
     // means that resolution is still in flight; an empty map means it
     // resolved with no default ID for us.
     const defaultIds = useDefaultStateIds();
@@ -3985,7 +3985,7 @@ export function useGreeter({ id: providedId } = {}) {
                 };
                 const result = await instance.create(mutation);
                 // If the server rejected us due to an expired token,
-                // refresh via the surface's bearer-refresh and retry
+                // refresh via the frontend's bearer-refresh and retry
                 // once (mirrors the unary-call path).
                 if (result.aborted !== undefined &&
                     result.aborted.code === reboot_api.StatusCode.UNAUTHENTICATED &&
@@ -4068,7 +4068,7 @@ export function useGreeter({ id: providedId } = {}) {
                 setResponse(GreeterGreetResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh
+                // token, refresh via the frontend's bearer-refresh
                 // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
@@ -4199,7 +4199,7 @@ export function useGreeter({ id: providedId } = {}) {
             return { aborted };
         }
         else if (response.status === 401 && refreshBearerToken) {
-            // Token expired — refresh via the surface's bearer-refresh
+            // Token expired — refresh via the frontend's bearer-refresh
             // and retry once.
             const newToken = await refreshBearerToken();
             if (newToken) {
@@ -4247,7 +4247,7 @@ export function useGreeter({ id: providedId } = {}) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh and
+                // token, refresh via the frontend's bearer-refresh and
                 // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
                     refreshBearerToken) {
@@ -4317,7 +4317,7 @@ export function useGreeter({ id: providedId } = {}) {
                 };
                 const result = await instance.setAdjective(mutation);
                 // If the server rejected us due to an expired token,
-                // refresh via the surface's bearer-refresh and retry
+                // refresh via the frontend's bearer-refresh and retry
                 // once (mirrors the unary-call path).
                 if (result.aborted !== undefined &&
                     result.aborted.code === reboot_api.StatusCode.UNAUTHENTICATED &&
@@ -4362,7 +4362,7 @@ export function useGreeter({ id: providedId } = {}) {
                 };
                 const result = await instance.transactionSetAdjective(mutation);
                 // If the server rejected us due to an expired token,
-                // refresh via the surface's bearer-refresh and retry
+                // refresh via the frontend's bearer-refresh and retry
                 // once (mirrors the unary-call path).
                 if (result.aborted !== undefined &&
                     result.aborted.code === reboot_api.StatusCode.UNAUTHENTICATED &&
@@ -4445,7 +4445,7 @@ export function useGreeter({ id: providedId } = {}) {
                 setResponse(GreeterTryToConstructContextResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh
+                // token, refresh via the frontend's bearer-refresh
                 // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
@@ -4576,7 +4576,7 @@ export function useGreeter({ id: providedId } = {}) {
             return { aborted };
         }
         else if (response.status === 401 && refreshBearerToken) {
-            // Token expired — refresh via the surface's bearer-refresh
+            // Token expired — refresh via the frontend's bearer-refresh
             // and retry once.
             const newToken = await refreshBearerToken();
             if (newToken) {
@@ -4624,7 +4624,7 @@ export function useGreeter({ id: providedId } = {}) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh and
+                // token, refresh via the frontend's bearer-refresh and
                 // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
                     refreshBearerToken) {
@@ -4732,7 +4732,7 @@ export function useGreeter({ id: providedId } = {}) {
                 setResponse(GreeterTryToConstructExternalContextResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh
+                // token, refresh via the frontend's bearer-refresh
                 // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
@@ -4863,7 +4863,7 @@ export function useGreeter({ id: providedId } = {}) {
             return { aborted };
         }
         else if (response.status === 401 && refreshBearerToken) {
-            // Token expired — refresh via the surface's bearer-refresh
+            // Token expired — refresh via the frontend's bearer-refresh
             // and retry once.
             const newToken = await refreshBearerToken();
             if (newToken) {
@@ -4911,7 +4911,7 @@ export function useGreeter({ id: providedId } = {}) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh and
+                // token, refresh via the frontend's bearer-refresh and
                 // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
                     refreshBearerToken) {
@@ -5019,7 +5019,7 @@ export function useGreeter({ id: providedId } = {}) {
                 setResponse(GreeterTestLongRunningFetchResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh
+                // token, refresh via the frontend's bearer-refresh
                 // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
@@ -5150,7 +5150,7 @@ export function useGreeter({ id: providedId } = {}) {
             return { aborted };
         }
         else if (response.status === 401 && refreshBearerToken) {
-            // Token expired — refresh via the surface's bearer-refresh
+            // Token expired — refresh via the frontend's bearer-refresh
             // and retry once.
             const newToken = await refreshBearerToken();
             if (newToken) {
@@ -5198,7 +5198,7 @@ export function useGreeter({ id: providedId } = {}) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh and
+                // token, refresh via the frontend's bearer-refresh and
                 // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
                     refreshBearerToken) {
@@ -5268,7 +5268,7 @@ export function useGreeter({ id: providedId } = {}) {
                 };
                 const result = await instance.testLongRunningWriter(mutation);
                 // If the server rejected us due to an expired token,
-                // refresh via the surface's bearer-refresh and retry
+                // refresh via the frontend's bearer-refresh and retry
                 // once (mirrors the unary-call path).
                 if (result.aborted !== undefined &&
                     result.aborted.code === reboot_api.StatusCode.UNAUTHENTICATED &&
@@ -5351,7 +5351,7 @@ export function useGreeter({ id: providedId } = {}) {
                 setResponse(GreeterGetWholeStateResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh
+                // token, refresh via the frontend's bearer-refresh
                 // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
@@ -5482,7 +5482,7 @@ export function useGreeter({ id: providedId } = {}) {
             return { aborted };
         }
         else if (response.status === 401 && refreshBearerToken) {
-            // Token expired — refresh via the surface's bearer-refresh
+            // Token expired — refresh via the frontend's bearer-refresh
             // and retry once.
             const newToken = await refreshBearerToken();
             if (newToken) {
@@ -5530,7 +5530,7 @@ export function useGreeter({ id: providedId } = {}) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh and
+                // token, refresh via the frontend's bearer-refresh and
                 // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
                     refreshBearerToken) {
@@ -5638,7 +5638,7 @@ export function useGreeter({ id: providedId } = {}) {
                 setResponse(GreeterFailWithExceptionResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh
+                // token, refresh via the frontend's bearer-refresh
                 // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
@@ -5769,7 +5769,7 @@ export function useGreeter({ id: providedId } = {}) {
             return { aborted };
         }
         else if (response.status === 401 && refreshBearerToken) {
-            // Token expired — refresh via the surface's bearer-refresh
+            // Token expired — refresh via the frontend's bearer-refresh
             // and retry once.
             const newToken = await refreshBearerToken();
             if (newToken) {
@@ -5817,7 +5817,7 @@ export function useGreeter({ id: providedId } = {}) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh and
+                // token, refresh via the frontend's bearer-refresh and
                 // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
                     refreshBearerToken) {
@@ -5925,7 +5925,7 @@ export function useGreeter({ id: providedId } = {}) {
                 setResponse(GreeterFailWithAbortedResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh
+                // token, refresh via the frontend's bearer-refresh
                 // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
@@ -6056,7 +6056,7 @@ export function useGreeter({ id: providedId } = {}) {
             return { aborted };
         }
         else if (response.status === 401 && refreshBearerToken) {
-            // Token expired — refresh via the surface's bearer-refresh
+            // Token expired — refresh via the frontend's bearer-refresh
             // and retry once.
             const newToken = await refreshBearerToken();
             if (newToken) {
@@ -6104,7 +6104,7 @@ export function useGreeter({ id: providedId } = {}) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh and
+                // token, refresh via the frontend's bearer-refresh and
                 // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
                     refreshBearerToken) {
@@ -6174,7 +6174,7 @@ export function useGreeter({ id: providedId } = {}) {
                 };
                 const result = await instance.dangerousFields(mutation);
                 // If the server rejected us due to an expired token,
-                // refresh via the surface's bearer-refresh and retry
+                // refresh via the frontend's bearer-refresh and retry
                 // once (mirrors the unary-call path).
                 if (result.aborted !== undefined &&
                     result.aborted.code === reboot_api.StatusCode.UNAUTHENTICATED &&
@@ -6219,7 +6219,7 @@ export function useGreeter({ id: providedId } = {}) {
                 };
                 const result = await instance.storeRecursiveMessage(mutation);
                 // If the server rejected us due to an expired token,
-                // refresh via the surface's bearer-refresh and retry
+                // refresh via the frontend's bearer-refresh and retry
                 // once (mirrors the unary-call path).
                 if (result.aborted !== undefined &&
                     result.aborted.code === reboot_api.StatusCode.UNAUTHENTICATED &&
@@ -6302,7 +6302,7 @@ export function useGreeter({ id: providedId } = {}) {
                 setResponse(GreeterReadRecursiveMessageResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh
+                // token, refresh via the frontend's bearer-refresh
                 // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
@@ -6433,7 +6433,7 @@ export function useGreeter({ id: providedId } = {}) {
             return { aborted };
         }
         else if (response.status === 401 && refreshBearerToken) {
-            // Token expired — refresh via the surface's bearer-refresh
+            // Token expired — refresh via the frontend's bearer-refresh
             // and retry once.
             const newToken = await refreshBearerToken();
             if (newToken) {
@@ -6481,7 +6481,7 @@ export function useGreeter({ id: providedId } = {}) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the surface's bearer-refresh and
+                // token, refresh via the frontend's bearer-refresh and
                 // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
                     refreshBearerToken) {
@@ -6551,7 +6551,7 @@ export function useGreeter({ id: providedId } = {}) {
                 };
                 const result = await instance.constructAndStoreRecursiveMessage(mutation);
                 // If the server rejected us due to an expired token,
-                // refresh via the surface's bearer-refresh and retry
+                // refresh via the frontend's bearer-refresh and retry
                 // once (mirrors the unary-call path).
                 if (result.aborted !== undefined &&
                     result.aborted.code === reboot_api.StatusCode.UNAUTHENTICATED &&

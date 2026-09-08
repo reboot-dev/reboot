@@ -12,19 +12,19 @@ project, not a snippet.
 
 The most complete example, and the one that shows what "general
 purpose" means in practice: **one backend, one `User` per person, and
-three front ends**. A multi-user bank with signup, accounts,
+three frontends**. A multi-user bank with signup, accounts,
 transfers, and interest.
 
 It demonstrates:
 
 * [Sign-in and `User` auto-construction](/users/overview): signing in
   enrols the user as a bank customer, in `UserServicer.create`.
-* A [web app](/surfaces/web) under `frontend/web/`, signing in with
+* A [web app](/frontends/web) under `frontend/web/`, signing in with
   `useSignIn()` and branching on `useUser()`.
-* A [React Native app](/surfaces/react_native) under
+* A [React Native app](/frontends/react_native) under
   `frontend/mobile/`, signing in with `expoAuth(...)` against the same
   OAuth server — same hooks, same user.
-* [AI chat UIs](/surfaces/ai_chat) under `frontend/mcp/`, so a chat
+* [AI chat UIs](/frontends/ai_chat) under `frontend/mcp/`, so a chat
   client can open accounts and read balances too.
 * A debit/credit [transaction](/define/methods#kinds) that atomically
   moves funds between accounts.
@@ -132,7 +132,7 @@ Goose — plus a standalone browser SPA that the chat UI deep-links to.
 
 It demonstrates:
 
-* [`UI` methods](/surfaces/ui_methods) that open React apps in the
+* [`UI` methods](/frontends/ui_methods) that open React apps in the
   chat interface.
 * The [`User` type](/users/overview) as an entry point that creates
   other state types.

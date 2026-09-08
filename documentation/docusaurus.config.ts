@@ -47,11 +47,11 @@ const config: Config = {
         // READMEs, error messages — links to some of these, as do
         // third parties, so they keep resolving.
         redirects: [
-          { from: "/ai_chat_apps/what_is", to: "/surfaces/ai_chat" },
-          { from: "/learn_more/mcp_apps", to: "/surfaces/ai_chat" },
+          { from: "/ai_chat_apps/what_is", to: "/frontends/ai_chat" },
+          { from: "/learn_more/mcp_apps", to: "/frontends/ai_chat" },
           {
             from: "/learn_more/implement/ui_methods",
-            to: "/surfaces/ui_methods",
+            to: "/frontends/ui_methods",
           },
           {
             from: "/ai_chat_apps/get_started",
