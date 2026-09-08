@@ -116,7 +116,7 @@ import { drawnCallCount, GraphPage } from "./graph";
 const SUBSCRIBER_ID = uuidv4();
 
 // What each pill means, written for a reader new to Reboot. A pill
-// whose label is not here gets no mark and no tooltip.
+// whose label is not here gets no tooltip.
 const DEFINITIONS: Record<string, string> = {
   reader:
     "Reads state without changing it, so any number can safely " +
@@ -174,8 +174,7 @@ const Pill: FC<{
   className: string;
   label: string;
   meaning?: string;
-  mark?: boolean;
-}> = ({ className, label, meaning, mark = true }) => {
+}> = ({ className, label, meaning }) => {
   const pill = useRef<HTMLSpanElement>(null);
   const [below, setBelow] = useState(false);
 
@@ -206,11 +205,6 @@ const Pill: FC<{
       onFocus={place}
     >
       {label}
-      {mark && (
-        <span className="define-mark" aria-hidden="true">
-          ?
-        </span>
-      )}
       <span
         className={below ? "definition below" : "definition"}
         role="tooltip"
@@ -1264,7 +1258,6 @@ const ScenarioRow: FC<{
           className="eyebrow scenario-keyword"
           label={keyword}
           meaning={meaning}
-          mark={false}
         />
         <span className="scenario-name">{name}</span>
         {name !== undefined && <CopyScenarioName name={name} />}
@@ -1445,7 +1438,6 @@ const RuleSection: FC<{
         className="eyebrow"
         label={rule.keyword.toLowerCase()}
         meaning={DEFINITIONS.rule}
-        mark={false}
       />
       <h3>{rule.name}</h3>
       {rule.tags.includes(WIP_TAG) && (

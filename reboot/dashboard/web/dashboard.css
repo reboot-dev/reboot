@@ -970,20 +970,11 @@ header h1 {
   background: hsl(318 55% 38%);
 }
 
-/* A pill that carries a definition. The mark is the invitation to
-   hover; the tooltip is the answer. `cursor: help` says the same
-   thing the mark does, for whoever reads cursors first. */
+/* A pill that carries a definition. `cursor: help` is the
+   invitation to hover; the tooltip is the answer. */
 .defined {
   position: relative;
   cursor: help;
-}
-
-/* Small and translucent so it reads as an aside rather than as part
-   of the label. */
-.define-mark {
-  margin-left: 4px;
-  font-size: 8px;
-  opacity: 0.55;
 }
 
 /* Above the pill, centred, and inert to the mouse so that moving
