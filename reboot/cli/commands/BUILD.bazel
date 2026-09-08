@@ -9,6 +9,7 @@ py_library(
     deps = [
         ":dev_py",
         "//reboot:version_py",
+        "//reboot/cli/common:dev_extra_py",
         "//reboot/cli/common:directories_py",
         "//reboot/cli/common:rc_py",
         "//reboot/cli/common:subprocesses_py",
@@ -37,6 +38,7 @@ py_library(
         "//rbt/std/presence/v1:presence_py_reboot",
         "//reboot/aio:aborted_py",
         "//reboot/aio:external_py",
+        "//reboot/cli/common:dev_extra_py",
         "//reboot/cli/common:directories_py",
         "//reboot/cli/common:frontend_py",
         "//reboot/cli/common:monkeys_py",

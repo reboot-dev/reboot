@@ -34,6 +34,7 @@ from reboot.cli.commands.generate import generate_direct
 # We import the whole `terminal` module (as opposed to the methods it contains)
 # to allow us to mock these methods out in tests.
 from reboot.cli.common import terminal
+from reboot.cli.common.dev_extra import dev_extra_installed, missing_dev_extra
 from reboot.cli.common.directories import (
     add_working_directory_options,
     dot_rbt_dev_directory,
@@ -1154,6 +1155,15 @@ async def dev_run(
     """Implementation of the 'dev run' subcommand."""
 
     _check_common_args(args)
+
+    # A development environment installs the `reboot[dev]` extra. The
+    # application runs without it, so this only says so.
+    if not dev_extra_installed():
+        terminal.warn(
+            missing_dev_extra(
+                '`rbt dashboard` and tests written with `reboot.bdd` need it'
+            )
+        )
 
     tls_args = [args.tls_certificate, args.tls_key, args.tls_root_certificate]
 

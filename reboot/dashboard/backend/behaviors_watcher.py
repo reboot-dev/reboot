@@ -7,9 +7,8 @@ cheaper than tracking which one an event was about, so a burst of
 saves loses nothing however many events the watch failed to hear.
 
 Each file is parsed by `reboot.bdd.feature`, whose parser is
-`gherkin-official`, which arrives with `reboot[dev]`. Without
-the extra, each feature file found is recorded with an error saying
-to install it, so the page can say why it shows no features.
+`gherkin-official`, which arrives with `reboot[dev]`, the extra
+`rbt dashboard` requires.
 
 Each scenario is also checked for the recordings of its last run in
 a browser, kept beside the feature file the way `reboot.bdd.recordings`
@@ -23,15 +22,9 @@ from rbt.dashboard.v1.dashboard_rbt import Dashboard
 from rbt.v1alpha1.bdd.feature_pb2 import Background, Feature, Scenario
 from reboot.aio.contexts import WorkflowContext
 from reboot.aio.workflows import at_least_once
-from reboot.bdd import recordings
+from reboot.bdd import feature, recordings
 from reboot.cli.common.watch import file_watcher
 from typing import Mapping
-
-try:
-    from reboot.bdd import feature
-    _extra_installed = True
-except ImportError:
-    _extra_installed = False
 
 # The glob every scenario file matches, which is the extension
 # `pytest-bdd` and every other Gherkin tool reads.
@@ -125,13 +118,6 @@ async def _read_and_parse(*, directory: Path) -> dict[str, Feature]:
     features: dict[str, Feature] = {}
     for path in _feature_files(directory):
         filename = str(path.relative_to(directory))
-        if not _extra_installed:
-            features[filename] = Feature(
-                error='Reading `.feature` files needs the packages '
-                '`reboot[dev]` installs; install the extra to see '
-                'behaviors here.'
-            )
-            continue
         try:
             source = path.read_text()
         except OSError as error:

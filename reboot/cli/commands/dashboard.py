@@ -12,6 +12,7 @@ from reboot.cli.commands.dev import (
     try_and_become_child_subreaper_on_linux,
 )
 from reboot.cli.common import terminal
+from reboot.cli.common.dev_extra import dev_extra_installed, missing_dev_extra
 from reboot.cli.common.directories import (
     add_working_directory_options,
     dot_rbt_directory,
@@ -282,6 +283,13 @@ async def dashboard(
     parser: ArgumentParser,
 ) -> int:
     """Implementation of the 'dashboard' subcommand."""
+    # The dashboard reads the application's `.feature` files with the
+    # packages the `reboot[dev]` extra installs, which every
+    # development environment has; without them it would show no
+    # features and say why on each file, so it refuses instead.
+    if not dev_extra_installed():
+        terminal.fail(missing_dev_extra('`rbt dashboard` needs it'))
+
     with use_working_directory(args, parser):
         # If on Linux try to become a child subreaper so that we can
         # properly clean up all processes descendant from us! Envoy in
