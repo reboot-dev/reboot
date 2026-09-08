@@ -36,7 +36,96 @@ const config: Config = {
     locales: ["en"],
   },
 
-  plugins: [tailwindPlugin],
+  plugins: [
+    tailwindPlugin,
+    [
+      "@docusaurus/plugin-client-redirects",
+      {
+        // Pages that this site published under an older URL. Reboot's
+        // own source — generated servicer boilerplate, example
+        // READMEs, error messages — links to some of these, as do
+        // third parties, so they keep resolving.
+        redirects: [
+          { from: "/ai_chat_apps/what_is", to: "/surfaces/ai_chat" },
+          {
+            from: "/learn_more/implement/ui_methods",
+            to: "/surfaces/ui_methods",
+          },
+          {
+            from: "/ai_chat_apps/get_started",
+            to: "/get_started/quickstart",
+          },
+          {
+            from: "/full_stack_apps/get_started_claude_code",
+            to: "/get_started/claude_code",
+          },
+          {
+            from: "/full_stack_apps/get_started_codex",
+            to: "/get_started/codex",
+          },
+          { from: "/full_stack_apps/examples", to: "/get_started/examples" },
+          { from: "/full_stack_apps/python", to: "/get_started/python" },
+          {
+            from: "/full_stack_apps/typescript",
+            to: "/get_started/typescript",
+          },
+          { from: "/full_stack_apps/react", to: "/get_started/react" },
+          { from: "/learn_more/define/overview", to: "/define/overview" },
+          { from: "/learn_more/define/methods", to: "/define/methods" },
+          { from: "/learn_more/define/pydantic", to: "/define/pydantic" },
+          { from: "/learn_more/define/zod", to: "/define/zod" },
+          { from: "/learn_more/define/protobuf", to: "/define/protobuf" },
+          {
+            from: "/learn_more/implement/servicers",
+            to: "/implement/servicers",
+          },
+          { from: "/learn_more/implement/readers", to: "/implement/readers" },
+          { from: "/learn_more/implement/writers", to: "/implement/writers" },
+          {
+            from: "/learn_more/implement/transactions",
+            to: "/implement/transactions",
+          },
+          {
+            from: "/learn_more/implement/workflows",
+            to: "/implement/workflows",
+          },
+          {
+            from: "/learn_more/applications",
+            to: "/implement/application",
+          },
+          { from: "/learn_more/call/overview", to: "/call/overview" },
+          { from: "/learn_more/call/from_react", to: "/call/from_react" },
+          {
+            from: "/learn_more/call/from_within_your_app",
+            to: "/call/from_within_your_app",
+          },
+          {
+            from: "/learn_more/call/from_outside_your_app",
+            to: "/call/from_outside_your_app",
+          },
+          { from: "/learn_more/call/via_http", to: "/call/via_http" },
+          {
+            from: "/learn_more/call/from_mcp_client",
+            to: "/call/from_mcp_client",
+          },
+          { from: "/learn_more/auth", to: "/users/authorization" },
+          {
+            from: "/learn_more/identity_and_external_apis",
+            to: "/users/external_apis",
+          },
+          { from: "/learn_more/tasks", to: "/tasks" },
+          { from: "/learn_more/side_effects", to: "/side_effects" },
+          { from: "/learn_more/idempotency", to: "/idempotency" },
+          { from: "/learn_more/errors", to: "/errors" },
+          { from: "/learn_more/agents", to: "/agents" },
+          { from: "/learn_more/secrets", to: "/secrets" },
+          { from: "/learn_more/testing", to: "/testing" },
+          { from: "/learn_more/nonlocal", to: "/nonlocal" },
+          { from: "/tools/cli", to: "/rbt_cli" },
+        ],
+      },
+    ],
+  ],
 
   presets: [
     [

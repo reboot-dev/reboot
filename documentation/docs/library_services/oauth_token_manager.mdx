@@ -31,7 +31,7 @@ service without one (e.g. `"slack.com"`).
   call them from your own backend, never expose them to untrusted
   clients.
 - If your application authenticates users with
-  [`Application(oauth=...)`](/learn_more/identity_and_external_apis),
+  [`Application(oauth=...)`](/users/external_apis),
   the OAuth server can capture and store the identity provider's tokens
   for you automatically (`store_tokens=True`) — your code then only ever
   calls `fetch`.
@@ -151,7 +151,7 @@ into the new `tokens` before calling `store`.
 
 You call `store` yourself when you run a service's OAuth flow with your
 own endpoints (see
-[Identity and external API calls](/learn_more/identity_and_external_apis));
+[Identity and external API calls](/users/external_apis));
 with `store_tokens=True` on an `Application(oauth=...)` provider, the
 OAuth server calls it for you — including carrying an existing refresh
 token forward when a later sign-in doesn't return one.

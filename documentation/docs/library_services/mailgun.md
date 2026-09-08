@@ -20,7 +20,7 @@ application = Application(
 ```
 
 To use the Mailgun integration, set the `MAILGUN_API_KEY`
-environment variable to your Mailgun API key. See [Secrets](../learn_more/secrets.mdx)
+environment variable to your Mailgun API key. See [Secrets](../secrets.mdx)
 for how to set this for local development and for deployments to
 Reboot Cloud.
 

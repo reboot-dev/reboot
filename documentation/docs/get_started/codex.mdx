@@ -3,10 +3,12 @@ import TabItem from "@theme/TabItem";
 
 # Get Started (with Codex)
 
-Build an AI Chat App using [Codex](https://developers.openai.com/codex/)
-and the Reboot plugin. Codex writes the code for you: describe the app,
-approve the proposed design, and it scaffolds the Reboot backend,
-interactive UI, tests, and local development setup.
+Build a full-stack app — a Reboot backend behind a standalone React
+frontend served at a normal URL — using
+[Codex](https://developers.openai.com/codex/) and the Reboot
+plugin. Codex writes the code for you: describe the app, approve
+the proposed design, and it scaffolds the Reboot backend, React
+frontend, tests, and local development setup.
 
 ## Install the Reboot plugin
 
@@ -101,27 +103,37 @@ Restart Codex after changing the config.
 In Codex, you do not need a slash command. Start from a normal prompt:
 
 ```
-Build a Reboot counter AI chat app with an interactive clicker UI
+Build a Reboot web app where users can sign up and keep a list of chat rooms
 ```
 
-Codex selects the Reboot app skill from the prompt and routes to the AI
-Chat App builder. The builder settles the design before it writes any
-code. It will:
+Codex selects the Reboot app skill from the prompt and routes to the
+Web App builder — "web app" (or "website", "SPA", "in the browser",
+or a URL) is what tells it you want a standalone browser frontend
+rather than an AI Chat App. If your description doesn't say, it asks
+first. The builder settles the design before it writes any code. It
+will:
 
 1. Analyze your description and propose a state model.
-2. Map out the `User` entry point, application types, methods, AI tools,
-   and UIs.
-3. State that design back to you — so you can redirect it before the
-   code exists.
+2. Map out the application types, methods, the pages the frontend
+   needs, and how users sign in.
+3. State that design back to you — so you can redirect it before
+   the code exists.
 
 Codex then scaffolds the full project — API definition, backend
-servicers, React UI, and configuration — builds it, writes and runs
+servicers, React SPA, and configuration — builds it, writes and runs
 backend tests, and starts the app.
+
+:::info The agent-driven path builds a Python backend
+The skill scaffolds a Python backend with a React frontend. If you
+want a **TypeScript** backend, follow the hand-written
+[TypeScript guide](/get_started/typescript) instead — but note
+that TypeScript backend support is in alpha.
+:::
 
 ## What gets created
 
-The skill generates a complete Reboot AI Chat App. The most relevant
-files are:
+The skill generates a complete full-stack Reboot app. The most
+relevant files are:
 
 ```
 my-app/
@@ -134,35 +146,33 @@ my-app/
 │   ├── api/                  # Generated Python bindings
 │   ├── src/
 │   │   ├── main.py           # Application entrypoint
-│   │   ├── example_prompts.py  # Setup wizard example prompts
 │   │   └── servicers/
 │   │       └── my_app.py     # Servicer implementation
 │   └── tests/
 │       └── my_app_test.py    # Backend behavior tests
 └── frontend/
     ├── package.json
-    ├── build.mjs            # Discovers + builds every UI
-    ├── vite.config.ts
-    ├── api/                 # Generated React bindings (rbt generate)
-    ├── mcp/
-    │   └── my-ui/
-    │       ├── index.html
-    │       ├── index.css        # Styling
-    │       ├── main.tsx         # RebootClientProvider entry
-    │       ├── App.tsx          # React component
-    │       └── App.module.css
-    └── web/                 # Optional standalone browser SPA
+    ├── build.mjs             # Discovers + builds every UI
+    ├── vite.config.ts        # Vite dev server + build config
+    ├── index.css             # Theme variables
+    ├── api/                  # Generated React bindings
+    └── web/                  # The standalone browser SPA
         ├── index.html
+        ├── .env.development  # VITE_REBOOT_URL=http://localhost:9991
         └── src/
-            ├── main.tsx
-            └── App.tsx
+            ├── main.tsx      # RebootClientProvider entry
+            └── App.tsx       # Routes + top-level component
 ```
 
-The API definition uses the same `User` + application type pattern
-described in the [hand-written guide](/get_started/quickstart):
-`User` is the auto-constructed entry point whose methods create other
-state types, and those types' methods use `mcp=Tool()` to be callable
-by the AI. UI methods use `UI()` and render React inside the MCP host.
+Each entity your app manages becomes its own
+[durable state type](/define/overview) with its own
+methods; the frontend calls those methods through the typed
+[React hooks](/call/from_react) that `rbt generate`
+emits into `frontend/api`. If your app has per-user state, the
+skill also declares a `User` type and signs browser users in
+through Reboot's [built-in OAuth support](/users/authorization) —
+`Development()` in development, so you can sign in as any
+identity without registering a provider first.
 
 ## Test your app
 
@@ -172,27 +182,24 @@ make sure that your app works, and keeps working.
 
 Once the tests pass, Codex starts everything the app needs:
 
-* the Reboot backend (`rbt dev run`), which also serves the MCP
-  endpoint,
-* the Vite frontend dev server, and
-* a Cloudflare quick tunnel, so that remote MCP clients (like
-  ChatGPT) can reach your local app.
+* the Reboot backend (`rbt dev run`), which serves your API at
+  `http://localhost:9991`, and
+* the Vite dev server, on `http://localhost:4444`.
 
-It then opens the app's **setup wizard** at `http://localhost:9991`
-— a page served by your app that walks you through connecting an
-MCP client (Claude, ChatGPT, or the MCPJam Inspector) and suggests
-example prompts to try.
+It then hands you `http://localhost:4444`, which redirects to your
+web app. In development, click "Sign in" and pick (or make up) a
+`Development` identity; signing in auto-constructs your `User`.
 
 ## Iterate on your app
 
 You can use the same skill to modify an existing app:
 
 ```
-Add a reset button that sets the counter back to zero.
+Add a page that shows the messages in a single chat room.
 ```
 
 Codex reads the current Reboot project, proposes a plan, waits for your
-approval, then updates the API, servicers, React UI, and tests.
+approval, then updates the API, servicers, React pages, and tests.
 
 ## Run it again later
 
@@ -204,21 +211,21 @@ Run my Reboot app in ./my-app
 ```
 
 Or just say "Run this Reboot app" from the project directory. The
-run skill starts everything your app needs and reopens the setup
-wizard.
+run skill starts the backend and the frontend dev server and points
+you at the app.
 
 ## Next steps
 
-* **[Get Started (with Claude Code)](/ai_chat_apps/get_started_claude_code)** —
+* **[Get Started (with Claude Code)](/get_started/claude_code)** —
   the equivalent agent-driven workflow for Claude Code.
-* **[Get Started (hand-written)](/get_started/quickstart)** —
-  build the same app step by step to understand every file.
-* **[UIs for AI Chat Apps](/surfaces/ui_methods)** —
-  the full reference for `UI` methods.
-* **[Creating tools](/define/pydantic#creating-tools-for-the-ai)** —
-  control which methods are callable by the AI.
-* **[AI Chat App Examples](/ai_chat_apps/examples)** — more examples
-  to explore.
+* **[Get Started (Python)](/get_started/python)** — build a
+  backend step by step to understand every file.
+* **[Build a React frontend](/get_started/react)** — the
+  hand-written version of the frontend the skill generates.
+* **[Call your API from React](/call/from_react)** — the
+  full reference for the generated hooks.
+* **[Full-stack Examples](/get_started/examples)** — more
+  examples to explore.
 * **[Deploy to Reboot Cloud](/deploy_on_reboot_cloud)** — deploy your
   app with `rbt cloud up`.
 * **[Join us on Discord](https://discord.gg/cRbdcS94Nr)** — ask
