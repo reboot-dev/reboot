@@ -65,6 +65,12 @@ task "<name>" on `Account` within 10 seconds', recording its
 response as the result. A task ID a response carries saves and
 awaits the same way.
 
+A scenario tagged '@blocked' describes behavior the application does
+not have yet, and says why in its description; it is skipped, with
+the description as the reason, until the tag comes off. A feature,
+rule or scenario tagged '@wip' is being worked on: it runs as usual,
+and the dashboard shows what is in progress.
+
 A Then 'eventually has' holds a reactive read open until its
 assertions hold, waiting at most its required bound, e.g.:
 
@@ -164,6 +170,43 @@ from reboot.bdd.grammar import (
 )
 from reboot.bdd.registry import client_types_by_name
 from typing import Any, Optional, Union, get_args, get_origin
+
+# The tag of a scenario describing behavior the application does not
+# have yet: skipped, with the scenario's description as the reason.
+BLOCKED_TAG = 'blocked'
+
+# The tag of a feature, rule or scenario being worked on, which runs
+# as usual.
+WIP_TAG = 'wip'
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        'markers',
+        f'{BLOCKED_TAG}: a scenario describing behavior the application does '
+        "not have yet; skipped, with the scenario's description saying why",
+    )
+    config.addinivalue_line(
+        'markers',
+        f'{WIP_TAG}: a feature, rule or scenario being worked on',
+    )
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config,
+    items: list[pytest.Item],
+) -> None:
+    for item in items:
+        if item.get_closest_marker(BLOCKED_TAG) is None:
+            continue
+        scenario = getattr(getattr(item, 'obj', None), '__scenario__', None)
+        description = getattr(scenario, 'description', None)
+        reason = (
+            description.strip().split('\n\n')[0].replace('\n', ' ')
+            if description else 'the scenario describes behavior the '
+            'application does not have yet'
+        )
+        item.add_marker(pytest.mark.skip(reason=f'blocked: {reason}'))
 
 
 @dataclass(frozen=True)

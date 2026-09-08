@@ -127,3 +127,18 @@ Feature: Accounts
     And the resulting `task_id` is saved as "deposit_task_id"
     And "anonymous" awaits the `deposit` task "<deposit_task_id>" on `Account` within 30 seconds
     Then the result has `updated_balance=20`
+
+  @wip
+  Scenario: A scenario being worked on runs as usual
+    Given "anonymous" creates an `Account` via `open`
+    And the resulting state id is saved as "account_id"
+    Then as "anonymous", `balance` on the `Account` for "<account_id>" has `balance=0`
+
+  @blocked
+  Scenario: A blocked scenario is skipped
+    Accounts cannot be closed yet: this waits for `Account` to declare
+    a `close` method.
+
+    Given "anonymous" creates an `Account` via `open`
+    And the resulting state id is saved as "account_id"
+    When "anonymous" does a `close` on `Account` of "<account_id>"

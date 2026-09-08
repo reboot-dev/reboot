@@ -47,6 +47,7 @@ py_test(
         requirement("pytest"),
         requirement("pytest-bdd"),
         ":account_servicer_py",
+        "//reboot:bdd_plugin_py",
         "//reboot/aio:applications_py",
         "//reboot/bdd:steps_py",
     ],
