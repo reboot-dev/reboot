@@ -98,7 +98,7 @@ The stored value is an `OAuthTokens` message:
 
 ## Methods
 
-### Fetch
+### `fetch`
 
 A `reader` that returns the stored tokens for a user. `found` is false
 when nothing is stored for that user — or once their tokens have been
@@ -140,7 +140,7 @@ exist yet, so the very first `fetch` can abort with a "state not
 constructed" error rather than report `found: false`. Treat both the
 same way — "this user hasn't connected the service yet".
 
-### Store
+### `store`
 
 A `transaction` that encrypts and persists tokens for a user,
 **replacing** any previously stored ones wholesale — including the
