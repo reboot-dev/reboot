@@ -261,9 +261,9 @@ const isStandardLibrary = (packageName: string): boolean =>
 // `state` is the state types its API declares, `data` is the types
 // those declare in turn, `features` is what the application lets a
 // person do, each joined with the scenarios, state types and code
-// that make it up, and `graph` is the calls the state types'
+// that make it up, and `models` is the calls the state types'
 // implementations make to each other.
-const PAGES = ["changelog", "data", "state", "features", "graph"] as const;
+const PAGES = ["changelog", "data", "state", "features", "models"] as const;
 
 type Page = typeof PAGES[number];
 
@@ -272,7 +272,7 @@ const PAGE_NAMES: Record<Page, string> = {
   data: "Data Types",
   state: "State Types",
   features: "Features",
-  graph: "Call Graph",
+  models: "Models",
 };
 
 const CHANGES_PER_PAGE = 100;
@@ -2377,7 +2377,7 @@ const Overview: FC<{
   // own, below.
   const entries: NavEntry[] = useMemo(
     () =>
-      page === "changelog" || page === "graph"
+      page === "changelog" || page === "models"
         ? []
         : page === "state"
         ? sortedAPIs(apis).flatMap((api) =>
@@ -2441,12 +2441,12 @@ const Overview: FC<{
       ? chosenFeature === undefined
         ? "application features"
         : "feature"
-      : "application domain";
+      : "application model";
 
   const heading =
     page === "changelog"
       ? "Changelog"
-      : page === "graph"
+      : page === "models"
       ? `${countWithNoun(calls, "call")} between ${countWithNoun(
           graphStateTypes.length,
           "state type"
@@ -2563,7 +2563,7 @@ const Overview: FC<{
     data: linkedDataTypes.length,
     features: featureEntries.length,
     changelog: shownChangelog.length,
-    graph: calls,
+    models: calls,
   };
 
   return (
@@ -2609,7 +2609,7 @@ const Overview: FC<{
       <Separator className="nav-resizer" />
       <Panel className="pane-panel">
         <div
-          className={page === "graph" ? "pane graph-pane" : "pane"}
+          className={page === "models" ? "pane graph-pane" : "pane"}
           ref={pane}
         >
           <header>
@@ -2651,7 +2651,7 @@ const Overview: FC<{
               isLoading={changelogIsLoading}
               live={live}
             />
-          ) : page === "graph" ? (
+          ) : page === "models" ? (
             <>
               {needsGenerateReason === NeedsGenerateReason.MISSING ? (
                 <p className="graph-note muted">
@@ -2681,7 +2681,7 @@ const Overview: FC<{
                 stateTypes={graphStateTypes}
                 selectedMethodId={target ?? null}
                 onSelectMethod={(id, replace) =>
-                  navigate(id === null ? "/graph" : `/graph/${id}`, {
+                  navigate(id === null ? "/models" : `/models/${id}`, {
                     replace,
                   })
                 }
