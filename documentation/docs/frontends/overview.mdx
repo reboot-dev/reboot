@@ -11,13 +11,13 @@ front door.
 | --- | --- | --- |
 | **Web** | A React app in the browser, talking to your Reboot backend. | [Web apps](/frontends/web) |
 | **React Native** | A React Native app on iOS and Android, using the same generated hooks as the web app. In alpha. | [React Native apps](/frontends/react_native) |
-| **AI chat** | Your methods as MCP tools, and React components rendered in the conversation as MCP Apps, inside ChatGPT, Claude, or VS Code. | [AI chat apps](/frontends/ai_chat) |
+| **MCP UI** | Your methods as MCP tools, and React components rendered in the conversation, inside ChatGPT, Claude, or VS Code. | [MCP UIs](/frontends/mcp_ui) |
 
 ## Agents
 
-An AI agent reaches your app over [MCP](/frontends/ai_chat). Which
+An AI agent reaches your app over [MCP](/frontends/mcp_ui). Which
 methods it may call, `User` methods included, is
-[your explicit choice](/frontends/ai_chat#choosing-which-methods-the-ai-can-call),
+[your explicit choice](/frontends/mcp_ui#choosing-which-methods-the-ai-can-call),
 method by method.
 
 An agent can also run *inside* your app, rather than calling in from
@@ -42,7 +42,7 @@ Whichever front door a call comes through, three things do not change.
 **One identity per user.** [Sign-in](/users/overview) is handled by
 the backend's OAuth server, not by any one client. A person who signs
 in on the web is the same `User`, with the same state, in your mobile
-app and in their chat client. There is no account linking to build.
+app and in their MCP client. There is no account linking to build.
 
 **One generated client, and one way in.** `rbt generate` emits one
 typed React client that the web app, the native app, and any
@@ -62,9 +62,9 @@ Only the mechanics at the very edge:
 - **Where the backend URL comes from.** The web app reads it from an
   environment variable at build time; a native app reads it from its
   own config; a `UI` method needs no URL at all, because the provider
-  detects the chat host.
+  detects the MCP host.
 - **How the sign-in flow runs.** A browser redirects and comes back. A
-  native app opens a system browser. A chat client runs the flow when
+  native app opens a system browser. An MCP client runs the flow when
   the user connects your app.
 - **What the user sees.** A full page, a native screen, or a component
   embedded in a conversation.
@@ -80,7 +80,7 @@ than one frontend.
 
 - [Web apps](/frontends/web)
 - [React Native apps](/frontends/react_native)
-- [AI chat apps](/frontends/ai_chat)
+- [MCP UIs](/frontends/mcp_ui)
 - [Agents](/agents) — an agent running inside your app.
 - [Call your API from React](/call/from_react) — the hooks reference
   shared by all of them.

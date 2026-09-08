@@ -12,7 +12,7 @@ For the impatient:
 The [Reboot '.proto' definitions](https://docs.reboot.dev/learn_more/define/overview#code-generation)
 can be found in the `api/` directory, grouped into
 subdirectories by proto package, while backend specific code can be
-found in {{ backend_locations }}{% if has_frontend %} and front end specific code in `frontend/web/`{% endif %}{% if has_mcp %} and MCP (AI chat) UIs in `frontend/mcp/`{% endif %}{% if has_mobile %} and a React Native (Expo) mobile front end in `frontend/mobile/`{% endif %}
+found in {{ backend_locations }}{% if has_frontend %} and front end specific code in `frontend/web/`{% endif %}{% if has_mcp %} and MCP UIs in `frontend/mcp/`{% endif %}{% if has_mobile %} and a React Native (Expo) mobile front end in `frontend/mobile/`{% endif %}
 {% if has_non_react_frontend %} and non-React front end in `frontend/reboot-non-react-web/`{% endif %}.
 
 _For more information on all of the Reboot examples, please [see the docs](https://docs.reboot.dev/full_stack_apps/examples)._
@@ -126,7 +126,7 @@ redirects to the web app.
 {% endif %}
 #### MCP
 
-The application is also an MCP server: an AI chat client can call
+The application is also an MCP server: an MCP client can call
 its tools and render its UIs (the `frontend/mcp/` directories) right
 in the chat. The easiest way to get connected is the setup wizard
 that the backend serves at

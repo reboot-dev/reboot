@@ -2,7 +2,7 @@ import { useState, type FC } from "react";
 import {
   type UseFoodOrderApi,
   useFoodOrder,
-} from "@api/ai_chat_food/v1/food_rbt_react";
+} from "@api/mcp_ui_food/v1/food_rbt_react";
 import css from "./App.module.css";
 
 export const MenuApp: FC = () => {

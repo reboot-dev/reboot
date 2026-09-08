@@ -132,8 +132,8 @@ const sidebars = {
         },
         {
           type: "category",
-          label: "AI chat apps",
-          link: { type: "doc", id: "frontends/ai_chat" },
+          label: "MCP UIs",
+          link: { type: "doc", id: "frontends/mcp_ui" },
           items: [
             {
               type: "doc",

@@ -1,6 +1,6 @@
 ---
 name: run
-description: Run an existing Reboot application locally. Detects whether the project is an MCP Chat App or a standalone Web App, makes sure dependencies and secrets are in place, then starts every process the app needs — a Cloudflare quick tunnel (so external MCP clients can reach the dev server) via the bundled `cloudflared` shim, the backend (`rbt dev run`), and the frontend dev server (for Chat Apps it also opens the setup wizard, from which the user can launch MCPJam on demand). Use this to bring an app back up, e.g. at the start of a new session.
+description: Run an existing Reboot application locally. Detects whether the project is an MCP UI or a standalone Web App, makes sure dependencies and secrets are in place, then starts every process the app needs — a Cloudflare quick tunnel (so external MCP clients can reach the dev server) via the bundled `cloudflared` shim, the backend (`rbt dev run`), and the frontend dev server (for MCP UIs it also opens the setup wizard, from which the user can launch MCPJam on demand). Use this to bring an app back up, e.g. at the start of a new session.
 argument-hint: [<project-directory>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit, AskUserQuestion
 ---
@@ -22,7 +22,7 @@ session, where no processes and no exported environment survive
 from last time.
 
 > This skill **runs** an app; it does not build or modify one. To
-> build, see the [chat-app skill](../chat-app/SKILL.md) and the
+> build, see the [`mcp-ui` skill](../mcp-ui/SKILL.md) and the
 > [web-app skill](../web-app/SKILL.md) — those skills defer here for
 > their "run the app" step.
 
@@ -37,7 +37,7 @@ where the app is. Every command below runs from the project root.
 A Reboot project is one of two kinds. Decide using these signals,
 strongest first.
 
-**MCP Chat App** — any of:
+**MCP UI** — any of:
 
 - An API file under `api/` uses `mcp=Tool()`, `mcp=None`, or `UI(`
   (the `UI()` method type).
@@ -52,7 +52,7 @@ strongest first.
   `frontend/mcp/`).
 
 If the signals genuinely conflict, or none match, ask the user
-("Is this an MCP Chat App or a standalone Web App?"). Do not guess —
+("Is this an MCP UI or a standalone Web App?"). Do not guess —
 the app type changes whether the setup wizard is opened.
 
 ## Step 3 — Dependencies
@@ -62,7 +62,7 @@ From the project root:
 - Backend: if `.venv/` is missing, run `uv sync`.
 - Frontend: if the frontend's `node_modules/` is missing, run
   `npm install` in the frontend directory — `frontend/` for an MCP
-  Chat App, `web/` for a standalone Web App.
+  MCP UI, `web/` for a standalone Web App.
 
 ## Step 4 — Secrets: the git-ignored env file
 
@@ -138,15 +138,15 @@ confusing to a developer who cannot see the backend terminal.
 ### Frontend — both app types
 
 Run the Vite dev server from the frontend directory: `frontend/` for
-an MCP Chat App, `web/` for a standalone Web App.
+an MCP UI, `web/` for a standalone Web App.
 
 ```sh
 cd frontend && npm run dev   # or `cd web` for a standalone Web App
 ```
 
-### Setup wizard — MCP Chat Apps only
+### Setup wizard — MCP UIs only
 
-An MCP Chat App's backend serves an interactive **setup wizard** at
+An MCP UI's backend serves an interactive **setup wizard** at
 its root URL (`http://localhost:9991`) — a browser page that walks
 the user through connecting the app to an MCP client (such as
 MCPJam: picking a client, copying the `/mcp` endpoint, completing
@@ -212,7 +212,7 @@ Confirm every process is up from its logs, then give the user:
 - the application's own inspect-page URL (and that `rbt inspect`
   inspects the same state from the CLI — see the
   [inspect skill](../inspect/SKILL.md));
-- for a Chat App — the setup-wizard URL (`http://localhost:9991`,
+- for an MCP UI — the setup-wizard URL (`http://localhost:9991`,
   already opened for them, for connecting an MCP client) and a
   first prompt to try (e.g. "Create a new todo list and show it to
   me"). Don't hand over an MCPJam URL — MCPJam isn't running, and
@@ -221,7 +221,7 @@ Confirm every process is up from its logs, then give the user:
 - for a Web App — the frontend dev-server URL and a first page to
   open.
 
-> **Always start every process the app needs.** A Chat App needs
+> **Always start every process the app needs.** An MCP UI needs
 > backend and frontend; a Web App needs the same. (MCPJam is not in
 > this set — it is launched on demand from the wizard, only if the
 > user picks it.) The app is not usable until both are up, so do

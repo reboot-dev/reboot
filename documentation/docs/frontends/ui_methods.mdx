@@ -1,14 +1,14 @@
 # UI methods
 
 A `UI` method declares a React component that an
-[AI chat client](/frontends/ai_chat) opens inside the conversation when
+[MCP client](/frontends/mcp_ui) opens inside the conversation when
 the AI calls the associated tool. Unlike `reader`, `writer`,
 `transaction`, and `workflow` methods, a `UI` method has no backend
 servicer code — the React `App.tsx` component **is** the
 implementation.
 
-:::info The AI chat frontend only
-`UI` methods exist for [MCP](/frontends/ai_chat), where they appear as
+:::info MCP UIs only
+`UI` methods exist for [MCP](/frontends/mcp_ui), where they appear as
 tools. There is no way to invoke one from a browser or from your
 backend. Your [web](/frontends/web) and
 [React Native](/frontends/react_native) frontends render their own
@@ -21,8 +21,8 @@ You declare a `UI` method in your
 [API definition](/define/pydantic), alongside your
 other methods:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py&lines=88-94&syntax=python) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-ui-counter-dashboard/api/mcp_ui_counter/v1/counter.py&lines=88-94&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter-dashboard/api/mcp_ui_counter/v1/counter.py -->
 
 ```python
 show_clicker=UI(
@@ -49,10 +49,10 @@ show_clicker=UI(
 
 ### Zero-config UI
 
-From the `ai-chat-counter` example:
+From the `mcp-ui-counter` example:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py&lines=92-98&syntax=python) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-ui-counter/api/mcp_ui_counter/v1/counter.py&lines=92-98&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter/api/mcp_ui_counter/v1/counter.py -->
 
 ```python
 show_clicker=UI(
@@ -68,10 +68,10 @@ show_clicker=UI(
 
 ### Parameterized UI
 
-From the `ai-chat-counter-dashboard` example:
+From the `mcp-ui-counter-dashboard` example:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py&lines=95-102&syntax=python) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-ui-counter-dashboard/api/mcp_ui_counter/v1/counter.py&lines=95-102&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter-dashboard/api/mcp_ui_counter/v1/counter.py -->
 
 ```python
 show_dashboard=UI(
@@ -93,7 +93,7 @@ import {
   type DashboardConfig,
   type UseCounterApi,
   useCounter,
-} from "@api/ai_chat_counter/v1/counter_rbt_react";
+} from "@api/mcp_ui_counter/v1/counter_rbt_react";
 
 export const DashboardApp: React.FC<DashboardConfig> = ({
   personalizedMessage,
@@ -136,7 +136,7 @@ the ID resolves, so check both before using the handle:
 import {
   type UseCounterApi,
   useCounter,
-} from "@api/ai_chat_counter/v1/counter_rbt_react";
+} from "@api/mcp_ui_counter/v1/counter_rbt_react";
 
 export const ClickerApp: FC = () => {
   const { counter, isLoading } = useCounter();
@@ -210,8 +210,8 @@ with an `index.html`).
 <details>
 <summary>The full <code>frontend/vite.config.ts</code></summary>
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/frontend/vite.config.ts&syntax=typescript) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/frontend/vite.config.ts -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-ui-counter/frontend/vite.config.ts&syntax=typescript) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter/frontend/vite.config.ts -->
 
 ```typescript
 // Vite configuration for Reboot UIs.

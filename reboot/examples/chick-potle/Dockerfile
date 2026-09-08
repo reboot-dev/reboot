@@ -36,7 +36,7 @@ COPY frontend/dist/ frontend/dist/
 
 # Make the Pydantic API definitions in `api/` and the generated
 # Reboot bindings in `backend/api/` both importable. They share
-# the `ai_chat_food.v1` namespace package, so both directories
+# the `mcp_ui_food.v1` namespace package, so both directories
 # must be on `PYTHONPATH`. `rbt dev run --python` does this
 # automatically; `rbt serve run --python` currently only adds
 # the generated-code directory, so we set the path here.

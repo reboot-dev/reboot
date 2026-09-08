@@ -3,7 +3,7 @@
 Covers `User.start_order` and `FoodOrder` CRUD via direct
 Reboot calls."""
 import unittest
-from ai_chat_food.v1.food_rbt import FoodOrder, User
+from mcp_ui_food.v1.food_rbt import FoodOrder, User
 from reboot.aio.aborted import Aborted
 from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot

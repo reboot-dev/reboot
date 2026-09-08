@@ -5,19 +5,19 @@ agent. The same skills work in both **Claude Code** and **Codex**.
 
 ## Included Skills
 
-| Skill                          | Description                                                                                                                               |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| [`app`](skills/app/)           | Build a Reboot app from a description — routes to `chat-app` or `web-app`                                                                 |
-| [`chat-app`](skills/chat-app/) | Build AI Chat Apps (MCP Apps) for ChatGPT, Claude, VSCode, Goose, and others — layers on top of `python`                                  |
-| [`web-app`](skills/web-app/)   | Build standalone Reboot Web Apps — a Reboot backend behind a browser-facing React frontend — layers on top of `python`                    |
-| [`run`](skills/run/)           | Run an existing Reboot app — detects MCP Chat App vs. Web App and starts every process it needs                                           |
-| [`deploy`](skills/deploy/)     | Deploy a Reboot app to production — backend on Reboot Cloud, web frontend on a static host under the user's own custom domain             |
-| [`inspect`](skills/inspect/)   | Inspect a running Reboot app's persisted state from the CLI with `rbt inspect` — list state types, list state IDs, dump one actor as JSON |
-| [`python`](skills/python/)     | Reboot Python framework reference: proto- or pydantic-defined APIs, Servicers, contexts, refs, scheduling, and testing                    |
-| [`upgrade`](skills/upgrade/)   | Upgrade an existing Reboot app to this plugin's Reboot version — applies migration steps, bumps pins, regenerates                         |
+| Skill                        | Description                                                                                                                               |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| [`app`](skills/app/)         | Build a Reboot app from a description — routes to `mcp-ui` or `web-app`                                                                   |
+| [`mcp-ui`](skills/mcp-ui/)   | Build MCP UIs for ChatGPT, Claude, VSCode, Goose, and others — layers on top of `python`                                                  |
+| [`web-app`](skills/web-app/) | Build standalone Reboot Web Apps — a Reboot backend behind a browser-facing React frontend — layers on top of `python`                    |
+| [`run`](skills/run/)         | Run an existing Reboot app — detects MCP UI vs. Web App and starts every process it needs                                                 |
+| [`deploy`](skills/deploy/)   | Deploy a Reboot app to production — backend on Reboot Cloud, web frontend on a static host under the user's own custom domain             |
+| [`inspect`](skills/inspect/) | Inspect a running Reboot app's persisted state from the CLI with `rbt inspect` — list state types, list state IDs, dump one actor as JSON |
+| [`python`](skills/python/)   | Reboot Python framework reference: proto- or pydantic-defined APIs, Servicers, contexts, refs, scheduling, and testing                    |
+| [`upgrade`](skills/upgrade/) | Upgrade an existing Reboot app to this plugin's Reboot version — applies migration steps, bumps pins, regenerates                         |
 
 The skill files are tool-agnostic. Claude Code invokes skills by
-plugin-namespaced name (e.g. `/reboot:chat-app`); Codex selects a
+plugin-namespaced name (e.g. `/reboot:mcp-ui`); Codex selects a
 skill automatically from its `description`. Both read the same
 `SKILL.md` files and `references/`.
 
@@ -147,11 +147,11 @@ differ because of Codex limitations:
 Once installed, just describe what you want to build:
 
 ```
-Build a todo list chat app with drag-to-reorder
+Build a todo list MCP UI with drag-to-reorder
 ```
 
 In Claude Code you can also invoke a skill directly, e.g.
-`/reboot:chat-app Build a todo list app` — plugin skills are
+`/reboot:mcp-ui Build a todo list app` — plugin skills are
 namespaced by the plugin's name. Either way the builder skills
 settle the design first — they analyze your description and state the
 state model and method map they are about to build, so you can redirect

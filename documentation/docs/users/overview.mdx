@@ -220,7 +220,7 @@ arm can be written down before the credentials exist. See
 ## What happens when somebody signs in
 
 The client sends the person to Reboot's sign-in endpoint — a web app
-does this through [`useSignIn()`](#on-the-client), an AI chat client
+does this through [`useSignIn()`](#on-the-client), an MCP client
 as part of connecting. Reboot hands them to your identity provider,
 receives them back, learns their stable ID and any
 [identity claims](/users/claims) you asked for, and **constructs their
@@ -330,13 +330,13 @@ The common pattern, which the todo-list app follows, is:
   (`create_todo_list` returns a `todo_list_id`, and records it on the
   `User`).
 - `User` methods **list** what this person owns (`list_todo_lists`),
-  so a fresh client — a browser after a reload, or an AI chat client
+  so a fresh client — a browser after a reload, or an MCP client
   in a brand-new conversation — can find its way back to their state.
 - Everything user-specific is reached from there: their lists, their
   documents, their settings.
 
-This pattern pays off on every frontend. A web app renders the list. A
-chat client calls the same method as a tool and remembers the IDs for
+This pattern pays off on every frontend. A web app renders the list. An
+MCP client calls the same method as a tool and remembers the IDs for
 the rest of the conversation. Neither of them has to be told who the
 user is.
 
@@ -348,7 +348,7 @@ On every frontend, the client side of all of this is two hooks:
   sign-in flow: a redirect in a [browser](/frontends/web#signing-in),
   a system-browser round trip in a
   [React Native app](/frontends/react_native). An
-  [AI chat client](/frontends/ai_chat) signs the person in when they
+  [MCP client](/frontends/mcp_ui) signs the person in when they
   connect your app, before any `UI` loads, so there is nothing to
   call.
 - **`useUser()`**, generated from your `User` type, resolves the
@@ -406,11 +406,11 @@ button.)
 | --- | --- |
 | [Web](/frontends/web) | `useSignIn()` sends the browser through your identity provider and back. |
 | [React Native](/frontends/react_native) | `useSignIn()` opens a system browser for your identity provider; the app passes `nativeAuth({...})` to its provider once, and everything else is the same. |
-| [AI chat (MCP)](/frontends/ai_chat) | The chat client runs the flow itself when the person connects your app. |
+| [MCP UI](/frontends/mcp_ui) | The MCP client runs the flow itself when the person connects your app. |
 
 Because identity is established by the backend, a person who signs in
 on the web is the *same* `User`, with the same state, in your mobile
-app and in their chat client.
+app and in their MCP client.
 
 ## Choose your identity provider deliberately
 

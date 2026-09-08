@@ -109,7 +109,7 @@ what that kind is allowed to do:
 | [`writer`](/implement/writers) | Read and mutate its own instance's state, atomically; it can call `reader` methods to read others. Writers on an instance run one at a time. |
 | [`transaction`](/implement/transactions) | Read and mutate *several* instances atomically. Either all of it happens or none of it does. |
 | [`workflow`](/implement/workflows) | Run a long-lived, retryable process — minutes, days, or forever — without holding a lock. |
-| [`UI`](/frontends/ui_methods) | Declare a React component an AI chat client can open. It has no backend implementation. |
+| [`UI`](/frontends/ui_methods) | Declare a React component an MCP client can open. It has no backend implementation. |
 
 Kinds form a hierarchy: a method may only call methods with the same
 or stronger guarantees. A `reader` cannot call a `writer`, so a read
@@ -185,10 +185,10 @@ every user — human or machine:
 
 - **Humans** reach it through a [web app](/frontends/web), a
   [React Native app](/frontends/react_native), or an
-  [AI chat app](/frontends/ai_chat), where
+  [MCP UI](/frontends/mcp_ui), where
   [`UI` methods](/frontends/ui_methods) render React components inside
   the conversation.
-- **Agents** reach it over [MCP](/frontends/ai_chat), where the methods
+- **Agents** reach it over [MCP](/frontends/mcp_ui), where the methods
   you mark `mcp=Tool()` appear as tools.
 - **Services** reach it from
   [your own backend code](/call/from_within_your_app), another

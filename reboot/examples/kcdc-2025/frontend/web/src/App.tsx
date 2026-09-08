@@ -114,7 +114,7 @@ const PendingChatbotMessages: FC<{ chatbotIds?: string[] }> = ({
 };
 
 const PAGE_SIZE = 20;
-const LoggedInChatApp: FC<{ username: string; handleLogout: () => void }> = ({
+const LoggedInChatRoom: FC<{ username: string; handleLogout: () => void }> = ({
   username,
   handleLogout,
 }) => {
@@ -253,7 +253,7 @@ function App() {
 
   if (username === undefined) return <Login onSubmit={handleLogin} />;
 
-  return <LoggedInChatApp username={username} handleLogout={handleLogout} />;
+  return <LoggedInChatRoom username={username} handleLogout={handleLogout} />;
 }
 
 export default App;

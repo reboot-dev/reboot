@@ -21,7 +21,7 @@ the backend allows that via `OAuth(allowed_origins=[...])`.
 
 > This skill **deploys** an app; it does not build or modify one
 > beyond production configuration. To build, see the
-> [chat-app skill](../chat-app/SKILL.md) and the
+> [`mcp-ui` skill](../mcp-ui/SKILL.md) and the
 > [web-app skill](../web-app/SKILL.md); to run locally, see the
 > [run skill](../run/SKILL.md).
 
@@ -29,7 +29,7 @@ the backend allows that via `OAuth(allowed_origins=[...])`.
 
 - A finished Web App (or the web frontend of a dual-frontend app)
   should go live at a real URL on the user's domain.
-- A Chat App with **no** web frontend should go to production: only
+- An MCP UI with **no** web frontend should go to production: only
   the backend deploy applies — do Step 2 and stop. MCP UIs ship
   inside the backend image and are served by the backend itself;
   there is nothing to host externally.
@@ -64,7 +64,7 @@ Production readiness checks that commonly bite at this point:
 
 - **A real OAuth provider.** `Development()` is dev-only; the
   `prod=` provider must be set
-  (`chat-app/references/auth-oauth-providers.md` has the
+  (`mcp-ui/references/auth-oauth-providers.md` has the
   per-provider details, including registering the backend's
   `/__/oauth/callback` redirect URI with the IdP).
 - **Authorizers everywhere.** Every externally reachable method

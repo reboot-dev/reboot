@@ -1,6 +1,6 @@
 # Agent Wiki
 
-An AI Chat App built with Reboot that provides a shared
+An MCP UI built with Reboot that provides a shared
 knowledge base humans and AIs can both read from and write to.
 Users hand in raw conversation `Transcript`s; a background
 "librarian" agent progressively distills those transcripts into

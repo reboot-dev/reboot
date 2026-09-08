@@ -113,7 +113,7 @@ reminder=$(
 - Do not guess Reboot platform behavior (idempotency, scheduling,
 authorizers, state construction, contexts, generated APIs). Before
 coding around any Reboot behavior, read the relevant reference in the
-Reboot plugin's skills (`python`, `chat-app`, `web-app`, `run`,
+Reboot plugin's skills (`python`, `mcp-ui`, `web-app`, `run`,
 `upgrade`) and state what it says.
 - Before hand-rolling a primitive (maps, queues, pub/sub, presence,
 encryption), check Reboot's standard library: the `stdlib-*.md`

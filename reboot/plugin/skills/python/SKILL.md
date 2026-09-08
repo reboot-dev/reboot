@@ -371,7 +371,7 @@ with "unknown actor type."
   `Workflow`**. Also the **user-provided API-key path** for services
   without OAuth (`Ciphertext`-encrypted, the ciphertext id kept in
   state; the developer's own service keys are env-var secrets instead).
-  Host-agnostic (chat apps and web apps). Pairs with
+  Host-agnostic (MCP UIs and web apps). Pairs with
   `stdlib-oauth-tokens.md` (the `OAuthTokenManager` type).
 
 ### Testing
@@ -505,7 +505,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/testing-external-context.md`
 - `references/testing-failure-recovery.md`
 
-**Frontend** (shared by `web-app` and `chat-app`):
+**Frontend** (shared by `web-app` and `mcp-ui`):
 
 - `references/react-generated-client.md` — what
   `rbt generate --react=` emits: hook overloads, `Use<Type>Api`,

@@ -31,7 +31,7 @@ It reads which UI to build from the `RBT_BUILD_TARGET` environment
 variable (the build scripts set it for you) instead of overloading
 Vite's `--mode`, which stays free for its usual `.env.<mode>`
 selection — drop any `vite build --mode <name>` invocations you carry.
-Rather than reproduce it here, copy it from the chat-app skill's
+Rather than reproduce it here, copy it from the `mcp-ui` skill's
 `references/react-scaffolding.md`, where it's written out in full, with
 commentary.
 

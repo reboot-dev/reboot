@@ -8,7 +8,7 @@ tags: web-app, react, vite, hooks, errors, RebootClientProvider
 ## Wire the Web SPA to the Reboot Backend
 
 Everything the standalone browser frontend needs. This is the
-web-app equivalent of the chat-app's scaffolding references —
+web-app equivalent of the `mcp-ui` skill's scaffolding references —
 **do not read those**: their Vite config, nested
 `frontend/mcp/<name>/index.html` output, and `UI()` machinery are
 MCP-host-specific and do not apply to a web app.

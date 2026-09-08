@@ -1,6 +1,6 @@
 ## `generate --react-extensions` is no longer needed for Vite frontends
 
-Reboot's React frontends — including AI Chat App UIs — build with
+Reboot's React frontends — including MCP UIs — build with
 Vite (or are type-checked by `tsc` under `moduleResolution: "bundler"`
 / `"node"`), all of which resolve the generated client's relative
 imports without explicit `.js` file extensions. The
@@ -12,7 +12,7 @@ their `.ts` sources.
 
 If your `.rbtrc` contains a `generate --react-extensions` line and
 your web frontend builds with Vite (the default for Reboot React and
-AI Chat Apps), remove that line:
+MCP UIs), remove that line:
 
 ```
 generate --react-extensions

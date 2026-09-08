@@ -6,14 +6,14 @@ from reboot.aio.contexts import (
     TransactionContext,
     WriterContext,
 )
-from tests.reboot.documentation.ai_chat_counter import (
+from tests.reboot.documentation.mcp_ui_counter import (
     CounterEntry,
     CreateCounterRequest,
     CreateCounterResponse,
     InitializeCounterRequest,
     ListCountersResponse,
 )
-from tests.reboot.documentation.ai_chat_counter_rbt import Counter, User
+from tests.reboot.documentation.mcp_ui_counter_rbt import Counter, User
 from typing import Optional
 
 

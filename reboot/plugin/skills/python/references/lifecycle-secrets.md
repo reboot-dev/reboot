@@ -160,7 +160,7 @@ async def main():
     ).run()
 ```
 
-See `auth-oauth-providers.md` (chat-app skill) for the full
+See `auth-oauth-providers.md` (`mcp-ui` skill) for the full
 provider-swap story.
 
 ## Don't

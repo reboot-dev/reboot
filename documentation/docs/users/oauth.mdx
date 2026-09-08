@@ -29,7 +29,7 @@ await Application(
 ).run()
 ```
 
-That gives you sign-in for browsers, native apps, and AI chat clients,
+That gives you sign-in for browsers, native apps, and MCP clients,
 sessions that stay signed in, sign-out, and
 [`User` auto-construction](/users/overview) — from those few lines.
 
@@ -107,7 +107,7 @@ wildcards are not supported.
 
 ### `skip_consent_for_redirect_uris`
 
-A client that cannot use the browser sign-in flow — an AI chat client,
+A client that cannot use the browser sign-in flow — an MCP client,
 a native app — registers itself with Reboot's OAuth server.
 
 Registration proves nothing about who is registering, so by default
