@@ -7,10 +7,13 @@ import { RebootClientProvider } from "@reboot-dev/reboot-react";
 import { Presence } from "@reboot-dev/reboot-std-react/presence";
 import {
   type CSSProperties,
+  createContext,
   type FC,
   Fragment,
+  type ReactNode,
   StrictMode,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -30,6 +33,7 @@ import {
   useNavigate,
   useNavigationType,
   useParams,
+  useSearchParams,
 } from "react-router";
 import { v4 as uuidv4 } from "uuid";
 import {
@@ -78,7 +82,6 @@ import type {
   LinkedDataType,
   Property,
   Kind,
-  Referrer,
 } from "./link_properties_to_data_types";
 import {
   dataTypeIdOfName,
@@ -164,9 +167,9 @@ const DEFINITION_GAP = 8;
 // each trailing a mark reads as clutter.
 //
 // The definition opens above the pill so it does not cover the row
-// the reader is on. The pane clips content outside it, so when the
-// pane is scrolled and there is no room above, the definition opens
-// below the pill instead.
+// the reader is on. The scroll pane holding the pill clips content
+// outside it, so when it is scrolled and there is no room above,
+// the definition opens below the pill instead.
 const Pill: FC<{
   className: string;
   label: string;
@@ -180,7 +183,7 @@ const Pill: FC<{
   // height is readable before it opens. The pill's position does not
   // depend on `below`, so measure the room from the pill.
   const place = useCallback(() => {
-    const pane = pill.current?.closest(".pane");
+    const pane = pill.current?.closest(".pane, .types-pane-body");
     const definition = pill.current?.querySelector(".definition");
     if (pane == null || definition == null) {
       return;
@@ -252,25 +255,19 @@ const Description: FC<{ className: string; text: string }> = ({
   );
 };
 
-// Standard-library types are not what the developer wrote, so the
-// page starts them collapsed.
-const isStandardLibrary = (packageName: string): boolean =>
-  packageName.startsWith("rbt.");
-
 // Each page indexes the same application: `changelog` is its history,
-// `state` is the state types its API declares, `data` is the types
-// those declare in turn, `features` is what the application lets a
-// person do, each joined with the scenarios, state types and code
-// that make it up, and `models` is the calls the state types'
-// implementations make to each other.
-const PAGES = ["changelog", "data", "state", "features", "models"] as const;
+// `features` is what the application lets a person do, each joined
+// with the scenarios, state types and code that make it up, and
+// `models` is the calls the state types' implementations make to
+// each other. The state types the API declares and the data types
+// those declare in turn are not pages but the types pane, which
+// every page carries on its right.
+const PAGES = ["changelog", "features", "models"] as const;
 
 type Page = typeof PAGES[number];
 
 const PAGE_NAMES: Record<Page, string> = {
   changelog: "Changelog",
-  data: "Data Types",
-  state: "State Types",
   features: "Features",
   models: "Models",
 };
@@ -281,16 +278,91 @@ const CHANGES_PER_PAGE = 100;
 // it lands on, so the two can never disagree.
 const pathOfTypeOnPage = (page: Page, id: string): string => `/${page}/${id}`;
 
+// Both the `id` of a type's section in the types pane and the
+// target a link to the type names in the `type` search parameter,
+// so the two can never disagree.
+const idOfTypeInPane = (id: string): string => `/type/${id}`;
+
+// What the `type` search parameter names: one state type, or one of
+// its methods, `bank.v1.Account` or `bank.v1.Account.deposit`. The
+// pane exists only while the parameter names something.
+interface PaneTarget {
+  stateTypeId: string;
+  method?: string;
+}
+
+const paneTargetOf = (
+  raw: string | null,
+  isStateTypeId: (id: string) => boolean
+): PaneTarget | undefined => {
+  if (raw === null) {
+    return undefined;
+  }
+  const separator = raw.lastIndexOf(".");
+  if (
+    !isStateTypeId(raw) &&
+    separator !== -1 &&
+    isStateTypeId(raw.slice(0, separator))
+  ) {
+    return {
+      stateTypeId: raw.slice(0, separator),
+      method: raw.slice(separator + 1),
+    };
+  }
+  return { stateTypeId: raw };
+};
+
+// The search string a link to a type produces. The path is left
+// alone, so following the link never leaves the page being read.
+const searchOfType = (id: string): string => `?type=${id}`;
+
+// A link that slides the types pane open on the state type the id
+// names, from wherever the type is named; a method id flashes the
+// method.
+const TypeLink: FC<{
+  id: string;
+  className?: string;
+  children: ReactNode;
+}> = ({ id, className, children }) => (
+  <Link className={className} to={{ search: searchOfType(id) }}>
+    {children}
+  </Link>
+);
+
+// The types pane's own `Anchor`: a link to the state type it shows.
+const PaneAnchor: FC<{ id: string }> = ({ id }) => (
+  <Link
+    className="anchor"
+    to={{ search: searchOfType(id) }}
+    aria-label={`Link to ${id}`}
+  >
+    #
+  </Link>
+);
+
+// Asks the types pane to open one data type beside its use.
+// Provided wherever a data type's name may be clicked; the provider
+// knows which use it stands beside. Absent where a data type's name
+// is plain text.
+const OpenDataTypeContext = createContext<((id: string) => void) | undefined>(
+  undefined
+);
+
 // `NavLink` is active when the route is this page or an id within it
-// (a `pathOfTypeOnPage` route), and sets `aria-current` itself.
-const PageSelector: FC<{ counts: Record<Page, number> }> = ({ counts }) => (
+// (a `pathOfTypeOnPage` route), and sets `aria-current` itself. The
+// links carry the types pane's search parameter, so switching pages
+// keeps the pane as it is.
+const PageSelector: FC<{ counts: Record<Page, number>; search: string }> = ({
+  counts,
+  search,
+}) => (
   <div className="page-selector">
     {PAGES.map((name) => (
       <NavLink
         className={({ isActive }) =>
           isActive ? "page-link current" : "page-link"
         }
-        to={`/${name}`}
+        to={{ pathname: `/${name}`, search }}
         key={name}
       >
         <span className="nav-name">{PAGE_NAMES[name]}</span>
@@ -304,6 +376,11 @@ const PageSelector: FC<{ counts: Record<Page, number> }> = ({ counts }) => (
 // narrowest width at which a package row stays readable; the maximum
 // leaves the document half of a small laptop screen.
 const NAV_WIDTH = { default: 250, min: 170, max: 520 };
+
+// The types pane's widths, pixels the same way. Dragged below its
+// minimum, the pane collapses to the handle, which is what brings
+// it back.
+const PANE_WIDTH = { default: 380, min: 260, max: 720, handle: 14 };
 
 // The sidebar is the first panel of the shell so that the border
 // between it and the document is a `Separator`, which the library
@@ -369,83 +446,9 @@ const Connection: FC<{ live: boolean }> = ({ live }) => (
   </div>
 );
 
-// One row of the sidebar. The state and data pages each map their
-// types to this, so one sidebar renders either page's list.
-interface NavEntry {
-  id: string;
-  name: string;
-  package: string;
-  count: string;
-}
-
-const Package: FC<{
-  package: string;
-  entries: NavEntry[];
-  page: Page;
-  noun: string;
-}> = ({ package: name, entries, page, noun }) => {
-  const [open, setOpen] = useState(!isStandardLibrary(name));
-
-  return (
-    <div className="package">
-      <button
-        className="package-head"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-      >
-        <span className="nav-name package-name">
-          <span className="caret">{open ? "▾" : "▸"}</span>
-          {name}
-        </span>
-        <span className="nav-count">{countWithNoun(entries.length, noun)}</span>
-      </button>
-      {open && (
-        <div className="package-types">
-          {entries.map((entry) => (
-            <Link
-              to={pathOfTypeOnPage(page, entry.id)}
-              title={entry.name}
-              key={entry.id}
-            >
-              <span className="nav-name">{entry.name}</span>
-              <span className="nav-count">{entry.count}</span>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// The developer's packages sort before the standard library's: the
-// developer wrote their own types and only references the standard
-// ones.
-const groupByPackage = (
-  entries: NavEntry[]
-): { package: string; entries: NavEntry[] }[] => {
-  const grouped = new Map<string, NavEntry[]>();
-  for (const entry of entries) {
-    const group = grouped.get(entry.package);
-    if (group === undefined) {
-      grouped.set(entry.package, [entry]);
-    } else {
-      group.push(entry);
-    }
-  }
-  return [...grouped.entries()]
-    .map(([name, entries]) => ({ package: name, entries }))
-    .sort((a, b) => {
-      const standard =
-        Number(isStandardLibrary(a.package)) -
-        Number(isStandardLibrary(b.package));
-      return standard !== 0 ? standard : a.package.localeCompare(b.package);
-    });
-};
-
-// A type's properties, one level deep, as a TypeScript type literal. A
-// property whose type is another of the developer's types names it and
-// links to it: each type is written out once, on the data page, and
-// every property that contains it points there.
+// A type's properties, one level deep, as a TypeScript type literal.
+// A property whose type is another of the developer's types names it,
+// and clicking the name opens that type beside this one.
 const Properties: FC<{ properties: Property[] }> = ({ properties }) => (
   <pre className="type-block">
     <code>
@@ -479,16 +482,23 @@ const Properties: FC<{ properties: Property[] }> = ({ properties }) => (
   </pre>
 );
 
-// A type as it appears in a row: a link to its page when it has one,
-// plain text (for `string` and the other built-ins) when it does not.
-const TypeName: FC<{ type: string; link?: string }> = ({ type, link }) =>
-  link === undefined ? (
+// A type as it appears in a row: plain text for `string` and the
+// other built-ins, otherwise a button that opens the data type
+// beside this use of it.
+const TypeName: FC<{ type: string; link?: string }> = ({ type, link }) => {
+  const openDataType = useContext(OpenDataTypeContext);
+  return link === undefined || openDataType === undefined ? (
     <>{type}</>
   ) : (
-    <Link className="type-link" to={pathOfTypeOnPage("data", link)}>
+    <button
+      type="button"
+      className="type-link type-name-button"
+      onClick={() => openDataType(link)}
+    >
       {type}
-    </Link>
+    </button>
   );
+};
 
 // The keys of a request or response, one level deep: a key whose type
 // is one of the developer's types names and links to that type, so a
@@ -556,22 +566,33 @@ const Signature: FC<{
 const Method: FC<{
   api: api_pb.API;
   method: api_pb.Method;
-  // The method's id on the page, `/state/bank.v1.Account.deposit`,
+  // The method's id in the pane, `/type/bank.v1.Account.deposit`,
   // which is what a link from the graph names.
   id: string;
-  expanded: boolean;
-  onToggle: () => void;
-}> = ({ api, method, id, expanded, onToggle }) => {
+  // Set for the method a followed link named, with the history entry
+  // that named it, so a second click flashes it again.
+  flashKey?: string;
+  // The data type open beside this method, if any.
+  openedDataType?: LinkedDataType;
+  onOpenDataType: (id: string) => void;
+  onCloseDataType: () => void;
+}> = ({
+  api,
+  method,
+  id,
+  flashKey,
+  openedDataType,
+  onOpenDataType,
+  onCloseDataType,
+}) => {
   return (
-    <div className={expanded ? "method is-expanded" : "method"} id={id}>
-      <div
-        className="method-head"
-        onClick={onToggle}
-        role="button"
-        aria-expanded={expanded}
-      >
+    <div
+      className={flashKey === undefined ? "method" : "method is-flash"}
+      id={id}
+      key={flashKey}
+    >
+      <div className="method-head">
         <div className="method-title">
-          <span className="method-caret caret">{expanded ? "▾" : "▸"}</span>
           <span className="method-name">{method.name}</span>
           {/* The kind comes before the tags because every method has
               one, so it sits in the same column in every row. The tags
@@ -595,18 +616,23 @@ const Method: FC<{
           </span>
         </div>
       </div>
-      {/* The detail that opening the section reveals. The page renders
-          it while the section is closed too: opening is a CSS
-          transition on this element, not a mount. */}
       <div className="method-detail">
         <div className="method-detail-inner">
-          <Signature api={api} method={method} />
-          {method.description !== undefined && (
-            <Description
-              className="method-description"
-              text={method.description}
-            />
-          )}
+          <OpenDataTypeContext.Provider value={onOpenDataType}>
+            <Signature api={api} method={method} />
+            {method.description !== undefined && (
+              <Description
+                className="method-description"
+                text={method.description}
+              />
+            )}
+            {openedDataType !== undefined && (
+              <DataTypeCard
+                linkedDataType={openedDataType}
+                onClose={onCloseDataType}
+              />
+            )}
+          </OpenDataTypeContext.Provider>
         </div>
       </div>
     </div>
@@ -616,85 +642,35 @@ const Method: FC<{
 const countWithNoun = (n: number, noun: string): string =>
   `${n} ${n === 1 ? noun : `${noun}s`}`;
 
-// Horizontal only. Closed, every method's pills share one column;
-// open, each sits in its own row. CSS cannot transition that layout
-// change, so this hook animates it: it records each pill's
-// `offsetLeft` on every render and, on a toggle, translates the pill
-// from its old position to its new one. Vertical movement comes from
-// the `.method-detail` transition in dashboard.css, whose duration
-// and easing SLIDE_MS and SLIDE_EASING match.
-//
-// `offsetLeft` ignores transforms, so a render that lands while a
-// pill is mid-slide measures where the pill will end up, and the next
-// toggle starts from there.
-const SLIDE_MS = 240;
-const SLIDE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
-
-const useSlidingPills = (expanded: string) => {
-  const section = useRef<HTMLElement>(null);
-  const before = useRef(new WeakMap<HTMLElement, number>());
-  const wasExpanded = useRef(expanded);
-
-  // Runs after every render so the positions the slide starts from are
-  // the ones on screen, not the ones measured at the last toggle, which
-  // a window resize would have moved since.
-  useLayoutEffect(() => {
-    const pills = section.current?.querySelectorAll<HTMLElement>(".kind, .tag");
-    if (pills === undefined) {
-      return;
-    }
-
-    const toggled = wasExpanded.current !== expanded;
-    wasExpanded.current = expanded;
-
-    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    pills.forEach((pill) => {
-      const was = before.current.get(pill);
-      const now = pill.offsetLeft;
-      before.current.set(pill, now);
-
-      if (!toggled || still || was === undefined || was === now) {
-        return;
-      }
-
-      pill.animate(
-        [{ transform: `translateX(${was - now}px)` }, { transform: "none" }],
-        { duration: SLIDE_MS, easing: SLIDE_EASING }
-      );
-    });
-  });
-
-  return section;
-};
-
 const StateType: FC<{
   api: api_pb.API;
   stateType: api_pb.StateType;
-  isMethodExpanded: (method: string) => boolean;
-  onToggleMethods: (methods: string[], expanded: boolean) => void;
-}> = ({ api, stateType, isMethodExpanded, onToggleMethods }) => {
-  const section = useSlidingPills(
-    stateType.methods.map((method) => isMethodExpanded(method.name)).join(":")
-  );
+  // The method a followed link flashes, with the history entry that
+  // named it.
+  flash?: { method: string; key: string };
+  linkedDataTypes: LinkedDataType[];
+}> = ({ api, stateType, flash, linkedDataTypes }) => {
   const name = qualifiedName({ api, stateType });
   const properties = propertiesOfState({ api, stateType });
 
-  // The section's own caret is open only when every method is:
-  // closing any single one closes it, so that clicking it opens
-  // everything again.
-  const allExpanded =
-    stateType.methods.length > 0 &&
-    stateType.methods.every((method) => isMethodExpanded(method.name));
+  // The one data type open beside its use: the anchor is the method
+  // it was opened under, or `state` for the state properties.
+  const [openedDataType, setOpenedDataType] = useState<{
+    anchor: string;
+    id: string;
+  } | null>(null);
+
+  const openedAt = (anchor: string): LinkedDataType | undefined =>
+    openedDataType?.anchor === anchor
+      ? linkedDataTypes.find(
+          (linkedDataType) => linkedDataType.id === openedDataType.id
+        )
+      : undefined;
+
+  const openedAtState = openedAt("state");
 
   return (
-    // The stylesheet opens and closes every method's detail from this
-    // class, so the whole section is one transition.
-    <section
-      ref={section}
-      className="state-type"
-      id={pathOfTypeOnPage("state", name)}
-    >
+    <section className="state-type" id={idOfTypeInPane(name)}>
       <div>
         <Pill
           className="eyebrow"
@@ -705,7 +681,7 @@ const StateType: FC<{
       <div className="state-type-head">
         <div className="state-type-heading">
           <h2>{stateType.name}</h2>
-          <Anchor page="state" id={name} />
+          <PaneAnchor id={name} />
           <span className="summary-line">
             {countWithNoun(properties.length, "property")} ·{" "}
             {countWithNoun(stateType.methods.length, "method")}
@@ -720,38 +696,38 @@ const StateType: FC<{
         />
       )}
 
-      <div className="eyebrow section">state</div>
-      {properties.length === 0 ? (
-        <div className="empty">
-          No state properties. The key is the whole state.
-        </div>
-      ) : (
-        <Properties properties={properties} />
-      )}
-
-      <button
-        className="eyebrow section section-toggle"
-        onClick={() =>
-          onToggleMethods(
-            stateType.methods.map((method) => method.name),
-            !allExpanded
-          )
-        }
-        aria-expanded={allExpanded}
+      <div className="eyebrow section">properties</div>
+      <OpenDataTypeContext.Provider
+        value={(id) => setOpenedDataType({ anchor: "state", id })}
       >
-        <span className="caret">{allExpanded ? "▾" : "▸"}</span>
-        methods
-      </button>
+        {properties.length === 0 ? (
+          <div className="empty">
+            No state properties. The key is the whole state.
+          </div>
+        ) : (
+          <Properties properties={properties} />
+        )}
+        {openedAtState !== undefined && (
+          <DataTypeCard
+            linkedDataType={openedAtState}
+            onClose={() => setOpenedDataType(null)}
+          />
+        )}
+      </OpenDataTypeContext.Provider>
+
+      <div className="eyebrow section">methods</div>
       <div className="methods">
         {stateType.methods.map((method) => (
           <Method
             api={api}
             method={method}
-            id={pathOfTypeOnPage("state", `${name}.${method.name}`)}
-            expanded={isMethodExpanded(method.name)}
-            onToggle={() =>
-              onToggleMethods([method.name], !isMethodExpanded(method.name))
+            id={idOfTypeInPane(`${name}.${method.name}`)}
+            flashKey={flash?.method === method.name ? flash.key : undefined}
+            openedDataType={openedAt(method.name)}
+            onOpenDataType={(id) =>
+              setOpenedDataType({ anchor: method.name, id })
             }
+            onCloseDataType={() => setOpenedDataType(null)}
             key={method.name}
           />
         ))}
@@ -790,73 +766,109 @@ const Anchor: FC<{ page: Page; id: string }> = ({ page, id }) => (
   </Link>
 );
 
-// Unlike a StateTypeCard, never collapsed: a type shown one level
-// deep is short enough that a collapse control would save little
-// space.
-const LinkedDataTypeCard: FC<{
+// One data type, opened beside the use that named it; the X lets it
+// go.
+const DataTypeCard: FC<{
   linkedDataType: LinkedDataType;
-  pageOfTypeId: (id: string) => Page;
-}> = ({ linkedDataType, pageOfTypeId }) => (
-  <section
-    className="state-type"
-    id={pathOfTypeOnPage("data", linkedDataType.id)}
-  >
-    <div>
+  onClose: () => void;
+}> = ({ linkedDataType, onClose }) => (
+  <section className="data-type-card">
+    <div className="data-type-card-head">
       <Pill
         className="eyebrow"
         label="data type"
         meaning={DEFINITIONS["data type"]}
       />
+      <button
+        type="button"
+        className="data-type-close"
+        onClick={onClose}
+        title={`Close ${linkedDataType.name}`}
+        aria-label={`Close ${linkedDataType.name}`}
+      >
+        ×
+      </button>
     </div>
-    <div className="state-type-head">
-      <div className="state-type-heading">
-        <h2>{linkedDataType.name}</h2>
-        <Anchor page="data" id={linkedDataType.id} />
-        <span className="summary-line">
-          {countWithNoun(linkedDataType.properties.length, "property")}
-        </span>
-      </div>
+    <div className="data-type-card-heading">
+      <h3>{linkedDataType.name}</h3>
+      <span className="summary-line">
+        {countWithNoun(linkedDataType.properties.length, "property")}
+      </span>
     </div>
-    <div className="file">{linkedDataType.filename}</div>
     {linkedDataType.description !== undefined && (
       <Description
         className="state-type-description"
         text={linkedDataType.description}
       />
     )}
-
-    <div className="eyebrow section">properties</div>
     {linkedDataType.properties.length === 0 ? (
       <div className="empty">No properties.</div>
     ) : (
       <Properties properties={linkedDataType.properties} />
     )}
-
-    <div className="eyebrow section">used by</div>
-    {linkedDataType.referrers.length === 0 ? (
-      <div className="empty">
-        Nothing contains this type. It is declared but unused.
-      </div>
-    ) : (
-      <div className="referrers">
-        {linkedDataType.referrers.map((referrer: Referrer) => (
-          <Link
-            className="referrer"
-            to={pathOfTypeOnPage(pageOfTypeId(referrer.id), referrer.id)}
-            key={referrer.label}
-          >
-            {referrer.label}
-          </Link>
-        ))}
-      </div>
-    )}
   </section>
 );
+
+// The types pane: one state type, slid open by a link to it from
+// the graph or a page, every method expanded; the X closes it. A
+// link naming a method flashes the method.
+const TypesPane: FC<{
+  apis: APIs;
+  linkedDataTypes: LinkedDataType[];
+  target: PaneTarget;
+  // The history entry that named the target, so a repeated link
+  // flashes its method again.
+  flashKey: string;
+  onClose: () => void;
+}> = ({ apis, linkedDataTypes, target, flashKey, onClose }) => {
+  const found = sortedAPIs(apis)
+    .flatMap((api) => api.stateTypes.map((stateType) => ({ api, stateType })))
+    .find(
+      ({ api, stateType }) =>
+        qualifiedName({ api, stateType }) === target.stateTypeId
+    );
+  return (
+    <div className="types-pane">
+      <div className="types-pane-header">
+        <span className="types-pane-title">
+          {found?.stateType.name ?? shortNameOfTypeName(target.stateTypeId)}
+        </span>
+        <button
+          type="button"
+          className="types-hide"
+          onClick={onClose}
+          title="Close the types pane"
+          aria-label="Close the types pane"
+        >
+          ×
+        </button>
+      </div>
+      <div className="types-pane-body">
+        {found === undefined ? (
+          <div className="empty">
+            <code>{target.stateTypeId}</code> is no longer declared.
+          </div>
+        ) : (
+          <StateType
+            api={found.api}
+            stateType={found.stateType}
+            flash={
+              target.method === undefined
+                ? undefined
+                : { method: target.method, key: flashKey }
+            }
+            linkedDataTypes={linkedDataTypes}
+          />
+        )}
+      </div>
+    </div>
+  );
+};
 
 // A custom step, one the application defines itself, which the
 // grammar cannot parse: its text with the spans its author wrote in
 // `backticks` as code, a span naming a state type or a method linking
-// to it on the state page, and each `<variable>` set in its hue.
+// to it in the types pane, and each `<variable>` set in its hue.
 const CustomStep: FC<{
   text: string;
   links: StepLinks;
@@ -875,13 +887,9 @@ const CustomStep: FC<{
           return link === undefined ? (
             <code key={index}>{part}</code>
           ) : (
-            <Link
-              className="type-link"
-              to={pathOfTypeOnPage("state", link)}
-              key={index}
-            >
+            <TypeLink className="type-link" id={link} key={index}>
               <code>{part}</code>
-            </Link>
+            </TypeLink>
           );
         }
         return (
@@ -972,7 +980,7 @@ interface Related {
 
 // One span of a built-in step printed from its syntax tree, styled
 // by its role:
-// a state type or method links to the state page, and a save, a
+// a state type or method links to the types pane, and a save, a
 // recall, a state id or a user is set in its own hue and lights up
 // every other span about the same saved value, state or user.
 const SpanText: FC<{
@@ -993,9 +1001,9 @@ const SpanText: FC<{
       : undefined;
   if (link !== undefined) {
     return (
-      <Link className="type-link" to={pathOfTypeOnPage("state", link)}>
+      <TypeLink className="type-link" id={link}>
         <code className={className}>{span.text}</code>
-      </Link>
+      </TypeLink>
     );
   }
   const key = hueKeyOfSpan(span);
@@ -1855,9 +1863,9 @@ const MethodChip: FC<{
   return id === undefined ? (
     <code className={className}>{label}</code>
   ) : (
-    <Link className="type-link" to={pathOfTypeOnPage("state", id)}>
+    <TypeLink className="type-link" id={id}>
       <code className={className}>{label}</code>
-    </Link>
+    </TypeLink>
   );
 };
 
@@ -2159,14 +2167,17 @@ const ChangeRow: FC<{ entry: Entry; now: Date }> = ({ entry, now }) => {
       </span>
       {/* Names are identifiers, so they are set as code, the way the
         descriptions set them. */}
-      {row.link === undefined ? (
+      {/* A data type has no home of its own: it shows beside a use,
+          so only a state type's name links, to the models page with
+          the pane open on it. */}
+      {row.link === undefined || row.link.page === "data" ? (
         <span className="change-name">
           <code>{row.name}</code>
         </span>
       ) : (
         <Link
           className="change-name"
-          to={pathOfTypeOnPage(row.link.page, row.link.id)}
+          to={{ pathname: "/models", search: searchOfType(row.link.id) }}
         >
           <code>{row.name}</code>
         </Link>
@@ -2248,20 +2259,18 @@ const Overview: FC<{
   navWidth: number;
   onNavResizing: (width: number) => void;
   onNavResized: () => void;
-  isMethodExpanded: (stateType: string, method: string) => boolean;
-  onToggleMethods: (
-    stateType: string,
-    methods: string[],
-    expanded: boolean
-  ) => void;
+  paneWidth: number;
+  onPaneResizing: (width: number) => void;
+  onPaneResized: () => void;
   preferencesLoaded: boolean;
 }> = ({
   page,
   navWidth,
   onNavResizing,
   onNavResized,
-  isMethodExpanded,
-  onToggleMethods,
+  paneWidth,
+  onPaneResizing,
+  onPaneResized,
   preferencesLoaded,
 }) => {
   // `Panel` reads `defaultSize` once, when it mounts, and the stored
@@ -2275,6 +2284,20 @@ const Overview: FC<{
     // drags: the drag already moves the panel.
   }, [navWidth, navPanel]);
 
+  const typesPanel = usePanelRef();
+
+  useEffect(() => {
+    // Never resizes a drawer dragged shut: another tab's stored
+    // width must not pop it open.
+    if (typesPanel.current?.isCollapsed() !== true) {
+      typesPanel.current?.resize(paneWidth);
+    }
+  }, [paneWidth, typesPanel]);
+
+  // Whether the drawer is dragged shut, from its width, so the
+  // handle renders in its place.
+  const [paneCollapsed, setPaneCollapsed] = useState(false);
+
   // The features page names its sections by file path, whose
   // slashes a `:id` segment cannot hold, so its route matches the
   // rest of the URL as a splat instead.
@@ -2282,6 +2305,14 @@ const Overview: FC<{
   const target =
     params.id ??
     (params["*"] === "" || params["*"] === undefined ? undefined : params["*"]);
+
+  // What the types pane shows, from the URL, so a link to a type is
+  // shareable and back and forward retrace it.
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const onClosePane = useCallback((): void => {
+    setSearchParams({});
+  }, [setSearchParams]);
 
   // The dashboard's own state: what it read of the developer's API
   // files. Nothing here calls the developer's application, so the
@@ -2356,50 +2387,30 @@ const Overview: FC<{
   );
 
   // Where the backticked spans of steps link, derived from the same
-  // APIs the state page shows, so a link can never point at a state
+  // APIs the types pane shows, so a link can never point at a state
   // type the page does not have.
   const links = useMemo(() => stepLinks(apis), [apis]);
 
-  // A referrer is either a state type or a data type, and its link
-  // must open the page that lists it.
-  const pageOfTypeId = useMemo(() => {
+  // Whether an id names a state type; anything else the API knows
+  // by id is a data type.
+  const isStateTypeId = useMemo(() => {
     const states = new Set(
       Object.values(apis).flatMap((api) =>
         api.stateTypes.map((stateType) => qualifiedName({ api, stateType }))
       )
     );
-    return (id: string): Page => (states.has(id) ? "state" : "data");
+    return (id: string): boolean => states.has(id);
   }, [apis]);
 
-  // The changelog is one list rather than a set of packages, and
-  // the graph is one canvas, so the sidebar has nothing to index;
-  // the features page lists its features as one flat list of its
-  // own, below.
-  const entries: NavEntry[] = useMemo(
-    () =>
-      page === "changelog" || page === "models"
-        ? []
-        : page === "state"
-        ? sortedAPIs(apis).flatMap((api) =>
-            api.stateTypes.map((stateType) => ({
-              id: qualifiedName({ api, stateType }),
-              name: stateType.name,
-              package: api.package,
-              count: countWithNoun(stateType.methods.length, "method"),
-            }))
-          )
-        : page === "features"
-        ? []
-        : linkedDataTypes.map((linkedDataType) => ({
-            id: linkedDataType.id,
-            name: linkedDataType.name,
-            package: linkedDataType.package,
-            count: countWithNoun(linkedDataType.properties.length, "property"),
-          })),
-    [page, apis, featureEntries, linkedDataTypes]
+  const paneTarget = useMemo(
+    () => paneTargetOf(searchParams.get("type"), isStateTypeId),
+    [searchParams, isStateTypeId]
   );
 
-  const packages = useMemo(() => groupByPackage(entries), [entries]);
+  // What the page links carry of the pane: the state type it shows,
+  // but not the method it last flashed.
+  const carriedSearch =
+    paneTarget === undefined ? "" : searchOfType(paneTarget.stateTypeId);
 
   // The features sidebar's list.
   const featureLinks = useMemo(
@@ -2451,19 +2462,9 @@ const Overview: FC<{
           graphStateTypes.length,
           "state type"
         )}`
-      : page === "state"
-      ? `${countWithNoun(stateTypeCount, "state type")} in ${countWithNoun(
-          packages.length,
-          "package"
-        )}`
-      : page === "features"
-      ? chosenFeature === undefined
-        ? countWithNoun(featureEntries.length, "feature")
-        : chosenFeature.feature.name ?? chosenFeature.filename
-      : `${countWithNoun(
-          linkedDataTypes.length,
-          "data type"
-        )} in ${countWithNoun(packages.length, "package")}`;
+      : chosenFeature === undefined
+      ? countWithNoun(featureEntries.length, "feature")
+      : chosenFeature.feature.name ?? chosenFeature.filename;
 
   // The page scrolls to the element the URL names only if it exists
   // when the URL changes, and it does not exist on a page that was
@@ -2491,22 +2492,50 @@ const Overview: FC<{
 
   const navigate = useNavigate();
 
-  // Opens one method on the state page: expanded, named by the URL
-  // so the page scrolls to it. `id` is a `methodId`,
-  // `bank.v1.Account.deposit`.
-  const onOpenMethod = useCallback(
+  // Opens one state type in the types pane, named by the URL.
+  const onOpenStateType = useCallback(
     (id: string): void => {
-      const stateType = id.slice(0, id.lastIndexOf("."));
-      const method = id.slice(id.lastIndexOf(".") + 1);
-      onToggleMethods(stateType, [method], true);
-      navigate(`/state/${id}`);
+      setSearchParams({ type: id });
     },
-    [onToggleMethods, navigate]
+    [setSearchParams]
+  );
+
+  // Choosing a method in the graph also opens it in the types pane:
+  // one navigation naming it as both the chosen method and the
+  // pane's target, which flashes it, as any link to a method does.
+  // `id` is a `methodId`, `bank.v1.Account.deposit`. Letting the
+  // method go keeps the pane as it is, without its flash target.
+  const onSelectMethod = useCallback(
+    (id: string | null, replace?: boolean): void => {
+      if (id === null) {
+        navigate({ pathname: "/models", search: carriedSearch }, { replace });
+        return;
+      }
+      navigate(
+        { pathname: `/models/${id}`, search: searchOfType(id) },
+        { replace }
+      );
+    },
+    [navigate, carriedSearch]
   );
 
   const pane = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const loaded = !(isLoading && stateTypeCount === 0) && preferencesLoaded;
+
+  // The types pane scrolls to the method a followed link names, once
+  // the pane has rendered it. Keyed by the history entry, so
+  // following the same link again scrolls to it again.
+  useEffect(() => {
+    if (paneTarget?.method === undefined) {
+      return;
+    }
+    document
+      .getElementById(
+        idOfTypeInPane(`${paneTarget.stateTypeId}.${paneTarget.method}`)
+      )
+      ?.scrollIntoView();
+  }, [location.key, paneTarget, apis]);
 
   // Remembered when this entry is left: the cleanup runs while the
   // pane is still on screen.
@@ -2532,10 +2561,8 @@ const Overview: FC<{
 
   // Only until the first read; while reloading, `response` keeps the
   // types last read, so the page shows those instead. The
-  // preferences read is waited for too, so the first paint has each
-  // method's detail already open or closed: the browser measures its
-  // restored scroll offset against the final layout, not one that
-  // grows when the preferences arrive.
+  // preferences read is waited for too, so the first paint has the
+  // panel widths the developer left.
   if ((isLoading && stateTypeCount === 0) || !preferencesLoaded) {
     return (
       <main>
@@ -2559,8 +2586,6 @@ const Overview: FC<{
   }
 
   const counts: Record<Page, number> = {
-    state: stateTypeCount,
-    data: linkedDataTypes.length,
     features: featureEntries.length,
     changelog: shownChangelog.length,
     models: calls,
@@ -2575,6 +2600,7 @@ const Overview: FC<{
       onLayoutChanged={(_layout, { isUserInteraction }) => {
         if (isUserInteraction) {
           onNavResized();
+          onPaneResized();
         }
       }}
     >
@@ -2588,21 +2614,10 @@ const Overview: FC<{
       >
         <nav>
           <RebootBrand live={live} />
-          <PageSelector counts={counts} />
+          <PageSelector counts={counts} search={carriedSearch} />
           {page === "features" && (
             <NavLinks heading="features" links={featureLinks} page="features" />
           )}
-          {/* The changelog has none. */}
-          {packages.length > 0 && <div className="eyebrow">packages</div>}
-          {packages.map((group) => (
-            <Package
-              package={group.package}
-              page={page}
-              noun={page === "state" ? "state type" : "data type"}
-              entries={group.entries}
-              key={group.package}
-            />
-          ))}
         </nav>
         <Checks response={response} />
       </Panel>
@@ -2680,70 +2695,91 @@ const Overview: FC<{
               <GraphPage
                 stateTypes={graphStateTypes}
                 selectedMethodId={target ?? null}
-                onSelectMethod={(id, replace) =>
-                  navigate(id === null ? "/models" : `/models/${id}`, {
-                    replace,
-                  })
-                }
-                onOpenMethod={onOpenMethod}
+                onSelectMethod={onSelectMethod}
+                onOpenStateType={onOpenStateType}
               />
             </>
-          ) : page === "state" ? (
-            sortedAPIs(apis).flatMap((api) =>
-              api.stateTypes.map((stateType) => {
-                const name = qualifiedName({ api, stateType });
-                return (
-                  <StateType
-                    api={api}
-                    stateType={stateType}
-                    isMethodExpanded={(method) =>
-                      isMethodExpanded(name, method)
-                    }
-                    onToggleMethods={(methods, expanded) =>
-                      onToggleMethods(name, methods, expanded)
-                    }
-                    key={name}
-                  />
-                );
-              })
-            )
-          ) : page === "features" ? (
-            featureEntries.length === 0 ? (
-              <div className="empty">
-                No <code>.feature</code> files found. Write one and the feature
-                it describes will show up here.
-              </div>
-            ) : chosenFeature === undefined ? (
-              <FeaturesOverview
-                features={featureEntries}
-                graph={graphStateTypes}
-                links={links}
-              />
-            ) : (
-              <FeaturePage
-                entry={chosenFeature}
-                graph={graphStateTypes}
-                links={links}
-                key={chosenFeature.filename}
-              />
-            )
-          ) : linkedDataTypes.length === 0 ? (
+          ) : featureEntries.length === 0 ? (
             <div className="empty">
-              No data types. The state types declare no requests, responses or
-              errors yet.
+              No <code>.feature</code> files found. Write one and the feature it
+              describes will show up here.
             </div>
+          ) : chosenFeature === undefined ? (
+            <FeaturesOverview
+              features={featureEntries}
+              graph={graphStateTypes}
+              links={links}
+            />
           ) : (
-            linkedDataTypes.map((linkedDataType) => (
-              <LinkedDataTypeCard
-                linkedDataType={linkedDataType}
-                pageOfTypeId={pageOfTypeId}
-                key={linkedDataType.id}
-              />
-            ))
+            <FeaturePage
+              entry={chosenFeature}
+              graph={graphStateTypes}
+              links={links}
+              key={chosenFeature.filename}
+            />
           )}
         </div>
       </Panel>
+      {page !== "changelog" && paneTarget !== undefined && (
+        <>
+          <Separator className="nav-resizer" />
+          <Panel
+            className="types-panel"
+            panelRef={typesPanel}
+            defaultSize={paneWidth}
+            minSize={PANE_WIDTH.min}
+            maxSize={PANE_WIDTH.max}
+            collapsible
+            collapsedSize={PANE_WIDTH.handle}
+            onResize={({ inPixels }) => {
+              const width = Math.round(inPixels);
+              setPaneCollapsed(width < PANE_WIDTH.min);
+              // A collapsed width is never remembered: the drawer
+              // reopens at the width it was dragged shut from.
+              if (width >= PANE_WIDTH.min) {
+                onPaneResizing(width);
+              }
+            }}
+          >
+            {paneCollapsed ? (
+              <button
+                type="button"
+                className="types-handle"
+                onClick={() => typesPanel.current?.expand()}
+                title="Show the types pane"
+                aria-label="Show the types pane"
+              >
+                ‹
+              </button>
+            ) : (
+              <TypesPane
+                apis={apis}
+                linkedDataTypes={linkedDataTypes}
+                target={paneTarget}
+                flashKey={location.key}
+                onClose={onClosePane}
+                key={paneTarget.stateTypeId}
+              />
+            )}
+          </Panel>
+        </>
+      )}
     </Group>
+  );
+};
+
+// Where the old state page's URLs land: the models page with the
+// types pane open on what the URL named.
+const StateTypeRedirect: FC = () => {
+  const params = useParams();
+  return (
+    <Navigate
+      to={{
+        pathname: "/models",
+        search: params.id === undefined ? "" : searchOfType(params.id),
+      }}
+      replace
+    />
   );
 };
 
@@ -2751,7 +2787,7 @@ const Overview: FC<{
 // reads the same ones, and they persist after the tab that set them
 // closes.
 const App: FC = () => {
-  const { useGet, setSuppressOpenOnRestart, setMethodsExpanded, setNavWidth } =
+  const { useGet, setSuppressOpenOnRestart, setNavWidth, setPaneWidth } =
     usePreferences({
       id: PREFERENCES_ID,
     });
@@ -2760,11 +2796,6 @@ const App: FC = () => {
   // Before the read returns, the page treats the preference as the
   // CLI treats an unwritten one: as false.
   const suppressed = response?.suppressOpenOnRestart ?? false;
-
-  const stored = useMemo(
-    () => new Set(response?.expandedMethods ?? []),
-    [response?.expandedMethods]
-  );
 
   const navWidth = response?.navWidth ?? NAV_WIDTH.default;
   const resizing = useRef(navWidth);
@@ -2777,43 +2808,16 @@ const App: FC = () => {
     setNavWidth({ navWidth: resizing.current });
   }, [setNavWidth]);
 
-  // The open state of each click that the read does not yet
-  // reflect; it overrides the stored value so a method responds to
-  // the click before the round trip completes. Dropped once the
-  // read agrees, since a stale stand-in would hide a later change
-  // from another tab.
-  const [clicked, setClicked] = useState(new Map<string, boolean>());
+  const paneWidth = response?.paneWidth ?? PANE_WIDTH.default;
+  const paneResizing = useRef(paneWidth);
 
-  useEffect(() => {
-    setClicked((clicked) => {
-      const waiting = new Map(
-        [...clicked].filter(([key, expanded]) => stored.has(key) !== expanded)
-      );
-      return waiting.size === clicked.size ? clicked : waiting;
-    });
-  }, [stored]);
+  const onPaneResizing = useCallback((width: number): void => {
+    paneResizing.current = width;
+  }, []);
 
-  const isMethodExpanded = useCallback(
-    (stateType: string, method: string): boolean => {
-      const key = `${stateType}.${method}`;
-      return clicked.get(key) ?? stored.has(key);
-    },
-    [clicked, stored]
-  );
-
-  const onToggleMethods = useCallback(
-    (stateType: string, methods: string[], expanded: boolean): void => {
-      setClicked((clicked) => {
-        const standing = new Map(clicked);
-        for (const method of methods) {
-          standing.set(`${stateType}.${method}`, expanded);
-        }
-        return standing;
-      });
-      setMethodsExpanded({ stateType, methods, expanded });
-    },
-    [setMethodsExpanded]
-  );
+  const onPaneResized = useCallback((): void => {
+    setPaneWidth({ paneWidth: paneResizing.current });
+  }, [setPaneWidth]);
 
   return (
     <div className="app">
@@ -2837,14 +2841,23 @@ const App: FC = () => {
                   navWidth={navWidth}
                   onNavResizing={onNavResizing}
                   onNavResized={onNavResized}
-                  isMethodExpanded={isMethodExpanded}
-                  onToggleMethods={onToggleMethods}
+                  paneWidth={paneWidth}
+                  onPaneResizing={onPaneResizing}
+                  onPaneResized={onPaneResized}
                   preferencesLoaded={response !== undefined}
                 />
               }
               key={page}
             />
           ))}
+          {/* The state page is the types pane now; its old URLs land
+              on the models page with the pane open on what they
+              named. A data type has no URL of its own anymore. */}
+          <Route path="/state/:id?" element={<StateTypeRedirect />} />
+          <Route
+            path="/data/:id?"
+            element={<Navigate to="/models" replace />}
+          />
           {/* A developer returning to the dashboard wants to know what
               just changed. */}
           <Route path="*" element={<Navigate to="/changelog" replace />} />

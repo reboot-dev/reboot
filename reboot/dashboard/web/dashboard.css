@@ -868,101 +868,11 @@ header h1 {
   user-select: none;
 }
 
-.method-caret {
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 11px;
-  color: hsl(240 3.8% 55%);
-}
-
-/* The `methods` eyebrow doubles as the toggle that drops every
-   method's detail at once. A button, styled back to the eyebrow it
-   replaces. */
-.section-toggle {
-  border: none;
-  background: none;
-  padding: 0;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  text-align: left;
-}
-
-.section-toggle .caret {
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 11px;
-}
-
 .method-title {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-}
-
-/* Closed, the methods of one state type share a single set of
-   columns, so every kind pill starts at the same x and so does every
-   tag: the eye can run down the list and see which methods write and
-   which are reachable over MCP without reading any of them. Open,
-   this all reverts to the flex row above, where each row packs its
-   pills against its own name and the reader is looking at one method
-   rather than comparing several.
-
-   `subgrid` passes the columns down from `.methods` through the card
-   and its head, so the tracks are sized once across every row rather
-   than per row. Each element is pinned to a column by name, because
-   `factory` and `mcp` are optional: auto-placement would slide a
-   method's `mcp` tag into the empty `factory` column and lose the
-   alignment that is the whole point.
-
-   Behind `@supports` because a browser without subgrid drops that one
-   declaration and keeps the rest, which would leave the cards as
-   plain grids whose columns are sized per row: worse than the flex
-   row it replaced. Chrome has had subgrid since 117; anything older
-   keeps the flex row and simply does not line up. */
-@supports (grid-template-columns: subgrid) {
-  .methods {
-    display: grid;
-    grid-template-columns: max-content max-content max-content 1fr;
-    /* The 14px is the gap between methods; the columns want the 8px
-       that `.method-title` uses when it is laid out as flex. */
-    row-gap: 14px;
-    column-gap: 8px;
-  }
-
-  .method:not(.is-expanded),
-  .method:not(.is-expanded) .method-head,
-  .method:not(.is-expanded) .method-title {
-    display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: subgrid;
-    align-items: center;
-  }
-
-  .method:not(.is-expanded) .method-detail {
-    grid-column: 1 / -1;
-  }
-
-  .method:not(.is-expanded) .method-caret {
-    grid-column: 1;
-  }
-
-  .method:not(.is-expanded) .method-name {
-    grid-column: 2;
-  }
-
-  .method:not(.is-expanded) .kind {
-    grid-column: 3;
-  }
-
-  .method:not(.is-expanded) .tags {
-    grid-column: 4;
-  }
-
-  .method.is-expanded {
-    display: block;
-    grid-column: 1 / -1;
-  }
 }
 
 /* Whatever tags a method has, side by side. Taken out of the
@@ -1127,43 +1037,6 @@ header h1 {
   transform: none;
 }
 
-/* The height animation. A grid row interpolates from `0fr` to
-   `1fr`, which is how the detail can grow to whatever height it
-   happens to need without anything measuring it first, since there
-   is no height to read while it is closed. The inner element
-   owns `overflow: hidden`, because a grid row can only shrink
-   below its content when the content itself is willing to be
-   clipped.
-
-   Opacity is on a shorter, later curve than the height so that
-   text fades in against a box that has already begun to open,
-   rather than appearing at full strength in a 1px slot. */
-.method-detail {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transition: grid-template-rows 240ms cubic-bezier(0.32, 0.72, 0, 1),
-    opacity 120ms ease-out;
-}
-
-.method-detail-inner {
-  overflow: hidden;
-}
-
-.method.is-expanded .method-detail {
-  grid-template-rows: 1fr;
-  opacity: 1;
-  transition: grid-template-rows 240ms cubic-bezier(0.32, 0.72, 0, 1),
-    opacity 180ms ease-in 60ms;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .method-detail,
-  .method.is-expanded .method-detail {
-    transition-duration: 1ms;
-  }
-}
-
 .method-description {
   font-size: 13px;
   line-height: 1.55;
@@ -1258,30 +1131,6 @@ header h1 {
 .type-link:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
-}
-
-/* What holds a type, listed under it. Laid out as a wrapping row
-   rather than a list, because each is short and there may be many. */
-.referrers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-}
-
-.referrer {
-  padding: 3px 8px;
-  border: 1px solid hsl(var(--border));
-  border-radius: 999px;
-  background: hsl(var(--card));
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 10.5px;
-  color: hsl(var(--muted-foreground));
-  text-decoration: none;
-}
-
-.referrer:hover {
-  color: hsl(var(--foreground));
-  border-color: hsl(240 5.9% 78%);
 }
 
 /* --- Call graph --- */
@@ -1442,7 +1291,7 @@ header h1 {
   white-space: nowrap;
 }
 
-/* The name is the way to the method on the state page. */
+/* The state type's name is the way to it in the types pane. */
 .graph-method-open {
   cursor: pointer;
 }
@@ -1831,9 +1680,12 @@ header h1 {
   opacity: 1;
 }
 
-/* The same open-and-close animation as `.method-detail`, on the
-   scenario's own class so that the subgrid layout `.methods` gives
-   its rows never applies here. */
+/* Open and close as a height animation: a grid row interpolates
+   from `0fr` to `1fr`, which is how the detail can grow to whatever
+   height it needs without anything measuring it first. The inner
+   element owns `overflow: hidden`, because a grid row can only
+   shrink below its content when the content is willing to be
+   clipped. */
 .scenario-detail {
   display: grid;
   grid-template-rows: 0fr;
@@ -2455,4 +2307,188 @@ header .state-type-description {
   max-width: 840px;
   margin: 0 auto 24px;
   padding: 0 48px;
+}
+
+/* --- The types pane --- */
+
+.types-panel {
+  min-width: 0;
+}
+
+/* Slides in when a link opens it. */
+.types-pane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: hsl(var(--background));
+  border-left: 1px solid hsl(var(--border));
+  animation: types-pane-in 200ms ease-out;
+}
+
+@keyframes types-pane-in {
+  from {
+    transform: translateX(40px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* What remains when the drawer is dragged shut: a handle that
+   brings it back. */
+.types-handle {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-left: 1px solid hsl(var(--border));
+  background: hsl(var(--sidebar));
+  cursor: pointer;
+  padding: 0;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+
+.types-handle:hover {
+  color: hsl(var(--foreground));
+  background: hsl(var(--card) / 0.6);
+}
+
+/* The header names the state type shown and closes the pane. */
+.types-pane-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 12px;
+  border-bottom: 1px solid hsl(var(--border));
+  background: hsl(var(--sidebar));
+}
+
+.types-pane-title {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.types-hide {
+  margin-left: auto;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: hsl(var(--muted-foreground));
+  padding: 4px 8px;
+  border-radius: 5px;
+}
+
+.types-hide:hover {
+  background: hsl(var(--card) / 0.6);
+  color: hsl(var(--foreground));
+}
+
+.types-pane-body {
+  flex: 1;
+  overflow-y: auto;
+  padding-top: 24px;
+}
+
+/* The pane's card is the state type's card, set in a narrower
+   column. */
+.types-pane-body .state-type {
+  max-width: none;
+  padding: 24px 20px 32px;
+}
+
+.types-pane-body .state-type h2 {
+  font-size: 22px;
+}
+
+/* The method a followed link named gets a green border, then the
+   border fades. An outline, so nothing shifts when it appears. */
+.method.is-flash {
+  border-radius: 6px;
+  animation: method-flash 1.5s ease-out;
+}
+
+@keyframes method-flash {
+  0%,
+  35% {
+    outline: 2px solid hsl(142 60% 40%);
+    outline-offset: 3px;
+  }
+  100% {
+    outline: 2px solid transparent;
+    outline-offset: 3px;
+  }
+}
+
+/* A data type's name is a button, styled as the link it replaces. */
+.type-name-button {
+  font: inherit;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+/* A data type beside the use that opened it, set flush with the
+   card and marked only by the rule at its left. */
+.data-type-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px;
+  border-left: 2px solid hsl(var(--border-strong));
+  animation: data-type-card-in 160ms ease-out;
+}
+
+@keyframes data-type-card-in {
+  from {
+    transform: translateY(-4px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* The eyebrow on its own line, with the X across from it; the name
+   and count on the next. */
+.data-type-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.data-type-card-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.data-type-card-heading h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.data-type-close {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: hsl(var(--muted-foreground));
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+
+.data-type-close:hover {
+  background: hsl(var(--card) / 0.6);
+  color: hsl(var(--foreground));
 }

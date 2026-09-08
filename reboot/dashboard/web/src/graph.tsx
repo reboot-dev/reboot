@@ -154,7 +154,7 @@ interface StateTypeData extends Record<string, unknown> {
   // The chosen method's id, when one is chosen.
   selectedMethod?: string | null;
   onSelectMethod?: (id: string) => void;
-  onOpenMethod?: (id: string) => void;
+  onOpenStateType?: (id: string) => void;
 }
 
 type GraphNode =
@@ -485,14 +485,14 @@ const ExpandedPackageNode: FC<
 // One method, one row: its kind's colour on the dot, its name, and
 // an edge landing on its left or leaving on its right. The handles
 // are invisible: the edge just needs somewhere to land. A click
-// chooses the method, and a second click lets it go.
+// chooses the method, which also opens it in the types pane, and a
+// second click lets it go.
 const MethodRow: FC<{
   id: string;
   method: GraphMethod;
   selected: boolean;
   onSelect?: (id: string) => void;
-  onOpen?: (id: string) => void;
-}> = ({ id, method, selected, onSelect, onOpen }) => (
+}> = ({ id, method, selected, onSelect }) => (
   <div
     className={`graph-method ${classNameOfKind(method.kind)}${
       selected ? " selected" : ""
@@ -514,16 +514,7 @@ const MethodRow: FC<{
       className="graph-port"
     />
     <span className="graph-method-dot" aria-hidden="true" />
-    <span
-      className="graph-method-name graph-method-open"
-      title="open on the state page"
-      onClick={(event) => {
-        event.stopPropagation();
-        onOpen?.(id);
-      }}
-    >
-      {method.name}
-    </span>
+    <span className="graph-method-name">{method.name}</span>
     {method.factory && <span className="graph-method-factory">factory</span>}
     <Handle
       type="source"
@@ -538,7 +529,17 @@ const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
   data,
 }) => (
   <div className="graph-state-type">
-    <div className="graph-state-type-head">{data.stateType.name}</div>
+    {/* The name is the way to the state type in the types pane. */}
+    <div
+      className="graph-state-type-head graph-method-open"
+      title="open in the types pane"
+      onClick={(event) => {
+        event.stopPropagation();
+        data.onOpenStateType?.(data.stateType.id);
+      }}
+    >
+      {data.stateType.name}
+    </div>
     {data.stateType.methods.map((method) => {
       const id = methodId(data.stateType.id, method.name);
       return (
@@ -547,7 +548,6 @@ const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
           method={method}
           selected={data.selectedMethod === id}
           onSelect={data.onSelectMethod}
-          onOpen={data.onOpenMethod}
           key={method.name}
         />
       );
@@ -733,8 +733,8 @@ const GraphCanvas: FC<{
   // one is a navigation, so back steps to the one chosen before.
   selectedMethodId: string | null;
   onSelectMethod: (id: string | null, replace?: boolean) => void;
-  onOpenMethod: (id: string) => void;
-}> = ({ packages, selectedMethodId, onSelectMethod, onOpenMethod }) => {
+  onOpenStateType: (id: string) => void;
+}> = ({ packages, selectedMethodId, onSelectMethod, onOpenStateType }) => {
   const location = useLocation();
   const saved =
     useNavigationType() === "POP" ? graphViews.get(location.key) : undefined;
@@ -931,7 +931,7 @@ const GraphCanvas: FC<{
                 ...node.data,
                 selectedMethod: selectedMethodId,
                 onSelectMethod: toggleMethodSelection,
-                onOpenMethod,
+                onOpenStateType,
               },
             };
           default:
@@ -944,7 +944,7 @@ const GraphCanvas: FC<{
       selectedMethodId,
       toggleMethodSelection,
       togglePackage,
-      onOpenMethod,
+      onOpenStateType,
     ]
   );
 
@@ -1034,8 +1034,8 @@ export const GraphPage: FC<{
   stateTypes: GraphStateType[];
   selectedMethodId: string | null;
   onSelectMethod: (id: string | null, replace?: boolean) => void;
-  onOpenMethod: (id: string) => void;
-}> = ({ stateTypes, selectedMethodId, onSelectMethod, onOpenMethod }) => {
+  onOpenStateType: (id: string) => void;
+}> = ({ stateTypes, selectedMethodId, onSelectMethod, onOpenStateType }) => {
   const packages = useMemo(
     () => groupStateTypesByPackage(stateTypes),
     [stateTypes]
@@ -1048,7 +1048,7 @@ export const GraphPage: FC<{
           packages={packages}
           selectedMethodId={selectedMethodId}
           onSelectMethod={onSelectMethod}
-          onOpenMethod={onOpenMethod}
+          onOpenStateType={onOpenStateType}
         />
       </ReactFlowProvider>
     </div>

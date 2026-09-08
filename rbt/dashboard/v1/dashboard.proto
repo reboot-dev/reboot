@@ -629,6 +629,10 @@ message Preferences {
   // Unset until the developer drags it; until then the page picks
   // the width, and may change what it picks.
   optional uint32 nav_width = 3;
+
+  // How wide the developer has dragged the types pane, the same
+  // way.
+  optional uint32 pane_width = 4;
 }
 
 message PreferencesGetRequest {}
@@ -637,6 +641,7 @@ message PreferencesGetResponse {
   bool suppress_open_on_restart = 1;
   repeated string expanded_methods = 2;
   optional uint32 nav_width = 3;
+  optional uint32 pane_width = 4;
 }
 
 message PreferencesSetSuppressOpenOnRestartRequest {
@@ -665,6 +670,12 @@ message PreferencesSetNavWidthRequest {
 }
 
 message PreferencesSetNavWidthResponse {}
+
+message PreferencesSetPaneWidthRequest {
+  uint32 pane_width = 1;
+}
+
+message PreferencesSetPaneWidthResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -761,6 +772,13 @@ service PreferencesMethods {
   // never writes back the rest of this state.
   rpc SetNavWidth(PreferencesSetNavWidthRequest)
       returns (PreferencesSetNavWidthResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Its own writer, the same way.
+  rpc SetPaneWidth(PreferencesSetPaneWidthRequest)
+      returns (PreferencesSetPaneWidthResponse) {
     option (rbt.v1alpha1.method).writer = {
     };
   }

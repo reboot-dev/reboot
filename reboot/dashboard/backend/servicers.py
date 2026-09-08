@@ -18,6 +18,8 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     PreferencesSetMethodsExpandedResponse,
     PreferencesSetNavWidthRequest,
     PreferencesSetNavWidthResponse,
+    PreferencesSetPaneWidthRequest,
+    PreferencesSetPaneWidthResponse,
     PreferencesSetSuppressOpenOnRestartRequest,
     PreferencesSetSuppressOpenOnRestartResponse,
 )
@@ -263,6 +265,10 @@ class PreferencesServicer(Preferences.Servicer):
                 self.state.nav_width
                 if self.state.HasField('nav_width') else None
             ),
+            pane_width=(
+                self.state.pane_width
+                if self.state.HasField('pane_width') else None
+            ),
         )
 
     async def SetSuppressOpenOnRestart(
@@ -300,3 +306,11 @@ class PreferencesServicer(Preferences.Servicer):
     ) -> PreferencesSetNavWidthResponse:
         self.state.nav_width = request.nav_width
         return PreferencesSetNavWidthResponse()
+
+    async def SetPaneWidth(
+        self,
+        context: WriterContext,
+        request: PreferencesSetPaneWidthRequest,
+    ) -> PreferencesSetPaneWidthResponse:
+        self.state.pane_width = request.pane_width
+        return PreferencesSetPaneWidthResponse()

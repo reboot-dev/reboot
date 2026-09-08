@@ -278,7 +278,7 @@ export const linkDataTypes = ({ apis }: { apis: APIs }): LinkedDataType[] => {
   };
 
   // What each method takes, returns and raises, labeled the way the
-  // state page labels the method.
+  // types pane labels the method.
   for (const api of Object.values(apis)) {
     for (const stateType of api.stateTypes) {
       const name = qualifiedName({ api, stateType });

@@ -311,7 +311,7 @@ export const scenariosOfFeature = (
 ];
 
 // Where the backticked spans of steps can link: each state type's
-// short name mapped to its id on the state page, and each method name
+// short name mapped to its id in the types pane, and each method name
 // mapped to every state type declaring one by that name.
 export interface StepLinks {
   stateTypes: Map<string, string>;
@@ -350,7 +350,7 @@ export const stepLinks = (apis: APIs): StepLinks => {
   };
 };
 
-// The id on the state page a method links to, and `undefined` for a
+// The id in the types pane a method links to, and `undefined` for a
 // method name no state type declares, or one several declare when
 // `stateType`, the state type the step names, is not among them: the
 // page never guesses which state type a step means.
@@ -372,7 +372,7 @@ export const linkOfMethod = (
   return named.length === 1 ? named[0].id : undefined;
 };
 
-// The id on the state page one backticked span of a step the grammar
+// The id in the types pane one backticked span of a step the grammar
 // does not define links to, and `undefined` for a span that is
 // neither a state type nor a method: the step's own text is the only
 // clue to which state type a method name means.
