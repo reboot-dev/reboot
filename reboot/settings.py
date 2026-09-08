@@ -326,6 +326,12 @@ ENVVAR_REBOOT_ENABLE_EVENT_LOOP_LAG_MONITORING = 'REBOOT_ENABLE_EVENT_LOOP_LAG_M
 # gRPC library.
 ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG = 'REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG'
 
+# When set to "false" (case-insensitive), turns off sharing of
+# identical reactive queries, so that every subscription runs the
+# reader for itself as it did before sharing existed. An escape hatch;
+# sharing is on by default.
+ENVVAR_REBOOT_SHARE_REACTIVE_QUERIES = 'REBOOT_SHARE_REACTIVE_QUERIES'
+
 # When set to a float (in seconds), enables asyncio debug mode on the
 # event loop and sets `loop.slow_callback_duration` to this value,
 # causing asyncio to log a warning (with the offending callback's

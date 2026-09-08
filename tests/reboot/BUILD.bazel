@@ -823,6 +823,18 @@ py_test(
 )
 
 py_test(
+    name = "reactive_sharing_test_py",
+    timeout = "short",
+    srcs = [":reactive_sharing_test.py"],
+    main = "reactive_sharing_test.py",
+    deps = [
+        ":greeter_py_reboot",
+        ":greeter_servicers_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+py_test(
     name = "reactivity_test_py",
     timeout = "short",
     srcs = [":reactivity_test.py"],

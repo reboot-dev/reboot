@@ -1,11 +1,14 @@
 import asyncio
 import grpc
 import logging
+import os
 import reboot.aio.placement
 import traceback
 import uuid
 import websockets
+from contextlib import asynccontextmanager
 from google.protobuf.json_format import MessageToJson
+from google.protobuf.message import Message
 from google.rpc import code_pb2, status_pb2
 from grpc_health.v1 import health_pb2
 from grpc_status import rpc_status
@@ -24,9 +27,12 @@ from reboot.aio.types import (
     state_type_tag_for_name,
 )
 from reboot.nodejs.python import should_print_stacktrace
-from reboot.settings import EVERY_LOCAL_NETWORK_ADDRESS
+from reboot.settings import (
+    ENVVAR_REBOOT_SHARE_REACTIVE_QUERIES,
+    EVERY_LOCAL_NETWORK_ADDRESS,
+)
 from reboot.wait_for_tasks import wait_for_tasks
-from typing import AsyncIterable, Optional
+from typing import AsyncIterable, AsyncIterator, Callable, Optional
 
 logger = get_logger(__name__)
 
@@ -45,6 +51,156 @@ class _SuppressInvalidHandshakeFilter(logging.Filter):
             if isinstance(exception, websockets.exceptions.InvalidMessage):
                 return False
         return True
+
+
+# Whether identical reactive queries share a single execution. Two
+# subscriptions are identical when they ask for the same method, on
+# the same state, with the same request, on behalf of the same caller
+# with the same credentials; sharing runs the reader once for all of
+# them and fans each response out.
+SHARE_REACTIVE_QUERIES: bool = os.environ.get(
+    ENVVAR_REBOOT_SHARE_REACTIVE_QUERIES,
+    'true',
+).lower() == 'true'
+
+
+class _SharedQuerySubscriber:
+    """One subscriber's view of a shared reactive query.
+
+    Holds at most one undelivered response: a subscriber that falls
+    behind skips the states it missed and sees the latest, which is
+    what a reactive read promises. Idempotency keys accumulate instead
+    of being replaced, so a subscriber still observes every mutation
+    that happened while it was behind.
+    """
+
+    def __init__(self):
+        self._response: Optional[Message] = None
+        self._idempotency_keys: list[uuid.UUID] = []
+        self._exception: Optional[BaseException] = None
+        self._deliverable = asyncio.Event()
+
+    def put(
+        self,
+        response: Optional[Message],
+        idempotency_keys: list[uuid.UUID],
+        exception: Optional[BaseException],
+    ) -> None:
+        if exception is not None:
+            self._exception = exception
+
+        if response is not None:
+            self._response = response
+
+        self._idempotency_keys.extend(idempotency_keys)
+
+        self._deliverable.set()
+
+    async def get(
+        self
+    ) -> tuple[Optional[Message], list[uuid.UUID], Optional[BaseException]]:
+        await self._deliverable.wait()
+        self._deliverable.clear()
+
+        response = self._response
+        self._response = None
+
+        idempotency_keys = self._idempotency_keys
+        self._idempotency_keys = []
+
+        return (response, idempotency_keys, self._exception)
+
+
+class _SharedQuery:
+    """A single execution of a reactive reader, fanned out to every
+    subscriber that asked the identical question.
+
+    Calls `Middleware.react_query()` once from its own task and gives
+    what it produces to every subscriber. Retains the most recent
+    response so that a subscriber which attaches later gets an answer
+    immediately rather than waiting for the next state change.
+    """
+
+    def __init__(
+        self,
+        *,
+        headers: Headers,
+        method: str,
+        request_bytes: bytes,
+        middleware: Middleware,
+        on_done: Callable[['_SharedQuery'], None],
+    ):
+        self._headers = headers
+        self._method = method
+        self._request_bytes = request_bytes
+        self._middleware = middleware
+        self._on_done = on_done
+        self._subscribers: set[_SharedQuerySubscriber] = set()
+        self._latest: Optional[Message] = None
+        self._task: Optional[asyncio.Task] = None
+
+    async def _produce(self) -> None:
+        try:
+            async for (response,
+                       idempotency_keys) in self._middleware.react_query(
+                           self._headers,
+                           self._method,
+                           self._request_bytes,
+                       ):
+                if response is not None:
+                    self._latest = response
+
+                for subscriber in self._subscribers:
+                    subscriber.put(response, idempotency_keys, None)
+        except asyncio.CancelledError:
+            # Our subscribers are all gone; nobody is left to tell.
+            raise
+        except BaseException as exception:
+            # Every subscriber asked the identical question, so they
+            # all get the identical failure.
+            for subscriber in self._subscribers:
+                subscriber.put(None, [], exception)
+        finally:
+            # A query that is no longer producing must not be handed to
+            # a subscriber that attaches later: it would wait for a
+            # response that can never arrive. Being done means the next
+            # subscriber starts a fresh execution instead.
+            self._on_done(self)
+
+    @asynccontextmanager
+    async def attach(self) -> AsyncIterator[_SharedQuerySubscriber]:
+        subscriber = _SharedQuerySubscriber()
+
+        # NOTE: everything up to the `yield` runs without `await`ing,
+        # so a subscriber cannot attach to a query that another
+        # subscriber is concurrently tearing down.
+        self._subscribers.add(subscriber)
+
+        if self._task is None:
+            self._task = asyncio.create_task(
+                self._produce(),
+                name=f'_SharedQuery._produce() in {__name__}',
+            )
+        elif self._latest is not None:
+            # Hand a late subscriber the current response without
+            # idempotency keys: those keys were observed on behalf of
+            # the subscribers that were already attached, and a query
+            # that has just started reports none of its own either.
+            subscriber.put(self._latest, [], None)
+
+        try:
+            yield subscriber
+        finally:
+            self._subscribers.discard(subscriber)
+
+            if len(self._subscribers) == 0:
+                self._on_done(self)
+
+                task = self._task
+                self._task = None
+
+                if task is not None:
+                    await wait_for_tasks([task], cancel=True)
 
 
 class ReactServicer(react_pb2_grpc.ReactServicer):
@@ -74,6 +230,10 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
             self._middleware_by_state_type[state_type_name] = middleware
 
         self._stop_websockets_serve = asyncio.Event()
+
+        # Live shared executions, keyed by everything that can make two
+        # subscriptions ask different questions.
+        self._shared_queries: dict[tuple, _SharedQuery] = {}
 
     def _state_type_name_for_state_ref(
         self, state_ref: StateRef
@@ -363,6 +523,25 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
     def add_to_server(self, server: grpc.aio.Server) -> None:
         react_pb2_grpc.add_ReactServicer_to_server(self, server)
 
+    @staticmethod
+    def _query_response(
+        response: Optional[Message],
+        idempotency_keys: list[uuid.UUID],
+    ) -> react_pb2.QueryResponse:
+        query_response = react_pb2.QueryResponse(
+            idempotency_keys=[
+                str(idempotency_key) for idempotency_key in idempotency_keys
+            ],
+        )
+
+        # Leave the `response` empty if the `react_query` returned
+        # `None`, so that the client can distinguish between a
+        # `None` response and a response with an empty payload.
+        if response is not None:
+            query_response.response = response.SerializeToString()
+
+        return query_response
+
     async def _query(
         self,
         *,
@@ -370,25 +549,64 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
         headers: Headers,
         middleware: Middleware,
     ) -> AsyncIterable[react_pb2.QueryResponse]:
-        async for (response, idempotency_keys) in middleware.react_query(
-            headers,
+        if not SHARE_REACTIVE_QUERIES:
+            async for (response, idempotency_keys) in middleware.react_query(
+                headers,
+                request.method,
+                request.request,
+            ):
+                yield self._query_response(response, idempotency_keys)
+            return
+
+        # Everything that can make two subscriptions produce different
+        # responses: what is being asked, of which state, and on whose
+        # behalf. Readers may branch on the caller's identity and
+        # credentials (`context.auth`, `context.app_internal`), so
+        # subscriptions differing in any of those get their own
+        # execution.
+        key = (
+            headers.application_id,
+            headers.state_ref,
             request.method,
             request.request,
-        ):
-            query_response = react_pb2.QueryResponse(
-                idempotency_keys=[
-                    str(idempotency_key)
-                    for idempotency_key in idempotency_keys
-                ],
+            headers.bearer_token,
+            headers.cookie,
+            str(headers.caller_id),
+            headers.internal_call,
+        )
+
+        shared = self._shared_queries.get(key)
+
+        if shared is None:
+
+            def on_done(query: _SharedQuery) -> None:
+                # Only evict the query that is actually done: by the
+                # time a cancelled query gets here a new one may
+                # already have taken its place under this key.
+                if self._shared_queries.get(key) is query:
+                    del self._shared_queries[key]
+
+            shared = _SharedQuery(
+                headers=headers,
+                method=request.method,
+                request_bytes=request.request,
+                middleware=middleware,
+                on_done=on_done,
             )
+            self._shared_queries[key] = shared
 
-            # Leave the `response` empty if the `react_query` returned
-            # `None`, so that the client can distinguish between a
-            # `None` response and a response with an empty payload.
-            if response is not None:
-                query_response.response = response.SerializeToString()
+        async with shared.attach() as subscriber:
+            while True:
+                (
+                    response,
+                    idempotency_keys,
+                    exception,
+                ) = await subscriber.get()
 
-            yield query_response
+                if exception is not None:
+                    raise exception
+
+                yield self._query_response(response, idempotency_keys)
 
     async def Query(
         self,
