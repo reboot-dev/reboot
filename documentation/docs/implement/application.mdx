@@ -97,26 +97,58 @@ If you have declared an `initialize` function, then you can additionally pass an
 to construct the context passed to `initialize`, so that the calls `initialize` makes
 are [authenticated](/users/authorization) to your application.
 
-## AI Chat App auto-registration
+## Signing users in
 
-When your API includes a
-[`User`](/define/pydantic#special-state-user) type or
-[`UI`](/surfaces/ui_methods) methods, `Application`
-automatically registers the necessary endpoints for AI chat
-clients. No extra configuration is needed in your `main.py` —
-the standard `Application(servicers=[...])` pattern handles
-everything:
+Pass an [`OAuth`](/users/oauth) to have Reboot run an OAuth server for
+your application — the sign-in flow for browsers, native apps, and AI
+chat clients alike, plus
+[`User` auto-construction](/users/overview):
 
 ```python
+from reboot.aio.auth.oauth import OAuth
+from reboot.aio.auth.oauth_providers import (
+    Development,
+    Google,
+    OAuthProviderByEnvironment,
+)
+
 application = Application(
     servicers=[UserServicer, CounterServicer],
+    oauth=OAuth(
+        provider=OAuthProviderByEnvironment(
+            dev=Development(),
+            prod=Google(...),
+        ),
+        allowed_origins=["https://app.example.com"],
+    ),
 )
 await application.run()
 ```
 
-AI chat clients connect to your app at `/mcp`. See
-[MCP Apps](/surfaces/ai_chat) for how your methods are exposed to
-AI chat clients.
+An application whose API declares a `User` type must configure this;
+starting without it is an error rather than a silent fallback. To
+verify tokens minted somewhere else instead, see
+[Bearer tokens](/users/tokens).
+
+## Presenting your app
+
+Three optional arguments describe your application to the clients that
+connect to it — most visibly [AI chat clients](/surfaces/ai_chat) and
+the setup wizard your app serves at its root URL:
+
+| Argument | Description |
+| --- | --- |
+| `title` | A human-readable name. Defaults to the application name. |
+| `description` | What the application does, in a sentence. |
+| `example_prompts` | `ExamplePrompt`s that give a first-time visitor something to try. |
+
+## The MCP endpoint
+
+`Application` mounts an MCP endpoint at `/mcp`, so any
+[AI chat client](/surfaces/ai_chat) can connect. Methods declared with
+`mcp=Tool()` appear there as tools, and
+[`UI`](/surfaces/ui_methods) methods as tools plus resources. No extra
+configuration is needed in your `main.py`.
 
 ## HTTP custom routes
 
@@ -139,8 +171,8 @@ implemented with [Express.js](https://expressjs.com/).
 show a helpful page explaining that this is a Reboot
 application.
 
-Please reach out to us at team@reboot.dev if you run into use cases
-for fixing these!
+Reach out at team@reboot.dev if you run into use cases for fixing
+these!
 
 :::
 
@@ -179,18 +211,18 @@ application.http.get("/hello_world", async (context, req, res) => {
 </Tabs>
 
 To simplify calling directly into your Reboot application from your
-`application.http.get` and `application.http.post` handlers we provide
-a `context` of type
-[`ExternalContext`](/call/from_outside_your_app) because
+`application.http.get` and `application.http.post` handlers, Reboot
+provides a `context` of type
+[`ExternalContext`](/call/from_outside_your_app), because
 you are still "external" to your application from an authorization
 perspective.
 
 This `context` includes any bearer token from
 `Authorization: Bearer <token>` so that any calls into your Reboot application
-will be properly authorized. In TypeScript, we inject the context for every
-handler. In Python, we follow the FastAPI dependency injection strategy:
-if you want the `context`, you must explicitly add it to your handler's
-arguments as shown in the following example:
+will be properly authorized. In TypeScript, the context is injected into
+every handler. In Python, Reboot follows the FastAPI dependency
+injection strategy: if you want the `context`, you must explicitly add
+it to your handler's arguments as shown in the following example:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
