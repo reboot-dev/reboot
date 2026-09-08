@@ -6,8 +6,8 @@ import TabItem from "@theme/TabItem";
 This page provides an overview of getting your development environment
 ready for building Reboot applications. Once your development
 environment is ready you can then start to
-[define](/learn_more/define/overview) and
-[implement](/learn_more/implement/servicers) your API.
+[define](/define/overview) and
+[implement](/implement/servicers) your API.
 
 ## Set up your environment
 
@@ -187,7 +187,7 @@ after `--` are passed directly to the underlying tool (in this case,
 
 #### AI Chat App flags
 
-When building [AI Chat Apps](/ai_chat_apps/get_started), add these
+When building [AI Chat Apps](/get_started/quickstart), add these
 to your `.rbtrc`:
 
 ```shell

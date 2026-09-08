@@ -88,7 +88,7 @@ new Application({
 
 By default, `OrderedMap` allows internal calls from the application to the
 library. However, this can be overridden by providing your own
-[authorizer](/learn_more/auth#authorizers).
+[authorizer](/users/authorization#authorizers).
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
@@ -579,7 +579,7 @@ try {
 
 ## React
 
-Once you've [set up](/learn_more/call/from_react) your React app to call into
+Once you've [set up](/call/from_react) your React app to call into
 your Reboot API, you can also use `OrderedMap` directly from your React app.
 
 First, on your backend, you will need to [override the authorizer](#authorizer) to allow
@@ -644,5 +644,5 @@ if (aborted !== undefined) {
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
 See [Call your API from
-React](/learn_more/call/from_react) to learn more about how to call methods from
+React](/call/from_react) to learn more about how to call methods from
 React.
