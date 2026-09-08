@@ -82,3 +82,24 @@ command) before changes to the `.env` file take effect.
 
 Now your frontend will access the backend via the tunnel host you've provided,
 making it accessible anywhere on the internet!
+
+### Signing in through a tunnel
+
+If your application signs users in, the tunnel gives your frontend a
+new origin, and credentialed requests from it are refused until that
+origin is trusted. Under `rbt dev run` only `http://localhost` and
+`http://127.0.0.1` are trusted automatically, so add the tunnel's
+frontend origin to [`allowed_origins`](/users/oauth#allowed_origins):
+
+```python
+oauth=OAuth(
+    provider=...,
+    allowed_origins=["https://43ee-20-61-126-210.ngrok-free.app"],
+)
+```
+
+Your identity provider also has to accept the new callback URL, so add
+`https://<your-backend-tunnel>/__/oauth/callback` to its authorized
+redirect URIs. A tunnel that hands out a fresh hostname on every run
+means redoing both each time; a tunnel with a stable hostname is worth
+it if you do this often.

@@ -9,6 +9,10 @@ environment is ready you can then start to
 [define](/define/overview) and
 [implement](/implement/servicers) your API.
 
+New to Reboot? [Build with Claude Code](/get_started/claude_code) or
+[Codex](/get_started/codex) gets you a running app in minutes; this
+page is the reference behind what they set up.
+
 ## Set up your environment
 
 You can use one of Reboot's GitHub Codespaces or set up your environment
@@ -77,12 +81,19 @@ them correctly to `rbt`.
 
 Here is a suggested file layout:
 
-| Files    | Directory |
+| Files | Directory |
 | -------- | ------- |
-| `*.proto`  | `api/`    |
+| API definitions (`*.py`, `*.ts`) | `api/` |
 | Backend source `*.py`, `*.ts/js` | `backend/src` |
 | Backend tests `*.py`, `*.ts/js` | `backend/tests` |
-| Frontend | `web` |
+| Generated React client | `frontend/api` |
+| Browser app | `frontend/web` |
+| React Native app | `frontend/mobile` |
+| `UI` method apps, one per method | `frontend/mcp/<name>` |
+
+Putting the generated client in `frontend/api` lets every frontend of
+your application share one copy of it. See
+[One backend, many frontends](/surfaces/overview).
 
 ## `.rbtrc` and flags
 
@@ -185,16 +196,18 @@ In these examples, the order of the flags is crucial. All flags that appear
 after `--` are passed directly to the underlying tool (in this case,
 `protoc`).
 
-#### AI Chat App flags
+#### Frontend flags
 
-When building [AI Chat Apps](/get_started/quickstart), add these
-to your `.rbtrc`:
+When your application has a React frontend — a
+[web app](/surfaces/web), a
+[React Native app](/surfaces/react_native), or
+[`UI` methods](/surfaces/ui_methods) — add these to your `.rbtrc`:
 
 ```shell
-# Generate React hooks for AI Chat App UIs.
+# Generate typed React hooks, shared by every frontend.
 generate --react=frontend/api
 
-# Proxy UIs through Vite for hot module replacement.
+# Proxy the frontend through Vite for hot module replacement.
 dev run --frontend-root-path=frontend
 
 dev run:hmr --frontend-host=http://localhost:4444
