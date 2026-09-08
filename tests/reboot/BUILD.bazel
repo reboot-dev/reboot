@@ -822,6 +822,17 @@ py_test(
     ],
 )
 
+py_binary(
+    name = "reactive_fanout_benchmark_py",
+    srcs = ["reactive_fanout_benchmark.py"],
+    main = "reactive_fanout_benchmark.py",
+    deps = [
+        ":greeter_py_reboot",
+        ":greeter_servicers_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
 py_test(
     name = "reactive_sharing_test_py",
     timeout = "short",
