@@ -1,0 +1,443 @@
+# Users and sign-in
+
+Nearly every application starts from the same question: *who is
+this?* Getting the answer right means an OAuth flow, a session, token
+refresh, per-user authorization, and a "find or create the user"
+helper nobody remembers to call — a pile of code that is easy to write
+badly and no fun to review.
+
+So Reboot solves it once, at the framework level. Declare a type named
+`User`, tell your `Application` how people sign in, and Reboot does
+the rest: it serves the sign-in flow, establishes the caller's
+identity, and **auto-constructs a `User` instance for them**. That
+instance is the entry point for everything else your application knows
+about that person.
+
+There is no sign-up form to write, no session table to keep, and
+nothing for you — or your coding agent — to get subtly wrong.
+
+## The `User` type
+
+Naming a type `User` in your API definition is what turns this on.
+Here it is in a todo-list app, where a `User` is the person: their
+profile, and the lists they own. The lists themselves are their own
+type.
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../tests/reboot/documentation/todos.py&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/todos.py -->
+
+```python
+# api/todos/v1/todos.py
+from reboot.api import (
+    API,
+    Field,
+    Methods,
+    Model,
+    Reader,
+    Tool,
+    Transaction,
+    Type,
+    Writer,
+)
+
+
+class UserState(Model):
+    # The person's profile, kept current from the identity provider's
+    # verified claims on every sign-in.
+    name: str = Field(tag=1, default="")
+    email: str = Field(tag=2, default="")
+    # The todo lists this person owns: each list's state ID, and its
+    # title so the lists can be shown without a call per list.
+    todo_lists: dict[str, str] = Field(tag=3, default_factory=dict)
+
+
+class ProfileResponse(Model):
+    name: str = Field(tag=1)
+    email: str = Field(tag=2)
+
+
+class CreateTodoListRequest(Model):
+    title: str = Field(tag=1)
+
+
+class CreateTodoListResponse(Model):
+    todo_list_id: str = Field(tag=1)
+
+
+class TodoListSummary(Model):
+    todo_list_id: str = Field(tag=1)
+    title: str = Field(tag=2)
+
+
+class ListTodoListsResponse(Model):
+    todo_lists: list[TodoListSummary] = Field(tag=1, default_factory=list)
+
+
+class TodoListState(Model):
+    title: str = Field(tag=1, default="")
+    # The `user_id` of the owner, so that only they may read or change
+    # the list.
+    owner_id: str = Field(tag=2, default="")
+    todos: list[str] = Field(tag=3, default_factory=list)
+
+
+class InitializeTodoListRequest(Model):
+    title: str = Field(tag=1)
+    owner_id: str = Field(tag=2)
+
+
+class AddTodoRequest(Model):
+    todo: str = Field(tag=1)
+
+
+class TodosResponse(Model):
+    title: str = Field(tag=1)
+    todos: list[str] = Field(tag=2, default_factory=list)
+
+
+api = API(
+    User=Type(
+        state=UserState,
+        methods=Methods(
+            profile=Reader(
+                request=None,
+                response=ProfileResponse,
+                description="The signed-in user's name and email.",
+                mcp=Tool(),
+            ),
+            create_todo_list=Transaction(
+                request=CreateTodoListRequest,
+                response=CreateTodoListResponse,
+                description="Create a todo list for the signed-in "
+                "user. Returns its `todo_list_id`, which is not "
+                "human-readable but must be passed to tools that "
+                "take one.",
+                mcp=Tool(),
+            ),
+            list_todo_lists=Reader(
+                request=None,
+                response=ListTodoListsResponse,
+                description="List the signed-in user's todo lists: "
+                "`todo_list_id` and title for each.",
+                mcp=Tool(),
+            ),
+        ),
+    ),
+    TodoList=Type(
+        state=TodoListState,
+        methods=Methods(
+            create=Writer(
+                request=InitializeTodoListRequest,
+                response=None,
+                factory=True,
+                description="Create the list with a title and an "
+                "owner.",
+                mcp=None,
+            ),
+            add=Writer(
+                request=AddTodoRequest,
+                response=None,
+                description="Add a todo to the list.",
+                mcp=Tool(),
+            ),
+            todos=Reader(
+                request=None,
+                response=TodosResponse,
+                description="The list's title and its todos.",
+                mcp=Tool(),
+            ),
+        ),
+    ),
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+Three things follow from that name:
+
+1. **Auto-construction.** A `User` instance is created the first time
+   a person signs in, and found again on every sign-in after that.
+   You never call `User.create(...)` yourself.
+2. **The state ID *is* the identity.** The instance's state ID is the
+   stable user ID your [OAuth provider](/users/providers) issues.
+   Inside a `User` servicer method,
+   `context.state_id` is therefore the signed-in person.
+3. **Per-user authorization by default.** A `User`'s methods are
+   callable by that user, and by your own application code, and by
+   nobody else. No `authorizer()` needed. See
+   [Authorization](/users/authorization#defaults-you-get-for-free).
+
+:::info Every field needs a default
+`User` instances are constructed with no arguments, so every field on
+your `User` state must have a default value, or be optional.
+`UserState` may be completely empty, if you only need `User` for
+its methods and its identity.
+:::
+
+## Turning sign-in on
+
+Auto-construction needs to know who is signing in, so an application
+with a `User` type must pass an [`OAuth`](/users/oauth) configuration.
+Starting one without it is an error, not a silent fallback:
+
+```python
+import os
+from reboot.aio.applications import Application
+from reboot.aio.auth.oauth import OAuth
+from reboot.aio.auth.oauth_providers import (
+    Development,
+    Google,
+    OAuthProviderByEnvironment,
+)
+
+async def main() -> None:
+    await Application(
+        servicers=[UserServicer, TodoListServicer],
+        oauth=OAuth(
+            provider=OAuthProviderByEnvironment(
+                dev=Development(),
+                prod=Google(
+                    client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
+                    client_secret=os.environ.get(
+                        "GOOGLE_OAUTH_CLIENT_SECRET"
+                    ),
+                ),
+            ),
+            allowed_origins=["https://app.example.com"],
+        ),
+    ).run()
+```
+
+Under `rbt dev run` that uses `Development()`, which serves a fake
+account picker — so you can sign in, and sign in *as somebody else*,
+without registering anything with anyone. Everywhere else it uses the
+`prod` arm, and that is when the environment variables have to be set:
+a provider checks its credentials when it is selected, so the `prod`
+arm can be written down before the credentials exist. See
+[Configure OAuth](/users/oauth) for the full set of options and
+[OAuth providers](/users/providers) for what to put in `prod=`.
+
+## What happens when somebody signs in
+
+The client sends the person to Reboot's sign-in endpoint — a web app
+does this through [`useSignIn()`](#on-the-client), an AI chat client
+as part of connecting. Reboot hands them to your identity provider,
+receives them back, learns their stable ID and any
+[identity claims](/users/claims) you asked for, and **constructs their
+`User` if it does not exist yet**. From then on, every call the client
+makes is authenticated as that person. Signing in for the thousandth
+time constructs nothing: the `User` is simply found again.
+
+## Doing something on first sign-in
+
+Auto-construction calls the `User` type's `create` method. Its default
+implementation does nothing; override it to run whatever a brand-new
+person needs. The todo-list app gives them a first list:
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../tests/reboot/documentation/backend/src/servicers/todos.py&lines=43-55&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/backend/src/servicers/todos.py -->
+
+```python
+async def create(
+    self,
+    context: TransactionContext,
+) -> None:
+    """Runs once, when a person signs in for the first time: give
+    them a list to start with."""
+    todo_list, _ = await TodoList.create(
+        context,
+        title="Getting started",
+        owner_id=context.state_id,
+    )
+    await todo_list.add(context, todo="Add your first todo")
+    self.state.todo_lists[todo_list.state_id] = "Getting started"
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+`create` is a `transaction`, so anything it touches is committed
+atomically with the construction of the `User` itself: either the person exists
+and has their first list, or neither happened.
+
+:::tip Make it cheap and idempotent
+`create` runs inside the sign-in flow, so keep it fast. Slow work
+(sending mail, calling a third-party API) belongs in a
+[task](/tasks) or [workflow](/implement/workflows) that `create`
+spawns.
+:::
+
+## Using the signed-in user
+
+Inside a `User` servicer method, the signed-in person is
+`context.state_id`. That is what makes `User` the natural place to
+create the things a person owns: it can record who the owner is
+without being told who is calling.
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../tests/reboot/documentation/backend/src/servicers/todos.py&lines=74-87&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/backend/src/servicers/todos.py -->
+
+```python
+async def create_todo_list(
+    self,
+    context: TransactionContext,
+    request: CreateTodoListRequest,
+) -> CreateTodoListResponse:
+    """Create a list owned by the signed-in person and remember it
+    on their `User`."""
+    todo_list, _ = await TodoList.create(
+        context,
+        title=request.title,
+        owner_id=context.state_id,
+    )
+    self.state.todo_lists[todo_list.state_id] = request.title
+    return CreateTodoListResponse(todo_list_id=todo_list.state_id)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+Elsewhere — in servicers for your *other* types — the caller's
+identity is on the context's `auth`:
+
+```python
+if context.auth is None or not context.auth.user_id:
+    # Nobody is signed in.
+    ...
+```
+
+That is also what [authorizers](/users/authorization) act on, which is
+usually a better place to put the check than in the method body. The
+todo-list app's `TodoList` servicer uses one to let only the recorded
+owner read or change a list.
+
+On the client, the `user` handle that [`useUser()`](#on-the-client)
+returns carries the same ID as `user.state_id`.
+
+So, wherever you are, the signed-in person's ID is at hand:
+
+| Where | The signed-in user's ID |
+| --- | --- |
+| A `User` servicer method | `context.state_id` |
+| Any other servicer method, or an authorizer | `context.auth.user_id` (`context.auth` is `None` when nobody is signed in) |
+| A React component | `user.state_id`, from `useUser()` |
+
+## `User` as the entry point
+
+Because `User` is the one type whose instance the framework can always
+find, it makes a natural front door for the rest of your application.
+The common pattern, which the todo-list app follows, is:
+
+- `User` methods **create** other state types and remember their IDs
+  (`create_todo_list` returns a `todo_list_id`, and records it on the
+  `User`).
+- `User` methods **list** what this person owns (`list_todo_lists`),
+  so a fresh client — a browser after a reload, or an AI chat client
+  in a brand-new conversation — can find its way back to their state.
+- Everything user-specific is reached from there: their lists, their
+  documents, their settings.
+
+This pattern pays off on every surface. A web app renders the list. A
+chat client calls the same method as a tool and remembers the IDs for
+the rest of the conversation. Neither of them has to be told who the
+user is.
+
+## On the client
+
+On every surface, the client side of all of this is two hooks:
+
+- **`useSignIn()`**, from `@reboot-dev/reboot-react`, starts the
+  sign-in flow: a redirect in a [browser](/surfaces/web#signing-in),
+  a system-browser round trip in a
+  [React Native app](/surfaces/react_native). An
+  [AI chat client](/surfaces/ai_chat) signs the person in when they
+  connect your app, before any `UI` loads, so there is nothing to
+  call.
+- **`useUser()`**, generated from your `User` type, resolves the
+  caller's own `User` when called with no ID: the instance
+  auto-constructed at sign-in. `user` is `undefined` while nobody is
+  signed in, and `isLoading` is `true` while the session is still
+  being resolved.
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../tests/reboot/documentation/todos_main.tsx&lines=7-38&syntax=tsx) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/todos_main.tsx -->
+
+```tsx
+// The signed-in person, or a button to become one. `useUser()` takes
+// no ID: it resolves the caller's own `User`, the instance Reboot
+// auto-constructed when they signed in.
+const Root = () => {
+  const { user, isLoading } = useUser();
+  const signIn = useSignIn();
+
+  if (isLoading) return <p>Checking session…</p>;
+  if (user === undefined) {
+    return <button onClick={() => signIn()}>Sign in</button>;
+  }
+  return <TodoLists user={user} />;
+};
+
+// Everything the app knows about this person hangs off `user`: its
+// readers are reactive hooks, its mutators are plain calls.
+const TodoLists = ({ user }: { user: UseUserApi }) => {
+  const { response } = user.useListTodoLists();
+
+  return (
+    <ul>
+      {(response?.todoLists ?? []).map((todoList) => (
+        <li key={todoList.todoListId}>{todoList.title}</li>
+      ))}
+      <li>
+        <button onClick={() => void user.createTodoList({ title: "New list" })}>
+          New list
+        </button>
+      </li>
+    </ul>
+  );
+};
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+`user` exposes your `User` methods: readers as nested hooks that
+re-render when state changes, mutators as plain calls. There is
+nothing else to set up. (`useSignOut()` exists for the sign-out
+button.)
+
+| Surface | How the flow runs |
+| --- | --- |
+| [Web](/surfaces/web) | `useSignIn()` sends the browser through your identity provider and back. |
+| [React Native](/surfaces/react_native) | `useSignIn()` opens a system browser for your identity provider; the app passes `nativeAuth({...})` to its provider once, and everything else is the same. |
+| [AI chat (MCP)](/surfaces/ai_chat) | The chat client runs the flow itself when the person connects your app. |
+
+Because identity is established by the backend, a person who signs in
+on the web is the *same* `User`, with the same state, in your mobile
+app and in their chat client.
+
+## Choose your identity provider deliberately
+
+:::important
+
+The provider you launch with **fixes your user-ID namespace.** Google,
+GitHub, Auth0 and Ory each issue IDs in their own space, with no
+mapping between them, and those IDs are your `User` state IDs.
+Switching providers once you have real users strands every user-keyed
+piece of state you have.
+
+Pick before you have production users. If you expect to need several
+sign-in methods, or user management beyond a bare ID, start with a
+broker like [Auth0 or Ory](/users/providers) — they let you add and
+change upstream login methods without changing the IDs your
+application sees.
+
+:::
+
+## Where to go next
+
+- [Configure OAuth](/users/oauth) — the `OAuth` options and what
+  production needs.
+- [OAuth providers](/users/providers) — `Development`, `Google`,
+  `GitHub`, `Auth0`, `Ory`, `Anonymous`, and writing your own.
+- [Identity claims](/users/claims) — get the user's verified email and
+  name into your `User` state.
+- [Authorization](/users/authorization) — decide who may call what.
+- [Call external APIs as the user](/users/external_apis) — act on the
+  user's behalf at Google, GitHub, Slack, …

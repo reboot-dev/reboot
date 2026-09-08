@@ -47,6 +47,7 @@ const config: Config = {
         // third parties, so they keep resolving.
         redirects: [
           { from: "/ai_chat_apps/what_is", to: "/surfaces/ai_chat" },
+          { from: "/learn_more/mcp_apps", to: "/surfaces/ai_chat" },
           {
             from: "/learn_more/implement/ui_methods",
             to: "/surfaces/ui_methods",
