@@ -361,14 +361,49 @@ interface CallEdgeData extends Record<string, unknown> {
   // for a method the API does not declare, and on a folded edge.
   kind?: Kind;
   count: number;
-  // The calling method's id, absent on a folded edge. What choosing
-  // a method keeps.
-  sourceMethodId?: string;
+  // Every calling method whose calls this edge carries: one for an
+  // edge from a method row, each contributor for a folded edge.
+  // What choosing a method keeps, transitively.
+  sourceMethodIds: string[];
   // Set while another method is chosen. The label fades off this
   // rather than off the edge's class: `EdgeLabelRenderer` draws
   // labels in a layer of their own, out of the class's reach.
   faded?: boolean;
 }
+
+// Every method the chosen one calls, transitively, itself included:
+// the downstream closure over the drawn calls. Collapse-blind, so
+// the path continues through a collapsed box.
+const reachableMethodIds = (
+  from: string,
+  packages: GraphPackage[]
+): Set<string> => {
+  const callsByMethodId = new Map(
+    packages.flatMap((pkg) =>
+      pkg.stateTypes.flatMap((stateType) =>
+        stateType.methods.map(
+          (method) =>
+            [methodId(stateType.id, method.name), method.calls] as const
+        )
+      )
+    )
+  );
+  const reached = new Set([from]);
+  const frontier = [from];
+  while (frontier.length > 0) {
+    for (const call of callsByMethodId.get(frontier.pop()!) ?? []) {
+      if (!isDrawn(call)) {
+        continue;
+      }
+      const callee = methodId(call.stateTypeName, call.methodName);
+      if (!reached.has(callee)) {
+        reached.add(callee);
+        frontier.push(callee);
+      }
+    }
+  }
+  return reached;
+};
 
 // The edges as the boxes show them. A call whose box is expanded
 // leaves from its own method row; otherwise it leaves from the box,
@@ -409,9 +444,13 @@ const edgesOfPackages = (
             ? `${source}|${sourceHandle}>${target}|${targetHandle}:${call.how}`
             : `${source}>${target}|${targetHandle}`;
 
+          const caller = methodId(stateType.id, method.name);
           const edgeFoldedInto = edgesById.get(id);
           if (edgeFoldedInto !== undefined) {
             edgeFoldedInto.data!.count += call.count;
+            if (!edgeFoldedInto.data!.sourceMethodIds.includes(caller)) {
+              edgeFoldedInto.data!.sourceMethodIds.push(caller);
+            }
             continue;
           }
           const kind = sourceExpanded ? method.kind : undefined;
@@ -426,9 +465,7 @@ const edgesOfPackages = (
               how: sourceExpanded ? call.how : undefined,
               kind,
               count: call.count,
-              sourceMethodId: sourceExpanded
-                ? methodId(stateType.id, method.name)
-                : undefined,
+              sourceMethodIds: [caller],
             },
             markerEnd: {
               type: MarkerType.ArrowClosed,
@@ -889,32 +926,37 @@ const GraphCanvas: FC<{
     [selectedMethodId, onSelectMethod]
   );
 
-  // With a method chosen, its own card and whatever its calls land
-  // on; nothing else. A box never fades: it is the room its cards
-  // are in.
-  const unfadedNodeIds = useMemo(() => {
+  // With a method chosen, everything downstream of it: the methods
+  // it calls transitively, the arrows carrying those calls, and the
+  // cards and boxes those arrows leave from or land on; nothing
+  // else. An arrow is downstream when any method folded into it is.
+  // An expanded box never fades: it is the room its cards are in.
+  const unfaded = useMemo(() => {
     if (selectedMethodId === null) {
       return null;
     }
+    const reached = reachableMethodIds(selectedMethodId, packages);
     const nodeIds = new Set<string>([
       stateTypeNameOfMethodId(selectedMethodId),
     ]);
+    const edgeIds = new Set<string>();
     for (const edge of edges) {
-      if (edge.data?.sourceMethodId === selectedMethodId) {
+      if (edge.data!.sourceMethodIds.some((id) => reached.has(id))) {
+        edgeIds.add(edge.id);
         nodeIds.add(edge.source);
         nodeIds.add(edge.target);
       }
     }
-    return nodeIds;
-  }, [selectedMethodId, edges]);
+    return { nodeIds, edgeIds };
+  }, [selectedMethodId, packages, edges]);
 
   const shownNodes = useMemo(
     () =>
       nodes.map((node) => {
         const faded =
-          unfadedNodeIds !== null &&
+          unfaded !== null &&
           node.type !== "expanded" &&
-          !unfadedNodeIds.has(node.id);
+          !unfaded.nodeIds.has(node.id);
         const className = faded ? "graph-faded" : undefined;
         switch (node.type) {
           case "expanded":
@@ -940,7 +982,7 @@ const GraphCanvas: FC<{
       }),
     [
       nodes,
-      unfadedNodeIds,
+      unfaded,
       selectedMethodId,
       toggleMethodSelection,
       togglePackage,
@@ -951,16 +993,14 @@ const GraphCanvas: FC<{
   const shownEdges = useMemo(
     () =>
       edges.map((edge) => {
-        const faded =
-          unfadedNodeIds !== null &&
-          edge.data?.sourceMethodId !== selectedMethodId;
+        const faded = unfaded !== null && !unfaded.edgeIds.has(edge.id);
         return {
           ...edge,
           className: faded ? "graph-faded" : undefined,
           data: { ...edge.data!, faded },
         };
       }),
-    [edges, unfadedNodeIds, selectedMethodId]
+    [edges, unfaded]
   );
 
   return (
