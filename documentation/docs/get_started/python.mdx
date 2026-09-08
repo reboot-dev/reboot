@@ -1,17 +1,18 @@
 import { CodeStepByStep, Step } from "../../src/components/Steps";
 
-# Python
+# Python backend
 
-If you want to use **Claude Code** to build your full-stack app, see
-the [getting started with Claude Code](claude_code)
-guide. If you want to use **Codex** to build your app, see the
-[getting started with Codex](codex) guide. If, however,
-you want to see exactly what we're feeding these AIs, then this
-step-by-step guide is for you!
+Build a Reboot backend in Python, one file at a time. This guide
+covers the backend only; add a frontend with the
+[React guide](/get_started/react).
+
+Prefer to have an agent do it? See
+[Build with Claude Code](/get_started/claude_code) or
+[Build with Codex](/get_started/codex).
 
 <CodeStepByStep>
 <Step
-  title="Setup your app folder"
+  title="Set up your app folder"
   description={`
 
 Create a folder where your Reboot app will live and \`cd\` into it.
@@ -43,7 +44,7 @@ python3 -m venv ./.venv && source .venv/bin/activate && pip install reboot pydan
 
 </Step>
 <Step
-  title="Make sure Docker is running:"
+  title="Make sure Docker is running"
 >
 
 ```sh
@@ -101,7 +102,7 @@ interface, e.g., \`ChatRoom\`. Following these naming conventions will make your
 backend code easy to understand.
 :::
 
-For brevity we are defining just two operations:
+For brevity this defines just two operations:
 
 1. \`messages\` returns all of your messages. It is a
 [\`Reader\`](/define/methods#kinds) because it only reads state.
@@ -319,7 +320,7 @@ Next, tell Reboot how to run your app. Give the app a name via
 \`--application-name=chat-room\` to persist state between app restarts. Watch
 for source code changes via \`--watch=...\` to restart the app whenever there
 is a modification. Finally, tell Reboot that it should use Python to run
-our app.
+your app.
 
 :::tip
 If you do not want state to persist between app restarts, do not pass the
@@ -376,13 +377,14 @@ curl -XPOST http://localhost:9991/chat_room.v1.ChatRoomMethods/Messages \
 </CodeStepByStep>
 
 <!-- TODO: use `## Next steps` instead of `<h1>Next steps</h1>` once
-we figure out to hide the right side navigation/table of contents. -->
+there is a way to hide the right side navigation / table of
+contents. -->
 
 <h1>Next steps</h1>
 
 Well done! You made it!
 
-This example is somewhat contrived as we only created one instance of
+This example is somewhat contrived: it creates just one instance of
 your `ChatRoom` data type, but in practice you are free to make as many
 of these as you like!
 
@@ -391,8 +393,11 @@ Check out these links to continue your exploration:
 * **[Build a React frontend](/get_started/react)** - create a
   React frontend that connects to your backend and displays your
   messages in real-time.
+* **[Add signed-in users](/users/overview)** - declare a `User` type
+  and pass `oauth=` to `Application`; Reboot runs the sign-in flow
+  and auto-constructs a `User` for each person.
 * **[Learn about transactions](/define/methods#kinds)** - so far,
-  we've covered `reader` and
+  you've seen `reader` and
   `writer` methods, but Reboot's power
   extends to `transactions`. [Learn about
   `transactions` and all of the other method kinds

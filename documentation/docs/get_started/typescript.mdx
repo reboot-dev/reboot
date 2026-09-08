@@ -2,24 +2,26 @@ import { CodeStepByStep, Step } from "../../src/components/Steps";
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
-# TypeScript
+# TypeScript backend
 
 :::warning[TypeScript backend support is in alpha]
 
 The core of Reboot — durable state, transactions, workflows, tasks,
 and the [standard library](/library_services/overview) — works in
 both Python and TypeScript, but some features are currently
-Python-only, including [MCP apps](/surfaces/ai_chat),
-[`UI` methods](/surfaces/ui_methods), the built-in OAuth
-sign-in flow, and [durable agents](/agents). If you don't
-have a strong preference for TypeScript, we recommend
+Python-only, including [AI chat apps](/surfaces/ai_chat),
+[`UI` methods](/surfaces/ui_methods), the
+[built-in OAuth sign-in flow](/users/oauth) — and therefore
+[`User` auto-construction](/users/overview) — and
+[durable agents](/agents). If you don't have a strong preference for
+TypeScript, prefer
 [starting with Python](/get_started/python).
 
 :::
 
 <CodeStepByStep>
 <Step
-  title="Setup your app folder"
+  title="Set up your app folder"
   description={`
 
 Create a folder where your Reboot app will live and \`cd\` into it.
@@ -49,7 +51,7 @@ npm init -y && npm pkg set type="module" && npm install @reboot-dev/reboot zod@^
 
 </Step>
 <Step
-  title="Make sure Docker is running:"
+  title="Make sure Docker is running"
 >
 
 ```sh
@@ -88,7 +90,7 @@ First, import Zod via \`import { z } from "zod/v4"\`. Reboot requires
 Next, define a durable state data type in Reboot called \`ChatRoom\` with
 \`state\` that includes an array of \`string\` messages.
 
-For brevity we are defining just two operations:
+For brevity this defines just two operations:
 
 1. \`messages\` returns all of your messages. It is a [\`reader\`](/define/methods#kinds) method because all it does is read state.
 1. \`send\` takes a \`message\` and updates state, so it is a [\`writer\`](/define/methods#kinds) method.
@@ -140,7 +142,7 @@ export const api = {
   title={<div>Create <code>.ts</code> implementation file</div>}
   description={`
 
-For each of the types that we define we need to
+For each type you define you need to
 implement [servicers](/implement/servicers) - a class containing
 methods that implement the operations of your data type.
 
@@ -332,7 +334,7 @@ and where to output the generated code, also in \`api/\`.
 
 Next, tell Reboot how to run your app. Give the app a name via
 \`--application-name=chat-room\` to persist state between app restarts. Finally,
-tell Reboot that it should use Node.js to run our app.
+tell Reboot that it should use Node.js to run your app.
 
 :::tip
 If you want to remove all of your changes between app restarts, do not pass the
@@ -390,13 +392,14 @@ curl -XPOST http://localhost:9991/chat_room.v1.ChatRoomMethods/Messages \
 </CodeStepByStep>
 
 <!-- TODO: use `## Next steps` instead of `<h1>Next steps</h1>` once
-we figure out to hide the right side navigation/table of contents. -->
+there is a way to hide the right side navigation / table of
+contents. -->
 
 <h1>Next steps</h1>
 
 Well done! You made it!
 
-This example is somewhat contrived as we only created one instance of
+This example is somewhat contrived: it creates just one instance of
 your `ChatRoom` data type, but in practice you are free to make as many
 of these as you like!
 
@@ -405,8 +408,11 @@ Check out these links to continue your exploration:
 * **[Build a React frontend](/get_started/react)** - create a
   React frontend that connects to your backend and displays your
   messages in real-time.
+* **[Authenticate callers](/users/tokens)** - verify bearer tokens
+  with a `TokenVerifier` and decide who may call what with
+  [authorizers](/users/authorization).
 * **[Learn about transactions](/define/methods#kinds)** - so far,
-  we've covered `reader` and
+  you've seen `reader` and
   `writer` methods, but Reboot's power
   extends to `transactions`. [Learn about
   `transactions` and all of the other method kinds

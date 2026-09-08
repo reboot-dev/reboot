@@ -49,6 +49,18 @@ serve run --application-name=my-app
 serve run --tls=external
 ```
 
+### Environment
+
+Two environment variables matter beyond the flags above:
+
+| Variable | Why |
+| --- | --- |
+| `REBOOT_CRYPTO_ROOT_KEYS` | Required. Reboot derives keys from it — the one your [OAuth server](/users/oauth) signs session tokens with, the one [`Ciphertext`](/library_services/ciphertext) encrypts with. Every server process of one application must be given the *same* value, and it must outlive the state it protects. `rbt dev run` and Reboot Cloud set it for you; `rbt serve` does not. |
+| `PORT` (or `RBT_PORT`) | An alternative to `--port`, which many hosting platforms set automatically. |
+
+Your identity provider's client ID and secret belong in the
+environment too; see [Secrets](/secrets).
+
 ### Kubernetes
 The recommended deployment model for `rbt serve` on Kubernetes is to store Reboot's state in
 either:
