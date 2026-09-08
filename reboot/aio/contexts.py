@@ -480,7 +480,7 @@ class React:
                         react_pb2.QueryRequest(
                             method=self._method,
                             request=serialized_request,
-                            client_can_acknowledge_responses=True,
+                            client_continues_query=True,
                         ),
                         metadata=metadata,
                     )
@@ -528,10 +528,10 @@ class React:
                             # See
                             # https://github.com/reboot-dev/mono/issues/4754.
                             # An older backend doesn't send an ID and
-                            # doesn't expect an acknowledgement.
+                            # doesn't expect to be asked for more.
                             if query_response.query_response_id != '':
-                                await stub.AcknowledgeQueryResponse(
-                                    react_pb2.AcknowledgeQueryResponseRequest(
+                                await stub.ContinueQuery(
+                                    react_pb2.ContinueQueryRequest(
                                         query_response_id=query_response.
                                         query_response_id,
                                     ),

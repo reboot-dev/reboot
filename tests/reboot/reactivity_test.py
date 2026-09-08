@@ -23,10 +23,10 @@ QUERY_REQUEST = react_pb2.QueryRequest
 REACT_STUB = react_pb2_grpc.ReactStub
 
 
-class QueryRequestWithoutAcknowledgements:
+class QueryRequestWithoutContinuations:
     """Constructs a `QueryRequest` the way a client from before
-    acknowledgements existed did, i.e. without
-    `client_can_acknowledge_responses`.
+    `ContinueQuery` existed did, i.e. without
+    `client_continues_query`.
 
     The generated gRPC stub reads `QueryRequest.SerializeToString` off
     the class when it is constructed, and the servicer registration
@@ -37,24 +37,23 @@ class QueryRequestWithoutAcknowledgements:
     FromString = QUERY_REQUEST.FromString
 
     def __new__(cls, **kwargs):
-        kwargs.pop('client_can_acknowledge_responses', None)
+        kwargs.pop('client_continues_query', None)
         return QUERY_REQUEST(**kwargs)
 
 
 @contextlib.contextmanager
-def query_requests_without_acknowledgements():
+def query_requests_without_continuations():
     """Makes every reactive reader send a `QueryRequest` the way a
-    client from before acknowledgements existed did. Both the generated
+    client from before `ContinueQuery` existed did. Both the generated
     clients and `reboot.aio.contexts` look `QueryRequest` and
     `ReactStub` up on their modules at call time, so patching here
     covers both.
 
-    Yields the IDs this client was driven to acknowledge, which must
-    stay empty: a client from before acknowledgements existed had no
-    `AcknowledgeQueryResponse` to call, so a backend that kept the
-    responses coming only because this one acknowledged would strand a
-    real old client."""
-    acknowledged: list[str] = []
+    Yields the IDs this client was driven to continue past, which must
+    stay empty: a client from before `ContinueQuery` existed had no
+    such RPC to call, so a backend that kept the responses coming only
+    because this one called it would strand a real old client."""
+    continued: list[str] = []
 
     class ReactStub:
 
@@ -64,16 +63,16 @@ def query_requests_without_acknowledgements():
         def __getattr__(self, name):
             return getattr(self._stub, name)
 
-        def AcknowledgeQueryResponse(self, request, **kwargs):
-            acknowledged.append(request.query_response_id)
-            return self._stub.AcknowledgeQueryResponse(request, **kwargs)
+        def ContinueQuery(self, request, **kwargs):
+            continued.append(request.query_response_id)
+            return self._stub.ContinueQuery(request, **kwargs)
 
     with patch.object(
         react_pb2,
         'QueryRequest',
-        QueryRequestWithoutAcknowledgements,
+        QueryRequestWithoutContinuations,
     ), patch.object(react_pb2_grpc, 'ReactStub', ReactStub):
-        yield acknowledged
+        yield continued
 
 
 class ProxyingGreeterServicer(MyGreeterServicer):
@@ -282,11 +281,11 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertLessEqual(len(greetings), 3, greetings)
 
-    async def test_client_without_acknowledgements(self) -> None:
+    async def test_client_that_never_continues(self) -> None:
         """
-        Tests that a client from before acknowledgements existed, which
-        never acknowledges a response, keeps getting new responses
-        instead of being stalled waiting for an acknowledgement that
+        Tests that a client from before `ContinueQuery` existed, which
+        never asks for the query to continue, keeps getting new
+        responses instead of being stalled waiting for a request that
         will never come.
         """
         self._can_accumulate_next_adjective.set()
@@ -301,7 +300,7 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
             adjective="reactive",
         )
 
-        with query_requests_without_acknowledgements() as acknowledged:
+        with query_requests_without_continuations() as continued:
             await self.start_accumulating_adjectives(greeter, context)
             self.assertEqual(["reactive"], await self.get_adjectives(1))
 
@@ -310,7 +309,7 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
             # Unlike the tests above, this one never sets
             # `_can_accumulate_next_adjective` a second time, so
             # nothing here ever tells the backend to carry on. A
-            # backend that waited for an acknowledgement would still be
+            # backend that waited to be asked would still be
             # holding the second response; getting it is what shows
             # that this backend is not waiting for one.
             self.assertEqual(
@@ -321,10 +320,10 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
             # Getting both responses is only evidence of what an old
             # client sees if this one really behaved like one. Had the
             # backend stamped IDs on those responses regardless of what
-            # the client asked for, this client would have acknowledged
-            # them and sailed on where a real old client, which has no
-            # `AcknowledgeQueryResponse` to call, would have stalled.
-            self.assertEqual([], acknowledged)
+            # the client asked for, this client would have continued
+            # past them and sailed on where a real old client, which
+            # has no `ContinueQuery` to call, would have stalled.
+            self.assertEqual([], continued)
 
 
 if __name__ == '__main__':

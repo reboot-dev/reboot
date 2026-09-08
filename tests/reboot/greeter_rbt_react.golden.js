@@ -1882,7 +1882,7 @@ class GreeterInstance {
         const queryRequest = new reboot_api.react_pb.QueryRequest({
             method,
             request: serializedRequest,
-            clientCanAcknowledgeResponses: true,
+            clientContinuesQuery: true,
             ...(bearerToken !== undefined && { bearerToken } || {}),
         });
         let expecteds = [];

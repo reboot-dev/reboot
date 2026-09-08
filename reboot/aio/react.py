@@ -74,8 +74,9 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
             self._middleware_by_state_type[state_type_name] = middleware
 
         # Events, keyed by the ID of a response sent by `Query`, that
-        # are set once the client acknowledges that response.
-        self._query_response_acknowledgements: dict[str, asyncio.Event] = {}
+        # are set once the client asks for the query to continue past
+        # that response.
+        self._query_continuations: dict[str, asyncio.Event] = {}
 
         self._stop_websockets_serve = asyncio.Event()
 
@@ -343,8 +344,8 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
         assert query_task is not None
 
         # Events, keyed by query response ID, that are set once the
-        # client acknowledges the response with that ID.
-        acknowledgements: dict[str, asyncio.Event] = {}
+        # client asks to continue past the response with that ID.
+        continuations: dict[str, asyncio.Event] = {}
 
         async def consume_requests():
             try:
@@ -352,23 +353,23 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
                     request_bytes = await websocket.recv()
 
                     # Everything the client sends after its initial
-                    # request is either an acknowledgement or a
+                    # request either continues the query or is a
                     # heartbeat; a heartbeat is an empty
-                    # `QueryRequest`, which acknowledges nothing.
-                    acknowledgement = react_pb2.QueryRequest()
-                    acknowledgement.ParseFromString(request_bytes)
+                    # `QueryRequest`, which continues nothing.
+                    continuation = react_pb2.QueryRequest()
+                    continuation.ParseFromString(request_bytes)
 
                     # Look the event up rather than take it: the loop
                     # that produced the response owns the entry and
-                    # removes it once it is done waiting. An
-                    # acknowledgement we no longer have an entry for
-                    # is one we have already acted on, or one whose
+                    # removes it once it is done waiting. A
+                    # continuation we no longer have an entry for is
+                    # one we have already acted on, or one whose
                     # response we produced before a restart.
-                    acknowledged = acknowledgements.get(
-                        acknowledgement.acknowledge_query_response_id
+                    may_continue = continuations.get(
+                        continuation.continue_query_response_id
                     )
-                    if acknowledged is not None:
-                        acknowledged.set()
+                    if may_continue is not None:
+                        may_continue.set()
             except Exception:
                 # WebSocket closed (or errored); cancel the main query
                 # task to unblock `_query()` and trigger cleanup.
@@ -382,30 +383,30 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
                 headers=headers,
                 middleware=middleware,
             ):
-                acknowledged: Optional[asyncio.Event] = None
+                may_continue: Optional[asyncio.Event] = None
 
-                if request.client_can_acknowledge_responses:
+                if request.client_continues_query:
                     response.query_response_id = str(uuid.uuid4())
-                    acknowledged = asyncio.Event()
-                    acknowledgements[response.query_response_id] = acknowledged
+                    may_continue = asyncio.Event()
+                    continuations[response.query_response_id] = may_continue
 
                 try:
                     await websocket.send(response.SerializeToString())
 
-                    # A client that acknowledges nothing gets
+                    # A client that never asks for more gets
                     # responses as fast as we produce them; the empty
-                    # ID tells it that we expect no acknowledgement.
-                    if acknowledged is not None:
+                    # ID tells it that we expect no such request.
+                    if may_continue is not None:
                         # Wait for the client to tell us that it is
                         # ready for a next response, so that it can't
                         # fall behind us. While we wait here the state
                         # may change any number of times, and the next
                         # response we produce reflects the latest of
                         # those states.
-                        await acknowledged.wait()
+                        await may_continue.wait()
                 finally:
-                    if acknowledged is not None:
-                        del acknowledgements[response.query_response_id]
+                    if may_continue is not None:
+                        del continuations[response.query_response_id]
         finally:
             requests_task.cancel()
             await asyncio.gather(requests_task, return_exceptions=True)
@@ -466,12 +467,12 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
 
         return middleware
 
-    async def AcknowledgeQueryResponse(
+    async def ContinueQuery(
         self,
-        request: react_pb2.AcknowledgeQueryResponseRequest,
+        request: react_pb2.ContinueQueryRequest,
         grpc_context: grpc.aio.ServicerContext,
-    ) -> react_pb2.AcknowledgeQueryResponseResponse:
-        """Implements the React.AcknowledgeQueryResponse RPC that lets a
+    ) -> react_pb2.ContinueQueryResponse:
+        """Implements the React.ContinueQuery RPC that lets a
         client tell us it has processed a response from `Query` and is
         ready for a next one."""
         try:
@@ -486,26 +487,24 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
         # Look the event up rather than take it: the `Query` call that
         # produced the response owns the entry and removes it once it
         # is done waiting.
-        acknowledged = self._query_response_acknowledgements.get(
-            request.query_response_id
-        )
+        may_continue = self._query_continuations.get(request.query_response_id)
 
-        if acknowledged is None:
+        if may_continue is None:
             # There are several valid reasons why we may not know this
             # response:
             # 1. The server may have restarted and lost its memory of
             #    the response. The client's `Query` call will have been
             #    broken by that same restart, and it will get a fresh
             #    response once it reconnects.
-            # 2. The client may have sent its acknowledgement twice
-            #    (e.g. retried the request), in which case we have
-            #    already produced a next response.
+            # 2. The client may have sent the same request twice
+            #    (e.g. retried it), in which case we have already
+            #    produced a next response.
             # Either way there is nothing left to do.
-            return react_pb2.AcknowledgeQueryResponseResponse()
+            return react_pb2.ContinueQueryResponse()
 
-        acknowledged.set()
+        may_continue.set()
 
-        return react_pb2.AcknowledgeQueryResponseResponse()
+        return react_pb2.ContinueQueryResponse()
 
     async def _query(
         self,
@@ -576,23 +575,23 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
                 headers=headers,
                 middleware=middleware,
             ):
-                acknowledged: Optional[asyncio.Event] = None
+                may_continue: Optional[asyncio.Event] = None
 
-                if request.client_can_acknowledge_responses:
+                if request.client_continues_query:
                     response.query_response_id = str(uuid.uuid4())
-                    acknowledged = asyncio.Event()
-                    self._query_response_acknowledgements[
-                        response.query_response_id] = acknowledged
+                    may_continue = asyncio.Event()
+                    self._query_continuations[response.query_response_id
+                                             ] = may_continue
 
                 try:
                     yield response
 
-                    # A client that acknowledges nothing gets
+                    # A client that never asks for more gets
                     # responses as fast as we produce them; the empty
-                    # ID tells it that we expect no acknowledgement.
-                    if acknowledged is not None:
+                    # ID tells it that we expect no such request.
+                    if may_continue is not None:
                         # Wait for the client to tell us, via
-                        # `AcknowledgeQueryResponse`, that it is ready
+                        # `ContinueQuery`, that it is ready
                         # for a next response, so that it can't fall
                         # behind us. While we wait here the state may
                         # change any number of times, and the next
@@ -606,14 +605,14 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
                         #       multiple responses without waiting for
                         #       an ack for each one, which would reduce
                         #       the user-visible latency of updates.
-                        await acknowledged.wait()
+                        await may_continue.wait()
                 finally:
                     # The `yield` is inside this `try` so that closing
                     # the generator while it is suspended there still
                     # takes the entry back out of a dictionary that
                     # lives as long as the service.
-                    if acknowledged is not None:
-                        del self._query_response_acknowledgements[
+                    if may_continue is not None:
+                        del self._query_continuations[
                             response.query_response_id]
         except asyncio.CancelledError:
             # It's pretty normal for a query to be cancelled; it's not useful to

@@ -381,7 +381,7 @@ export function reactively<
         const queryRequest = new react_pb.QueryRequest({
           method,
           request: request.toBinary(),
-          clientCanAcknowledgeResponses: true,
+          clientContinuesQuery: true,
           ...((bearerToken !== undefined && {
             bearerToken: await bearerToken(),
           }) ||
@@ -421,9 +421,9 @@ export function reactively<
 
 // Tells the backend that we have processed the response with the given
 // ID and are ready for a next one. Retries until the backend confirms,
-// since a lost acknowledgement would leave the `Query` stream waiting
+// since a lost request would leave the `Query` stream waiting
 // forever.
-async function acknowledgeQueryResponse({
+async function continueQuery({
   endpoint,
   headers,
   queryResponseId,
@@ -434,9 +434,7 @@ async function acknowledgeQueryResponse({
   queryResponseId: string;
   signal?: AbortSignal;
 }): Promise<void> {
-  const url = new URL(
-    `${endpoint}/rbt.v1alpha1.React/AcknowledgeQueryResponse`
-  );
+  const url = new URL(`${endpoint}/rbt.v1alpha1.React/ContinueQuery`);
 
   const backoff = new Backoff();
 
@@ -456,7 +454,8 @@ async function acknowledgeQueryResponse({
       // ourselves.
       if (!response.ok) {
         throw new Error(
-          `Acknowledging query response '${queryResponseId}' failed ` +
+          `Continuing the query past response ` +
+            `'${queryResponseId}' failed ` +
             `with HTTP status ${response.status}`
         );
       }
@@ -466,7 +465,7 @@ async function acknowledgeQueryResponse({
         throw e;
       }
       console.warn(
-        `[Reboot] Failed to acknowledge query response ` +
+        `[Reboot] Failed to continue the query past response ` +
           `'${queryResponseId}', retrying after backoff ...`
       );
       await backoff.wait();
@@ -494,8 +493,8 @@ export async function* reactiveReader({
   }
 
   if (url.protocol === "https:" && !websockets) {
-    const acknowledgeHeaders = new Headers(headers);
-    acknowledgeHeaders.set("Content-Type", "application/json");
+    const continueHeaders = new Headers(headers);
+    continueHeaders.set("Content-Type", "application/json");
 
     const responses = grpcServerStream({
       endpoint: url.toString(),
@@ -513,11 +512,11 @@ export async function* reactiveReader({
       // ask the backend for a next one, so that it reflects the
       // latest state rather than a state that has already been
       // superseded. An older backend doesn't send an ID and doesn't
-      // expect an acknowledgement.
+      // expect to be asked for more.
       if (response.queryResponseId !== "") {
-        await acknowledgeQueryResponse({
+        await continueQuery({
           endpoint,
-          headers: acknowledgeHeaders,
+          headers: continueHeaders,
           queryResponseId: response.queryResponseId,
           signal,
         });
@@ -536,12 +535,12 @@ export async function* reactiveReader({
       heartbeatRequest: new react_pb.QueryRequest(),
       responseType: react_pb.QueryResponse,
       signal,
-      // Acknowledgements go back over the same websocket, so that a
+      // Continuations go back over the same websocket, so that a
       // reactive read costs no extra round trips.
-      acknowledgeRequest: (response: react_pb.QueryResponse) =>
+      continueRequest: (response: react_pb.QueryResponse) =>
         response.queryResponseId !== ""
           ? new react_pb.QueryRequest({
-              acknowledgeQueryResponseId: response.queryResponseId,
+              continueQueryResponseId: response.queryResponseId,
             })
           : undefined,
     });
@@ -841,7 +840,7 @@ export async function* grpcWebsocketServerStream<
   heartbeatRequest,
   responseType,
   signal,
-  acknowledgeRequest,
+  continueRequest,
 }: {
   url: URL;
   request: RequestType;
@@ -850,7 +849,7 @@ export async function* grpcWebsocketServerStream<
   signal: AbortSignal;
   // Produces the request, if any, to send back once the consumer has
   // processed a response.
-  acknowledgeRequest?: (response: ResponseType) => RequestType | undefined;
+  continueRequest?: (response: ResponseType) => RequestType | undefined;
 }): AsyncGenerator<ResponseType, void, unknown> {
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
 
@@ -942,12 +941,12 @@ export async function* grpcWebsocketServerStream<
 
         yield response;
 
-        const acknowledgement = acknowledgeRequest?.(response);
+        const continuation = continueRequest?.(response);
         if (
-          acknowledgement !== undefined &&
+          continuation !== undefined &&
           websocket.readyState === WebSocket.OPEN
         ) {
-          websocket.send(acknowledgement.toBinary());
+          websocket.send(continuation.toBinary());
         }
       }
 

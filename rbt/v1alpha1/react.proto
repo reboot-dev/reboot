@@ -19,19 +19,20 @@ message QueryRequest {
   // Authorization bearer token.
   optional string bearer_token = 3;
 
-  // ID of the `QueryResponse` that this request acknowledges. This is
-  // how a client whose responses arrive over a websocket acknowledges
-  // them, on that same websocket, and it is the only way that works
-  // for such a client; see `Query`. Only meaningful on transports
-  // where a client can send more than one message per query, i.e.
-  // websockets. When this is set the other fields are ignored.
-  string acknowledge_query_response_id = 4;
+  // ID of the `QueryResponse` this client has consumed, after which
+  // it wants the query to continue. This is how a client whose
+  // responses arrive over a websocket continues its query, on that
+  // same websocket, and it is the only way that works for such a
+  // client; see `Query`. Only meaningful on transports where a client
+  // can send more than one message per query, i.e. websockets. When
+  // this is set the other fields are ignored.
+  string continue_query_response_id = 4;
 
-  // Whether this client acknowledges the responses it receives. A
-  // client that does not set this gets responses at whatever rate the
-  // server produces them, whether or not it can consume them that
-  // fast.
-  bool client_can_acknowledge_responses = 5;
+  // Whether this client asks for each next response once it has
+  // consumed the one before it. A client that does not set this gets
+  // responses at whatever rate the server produces them, whether or
+  // not it can consume them that fast.
+  bool client_continues_query = 5;
 }
 
 message QueryResponse {
@@ -55,20 +56,22 @@ message QueryResponse {
   // TODO(benh): send these as bytes?
   repeated string idempotency_keys = 2;
 
-  // Unique ID of this response, used to acknowledge it. Only set when
-  // the client set `client_can_acknowledge_responses` on its
-  // `QueryRequest`; an empty ID means no acknowledgement is expected.
+  // Unique ID of this response, which a client names to continue the
+  // query after it. Only set when the client set
+  // `client_continues_query` on its `QueryRequest`; an empty ID means
+  // the client is not expected to ask for anything further.
   string query_response_id = 4;
 }
 
 ////////////////////////////////////////////////////////////////////////
 
-message AcknowledgeQueryResponseRequest {
-  // ID of the `QueryResponse` being acknowledged.
+message ContinueQueryRequest {
+  // ID of the `QueryResponse` the client has consumed; the query
+  // continues after it.
   string query_response_id = 1;
 }
 
-message AcknowledgeQueryResponseResponse {}
+message ContinueQueryResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -118,24 +121,23 @@ message WebSocketsConnectionResponse {}
 service React {
   // Allows users to "watch" the response of a unary reader method for
   // changes. The current response of the method is sent when the
-  // stream is opened. A client that sets
-  // `client_can_acknowledge_responses` must acknowledge every
-  // response before a next one is produced, and that next response
-  // reflects the _latest_ state, skipping any states that came and
-  // went while the client was busy. A client that does not set it
-  // gets responses at whatever rate the server produces them,
-  // whether or not it can consume them that fast.
+  // stream is opened. A client that sets `client_continues_query`
+  // asks for each next response once it has consumed the one before
+  // it, and that next response reflects the _latest_ state, skipping
+  // any states that came and went while the client was busy. A client
+  // that does not set it gets responses at whatever rate the server
+  // produces them, whether or not it can consume them that fast.
   //
-  // Which mechanism a client acknowledges with is determined by the
-  // transport its responses arrive on, and only that mechanism works:
-  // a client reading over a websocket sends a `QueryRequest` with
-  // `acknowledge_query_response_id` set on that same websocket, and a
-  // client reading over any other transport calls
-  // `AcknowledgeQueryResponse`. The server tracks what it is waiting
-  // for per transport, so an acknowledgement that arrives the other
-  // way names an ID the server has no record of, which it treats as
-  // one it has already handled: the acknowledgement is accepted and
-  // then ignored, and the query stops producing responses.
+  // How a client asks for the next response is determined by the
+  // transport its responses arrive on, and only that way works: a
+  // client reading over a websocket sends a `QueryRequest` with
+  // `continue_query_response_id` set on that same websocket, and a
+  // client reading over any other transport calls `ContinueQuery`.
+  // The server tracks what it is waiting for per transport, so a
+  // request that arrives the other way names an ID the server has no
+  // record of, which it treats as one it has already handled: the
+  // request is accepted and then ignored, and the query stops
+  // producing responses.
   //
   // NOTE: the service name and state ID is expected to be part of the
   // gRPC metadata, exactly like any other reboot requests.
@@ -145,18 +147,17 @@ service React {
     };
   }
 
-  // Acknowledges that a client has processed a response from `Query`
-  // and is ready for a next one. Must be called on the same server
-  // that produced the response.
+  // Tells the server that a client has consumed a response from
+  // `Query` and wants the query to continue. Must be called on the
+  // same server that produced the response.
   //
   // For a client whose responses arrive over a websocket this is the
-  // wrong mechanism; such a client acknowledges on the websocket that
-  // carries its responses, by sending a `QueryRequest` with
-  // `acknowledge_query_response_id` set.
-  rpc AcknowledgeQueryResponse(AcknowledgeQueryResponseRequest)
-      returns (AcknowledgeQueryResponseResponse) {
+  // wrong mechanism; such a client continues its query on the
+  // websocket that carries its responses, by sending a `QueryRequest`
+  // with `continue_query_response_id` set.
+  rpc ContinueQuery(ContinueQueryRequest) returns (ContinueQueryResponse) {
     option (google.api.http) = {
-      post: "/rbt.v1alpha1.React/AcknowledgeQueryResponse"
+      post: "/rbt.v1alpha1.React/ContinueQuery"
     };
   }
 

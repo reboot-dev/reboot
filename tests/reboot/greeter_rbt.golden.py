@@ -21745,7 +21745,7 @@ class Greeter:
                                     request=GreeterGreetRequestToProto(
                                         __request__
                                     ).SerializeToString(),
-                                    client_can_acknowledge_responses=True,
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -21774,10 +21774,10 @@ class Greeter:
                                 # them. See
                                 # https://github.com/reboot-dev/mono/issues/4754.
                                 # An older backend doesn't send an ID and
-                                # doesn't expect an acknowledgement.
+                                # doesn't expect to be asked for more.
                                 if __query_response__.query_response_id != "":
-                                    await __stub__.AcknowledgeQueryResponse(
-                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                    await __stub__.ContinueQuery(
+                                        IMPORT_rbt_v1alpha1.react_pb2.ContinueQueryRequest(
                                             query_response_id=__query_response__.query_response_id,
                                         ),
                                         # The same metadata ensures we're routed
@@ -21935,7 +21935,7 @@ class Greeter:
                                     request=GreeterTryToConstructContextRequestToProto(
                                         __request__
                                     ).SerializeToString(),
-                                    client_can_acknowledge_responses=True,
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -21964,10 +21964,10 @@ class Greeter:
                                 # them. See
                                 # https://github.com/reboot-dev/mono/issues/4754.
                                 # An older backend doesn't send an ID and
-                                # doesn't expect an acknowledgement.
+                                # doesn't expect to be asked for more.
                                 if __query_response__.query_response_id != "":
-                                    await __stub__.AcknowledgeQueryResponse(
-                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                    await __stub__.ContinueQuery(
+                                        IMPORT_rbt_v1alpha1.react_pb2.ContinueQueryRequest(
                                             query_response_id=__query_response__.query_response_id,
                                         ),
                                         # The same metadata ensures we're routed
@@ -22125,7 +22125,7 @@ class Greeter:
                                     request=GreeterTryToConstructExternalContextRequestToProto(
                                         __request__
                                     ).SerializeToString(),
-                                    client_can_acknowledge_responses=True,
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -22154,10 +22154,10 @@ class Greeter:
                                 # them. See
                                 # https://github.com/reboot-dev/mono/issues/4754.
                                 # An older backend doesn't send an ID and
-                                # doesn't expect an acknowledgement.
+                                # doesn't expect to be asked for more.
                                 if __query_response__.query_response_id != "":
-                                    await __stub__.AcknowledgeQueryResponse(
-                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                    await __stub__.ContinueQuery(
+                                        IMPORT_rbt_v1alpha1.react_pb2.ContinueQueryRequest(
                                             query_response_id=__query_response__.query_response_id,
                                         ),
                                         # The same metadata ensures we're routed
@@ -22321,7 +22321,7 @@ class Greeter:
                                     request=GreeterTestLongRunningFetchRequestToProto(
                                         __request__
                                     ).SerializeToString(),
-                                    client_can_acknowledge_responses=True,
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -22350,10 +22350,10 @@ class Greeter:
                                 # them. See
                                 # https://github.com/reboot-dev/mono/issues/4754.
                                 # An older backend doesn't send an ID and
-                                # doesn't expect an acknowledgement.
+                                # doesn't expect to be asked for more.
                                 if __query_response__.query_response_id != "":
-                                    await __stub__.AcknowledgeQueryResponse(
-                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                    await __stub__.ContinueQuery(
+                                        IMPORT_rbt_v1alpha1.react_pb2.ContinueQueryRequest(
                                             query_response_id=__query_response__.query_response_id,
                                         ),
                                         # The same metadata ensures we're routed
@@ -22511,7 +22511,7 @@ class Greeter:
                                     request=GreeterGetWholeStateRequestToProto(
                                         __request__
                                     ).SerializeToString(),
-                                    client_can_acknowledge_responses=True,
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -22540,10 +22540,10 @@ class Greeter:
                                 # them. See
                                 # https://github.com/reboot-dev/mono/issues/4754.
                                 # An older backend doesn't send an ID and
-                                # doesn't expect an acknowledgement.
+                                # doesn't expect to be asked for more.
                                 if __query_response__.query_response_id != "":
-                                    await __stub__.AcknowledgeQueryResponse(
-                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                    await __stub__.ContinueQuery(
+                                        IMPORT_rbt_v1alpha1.react_pb2.ContinueQueryRequest(
                                             query_response_id=__query_response__.query_response_id,
                                         ),
                                         # The same metadata ensures we're routed
@@ -22701,7 +22701,7 @@ class Greeter:
                                     request=GreeterFailWithExceptionRequestToProto(
                                         __request__
                                     ).SerializeToString(),
-                                    client_can_acknowledge_responses=True,
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -22730,10 +22730,10 @@ class Greeter:
                                 # them. See
                                 # https://github.com/reboot-dev/mono/issues/4754.
                                 # An older backend doesn't send an ID and
-                                # doesn't expect an acknowledgement.
+                                # doesn't expect to be asked for more.
                                 if __query_response__.query_response_id != "":
-                                    await __stub__.AcknowledgeQueryResponse(
-                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                    await __stub__.ContinueQuery(
+                                        IMPORT_rbt_v1alpha1.react_pb2.ContinueQueryRequest(
                                             query_response_id=__query_response__.query_response_id,
                                         ),
                                         # The same metadata ensures we're routed
@@ -22891,7 +22891,7 @@ class Greeter:
                                     request=GreeterFailWithAbortedRequestToProto(
                                         __request__
                                     ).SerializeToString(),
-                                    client_can_acknowledge_responses=True,
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -22920,10 +22920,10 @@ class Greeter:
                                 # them. See
                                 # https://github.com/reboot-dev/mono/issues/4754.
                                 # An older backend doesn't send an ID and
-                                # doesn't expect an acknowledgement.
+                                # doesn't expect to be asked for more.
                                 if __query_response__.query_response_id != "":
-                                    await __stub__.AcknowledgeQueryResponse(
-                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                    await __stub__.ContinueQuery(
+                                        IMPORT_rbt_v1alpha1.react_pb2.ContinueQueryRequest(
                                             query_response_id=__query_response__.query_response_id,
                                         ),
                                         # The same metadata ensures we're routed
@@ -23081,7 +23081,7 @@ class Greeter:
                                     request=GreeterReadRecursiveMessageRequestToProto(
                                         __request__
                                     ).SerializeToString(),
-                                    client_can_acknowledge_responses=True,
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
                             )
@@ -23110,10 +23110,10 @@ class Greeter:
                                 # them. See
                                 # https://github.com/reboot-dev/mono/issues/4754.
                                 # An older backend doesn't send an ID and
-                                # doesn't expect an acknowledgement.
+                                # doesn't expect to be asked for more.
                                 if __query_response__.query_response_id != "":
-                                    await __stub__.AcknowledgeQueryResponse(
-                                        IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                    await __stub__.ContinueQuery(
+                                        IMPORT_rbt_v1alpha1.react_pb2.ContinueQueryRequest(
                                             query_response_id=__query_response__.query_response_id,
                                         ),
                                         # The same metadata ensures we're routed

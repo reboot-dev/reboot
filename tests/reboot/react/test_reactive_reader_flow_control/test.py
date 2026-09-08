@@ -9,7 +9,7 @@ from tests.reboot.react.web_driver_runner import web_driver
 STATE_ID = 'greeter-flow-control-test'
 
 # Adjectives to write, in rounds. Every adjective in a round is written
-# while the browser holds the acknowledgement of the response it is
+# while the browser holds back the response it is
 # showing, so the backend passes through all of them and may send only
 # the last.
 ROUNDS = [
@@ -24,10 +24,10 @@ async def test(context: ExternalContext, uri: str):
     next response skips the states it missed and gets the latest one.
 
     The app in `index.tsx` consumes the reactive read itself and holds
-    the acknowledgement of each response until this test releases it,
+    each response back until this test releases it,
     so every state change below is known to have completed while the
     backend had no response it was allowed to send. Releasing the
-    acknowledgement must then produce exactly one response, carrying
+    hold must then produce exactly one response, carrying
     the last state written in the round rather than the first one the
     backend passed through."""
     await Greeter.idempotently(f"Create '{STATE_ID}'").Create(
@@ -72,7 +72,7 @@ async def test(context: ExternalContext, uri: str):
         await asyncio.to_thread(driver.get, f'http://127.0.0.1:{port}/')
 
         # The browser renders the state it started from and then holds
-        # its acknowledgement of that response.
+        # back rather than continuing past it.
         rendered = await asyncio.to_thread(wait_for_message_count, driver, 1)
         assert rendered == [message('tasty')], rendered
 
@@ -80,15 +80,15 @@ async def test(context: ExternalContext, uri: str):
             # Each of these writes has completed by the time the next
             # begins, so by the end of this loop the backend has passed
             # through every one of these states while holding a
-            # response that the browser has not acknowledged.
+            # response the browser has not continued past.
             for adjective in adjectives:
                 await greeter.SetAdjective(context, adjective=adjective)
 
-            # Let the browser acknowledge, which is the first moment
+            # Let the browser continue, which is the first moment
             # the backend may produce a next response.
             await asyncio.to_thread(
                 driver.execute_script,
-                'window.acknowledge()',
+                'window.continueQuery()',
             )
 
             rendered = await asyncio.to_thread(
