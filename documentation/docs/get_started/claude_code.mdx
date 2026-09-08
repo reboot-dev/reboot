@@ -1,34 +1,31 @@
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
-# Get Started (with Claude Code)
+# Build with Claude Code
 
-Build a full-stack app — a Reboot backend behind a standalone React
-frontend served at a normal URL — using
+Build a Reboot app with
 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)
-and the Reboot plugin. Claude Code writes the code for you: you
-describe what you want, approve the plan, and it scaffolds the
-entire project.
+and the Reboot plugin. You describe what you want, approve the design,
+and Claude Code scaffolds the whole project: API definition, backend
+servicers, frontend, sign-in, tests, and local development setup.
 
 ## Install the Reboot plugin
 
-The plugin bundles everything Reboot needs, so
-[Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)
-itself is the only thing you need to have installed.
+The plugin bundles everything Reboot needs, so Claude Code itself is
+the only prerequisite.
 
 <Tabs groupId="install-method">
   <TabItem value="quick" label="Quick install">
 
-Install the Reboot plugin for Claude Code with a single
-command:
+Install the Reboot plugin for Claude Code with a single command:
 
 ```sh
 curl -fsSL https://reboot.dev/install.sh | bash
 ```
 
-This registers the Reboot marketplace, installs the plugin,
-and pre-installs its pinned dependencies so your first build
-runs without waiting on downloads.
+This registers the Reboot marketplace, installs the plugin, and
+pre-installs its pinned dependencies so your first build runs without
+waiting on downloads.
 
 Then start Claude Code — or, if it was already running while you
 installed, restart it — so the plugin loads.
@@ -36,8 +33,7 @@ installed, restart it — so the plugin loads.
   </TabItem>
   <TabItem value="manual" label="Manual install">
 
-Add the marketplace and install the plugin yourself with
-Claude Code:
+Add the marketplace and install the plugin yourself with Claude Code:
 
 ```
 claude plugin marketplace add reboot-dev/reboot-plugin
@@ -72,45 +68,69 @@ installed the Reboot plugin so the new plugin loads.
   </TabItem>
 </Tabs>
 
-## Use the skill
+## Describe your app
 
-Once installed, invoke the skill with a description of your app:
+Just say what you want to build, and where you want to use it:
 
 ```
-/reboot:web-app Build a web app where users can sign up and keep a list of chat rooms
+Build me a todo-list app I can use from a browser and from Claude and ChatGPT
 ```
 
-You can also just describe what you want to build in a normal
-prompt — Claude Code selects the right Reboot skill from your
-description, and saying "website", "web app", "SPA", "in the
-browser", or naming a URL is enough for it to pick the Web App
-builder. Or invoke `/reboot:app`, which asks whether you want an AI
-Chat App or a standalone Web App and then hands off to the matching
-skill — for this guide, pick the Web App.
+That prompt gets you one backend with two front doors: a React web app
+you open in a browser, and an [AI chat app](/surfaces/ai_chat) that
+Claude and ChatGPT can drive as tools — sharing one set of todos and
+one signed-in [`User`](/users/overview) per person.
 
-The skill settles the design before it writes any code. It will:
+Claude Code picks the right Reboot skill from your description. The one
+thing it will not guess from the subject matter is **where the app
+lives**, so say it:
 
-1. Analyze your description and propose a state model
-2. Map out which types and methods your app needs, which pages the
-   frontend has, and how users sign in
-3. State that design back to you — so you can redirect it before
-   the code exists
+| You say | You get |
+| --- | --- |
+| "web app", "website", "SPA", "in the browser", a URL | A [web app](/surfaces/web): a React frontend on its own origin. |
+| "MCP", "in Claude", "in ChatGPT", "chat app" | An [AI chat app](/surfaces/ai_chat): tools and `UI` methods over MCP. |
+| Both, as above | One backend serving both surfaces, with one `User` per person. |
 
-Claude Code then scaffolds the full project — API definition,
-backend servicers, React SPA, and configuration — builds it, writes
-and runs backend tests, and starts the app.
+The skills scaffold web and AI chat front ends. A
+[React Native app](/surfaces/react_native) (alpha) is added by hand.
+
+If your description doesn't say, it asks. You can also invoke the
+skills directly:
+
+```
+/reboot:web-app Build me a todo-list app I can use in a browser
+```
+
+```
+/reboot:chat-app Build me a todo-list app I can use from Claude and ChatGPT
+```
+
+Or `/reboot:app` with a description, which asks which surface you
+want and then hands off.
+
+## What it does before it writes code
+
+The skill settles the design first. It will:
+
+1. Analyze your description and propose a state model.
+2. Map out which types and methods your app needs, which pages or UIs
+   the frontend has, and how users sign in.
+3. State that design back to you — so you can redirect it before the
+   code exists.
+
+Then it scaffolds the project, builds it, writes and runs backend
+tests, and starts the app.
 
 :::info The agent-driven path builds a Python backend
-The skill scaffolds a Python backend with a React frontend. If you
-want a **TypeScript** backend, follow the hand-written
-[TypeScript guide](/get_started/typescript) instead — but note
-that TypeScript backend support is in alpha.
+The skills scaffold a Python backend. If you want a **TypeScript**
+backend, follow the hand-written
+[TypeScript guide](/get_started/typescript) instead — but note that
+TypeScript backend support is in alpha.
 :::
 
 ## What gets created
 
-The skill generates a complete full-stack Reboot app. The most
-relevant files are:
+A complete Reboot project. The most relevant files:
 
 ```
 my-app/
@@ -122,9 +142,10 @@ my-app/
 ├── backend/
 │   ├── api/                  # Generated Python bindings
 │   ├── src/
-│   │   ├── main.py           # Application entrypoint
+│   │   ├── main.py           # Application entrypoint, including `oauth=`
+│   │   ├── example_prompts.py  # Chat apps: setup-wizard prompts
 │   │   └── servicers/
-│   │       └── my_app.py     # Servicer implementation
+│   │       └── my_app.py     # Servicer implementations
 │   └── tests/
 │       └── my_app_test.py    # Backend behavior tests
 └── frontend/
@@ -133,77 +154,93 @@ my-app/
     ├── vite.config.ts        # Vite dev server + build config
     ├── index.css             # Theme variables
     ├── api/                  # Generated React bindings
-    └── web/                  # The standalone browser SPA
-        ├── index.html
-        ├── .env.development  # VITE_REBOOT_URL=http://localhost:9991
-        └── src/
-            ├── main.tsx      # RebootClientProvider entry
-            └── App.tsx       # Routes + top-level component
+    ├── web/                  # The browser SPA
+    │   ├── index.html
+    │   ├── .env.development  # VITE_REBOOT_URL=http://localhost:9991
+    │   └── src/
+    │       ├── main.tsx      # RebootClientProvider entry
+    │       └── App.tsx       # Routes + top-level component
+    └── mcp/                  # Chat apps: one directory per `UI` method
+        └── my-ui/
+            ├── index.html
+            ├── main.tsx
+            └── App.tsx
 ```
 
-Each entity your app manages becomes its own
-[durable state type](/define/overview) with its own
-methods; the frontend calls those methods through the typed
-[React hooks](/call/from_react) that `rbt generate`
-emits into `frontend/api`. If your app has per-user state, the
-skill also declares a `User` type and signs browser users in
-through Reboot's [built-in OAuth support](/users/authorization) —
-`Development()` in development, so you can sign in as any
-identity without registering a provider first.
+### Reading the code it wrote
 
-## Test your app
+| File | What it is | Learn more |
+| --- | --- | --- |
+| `api/my_app/v1/my_app.py` | Your API: one [durable state type](/define/overview) per entity, each with its methods, declared with Pydantic. | [Define your API](/define/pydantic) |
+| `backend/src/servicers/` | The code behind those methods. | [Implement your API](/implement/servicers) |
+| `backend/src/main.py` | Constructs the `Application` and passes `oauth=`, so people can sign in and Reboot auto-constructs their `User`. | [Users and sign-in](/users/overview) |
+| `frontend/api/` | Typed React hooks generated from your API, shared by every front end. | [Call your API from React](/call/from_react) |
+| `frontend/web/` | The browser app. | [Web apps](/surfaces/web) |
+| `frontend/mcp/` | One React app per `UI` method, rendered inside the chat client. | [AI chat apps](/surfaces/ai_chat) |
+| `backend/tests/` | Backend tests, run against an in-process Reboot. | [Testing](/testing) |
 
-Claude Code writes backend unit tests covering your app's user
-stories and runs them before handing the app off — they help to
-make sure that your app works, and keeps working.
+In development the sign-in flow uses `Development()`, a fake account
+picker, so you can sign in as any of a handful of identities without
+registering a provider anywhere. Before you deploy, pick a
+[real provider](/users/providers).
 
-Once the tests pass, Claude Code starts everything the app needs:
+## Test and run
 
-* the Reboot backend (`rbt dev run`), which serves your API at
-  `http://localhost:9991`, and
-* the Vite dev server, on `http://localhost:4444`.
+Claude Code writes backend unit tests covering your app's user stories
+and runs them before handing the app off — they help make sure the app
+works, and keeps working.
 
-It then hands you `http://localhost:4444`, which redirects to your
-web app. In development, click "Sign in" and pick (or make up) a
-`Development` identity; signing in auto-constructs your `User`.
+Once the tests pass it starts everything the app needs:
 
-## Iterate on your app
+* the Reboot backend (`rbt dev run`), serving your API at
+  `http://localhost:9991`;
+* the Vite dev server, on `http://localhost:4444`; and
+* for chat apps, a Cloudflare quick tunnel, so cloud-hosted MCP
+  clients can reach your machine.
 
-You can also use the skill to modify an existing app:
+For a web app it gives you `http://localhost:4444` to open. Click **Sign in**,
+pick a `Development` identity, and Reboot
+[auto-constructs your `User`](/users/overview).
+
+For a chat app it opens the **setup wizard** at
+`http://localhost:9991` — a page your app serves that walks you
+through connecting Claude, ChatGPT, or an inspector, and suggests
+example prompts.
+
+## Iterate
+
+The same skill modifies an existing app:
 
 ```
-/reboot:web-app Add a page that shows the messages in a single chat room
+/reboot:web-app Add due dates to todos, and a filter for what's overdue
 ```
 
-The skill reads your current code, plans the changes, and waits
-for approval before editing.
+It reads your current code, plans the changes, and waits for approval
+before editing.
 
 ## Run it again later
 
-If you come back to your project in a new session, ask Claude Code
-to bring the app back up:
+Coming back in a new session:
 
 ```
 /reboot:run my-app
 ```
 
-Or just say "Run this Reboot app" from the project directory. The
-run skill starts the backend and the frontend dev server and points
-you at the app.
+Or just say "Run this Reboot app" from the project directory.
 
 ## Next steps
 
-* **[Get Started (with Codex)](/get_started/codex)** —
-  the equivalent agent-driven workflow for Codex.
-* **[Get Started (Python)](/get_started/python)** — build a
-  backend step by step to understand every file.
-* **[Build a React frontend](/get_started/react)** — the
-  hand-written version of the frontend the skill generates.
-* **[Call your API from React](/call/from_react)** — the
-  full reference for the generated hooks.
-* **[Full-stack Examples](/get_started/examples)** — more
-  examples to explore.
-* **[Deploy to Reboot Cloud](/deploy_on_reboot_cloud)** — deploy
-  your app with `rbt cloud up`.
-* **[Join us on Discord](https://discord.gg/cRbdcS94Nr)** — ask
+* **[Build with Codex](/get_started/codex)** — the equivalent
+  agent-driven workflow for Codex.
+* **[Python backend](/get_started/python)** and
+  **[React frontend](/get_started/react)** — build it by hand, to see
+  every file.
+* **[Users and sign-in](/users/overview)** — what the `User` type the
+  skill generated is doing.
+* **[Call your API from React](/call/from_react)** — the full
+  reference for the generated hooks.
+* **[Examples](/get_started/examples)** — more apps to explore.
+* **[Deploy to Reboot Cloud](/deploy_on_reboot_cloud)** — ship it with
+  `rbt cloud up`.
+* **[Join the Discord](https://discord.gg/cRbdcS94Nr)** — ask
   questions and share what you're building!

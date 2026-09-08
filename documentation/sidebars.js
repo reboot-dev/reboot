@@ -69,28 +69,6 @@ const sidebars = {
       ],
     },
     {
-      type: "category",
-      collapsed: true,
-      label: "AI chat apps",
-      items: [
-        {
-          type: "doc",
-          id: "ai_chat_apps/get_started_claude_code",
-          label: "Get started (with Claude Code)",
-        },
-        {
-          type: "doc",
-          id: "ai_chat_apps/get_started_codex",
-          label: "Get started (with Codex)",
-        },
-        {
-          type: "doc",
-          id: "ai_chat_apps/examples",
-          label: "Examples",
-        },
-      ],
-    },
-    {
       type: "doc",
       id: "concepts",
       label: "How Reboot works",
