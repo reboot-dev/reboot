@@ -1671,11 +1671,35 @@ const NO_FILTER: FeatureFilter = {
   blocked: false,
 };
 
-// The filter the features page keeps while it is open: the words,
-// the state types and the tags asked for, and how a chip turns each
-// on and off.
+// The key the features page keeps its filter under in the tab's
+// session storage.
+const FEATURE_FILTER_KEY = "features-filter";
+
+// The filter the features page keeps for as long as the browser tab
+// is open: the words, the state types and the tags asked for, and
+// how a chip turns each on and off. Kept in the tab's session
+// storage, so that opening a feature and coming back, or visiting
+// another page and returning, finds the filter as it was, and
+// closing the tab forgets it.
 const useFeatureFilter = () => {
-  const [filter, setFilter] = useState<FeatureFilter>(NO_FILTER);
+  const [filter, setFilter] = useState<FeatureFilter>(() => {
+    try {
+      const stored = sessionStorage.getItem(FEATURE_FILTER_KEY);
+      return stored === null
+        ? NO_FILTER
+        : { ...NO_FILTER, ...(JSON.parse(stored) as Partial<FeatureFilter>) };
+    } catch {
+      return NO_FILTER;
+    }
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(FEATURE_FILTER_KEY, JSON.stringify(filter));
+    } catch {
+      // A browser refusing storage keeps the filter for the page's
+      // life only.
+    }
+  }, [filter]);
   const toggleWebApp = () =>
     setFilter((current) => ({ ...current, webApp: !current.webApp }));
   const toggleWip = () =>
