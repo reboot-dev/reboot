@@ -60,7 +60,7 @@ steps can say <account_id>.
 
 A call runs as a task instead by saying '"alice" spawns a `method`
 on ...', with the next line saving 'the resulting task id is saved
-as `name`'; the task then awaits as '"alice" awaits the `method`
+as "name"'; the task then awaits as '"alice" awaits the `method`
 task "<name>" on `Account` within 10 seconds', recording its
 response as the result. A task ID a response carries saves and
 awaits the same way.
@@ -281,7 +281,7 @@ def _maybe_saved(world: World, text: str) -> str:
     value = _saved_value(world, text[1:-1])
     if not isinstance(value, str):
         raise ValueError(
-            f'Expecting the value saved as "{text[2:-1]}" to be a '
+            f'Expecting the value saved as "{text[1:-1]}" to be a '
             f"string, but it is {value!r}"
         )
     return value

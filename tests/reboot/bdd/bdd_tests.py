@@ -41,6 +41,7 @@ from reboot.bdd.steps import (
     _assert_aborted,
     _assert_properties,
     _has_bearer_token,
+    _maybe_saved,
     _parse_assertions,
     _parse_assignments,
     _parse_saves,
@@ -193,6 +194,16 @@ def test_almost_clause_messages() -> None:
     )
     with pytest.raises(ValueError, match=r"say a saved value as <amount>"):
         _parse_assignments(world, '`amount=$amount`')
+
+
+def test_a_recall_where_a_string_is_needed_must_be_a_string() -> None:
+    """A recall in a state id, user id or bearer token position must
+    name a saved string, and the error names what was saved."""
+    world = World()
+    world.save('account_id', {'task_id': 'abc'})
+    with pytest.raises(ValueError) as raised:
+        _maybe_saved(world, '<account_id>')
+    assert 'Expecting the value saved as "account_id"' in str(raised.value)
 
 
 def test_a_save_may_not_use_an_examples_column() -> None:

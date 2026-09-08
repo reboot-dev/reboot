@@ -6,11 +6,10 @@ again on every change: the files are small, and parsing them all is
 cheaper than tracking which one an event was about, so a burst of
 saves loses nothing however many events the watch failed to hear.
 
-Each file is parsed by `reboot.bdd.feature`, whose package imports
-pytest-bdd and whose parser is `gherkin-official`; both arrive with
-`reboot[pytest-bdd]`. Without the extra, each feature file found is
-recorded with an error saying to install it, so the page can say
-why it shows no behaviors.
+Each file is parsed by `reboot.bdd.feature`, whose parser is
+`gherkin-official`, which arrives with `reboot[pytest-bdd]`. Without
+the extra, each feature file found is recorded with an error saying
+to install it, so the page can say why it shows no features.
 
 Each scenario is also checked for the recordings of its last run in
 a browser, kept beside the feature file the way `reboot.bdd.recordings`
