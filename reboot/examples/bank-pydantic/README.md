@@ -14,7 +14,7 @@ Reboot, with its API defined using Pydantic models.
 The [Reboot '.proto' definitions](https://docs.reboot.dev/learn_more/define/overview#code-generation)
 can be found in the `api/` directory, grouped into
 subdirectories by proto package, while backend specific code can be
-found in `backend/` and front end specific code in `frontend/web/` and MCP (AI chat) UIs in `frontend/mcp/` and a React Native (Expo) mobile front end in `frontend/mobile/`.
+found in `backend/` and front end specific code in `frontend/web/` and MCP UIs in `frontend/mcp/` and a React Native (Expo) mobile front end in `frontend/mobile/`.
 
 _For more information on all of the Reboot examples, please [see the docs](https://docs.reboot.dev/full_stack_apps/examples)._
 
@@ -119,7 +119,7 @@ one.
 
 #### MCP
 
-The application is also an MCP server: an AI chat client can call
+The application is also an MCP server: an MCP client can call
 its tools and render its UIs (the `frontend/mcp/` directories) right
 in the chat. The easiest way to get connected is the setup wizard
 that the backend serves at

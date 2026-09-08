@@ -19,7 +19,7 @@ written — which is exactly when to start it: bring the dashboard up
 early in a build and the developer watches the API take shape while
 you write it.
 
-Use this skill when a build flow directs you here (the `chat-app`
+Use this skill when a build flow directs you here (the `mcp-ui`
 and `web-app` skills do, right before the API is written) or when
 the user asks for the dashboard while an app is being built.
 

@@ -1,7 +1,7 @@
 # Chick-potle
 
-An AI Chat App built with Reboot that demonstrates a small
-food-ordering flow driven from inside an AI chat client.
+An MCP UI built with Reboot that demonstrates a small
+food-ordering flow driven from inside an MCP client.
 The AI calls tools to start an order, browse the menu, and
 add or remove items; humans see two embedded React UIs — a
 menu grid and a cart — rendered alongside the conversation.
@@ -103,7 +103,7 @@ capability:
 
 ```
 chick-potle/
-├── api/ai_chat_food/v1/food.py   # State models + method declarations.
+├── api/mcp_ui_food/v1/food.py   # State models + method declarations.
 ├── backend/
 │   ├── api/                      # Generated Python bindings.
 │   └── src/

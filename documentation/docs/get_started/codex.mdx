@@ -106,7 +106,7 @@ Build me a Reboot todo-list app I can use from a browser and from Claude and Cha
 ```
 
 That prompt gets you one backend with two front doors: a React web app
-you open in a browser, and an [AI chat app](/frontends/ai_chat) that
+you open in a browser, and an [MCP UI](/frontends/mcp_ui) that
 Claude and ChatGPT can drive as tools — sharing one set of todos and
 one signed-in [`User`](/users/overview) per person.
 
@@ -117,10 +117,10 @@ so say it:
 | You say | You get |
 | --- | --- |
 | "web app", "website", "SPA", "in the browser", a URL | A [web app](/frontends/web): a React frontend on its own origin. |
-| "MCP", "in Claude", "in ChatGPT", "chat app" | An [AI chat app](/frontends/ai_chat): tools and `UI` methods over MCP. |
+| "MCP", "in Claude", "in ChatGPT", "MCP UI" | An [MCP UI](/frontends/mcp_ui): tools and `UI` methods over MCP. |
 | Both, as above | One backend serving both frontends, with one `User` per person. |
 
-The skills scaffold web and AI chat frontends. A
+The skills scaffold web frontends and MCP UIs. A
 [React Native app](/frontends/react_native) (alpha) is added by hand.
 
 If your description doesn't say, it asks first.
@@ -160,7 +160,7 @@ my-app/
 │   ├── api/                  # Generated Python bindings
 │   ├── src/
 │   │   ├── main.py           # Application entrypoint, including `oauth=`
-│   │   ├── example_prompts.py  # Chat apps: setup-wizard prompts
+│   │   ├── example_prompts.py  # MCP UIs: setup-wizard prompts
 │   │   └── servicers/
 │   │       └── my_app.py     # Servicer implementations
 │   └── tests/
@@ -177,7 +177,7 @@ my-app/
     │   └── src/
     │       ├── main.tsx      # RebootClientProvider entry
     │       └── App.tsx       # Routes + top-level component
-    └── mcp/                  # Chat apps: one directory per `UI` method
+    └── mcp/                  # MCP UIs: one directory per `UI` method
         └── my-ui/
             ├── index.html
             ├── main.tsx
@@ -193,7 +193,7 @@ my-app/
 | `backend/src/main.py` | Constructs the `Application` and passes `oauth=`, so people can sign in and Reboot auto-constructs their `User`. | [Users and sign-in](/users/overview) |
 | `frontend/api/` | Typed React hooks generated from your API, shared by every frontend. | [Call your API from React](/call/from_react) |
 | `frontend/web/` | The browser app. | [Web apps](/frontends/web) |
-| `frontend/mcp/` | One React app per `UI` method, rendered inside the chat client. | [AI chat apps](/frontends/ai_chat) |
+| `frontend/mcp/` | One React app per `UI` method, rendered inside the MCP client. | [MCP UIs](/frontends/mcp_ui) |
 | `backend/tests/` | Backend tests, run against an in-process Reboot. | [Testing](/testing) |
 
 In development the sign-in flow uses `Development()`, a fake account
@@ -212,14 +212,14 @@ Once the tests pass it starts everything the app needs:
 * the Reboot backend (`rbt dev run`), serving your API at
   `http://localhost:9991`;
 * the Vite dev server, on `http://localhost:4444`; and
-* for chat apps, a Cloudflare quick tunnel, so cloud-hosted MCP
+* for MCP UIs, a Cloudflare quick tunnel, so cloud-hosted MCP
   clients can reach your machine.
 
 For a web app it gives you `http://localhost:4444` to open. Click **Sign in**,
 pick a `Development` identity, and Reboot
 [auto-constructs your `User`](/users/overview).
 
-For a chat app it opens the **setup wizard** at
+For an MCP UI it opens the **setup wizard** at
 `http://localhost:9991` — a page your app serves that walks you
 through connecting Claude, ChatGPT, or an inspector, and suggests
 example prompts.

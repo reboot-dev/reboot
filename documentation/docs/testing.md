@@ -196,8 +196,8 @@ token — through the same code path a real sign-in goes through, so the
 caller's `User` is auto-constructed as a side effect — and returns an
 `ExternalContext` authenticated as that user:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../tests/reboot/documentation/test_ai_chat_counter.py&lines=27-30) -->
-<!-- The below code snippet is automatically added from ../../tests/reboot/documentation/test_ai_chat_counter.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../tests/reboot/documentation/test_mcp_ui_counter.py&lines=27-30) -->
+<!-- The below code snippet is automatically added from ../../tests/reboot/documentation/test_mcp_ui_counter.py -->
 
 ```py
 self.context = await self.rbt.create_external_context_as(
@@ -217,8 +217,8 @@ so this is also how you check that
 [authorizers](/users/authorization) really do keep users apart — mint
 a second context as somebody else and assert that it is refused:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../tests/reboot/documentation/test_ai_chat_counter.py&lines=72-91) -->
-<!-- The below code snippet is automatically added from ../../tests/reboot/documentation/test_ai_chat_counter.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../tests/reboot/documentation/test_mcp_ui_counter.py&lines=72-91) -->
+<!-- The below code snippet is automatically added from ../../tests/reboot/documentation/test_mcp_ui_counter.py -->
 
 ```py
 async def test_non_owner_cannot_read_counter(self) -> None:

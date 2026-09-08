@@ -5,18 +5,18 @@
     "email": "team@reboot.dev"
   },
   "metadata": {
-    "description": "Skills for building AI Chat Apps with Reboot.",
+    "description": "Skills for building MCP UIs with Reboot.",
     "version": "1.5.0"
   },
   "plugins": [
     {
       "name": "reboot",
-      "description": "Use Reboot to build AI Chat Apps (MCP Apps) for ChatGPT, Claude, VSCode, Goose, and others.",
+      "description": "Use Reboot to build MCP UIs for ChatGPT, Claude, VSCode, Goose, and others.",
       "source": "./",
       "strict": false,
       "skills": [
         "./skills/app",
-        "./skills/chat-app",
+        "./skills/mcp-ui",
         "./skills/web-app",
         "./skills/run",
         "./skills/dashboard",

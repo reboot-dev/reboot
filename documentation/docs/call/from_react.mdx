@@ -212,20 +212,20 @@ if (user === undefined) return <button onClick={() => signIn()}>Sign in</button>
 See [Web apps](/frontends/web#signing-in) for the browser flow, and
 [React Native apps](/frontends/react_native) for the native one.
 
-## In AI chat UIs
+## In MCP UIs
 
 The same generated hooks work unchanged inside an
-[AI chat client](/frontends/ai_chat), where a
+[MCP client](/frontends/mcp_ui), where a
 [`UI` method](/frontends/ui_methods) renders your component. A few
 things differ:
 
-- **No `url` prop needed.** In the AI chat context,
+- **No `url` prop needed.** Inside an MCP client,
   `RebootClientProvider` automatically detects the environment.
   You do not pass a `url`:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/main.tsx&lines=9-11) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/main.tsx -->
+(CODE:src=../../../reboot/examples/mcp-ui-counter/frontend/mcp/clicker/main.tsx&lines=9-11) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter/frontend/mcp/clicker/main.tsx -->
 
 ```tsx
 <RebootClientProvider>
@@ -246,8 +246,8 @@ things differ:
   component):
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/App.tsx&lines=10-31) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/App.tsx -->
+(CODE:src=../../../reboot/examples/mcp-ui-counter/frontend/mcp/clicker/App.tsx&lines=10-31) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter/frontend/mcp/clicker/App.tsx -->
 
 ```tsx
 export const ClickerApp: FC = () => {
@@ -285,8 +285,8 @@ const Clicker: FC<{ counter: UseCounterApi }> = ({ counter }) => {
   as props:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/ai-chat-counter-dashboard/frontend/mcp/dashboard/App.tsx&lines=20-21) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter-dashboard/frontend/mcp/dashboard/App.tsx -->
+(CODE:src=../../../reboot/examples/mcp-ui-counter-dashboard/frontend/mcp/dashboard/App.tsx&lines=20-21) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter-dashboard/frontend/mcp/dashboard/App.tsx -->
 
 ```tsx
 export const DashboardApp: FC<DashboardConfig> = ({ personalizedMessage }) => {

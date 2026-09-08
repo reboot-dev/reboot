@@ -315,7 +315,7 @@ time), use `conftest.py` instead — see
 
 ## One Test Method per User Story
 
-The build flows in the `chat-app` and `web-app` skills require
+The build flows in the `mcp-ui` and `web-app` skills require
 backend unit tests covering each user-facing user story **before**
 running the app for the user. The structure that works best is:
 

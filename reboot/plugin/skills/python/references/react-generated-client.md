@@ -1,7 +1,7 @@
 ---
 title: The Generated React Client Contract
 impact: HIGH
-impactDescription: The exact hook, mutator, and error shapes `rbt generate --react=` emits — identical for web apps and MCP chat apps
+impactDescription: The exact hook, mutator, and error shapes `rbt generate --react=` emits — identical for web apps and MCP UIs
 tags: react, hooks, generated, codegen, errors, typescript
 ---
 
@@ -14,7 +14,7 @@ files live, how the backend URL is found, how a user signs in — is in
 the skill you are building with:
 [`web-app/references/react-client.md`](../../web-app/references/react-client.md)
 or
-[`chat-app/references/react-scaffolding.md`](../../chat-app/references/react-scaffolding.md).
+[`mcp-ui/references/react-scaffolding.md`](../../mcp-ui/references/react-scaffolding.md).
 
 **Do not read the generated `*_rbt_react.ts` to rediscover any of
 this.** It runs to tens of thousands of lines, and every one you open

@@ -1,5 +1,5 @@
-from ai_chat_food.v1.food import CartEntry, MenuItem
-from ai_chat_food.v1.food_rbt import FoodOrder, User
+from mcp_ui_food.v1.food import CartEntry, MenuItem
+from mcp_ui_food.v1.food_rbt import FoodOrder, User
 from rbt.v1alpha1.errors_pb2 import Ok, PermissionDenied, Unauthenticated
 from reboot.aio.auth.authorizers import allow_if, is_app_internal
 from reboot.aio.contexts import (

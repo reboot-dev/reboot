@@ -17,9 +17,9 @@ For the impatient:
 
 ## Overview
 
-The Reboot Store is an AI Chat App (MCP App) that lets users browse
-products, manage a shopping cart, and check out — all through an AI
-chat interface. It exposes three interactive UIs:
+The Reboot Store is an MCP UI that lets users browse
+products, manage a shopping cart, and check out — all from inside an MCP
+client. It exposes three interactive UIs:
 
 - **Store** — a product grid showing the products the model
   picked for the current request, with color and size selection

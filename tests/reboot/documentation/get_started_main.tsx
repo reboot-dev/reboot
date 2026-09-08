@@ -1,5 +1,5 @@
 // frontend/web/src/main.tsx
-import { useUser } from "@api/ai_chat_counter/v1/counter_rbt_react";
+import { useUser } from "@api/mcp_ui_counter/v1/counter_rbt_react";
 import {
   RebootClientProvider,
   useSignIn,

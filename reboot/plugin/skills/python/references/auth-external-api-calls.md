@@ -1,7 +1,7 @@
 ---
 title: Calling External-Service APIs on the User's Behalf
 impact: HIGH
-impactDescription: Token capture is opt-in and easy to get subtly wrong — the wrong scope, a missing library, storing from a non-app-internal context, or an external call outside a Workflow all fail at runtime, not at startup. This is the host-agnostic recipe shared by chat apps and web apps.
+impactDescription: Token capture is opt-in and easy to get subtly wrong — the wrong scope, a missing library, storing from a non-app-internal context, or an external call outside a Workflow all fail at runtime, not at startup. This is the host-agnostic recipe shared by MCP UIs and web apps.
 tags: auth, oauth, tokens, store_tokens, oauth-token-manager, ciphertext, workflow, external, api, api-key, custom-endpoint, on-behalf, refresh-token, crypto-shred
 ---
 
@@ -10,7 +10,7 @@ tags: auth, oauth, tokens, store_tokens, oauth-token-manager, ciphertext, workfl
 Beyond telling you _who_ the caller is, OAuth can let your app act **as
 the user** at an external service — read their Google Calendar, open
 GitHub issues, post to their Slack — even in a background workflow long
-after they've left. This recipe is **the same for chat apps and web
+after they've left. This recipe is **the same for MCP UIs and web
 apps**; only how you _capture_ the tokens differs slightly by host (see
 "Capturing tokens" below). Two halves, always:
 
@@ -54,12 +54,12 @@ via `Application(oauth=...)` (`Google` / `GitHub` / `Auth0`), the OAuth
 server can capture its tokens for you: add the extra `scopes=[...]` your
 calls need and `store_tokens=True` on the provider — no endpoints to
 write. This works on every frontend that signs in through `oauth=` —
-MCP chat apps and web apps alike. It captures the identity provider's **own**
+MCP UIs and web apps alike. It captures the identity provider's **own**
 tokens only: with `Auth0` you get an Auth0 token, not the upstream
 Google/GitHub token a brokered sign-in went through — to call the
 upstream API, ask Auth0 for the federated IdP token or use Path B. The
 provider-config details (per-provider scopes, `Development()` issues no
-tokens, the Auth0-broker caveat, etc.) are in the chat-app skill's
+tokens, the Auth0-broker caveat, etc.) are in the `mcp-ui` skill's
 `auth-store-tokens.md`.
 
 ### Path B — your own OAuth flow (any other service)

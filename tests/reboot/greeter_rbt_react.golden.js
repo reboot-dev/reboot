@@ -1993,7 +1993,7 @@ class GreeterInstance {
                         // If we don't have any orphans to observe and we don't have any expecteds to observe,
                         // or at least, the first expecteds _is not observed_ by this response, then go ahead and
                         // pass on the response because it might contain new data that should get shown to the
-                        // user (e.g., in a chat app this could be a new chat message from a different user).
+                        // user (e.g., in a chat room this could be a new message from a different user).
                         else if (response !== undefined && !haveOrphans) {
                             reader.setResponse(response);
                         }

@@ -56,7 +56,7 @@ Four blocks: install deps from the lockfile, copy schemas + config and
 run `rbt generate`, copy backend source, then run `rbt serve run` —
 which reads everything else it needs from `.rbtrc`.
 
-## Adding a Bundled Web Frontend (MCP / Chat Apps)
+## Adding a Bundled Web Frontend (MCP UIs)
 
 For an MCP or chat-style app where the Reboot backend is also the
 static web server for an embedded UI artifact, add two layers between
@@ -167,7 +167,7 @@ web/
 README.md
 ```
 
-**Bundled-web (MCP / chat app)** — keep `frontend/` sources the in-image
+**Bundled-web (MCP UI)** — keep `frontend/` sources the in-image
 `npm ci && npm run build` needs, drop everything else under `frontend/`:
 
 ```gitignore

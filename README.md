@@ -166,7 +166,7 @@ can build any kind of app with Reboot:
   [web app](https://docs.reboot.dev/frontends/web), a
   [React Native app](https://docs.reboot.dev/frontends/react_native)
   (alpha), or an
-  [AI chat app](https://docs.reboot.dev/frontends/ai_chat) inside
+  [MCP UI](https://docs.reboot.dev/frontends/mcp_ui) inside
   ChatGPT, Claude, or VS Code, where `UI` methods render React
   components in the conversation.
 - **Agents** reach it over MCP: every method marked `mcp=Tool()` is a
@@ -187,7 +187,7 @@ per-user entry point the rest of your app hangs off, and the same
 
 Python backends are supported today. TypeScript backends and React
 Native frontends are in alpha: the core of Reboot works in both
-languages, but AI chat apps, `UI` methods, the built-in OAuth sign-in
+languages, but MCP UIs, `UI` methods, the built-in OAuth sign-in
 flow, and durable agents are Python-only for now. More languages are
 coming.
 

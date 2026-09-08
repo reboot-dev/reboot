@@ -263,7 +263,7 @@ The harness exercises the full RPC path — not Servicer instances
 directly. That means the same context-type rules, error semantics,
 and serialization apply. If a test passes, the wiring is correct.
 This is exactly why "write tests for each user story before
-handing the app off" is in the `chat-app` and `web-app` build
+handing the app off" is in the `mcp-ui` and `web-app` build
 flows: the tests catch contract bugs that a manual click-through
 won't surface for several minutes.
 

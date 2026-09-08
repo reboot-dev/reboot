@@ -55,7 +55,7 @@ identity available).
   Servicer up front**, using `allow_if(...)` with predicates like
   `has_verified_token` and `state_id_is_user_id`. The rules execute
   identically in dev and prod; no second pass before shipping. This
-  is the typical and recommended pattern for **both** MCP chat apps
+  is the typical and recommended pattern for **both** MCP UIs
   and standalone web apps — the same OAuth server serves both
   frontends, browsers via a `rbt_session` cookie and MCP clients via
   `Authorization: Bearer`.

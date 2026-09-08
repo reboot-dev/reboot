@@ -72,8 +72,8 @@ give a rule per method:
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/backend/src/servicers/counter.py&lines=72-84&syntax=python) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/backend/src/servicers/counter.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-ui-counter/backend/src/servicers/counter.py&lines=72-84&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter/backend/src/servicers/counter.py -->
 
 ```python
 class CounterServicer(Counter.Servicer):
@@ -277,8 +277,8 @@ A callable receives the `context`, the instance's `state`, and the
 `request`, and returns a decision. Here is one that allows the owner
 of a `Counter` and nobody else:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/backend/src/servicers/counter.py&lines=20-33&syntax=python) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/backend/src/servicers/counter.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-ui-counter/backend/src/servicers/counter.py&lines=20-33&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter/backend/src/servicers/counter.py -->
 
 ```python
 def _caller_is_owner(
@@ -337,7 +337,7 @@ get=allow_if(any=[_caller_is_owner, is_app_internal]),
 
 That gives you per-instance ownership without a permissions table, and
 it holds no matter which frontend the call arrives from — web, native,
-or an AI chat client.
+or an MCP client.
 
 ## Next
 

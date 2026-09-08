@@ -31,7 +31,7 @@ backend behind a standalone React frontend served at a normal URL.
 > backend — they share `oauth=...`, the same `User` actor per
 > upstream identity, and the same servicer code. If your app needs
 > both frontends, also load the
-> [chat-app skill](../chat-app/SKILL.md) for the MCP-specific
+> [`mcp-ui` skill](../mcp-ui/SKILL.md) for the MCP-specific
 > additions (`mcp=Tool()`, `UI()`, MCPJam).
 > This skill alone covers the web side.
 
@@ -47,11 +47,11 @@ backend behind a standalone React frontend served at a normal URL.
   [`deploy` skill](../deploy/SKILL.md): backend on Reboot Cloud,
   frontend on a static host under the user's own custom domain.
 
-## How a Web App Differs From a Chat App
+## How a Web App Differs From an MCP UI
 
 The Reboot backend is identical. The deltas are all on the frontend:
 
-| Concern      | Chat App (`chat-app`)                                    | Web App (this skill)                                                                   |
+| Concern      | MCP UI (`mcp-ui`)                                        | Web App (this skill)                                                                   |
 | ------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Front door   | MCP host (ChatGPT, Claude, …) creates a `User` per user. | Browser user signs in via `Application(oauth=...)`; same `User` per upstream identity. |
 | API exposure | `mcp=Tool()` on writer/transaction methods.              | Methods exposed only through the generated React client.                               |
@@ -68,7 +68,7 @@ scheduling, stdlib actors, errors, auth predicates, testing) are
 
 Web apps wire identity via
 `Application(oauth=OAuth(provider=OAuthProviderByEnvironment(dev=Development(), prod=Google(...))))`
-— the same parameter MCP chat apps use. Reboot mounts its
+— the same parameter MCP UIs use. Reboot mounts its
 built-in OAuth Authorization Server at `/__/oauth/*` and brokers
 sign-in against the configured upstream IdP. Browser sessions
 are carried in an HttpOnly `rbt_session` cookie set by
@@ -142,7 +142,7 @@ Recommended sequence:
    before real users exist**: `context.auth.user_id` is namespaced
    per provider, so switching providers after launch strands every
    existing user's state. Only reach for
-   [chat-app/references/auth-oauth-providers.md](../chat-app/references/auth-oauth-providers.md)
+   [mcp-ui/references/auth-oauth-providers.md](../mcp-ui/references/auth-oauth-providers.md)
    if you need to write a custom provider or debug a specific
    provider's flow. In unit tests, keep
    `token_verifier=<your IdP verifier>` exactly as in production —
@@ -202,15 +202,15 @@ it** — not all of them up front — and read each one **once**. The
 groups below are in build order, and each reference appears in
 exactly one of them — the step that needs it.
 
-> **Never read `chat-app/references/*` for a web app.** They cover
+> **Never read `mcp-ui/references/*` for a web app.** They cover
 > the MCP frontend — `UI()` artifacts, the MCPJam inspector, the
 > nested `frontend/mcp/<name>/` Vite output, `mcp=Tool()` markers,
 > popping a widget out into a web app. Reaching into them costs
-> context and produces chat-app-shaped code (`mcp=None` on every
+> context and produces MCP-UI-shaped code (`mcp=None` on every
 > method of an app with no MCP frontend). The web equivalents are
 > [`references/react-client.md`](references/react-client.md) and the
 > `python` references named below. The single exception is
-> [chat-app/references/auth-oauth-providers.md](../chat-app/references/auth-oauth-providers.md),
+> [mcp-ui/references/auth-oauth-providers.md](../mcp-ui/references/auth-oauth-providers.md),
 > which is frontend-neutral: read it when you pick a real provider.
 
 **Before the API definition:**
@@ -425,7 +425,7 @@ Before writing code, analyze the user's request:
    `python/references/state-collections.md` Step 1 for the full
    decomposition signal list.
 2. **Per-user state?** If yes, declare a `User` type and route
-   creation through it the same way `chat-app` does — the
+   creation through it the same way `mcp-ui` does — the
    `User`-front-door pattern is independent of MCP. If the app is
    anonymous or all users share state, skip `User`.
 3. **Container shape for each collection.** Once an entity is its
@@ -497,7 +497,7 @@ Before writing code, analyze the user's request:
                              # (output of `rbt generate --react=`)
 ```
 
-Key differences from a `chat-app` layout:
+Key differences from a `mcp-ui` layout:
 
 - `web/index.html` lives at the top of `web/` (single SPA entry),
   **not** under `frontend/mcp/<name>/index.html`.
@@ -528,7 +528,7 @@ Key differences from a `chat-app` layout:
    rules live in `python/references/api-pydantic.md`; method
    marker → context-type rules in
    `python/references/api-methods.md`. Do **not** add `mcp=Tool()`
-   or `UI()` — those are chat-app only.
+   or `UI()` — those are MCP-UI only.
 5. `uv run rbt generate`. Don't read what it wrote: the signature
    your servicer must match is in `python/references/api-methods.md`
    ("The Servicer Signature Each Declaration Obliges").

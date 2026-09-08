@@ -460,7 +460,7 @@ main() {
         ok "Installed for: $(IFS=', '; echo "${INSTALLED_FOR[*]}")."
     fi
     printf >&2 "\nStart a new agent session, then ask to build a Reboot app"
-    printf >&2 " — e.g. ${BOLD}build a todo chat app${RESET}.\n"
+    printf >&2 " — e.g. ${BOLD}build a todo-list MCP UI${RESET}.\n"
 }
 
 # Run the install when this file is executed, directly or via

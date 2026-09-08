@@ -101,7 +101,7 @@ are [authenticated](/users/authorization) to your application.
 
 Pass an [`OAuth`](/users/oauth) to have Reboot run an OAuth server for
 your application — the sign-in flow for browsers, native apps, and AI
-chat clients alike, plus
+MCP clients alike, plus
 [`User` auto-construction](/users/overview):
 
 ```python
@@ -133,7 +133,7 @@ verify tokens minted somewhere else instead, see
 ## Presenting your app
 
 Three optional arguments describe your application to the clients that
-connect to it — most visibly [AI chat clients](/frontends/ai_chat) and
+connect to it — most visibly [MCP clients](/frontends/mcp_ui) and
 the setup wizard your app serves at its root URL:
 
 | Argument | Description |
@@ -145,7 +145,7 @@ the setup wizard your app serves at its root URL:
 ## The MCP endpoint
 
 `Application` mounts an MCP endpoint at `/mcp`, so any
-[AI chat client](/frontends/ai_chat) can connect. Methods declared with
+[MCP client](/frontends/mcp_ui) can connect. Methods declared with
 `mcp=Tool()` appear there as tools, and
 [`UI`](/frontends/ui_methods) methods as tools plus resources. No extra
 configuration is needed in your `main.py`.

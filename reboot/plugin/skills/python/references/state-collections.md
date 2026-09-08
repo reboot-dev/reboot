@@ -381,6 +381,6 @@ form runs:
   collection items.
 - `stdlib-ordered-map.md` — concrete API for Shape C, library
   registration, pagination details.
-- `chat-app/references/api-state-shapes.md` (chat-app skill) — the
-  chat-app-specific corollary: `list[Item]` is for sub-records,
+- `mcp-ui/references/api-state-shapes.md` (`mcp-ui` skill) — the
+  MCP-UI-specific corollary: `list[Item]` is for sub-records,
   not for application-type instances.
