@@ -57,7 +57,11 @@ import {
   printBuiltInSyntax,
   recordingUrl,
   type FeatureFilter,
+  BLOCKED_TAG,
+  WIP_TAG,
+  blockedScenariosOfFeature,
   featurePasses,
+  isWip,
   featuresByRecency,
   rulePasses,
   scenariosOfFeature,
@@ -1132,8 +1136,17 @@ const ScenarioRow: FC<{
     key: relatedKey,
     onRelate: setRelatedKey,
   };
+  const blocked = tags.includes(BLOCKED_TAG);
   return (
-    <div className={expanded ? "scenario is-expanded" : "scenario"}>
+    <div
+      className={[
+        "scenario",
+        expanded ? "is-expanded" : "",
+        blocked ? "is-blocked" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <div
         className="scenario-head"
         onClick={() => setExpanded(!expanded)}
@@ -1173,13 +1186,28 @@ const ScenarioRow: FC<{
             recording stale
           </span>
         )}
-        {tags.length > 0 && (
+        {tags.includes(WIP_TAG) && (
+          <TagPill tag="wip" title="Being worked on" />
+        )}
+        {tags.includes(BLOCKED_TAG) && (
+          <TagPill
+            tag="blocked"
+            title={
+              description ??
+              "Describes behavior the application does not have yet"
+            }
+          />
+        )}
+        {tags.filter((tag) => tag !== BLOCKED_TAG && tag !== WIP_TAG).length >
+          0 && (
           <span className="tags">
-            {tags.map((tag) => (
-              <span className="tag" key={tag}>
-                {tag}
-              </span>
-            ))}
+            {tags
+              .filter((tag) => tag !== BLOCKED_TAG && tag !== WIP_TAG)
+              .map((tag) => (
+                <span className="tag" key={tag}>
+                  {tag}
+                </span>
+              ))}
           </span>
         )}
       </div>
@@ -1305,6 +1333,9 @@ const RuleSection: FC<{
         mark={false}
       />
       <h3>{rule.name}</h3>
+      {rule.tags.includes(WIP_TAG) && (
+        <TagPill tag="wip" title="Being worked on" />
+      )}
       <Anchor page="features" id={id} />
       <span className="summary-line">
         {countWithNoun(rule.scenarios.length, "scenario")}
@@ -1412,6 +1443,36 @@ const WebAppToggle: FC<{
     <span aria-hidden="true">🌐</span>
     <span className="visually-hidden">web app</span>
   </button>
+);
+
+// A pill for one of the tags the index filters by, '@wip' or
+// '@blocked'; clicking it filters the index to the features carrying
+// the tag, and it is lit while that filter is on.
+const TagToggle: FC<{
+  tag: "wip" | "blocked";
+  active: boolean;
+  onToggle: () => void;
+  title: string;
+}> = ({ tag, active, onToggle, title }) => (
+  <button
+    type="button"
+    className={`tag-toggle tag-toggle-${tag}${active ? " is-active" : ""}`}
+    onClick={onToggle}
+    title={title}
+    aria-pressed={active}
+  >
+    {tag}
+  </button>
+);
+
+// A pill marking a rule or scenario as '@wip' or '@blocked'.
+const TagPill: FC<{ tag: "wip" | "blocked"; title?: string }> = ({
+  tag,
+  title,
+}) => (
+  <span className={`tag-pill tag-pill-${tag}`} title={title}>
+    {tag}
+  </span>
 );
 
 // A state type as a chip that filters the index by it; lit while it
@@ -1541,7 +1602,17 @@ const FeaturesSearch: FC<{
   onChange: (filter: FeatureFilter) => void;
   onToggleStateType: (type: string) => void;
   onToggleWebApp: () => void;
-}> = ({ filter, stateTypes, onChange, onToggleStateType, onToggleWebApp }) => (
+  onToggleWip: () => void;
+  onToggleBlocked: () => void;
+}> = ({
+  filter,
+  stateTypes,
+  onChange,
+  onToggleStateType,
+  onToggleWebApp,
+  onToggleWip,
+  onToggleBlocked,
+}) => (
   <div className="features-search">
     <input
       type="search"
@@ -1567,6 +1638,26 @@ const FeaturesSearch: FC<{
             : "Show only features with web app scenarios"
         }
       />
+      <TagToggle
+        tag="wip"
+        active={filter.wip}
+        onToggle={onToggleWip}
+        title={
+          filter.wip
+            ? "Showing features being worked on; click to show all"
+            : "Show only features being worked on"
+        }
+      />
+      <TagToggle
+        tag="blocked"
+        active={filter.blocked}
+        onToggle={onToggleBlocked}
+        title={
+          filter.blocked
+            ? "Showing features with blocked scenarios; click to show all"
+            : "Show only features with blocked scenarios"
+        }
+      />
     </div>
   </div>
 );
@@ -1576,15 +1667,21 @@ const NO_FILTER: FeatureFilter = {
   query: "",
   stateTypes: [],
   webApp: false,
+  wip: false,
+  blocked: false,
 };
 
 // The filter the features page keeps while it is open: the words,
-// the state types and whether the web app is asked for, and how a
-// chip turns each on and off.
+// the state types and the tags asked for, and how a chip turns each
+// on and off.
 const useFeatureFilter = () => {
   const [filter, setFilter] = useState<FeatureFilter>(NO_FILTER);
   const toggleWebApp = () =>
     setFilter((current) => ({ ...current, webApp: !current.webApp }));
+  const toggleWip = () =>
+    setFilter((current) => ({ ...current, wip: !current.wip }));
+  const toggleBlocked = () =>
+    setFilter((current) => ({ ...current, blocked: !current.blocked }));
   const toggleStateType = (type: string) =>
     setFilter((current) => ({
       ...current,
@@ -1593,11 +1690,17 @@ const useFeatureFilter = () => {
         : [...current.stateTypes, type],
     }));
   const filtering =
-    filter.query.trim() !== "" || filter.stateTypes.length > 0 || filter.webApp;
+    filter.query.trim() !== "" ||
+    filter.stateTypes.length > 0 ||
+    filter.webApp ||
+    filter.wip ||
+    filter.blocked;
   return {
     filter,
     setFilter,
     toggleWebApp,
+    toggleWip,
+    toggleBlocked,
     toggleStateType,
     filtering,
   };
@@ -1670,10 +1773,22 @@ const FeatureSummaryCard: FC<{
   graph: GraphStateType[];
   links: StepLinks;
   onToggleWebApp: () => void;
-}> = ({ entry, filter, graph, links, onToggleWebApp }) => {
+  onToggleWip: () => void;
+  onToggleBlocked: () => void;
+}> = ({
+  entry,
+  filter,
+  graph,
+  links,
+  onToggleWebApp,
+  onToggleWip,
+  onToggleBlocked,
+}) => {
   const { filename, feature } = entry;
   const scenarios = scenariosOfFeature(feature).length;
   const webApp = webAppScenarioCount(feature);
+  const blocked = blockedScenariosOfFeature(feature).length;
+  const wip = isWip(feature);
   return (
     <section className="feature-summary">
       <div className="feature-methods-label">feature</div>
@@ -1717,6 +1832,26 @@ const FeatureSummaryCard: FC<{
             active={filter.webApp}
             onToggle={onToggleWebApp}
             title={`${webApp} of ${scenarios} scenarios drive the web app`}
+          />
+        )}
+        {wip && (
+          <TagToggle
+            tag="wip"
+            active={filter.wip}
+            onToggle={onToggleWip}
+            title={
+              feature.tags.includes(WIP_TAG)
+                ? "This feature is being worked on"
+                : "A rule or scenario of this feature is being worked on"
+            }
+          />
+        )}
+        {blocked > 0 && (
+          <TagToggle
+            tag="blocked"
+            active={filter.blocked}
+            onToggle={onToggleBlocked}
+            title={`${blocked} of ${scenarios} scenarios are blocked`}
           />
         )}
       </div>
@@ -1766,8 +1901,15 @@ const FeaturesOverview: FC<{
   graph: GraphStateType[];
   links: StepLinks;
 }> = ({ features, graph, links }) => {
-  const { filter, setFilter, toggleWebApp, toggleStateType, filtering } =
-    useFeatureFilter();
+  const {
+    filter,
+    setFilter,
+    toggleWebApp,
+    toggleWip,
+    toggleBlocked,
+    toggleStateType,
+    filtering,
+  } = useFeatureFilter();
   const shown = featuresByRecency(features).filter(({ feature }) =>
     featurePasses(feature, filter)
   );
@@ -1779,6 +1921,8 @@ const FeaturesOverview: FC<{
         onChange={setFilter}
         onToggleStateType={toggleStateType}
         onToggleWebApp={toggleWebApp}
+        onToggleWip={toggleWip}
+        onToggleBlocked={toggleBlocked}
       />
       <div className="features-overview">
         <div className="feature-summaries">
@@ -1797,6 +1941,8 @@ const FeaturesOverview: FC<{
                 graph={graph}
                 links={links}
                 onToggleWebApp={toggleWebApp}
+                onToggleWip={toggleWip}
+                onToggleBlocked={toggleBlocked}
                 key={entry.filename}
               />
             ))

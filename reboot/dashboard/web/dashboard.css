@@ -1693,6 +1693,70 @@ header h1 {
   border-color: hsl(var(--border-strong));
 }
 
+/* The pills for the tags the pages mark and filter by: '@wip',
+   green, for what is being worked on, and '@blocked', red, for a
+   scenario describing behavior the application does not have yet.
+   As a toggle, lit while filtering; as a mark on a rule or scenario,
+   never lit. */
+.tag-toggle,
+.tag-pill {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.tag-toggle {
+  cursor: pointer;
+}
+
+.tag-pill {
+  cursor: help;
+}
+
+.tag-toggle-wip,
+.tag-pill-wip {
+  color: hsl(140 55% 26%);
+  background: hsl(140 55% 45% / 0.16);
+  border-color: hsl(140 50% 40% / 0.5);
+}
+
+.tag-toggle-wip:hover {
+  border-color: hsl(140 50% 32%);
+}
+
+.tag-toggle-wip.is-active {
+  color: hsl(0 0% 100%);
+  background: hsl(140 50% 34%);
+  border-color: hsl(140 50% 34%);
+}
+
+.tag-toggle-blocked,
+.tag-pill-blocked {
+  color: hsl(4 65% 34%);
+  background: hsl(4 80% 58% / 0.14);
+  border-color: hsl(4 70% 50% / 0.5);
+}
+
+.tag-toggle-blocked:hover {
+  border-color: hsl(4 70% 40%);
+}
+
+.tag-toggle-blocked.is-active {
+  color: hsl(0 0% 100%);
+  background: hsl(4 65% 45%);
+  border-color: hsl(4 65% 45%);
+}
+
+/* A blocked scenario is set back, since it does not run. */
+.scenario.is-blocked > .scenario-head .scenario-name {
+  color: hsl(var(--muted-foreground));
+}
+
 /* Recordings that show an earlier version of the scenario: named,
    not offered. */
 .scenario-video.is-stale {

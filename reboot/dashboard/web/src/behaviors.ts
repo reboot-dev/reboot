@@ -95,6 +95,31 @@ export const stateTypesOfFeature = (feature: feature_pb.Feature): string[] => {
 const isWebAppStep = (step: feature_pb.Step): boolean =>
   /WebApp/.test(step.builtIn?.step.case ?? "");
 
+// A feature's scenarios describing behavior the application does not
+// have yet, each with the rule it is under, if any: those tagged
+// themselves, and every one under a tagged rule or feature, since a
+// feature's and a rule's tags apply to each scenario under them.
+export const blockedScenariosOfFeature = (
+  feature: feature_pb.Feature
+): { scenario: feature_pb.Scenario; rule?: feature_pb.Rule }[] => {
+  const featureBlocked = feature.tags.includes(BLOCKED_TAG);
+  return [
+    ...feature.scenarios
+      .filter((scenario) => featureBlocked || isBlocked(scenario))
+      .map((scenario) => ({ scenario, rule: undefined })),
+    ...feature.rules.flatMap((rule) =>
+      rule.scenarios
+        .filter(
+          (scenario) =>
+            featureBlocked ||
+            rule.tags.includes(BLOCKED_TAG) ||
+            isBlocked(scenario)
+        )
+        .map((scenario) => ({ scenario, rule }))
+    ),
+  ];
+};
+
 // How many of a feature's scenarios drive the web app.
 export const webAppScenarioCount = (feature: feature_pb.Feature): number =>
   scenariosOfFeature(feature).filter((scenario) =>
@@ -191,16 +216,21 @@ const textOfRule = (rule: feature_pb.Rule): string =>
     .toLowerCase();
 
 // The index's filter: words to find, state types the feature must
-// name, every one of them, and whether it must drive the web app.
+// name, every one of them, whether it must drive the web app, whether
+// it must be being worked on, and whether it must have a blocked
+// scenario.
 export interface FeatureFilter {
   query: string;
   stateTypes: string[];
   webApp: boolean;
+  wip: boolean;
+  blocked: boolean;
 }
 
 // Whether a feature is about what the filter asks for, its words
-// aside: it names every state type asked for, and drives the web app
-// if that is asked.
+// aside: it names every state type asked for, drives the web app if
+// that is asked, is being worked on if that is asked, and has a
+// blocked scenario if that is asked.
 const featureIsAbout = (
   feature: feature_pb.Feature,
   filter: FeatureFilter
@@ -208,7 +238,9 @@ const featureIsAbout = (
   const types = stateTypesOfFeature(feature);
   return (
     filter.stateTypes.every((type) => types.includes(type)) &&
-    (!filter.webApp || webAppScenarioCount(feature) > 0)
+    (!filter.webApp || webAppScenarioCount(feature) > 0) &&
+    (!filter.wip || isWip(feature)) &&
+    (!filter.blocked || blockedScenariosOfFeature(feature).length > 0)
   );
 };
 
@@ -243,6 +275,27 @@ export const rulePasses = (
     (feature.name ?? "").toLowerCase().includes(query)
   );
 };
+
+// The tag of a scenario describing behavior the application does not
+// have yet, which its description explains; such a scenario is
+// skipped when the feature runs.
+export const BLOCKED_TAG = "@blocked";
+
+// The tag of a feature, rule or scenario being worked on, which runs
+// as usual: what is new in the application right now.
+export const WIP_TAG = "@wip";
+
+export const isBlocked = (scenario: feature_pb.Scenario): boolean =>
+  scenario.tags.includes(BLOCKED_TAG);
+
+// Whether a feature is being worked on anywhere: tagged itself, or
+// holding a rule or scenario that is.
+export const isWip = (feature: feature_pb.Feature): boolean =>
+  feature.tags.includes(WIP_TAG) ||
+  feature.rules.some((rule) => rule.tags.includes(WIP_TAG)) ||
+  scenariosOfFeature(feature).some((scenario) =>
+    scenario.tags.includes(WIP_TAG)
+  );
 
 // Every scenario of a feature: the ones that belong to it directly,
 // then each rule's, which is the order they are written in the file.
