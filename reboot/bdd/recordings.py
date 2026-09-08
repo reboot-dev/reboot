@@ -84,6 +84,19 @@ def digest(scenario: Scenario, backgrounds: Sequence[Background]) -> str:
     backgrounds: its name, their steps, its steps, and its examples.
     Its keyword, description and tags are left out, since changing
     them changes nothing a recording shows."""
+    # The digest is of a hand-picked list of strings rather than of the
+    # messages' serialized bytes, for two reasons. The messages carry
+    # more than what the scenario runs: each step's line number, its
+    # parsed built-in syntax, and the videos and screenshots the
+    # dashboard attaches once it has found this very directory, so a
+    # comment added above the scenario, a change to the grammar's
+    # messages, or a recording being made would each change the bytes
+    # while changing nothing a recording shows. And the digest names a
+    # directory that is checked in and read back for years, while
+    # protobuf's deterministic serialization is only stable within one
+    # library and one schema: a field added to `Step` or a newer
+    # runtime would make every recording in every project look stale.
+    # A JSON list of the same strings is the same bytes everywhere.
     canonical = json.dumps(
         [
             scenario.name,
