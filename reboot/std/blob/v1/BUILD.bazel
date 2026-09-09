@@ -24,6 +24,7 @@ py_library(
         "@com_github_reboot_dev_reboot//log:log_py",
         "@com_github_reboot_dev_reboot//rbt/std/blob/v1:blob_py_reboot",
         "@com_github_reboot_dev_reboot//rbt/std/blob/v1:data_plane_py_reboot",
+        requirement("aiofiles"),
         requirement("aiohttp"),
         requirement("grpcio"),
         requirement("starlette"),
