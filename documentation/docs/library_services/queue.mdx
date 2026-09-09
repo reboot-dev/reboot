@@ -46,20 +46,20 @@ import { Queue } from "@reboot-dev/reboot-std/collections/queue/v1";
   </TabItem>
 </Tabs>
 
-Also make sure to include the `Queue` library and the dependent [`SortedMap`](./sorted_map)
-library when starting up your `Application`. (Note: this import is different
-from above.)
+Also make sure to include the `Queue` library when starting up your
+`Application`. In Python, listing `queue_library()` brings along the
+[`SortedMap`](./sorted_map) library it depends on; in TypeScript, list
+both. (Note: this import is different from above.)
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 ```py
 from reboot.std.collections.queue.v1.queue import queue_library
-from reboot.std.collections.v1.sorted_map import sorted_map_library
 
 async def main():
     application = Application(
         servicers=[MyServicer],
-        libraries=[queue_library(), sorted_map_library()],
+        libraries=[queue_library()],
     )
     await application.run()
 ```

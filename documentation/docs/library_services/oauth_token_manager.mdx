@@ -38,28 +38,20 @@ service without one (e.g. `"slack.com"`).
 
 ## Imports and servicers
 
-The `oauth` library builds on [`Ciphertext`](./ciphertext) (which builds
-on [`OrderedMap`](./ordered_map)), so include all three when starting
-your `Application`; omitting any of them fails fast at startup.
+The `oauth` library builds on [`Ciphertext`](./ciphertext), which builds
+on [`OrderedMap`](./ordered_map). In Python, listing `oauth_library()`
+brings both along; in TypeScript, list all three.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 
 ```py
 from reboot.std.oauth.v1.oauth import oauth_library
-from reboot.std.ciphertext.v1.ciphertext import ciphertext_library
-from reboot.std.collections.ordered_map.v1.ordered_map import (
-    ordered_map_library,
-)
 
 async def main():
     application = Application(
         servicers=[MyServicer],
-        libraries=[
-            oauth_library(),
-            ciphertext_library(),
-            ordered_map_library(),
-        ],
+        libraries=[oauth_library()],
     )
     await application.run()
 ```

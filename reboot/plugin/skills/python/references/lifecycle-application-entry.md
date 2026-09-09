@@ -99,18 +99,17 @@ async def main():
 
 ## See Also
 
-If you're using any stdlib state type, the wiring lives in **two**
-places: its `servicers()` list goes into `servicers=[...]`, and its
-`<name>_library()` factory goes into `libraries=[...]`. Forgetting
-either gives a runtime "unknown actor type" error. The references for
-each type call out exactly what to register:
+If you're using any stdlib state type, its `<name>_library()` factory
+goes into `libraries=[...]`; that registers its servicers and mounts
+whatever the library itself depends on. Forgetting it gives a runtime
+"unknown actor type" error. The references for each type call out
+exactly what to register:
 
-- `stdlib-ordered-map.md` — `ordered_map.servicers()` + `ordered_map_library()`
-- `stdlib-queue.md` — `queue.servicers()` + the stdlib map library
-  (`Queue` uses a stdlib sorted-map actor under the hood — see the
-  reference for the exact import)
-- `stdlib-pubsub.md` — `pubsub.servicers()` (transitively pulls
-  `queue.servicers()`) + the stdlib map library
+- `stdlib-ordered-map.md` — `ordered_map_library()`
+- `stdlib-queue.md` — `queue_library()` (brings along the stdlib
+  sorted-map library `Queue` uses under the hood)
+- `stdlib-pubsub.md` — `pubsub_library()` (brings along `Queue` and
+  the sorted-map library)
 - `stdlib-presence.md` — `presence.servicers()` (returns three
   Servicers; no library factory)
 
