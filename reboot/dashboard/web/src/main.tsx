@@ -730,16 +730,39 @@ const StateType: FC<{
   );
 };
 
-// The toggle for whether `rbt dev run` opens the dashboard by itself.
-const Banner: FC<{ suppressed: boolean; onToggle: () => void }> = ({
-  suppressed,
-  onToggle,
+// Whether the CLI just opened this page by itself, said by the
+// query parameter it opens the page with. Read once and stripped,
+// so a reload or a copied URL says nothing.
+const openedAutomatically = ((): boolean => {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("opened") !== "automatically") {
+    return false;
+  }
+  params.delete("opened");
+  const search = params.toString();
+  window.history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${search === "" ? "" : `?${search}`}${
+      window.location.hash
+    }`
+  );
+  return true;
+})();
+
+// Says the CLI opened this page by itself, and offers not to be
+// reopened; either button dismisses it.
+const OpenedNotice: FC<{ onSuppress: () => void; onClose: () => void }> = ({
+  onSuppress,
+  onClose,
 }) => (
-  <div className="banner">
-    <button className="banner-link" onClick={onToggle}>
-      {suppressed
-        ? "Open this dashboard on every restart"
-        : "Don't reopen this dashboard on restart"}
+  <div className="opened-notice" role="status">
+    <span>This dashboard was opened automatically.</span>
+    <button type="button" className="opened-notice-button" onClick={onSuppress}>
+      Don't reopen automatically
+    </button>
+    <button type="button" className="opened-notice-button" onClick={onClose}>
+      Close
     </button>
   </div>
 );
@@ -2785,9 +2808,7 @@ const App: FC = () => {
     });
   const { response } = useGet();
 
-  // Before the read returns, the page treats the preference as the
-  // CLI treats an unwritten one: as false.
-  const suppressed = response?.suppressOpenOnRestart ?? false;
+  const [openedNotice, setOpenedNotice] = useState(openedAutomatically);
 
   const navWidth = response?.navWidth ?? NAV_WIDTH.default;
   const resizing = useRef(navWidth);
@@ -2813,12 +2834,15 @@ const App: FC = () => {
 
   return (
     <div className="app">
-      <Banner
-        suppressed={suppressed}
-        onToggle={() =>
-          setSuppressOpenOnRestart({ suppressOpenOnRestart: !suppressed })
-        }
-      />
+      {openedNotice && (
+        <OpenedNotice
+          onSuppress={() => {
+            setSuppressOpenOnRestart({ suppressOpenOnRestart: true });
+            setOpenedNotice(false);
+          }}
+          onClose={() => setOpenedNotice(false)}
+        />
+      )}
       <HashRouter>
         <Routes>
           {PAGES.map((page) => (

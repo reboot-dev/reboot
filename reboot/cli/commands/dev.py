@@ -532,10 +532,12 @@ async def _open_dashboard_once(
 
     # `webbrowser` honors `$BROWSER`, which is what makes this work in
     # Codespaces and devcontainers, and returns `False` rather than
-    # raising when there is no browser to open.
+    # raising when there is no browser to open. An unforced open
+    # tells the page it was automatic, so it can offer not to be.
     page_url = f'{dashboard_url}{DASHBOARD_PATH}/'
+    opened_url = page_url if forced else f'{page_url}?opened=automatically'
 
-    if not await asyncio.to_thread(webbrowser.open, page_url):
+    if not await asyncio.to_thread(webbrowser.open, opened_url):
         terminal.warn(
             f"Could not open a browser; your dashboard is at {page_url}"
         )

@@ -288,8 +288,8 @@ async def _open_when_serving(*, port: int) -> None:
     long as it is open, so a tab left up keeps a second one from
     appearing, and a tab that was closed is replaced.
 
-    Also stays shut when the developer clicked "Don't reopen this
-    dashboard on restart".
+    Also stays shut when the developer clicked "Don't reopen
+    automatically" in the notice an automatic open shows.
     """
     dashboard_url = f'http://127.0.0.1:{port}'
     page_url = f'{dashboard_url}{DASHBOARD_PATH}/'
@@ -316,8 +316,12 @@ async def _open_when_serving(*, port: int) -> None:
 
         # `webbrowser` honors `$BROWSER`, which is what makes this
         # work in Codespaces and devcontainers, and returns `False`
-        # rather than raising when there is no browser to open.
-        if not await asyncio.to_thread(webbrowser.open, page_url):
+        # rather than raising when there is no browser to open. The
+        # page is told it was opened automatically, so it can offer
+        # not to be.
+        if not await asyncio.to_thread(
+            webbrowser.open, f'{page_url}?opened=automatically'
+        ):
             terminal.warn(
                 f"Could not open a browser; your dashboard is at {page_url}"
             )
