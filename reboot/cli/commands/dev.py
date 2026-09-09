@@ -693,7 +693,7 @@ async def check_local_envoy_mode(subprocesses: Subprocesses) -> None:
 
         # 'envoy --version' outputs something like:
         #  envoy  version:
-        #  <commit-sha>/1.38.2/Clean/RELEASE/BoringSSL
+        #  <commit-sha>/1.38.4/Clean/RELEASE/BoringSSL
         if ENVOY_VERSION not in stdout.decode():
             terminal.warn(
                 f"Reboot is tested with Envoy version '{ENVOY_VERSION}', "

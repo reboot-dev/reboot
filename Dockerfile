@@ -24,14 +24,17 @@
 # The following ARGs must be defined before the first FROM, since they'll
 # parameterize a FROM.
 
-# Latest version as of 2025-02-06. Keep in sync with `ISTIO_VERSION` in
-# `infrastructure/clusters/resources/istio.py`.
-ARG ISTIO_VERSION=1.29.0
+# Latest version as of 2026-09-09. Keep in sync with the Istio version
+# that our Kubernetes clusters are deployed with, so that the
+# `istioctl` in this image speaks to a control plane of its own
+# version.
+ARG ISTIO_VERSION=1.30.4
 
-# This version should match `ENVOY_VERSION` in
-# `public/reboot/settings.py` and
-# `reboot/containers/reboot-base/Dockerfile`.
-ARG ENVOY_VERSION=1.38.2
+# This version should match `ENVOY_VERSION` in `reboot/settings.py`
+# and `reboot/containers/reboot-base/Dockerfile`. Istio 1.30.4 builds
+# its proxy from Envoy `1.38.4-dev`, so `1.38.4` is the released Envoy
+# patch that most closely matches the mesh proxies.
+ARG ENVOY_VERSION=1.38.4
 
 # Clang version used for C++ compilation on the host and in the
 # manylinux-builder container.
