@@ -1310,6 +1310,45 @@ header h1 {
   text-decoration: underline;
 }
 
+/* The stubs of the arrows at the chosen row's flanks: the right one
+   lights what the method calls, the left one who calls it. */
+.graph-cone {
+  position: absolute;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid hsl(var(--border-strong));
+  border-radius: 999px;
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 5;
+}
+
+.graph-cone-upstream {
+  left: -16px;
+}
+
+.graph-cone-downstream {
+  right: -16px;
+}
+
+.graph-cone:hover {
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--primary));
+}
+
+/* Its fill is the chosen method's kind colour, set inline. */
+.graph-cone.is-active {
+  color: hsl(var(--primary-foreground));
+}
+
 /* A factory: the method that brings the state into existence, which
    is what a `constructs` edge lands on. */
 .graph-method-factory {

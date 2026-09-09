@@ -149,12 +149,27 @@ interface ExpandedPackageData extends Record<string, unknown> {
   onCollapse?: (name: string) => void;
 }
 
+// Which cones of the chosen method the graph lights: what it calls
+// (downstream), who calls it (upstream), or both.
+interface Cones {
+  downstream: boolean;
+  upstream: boolean;
+}
+
+const DEFAULT_CONES: Cones = { downstream: true, upstream: false };
+
 interface StateTypeData extends Record<string, unknown> {
   stateType: GraphStateType;
   // The chosen method's id, when one is chosen.
   selectedMethod?: string | null;
   onSelectMethod?: (id: string) => void;
   onOpenStateType?: (id: string) => void;
+  cones?: Cones;
+  onToggleCone?: (cone: keyof Cones) => void;
+  // Whether any drawn call lands on the chosen method, and whether
+  // it makes one; a button with nothing to light is not shown.
+  hasCallers?: boolean;
+  hasCalls?: boolean;
 }
 
 type GraphNode =
@@ -365,6 +380,9 @@ interface CallEdgeData extends Record<string, unknown> {
   // edge from a method row, each contributor for a folded edge.
   // What choosing a method keeps, transitively.
   sourceMethodIds: string[];
+  // Every called method the same way, which is what says whether
+  // the edge lands inside the upstream cone.
+  targetMethodIds: string[];
   // Set while another method is chosen. The label fades off this
   // rather than off the edge's class: `EdgeLabelRenderer` draws
   // labels in a layer of their own, out of the class's reach.
@@ -399,6 +417,46 @@ const reachableMethodIds = (
       if (!reached.has(callee)) {
         reached.add(callee);
         frontier.push(callee);
+      }
+    }
+  }
+  return reached;
+};
+
+// Every method that calls the chosen one, transitively, itself
+// included: the upstream closure over the same drawn calls,
+// collapse-blind the same way.
+const reachingMethodIds = (
+  to: string,
+  packages: GraphPackage[]
+): Set<string> => {
+  const callersByMethodId = new Map<string, string[]>();
+  for (const pkg of packages) {
+    for (const stateType of pkg.stateTypes) {
+      for (const method of stateType.methods) {
+        const caller = methodId(stateType.id, method.name);
+        for (const call of method.calls) {
+          if (!isDrawn(call)) {
+            continue;
+          }
+          const callee = methodId(call.stateTypeName, call.methodName);
+          const callers = callersByMethodId.get(callee);
+          if (callers === undefined) {
+            callersByMethodId.set(callee, [caller]);
+          } else {
+            callers.push(caller);
+          }
+        }
+      }
+    }
+  }
+  const reached = new Set([to]);
+  const frontier = [to];
+  while (frontier.length > 0) {
+    for (const caller of callersByMethodId.get(frontier.pop()!) ?? []) {
+      if (!reached.has(caller)) {
+        reached.add(caller);
+        frontier.push(caller);
       }
     }
   }
@@ -445,11 +503,15 @@ const edgesOfPackages = (
             : `${source}>${target}|${targetHandle}`;
 
           const caller = methodId(stateType.id, method.name);
+          const callee = methodId(call.stateTypeName, call.methodName);
           const edgeFoldedInto = edgesById.get(id);
           if (edgeFoldedInto !== undefined) {
             edgeFoldedInto.data!.count += call.count;
             if (!edgeFoldedInto.data!.sourceMethodIds.includes(caller)) {
               edgeFoldedInto.data!.sourceMethodIds.push(caller);
+            }
+            if (!edgeFoldedInto.data!.targetMethodIds.includes(callee)) {
+              edgeFoldedInto.data!.targetMethodIds.push(callee);
             }
             continue;
           }
@@ -466,6 +528,7 @@ const edgesOfPackages = (
               kind,
               count: call.count,
               sourceMethodIds: [caller],
+              targetMethodIds: [callee],
             },
             markerEnd: {
               type: MarkerType.ArrowClosed,
@@ -564,33 +627,123 @@ const MethodRow: FC<{
 
 const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
   data,
-}) => (
-  <div className="graph-state-type">
-    {/* The name is the way to the state type in the types pane. */}
-    <div
-      className="graph-state-type-head graph-method-open"
-      title="open in the types pane"
-      onClick={(event) => {
-        event.stopPropagation();
-        data.onOpenStateType?.(data.stateType.id);
-      }}
-    >
-      {data.stateType.name}
-    </div>
-    {data.stateType.methods.map((method) => {
-      const id = methodId(data.stateType.id, method.name);
-      return (
-        <MethodRow
-          id={id}
-          method={method}
-          selected={data.selectedMethod === id}
-          onSelect={data.onSelectMethod}
-          key={method.name}
-        />
-      );
-    })}
-  </div>
-);
+}) => {
+  // The chosen row's place in the card, for the cone buttons that
+  // flank it. The card clips its contents, so the buttons are
+  // siblings of it, placed by the layout's own row arithmetic.
+  const selectedIndex =
+    data.selectedMethod == null
+      ? -1
+      : data.stateType.methods.findIndex(
+          (method) =>
+            methodId(data.stateType.id, method.name) === data.selectedMethod
+        );
+  const coneTop = 1 + HEAD_HEIGHT + selectedIndex * ROW_HEIGHT + ROW_HEIGHT / 2;
+  // Lit, a button fills with the chosen method's kind colour, the
+  // colour its arrows are drawn in.
+  const coneColor = colorOfKind(data.stateType.methods[selectedIndex]?.kind);
+  return (
+    <>
+      <div className="graph-state-type">
+        {/* The name is the way to the state type in the types pane. */}
+        <div
+          className="graph-state-type-head graph-method-open"
+          title="open in the types pane"
+          onClick={(event) => {
+            event.stopPropagation();
+            data.onOpenStateType?.(data.stateType.id);
+          }}
+        >
+          {data.stateType.name}
+        </div>
+        {data.stateType.methods.map((method) => {
+          const id = methodId(data.stateType.id, method.name);
+          return (
+            <MethodRow
+              id={id}
+              method={method}
+              selected={data.selectedMethod === id}
+              onSelect={data.onSelectMethod}
+              key={method.name}
+            />
+          );
+        })}
+      </div>
+      {selectedIndex !== -1 && data.hasCallers === true && (
+        <button
+          type="button"
+          className={
+            data.cones?.upstream
+              ? "graph-cone graph-cone-upstream is-active"
+              : "graph-cone graph-cone-upstream"
+          }
+          style={
+            data.cones?.upstream
+              ? {
+                  top: coneTop,
+                  background: coneColor,
+                  borderColor: coneColor,
+                }
+              : { top: coneTop }
+          }
+          title="Show who calls this method"
+          aria-pressed={data.cones?.upstream ?? false}
+          onClick={(event) => {
+            event.stopPropagation();
+            data.onToggleCone?.("upstream");
+          }}
+        >
+          <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
+            <path
+              d="M1.5 6 H10 M6.5 2.5 L10 6 L6.5 9.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      )}
+      {selectedIndex !== -1 && data.hasCalls === true && (
+        <button
+          type="button"
+          className={
+            data.cones?.downstream
+              ? "graph-cone graph-cone-downstream is-active"
+              : "graph-cone graph-cone-downstream"
+          }
+          style={
+            data.cones?.downstream
+              ? {
+                  top: coneTop,
+                  background: coneColor,
+                  borderColor: coneColor,
+                }
+              : { top: coneTop }
+          }
+          title="Show what this method calls"
+          aria-pressed={data.cones?.downstream ?? false}
+          onClick={(event) => {
+            event.stopPropagation();
+            data.onToggleCone?.("downstream");
+          }}
+        >
+          <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
+            <path
+              d="M1.5 6 H10 M6.5 2.5 L10 6 L6.5 9.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      )}
+    </>
+  );
+};
 
 const CallEdge: FC<EdgeProps<Edge<CallEdgeData>>> = ({
   id,
@@ -926,29 +1079,95 @@ const GraphCanvas: FC<{
     [selectedMethodId, onSelectMethod]
   );
 
-  // With a method chosen, everything downstream of it: the methods
-  // it calls transitively, the arrows carrying those calls, and the
-  // cards and boxes those arrows leave from or land on; nothing
-  // else. An arrow is downstream when any method folded into it is.
-  // An expanded box never fades: it is the room its cards are in.
+  // Which cones of the chosen method the graph lights; what it
+  // calls, until the buttons flanking the chosen row say otherwise.
+  // Reset when the choice changes.
+  const [cones, setCones] = useState<Cones>(DEFAULT_CONES);
+
+  useEffect(() => {
+    setCones(DEFAULT_CONES);
+  }, [selectedMethodId]);
+
+  const toggleCone = useCallback((cone: keyof Cones): void => {
+    setCones((current) => ({ ...current, [cone]: !current[cone] }));
+  }, []);
+
+  // Whether any drawn call lands on the chosen method, self-calls
+  // included, and whether it makes any.
+  const selectedHasCallers = useMemo(
+    () =>
+      selectedMethodId !== null &&
+      packages.some((pkg) =>
+        pkg.stateTypes.some((stateType) =>
+          stateType.methods.some((method) =>
+            method.calls.some(
+              (call) =>
+                isDrawn(call) &&
+                methodId(call.stateTypeName, call.methodName) ===
+                  selectedMethodId
+            )
+          )
+        )
+      ),
+    [selectedMethodId, packages]
+  );
+
+  const selectedHasCalls = useMemo(
+    () =>
+      selectedMethodId !== null &&
+      packages.some((pkg) =>
+        pkg.stateTypes.some((stateType) =>
+          stateType.methods.some(
+            (method) =>
+              methodId(stateType.id, method.name) === selectedMethodId &&
+              method.calls.some(isDrawn)
+          )
+        )
+      ),
+    [selectedMethodId, packages]
+  );
+
+  // With a method chosen, its lit cones: downstream, the methods it
+  // calls transitively and the arrows carrying those calls;
+  // upstream, the methods that call it transitively, whose arrows
+  // must both leave from and land on callers. The cards and boxes a
+  // lit arrow touches stay lit, and nothing else does. An arrow is
+  // in a cone when any method folded into it is. An expanded box
+  // never fades: it is the room its cards are in.
   const unfaded = useMemo(() => {
     if (selectedMethodId === null) {
       return null;
     }
-    const reached = reachableMethodIds(selectedMethodId, packages);
     const nodeIds = new Set<string>([
       stateTypeNameOfMethodId(selectedMethodId),
     ]);
     const edgeIds = new Set<string>();
-    for (const edge of edges) {
-      if (edge.data!.sourceMethodIds.some((id) => reached.has(id))) {
-        edgeIds.add(edge.id);
-        nodeIds.add(edge.source);
-        nodeIds.add(edge.target);
+    const light = (edge: Edge<CallEdgeData>): void => {
+      edgeIds.add(edge.id);
+      nodeIds.add(edge.source);
+      nodeIds.add(edge.target);
+    };
+    if (cones.downstream) {
+      const reached = reachableMethodIds(selectedMethodId, packages);
+      for (const edge of edges) {
+        if (edge.data!.sourceMethodIds.some((id) => reached.has(id))) {
+          light(edge);
+        }
+      }
+    }
+    if (cones.upstream) {
+      const reaching = reachingMethodIds(selectedMethodId, packages);
+      for (const edge of edges) {
+        if (
+          edge.data!.sourceMethodIds.some((id) => reaching.has(id)) &&
+          edge.data!.targetMethodIds.some((id) => reaching.has(id))
+        ) {
+          light(edge);
+        }
       }
     }
     return { nodeIds, edgeIds };
-  }, [selectedMethodId, packages, edges]);
+  }, [selectedMethodId, cones, packages, edges]);
 
   const shownNodes = useMemo(
     () =>
@@ -974,6 +1193,10 @@ const GraphCanvas: FC<{
                 selectedMethod: selectedMethodId,
                 onSelectMethod: toggleMethodSelection,
                 onOpenStateType,
+                cones,
+                onToggleCone: toggleCone,
+                hasCallers: selectedHasCallers,
+                hasCalls: selectedHasCalls,
               },
             };
           default:
@@ -987,6 +1210,10 @@ const GraphCanvas: FC<{
       toggleMethodSelection,
       togglePackage,
       onOpenStateType,
+      cones,
+      toggleCone,
+      selectedHasCallers,
+      selectedHasCalls,
     ]
   );
 
