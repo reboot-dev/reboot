@@ -13,6 +13,7 @@ mirroring how a presigned S3 URL is served by S3 without consulting
 the application.
 """
 
+import aiofiles
 import asyncio
 import hashlib
 import hmac
@@ -133,15 +134,21 @@ def _make_put_part(store: FilesystemBlobStore):
         digest = hashlib.md5()
         size = 0
         try:
-            with open(temporary, "wb") as f:
+            # A part is megabytes, so the writes go off the event loop
+            # for the same reason the download below reads off it: this
+            # handler is driven by the loop, and writing inline would
+            # stall every other request this worker is serving.
+            async with aiofiles.open(temporary, "wb") as f:
                 async for chunk in request.stream():
                     if size + len(chunk) > store.part_size:
                         raise _PartTooLarge()
                     digest.update(chunk)
                     size += len(chunk)
-                    f.write(chunk)
-                f.flush()
-                os.fsync(f.fileno())
+                    await f.write(chunk)
+                await f.flush()
+                # `aiofiles` has no `fsync`; `fileno()` is proxied
+                # straight through, so the descriptor is the real one.
+                await asyncio.to_thread(os.fsync, f.fileno())
         except _PartTooLarge:
             os.unlink(temporary)
             return Response(
@@ -211,15 +218,9 @@ def _make_get_blob(store: FilesystemBlobStore):
                 # Read off the event loop: this generator is driven by
                 # it, and a part is megabytes, so reading inline would
                 # stall every other request this worker is serving.
-                file = await asyncio.to_thread(open, path, "rb")
-                try:
-                    while chunk := await asyncio.to_thread(
-                        file.read,
-                        _STREAM_CHUNK_SIZE,
-                    ):
+                async with aiofiles.open(path, "rb") as file:
+                    while chunk := await file.read(_STREAM_CHUNK_SIZE):
                         yield chunk
-                finally:
-                    await asyncio.to_thread(file.close)
 
         media_type, safety_headers = download_headers(meta.content_type)
         return StreamingResponse(
