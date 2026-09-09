@@ -5,9 +5,13 @@ import os
 import secrets
 import shutil
 import sys
+import webbrowser
 from pathlib import Path
 from reboot.aio.backoff import Backoff
 from reboot.cli.commands.dev import (
+    _dashboard_reachable,
+    _open_on_restart,
+    _viewers,
     check_local_envoy_mode,
     try_and_become_child_subreaper_on_linux,
 )
@@ -278,6 +282,51 @@ async def _run_dashboard(
         await backoff()
 
 
+async def _open_when_serving(*, port: int) -> None:
+    """Opens the dashboard once it is serving, unless somebody is
+    already looking at one: the page subscribes to `Presence` for as
+    long as it is open, so a tab left up keeps a second one from
+    appearing, and a tab that was closed is replaced.
+
+    Also stays shut when the developer clicked "Don't reopen this
+    dashboard on restart".
+    """
+    dashboard_url = f'http://127.0.0.1:{port}'
+    page_url = f'{dashboard_url}{DASHBOARD_PATH}/'
+
+    try:
+        backoff = Backoff()
+        while not await _dashboard_reachable(port):
+            await backoff()
+
+        while True:
+            try:
+                viewers = await _viewers(dashboard_url)
+                break
+            except Exception:
+                # Reachable means the proxy answers; the application
+                # behind it comes up moments later.
+                await backoff()
+
+        if len(viewers) > 0:
+            return
+
+        if not await _open_on_restart(dashboard_url):
+            return
+
+        # `webbrowser` honors `$BROWSER`, which is what makes this
+        # work in Codespaces and devcontainers, and returns `False`
+        # rather than raising when there is no browser to open.
+        if not await asyncio.to_thread(webbrowser.open, page_url):
+            terminal.warn(
+                f"Could not open a browser; your dashboard is at {page_url}"
+            )
+    except Exception as e:
+        # Never let this take down `rbt dashboard`; the dashboard is
+        # still reachable by hand.
+        terminal.warn(f"Could not open a dashboard ({e}); it is at {page_url}")
+
+
 async def dashboard(
     args,
     parser: ArgumentParser,
@@ -321,11 +370,19 @@ async def dashboard(
             f'http://127.0.0.1:{port}{DASHBOARD_PATH}/\n'
         )
 
-        await _run_dashboard(
-            env=env,
-            state_directory=Path(env[ENVVAR_RBT_STATE_DIRECTORY]),
-            subprocesses=subprocesses,
+        open_task = asyncio.create_task(
+            _open_when_serving(port=port),
+            name=f'_open_when_serving(...) in {__name__}',
         )
+
+        try:
+            await _run_dashboard(
+                env=env,
+                state_directory=Path(env[ENVVAR_RBT_STATE_DIRECTORY]),
+                subprocesses=subprocesses,
+            )
+        finally:
+            open_task.cancel()
 
     return 0
 
