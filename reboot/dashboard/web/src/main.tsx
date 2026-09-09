@@ -310,6 +310,51 @@ const NAV_WIDTH = { default: 250, min: 170, max: 520 };
 // drags, keeps within bounds, moves by keyboard and describes to
 // assistive technology.
 
+// A check that took longer than this reads in red at the foot of the
+// sidebar: the watcher is keeping the page waiting.
+const SLOW_CHECK_SECONDS = 10;
+
+// How long a check took, in seconds.
+const secondsOfCheck = (check: dashboard_pb.Check): number =>
+  check.took === undefined
+    ? 0
+    : Number(check.took.seconds) + check.took.nanos / 1_000_000_000;
+
+// One line at the foot of the sidebar: when a watcher last checked
+// the developer's files, in red when the check took too long.
+const CheckLine: FC<{
+  what: string;
+  check: dashboard_pb.Check | undefined;
+}> = ({ what, check }) => {
+  if (check?.at === undefined) {
+    return <div className="check">{what} not checked yet</div>;
+  }
+  const seconds = secondsOfCheck(check);
+  return (
+    <div
+      className={seconds > SLOW_CHECK_SECONDS ? "check is-slow" : "check"}
+      title={`The check took ${seconds.toFixed(1)} seconds`}
+    >
+      {what} checked at{" "}
+      <time dateTime={check.at.toDate().toISOString()}>
+        {check.at.toDate().toLocaleTimeString()}
+      </time>
+    </div>
+  );
+};
+
+// When each watcher last checked the developer's files, at the foot
+// of the sidebar.
+const Checks: FC<{
+  response: dashboard_pb.DashboardGetResponse | undefined;
+}> = ({ response }) => (
+  <div className="checks">
+    <CheckLine what="features" check={response?.featuresCheck} />
+    <CheckLine what="api" check={response?.apiCheck} />
+    <CheckLine what="code" check={response?.codeCheck} />
+  </div>
+);
+
 const RebootBrand: FC<{ live: boolean }> = ({ live }) => (
   <div className="brand">
     <img className="brand-logo" src="./reboot-logo.svg" alt="Reboot logo" />
@@ -2559,6 +2604,7 @@ const Overview: FC<{
             />
           ))}
         </nav>
+        <Checks response={response} />
       </Panel>
       <Separator className="nav-resizer" />
       <Panel className="pane-panel">

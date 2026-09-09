@@ -106,6 +106,12 @@ main {
   min-width: 0;
 }
 
+/* The sidebar's list scrolls; the checks stay at its foot. */
+.nav-panel {
+  display: flex;
+  flex-direction: column;
+}
+
 /* The border between the two, widened into something a pointer can
    catch. The line only shows while it is being reached for: the
    sidebar already has a border, and a second one drawn over it at
@@ -167,11 +173,41 @@ main {
 /* `height: 100%` because the panel around it is what has a height;
    without one there is nothing for `overflow-y` to scroll against. */
 nav {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   background: hsl(var(--sidebar));
   border-right: 1px solid hsl(var(--border));
   overflow-y: auto;
   padding: 14px 8px;
+}
+
+/* When each watcher last checked the developer's files, at the foot
+   of the sidebar: quiet, and red for a check that took too long. */
+.checks {
+  background: hsl(var(--sidebar));
+  border-right: 1px solid hsl(var(--border));
+  border-top: 1px solid hsl(var(--border));
+  padding: 8px 18px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.check {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.check.is-slow {
+  color: hsl(4 65% 45%);
+  opacity: 1;
 }
 
 .eyebrow {

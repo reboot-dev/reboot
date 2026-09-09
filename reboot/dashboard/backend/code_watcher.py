@@ -61,6 +61,7 @@ from reboot.aio.cooperatively import cooperatively
 from reboot.aio.workflows import at_least_once
 from reboot.cli.common.watch import file_watcher
 from reboot.dashboard.backend.changelog import code_changes_between
+from reboot.dashboard.backend.check import timed
 from reboot.dashboard.backend.pyright import Location, Pyright
 from reboot.dashboard.backend.walk import (
     GENERATED_SUFFIXES,
@@ -1250,21 +1251,28 @@ async def watch(
                 # mid-iteration records the same `Update` it was
                 # recording, which is what the idempotency of the
                 # write needs.
-                known_now, generated_now, changes = await at_least_once(
+                analyzed, check = await at_least_once(
                     'Walk and analyze',
                     context,
                     partial(
-                        _walk_and_analyze,
-                        application=application,
-                        roots=roots,
-                        generated_directory=generated_directory,
-                        known=known,
-                        generated=generated,
+                        timed,
+                        partial(
+                            _walk_and_analyze,
+                            application=application,
+                            roots=roots,
+                            generated_directory=generated_directory,
+                            known=known,
+                            generated=generated,
+                        ),
                     ),
                 )
+                known_now, generated_now, changes = analyzed
 
                 # A write wakes every browser reading `Get`, so one
-                # is only made when the analysis found a difference.
+                # is only made when the analysis found a difference. We
+                # include the check so that it is recorded atomically
+                # with the changes; a check that found none is recorded
+                # on its own.
                 if known_now is not None:
                     servicers = extract_and_sort_servicers(known_now)
 
@@ -1289,10 +1297,16 @@ async def watch(
                         code_files=files,
                         generated=dict(generated_now),
                         changes=changes,
+                        check=check,
                     )
 
                     known = known_now
                     generated = generated_now
+                else:
+                    await Dashboard.ref().per_iteration('Check').RecordCheck(
+                        context,
+                        code=check,
+                    )
 
                 # If we're restarting this workflow we might be in
                 # an iteration that has already memoized

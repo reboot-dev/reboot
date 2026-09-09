@@ -32,6 +32,7 @@ from reboot.aio.workflows import at_least_once
 from reboot.cli.common.watch import file_watcher
 from reboot.dashboard.backend.api_reader import read_api_file
 from reboot.dashboard.backend.changelog import changes_between
+from reboot.dashboard.backend.check import timed
 from reboot.dashboard.backend.walk import (
     GENERATED_SUFFIXES,
     SOURCE_GLOB,
@@ -313,14 +314,17 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
             ) as event:
 
                 # Memoized per iteration.
-                known_now, changes = await at_least_once(
+                (known_now, changes), check = await at_least_once(
                     'Walk and read',
                     context,
                     partial(
-                        _walk_and_read,
-                        api_directory=api_directory,
-                        directory=directory,
-                        known=known,
+                        timed,
+                        partial(
+                            _walk_and_read,
+                            api_directory=api_directory,
+                            directory=directory,
+                            known=known,
+                        ),
                     ),
                 )
 
@@ -328,7 +332,9 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
                 # is only made for a difference, and it is one
                 # transaction for the whole iteration, so that a save
                 # that touches several files is one entry's worth of
-                # history.
+                # history. We include the check so that it is recorded
+                # atomically with the changes; a check that found none
+                # is recorded on its own.
                 if known_now is not None:
                     await Dashboard.ref().per_iteration('Update').UpdateApi(
                         context,
@@ -340,8 +346,14 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
                             known_now, api_directory=directory
                         ),
                         changes=changes,
+                        check=check,
                     )
                     known = known_now
+                else:
+                    await Dashboard.ref().per_iteration('Check').RecordCheck(
+                        context,
+                        api=check,
+                    )
 
                 # If we're restarting this workflow we might be in an
                 # iteration that has already memoized `_walk_and_read`

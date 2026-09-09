@@ -24,6 +24,7 @@ from reboot.aio.contexts import WorkflowContext
 from reboot.aio.workflows import at_least_once
 from reboot.bdd import feature, recordings
 from reboot.cli.common.watch import file_watcher
+from reboot.dashboard.backend.check import timed
 from typing import Mapping
 
 # The glob every scenario file matches, which is the extension
@@ -165,21 +166,31 @@ async def watch(context: WorkflowContext) -> None:
             ) as event:
 
                 # Memoized per iteration.
-                features_now = await at_least_once(
+                features_now, check = await at_least_once(
                     'Read and parse',
                     context,
-                    partial(_read_and_parse, directory=directory),
+                    partial(
+                        timed, partial(_read_and_parse, directory=directory)
+                    ),
                 )
 
                 # An update wakes every browser reading `Get`, so one
-                # is only made for a difference.
+                # is only made for a difference. We include the check so
+                # that it is recorded atomically with the changes; a
+                # check that found none is recorded on its own.
                 if features_now != features:
                     await Dashboard.ref(
                     ).per_iteration('Update').UpdateFeatures(
                         context,
                         features=features_now,
+                        check=check,
                     )
                     features = features_now
+                else:
+                    await Dashboard.ref().per_iteration('Check').RecordCheck(
+                        context,
+                        features=check,
+                    )
 
                 # A restarted workflow may be in an iteration that has
                 # already memoized `_read_and_parse`, so it goes to the

@@ -4,6 +4,8 @@ from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import (
     DashboardGetRequest,
     DashboardGetResponse,
+    DashboardRecordCheckRequest,
+    DashboardRecordCheckResponse,
     DashboardUpdateApiRequest,
     DashboardUpdateApiResponse,
     DashboardUpdateCodeRequest,
@@ -70,7 +72,38 @@ class DashboardServicer(Dashboard.Servicer):
             generated=self.state.generated,
             needs_generate_reason=needs_generate_reason(self.state),
             features=self.state.features,
+            api_check=(
+                self.state.api_check
+                if self.state.HasField('api_check') else None
+            ),
+            code_check=(
+                self.state.code_check
+                if self.state.HasField('code_check') else None
+            ),
+            features_check=(
+                self.state.features_check
+                if self.state.HasField('features_check') else None
+            ),
         )
+
+    async def RecordCheck(
+        self,
+        context: WriterContext,
+        request: DashboardRecordCheckRequest,
+    ) -> DashboardRecordCheckResponse:
+        """Records a check that found nothing to update: when the
+        watcher checked the developer's files and how long it took."""
+        watcher = request.WhichOneof('watcher')
+        if watcher == 'api':
+            self.state.api_check.CopyFrom(request.api)
+        elif watcher == 'code':
+            self.state.code_check.CopyFrom(request.code)
+        elif watcher == 'features':
+            self.state.features_check.CopyFrom(request.features)
+        else:
+            raise ValueError(f"Expecting a watcher's check, not {watcher!r}")
+
+        return DashboardRecordCheckResponse()
 
     @classmethod
     async def WatchApi(
@@ -105,6 +138,7 @@ class DashboardServicer(Dashboard.Servicer):
         self.state.code_files.MergeFrom(request.code_files)
         self.state.generated.clear()
         self.state.generated.MergeFrom(request.generated)
+        self.state.code_check.CopyFrom(request.check)
 
         if len(request.changes) > 0:
             await OrderedMap.ref(CHANGELOG_ID).Insert(
@@ -154,6 +188,7 @@ class DashboardServicer(Dashboard.Servicer):
         """Replaces what the developer's `.feature` files declare."""
         self.state.features.clear()
         self.state.features.MergeFrom(request.features)
+        self.state.features_check.CopyFrom(request.check)
 
         return DashboardUpdateFeaturesResponse()
 
@@ -187,6 +222,7 @@ class DashboardServicer(Dashboard.Servicer):
         self.state.apis.MergeFrom(request.apis)
         self.state.api_digests.clear()
         self.state.api_digests.MergeFrom(request.api_digests)
+        self.state.api_check.CopyFrom(request.check)
 
         if len(request.changes) > 0:
             await OrderedMap.ref(CHANGELOG_ID).Insert(

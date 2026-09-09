@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package rbt.dashboard.v1;
 
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "rbt/v1alpha1/options.proto";
 import "rbt/v1alpha1/api/api.proto";
@@ -72,6 +73,22 @@ message Dashboard {
   // by the file's path relative to the working directory, as of the
   // last write.
   map<string, rbt.v1alpha1.bdd.Feature> features = 9;
+
+  // The last check each watcher made of the developer's files: when
+  // it finished and how long it took. Absent until the watcher has
+  // checked once.
+  optional Check api_check = 10;
+  optional Check code_check = 11;
+  optional Check features_check = 12;
+}
+
+// One check a watcher made of the developer's files.
+message Check {
+  // When the check finished.
+  google.protobuf.Timestamp at = 1;
+
+  // How long reading and analyzing the files took.
+  google.protobuf.Duration took = 2;
 }
 
 message DashboardGetRequest {}
@@ -102,6 +119,10 @@ message DashboardGetResponse {
   optional NeedsGenerateReason needs_generate_reason = 8;
 
   map<string, rbt.v1alpha1.bdd.Feature> features = 9;
+
+  optional Check api_check = 10;
+  optional Check code_check = 11;
+  optional Check features_check = 12;
 }
 
 message DashboardUpdateApiRequest {
@@ -115,6 +136,10 @@ message DashboardUpdateApiRequest {
   // Recorded in the same transaction as the state, so that the
   // changelog never says something the state does not.
   repeated Change changes = 4;
+
+  // The check that found what this records, recorded in the same
+  // write, so that a page that sees the check sees what it found.
+  Check check = 7;
 }
 
 message DashboardUpdateApiResponse {}
@@ -128,6 +153,10 @@ message DashboardUpdateCodeRequest {
   // Recorded in the same transaction as the state, so that the
   // changelog never says something the state does not.
   repeated Change changes = 4;
+
+  // The check that found what this records, recorded in the same
+  // write, so that a page that sees the check sees what it found.
+  Check check = 5;
 }
 
 message DashboardUpdateCodeResponse {}
@@ -399,9 +428,24 @@ message DashboardWatchCodeResponse {}
 message DashboardUpdateFeaturesRequest {
   // Keyed the way `Dashboard.features` is.
   map<string, rbt.v1alpha1.bdd.Feature> features = 1;
+
+  // The check that found what this records, recorded in the same
+  // write, so that a page that sees the check sees what it found.
+  Check check = 2;
 }
 
 message DashboardUpdateFeaturesResponse {}
+
+message DashboardRecordCheckRequest {
+  // Which watcher checked, with its check.
+  oneof watcher {
+    Check api = 1;
+    Check code = 2;
+    Check features = 3;
+  }
+}
+
+message DashboardRecordCheckResponse {}
 
 message DashboardWatchFeaturesRequest {}
 
@@ -678,6 +722,15 @@ service DashboardMethods {
   rpc WatchFeatures(DashboardWatchFeaturesRequest)
       returns (DashboardWatchFeaturesResponse) {
     option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  // Records a check that found nothing to update: when the watcher
+  // checked the developer's files and how long it took. A check that
+  // found something records itself with the update, in one write.
+  rpc RecordCheck(DashboardRecordCheckRequest)
+      returns (DashboardRecordCheckResponse) {
+    option (rbt.v1alpha1.method).writer = {
     };
   }
 }
