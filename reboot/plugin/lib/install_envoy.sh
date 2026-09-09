@@ -18,10 +18,10 @@
 
 set -eu
 
-# Pinned Envoy version. Keep in sync with
-# `public/reboot/settings.py` (`ENVOY_VERSION`), which is the
-# library's source of truth for the resolver.
-ENVOY_VERSION="1.38.2"
+# Pinned Envoy version. Keep in sync with `reboot/settings.py`
+# (`ENVOY_VERSION`), which is the library's source of truth for the
+# resolver.
+ENVOY_VERSION="1.38.4"
 
 # `PLUGIN_DATA` is hardcoded rather than read from `$CLAUDE_PLUGIN_DATA`.
 # Claude Code only sets that env var when it runs something from a
