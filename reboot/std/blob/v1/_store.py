@@ -20,7 +20,7 @@ import shutil
 import time
 from dataclasses import dataclass
 from reboot.crypto import root_keys
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 from uuid import uuid4
 
 # The part size clients should use. Every part except the last must be
@@ -66,6 +66,62 @@ class UploadedPart:
     number: int
     etag: str
     size: int
+
+
+@dataclass(frozen=True)
+class PartRecord:
+    """One part of a committed blob: its number, and the size its
+    bytes on disk were found to have at completion."""
+    number: int
+    size: int
+
+
+@dataclass(frozen=True)
+class BlobMetadata:
+    """A blob's entry in the store, as `meta.json` holds it.
+
+    `upload_id`, `etag` and `parts` are written in the same atomic
+    update as `committed`, so a committed blob carries all three."""
+    content_type: str
+    committed: bool
+    upload_id: Optional[str] = None
+    etag: Optional[str] = None
+    parts: tuple[PartRecord, ...] = ()
+
+    @classmethod
+    def from_json(cls, data: dict[str, Any]) -> "BlobMetadata":
+        return cls(
+            content_type=data["content_type"],
+            committed=data.get("committed", False),
+            upload_id=data.get("upload_id"),
+            etag=data.get("etag"),
+            parts=tuple(
+                PartRecord(number=part["number"], size=part["size"])
+                for part in data.get("parts", ())
+            ),
+        )
+
+    def to_json(self) -> dict[str, Any]:
+        """The on-disk form. A `dict` is the right shape at this one
+        boundary and nowhere else; absent fields are omitted rather
+        than written as `null`, so the file stays byte-comparable with
+        what earlier versions of this store wrote."""
+        data: dict[str, Any] = {
+            "content_type": self.content_type,
+            "committed": self.committed,
+        }
+        if self.upload_id is not None:
+            data["upload_id"] = self.upload_id
+        if self.etag is not None:
+            data["etag"] = self.etag
+        if self.parts:
+            data["parts"] = [
+                {
+                    "number": part.number,
+                    "size": part.size
+                } for part in self.parts
+            ]
+        return data
 
 
 def _encode_blob_id(blob_id: str) -> str:
@@ -184,21 +240,25 @@ class FilesystemBlobStore:
     def _meta_path(self, encoded_blob_id: str) -> str:
         return os.path.join(self.blob_directory(encoded_blob_id), "meta.json")
 
-    def read_meta(self, encoded_blob_id: str) -> Optional[dict]:
+    def read_meta(self, encoded_blob_id: str) -> Optional[BlobMetadata]:
         try:
             with open(self._meta_path(encoded_blob_id), "r") as f:
-                return json.load(f)
+                return BlobMetadata.from_json(json.load(f))
         except FileNotFoundError:
             return None
 
-    def _write_meta(self, encoded_blob_id: str, meta: dict) -> None:
+    def _write_meta(
+        self,
+        encoded_blob_id: str,
+        meta: BlobMetadata,
+    ) -> None:
         # Write to a temp file and atomically rename, so a crash
         # mid-write can never leave a torn `meta.json` that a
         # concurrent `read_meta` would fail to parse.
         path = self._meta_path(encoded_blob_id)
         temp_path = f"{path}.{uuid4().hex}.tmp"
         with open(temp_path, "w") as f:
-            json.dump(meta, f)
+            json.dump(meta.to_json(), f)
             f.flush()
             os.fsync(f.fileno())
         os.replace(temp_path, path)
@@ -213,11 +273,10 @@ class FilesystemBlobStore:
             # orphaning it under a fresh upload ID.
             existing = self.read_meta(encoded)
             if (
-                existing is not None and
-                not existing.get("committed", False) and
-                "upload_id" in existing
+                existing is not None and not existing.committed and
+                existing.upload_id is not None
             ):
-                upload_id = existing["upload_id"]
+                upload_id = existing.upload_id
                 reuse = True
             else:
                 upload_id = uuid4().hex
@@ -231,11 +290,11 @@ class FilesystemBlobStore:
             if not reuse:
                 self._write_meta(
                     encoded,
-                    {
-                        "content_type": content_type,
-                        "committed": False,
-                        "upload_id": upload_id,
-                    },
+                    BlobMetadata(
+                        content_type=content_type,
+                        committed=False,
+                        upload_id=upload_id,
+                    ),
                 )
             return upload_id
 
@@ -269,7 +328,7 @@ class FilesystemBlobStore:
         def sync():
             encoded = _encode_blob_id(blob_id)
             digests = []
-            manifest = []
+            manifest: list[PartRecord] = []
             total_size = 0
             last_part_number = max(part.number for part in parts)
             for part in sorted(parts, key=lambda part: part.number):
@@ -309,7 +368,9 @@ class FilesystemBlobStore:
                     )
                 total_size += size
                 digests.append(digest.digest())
-                manifest.append({"number": part.number, "size": size})
+                manifest.append(
+                    PartRecord(number=part.number, size=size)
+                )
 
             # Verify the *real* total against `max_size` (not the
             # already-checked reported sizes) as defense in depth.
@@ -326,13 +387,13 @@ class FilesystemBlobStore:
             )
             self._write_meta(
                 encoded,
-                {
-                    "content_type": content_type,
-                    "committed": True,
-                    "etag": etag,
-                    "upload_id": upload_id,
-                    "parts": manifest,
-                },
+                BlobMetadata(
+                    content_type=content_type,
+                    committed=True,
+                    upload_id=upload_id,
+                    etag=etag,
+                    parts=tuple(manifest),
+                ),
             )
             return etag
 
