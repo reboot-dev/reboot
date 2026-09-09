@@ -13,3 +13,6 @@ api/**/*_rbt*.ts
 
 # Ignore .yarn folder.
 .yarn
+
+# Recordings of browser scenarios, made by running the tests.
+*.recordings/

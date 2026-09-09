@@ -1764,6 +1764,37 @@ header h1 {
   cursor: help;
 }
 
+/* A scenario that drives the web app but has no recordings here yet:
+   running it makes them, which its definition says. */
+.scenario-video.is-unrecorded {
+  border-style: dotted;
+}
+
+/* The button beside a scenario's name that copies the name; quiet
+   until hovered, and a word while it says it copied. */
+.copy-scenario-name {
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+  color: hsl(var(--muted-foreground));
+  background: none;
+  border: 0;
+  padding: 2px;
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.copy-scenario-name:hover,
+.copy-scenario-name.is-copied {
+  color: hsl(var(--foreground));
+  opacity: 1;
+}
+
 /* The same open-and-close animation as `.method-detail`, on the
    scenario's own class so that the subgrid layout `.methods` gives
    its rows never applies here. */

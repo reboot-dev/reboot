@@ -4,3 +4,6 @@
 /api/dist/
 /frontend/api/
 /dist/
+
+# Recordings of browser scenarios, made by running the tests.
+*.recordings/

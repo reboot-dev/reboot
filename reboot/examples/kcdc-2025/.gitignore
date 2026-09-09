@@ -20,3 +20,6 @@ __pycache__/
 /.unpublished-reboot-wheel/*.whl
 
 *~
+
+# Recordings of browser scenarios, made by running the tests.
+*.recordings/

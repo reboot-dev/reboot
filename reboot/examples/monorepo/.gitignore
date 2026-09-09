@@ -13,3 +13,6 @@ hello-tasks/backend/api
 # Temporary directories produced by `pytest`.
 __pycache__/
 .pytest_cache/
+
+# Recordings of browser scenarios, made by running the tests.
+*.recordings/

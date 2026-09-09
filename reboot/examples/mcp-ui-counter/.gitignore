@@ -28,3 +28,6 @@ build/
 .idea/
 .vscode/
 *.swp
+
+# Recordings of browser scenarios, made by running the tests.
+*.recordings/

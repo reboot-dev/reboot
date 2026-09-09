@@ -18,3 +18,6 @@ __pycache__/
 /backend/api/
 boilerplate/
 .unpublished-reboot-wheel/
+
+# Recordings of browser scenarios, made by running the tests.
+*.recordings/

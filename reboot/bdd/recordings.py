@@ -2,10 +2,10 @@
 user's browser in its last run, and a screenshot after each user's
 step that opened the app and after each of its assertion steps.
 
-They live beside the feature file, in a directory named after it, so
-that they are checked in with it: anyone who checks out the project
-sees how each scenario looked without running it, and a version's
-recordings sit in history next to that version's scenarios.
+They live beside the feature file, in a directory named after it and
+ignored by git: running a scenario makes them, the dashboard shows
+the last run's, and a project that wants a version's recordings in
+history beside that version's scenarios may choose to check them in.
 
     backend/tests/web.feature
     backend/tests/web.recordings/
@@ -92,7 +92,8 @@ def digest(scenario: Scenario, backgrounds: Sequence[Background]) -> str:
     # comment added above the scenario, a change to the grammar's
     # messages, or a recording being made would each change the bytes
     # while changing nothing a recording shows. And the digest names a
-    # directory that is checked in and read back for years, while
+    # directory that outlives the run that made it and is read back
+    # after upgrades, or for years where a project checks it in, while
     # protobuf's deterministic serialization is only stable within one
     # library and one schema: a field added to `Step` or a newer
     # runtime would make every recording in every project look stale.

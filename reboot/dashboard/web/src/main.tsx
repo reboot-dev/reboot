@@ -60,6 +60,7 @@ import {
   BLOCKED_TAG,
   WIP_TAG,
   blockedScenariosOfFeature,
+  drivesWebApp,
   featurePasses,
   isWip,
   featuresByRecency,
@@ -1088,6 +1089,58 @@ const StepRow: FC<{
 // One row of a feature's or a rule's scenario list: a scenario, or
 // the background the list's scenarios share. Closed, it is one line;
 // open, its steps.
+// A button that copies the scenario's name, to hand to whoever, or
+// whatever, runs the tests: it says so for a moment once it has.
+const CopyScenarioName: FC<{ name: string }> = ({ name }) => {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) {
+      return;
+    }
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  return (
+    <button
+      type="button"
+      className={copied ? "copy-scenario-name is-copied" : "copy-scenario-name"}
+      title="Copy the scenario's name"
+      aria-label={`Copy "${name}"`}
+      // A click here copies, and does not open the scenario.
+      onClick={(event) => {
+        event.stopPropagation();
+        navigator.clipboard.writeText(name).then(
+          () => setCopied(true),
+          () => setCopied(false)
+        );
+      }}
+    >
+      {copied ? (
+        "copied"
+      ) : (
+        <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+          <rect
+            x="4"
+            y="4"
+            width="7"
+            height="7"
+            rx="1"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
+          <path
+            d="M8 4 V2 a1 1 0 0 0 -1 -1 H2 a1 1 0 0 0 -1 1 v5 a1 1 0 0 0 1 1 h2"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
+        </svg>
+      )}
+    </button>
+  );
+};
+
 const ScenarioRow: FC<{
   keyword: string;
   // Absent for a bare heading naming nothing.
@@ -1161,6 +1214,7 @@ const ScenarioRow: FC<{
           mark={false}
         />
         <span className="scenario-name">{name}</span>
+        {name !== undefined && <CopyScenarioName name={name} />}
         {videos.map((video) => (
           <a
             className="scenario-video"
@@ -1185,6 +1239,14 @@ const ScenarioRow: FC<{
           >
             recording stale
           </span>
+        )}
+        {drivesWebApp(steps) && videos.length === 0 && !recordingsStale && (
+          <Pill
+            className="scenario-video is-unrecorded"
+            label="not recorded yet"
+            meaning="This scenario uses a web browser, run the test in order to see its video and screenshot recordings."
+            mark={false}
+          />
         )}
         {tags.includes(WIP_TAG) && (
           <TagPill tag="wip" title="Being worked on" />

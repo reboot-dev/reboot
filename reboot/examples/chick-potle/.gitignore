@@ -31,3 +31,6 @@ frontend/dist/
 
 # OS.
 .DS_Store
+
+# Recordings of browser scenarios, made by running the tests.
+*.recordings/

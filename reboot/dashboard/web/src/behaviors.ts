@@ -95,6 +95,11 @@ export const stateTypesOfFeature = (feature: feature_pb.Feature): string[] => {
 const isWebAppStep = (step: feature_pb.Step): boolean =>
   /WebApp/.test(step.builtIn?.step.case ?? "");
 
+// Whether a scenario with the given steps drives the web app, so that
+// running it records a browser.
+export const drivesWebApp = (steps: feature_pb.Step[]): boolean =>
+  steps.some(isWebAppStep);
+
 // A feature's scenarios describing behavior the application does not
 // have yet, each with the rule it is under, if any: those tagged
 // themselves, and every one under a tagged rule or feature, since a
@@ -122,9 +127,8 @@ export const blockedScenariosOfFeature = (
 
 // How many of a feature's scenarios drive the web app.
 export const webAppScenarioCount = (feature: feature_pb.Feature): number =>
-  scenariosOfFeature(feature).filter((scenario) =>
-    scenario.steps.some(isWebAppStep)
-  ).length;
+  scenariosOfFeature(feature).filter((scenario) => drivesWebApp(scenario.steps))
+    .length;
 
 // Every state type any feature names, in the order first named
 // across the features as given.

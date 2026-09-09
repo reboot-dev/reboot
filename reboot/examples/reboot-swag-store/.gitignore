@@ -33,3 +33,6 @@ build/
 
 # Local environment variables
 .env
+
+# Recordings of browser scenarios, made by running the tests.
+*.recordings/

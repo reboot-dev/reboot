@@ -11,3 +11,6 @@ dist/
 # Generated code.
 api/**/*.js
 api/**/*.ts
+
+# Recordings of browser scenarios, made by running the tests.
+*.recordings/
