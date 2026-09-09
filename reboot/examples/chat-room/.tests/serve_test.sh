@@ -168,8 +168,8 @@ if command -v docker &> /dev/null; then
     fi
     # Verify the response contains the message we sent.
     # Collapse whitespace since the JSON response is pretty-printed.
-    if ! tr -d ' \n' < "$actual_output_file" | grep -q '"messages":\["test"\]'; then
-      echo "Expected '\"messages\":[\"test\"]' in response for state ID '$state_id', got:"
+    if ! tr -d ' \n' < "$actual_output_file" | grep -q '"messages":\[{"text":"test"'; then
+      echo "Expected '\"messages\":[{\"text\":\"test\"' in response for state ID '$state_id', got:"
       cat "$actual_output_file"
       exit 1
     fi

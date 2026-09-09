@@ -113,8 +113,8 @@ const ChatRoom = () => {
         <FlatList
           style={styles.messages}
           data={confirmed}
-          keyExtractor={(item, index) => `${index}-${item}`}
-          renderItem={({ item }) => <Message text={item} />}
+          keyExtractor={(item, index) => `${index}-${item.text}`}
+          renderItem={({ item }) => <Message text={item.text} />}
           ListFooterComponent={
             <View>
               {pending.map(({ request: { message }, isLoading }, index) => (

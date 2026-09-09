@@ -303,7 +303,7 @@ export const DashboardApp: FC<DashboardConfig> = ({ personalizedMessage }) => {
 You can call a `reader` _reactively_ very simply:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=33-34) -->
+(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=160-161) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
@@ -332,7 +332,7 @@ and [`transaction`](/define/methods#kinds) methods
 are both callable from React.
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=33-33) -->
+(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=160-160) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
@@ -349,11 +349,17 @@ This line calls the
 definition, using its lower camel case name:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=37-37) -->
+(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=181-187) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
-const { aborted } = await send({ message: message });
+const { response, aborted } = await send({
+  message: message,
+  attachments:
+    file !== null
+      ? [{ contentType: file.type, sizeBytes: BigInt(file.size) }]
+      : [],
+});
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -370,12 +376,17 @@ Reboot attaches all in-flight mutations to a `.pending` property of every mutato
 facilitate this, for example:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=81-83) -->
+(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=306-313) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
-{send.pending.map(({ request: { message }, isLoading }) => (
-  <PendingMessage text={message} isLoading={isLoading} key={message} />
+{send.pending.map(({ request, isLoading }, index) => (
+  <PendingMessage
+    text={request.message ?? ""}
+    attachmentCount={request.attachments?.length ?? 0}
+    isLoading={isLoading}
+    key={index}
+  />
 ))}
 ```
 
@@ -402,15 +413,30 @@ Every call to a mutator returns both a `response` and an `aborted`; successful c
 [Learn more about Reboot errors and error types.](/errors)
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=37-41) -->
+(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=181-200) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
-const { aborted } = await send({ message: message });
+const { response, aborted } = await send({
+  message: message,
+  attachments:
+    file !== null
+      ? [{ contentType: file.type, sizeBytes: BigInt(file.size) }]
+      : [],
+});
 if (aborted !== undefined) {
-  console.warn(aborted.error.getType());
-  console.warn(aborted.message);
-}
+  // Surface the failure to the user. The backend's
+  // `AttachmentTooLarge` error carries the limit, so we can say
+  // exactly what it is.
+  if (aborted.error instanceof AttachmentTooLarge) {
+    const maxMebibytes = Number(aborted.error.maxSizeBytes) / (1024 * 1024);
+    setError(
+      `That attachment is too large. The maximum is ${maxMebibytes} MiB.`
+    );
+  } else {
+    setError(`Couldn't send your message: ${aborted.message}`);
+  }
+  return;
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->

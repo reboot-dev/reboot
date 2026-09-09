@@ -1,5 +1,8 @@
 {
  "messages": [
-  "Hello, World!"
+  {
+   "text": "Hello, World!",
+   "attachmentBlobIds": []
+  }
  ]
 }

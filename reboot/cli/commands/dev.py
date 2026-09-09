@@ -34,6 +34,10 @@ from reboot.cli.commands.generate import generate_direct
 # We import the whole `terminal` module (as opposed to the methods it contains)
 # to allow us to mock these methods out in tests.
 from reboot.cli.common import terminal
+from reboot.cli.common.blob_data_plane import (
+    BLOBS_SUBDIRECTORY,
+    start_filesystem_data_plane,
+)
 from reboot.cli.common.directories import (
     add_working_directory_options,
     dot_rbt_dev_directory,
@@ -90,6 +94,7 @@ from reboot.settings import (
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
     LocalEnvoyMode,
 )
+from reboot.std.blob.v1._data_plane import ENVVAR_BLOB_DATA_PLANE_URL
 from reboot.version import REBOOT_VERSION
 from typing import Any, Awaitable, Callable, Optional, TextIO, TypeVar
 
@@ -1636,6 +1641,58 @@ async def __dev_run(
                 ),
                 name=f'_open_dashboard(...) in {__name__}',
             )
+        )
+
+    # Honor a blob data plane configured via `--env-file`/`--env` (they
+    # are otherwise only composed into the application's environment at
+    # launch, below) so that no local one is spawned; mirror
+    # `compose_env`'s precedence: `--env` wins over `--env-file`.
+    if args.env_file is not None and os.path.isfile(args.env_file):
+        data_plane_url = _load_env_file(args.env_file
+                                       ).get(ENVVAR_BLOB_DATA_PLANE_URL)
+        if data_plane_url is not None:
+            env[ENVVAR_BLOB_DATA_PLANE_URL] = data_plane_url
+    for (key, value) in args.env or []:
+        if key == ENVVAR_BLOB_DATA_PLANE_URL:
+            env[key] = value
+
+    # Start the filesystem blob data plane (unless a data plane is
+    # already configured) and point the application at it. Bytes live
+    # beside the rest of the run's state, and are reclaimed the same
+    # way it is: `rbt dev expunge --application-name=...` removes
+    # both for a named application, while an anonymous run keeps
+    # both under `.rbt/dev` until that directory is removed by hand.
+    blobs_directory = os.path.join(
+        env.get(
+            ENVVAR_RBT_STATE_DIRECTORY,
+            str(dot_rbt_dev_directory(args, parser)),
+        ),
+        BLOBS_SUBDIRECTORY,
+    )
+    # The data plane derives its URL-signing key from the
+    # cryptographic root keys, so it needs them in its environment.
+    # They go in a copy rather than in `env`: `compose_env()` mints
+    # fresh keys for the *application* on every restart, and seeding
+    # `env` would satisfy its `not in composed` guard and freeze the
+    # application's keys for the whole run. The data plane both signs
+    # and verifies its own URLs, so it only needs a key that is stable
+    # for its own lifetime.
+    data_plane_env = env.copy()
+    data_plane_env.setdefault(
+        ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
+        crypto_root_keys(),
+    )
+    await start_filesystem_data_plane(
+        data_plane_env,
+        blobs_directory,
+        subprocesses,
+        background_command_tasks,
+    )
+    # `start_filesystem_data_plane` reports the URL it bound by
+    # writing it into the environment it was given.
+    if ENVVAR_BLOB_DATA_PLANE_URL in data_plane_env:
+        env[ENVVAR_BLOB_DATA_PLANE_URL] = (
+            data_plane_env[ENVVAR_BLOB_DATA_PLANE_URL]
         )
 
     if tracing == Tracing.JAEGER:

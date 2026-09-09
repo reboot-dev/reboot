@@ -33,7 +33,7 @@ async function bindToElement(
 ) {
   for await (const response of generator) {
     element.innerHTML = `${response.messages
-      .map((msg: string) => `<div class="message">${msg}</div>`)
+      .map((msg) => `<div class="message">${msg.text}</div>`)
       .join("")}`;
   }
 }
