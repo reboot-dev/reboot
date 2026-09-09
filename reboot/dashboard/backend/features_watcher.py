@@ -135,7 +135,7 @@ async def _read_and_parse(*, directory: Path) -> dict[str, Feature]:
 
 
 async def watch(context: WorkflowContext) -> None:
-    """Keeps the behaviors state matching what the feature files
+    """Keeps the features state matching what the feature files
     declare, until cancelled.
 
     The working directory is where `rbt dashboard` runs, which is
@@ -175,7 +175,7 @@ async def watch(context: WorkflowContext) -> None:
                 # is only made for a difference.
                 if features_now != features:
                     await Dashboard.ref(
-                    ).per_iteration('Update').UpdateBehaviors(
+                    ).per_iteration('Update').UpdateFeatures(
                         context,
                         features=features_now,
                     )

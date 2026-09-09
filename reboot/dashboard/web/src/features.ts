@@ -5,7 +5,7 @@
 // of which state types it exercises; the call graph says what those
 // reach; and the API says which methods no feature describes at all.
 import type * as feature_pb from "../../../../rbt/v1alpha1/bdd/feature_pb";
-import { stepsOfFeature, type FeatureEntry } from "./behaviors";
+import { stepsOfFeature, type FeatureEntry } from "./feature_files";
 import type { GraphStateType } from "./callgraph";
 import { shortNameOfTypeName } from "./link_properties_to_data_types";
 

@@ -46,7 +46,7 @@ import type {
   Printed,
   Span,
   StepLinks,
-} from "./behaviors";
+} from "./feature_files";
 import {
   columnsOfExamples,
   hueKeyOfSpan,
@@ -72,7 +72,7 @@ import {
   webAppScenarioCount,
   spansOfText,
   stepLinks,
-} from "./behaviors";
+} from "./feature_files";
 import type {
   APIs,
   LinkedDataType,

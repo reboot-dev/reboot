@@ -45,7 +45,7 @@ _DASHBOARD_DIRECTORY = Path(__file__).parent / 'dashboard'
 
 # Where the page fetches a scenario's recordings from, followed by the
 # recording's path relative to the working directory, the path the
-# behaviors state names it by.
+# features state names it by.
 RECORDINGS_PATH = '/recordings'
 
 # What a recording may be: a scenario's video or a step's screenshot.
@@ -151,7 +151,7 @@ async def initialize(context: InitializeContext) -> None:
 
     _ = await dashboard.idempotently().spawn().WatchCode(context)
 
-    _ = await dashboard.idempotently().spawn().WatchBehaviors(context)
+    _ = await dashboard.idempotently().spawn().WatchFeatures(context)
 
 
 async def main():

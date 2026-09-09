@@ -6,10 +6,10 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     DashboardGetResponse,
     DashboardUpdateApiRequest,
     DashboardUpdateApiResponse,
-    DashboardUpdateBehaviorsRequest,
-    DashboardUpdateBehaviorsResponse,
     DashboardUpdateCodeRequest,
     DashboardUpdateCodeResponse,
+    DashboardUpdateFeaturesRequest,
+    DashboardUpdateFeaturesResponse,
     PreferencesGetRequest,
     PreferencesGetResponse,
     PreferencesSetMethodsExpandedRequest,
@@ -30,8 +30,8 @@ from reboot.aio.contexts import (
 )
 from reboot.dashboard.backend import (
     api_watcher,
-    behaviors_watcher,
     code_watcher,
+    features_watcher,
 )
 from reboot.dashboard.backend.constants import (
     CHANGELOG_ID,
@@ -146,28 +146,28 @@ class DashboardServicer(Dashboard.Servicer):
 
         return Dashboard.WatchCodeResponse()
 
-    async def UpdateBehaviors(
+    async def UpdateFeatures(
         self,
         context: WriterContext,
-        request: DashboardUpdateBehaviorsRequest,
-    ) -> DashboardUpdateBehaviorsResponse:
+        request: DashboardUpdateFeaturesRequest,
+    ) -> DashboardUpdateFeaturesResponse:
         """Replaces what the developer's `.feature` files declare."""
         self.state.features.clear()
         self.state.features.MergeFrom(request.features)
 
-        return DashboardUpdateBehaviorsResponse()
+        return DashboardUpdateFeaturesResponse()
 
     @classmethod
-    async def WatchBehaviors(
+    async def WatchFeatures(
         cls,
         context: WorkflowContext,
-        request: Dashboard.WatchBehaviorsRequest,
-    ) -> Dashboard.WatchBehaviorsResponse:
+        request: Dashboard.WatchFeaturesRequest,
+    ) -> Dashboard.WatchFeaturesResponse:
         """Returns only when the dashboard stops, parsing the
         developer's `.feature` files whenever they change."""
-        await behaviors_watcher.watch(context)
+        await features_watcher.watch(context)
 
-        return Dashboard.WatchBehaviorsResponse()
+        return Dashboard.WatchFeaturesResponse()
 
     async def UpdateApi(
         self,

@@ -9,10 +9,10 @@ ts_config(
 ts_project(
     name = "dashboard_ts",
     srcs = [
-        "src/behaviors.ts",
         "src/callgraph.ts",
         "src/changelog.ts",
         "src/constants.ts",
+        "src/feature_files.ts",
         "src/features.ts",
         "src/graph.tsx",
         "src/link_properties_to_data_types.ts",

@@ -1,6 +1,6 @@
 """Scenarios appear as the developer writes their feature files.
 
-The behaviors watcher reads every `.feature` file under the working
+The features watcher reads every `.feature` file under the working
 directory, so these tests run the dashboard in a temporary working
 directory of their own.
 """
@@ -43,7 +43,7 @@ BANK = '''Feature: Bank accounts
 '''
 
 
-class BehaviorsWatcherTest(unittest.IsolatedAsyncioTestCase):
+class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
 
     watcher: Optional[asyncio.Task] = None
 

@@ -50,14 +50,14 @@ py_test(
 )
 
 py_test(
-    name = "behaviors_watcher_tests_py",
-    srcs = ["behaviors_watcher_tests.py"],
-    main = "behaviors_watcher_tests.py",
+    name = "features_watcher_tests_py",
+    srcs = ["features_watcher_tests.py"],
+    main = "features_watcher_tests.py",
     deps = [
         "//reboot/aio:tests_py",
         "//reboot/bdd:feature_py",
         "//reboot/bdd:recordings_py",
-        "//reboot/dashboard/backend:behaviors_watcher_py",
+        "//reboot/dashboard/backend:features_watcher_py",
         "//reboot/dashboard/backend:main_py",
     ],
 )

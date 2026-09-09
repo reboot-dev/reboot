@@ -1,6 +1,6 @@
-// What the behaviors page derives from the parsed `.feature` files:
-// their order, their scenario counts, and where a backticked span of
-// a step links.
+// What the features page derives from the parsed `.feature` files:
+// their order, their scenarios, tags and filters, and where a
+// backticked span of a step links.
 
 import type * as feature_pb from "../../../../rbt/v1alpha1/bdd/feature_pb";
 import type * as grammar_pb from "../../../../rbt/v1alpha1/bdd/grammar_pb";

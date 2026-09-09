@@ -396,16 +396,16 @@ message DashboardWatchCodeRequest {}
 
 message DashboardWatchCodeResponse {}
 
-message DashboardUpdateBehaviorsRequest {
+message DashboardUpdateFeaturesRequest {
   // Keyed the way `Dashboard.features` is.
   map<string, rbt.v1alpha1.bdd.Feature> features = 1;
 }
 
-message DashboardUpdateBehaviorsResponse {}
+message DashboardUpdateFeaturesResponse {}
 
-message DashboardWatchBehaviorsRequest {}
+message DashboardWatchFeaturesRequest {}
 
-message DashboardWatchBehaviorsResponse {}
+message DashboardWatchFeaturesResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -665,18 +665,18 @@ service DashboardMethods {
   }
 
   // Replaces what the developer's `.feature` files declare. Its own
-  // writer, so that recording behaviors never writes back what the
+  // writer, so that recording features never writes back what the
   // other two updates record.
-  rpc UpdateBehaviors(DashboardUpdateBehaviorsRequest)
-      returns (DashboardUpdateBehaviorsResponse) {
+  rpc UpdateFeatures(DashboardUpdateFeaturesRequest)
+      returns (DashboardUpdateFeaturesResponse) {
     option (rbt.v1alpha1.method).writer = {
     };
   }
 
   // Watches the developer's `.feature` files for as long as the
   // dashboard application runs, parsing each one that changes.
-  rpc WatchBehaviors(DashboardWatchBehaviorsRequest)
-      returns (DashboardWatchBehaviorsResponse) {
+  rpc WatchFeatures(DashboardWatchFeaturesRequest)
+      returns (DashboardWatchFeaturesResponse) {
     option (rbt.v1alpha1.method).workflow = {
     };
   }
