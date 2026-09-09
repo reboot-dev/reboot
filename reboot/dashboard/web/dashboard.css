@@ -2468,6 +2468,12 @@ header .state-type-description {
 
 /* The eyebrow on its own line, with the X across from it; the name
    and count on the next. */
+/* Opened from a changelog row, the card carries the same green
+   flash a linked method does. */
+.data-type-card.is-flash {
+  animation: data-type-card-in 160ms ease-out, method-flash 1.5s ease-out;
+}
+
 .data-type-card-head {
   display: flex;
   align-items: center;

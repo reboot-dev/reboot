@@ -566,8 +566,10 @@ const Method: FC<{
   // Set for the method a followed link named, with the history entry
   // that named it, so a second click flashes it again.
   flashKey?: string;
-  // The data type open beside this method, if any.
+  // The data type open beside this method, if any, and whether it
+  // flashes.
   openedDataType?: LinkedDataType;
+  openedDataTypeFlash?: boolean;
   onOpenDataType: (id: string) => void;
   onCloseDataType: () => void;
 }> = ({
@@ -576,6 +578,7 @@ const Method: FC<{
   id,
   flashKey,
   openedDataType,
+  openedDataTypeFlash,
   onOpenDataType,
   onCloseDataType,
 }) => {
@@ -623,6 +626,7 @@ const Method: FC<{
             {openedDataType !== undefined && (
               <DataTypeCard
                 linkedDataType={openedDataType}
+                flash={openedDataTypeFlash}
                 onClose={onCloseDataType}
               />
             )}
@@ -636,14 +640,49 @@ const Method: FC<{
 const countWithNoun = (n: number, noun: string): string =>
   `${n} ${n === 1 ? noun : `${noun}s`}`;
 
+// Where a data type opened from outside the pane sits: beside the
+// state properties when they use it, else beside the first method
+// whose signature names or contains it, else beside the state
+// properties anyway.
+const anchorOfDataType = (
+  api: api_pb.API,
+  stateType: api_pb.StateType,
+  dataTypeId: string
+): string => {
+  const contains = (properties: Property[]): boolean =>
+    properties.some((property) => property.link === dataTypeId);
+  if (contains(propertiesOfState({ api, stateType }))) {
+    return "state";
+  }
+  const named = (name: string | undefined): boolean =>
+    name !== undefined && dataTypeIdOfName({ api, name }) === dataTypeId;
+  for (const method of stateType.methods) {
+    if (
+      named(method.request?.name) ||
+      named(method.response?.name) ||
+      method.errors.some(({ name }) => named(name)) ||
+      (method.request !== undefined &&
+        contains(propertiesOfDataType({ api, name: method.request.name }))) ||
+      (method.response !== undefined &&
+        contains(propertiesOfDataType({ api, name: method.response.name })))
+    ) {
+      return method.name;
+    }
+  }
+  return "state";
+};
+
 const StateType: FC<{
   api: api_pb.API;
   stateType: api_pb.StateType;
   // The method a followed link flashes, with the history entry that
   // named it.
   flash?: { method: string; key: string };
+  // A data type to start with open beside its first use, from a
+  // changelog row.
+  openDataTypeId?: string;
   linkedDataTypes: LinkedDataType[];
-}> = ({ api, stateType, flash, linkedDataTypes }) => {
+}> = ({ api, stateType, flash, openDataTypeId, linkedDataTypes }) => {
   const name = qualifiedName({ api, stateType });
   const properties = propertiesOfState({ api, stateType });
 
@@ -652,7 +691,21 @@ const StateType: FC<{
   const [openedDataType, setOpenedDataType] = useState<{
     anchor: string;
     id: string;
-  } | null>(null);
+    // Set for a card a changelog row opened, which flashes the way
+    // a linked method does; a card opened by hand is already being
+    // looked at.
+    flash?: boolean;
+  } | null>(() =>
+    openDataTypeId === undefined
+      ? null
+      : {
+          anchor: anchorOfDataType(api, stateType, openDataTypeId),
+          id: openDataTypeId,
+          flash: true,
+        }
+  );
+
+  const openedFlash = openedDataType?.flash === true;
 
   const openedAt = (anchor: string): LinkedDataType | undefined =>
     openedDataType?.anchor === anchor
@@ -704,6 +757,7 @@ const StateType: FC<{
         {openedAtState !== undefined && (
           <DataTypeCard
             linkedDataType={openedAtState}
+            flash={openedFlash}
             onClose={() => setOpenedDataType(null)}
           />
         )}
@@ -718,6 +772,7 @@ const StateType: FC<{
             id={idOfTypeInPane(`${name}.${method.name}`)}
             flashKey={flash?.method === method.name ? flash.key : undefined}
             openedDataType={openedAt(method.name)}
+            openedDataTypeFlash={openedFlash}
             onOpenDataType={(id) =>
               setOpenedDataType({ anchor: method.name, id })
             }
@@ -787,9 +842,12 @@ const Anchor: FC<{ page: Page; id: string }> = ({ page, id }) => (
 // go.
 const DataTypeCard: FC<{
   linkedDataType: LinkedDataType;
+  flash?: boolean;
   onClose: () => void;
-}> = ({ linkedDataType, onClose }) => (
-  <section className="data-type-card">
+}> = ({ linkedDataType, flash, onClose }) => (
+  <section
+    className={flash === true ? "data-type-card is-flash" : "data-type-card"}
+  >
     <div className="data-type-card-head">
       <Pill
         className="eyebrow"
@@ -833,11 +891,12 @@ const TypesPane: FC<{
   apis: APIs;
   linkedDataTypes: LinkedDataType[];
   target: PaneTarget;
+  openDataTypeId?: string;
   // The history entry that named the target, so a repeated link
   // flashes its method again.
   flashKey: string;
   onClose: () => void;
-}> = ({ apis, linkedDataTypes, target, flashKey, onClose }) => {
+}> = ({ apis, linkedDataTypes, target, openDataTypeId, flashKey, onClose }) => {
   const found = sortedAPIs(apis)
     .flatMap((api) => api.stateTypes.map((stateType) => ({ api, stateType })))
     .find(
@@ -874,6 +933,7 @@ const TypesPane: FC<{
                 ? undefined
                 : { method: target.method, key: flashKey }
             }
+            openDataTypeId={openDataTypeId}
             linkedDataTypes={linkedDataTypes}
           />
         )}
@@ -2159,8 +2219,14 @@ const FeaturePage: FC<{
   </>
 );
 
-const ChangeRow: FC<{ entry: Entry; now: Date }> = ({ entry, now }) => {
+const ChangeRow: FC<{
+  entry: Entry;
+  now: Date;
+  searchOfDataTypeId: (id: string) => string | undefined;
+}> = ({ entry, now, searchOfDataTypeId }) => {
   const row = rowOfChange(entry.change);
+  const dataSearch =
+    row.link?.page === "data" ? searchOfDataTypeId(row.link.id) : undefined;
   return (
     <div className="change">
       <time className="change-when" dateTime={entry.at.toISOString()}>
@@ -2182,18 +2248,20 @@ const ChangeRow: FC<{ entry: Entry; now: Date }> = ({ entry, now }) => {
       </span>
       {/* Names are identifiers, so they are set as code, the way the
         descriptions set them. */}
-      {/* A data type has no home of its own: it shows beside a use,
-          so only a state type's name links, to the models page with
-          the pane open on it. */}
-      {row.link === undefined || row.link.page === "data" ? (
+      {/* A state type opens in the pane; a data type opens the first
+          state type using it, its card beside the use. A data type
+          nothing uses has nowhere to open. */}
+      {row.link === undefined ||
+      (row.link.page === "data" && dataSearch === undefined) ? (
         <span className="change-name">
           <code>{row.name}</code>
         </span>
+      ) : row.link.page === "state" ? (
+        <TypeLink className="change-name" id={row.link.id}>
+          <code>{row.name}</code>
+        </TypeLink>
       ) : (
-        <Link
-          className="change-name"
-          to={{ pathname: "/models", search: searchOfType(row.link.id) }}
-        >
+        <Link className="change-name" to={{ search: dataSearch }}>
           <code>{row.name}</code>
         </Link>
       )}
@@ -2220,7 +2288,8 @@ const ChangelogPage: FC<{
   onMore: () => void;
   isLoading: boolean;
   live: boolean;
-}> = ({ shown, more, onMore, isLoading, live }) => {
+  searchOfDataTypeId: (id: string) => string | undefined;
+}> = ({ shown, more, onMore, isLoading, live, searchOfDataTypeId }) => {
   // Every row on the page measures "ago" from this same moment.
   const now = new Date();
 
@@ -2245,7 +2314,12 @@ const ChangelogPage: FC<{
       )}
       <div className="changes">
         {shown.map((entry) => (
-          <ChangeRow entry={entry} now={now} key={entry.key} />
+          <ChangeRow
+            entry={entry}
+            now={now}
+            searchOfDataTypeId={searchOfDataTypeId}
+            key={entry.key}
+          />
         ))}
       </div>
       {more && (
@@ -2426,6 +2500,40 @@ const Overview: FC<{
   // but not the method it last flashed.
   const carriedSearch =
     paneTarget === undefined ? "" : searchOfType(paneTarget.stateTypeId);
+
+  // A data type a changelog row asked to see, opened beside its
+  // first use in the pane's state type.
+  const openDataTypeId = searchParams.get("data") ?? undefined;
+
+  // Where a changelog row's data type opens: the first state type
+  // using it, walked up through the data types that contain it; a
+  // data type nothing uses has nowhere to open.
+  const searchOfDataTypeId = useMemo(() => {
+    const byId = new Map<string, LinkedDataType>(
+      linkedDataTypes.map((linkedDataType) => [
+        linkedDataType.id,
+        linkedDataType,
+      ])
+    );
+    return (id: string): string | undefined => {
+      const seen = new Set<string>();
+      const frontier = [id];
+      while (frontier.length > 0) {
+        const current = frontier.shift()!;
+        if (seen.has(current)) {
+          continue;
+        }
+        seen.add(current);
+        if (isStateTypeId(current)) {
+          return `${searchOfType(current)}&data=${id}`;
+        }
+        for (const referrer of byId.get(current)?.referrers ?? []) {
+          frontier.push(referrer.id);
+        }
+      }
+      return undefined;
+    };
+  }, [linkedDataTypes, isStateTypeId]);
 
   // The features sidebar's list.
   const featureLinks = useMemo(
@@ -2680,6 +2788,7 @@ const Overview: FC<{
               onMore={() => setChangelogPages(changelogPages + 1)}
               isLoading={changelogIsLoading}
               live={live}
+              searchOfDataTypeId={searchOfDataTypeId}
             />
           ) : page === "models" ? (
             <>
@@ -2735,7 +2844,7 @@ const Overview: FC<{
           )}
         </div>
       </Panel>
-      {page !== "changelog" && paneTarget !== undefined && (
+      {paneTarget !== undefined && (
         <>
           <Separator className="nav-resizer" />
           <Panel
@@ -2771,9 +2880,10 @@ const Overview: FC<{
                 apis={apis}
                 linkedDataTypes={linkedDataTypes}
                 target={paneTarget}
+                openDataTypeId={openDataTypeId}
                 flashKey={location.key}
                 onClose={onClosePane}
-                key={paneTarget.stateTypeId}
+                key={`${paneTarget.stateTypeId}:${openDataTypeId ?? ""}`}
               />
             )}
           </Panel>
