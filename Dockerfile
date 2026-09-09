@@ -257,8 +257,8 @@ RUN wget --tries=5 --waitretry=10 --retry-connrefused -O /usr/local/bin/bazel ht
     && chmod +x /usr/local/bin/bazel
 
 # Install k3d.io which we'll use to run integration tests.
-# See https://k3d.io/v5.9.0/#install-specific-release
-ARG K3D_VERSION=v5.9.0
+# See https://k3d.io/v5.8.3/#install-specific-release
+ARG K3D_VERSION=v5.8.3
 RUN curl --retry 5 --retry-all-errors -fsS https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh \
     -o /tmp/k3d-install.sh \
     && TAG=${K3D_VERSION} bash /tmp/k3d-install.sh \
@@ -266,7 +266,7 @@ RUN curl --retry 5 --retry-all-errors -fsS https://raw.githubusercontent.com/k3d
 # The version of Kubernetes used by k3d is determined by the version of k3s it
 # installs, which is determined by the version of k3d. Confirm that the expected
 # Kubernetes version is indeed that k3d's default.
-ARG KUBERNETES_VERSION=v1.32.5
+ARG KUBERNETES_VERSION=v1.31.5
 RUN k3d version | grep -q "k3s version ${KUBERNETES_VERSION}-k3s"
 
 # Install kubectl which we'll use to run integration tests. Must be compatible
