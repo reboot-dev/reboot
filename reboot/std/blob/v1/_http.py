@@ -120,7 +120,7 @@ def _make_put_part(store: FilesystemBlobStore):
         # part-PUT URL minted just before commit must not still be
         # usable to tamper with the bytes afterwards.
         meta = store.read_meta(blob)
-        if meta is not None and meta.get("committed", False):
+        if meta is not None and meta.committed:
             return Response(status_code=409, content="Blob already committed")
 
         # Write somewhere else and publish with a rename, rather than
@@ -164,7 +164,7 @@ def _make_put_part(store: FilesystemBlobStore):
         # belongs to has been committed.
         async with store.lock_for(blob):
             meta = store.read_meta(blob)
-            if meta is not None and meta.get("committed", False):
+            if meta is not None and meta.committed:
                 os.unlink(temporary)
                 return Response(
                     status_code=409, content="Blob already committed"
@@ -196,16 +196,18 @@ def _make_get_blob(store: FilesystemBlobStore):
             return Response(status_code=403, content="Invalid signature")
 
         meta = store.read_meta(blob)
-        if meta is None or not meta.get("committed", False):
+        if meta is None or not meta.committed:
             return Response(status_code=404, content="No such blob")
 
-        upload_id = meta["upload_id"]
-        parts = meta["parts"]
-        total_size = sum(part["size"] for part in parts)
+        # Written in the same atomic update as `committed`.
+        assert meta.upload_id is not None and meta.etag is not None
+        upload_id = meta.upload_id
+        parts = meta.parts
+        total_size = sum(part.size for part in parts)
 
         async def stream():
-            for part in sorted(parts, key=lambda part: part["number"]):
-                path = store.part_path(blob, upload_id, part["number"])
+            for part in sorted(parts, key=lambda part: part.number):
+                path = store.part_path(blob, upload_id, part.number)
                 # Read off the event loop: this generator is driven by
                 # it, and a part is megabytes, so reading inline would
                 # stall every other request this worker is serving.
@@ -219,13 +221,13 @@ def _make_get_blob(store: FilesystemBlobStore):
                 finally:
                     await asyncio.to_thread(file.close)
 
-        media_type, safety_headers = download_headers(meta["content_type"])
+        media_type, safety_headers = download_headers(meta.content_type)
         return StreamingResponse(
             stream(),
             media_type=media_type,
             headers={
                 "Content-Length": str(total_size),
-                "ETag": f'"{meta["etag"]}"',
+                "ETag": f'"{meta.etag}"',
                 "Accept-Ranges": "none",
                 **safety_headers,
             },

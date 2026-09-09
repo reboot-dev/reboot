@@ -16,6 +16,7 @@ from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
 from reboot.std.blob.v1._store import (
     DEFAULT_PART_SIZE_BYTES,
+    BlobMetadata,
     BlobStoreError,
     FilesystemBlobStore,
     UploadedPart,
@@ -386,10 +387,14 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
         may_record = threading.Event()
         write_meta = FilesystemBlobStore._write_meta
 
-        def paused_write_meta(self, encoded_blob_id: str, meta) -> None:
+        def paused_write_meta(
+            self,
+            encoded_blob_id: str,
+            meta: BlobMetadata,
+        ) -> None:
             # Only completion records a committed blob; `begin_upload`
             # writes metadata too, and must not be paused.
-            if meta.get("committed", False):
+            if meta.committed:
                 reached_recording.set()
                 may_record.wait(timeout=_RACE_TIMEOUT_SECONDS)
             write_meta(self, encoded_blob_id, meta)
