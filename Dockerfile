@@ -114,7 +114,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 
 # Install `grpcurl`, which is very helpful for debugging. See:
 #   https://github.com/fullstorydev/grpcurl
-ARG GRPCURL_VERSION=1.9.2
+ARG GRPCURL_VERSION=1.9.4
 RUN if [ "${TARGETARCH}" = "amd64" ]; then \
     wget --tries=5 --waitretry=10 --retry-connrefused https://github.com/fullstorydev/grpcurl/releases/download/v${GRPCURL_VERSION}/grpcurl_${GRPCURL_VERSION}_linux_x86_64.tar.gz \
     && tar -xvf ./grpcurl_${GRPCURL_VERSION}_linux_x86_64.tar.gz grpcurl \
@@ -163,7 +163,7 @@ ARG CLANG_VERSION
 ARG ENVOY_VERSION
 # Docker version format is Ubuntu-style:
 #    [epoch]:[version]-[revision]-[ubuntu-suffix]
-ARG DOCKER_VERSION=5:29.1.2-1~ubuntu.22.04~jammy
+ARG DOCKER_VERSION=5:29.8.0-1~ubuntu.22.04~jammy
 
 RUN apt-get update \
     # Install various prerequisite packages need for building as well as
@@ -252,13 +252,13 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Bazel.
-ARG BAZELISK_VERSION=v1.27.0
+ARG BAZELISK_VERSION=v1.29.0
 RUN wget --tries=5 --waitretry=10 --retry-connrefused -O /usr/local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/download/${BAZELISK_VERSION}/bazelisk-linux-${TARGETARCH} \
     && chmod +x /usr/local/bin/bazel
 
 # Install k3d.io which we'll use to run integration tests.
-# See https://k3d.io/v5.8.3/#install-specific-release
-ARG K3D_VERSION=v5.8.3
+# See https://k3d.io/v5.9.0/#install-specific-release
+ARG K3D_VERSION=v5.9.0
 RUN curl --retry 5 --retry-all-errors -fsS https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh \
     -o /tmp/k3d-install.sh \
     && TAG=${K3D_VERSION} bash /tmp/k3d-install.sh \
@@ -266,7 +266,7 @@ RUN curl --retry 5 --retry-all-errors -fsS https://raw.githubusercontent.com/k3d
 # The version of Kubernetes used by k3d is determined by the version of k3s it
 # installs, which is determined by the version of k3d. Confirm that the expected
 # Kubernetes version is indeed that k3d's default.
-ARG KUBERNETES_VERSION=v1.31.5
+ARG KUBERNETES_VERSION=v1.32.5
 RUN k3d version | grep -q "k3s version ${KUBERNETES_VERSION}-k3s"
 
 # Install kubectl which we'll use to run integration tests. Must be compatible
@@ -289,8 +289,8 @@ RUN curl --retry 5 --retry-all-errors -fL https://istio.io/downloadIstio \
 
 # Install Skaffold as per instructions here:
 #   https://skaffold.dev/docs/install/
-# Latest version as of 2023-04-17.
-ARG SKAFFOLD_VERSION=2.3.1
+# Latest version as of 2026-09-09.
+ARG SKAFFOLD_VERSION=2.24.0
 RUN curl --retry 5 --retry-all-errors -fLo skaffold https://storage.googleapis.com/skaffold/releases/v${SKAFFOLD_VERSION}/skaffold-linux-${TARGETARCH} \
     && chmod +x skaffold && mv skaffold /usr/local/bin/
 
@@ -303,8 +303,8 @@ COPY .devcontainer/kustomize_wrapper.sh /usr/local/bin/kustomize
 # Install crane based on instructions here:
 #   https://github.com/google/go-containerregistry/tree/main/cmd/crane#install-from-releases
 # We use crane to move container images built by Bazel into Kubernetes clusters.
-# Latest version as of 2023-08-29.
-ARG CRANE_VERSION=0.16.1
+# Latest version as of 2026-09-09.
+ARG CRANE_VERSION=0.22.1
 RUN set -e; \
     if [ "${TARGETARCH}" = "amd64" ]; then \
     ARCH_SUFFIX="x86_64"; \
@@ -319,7 +319,7 @@ RUN set -e; \
 
 # Install the Groundcover CLI based on instructions here:
 #   https://github.com/groundcover-com/cli#from-the-binary-releases
-ARG GROUNDCOVER_VERSION=0.21.0
+ARG GROUNDCOVER_VERSION=0.22.14
 RUN curl --retry 5 --retry-all-errors -fSsL https://github.com/groundcover-com/cli/releases/download/v${GROUNDCOVER_VERSION}/groundcover_${GROUNDCOVER_VERSION}_linux_${TARGETARCH}.tar.gz -o /tmp/groundcover.tar.gz \
     && tar -zxf /tmp/groundcover.tar.gz -C /usr/bin \
     && chmod +x /usr/bin/groundcover
@@ -328,7 +328,7 @@ RUN curl --retry 5 --retry-all-errors -fSsL https://github.com/groundcover-com/c
 # Network projects. The non-sqlite build is deliberate: the `sqlite`
 # variants link against GLIBC 2.38, newer than this image (Ubuntu
 # Jammy, GLIBC 2.35).
-ARG ORY_VERSION=1.3.1
+ARG ORY_VERSION=1.3.3
 RUN set -e; \
     if [ "${TARGETARCH}" = "amd64" ]; then \
     ARCH_SUFFIX="64bit"; \
@@ -451,7 +451,7 @@ RUN wget --tries=5 --waitretry=10 --retry-connrefused https://github.com/bazelbu
 #   https://github.com/nodesource/distributions#installation-instructions
 # Note: We need this to install prettier.
 ARG NODE_MAJOR=20
-ARG NPM_VERSION=11.5.1
+ARG NPM_VERSION=11.19.1
 RUN mkdir -p /etc/apt/keyrings \
     && curl --retry 5 --retry-all-errors -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
@@ -464,7 +464,7 @@ RUN mkdir -p /etc/apt/keyrings \
 # rebuilding Bazel targets when their sources/dependencies change).
 ARG PRETTIER_VERSION=2.7.1
 ARG MARKDOWN_AUTODOCS_VERSION=1.0.133
-ARG IBAZEL_VERSION=0.26.10
+ARG IBAZEL_VERSION=0.28.0
 RUN npm install -g prettier@${PRETTIER_VERSION} markdown-autodocs@${MARKDOWN_AUTODOCS_VERSION} @bazel/ibazel@${IBAZEL_VERSION}
 
 # Install bash-completion so tab autocomplete works for git and other commands.
@@ -478,7 +478,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install bash-comple
 #  * `uv`, a fast Python package installer and resolver.
 #  * `py-spy`, the sampling profiler invoked by `_maybe_run_py_spy()`
 #    in `reboot/aio/monitoring.py`.
-RUN pip install yapf==0.40.2 mypy==1.18.1 isort==5.12.0 ruff==0.1.14 build==1.0.3 uv==0.9.18 py-spy==0.4.2
+RUN pip install yapf==0.40.2 mypy==1.18.1 isort==5.12.0 ruff==0.1.14 build==1.6.0 uv==0.12.11 py-spy==0.4.2
 
 # Install and setup fish (shell used on codespaces).
 # NOTE: We do this as it is done here:
@@ -520,7 +520,7 @@ RUN set -e; \
 
 # Install `aws-iam-authenticator`, which `kubectl` uses to authenticate with
 # AWS.
-ARG AWS_IAM_AUTHENTICATOR_VERSION=0.6.11
+ARG AWS_IAM_AUTHENTICATOR_VERSION=0.7.20
 RUN curl --retry 5 --retry-all-errors -fLo aws-iam-authenticator https://github.com/kubernetes-sigs/aws-iam-authenticator/releases/download/v${AWS_IAM_AUTHENTICATOR_VERSION}/aws-iam-authenticator_${AWS_IAM_AUTHENTICATOR_VERSION}_linux_${TARGETARCH} \
     && chmod +x ./aws-iam-authenticator \
     && mv ./aws-iam-authenticator /usr/local/bin/
@@ -529,7 +529,7 @@ RUN curl --retry 5 --retry-all-errors -fLo aws-iam-authenticator https://github.
 #
 # Even if we don't use Pulumi CLI directly as humans, the Pulumi SDK (used by
 # our code) requires that it is present.
-ARG PULUMI_VERSION=3.220.0
+ARG PULUMI_VERSION=3.261.0
 RUN set -e; \
     if [ "${TARGETARCH}" = "amd64" ]; then \
     ARCH_SUFFIX="x64"; \
@@ -548,7 +548,7 @@ RUN set -e; \
 # versions. (The latter is optional but enables the Python versions to be
 # cached in the Docker image).
 USER $UNAME
-RUN curl --retry 5 --retry-all-errors -LsSf https://astral.sh/uv/0.11.13/install.sh \
+RUN curl --retry 5 --retry-all-errors -LsSf https://astral.sh/uv/0.12.11/install.sh \
     -o /tmp/uv-install.sh \
     && sh /tmp/uv-install.sh \
     && rm /tmp/uv-install.sh \
@@ -583,14 +583,14 @@ RUN claude mcp add -s user chrome-devtools \
 USER root
 
 # Install Helm.
-ARG HELM_VERSION=3.15.4
+ARG HELM_VERSION=3.21.4
 RUN wget --tries=5 --waitretry=10 --retry-connrefused https://get.helm.sh/helm-v${HELM_VERSION}-linux-${TARGETARCH}.tar.gz \
     && tar --to-stdout -xvf ./helm-v${HELM_VERSION}-linux-${TARGETARCH}.tar.gz linux-${TARGETARCH}/helm > /usr/local/bin/helm \
     && rm ./helm-v${HELM_VERSION}-linux-${TARGETARCH}.tar.gz \
     && chmod +x /usr/local/bin/helm
 
 # Install the Helm chart-testing tool.
-ARG CHART_TESTING_VERSION=3.11.0
+ARG CHART_TESTING_VERSION=3.14.0
 RUN wget --tries=5 --waitretry=10 --retry-connrefused https://github.com/helm/chart-testing/releases/download/v${CHART_TESTING_VERSION}/chart-testing_${CHART_TESTING_VERSION}_linux_${TARGETARCH}.tar.gz \
     && tar --to-stdout -xvf ./chart-testing_${CHART_TESTING_VERSION}_linux_${TARGETARCH}.tar.gz ct > /usr/local/bin/ct \
     && rm ./chart-testing_${CHART_TESTING_VERSION}_linux_${TARGETARCH}.tar.gz \
@@ -605,14 +605,14 @@ RUN curl --retry 5 --retry-all-errors -fsSL https://get.pnpm.io/install.sh \
 
 # Install additional npm packages: `corepack` in order to get `yarn`, and the
 # Firebase CLI.
-ARG FIREBASE_VERSION=13.26.0
+ARG FIREBASE_VERSION=15.29.0
 RUN npm install -g corepack firebase-tools@${FIREBASE_VERSION} \
     && corepack enable
 
 # Install `kubectl krew` plugin manager, and the `resource-capacity`
 # plugin. We use a shared `KREW_ROOT` so that any user can run `kubectl
 # krew` without permission issues.
-ARG KREW_VERSION=v0.4.4
+ARG KREW_VERSION=v0.5.0
 ENV KREW_ROOT=/opt/krew
 RUN set -e; \
     case "${TARGETARCH}" in \
@@ -854,7 +854,7 @@ RUN set -e; \
     && ln -sf /opt/python/cp310-cp310/bin/pip /usr/local/bin/pip3
 
 # Install Bazel via Bazelisk.
-ARG BAZELISK_VERSION=v1.27.0
+ARG BAZELISK_VERSION=v1.29.0
 RUN set -e; \
     if [ "${TARGETARCH}" = "amd64" ]; then \
     ARCH_SUFFIX="amd64"; \
@@ -920,7 +920,7 @@ RUN dnf install -y nodejs && dnf clean all
 # Install uv for the builder user. We create a symlink in /usr/local/bin
 # so it's accessible on the PATH regardless of the user.
 USER builder
-RUN curl --retry 5 --retry-all-errors -LsSf https://astral.sh/uv/0.11.13/install.sh \
+RUN curl --retry 5 --retry-all-errors -LsSf https://astral.sh/uv/0.12.11/install.sh \
     -o /tmp/uv-install.sh \
     && sh /tmp/uv-install.sh \
     && rm /tmp/uv-install.sh
