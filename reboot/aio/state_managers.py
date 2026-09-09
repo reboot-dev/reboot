@@ -1116,7 +1116,15 @@ class StateManager(ABC):
             """Awaits for transaction to finish, i.e., aborted or committed."""
 
             async def closure():
-                await self._committed
+                # Shield so that cancelling a waiter cancels only that
+                # waiter. `_committed` is shared with every other
+                # waiter and with the participant paths that resolve
+                # it, so a cancellation reaching it would leave
+                # `finished()` reporting a transaction that `commit()`
+                # and `abort()` can no longer resolve. The
+                # coordinator's participants future is shielded for
+                # the same reason.
+                await asyncio.shield(self._committed)
 
             return closure().__await__()
 

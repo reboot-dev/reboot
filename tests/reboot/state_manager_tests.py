@@ -36,6 +36,7 @@ from reboot.aio.state_managers import (
     Lock,
     ScalableBloomFilter,
     SidecarStateManager,
+    StateManager,
 )
 from reboot.aio.tasks import TaskEffect
 from reboot.aio.types import ApplicationId, StateId, StateRef, StateTypeName
@@ -1388,6 +1389,84 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(lock.is_shared_locked())
         lock.release_shared()
         self.assertFalse(lock.is_locked())
+
+
+class TransactionTest(unittest.IsolatedAsyncioTestCase):
+    """Unit tests for `StateManager.Transaction`, whose outcome every
+    interested party learns by awaiting the transaction itself."""
+
+    def _transaction(self) -> StateManager.Transaction:
+        state_type = StateTypeName('test.v1.Transactional')
+        state_ref = StateRef.from_id(state_type, 'test-1234')
+        return StateManager.Transaction(
+            transaction_ids=[uuid.uuid4()],
+            coordinator_state_type=state_type,
+            coordinator_state_ref=state_ref,
+            state_type=state_type,
+            state_ref=state_ref,
+            tasks_dispatcher=unittest.mock.MagicMock(spec=TasksDispatcher),
+            mode=Lock.Mode.SHARED,
+        )
+
+    async def _waiter(
+        self,
+        transaction: StateManager.Transaction,
+    ) -> asyncio.Task:
+        """Returns a task that is awaiting `transaction`."""
+        task = asyncio.create_task(self._await_transaction(transaction))
+        # Runs the task up to its await on the transaction.
+        await asyncio.sleep(0)
+        return task
+
+    async def _await_transaction(
+        self,
+        transaction: StateManager.Transaction,
+    ) -> None:
+        await transaction
+
+    async def test_cancelled_waiter_leaves_transaction_unfinished(
+        self,
+    ) -> None:
+        """A task cancelled while awaiting a transaction takes the
+        cancellation with it, leaving the transaction free to be
+        aborted (or committed) afterwards.
+
+        A cancellation that reached the transaction's own future
+        instead would make it claim to be finished while the
+        participant's `abort()` raises `InvalidStateError` from inside
+        a section that must not raise, abandoning the participant
+        entry and the state's lock.
+        """
+        transaction = self._transaction()
+        waiter = await self._waiter(transaction)
+
+        waiter.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await waiter
+
+        self.assertFalse(transaction.finished())
+
+        transaction.abort()
+        self.assertTrue(transaction.aborted())
+
+    async def test_cancelled_waiter_leaves_other_waiters_waiting(
+        self,
+    ) -> None:
+        """One waiter's cancellation leaves the other waiters to learn
+        the transaction's outcome as usual."""
+        transaction = self._transaction()
+        cancelled_waiter = await self._waiter(transaction)
+        surviving_waiter = await self._waiter(transaction)
+
+        cancelled_waiter.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await cancelled_waiter
+
+        transaction.prepare()
+        transaction.commit()
+
+        await surviving_waiter
+        self.assertTrue(transaction.committed())
 
 
 class EffectsRequiresExclusiveTest(unittest.TestCase):
