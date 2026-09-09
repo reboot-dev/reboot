@@ -5,13 +5,13 @@ Feature: Customers can transfer money between accounts
 
   Background:
     Given the application is up
-    And "anonymous" is an unauthenticated user
 
   Rule: A transfer moves exactly the amount from one account to the other
     Neither account sees any other change.
 
     Scenario: A transfer between two customers' accounts
-      Given "anonymous" creates a `Bank` via `create`
+      Given "anonymous" is an unauthenticated user
+      And "anonymous" creates a `Bank` via `create`
       And the resulting state id is saved as "bank id"
       When "anonymous" does a `sign_up` on `Bank` of "<bank id>" with `customer_id="test@reboot.dev"`
       And "anonymous" does an `open_account` on `Customer` of "test@reboot.dev" with `initial_deposit=1000.0`
@@ -44,7 +44,8 @@ Feature: Customers can transfer money between accounts
     too, so money is never created by a failed transfer.
 
     Scenario: A transfer for more than the source account holds
-      Given "anonymous" creates a `Bank` via `create`
+      Given "anonymous" is an unauthenticated user
+      And "anonymous" creates a `Bank` via `create`
       And the resulting state id is saved as "bank id"
       When "anonymous" does a `sign_up` on `Bank` of "<bank id>" with `customer_id="payer@reboot.dev"`
       And "anonymous" does an `open_account` on `Customer` of "payer@reboot.dev" with `initial_deposit=100.0`

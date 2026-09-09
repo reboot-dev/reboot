@@ -4,10 +4,10 @@ Feature: Customers can open an account
 
   Background:
     Given the application is up
-    And "anonymous" is an unauthenticated user
 
   Scenario: The bank opens an account for a customer
-    Given "anonymous" creates a `Bank` via `create`
+    Given "anonymous" is an unauthenticated user
+    And "anonymous" creates a `Bank` via `create`
     And the resulting state id is saved as "bank id"
     And "anonymous" does a `sign_up` on `Bank` of "<bank id>" with `customer_id="ann@example.com"`
     When "anonymous" does an `open_customer_account` on `Bank` of "<bank id>" with `customer_id="ann@example.com"` and `initial_deposit=25.0`
@@ -16,7 +16,8 @@ Feature: Customers can open an account
   Rule: A new account holds exactly its initial deposit
 
     Scenario: Opening an account with a deposit
-      Given "anonymous" creates a `Bank` via `create`
+      Given "anonymous" is an unauthenticated user
+      And "anonymous" creates a `Bank` via `create`
       And the resulting state id is saved as "bank id"
       And "anonymous" does a `sign_up` on `Bank` of "<bank id>" with `customer_id="ann@example.com"`
       When "anonymous" does an `open_account` on `Customer` of "ann@example.com" with `initial_deposit=100.0`
@@ -37,7 +38,8 @@ Feature: Customers can open an account
   Rule: An account belongs to the customer who opened it
 
     Scenario: Two customers open an account each
-      Given "anonymous" creates a `Bank` via `create`
+      Given "anonymous" is an unauthenticated user
+      And "anonymous" creates a `Bank` via `create`
       And the resulting state id is saved as "bank id"
       And "anonymous" does a `sign_up` on `Bank` of "<bank id>" with `customer_id="ann@example.com"`
       And "anonymous" does a `sign_up` on `Bank` of "<bank id>" with `customer_id="bob@example.com"`

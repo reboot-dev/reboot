@@ -5,10 +5,10 @@ Feature: Users can sign in
 
   Background:
     Given the application is up
-    And "anonymous" is an unauthenticated user
 
   Scenario: Signing in makes the user a customer of the bank
     Given "alice" is an authenticated user
+    And "anonymous" is an unauthenticated user
     Then as "alice", `balances` on the `User` for "alice" has `balances=[]`
     And as "anonymous", `all_customer_ids` on the `Bank` for "reboot-bank" has `customer_ids` containing `"alice"`
 
