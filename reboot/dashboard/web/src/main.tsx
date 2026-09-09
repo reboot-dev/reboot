@@ -2850,9 +2850,9 @@ const App: FC = () => {
             path="/data/:id?"
             element={<Navigate to="/models" replace />}
           />
-          {/* A developer returning to the dashboard wants to know what
-              just changed. */}
-          <Route path="*" element={<Navigate to="/changelog" replace />} />
+          {/* A developer returning to the dashboard starts at the
+              application's model. */}
+          <Route path="*" element={<Navigate to="/models" replace />} />
         </Routes>
       </HashRouter>
     </div>
