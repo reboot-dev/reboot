@@ -9,6 +9,7 @@ import webbrowser
 from pathlib import Path
 from reboot.aio.backoff import Backoff
 from reboot.cli.commands.dev import (
+    DEFAULT_LOCAL_ENVOY_PORT,
     _dashboard_reachable,
     _open_on_restart,
     _viewers,
@@ -29,6 +30,7 @@ from reboot.dashboard.backend.constants import (
     DEFAULT_DASHBOARD_PORT,
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
+    ENVVAR_RBT_APPLICATION_URL,
     ENVVAR_RBT_GENERATED_DIRECTORY,
 )
 from reboot.settings import (
@@ -121,6 +123,25 @@ def _application(parser: ArgumentParser) -> Optional[str]:
     return None
 
 
+def _application_url(parser: ArgumentParser) -> str:
+    """Returns where the developer's application serves, which is the
+    port they tell `rbt dev run` to serve on, and `rbt dev run`'s
+    default port when they tell it none.
+
+    Read rather than asked for again, for the same reason as the
+    application. Only a plain `dev run --port=` line counts: a line
+    written for a config, `dev run:hmr --port=`, applies only when
+    that config is asked for, which nothing here knows.
+    """
+    port = DEFAULT_LOCAL_ENVOY_PORT
+    for argument in parser.dot_rc_arguments('dev run'):
+        name, separator, value = argument.partition('=')
+        if name == '--port' and separator == '=':
+            port = int(value)
+
+    return f'http://localhost:{port}'
+
+
 def _generated_directory(parser: ArgumentParser) -> Optional[str]:
     """Returns the directory `rbt generate` writes Python code into,
     which is where its `--python=` flag points, and `None` when it
@@ -145,6 +166,7 @@ def _dashboard_env(
     port: int,
     api_directory: str,
     application: Optional[str],
+    application_url: str,
     generated_directory: Optional[str],
 ) -> dict[str, str]:
     """The environment for the dashboard application.
@@ -203,6 +225,11 @@ def _dashboard_env(
     composed.pop(ENVVAR_RBT_APPLICATION, None)
     if application is not None:
         composed[ENVVAR_RBT_APPLICATION] = application
+
+    # Where the developer's application serves, for the page to read
+    # its states and tasks from. Always set: the application has a
+    # port whether or not it is running.
+    composed[ENVVAR_RBT_APPLICATION_URL] = application_url
 
     # Where the developer's generated Python is, spelled the same way
     # and for the same reason. Left out when the developer named no
@@ -366,6 +393,7 @@ async def dashboard(
             port=port,
             api_directory=_api_directory(parser),
             application=_application(parser),
+            application_url=_application_url(parser),
             generated_directory=_generated_directory(parser),
         )
 

@@ -21,6 +21,12 @@ DASHBOARD_PATH = '/dashboard'
 # logs, and outside the Linux ephemeral range.
 DEFAULT_DASHBOARD_PORT = 9871
 
+# Where the dashboard application tells its page the developer's
+# application is, as a JSON object with the URL under `url`. The page
+# runs in the browser and cannot read the environment, so the URL the
+# CLI puts there has to be served to it.
+APPLICATION_PATH = '/application'
+
 # The `Dashboard` state holding everything the dashboard shows, as
 # the dashboard application last read it.
 DASHBOARD_ID = 'dashboard'
@@ -46,6 +52,12 @@ ENVVAR_RBT_API_DIRECTORY = 'RBT_API_DIRECTORY'
 # the servicers, is what says. Unset when the developer named none, in
 # which case no implementation is looked for.
 ENVVAR_RBT_APPLICATION = 'RBT_APPLICATION'
+
+# Where the developer's application serves, `http://localhost:9991`,
+# from the port the `.rbtrc` gives `rbt dev run`. The page reads the
+# application's states and tasks from there; nothing else in the
+# dashboard reaches the application.
+ENVVAR_RBT_APPLICATION_URL = 'RBT_APPLICATION_URL'
 
 # The directory `rbt generate` writes Python code into, as the
 # `.rbtrc` spells it with `--python=`. The generated code is where
