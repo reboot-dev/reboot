@@ -57,6 +57,22 @@ class Greeter3Library(Library):
         return [GREETER_LIBRARY_NAME]
 
 
+GREETER_4_LIBRARY_NAME = "tests.reboot.aio.libraries_test.Greeter4Library"
+
+
+class Greeter4Library(Library):
+    """A library with no servicers, requiring a library that itself
+    requires another."""
+
+    name = GREETER_4_LIBRARY_NAME
+
+    def servicers(self):
+        return []
+
+    def requirements(self):
+        return [GREETER_2_LIBRARY_NAME]
+
+
 def greeter_library():
     return GreeterLibrary()
 
@@ -67,6 +83,10 @@ def greeter2_library():
 
 def greeter3_library():
     return Greeter3Library()
+
+
+def greeter4_library():
+    return Greeter4Library()
 
 
 class TestCase(unittest.IsolatedAsyncioTestCase):
@@ -125,15 +145,99 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIn(Greeter2Servicer, application.servicers)
         self.assertIn(Greeter3Servicer, application.servicers)
 
-    async def test_throws_if_not_all_requirements_present(self) -> None:
+    async def test_adds_required_libraries(self) -> None:
+        application = Application(libraries=[greeter2_library()])
+
+        # The required library is added, with its servicers.
+        self.assertEqual(
+            {GreeterLibrary, Greeter2Library},
+            set(type(library) for library in application.libraries),
+        )
+        self.assertIn(MyGreeterServicer, application.servicers)
+        self.assertIn(Greeter2Servicer, application.servicers)
+
+    async def test_adds_required_libraries_transitively(self) -> None:
+        application = Application(libraries=[greeter4_library()])
+
+        self.assertEqual(
+            {GreeterLibrary, Greeter2Library, Greeter4Library},
+            set(type(library) for library in application.libraries),
+        )
+
+    async def test_keeps_listed_instance_of_required_library(self) -> None:
+        greeter = greeter_library()
+        application = Application(
+            libraries=[greeter2_library(), greeter],
+        )
+
+        # The listed instance is used rather than a fresh one.
+        self.assertEqual(2, len(application.libraries))
+        self.assertTrue(
+            any(library is greeter for library in application.libraries)
+        )
+
+    async def test_throws_if_requirement_unknown(self) -> None:
+
+        class NeedsUnknownLibrary(Library):
+
+            name = "tests.reboot.aio.libraries_test.NeedsUnknownLibrary"
+
+            def servicers(self):
+                return []
+
+            def requirements(self):
+                return ["tests.reboot.aio.libraries_test.Unknown"]
+
         with self.assertRaises(ValueError) as error:
-            Application(libraries=[greeter2_library()])
-        self.assertEqual(type(error.exception), ValueError)
+            Application(libraries=[NeedsUnknownLibrary()])
 
         self.assertIn(
-            f"Missing required libraries: {GREETER_LIBRARY_NAME}. Please add these libraries and pass them to the `libraries` parameter.",
-            str(error.exception)
+            "requires library `tests.reboot.aio.libraries_test.Unknown`, "
+            "which is not one Reboot can construct itself",
+            str(error.exception),
         )
+
+    async def test_throws_if_requirement_needs_arguments(self) -> None:
+
+        class NeedsArgumentLibrary(Library):
+
+            name = "tests.reboot.aio.libraries_test.NeedsArgumentLibrary"
+
+            def __init__(self, argument: str):
+                self.argument = argument
+
+            def servicers(self):
+                return [MyGreeterServicer]
+
+        class RequiresNeedsArgumentLibrary(Library):
+
+            name = (
+                "tests.reboot.aio.libraries_test."
+                "RequiresNeedsArgumentLibrary"
+            )
+
+            def servicers(self):
+                return []
+
+            def requirements(self):
+                return [NeedsArgumentLibrary.name]
+
+        with self.assertRaises(ValueError) as error:
+            Application(libraries=[RequiresNeedsArgumentLibrary()])
+
+        self.assertIn(
+            "can not be constructed without arguments",
+            str(error.exception),
+        )
+
+        # Listing a constructed instance satisfies the requirement.
+        application = Application(
+            libraries=[
+                RequiresNeedsArgumentLibrary(),
+                NeedsArgumentLibrary("argument"),
+            ]
+        )
+        self.assertEqual(2, len(application.libraries))
 
     async def test_require_class_name(self) -> None:
         with self.assertRaises(NotImplementedError) as error:
@@ -155,7 +259,7 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         class Library1WithInitialize(Library):
             """Library with an initialize function."""
 
-            name = "tests.reboot.aio.libraries_test.GreeterLibrary"
+            name = "tests.reboot.aio.libraries_test.Library1WithInitialize"
 
             def servicers(self):
                 return [MyGreeterServicer]
@@ -167,7 +271,7 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         class Library2WithInitialize(Library):
             """Library with an initialize function."""
 
-            name = "tests.reboot.aio.libraries_test.Greeter2Library"
+            name = "tests.reboot.aio.libraries_test.Library2WithInitialize"
 
             def servicers(self):
                 return [MyGreeterServicer]
