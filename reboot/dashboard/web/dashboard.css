@@ -1608,6 +1608,11 @@ header h1 {
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   background: hsl(var(--card));
+  /* Room around an opened scenario when it is scrolled into view, so
+     the reader can see it ends, and does not start, at the pane's
+     edge. */
+  scroll-margin-top: 12px;
+  scroll-margin-bottom: 28px;
 }
 
 .scenario-head {

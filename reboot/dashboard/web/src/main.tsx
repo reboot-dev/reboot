@@ -1376,6 +1376,30 @@ const ScenarioRow: FC<{
     onRelate: setRelatedKey,
   };
   const blocked = tags.includes(BLOCKED_TAG);
+
+  // An opened scenario is brought into view once its detail has
+  // finished opening, which is when its height is known: whole when
+  // it fits the pane, else with its top at the pane's top, so as
+  // much of it shows as can.
+  const row = useRef<HTMLDivElement>(null);
+  const scrollIntoViewOnceOpen = useRef(false);
+  const onDetailOpened = (): void => {
+    if (!scrollIntoViewOnceOpen.current || row.current === null) {
+      return;
+    }
+    scrollIntoViewOnceOpen.current = false;
+    const pane = row.current.closest(".pane");
+    if (pane === null) {
+      return;
+    }
+    const fits =
+      row.current.getBoundingClientRect().height <= pane.clientHeight;
+    row.current.scrollIntoView({
+      block: fits ? "nearest" : "start",
+      behavior: "smooth",
+    });
+  };
+
   return (
     <div
       className={[
@@ -1385,10 +1409,14 @@ const ScenarioRow: FC<{
       ]
         .filter(Boolean)
         .join(" ")}
+      ref={row}
     >
       <div
         className="scenario-head"
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => {
+          scrollIntoViewOnceOpen.current = !expanded;
+          setExpanded(!expanded);
+        }}
         role="button"
         aria-expanded={expanded}
       >
@@ -1460,7 +1488,19 @@ const ScenarioRow: FC<{
       </div>
       {/* Rendered while the row is closed too: opening is a CSS
           transition on this element, not a mount. */}
-      <div className="scenario-detail">
+      <div
+        className="scenario-detail"
+        // The rows' transition ends last; the opacity's ends first
+        // and is not the one to measure by.
+        onTransitionEnd={(event) => {
+          if (
+            event.target === event.currentTarget &&
+            event.propertyName === "grid-template-rows"
+          ) {
+            onDetailOpened();
+          }
+        }}
+      >
         <div className="scenario-detail-inner">
           {description !== undefined && (
             <Description className="method-description" text={description} />
