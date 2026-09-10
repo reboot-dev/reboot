@@ -250,14 +250,14 @@ const Description: FC<{ className: string; text: string }> = ({
   );
 };
 
-// Each page indexes the same application: `changelog` is its history,
-// `features` is what the application lets a person do, each joined
-// with the scenarios, state types and code that make it up, and
-// `models` is the calls the state types' implementations make to
-// each other. The state types the API declares and the data types
-// those declare in turn are not pages but the types pane, which
-// every page carries on its right.
-const PAGES = ["changelog", "features", "models"] as const;
+// Each page indexes the same application: `models` is the calls the
+// state types' implementations make to each other, and where a
+// developer starts; `features` is what the application lets a person
+// do, each joined with the scenarios, state types and code that make
+// it up; and `changelog` is its history. The state types the API
+// declares and the data types those declare in turn are not pages
+// but the types pane, which every page carries on its right.
+const PAGES = ["models", "features", "changelog"] as const;
 
 type Page = typeof PAGES[number];
 
