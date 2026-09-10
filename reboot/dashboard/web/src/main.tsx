@@ -2738,7 +2738,9 @@ const Overview: FC<{
   const counts: Record<Page, number> = {
     features: featureEntries.length,
     changelog: shownChangelog.length,
-    models: calls,
+    // The state types the graph draws, the way its heading counts
+    // them.
+    models: graphStateTypes.length,
   };
 
   return (
