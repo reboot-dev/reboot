@@ -80,6 +80,13 @@ message Dashboard {
   optional Check api_check = 10;
   optional Check code_check = 11;
   optional Check features_check = 12;
+
+  // When each last changed: the time of the check whose update wrote
+  // it, so a page can tell whether it has something the developer
+  // has not seen. Absent until the first update.
+  optional google.protobuf.Timestamp api_changed_at = 13;
+  optional google.protobuf.Timestamp code_changed_at = 14;
+  optional google.protobuf.Timestamp features_changed_at = 15;
 }
 
 // One check a watcher made of the developer's files.
@@ -123,6 +130,10 @@ message DashboardGetResponse {
   optional Check api_check = 10;
   optional Check code_check = 11;
   optional Check features_check = 12;
+
+  optional google.protobuf.Timestamp api_changed_at = 13;
+  optional google.protobuf.Timestamp code_changed_at = 14;
+  optional google.protobuf.Timestamp features_changed_at = 15;
 }
 
 message DashboardUpdateApiRequest {
@@ -633,6 +644,21 @@ message Preferences {
   // How wide the developer has dragged the types pane, the same
   // way.
   optional uint32 pane_width = 4;
+
+  // What each page showed the last time it was open, so the sidebar
+  // can say when a page has something the developer has not seen.
+  // Each is unset until its page has been opened once.
+  //
+  // For the changelog, the key of the newest entry shown: entries
+  // are keyed by UUIDv7, which order by time, so an entry with a
+  // greater key is one not yet seen.
+  optional string changelog_seen_key = 5;
+  // For the models page, the later of when the API and the code
+  // last changed, as of the last time it was open.
+  optional google.protobuf.Timestamp models_seen_at = 6;
+  // For the features page, when the features last changed, the
+  // same way.
+  optional google.protobuf.Timestamp features_seen_at = 7;
 }
 
 message PreferencesGetRequest {}
@@ -642,6 +668,9 @@ message PreferencesGetResponse {
   repeated string expanded_methods = 2;
   optional uint32 nav_width = 3;
   optional uint32 pane_width = 4;
+  optional string changelog_seen_key = 5;
+  optional google.protobuf.Timestamp models_seen_at = 6;
+  optional google.protobuf.Timestamp features_seen_at = 7;
 }
 
 message PreferencesSetSuppressOpenOnRestartRequest {
@@ -676,6 +705,16 @@ message PreferencesSetPaneWidthRequest {
 }
 
 message PreferencesSetPaneWidthResponse {}
+
+message PreferencesSetSeenRequest {
+  // What a page showed, for whichever pages are given, named the way
+  // the state keeps them.
+  optional string changelog_seen_key = 1;
+  optional google.protobuf.Timestamp models_seen_at = 2;
+  optional google.protobuf.Timestamp features_seen_at = 3;
+}
+
+message PreferencesSetSeenResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -779,6 +818,13 @@ service PreferencesMethods {
   // Its own writer, the same way.
   rpc SetPaneWidth(PreferencesSetPaneWidthRequest)
       returns (PreferencesSetPaneWidthResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Records what a page showed the last time it was open, which is
+  // what the sidebar tells new from seen by.
+  rpc SetSeen(PreferencesSetSeenRequest) returns (PreferencesSetSeenResponse) {
     option (rbt.v1alpha1.method).writer = {
     };
   }

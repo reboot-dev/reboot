@@ -395,6 +395,13 @@ nav a .nav-name {
 
 /* Dimmed by the colour rather than by `opacity`, which would fade
    the cell's fill along with its text and split the row in two. */
+/* The word beside a page with something not yet seen. */
+.nav-count em {
+  font-style: italic;
+  font-weight: 700;
+  color: hsl(var(--primary));
+}
+
 .page-link.current .nav-count {
   color: hsl(var(--primary-foreground) / 0.7);
 }

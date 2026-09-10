@@ -20,6 +20,8 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     PreferencesSetNavWidthResponse,
     PreferencesSetPaneWidthRequest,
     PreferencesSetPaneWidthResponse,
+    PreferencesSetSeenRequest,
+    PreferencesSetSeenResponse,
     PreferencesSetSuppressOpenOnRestartRequest,
     PreferencesSetSuppressOpenOnRestartResponse,
 )
@@ -86,6 +88,18 @@ class DashboardServicer(Dashboard.Servicer):
                 self.state.features_check
                 if self.state.HasField('features_check') else None
             ),
+            api_changed_at=(
+                self.state.api_changed_at
+                if self.state.HasField('api_changed_at') else None
+            ),
+            code_changed_at=(
+                self.state.code_changed_at
+                if self.state.HasField('code_changed_at') else None
+            ),
+            features_changed_at=(
+                self.state.features_changed_at
+                if self.state.HasField('features_changed_at') else None
+            ),
         )
 
     async def RecordCheck(
@@ -141,6 +155,7 @@ class DashboardServicer(Dashboard.Servicer):
         self.state.generated.clear()
         self.state.generated.MergeFrom(request.generated)
         self.state.code_check.CopyFrom(request.check)
+        self.state.code_changed_at.CopyFrom(request.check.at)
 
         if len(request.changes) > 0:
             await OrderedMap.ref(CHANGELOG_ID).Insert(
@@ -191,6 +206,7 @@ class DashboardServicer(Dashboard.Servicer):
         self.state.features.clear()
         self.state.features.MergeFrom(request.features)
         self.state.features_check.CopyFrom(request.check)
+        self.state.features_changed_at.CopyFrom(request.check.at)
 
         return DashboardUpdateFeaturesResponse()
 
@@ -225,6 +241,7 @@ class DashboardServicer(Dashboard.Servicer):
         self.state.api_digests.clear()
         self.state.api_digests.MergeFrom(request.api_digests)
         self.state.api_check.CopyFrom(request.check)
+        self.state.api_changed_at.CopyFrom(request.check.at)
 
         if len(request.changes) > 0:
             await OrderedMap.ref(CHANGELOG_ID).Insert(
@@ -268,6 +285,18 @@ class PreferencesServicer(Preferences.Servicer):
             pane_width=(
                 self.state.pane_width
                 if self.state.HasField('pane_width') else None
+            ),
+            changelog_seen_key=(
+                self.state.changelog_seen_key
+                if self.state.HasField('changelog_seen_key') else None
+            ),
+            models_seen_at=(
+                self.state.models_seen_at
+                if self.state.HasField('models_seen_at') else None
+            ),
+            features_seen_at=(
+                self.state.features_seen_at
+                if self.state.HasField('features_seen_at') else None
             ),
         )
 
@@ -314,3 +343,18 @@ class PreferencesServicer(Preferences.Servicer):
     ) -> PreferencesSetPaneWidthResponse:
         self.state.pane_width = request.pane_width
         return PreferencesSetPaneWidthResponse()
+
+    async def SetSeen(
+        self,
+        context: WriterContext,
+        request: PreferencesSetSeenRequest,
+    ) -> PreferencesSetSeenResponse:
+        """Records what each given page showed the last time it was
+        open."""
+        if request.HasField('changelog_seen_key'):
+            self.state.changelog_seen_key = request.changelog_seen_key
+        if request.HasField('models_seen_at'):
+            self.state.models_seen_at.CopyFrom(request.models_seen_at)
+        if request.HasField('features_seen_at'):
+            self.state.features_seen_at.CopyFrom(request.features_seen_at)
+        return PreferencesSetSeenResponse()

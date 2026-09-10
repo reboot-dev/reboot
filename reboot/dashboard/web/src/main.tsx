@@ -45,6 +45,7 @@ import {
 } from "./constants";
 import type * as api_pb from "../../../../rbt/v1alpha1/api/api_pb";
 import type * as dashboard_pb from "../../../../rbt/dashboard/v1/dashboard_pb";
+import type { Timestamp } from "@bufbuild/protobuf";
 import type {
   FeatureEntry,
   Features,
@@ -392,10 +393,12 @@ const PaneAnchor: FC<{ id: string }> = ({ id }) => (
 // (a `pathOfTypeOnPage` route), and sets `aria-current` itself. The
 // links carry the types pane's search parameter, so switching pages
 // keeps the pane as it is.
-const PageSelector: FC<{ counts: Record<Page, number>; search: string }> = ({
-  counts,
-  search,
-}) => (
+const PageSelector: FC<{
+  // Which pages have something the developer has not seen: what
+  // changed since the page was last open. The others say nothing.
+  isNew: Record<Page, boolean>;
+  search: string;
+}> = ({ isNew, search }) => (
   <div className="page-selector">
     {PAGES.map((name) => (
       <NavLink
@@ -406,11 +409,37 @@ const PageSelector: FC<{ counts: Record<Page, number>; search: string }> = ({
         key={name}
       >
         <span className="nav-name">{PAGE_NAMES[name]}</span>
-        <span className="nav-count">{counts[name]}</span>
+        <span className="nav-count">{isNew[name] && <em>new</em>}</span>
       </NavLink>
     ))}
   </div>
 );
+
+// What a page showed the last time it was open, as the preferences
+// keep it: the newest changelog entry's key, and when the models
+// and the features had last changed.
+interface Seen {
+  changelogKey?: string;
+  modelsAt?: Timestamp;
+  featuresAt?: Timestamp;
+}
+
+// Whether something changed at `changedAt` that a page last open at
+// `seenAt` has not shown: nothing has changed means nothing is new,
+// and a page never opened has everything to see.
+const isUnseen = (
+  changedAt: Timestamp | undefined,
+  seenAt: Timestamp | undefined
+): boolean =>
+  changedAt !== undefined &&
+  (seenAt === undefined || changedAt.toDate() > seenAt.toDate());
+
+// The later of two times, either of which may be absent.
+const later = (
+  a: Timestamp | undefined,
+  b: Timestamp | undefined
+): Timestamp | undefined =>
+  a === undefined ? b : b === undefined ? a : a.toDate() > b.toDate() ? a : b;
 
 // Pixels, which is how `Panel` reads plain numbers. The minimum is the
 // narrowest width at which a package row stays readable; the maximum
@@ -2436,6 +2465,10 @@ const Overview: FC<{
   onPaneResizing: (width: number) => void;
   onPaneResized: () => void;
   preferencesLoaded: boolean;
+  // What each page showed the last time it was open, and how to
+  // record what the open page shows now.
+  seen: Seen;
+  onSeen: (seen: Seen) => void;
 }> = ({
   page,
   navWidth,
@@ -2445,6 +2478,8 @@ const Overview: FC<{
   onPaneResizing,
   onPaneResized,
   preferencesLoaded,
+  seen,
+  onSeen,
 }) => {
   // `Panel` reads `defaultSize` once, when it mounts, and the stored
   // width arrives from the application later. The effect below resizes
@@ -2625,6 +2660,50 @@ const Overview: FC<{
     ? changelog.slice(0, CHANGES_PER_PAGE * changelogPages)
     : changelog;
 
+  // What each page has that the developer has not seen. The
+  // changelog has a new entry when its newest key is past the one
+  // seen, which the keys' order in time allows; the models page has
+  // one when the API or the code changed since it was last open; the
+  // features page when the features did.
+  const newestChangeKey = changelog[0]?.key;
+  const modelsChangedAt = later(
+    response?.apiChangedAt,
+    response?.codeChangedAt
+  );
+  const featuresChangedAt = response?.featuresChangedAt;
+  const isNew: Record<Page, boolean> = {
+    changelog:
+      newestChangeKey !== undefined &&
+      (seen.changelogKey === undefined || newestChangeKey > seen.changelogKey),
+    models: isUnseen(modelsChangedAt, seen.modelsAt),
+    features: isUnseen(featuresChangedAt, seen.featuresAt),
+  };
+
+  // Having a page open is having seen it: what it shows becomes what
+  // was seen, once it differs.
+  useEffect(() => {
+    if (
+      page === "changelog" &&
+      isNew.changelog &&
+      newestChangeKey !== undefined
+    ) {
+      onSeen({ changelogKey: newestChangeKey });
+    } else if (page === "models" && isNew.models) {
+      onSeen({ modelsAt: modelsChangedAt });
+    } else if (page === "features" && isNew.features) {
+      onSeen({ featuresAt: featuresChangedAt });
+    }
+  }, [
+    page,
+    isNew.changelog,
+    isNew.models,
+    isNew.features,
+    newestChangeKey,
+    modelsChangedAt,
+    featuresChangedAt,
+    onSeen,
+  ]);
+
   const calls = useMemo(
     () => drawnCallCount(graphStateTypes),
     [graphStateTypes]
@@ -2800,14 +2879,6 @@ const Overview: FC<{
     );
   }
 
-  const counts: Record<Page, number> = {
-    features: featureEntries.length,
-    changelog: shownChangelog.length,
-    // The state types the graph draws, the way its heading counts
-    // them.
-    models: graphStateTypes.length,
-  };
-
   return (
     <CarriedSearchContext.Provider value={carriedSearch}>
       <Group
@@ -2832,7 +2903,7 @@ const Overview: FC<{
         >
           <nav>
             <RebootBrand live={live} />
-            <PageSelector counts={counts} search={carriedSearch} />
+            <PageSelector isNew={isNew} search={carriedSearch} />
             {page === "features" && (
               <NavLinks
                 heading="features"
@@ -3015,11 +3086,27 @@ const StateTypeRedirect: FC = () => {
 // reads the same ones, and they persist after the tab that set them
 // closes.
 const App: FC = () => {
-  const { useGet, setSuppressOpenOnRestart, setNavWidth, setPaneWidth } =
-    usePreferences({
-      id: PREFERENCES_ID,
-    });
+  const {
+    useGet,
+    setSuppressOpenOnRestart,
+    setNavWidth,
+    setPaneWidth,
+    setSeen,
+  } = usePreferences({
+    id: PREFERENCES_ID,
+  });
   const { response } = useGet();
+
+  const onSeen = useCallback(
+    (seen: Seen): void => {
+      setSeen({
+        changelogSeenKey: seen.changelogKey,
+        modelsSeenAt: seen.modelsAt,
+        featuresSeenAt: seen.featuresAt,
+      });
+    },
+    [setSeen]
+  );
 
   const [openedNotice, setOpenedNotice] = useState(openedAutomatically);
 
@@ -3074,6 +3161,12 @@ const App: FC = () => {
                   onPaneResizing={onPaneResizing}
                   onPaneResized={onPaneResized}
                   preferencesLoaded={response !== undefined}
+                  seen={{
+                    changelogKey: response?.changelogSeenKey,
+                    modelsAt: response?.modelsSeenAt,
+                    featuresAt: response?.featuresSeenAt,
+                  }}
+                  onSeen={onSeen}
                 />
               }
               key={page}
