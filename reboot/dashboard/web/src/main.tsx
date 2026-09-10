@@ -273,6 +273,29 @@ const CHANGES_PER_PAGE = 100;
 // it lands on, so the two can never disagree.
 const pathOfTypeOnPage = (page: Page, id: string): string => `/${page}/${id}`;
 
+// What the page's links carry of the types pane: the search naming
+// the type it shows, so following a link to a feature or a rule
+// leaves the pane open on what it was showing.
+const CarriedSearchContext = createContext<string>("");
+
+// A link to a place on a page, which keeps the types pane as it is.
+const PageLink: FC<{
+  to: string;
+  className?: string;
+  title?: string;
+  "aria-label"?: string;
+  children: ReactNode;
+}> = ({ to, className, title, "aria-label": ariaLabel, children }) => (
+  <Link
+    className={className}
+    to={{ pathname: to, search: useContext(CarriedSearchContext) }}
+    title={title}
+    aria-label={ariaLabel}
+  >
+    {children}
+  </Link>
+);
+
 // Both the `id` of a type's section in the types pane and the
 // target a link to the type names in the `type` search parameter,
 // so the two can never disagree.
@@ -800,13 +823,13 @@ const OpenedNotice: FC<{ onSuppress: () => void; onClose: () => void }> = ({
 // The CSS hides it until the heading is hovered or the link is tabbed
 // to: a column of headings each trailing a `#` reads as punctuation.
 const Anchor: FC<{ page: Page; id: string }> = ({ page, id }) => (
-  <Link
+  <PageLink
     className="anchor"
     to={pathOfTypeOnPage(page, id)}
     aria-label={`Link to ${id}`}
   >
     #
-  </Link>
+  </PageLink>
 );
 
 // One data type, on the pane the way a state type is: what it holds,
@@ -1637,13 +1660,13 @@ const NavLinks: FC<{
   <>
     <div className="eyebrow">{heading}</div>
     {links.map((link) => (
-      <Link
+      <PageLink
         to={pathOfTypeOnPage(page, link.id)}
         title={link.name}
         key={link.id}
       >
         <span className="nav-name">{link.name}</span>
-      </Link>
+      </PageLink>
     ))}
   </>
 );
@@ -2040,12 +2063,12 @@ const FeatureSummaryCard: FC<{
     <section className="feature-summary">
       <div className="feature-methods-label">feature</div>
       <div className="feature-row-head">
-        <Link
+        <PageLink
           className="feature-summary-name"
           to={pathOfTypeOnPage("features", filename)}
         >
           {feature.name ?? filename}
-        </Link>
+        </PageLink>
       </div>
       {feature.description !== undefined && (
         <p className="feature-summary-description">{feature.description}</p>
@@ -2057,9 +2080,11 @@ const FeatureSummaryCard: FC<{
         <ul className="feature-summary-rules">
           {feature.rules.map((rule, index) => (
             <li key={index}>
-              <Link to={pathOfTypeOnPage("features", ruleId(filename, index))}>
+              <PageLink
+                to={pathOfTypeOnPage("features", ruleId(filename, index))}
+              >
                 {rule.name ?? `Rule ${index + 1}`}
-              </Link>
+              </PageLink>
             </li>
           ))}
         </ul>
@@ -2071,9 +2096,9 @@ const FeatureSummaryCard: FC<{
         litStateTypes={filter.stateTypes}
       />
       <div className="feature-row-meta">
-        <Link to={pathOfTypeOnPage("features", filename)}>
+        <PageLink to={pathOfTypeOnPage("features", filename)}>
           {countWithNoun(scenarios, "scenario")}
-        </Link>
+        </PageLink>
         {webApp > 0 && (
           <WebAppToggle
             active={filter.webApp}
@@ -2219,14 +2244,14 @@ const FeatureGallery: FC<{ filename: string; feature: feature_pb.Feature }> = ({
   return (
     <div className="feature-gallery">
       {shots.map(({ scenario, screenshot }) => (
-        <Link
+        <PageLink
           className="feature-gallery-item"
           to={pathOfTypeOnPage("features", filename)}
           key={scenario.line}
         >
           <img src={recordingUrl(screenshot)} alt="" />
           <span>{scenario.name}</span>
-        </Link>
+        </PageLink>
       ))}
     </div>
   );
@@ -2744,184 +2769,190 @@ const Overview: FC<{
   };
 
   return (
-    <Group
-      className="shell"
-      orientation="horizontal"
-      // The layout also changes when the panel mounts with the stored
-      // width; only a drag or a resize key writes the width back.
-      onLayoutChanged={(_layout, { isUserInteraction }) => {
-        if (isUserInteraction) {
-          onNavResized();
-          onPaneResized();
-        }
-      }}
-    >
-      <Panel
-        className="nav-panel"
-        panelRef={navPanel}
-        defaultSize={navWidth}
-        minSize={NAV_WIDTH.min}
-        maxSize={NAV_WIDTH.max}
-        onResize={({ inPixels }) => onNavResizing(Math.round(inPixels))}
+    <CarriedSearchContext.Provider value={carriedSearch}>
+      <Group
+        className="shell"
+        orientation="horizontal"
+        // The layout also changes when the panel mounts with the stored
+        // width; only a drag or a resize key writes the width back.
+        onLayoutChanged={(_layout, { isUserInteraction }) => {
+          if (isUserInteraction) {
+            onNavResized();
+            onPaneResized();
+          }
+        }}
       >
-        <nav>
-          <RebootBrand live={live} />
-          <PageSelector counts={counts} search={carriedSearch} />
-          {page === "features" && (
-            <NavLinks heading="features" links={featureLinks} page="features" />
-          )}
-        </nav>
-        <Checks response={response} />
-      </Panel>
-      <Separator className="nav-resizer" />
-      <Panel className="pane-panel">
-        <div
-          className={page === "models" ? "pane graph-pane" : "pane"}
-          ref={pane}
+        <Panel
+          className="nav-panel"
+          panelRef={navPanel}
+          defaultSize={navWidth}
+          minSize={NAV_WIDTH.min}
+          maxSize={NAV_WIDTH.max}
+          onResize={({ inPixels }) => onNavResizing(Math.round(inPixels))}
         >
-          <header>
-            <div className="eyebrow">{eyebrow}</div>
-            <h1>{heading}</h1>
-            {/* A feature's page names the feature up here, so its
-                file, counts, and description belong here too. */}
-            {page === "features" && chosenFeature !== undefined && (
-              <>
-                <div className="feature-file-line">
-                  <div className="file">{chosenFeature.filename}</div>
-                  <span className="summary-line">
-                    {countWithNoun(
-                      scenariosOfFeature(chosenFeature.feature).length,
-                      "scenario"
-                    )}
-                    {chosenFeature.feature.rules.length > 0 &&
-                      ` · ${countWithNoun(
-                        chosenFeature.feature.rules.length,
-                        "rule"
-                      )}`}
-                  </span>
-                </div>
-                {chosenFeature.feature.description !== undefined && (
-                  <Description
-                    className="state-type-description"
-                    text={chosenFeature.feature.description}
-                  />
-                )}
-              </>
-            )}
-          </header>
-          {error && <div className="error">{error}</div>}
-          {page === "changelog" ? (
-            <ChangelogPage
-              shown={shownChangelog}
-              more={moreChangelog}
-              onMore={() => setChangelogPages(changelogPages + 1)}
-              isLoading={changelogIsLoading}
-              live={live}
-            />
-          ) : page === "models" ? (
-            <>
-              {needsGenerateReason === NeedsGenerateReason.MISSING ? (
-                <p className="graph-note muted">
-                  Your application imports generated code that does not exist
-                  yet, so the static call graph anaysis cannot be done. Run{" "}
-                  <code>rbt generate</code>.
-                </p>
-              ) : needsGenerateReason === NeedsGenerateReason.CHANGED ? (
-                <p className="graph-note muted">
-                  Your API files changed since the generated code was written,
-                  so the static call graph analysis may be out of date. Run{" "}
-                  <code>rbt generate</code>.
-                </p>
-              ) : null}
-              {/* With a module `missing`, no servicer resolves. */}
-              {needsGenerateReason !== NeedsGenerateReason.MISSING &&
-              response !== undefined &&
-              servicers.length === 0 ? (
-                <p className="graph-note muted">
-                  No servicers found, so no static call graph analysis run. The
-                  dashboard reads the Python application your{" "}
-                  <code>.rbtrc</code> names with{" "}
-                  <code>dev run --application=</code>.
-                </p>
-              ) : null}
-              <GraphPage
-                stateTypes={graphStateTypes}
-                selectedMethodId={target ?? null}
-                onSelectMethod={onSelectMethod}
-                onOpenStateType={onOpenStateType}
+          <nav>
+            <RebootBrand live={live} />
+            <PageSelector counts={counts} search={carriedSearch} />
+            {page === "features" && (
+              <NavLinks
+                heading="features"
+                links={featureLinks}
+                page="features"
               />
-            </>
-          ) : featureEntries.length === 0 ? (
-            <div className="empty">
-              No <code>.feature</code> files found. Write one and the feature it
-              describes will show up here.
-            </div>
-          ) : chosenFeature === undefined ? (
-            <FeaturesOverview
-              features={featureEntries}
-              graph={graphStateTypes}
-              links={links}
-            />
-          ) : (
-            <FeaturePage
-              entry={chosenFeature}
-              graph={graphStateTypes}
-              links={links}
-              key={chosenFeature.filename}
-            />
-          )}
-        </div>
-      </Panel>
-      {paneTarget !== undefined && (
-        <>
-          <Separator className="nav-resizer" />
-          <Panel
-            className="types-panel"
-            panelRef={typesPanel}
-            defaultSize={paneWidth}
-            minSize={PANE_WIDTH.min}
-            maxSize={PANE_WIDTH.max}
-            collapsible
-            collapsedSize={PANE_WIDTH.handle}
-            onResize={({ inPixels }) => {
-              const width = Math.round(inPixels);
-              setPaneCollapsed(width < PANE_WIDTH.min);
-              // A collapsed width is never remembered: the drawer
-              // reopens at the width it was dragged shut from.
-              if (width >= PANE_WIDTH.min) {
-                onPaneResizing(width);
-              }
-            }}
+            )}
+          </nav>
+          <Checks response={response} />
+        </Panel>
+        <Separator className="nav-resizer" />
+        <Panel className="pane-panel">
+          <div
+            className={page === "models" ? "pane graph-pane" : "pane"}
+            ref={pane}
           >
-            {paneCollapsed ? (
-              <button
-                type="button"
-                className="types-handle"
-                onClick={() => typesPanel.current?.expand()}
-                title="Show the types pane"
-                aria-label="Show the types pane"
-              >
-                ‹
-              </button>
+            <header>
+              <div className="eyebrow">{eyebrow}</div>
+              <h1>{heading}</h1>
+              {/* A feature's page names the feature up here, so its
+                file, counts, and description belong here too. */}
+              {page === "features" && chosenFeature !== undefined && (
+                <>
+                  <div className="feature-file-line">
+                    <div className="file">{chosenFeature.filename}</div>
+                    <span className="summary-line">
+                      {countWithNoun(
+                        scenariosOfFeature(chosenFeature.feature).length,
+                        "scenario"
+                      )}
+                      {chosenFeature.feature.rules.length > 0 &&
+                        ` · ${countWithNoun(
+                          chosenFeature.feature.rules.length,
+                          "rule"
+                        )}`}
+                    </span>
+                  </div>
+                  {chosenFeature.feature.description !== undefined && (
+                    <Description
+                      className="state-type-description"
+                      text={chosenFeature.feature.description}
+                    />
+                  )}
+                </>
+              )}
+            </header>
+            {error && <div className="error">{error}</div>}
+            {page === "changelog" ? (
+              <ChangelogPage
+                shown={shownChangelog}
+                more={moreChangelog}
+                onMore={() => setChangelogPages(changelogPages + 1)}
+                isLoading={changelogIsLoading}
+                live={live}
+              />
+            ) : page === "models" ? (
+              <>
+                {needsGenerateReason === NeedsGenerateReason.MISSING ? (
+                  <p className="graph-note muted">
+                    Your application imports generated code that does not exist
+                    yet, so the static call graph anaysis cannot be done. Run{" "}
+                    <code>rbt generate</code>.
+                  </p>
+                ) : needsGenerateReason === NeedsGenerateReason.CHANGED ? (
+                  <p className="graph-note muted">
+                    Your API files changed since the generated code was written,
+                    so the static call graph analysis may be out of date. Run{" "}
+                    <code>rbt generate</code>.
+                  </p>
+                ) : null}
+                {/* With a module `missing`, no servicer resolves. */}
+                {needsGenerateReason !== NeedsGenerateReason.MISSING &&
+                response !== undefined &&
+                servicers.length === 0 ? (
+                  <p className="graph-note muted">
+                    No servicers found, so no static call graph analysis run.
+                    The dashboard reads the Python application your{" "}
+                    <code>.rbtrc</code> names with{" "}
+                    <code>dev run --application=</code>.
+                  </p>
+                ) : null}
+                <GraphPage
+                  stateTypes={graphStateTypes}
+                  selectedMethodId={target ?? null}
+                  onSelectMethod={onSelectMethod}
+                  onOpenStateType={onOpenStateType}
+                />
+              </>
+            ) : featureEntries.length === 0 ? (
+              <div className="empty">
+                No <code>.feature</code> files found. Write one and the feature
+                it describes will show up here.
+              </div>
+            ) : chosenFeature === undefined ? (
+              <FeaturesOverview
+                features={featureEntries}
+                graph={graphStateTypes}
+                links={links}
+              />
             ) : (
-              <TypesPane
-                apis={apis}
-                linkedDataTypes={linkedDataTypes}
-                target={paneTarget}
-                propertyName={paneProperty}
-                flashKey={returning ? undefined : location.key}
-                bodyRef={typesBody}
-                onScroll={(scrollTop) =>
-                  typesScrollTops.set(location.key, scrollTop)
-                }
-                onClose={onClosePane}
-                key={typeIdOfTarget(paneTarget)}
+              <FeaturePage
+                entry={chosenFeature}
+                graph={graphStateTypes}
+                links={links}
+                key={chosenFeature.filename}
               />
             )}
-          </Panel>
-        </>
-      )}
-    </Group>
+          </div>
+        </Panel>
+        {paneTarget !== undefined && (
+          <>
+            <Separator className="nav-resizer" />
+            <Panel
+              className="types-panel"
+              panelRef={typesPanel}
+              defaultSize={paneWidth}
+              minSize={PANE_WIDTH.min}
+              maxSize={PANE_WIDTH.max}
+              collapsible
+              collapsedSize={PANE_WIDTH.handle}
+              onResize={({ inPixels }) => {
+                const width = Math.round(inPixels);
+                setPaneCollapsed(width < PANE_WIDTH.min);
+                // A collapsed width is never remembered: the drawer
+                // reopens at the width it was dragged shut from.
+                if (width >= PANE_WIDTH.min) {
+                  onPaneResizing(width);
+                }
+              }}
+            >
+              {paneCollapsed ? (
+                <button
+                  type="button"
+                  className="types-handle"
+                  onClick={() => typesPanel.current?.expand()}
+                  title="Show the types pane"
+                  aria-label="Show the types pane"
+                >
+                  ‹
+                </button>
+              ) : (
+                <TypesPane
+                  apis={apis}
+                  linkedDataTypes={linkedDataTypes}
+                  target={paneTarget}
+                  propertyName={paneProperty}
+                  flashKey={returning ? undefined : location.key}
+                  bodyRef={typesBody}
+                  onScroll={(scrollTop) =>
+                    typesScrollTops.set(location.key, scrollTop)
+                  }
+                  onClose={onClosePane}
+                  key={typeIdOfTarget(paneTarget)}
+                />
+              )}
+            </Panel>
+          </>
+        )}
+      </Group>
+    </CarriedSearchContext.Provider>
   );
 };
 
