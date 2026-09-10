@@ -28,10 +28,20 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":application_config_py",
-        ":settings_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
+        ":replicas_py",
         "@com_github_reboot_dev_reboot//reboot/aio:servicers_py",
         "@com_github_reboot_dev_reboot//reboot/aio:types_py",
+    ],
+)
+
+py_library(
+    name = "replicas_py",
+    srcs = ["replicas.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":settings_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
+        requirement("protobuf"),
     ],
 )
 
@@ -57,6 +67,7 @@ py_library(
         requirement("aiofiles"),
         requirement("psutil"),
         ":servers_py",
+        ":replicas_py",
         ":settings_py",
         "@com_github_reboot_dev_reboot//reboot:naming_py",
         "//reboot/aio:http_py",

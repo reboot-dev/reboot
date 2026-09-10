@@ -299,6 +299,15 @@ class PythonWebFramework(WebFramework):
                 request.state.reboot_external_context = (
                     external_context_from_request(request)
                 )
+            # Offered rather than applied, for a handler that can
+            # establish a caller's right itself and only then wants to
+            # act on the application's behalf. Reaching for this is a
+            # handler saying it has done that; the route-level
+            # `app_internal=True` above, which grants the same thing
+            # on the strength of a path alone, cannot make that check.
+            request.state.reboot_app_internal_context = (
+                app_internal_external_context_from_request
+            )
 
             return await call_next(request)
 

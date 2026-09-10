@@ -5,11 +5,10 @@ export * from "@reboot-dev/reboot-std-api/blob/v1/blob_rbt.js";
 // The servicers are implemented in Python (the data-plane client
 // lives there); Node.js applications host them as "native" servicers.
 //
-// NOTE: the application-side routes that proxy bytes to a data plane
-// requesting forwarded paths (such as the local filesystem one) are
-// currently only registered by Python applications; Node.js
-// applications need a data plane whose URLs are directly reachable by
-// clients (no forwarded paths, e.g. Reboot Cloud's).
+// NOTE: the HTTP routes that serve the filesystem data plane's bytes
+// are currently only registered by Python applications; a Node.js
+// application needs a data plane that serves its own URLs, named by
+// `REBOOT_BLOB_DATA_PLANE_URL`.
 export default {
   servicers: (): NativeServicer[] => {
     return [
