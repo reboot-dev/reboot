@@ -76,6 +76,7 @@ import {
   stateTypesOfFeature,
   stateTypesOfFeatures,
   webAppScenarioCount,
+  spansOfPrinted,
   spansOfText,
   stepLinks,
 } from "./feature_files";
@@ -1213,7 +1214,9 @@ const BuiltInStep: FC<{
   related: Related;
 }> = ({ syntax, links, related }) => {
   const printed: Printed = printBuiltInSyntax(syntax);
-  const stateType = printed.head.find(
+  // A call names its state after its clauses, in the tail; a read
+  // names it in the head.
+  const stateType = spansOfPrinted(printed).find(
     (span) => span.role === "state-type"
   )?.text;
   const spans = (spans: Span[]) => (
