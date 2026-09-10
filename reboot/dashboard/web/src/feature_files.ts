@@ -568,6 +568,18 @@ const withClauses = (
     ? { head: [], clauses: [] }
     : { head: [text(` ${word} `)], clauses };
 
+// A read's properties inline, before what the read asserts or saves:
+// ' with `amount=50`', the clauses joined by commas, or nothing.
+const inlineClauses = (word: string, clauses: Span[][]): Span[] =>
+  clauses.length === 0
+    ? []
+    : [
+        text(` ${word} `),
+        ...clauses.flatMap((clause, index) =>
+          index === 0 ? clause : [text(", "), ...clause]
+        ),
+      ];
+
 // A built-in step printed from its syntax tree, the way the grammar
 // spells it. The grammar is strict enough that this is the step as
 // written, but for `,` against `and` between clauses and `a` against
@@ -724,6 +736,7 @@ export const printBuiltInSyntax = (
           { text: step.value.method, role: "method" },
           text(" on "),
           ...spansOfState(step.value.state),
+          ...inlineClauses("with", step.value.arguments.map(spansOfAssignment)),
           text(" has "),
         ],
         clauses: step.value.assertions.map(spansOfAssertion),
@@ -736,6 +749,7 @@ export const printBuiltInSyntax = (
           { text: step.value.method, role: "method" },
           text(" on "),
           ...spansOfState(step.value.state),
+          ...inlineClauses("with", step.value.arguments.map(spansOfAssignment)),
           text(" eventually has "),
         ],
         clauses: step.value.assertions.map(spansOfAssertion),
@@ -748,6 +762,7 @@ export const printBuiltInSyntax = (
           { text: step.value.method, role: "method" },
           text(" on "),
           ...spansOfState(step.value.state),
+          ...inlineClauses("with", step.value.arguments.map(spansOfAssignment)),
           text(" has "),
         ],
         clauses: step.value.saves.map(spansOfSave),
@@ -764,6 +779,7 @@ export const printBuiltInSyntax = (
           { text: step.value.method, role: "method" },
           text(" on "),
           ...spansOfState(step.value.state),
+          ...inlineClauses("with", step.value.arguments.map(spansOfAssignment)),
           text(" aborts with "),
           { text: step.value.errorType, role: "error-type" },
           ...clauses.head,

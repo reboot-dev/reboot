@@ -188,6 +188,9 @@ message Has {
 
   // The user the call is made as.
   string user = 4;
+
+  // The reader's request properties, said before 'has'.
+  repeated Assignment arguments = 5;
 }
 
 // '`balance` on the `Account` for "alice" eventually has ... within
@@ -204,6 +207,9 @@ message EventuallyHas {
 
   // The user the call is made as.
   string user = 5;
+
+  // The reader's request properties, said before 'eventually has'.
+  repeated Assignment arguments = 6;
 }
 
 // '`get` on the `Account` for "alice" has `owner` saved as "o"': a
@@ -217,6 +223,9 @@ message HasSavedAs {
 
   // The user the call is made as.
   string user = 4;
+
+  // The reader's request properties, said before 'has'.
+  repeated Assignment arguments = 5;
 }
 
 // '`balance` on the `Account` for "alice" aborts with
@@ -234,6 +243,9 @@ message AbortsWith {
 
   // The user the call is made as.
   string user = 5;
+
+  // The reader's request properties, said before 'aborts with'.
+  repeated Assignment arguments = 6;
 }
 
 // 'the result has ...'.

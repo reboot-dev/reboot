@@ -155,6 +155,43 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(syntax.eventually_has.seconds, 2.5)
         self.assertEqual(len(syntax.eventually_has.assertions), 1)
 
+    def test_a_read_says_the_reader_properties(self) -> None:
+        syntax = parse(
+            'as "u", `has_at_least` on the `Account` for "alice" with '
+            '`amount=50` has `enough=true`'
+        )
+        assert syntax is not None
+        self.assertEqual(syntax.WhichOneof('step'), 'has')
+        self.assertEqual(
+            [(a.path, a.value.json) for a in syntax.has.arguments],
+            [('amount', '50')],
+        )
+        self.assertEqual(len(syntax.has.assertions), 1)
+
+        syntax = parse(
+            'as "u", `has_at_least` on the `Account` for "alice" with '
+            '`amount=50` eventually has `enough=true` within 5 seconds'
+        )
+        assert syntax is not None
+        self.assertEqual(syntax.WhichOneof('step'), 'eventually_has')
+        self.assertEqual(len(syntax.eventually_has.arguments), 1)
+
+        syntax = parse(
+            'as "u", `has_at_least` on the `Account` for "alice" with '
+            '`amount=50` has `enough` saved as "covered"'
+        )
+        assert syntax is not None
+        self.assertEqual(syntax.WhichOneof('step'), 'has_saved_as')
+        self.assertEqual(len(syntax.has_saved_as.arguments), 1)
+
+        syntax = parse(
+            'as "u", `has_at_least` on the `Account` for "alice" with '
+            '`amount=50` aborts with `Unauthenticated`'
+        )
+        assert syntax is not None
+        self.assertEqual(syntax.WhichOneof('step'), 'aborts_with')
+        self.assertEqual(len(syntax.aborts_with.arguments), 1)
+
     def test_aborts(self) -> None:
         syntax = parse('the attempt aborts with `OverdraftError`')
         assert syntax is not None

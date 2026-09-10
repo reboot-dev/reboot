@@ -80,7 +80,11 @@ assertions hold, waiting at most its required bound, e.g.:
 A Then 'has' asserts and a Given or When 'has' saves, and readers
 are only read that way: 'does a' and 'attempts a' refuse readers the
 way 'has' refuses writers, and a reader's abort is asserted with
-'`reader` on ... aborts with ...'.
+'`reader` on ... aborts with ...'. A reader that takes properties is
+given them before the 'has', the way a call is given its own:
+
+    Then as "alice", `has_at_least` on the `Account` for "alice" with
+      `amount=50` has `enough=true`
 
 An asserting list can also say the predicates `path` containing
 `value` (a substring of a string, an element of a list, or a key of
@@ -1053,10 +1057,11 @@ async def _read(
     method: str,
     state_type: str,
     state_id: str,
+    arguments: Optional[str],
 ) -> Any:
     """Calls the named reader on the named state as the given user,
-    recording and returning its response; raises if
-    the method is not a reader."""
+    with the request the argument clauses describe, recording and
+    returning its response; raises if the method is not a reader."""
     if not world.is_reader(state_type=state_type, method=method):
         raise ValueError(
             f"`{method}` is not a reader; call it with '\"...\" does a "
@@ -1067,7 +1072,7 @@ async def _read(
             state_type=state_type,
             state_id=_maybe_saved(world, state_id),
             method=method,
-            assignments={},
+            assignments=_parse_assignments(world, arguments),
             user=user,
         )
         return world.response
@@ -1085,9 +1090,12 @@ async def _then_has(
     method: str,
     state_type: str,
     state_id: str,
+    arguments: Optional[str],
     clauses: str,
 ) -> None:
-    response = await _read(world, user, method, state_type, state_id)
+    response = await _read(
+        world, user, method, state_type, state_id, arguments
+    )
     _assert_properties(response, _parse_assertions(world, clauses))
 
 
@@ -1098,6 +1106,7 @@ async def _eventually_has(
     method: str,
     state_type: str,
     state_id: str,
+    arguments: Optional[str],
     clauses: str,
     within: str,
 ) -> None:
@@ -1111,7 +1120,18 @@ async def _eventually_has(
     reference = world.client_type(state_type).ref(
         _maybe_saved(world, state_id)
     )
-    responses = getattr(reference.reactively(), method)(world.context(user))
+    assignments = _parse_assignments(world, arguments)
+    read = getattr(reference.reactively(), method)
+    responses = (
+        read(world.context(user)) if not assignments else read(
+            world.context(user),
+            world.request(
+                state_type=state_type,
+                method=method,
+                assignments=assignments,
+            ),
+        )
+    )
     deadline = asyncio.get_running_loop().time() + seconds
     last_error: Optional[AssertionError] = None
     try:
@@ -1159,9 +1179,12 @@ async def _has_saved_as(
     method: str,
     state_type: str,
     state_id: str,
+    arguments: Optional[str],
     clauses: str,
 ) -> None:
-    response = await _read(world, user, method, state_type, state_id)
+    response = await _read(
+        world, user, method, state_type, state_id, arguments
+    )
     response_json = _json_object(response)
     for name, path in _parse_saves(clauses).items():
         world.save(name, _resolve_json_property(response_json, path))
@@ -1174,6 +1197,7 @@ async def _aborts_with(
     method: str,
     state_type: str,
     state_id: str,
+    arguments: Optional[str],
     error_type: str,
     clauses: Optional[str],
 ) -> None:
@@ -1188,7 +1212,7 @@ async def _aborts_with(
             state_type=state_type,
             state_id=_maybe_saved(world, state_id),
             method=method,
-            assignments={},
+            assignments=_parse_assignments(world, arguments),
             user=user,
         )
     except Aborted as aborted:

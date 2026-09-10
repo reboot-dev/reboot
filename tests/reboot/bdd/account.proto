@@ -32,6 +32,11 @@ service AccountMethods {
     };
   }
 
+  rpc HasAtLeast(HasAtLeastRequest) returns (HasAtLeastResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
   rpc DepositLater(DepositLaterRequest) returns (DepositLaterResponse) {
     option (rbt.v1alpha1.method).writer = {
     };
@@ -85,6 +90,15 @@ message OpenResponse {
 }
 
 message BalanceRequest {}
+
+message HasAtLeastRequest {
+  int64 amount = 1;
+}
+
+message HasAtLeastResponse {
+  // Whether the balance covers the amount.
+  bool enough = 1;
+}
 
 message DepositLaterRequest {
   // Amount a scheduled task will deposit.

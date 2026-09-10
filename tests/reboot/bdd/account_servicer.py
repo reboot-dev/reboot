@@ -15,6 +15,8 @@ from tests.reboot.bdd.account_rbt import (
     GetOwnerResponse,
     GetOwnersRequest,
     GetOwnersResponse,
+    HasAtLeastRequest,
+    HasAtLeastResponse,
     OpenRequest,
     OpenResponse,
     PutOwnerRequest,
@@ -47,6 +49,13 @@ class AccountServicer(Account.Servicer):
         request: BalanceRequest,
     ) -> BalanceResponse:
         return BalanceResponse(balance=self.state.balance)
+
+    async def has_at_least(
+        self,
+        context: ReaderContext,
+        request: HasAtLeastRequest,
+    ) -> HasAtLeastResponse:
+        return HasAtLeastResponse(enough=self.state.balance >= request.amount)
 
     async def deposit_later(
         self,

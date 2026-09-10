@@ -147,6 +147,11 @@ USER = r'"(?P<user>[^"]*)"'
 # A step's optional trailing property list.
 PROPERTIES = rf'(?: with (?P<clauses>{PROPERTY_CLAUSES}))?'
 
+# A read's optional property list, the reader's request, said before
+# what the read asserts or saves: 'as "alice", `has_at_least` on the
+# `Account` for "a" with `amount=50` has `enough=true`'.
+ARGUMENTS = rf'(?: with (?P<arguments>{PROPERTY_CLAUSES}))?'
+
 # The shape of each built-in step's text: what the step registers
 # with pytest-bdd, and what `read` reads a step by. Named for the
 # phrase that distinguishes the step.
@@ -179,17 +184,21 @@ ATTEMPT_ABORTS_WITH = (
     r'the attempt aborts with `(?P<error_type>\w+)`'
     rf'(?: with (?P<clauses>{ASSERT_CLAUSES}))?$'
 )
-HAS = rf'{AS}`(?P<method>\w+)` on {STATE} has (?P<clauses>{ASSERT_CLAUSES})$'
+HAS = (
+    rf'{AS}`(?P<method>\w+)` on {STATE}{ARGUMENTS} has '
+    rf'(?P<clauses>{ASSERT_CLAUSES})$'
+)
 EVENTUALLY_HAS = (
-    rf'{AS}`(?P<method>\w+)` on {STATE} '
+    rf'{AS}`(?P<method>\w+)` on {STATE}{ARGUMENTS} '
     rf'eventually has (?P<clauses>{ASSERT_CLAUSES}) within (?P<within>.+)$'
 )
 HAS_SAVED_AS = (
-    rf'{AS}`(?P<method>\w+)` on {STATE} has (?P<clauses>{SAVE_CLAUSES})$'
+    rf'{AS}`(?P<method>\w+)` on {STATE}{ARGUMENTS} has '
+    rf'(?P<clauses>{SAVE_CLAUSES})$'
 )
 ABORTS_WITH = (
-    rf'{AS}`(?P<method>\w+)` on {STATE} aborts with `(?P<error_type>\w+)`'
-    rf'(?: with (?P<clauses>{ASSERT_CLAUSES}))?$'
+    rf'{AS}`(?P<method>\w+)` on {STATE}{ARGUMENTS} aborts with '
+    rf'`(?P<error_type>\w+)`(?: with (?P<clauses>{ASSERT_CLAUSES}))?$'
 )
 RESULT_HAS = rf'the result has (?P<clauses>{ASSERT_CLAUSES})$'
 
@@ -443,6 +452,7 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
                 state=_state(match),
                 assertions=_assertions(match['clauses']),
                 user=match['user'],
+                arguments=_assignments(match['arguments']),
             )
         )
     match = re.match(EVENTUALLY_HAS, text)
@@ -457,6 +467,7 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
                 assertions=_assertions(match['clauses']),
                 seconds=seconds,
                 user=match['user'],
+                arguments=_assignments(match['arguments']),
             )
         )
     match = re.match(HAS_SAVED_AS, text)
@@ -467,6 +478,7 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
                 state=_state(match),
                 saves=_saves(match['clauses']),
                 user=match['user'],
+                arguments=_assignments(match['arguments']),
             )
         )
     match = re.match(ABORTS_WITH, text)
@@ -478,6 +490,7 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
                 error_type=match['error_type'],
                 assertions=_assertions(match['clauses']),
                 user=match['user'],
+                arguments=_assignments(match['arguments']),
             )
         )
     match = re.match(RESULT_HAS, text)

@@ -128,6 +128,15 @@ Feature: Accounts
     And "anonymous" awaits the `deposit` task "<deposit_task_id>" on `Account` within 30 seconds
     Then the result has `updated_balance=20`
 
+  Scenario: A reader takes properties
+    Given "anonymous" creates an `Account` via `open` with `initial_balance=100`
+    And the resulting state id is saved as "account_id"
+    Then as "anonymous", `has_at_least` on the `Account` for "<account_id>" with `amount=50` has `enough=true`
+    And as "anonymous", `has_at_least` on the `Account` for "<account_id>" with `amount=500` has `enough=false`
+    And as "anonymous", `has_at_least` on the `Account` for "<account_id>" with `amount=100` eventually has `enough=true` within 5 seconds
+    When as "anonymous", `has_at_least` on the `Account` for "<account_id>" with `amount=1` has `enough` saved as "covered"
+    Then as "anonymous", `has_at_least` on the `Account` for "<account_id>" with `amount=1` has `enough=<covered>`
+
   @wip
   Scenario: A scenario being worked on runs as usual
     Given "anonymous" creates an `Account` via `open`
