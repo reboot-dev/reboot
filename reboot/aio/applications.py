@@ -353,6 +353,12 @@ class Application:
             else:
                 servicers = library_servicers
 
+            legacy_grpc_servicers = legacy_grpc_servicers or []
+            legacy_grpc_servicers.extend(
+                servicer for library in libraries
+                for servicer in library.legacy_grpc_servicers()
+            )
+
         if servicers is not None and len(servicers) == 0:
             raise ValueError("'servicers' can't be an empty list")
 
