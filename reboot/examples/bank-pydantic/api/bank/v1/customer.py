@@ -11,7 +11,12 @@ from reboot.api import (
 
 
 class CustomerState(Model):
-    account_ids: list[str] = Field(tag=1, default_factory=list)
+    account_ids: list[str] = Field(
+        tag=1,
+        default_factory=list,
+        description="The ids of the customer's accounts, in the order "
+        "they were opened.",
+    )
 
 
 class OpenAccountRequest(Model):

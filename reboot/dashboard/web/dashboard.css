@@ -2472,6 +2472,88 @@ header .state-type-description {
   }
 }
 
+/* A property's row: its name and type on one line, what was written
+   about it as prose beneath, then what a value must satisfy. */
+.properties {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.property {
+  padding: 10px 14px;
+  border: 1px solid hsl(var(--border-soft));
+  border-radius: var(--radius);
+  background: hsl(var(--surface-sunken));
+}
+
+.property-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+}
+
+.property-name {
+  color: hsl(var(--foreground));
+  font-weight: 600;
+}
+
+.property-type {
+  color: hsl(var(--muted-foreground));
+}
+
+.property-head .anchor {
+  margin-left: 0;
+}
+
+.property-head:hover .anchor {
+  opacity: 1;
+}
+
+.property-description {
+  max-width: 62ch;
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: hsl(var(--prose));
+  text-wrap: pretty;
+}
+
+.property-description code {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.9em;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border-soft));
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.property-constraints {
+  margin-top: 5px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+
+.property-deprecated {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: hsl(4 65% 34%);
+  background: hsl(4 80% 58% / 0.14);
+  border: 1px solid hsl(4 70% 50% / 0.5);
+  border-radius: 999px;
+  padding: 0 7px;
+}
+
+/* The property a followed link named flashes the way a method does. */
+.property.is-flash {
+  animation: method-flash 1.5s ease-out;
+}
+
 /* A data type's name is a button, styled as the link it replaces. */
 .type-name-button {
   font: inherit;

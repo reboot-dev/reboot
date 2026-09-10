@@ -13,7 +13,13 @@ from reboot.api import (
 
 
 class BankState(Model):
-    customer_ids_map_id: str = Field(tag=1)
+    customer_ids_map_id: str = Field(
+        tag=1,
+        description="The id of the `SortedMap` that lists the bank's "
+        "customers by id, one entry per customer who signed up, so that "
+        "the bank can page through them in order however many there "
+        "are.",
+    )
 
 
 class SignUpRequest(Model):

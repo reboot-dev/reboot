@@ -2,7 +2,12 @@ from reboot.api import API, Field, Methods, Model, Reader, Tool, Type, Writer
 
 
 class AccountState(Model):
-    balance: float = Field(tag=1)
+    balance: float = Field(
+        tag=1,
+        description="What the account holds, in dollars: every deposit "
+        "added and every withdrawal and transfer out taken away, and "
+        "never below zero.",
+    )
 
 
 class BalanceResponse(Model):
