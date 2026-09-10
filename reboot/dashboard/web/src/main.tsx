@@ -876,8 +876,9 @@ const TypesPane: FC<{
   // The property a followed link named, if any.
   propertyName?: string;
   // The history entry that named the target, so a repeated link
-  // flashes its method again.
-  flashKey: string;
+  // flashes its method again; absent on a back or forward, which
+  // returns to what the reader had already seen flash.
+  flashKey?: string;
   // The pane's scrolling body, for whoever restores its scroll.
   bodyRef: RefObject<HTMLDivElement>;
   onScroll: (scrollTop: number) => void;
@@ -911,7 +912,7 @@ const TypesPane: FC<{
           (linkedDataType) => linkedDataType.id === target.dataTypeId
         );
   const flashProperty =
-    propertyName === undefined
+    propertyName === undefined || flashKey === undefined
       ? undefined
       : { id: idOfPropertyInPane(typeId, propertyName), key: flashKey };
   return (
@@ -948,7 +949,7 @@ const TypesPane: FC<{
             api={found.api}
             stateType={found.stateType}
             flash={
-              target.method === undefined
+              target.method === undefined || flashKey === undefined
                 ? undefined
                 : { method: target.method, key: flashKey }
             }
@@ -2630,6 +2631,19 @@ const Overview: FC<{
 
   const typesBody = useRef<HTMLDivElement>(null);
 
+  // Whether this entry is one the reader is returning to by back or
+  // forward, told by the scroll it left there: the pane then
+  // restores that scroll and flashes nothing, since the method or
+  // property the entry named has already had its flash. A fresh
+  // load also reports `POP`, and left no scroll, so a link opened
+  // in a new tab still scrolls and flashes. Decided once per entry:
+  // the scroll to a method records a scroll for the entry, which
+  // must not turn the entry into one being returned to.
+  const returning = useMemo(
+    () => navigationType === "POP" && typesScrollTops.has(location.key),
+    [navigationType, location.key]
+  );
+
   // The types pane scrolls to the method or property a followed link
   // names, once the pane has rendered it. Keyed by the history
   // entry, so following the same link again scrolls to it again. On
@@ -2639,7 +2653,7 @@ const Overview: FC<{
     if (paneTarget === undefined) {
       return;
     }
-    if (navigationType === "POP" && typesScrollTops.has(location.key)) {
+    if (returning) {
       return;
     }
     const id =
@@ -2652,7 +2666,7 @@ const Overview: FC<{
       return;
     }
     document.getElementById(id)?.scrollIntoView();
-  }, [navigationType, location.key, paneTarget, paneProperty, apis]);
+  }, [returning, location.key, paneTarget, paneProperty, apis]);
 
   // Remembered when this entry is left: the cleanup runs while the
   // pane is still on screen.
@@ -2879,7 +2893,7 @@ const Overview: FC<{
                 linkedDataTypes={linkedDataTypes}
                 target={paneTarget}
                 propertyName={paneProperty}
-                flashKey={location.key}
+                flashKey={returning ? undefined : location.key}
                 bodyRef={typesBody}
                 onScroll={(scrollTop) =>
                   typesScrollTops.set(location.key, scrollTop)
