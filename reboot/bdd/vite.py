@@ -25,6 +25,10 @@ from reboot.mcp.ui import find_project_root_from
 from typing import Iterator, Optional, Union
 
 
+# TODO: pass `--port 0` and read the port Vite prints, 'Local:
+# http://localhost:PORT/', instead of reserving one here. That works
+# from Vite 8: through 7, the CLI drops the 0 and binds its default,
+# 5173, so two servers started at once collide.
 def _reserve_port() -> socket.socket:
     """A socket bound to a free port on the loopback address, which
     keeps the port from anything else until the socket is closed.
