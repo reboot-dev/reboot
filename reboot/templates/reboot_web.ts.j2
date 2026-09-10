@@ -228,7 +228,13 @@ export namespace {{ client.proto.state_name }} {
 
   export type Partial{{ method.proto.name }}Request =
   {% if options.proto.zod %}
-  {{ method.proto.name }}Request;
+  {# The schema's input type, in which a field with a default may be
+     left out; `z.infer` is its output type, in which it may not. #}
+  z.input<
+    reboot_api.EnsureZodObject<
+      typeof api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request
+      >
+    >;
   {% else %}
   protobuf_es.PartialMessage<{{ method.input_type }}>;
   {% endif %}
@@ -246,7 +252,11 @@ export namespace {{ client.proto.state_name }} {
 
   export type Partial{{ method.proto.name }}Response =
   {% if options.proto.zod %}
-  {{ method.proto.name }}Response;
+  z.input<
+    reboot_api.EnsureZodObject<
+      typeof api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response
+      >
+    >;
   {% else %}
   protobuf_es.PartialMessage<{{ method.output_type }}>;
   {% endif %}
@@ -337,7 +347,7 @@ export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_c
   }
 
   constructor(
-    error: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}AbortedError{% if options.proto.zod %}{% if method.options.errors | length != 0 %} | z.infer<typeof {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema>{% endif %} | z.infer<typeof reboot_api.ZOD_ERRORS>{% endif %},
+    error: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}AbortedError{% if options.proto.zod %}{% if method.options.errors | length != 0 %} | z.input<typeof {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema>{% endif %} | z.input<typeof reboot_api.ZOD_ERRORS>{% endif %},
     { message }: { message?: string } = {}
   ) {
     super();
