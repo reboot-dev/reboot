@@ -299,10 +299,10 @@ async def _open_when_serving(*, port: int) -> None:
         while not await _dashboard_reachable(port):
             await backoff()
 
-        while True:
+        viewers: Optional[list[str]] = None
+        while viewers is None:
             try:
                 viewers = await _viewers(dashboard_url)
-                break
             except Exception:
                 # Reachable means the proxy answers; the application
                 # behind it comes up moments later.
