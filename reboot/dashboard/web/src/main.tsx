@@ -615,9 +615,18 @@ const Method: FC<{
   // that named it, so a second click flashes it again.
   flashKey?: string;
 }> = ({ api, method, id, flashKey }) => {
+  // The kind names the card too, so a flash takes the kind's color.
+  const kind = kindOfMethod(method);
+  const kindLabel = kind === undefined ? "unspecified" : labelOfKind(kind);
   return (
     <div
-      className={flashKey === undefined ? "method" : "method is-flash"}
+      className={[
+        "method",
+        `method-${kindLabel}`,
+        flashKey === undefined ? "" : "is-flash",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       id={id}
       key={flashKey}
     >

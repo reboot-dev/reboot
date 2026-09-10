@@ -2493,10 +2493,28 @@ header .state-type-description {
   animation: method-flash 1.5s ease-out;
 }
 
+/* The flash is in the color of the method's kind, the one its pill
+   wears, so the outline says what the pill says. */
+.method-reader {
+  --flash: hsl(166 55% 38%);
+}
+
+.method-writer {
+  --flash: hsl(211 72% 45%);
+}
+
+.method-transaction {
+  --flash: hsl(275 50% 50%);
+}
+
+.method-workflow {
+  --flash: hsl(32 85% 48%);
+}
+
 @keyframes method-flash {
   0%,
   35% {
-    outline: 2px solid hsl(142 60% 40%);
+    outline: 2px solid var(--flash, hsl(142 60% 40%));
     outline-offset: 3px;
   }
   100% {
