@@ -4,7 +4,6 @@ import {
   useCart,
   useCouponBook,
 } from "@api/reboot_swag_store/v1/store_rbt_react";
-import { CartEmpty, InvalidCoupon } from "@api/reboot_swag_store/v1/store_pb";
 import { useMcpApp } from "@reboot-dev/reboot-react";
 import css from "./App.module.css";
 
@@ -260,9 +259,9 @@ const Cart: FC<{ cart: UseCartApi }> = ({ cart }) => {
         couponCode: couponCode.trim(),
       });
       if (aborted !== undefined) {
-        if (aborted.error instanceof CartEmpty) {
+        if (aborted.error.type === "CartEmpty") {
           setCheckoutError("Your cart is empty.");
-        } else if (aborted.error instanceof InvalidCoupon) {
+        } else if (aborted.error.type === "InvalidCoupon") {
           setCheckoutError("That coupon code is not valid.");
           setCouponValid(false);
         } else {
