@@ -2588,77 +2588,17 @@ header .state-type-description {
 }
 
 /* A data type's name is a button, styled as the link it replaces. */
-.type-name-button {
+/* A data type's name in a signature or a row: a link in the line's
+   own type, underlined on hover the way every type link is. */
+.type-name {
   font: inherit;
-  border: none;
-  background: none;
-  padding: 0;
-  cursor: pointer;
-  text-align: left;
 }
 
-/* A data type beside the use that opened it, set flush with the
-   card and marked only by the rule at its left. */
-.data-type-card {
+/* What contains a data type, each a link to it. */
+.referrers {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 14px;
-  padding: 14px;
-  border-left: 2px solid hsl(var(--border-strong));
-  animation: data-type-card-in 160ms ease-out;
-}
-
-@keyframes data-type-card-in {
-  from {
-    transform: translateY(-4px);
-    opacity: 0;
-  }
-  to {
-    transform: none;
-    opacity: 1;
-  }
-}
-
-/* The eyebrow on its own line, with the X across from it; the name
-   and count on the next. */
-/* Opened from a changelog row, the card carries the same green
-   flash a linked method does. */
-.data-type-card.is-flash {
-  animation: data-type-card-in 160ms ease-out, method-flash 1.5s ease-out;
-}
-
-.data-type-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.data-type-card-heading {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.data-type-card-heading h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-}
-
-.data-type-close {
-  border: none;
-  background: none;
-  cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-  color: hsl(var(--muted-foreground));
-  padding: 2px 6px;
-  border-radius: 5px;
-}
-
-.data-type-close:hover {
-  background: hsl(var(--card) / 0.6);
-  color: hsl(var(--foreground));
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
 }

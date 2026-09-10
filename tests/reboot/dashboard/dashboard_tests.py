@@ -367,68 +367,67 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
         await self._wait_for_suppress_open_on_restart(True)
 
-    # Where the pane shows a data type once it is opened: a card with
-    # the type's name as its heading.
-    _DATA_TYPE_HEADING = (By.CSS_SELECTOR, '.data-type-card h3')
+    # Where the pane shows the data type `Shelf`, the way it shows a
+    # state type.
+    _SHELF = (By.CSS_SELECTOR, '[id="/type/shop.v1.shop.Shelf"]')
 
-    async def test_a_data_type_opens_beside_its_use(self) -> None:
+    async def test_a_data_type_opens_in_the_pane(self) -> None:
         # No method names `Shelf`: it is reached only as a property of
-        # `LookResponse`, so it has no place of its own. A link to it,
-        # from a changelog row, names it in the URL beside the state
-        # type that uses it, and the pane opens it as a card beside
-        # that use.
+        # `LookResponse`. A data type is a type of the pane's own, so a
+        # link to it, from a changelog row or anywhere else, names it
+        # in the URL the way a state type is named.
         await self._record_state_types()
 
         def body(driver):
             driver.get(
-                f'{self.url}{DASHBOARD_PATH}/'
-                '#/models?type=shop.v1.Shop&data=shop.v1.shop.Shelf'
+                f'{self.url}{DASHBOARD_PATH}/#/models?type=shop.v1.shop.Shelf'
             )
             WebDriverWait(driver, 60).until(
-                expected_conditions.text_to_be_present_in_element(
-                    self._DATA_TYPE_HEADING,
-                    'Shelf',
-                )
+                expected_conditions.presence_of_element_located(self._SHELF)
             )
             return driver.page_source
 
         page = await asyncio.to_thread(self._run_in_browser, body)
 
-        # The card shows what the file declares about the type: its
-        # description and its properties.
+        # The pane shows what the file declares about the type, its
+        # description and its properties, and what contains it.
         self.assertIn('Where an item sits.', page)
         self.assertIn('aisle', page)
+        self.assertIn('LookResponse.shelf', page)
 
     async def test_a_contained_type_opens_from_the_signature(self) -> None:
         # The convention is one level deep: a signature names the type
-        # a property contains, and clicking that name opens the type's
-        # card beside the method.
+        # a property contains, and clicking that name opens the type
+        # in the pane, from which the browser's back returns to the
+        # state type.
         await self._record_state_types()
+
+        shop = (By.CSS_SELECTOR, '[id="/type/shop.v1.Shop"]')
 
         def body(driver):
             driver.get(
                 f'{self.url}{DASHBOARD_PATH}/#/models?type=shop.v1.Shop'
             )
             WebDriverWait(driver, 60).until(
-                expected_conditions.presence_of_element_located(
-                    (By.CSS_SELECTOR, '[id="/type/shop.v1.Shop"]')
-                )
+                expected_conditions.presence_of_element_located(shop)
             )
             shelves = [
                 name for name in driver.find_elements(
                     By.CSS_SELECTOR,
-                    '.method-signature .type-name-button',
+                    '.method-signature .type-name',
                 ) if name.get_attribute('textContent') == 'Shelf'
             ]
             self.assertEqual(len(shelves), 1)
             shelves[0].click()
             WebDriverWait(driver, 60).until(
-                expected_conditions.text_to_be_present_in_element(
-                    self._DATA_TYPE_HEADING,
-                    'Shelf',
-                )
+                expected_conditions.presence_of_element_located(self._SHELF)
             )
-            return driver.page_source
+            page = driver.page_source
+            driver.back()
+            WebDriverWait(driver, 60).until(
+                expected_conditions.presence_of_element_located(shop)
+            )
+            return page
 
         page = await asyncio.to_thread(self._run_in_browser, body)
 
