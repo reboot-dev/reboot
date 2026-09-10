@@ -22,9 +22,33 @@ import {
 } from "../../../../rbt/v1alpha1/inspect/inspect_pb";
 import { APPLICATION_PATH } from "./constants";
 
+// The names a browser resolves to this machine. A page on one of
+// them and a frame on another are different sites to the browser,
+// whatever the ports, and a frame on a different site from its page
+// loses its cookies in Safari, in Firefox's strict mode and in any
+// incognito window.
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+// `url` with its host renamed to `hostname` when both name this
+// machine, so that what the page frames or calls is the same site
+// as the page, and its cookies work in every browser. Any other URL
+// is returned as it is.
+export const sameSiteUrl = (url: string, hostname: string): string => {
+  const parsed = new URL(url);
+  if (
+    LOOPBACK_HOSTNAMES.has(parsed.hostname) &&
+    LOOPBACK_HOSTNAMES.has(hostname) &&
+    parsed.hostname !== hostname
+  ) {
+    parsed.hostname = hostname;
+  }
+  return parsed.toString().replace(/\/$/, "");
+};
+
 // Where the application serves, `http://localhost:9991`, which the
 // dashboard application learned from the `.rbtrc` and serves at
-// `APPLICATION_PATH`. `undefined` until it has been read.
+// `APPLICATION_PATH`, on the page's own hostname. `undefined` until
+// it has been read.
 export const useApplicationUrl = (): string | undefined => {
   const [url, setUrl] = useState<string>();
   useEffect(() => {
@@ -33,7 +57,7 @@ export const useApplicationUrl = (): string | undefined => {
       .then((response) => response.json())
       .then(({ url }: { url: string }) => {
         if (!cancelled) {
-          setUrl(url);
+          setUrl(sameSiteUrl(url, window.location.hostname));
         }
       });
     return () => {
@@ -288,4 +312,67 @@ export const useStateData = (
     dependencies: [stateType, stateId],
   });
   return { value: value?.json, ...rest };
+};
+
+// How long between one-shot reads of what is not worth a connection
+// held open.
+const POLL_MS = 10_000;
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+// Runs `poll` now and again every `POLL_MS` for as long as the
+// component is mounted and the application's address is known.
+// `poll` is given a way to ask whether it should stop.
+const usePoll = (
+  url: string | undefined,
+  poll: (url: string, cancelled: () => boolean) => Promise<void>
+): void => {
+  useEffect(() => {
+    if (url === undefined) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      while (!cancelled) {
+        await poll(url, () => cancelled);
+        await sleep(POLL_MS);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // `poll` is what the hook's caller wrote once; a new function
+    // each render must not start the reads over.
+  }, [url]);
+};
+
+// Where the application serves the developer's web frontend when
+// it serves one: proxied to Vite there under `rbt dev run`, or the
+// built files mounted there.
+export const FRONTEND_PATH = "/__/frontend/web/";
+
+// Whether the application serves a frontend, asked every
+// `POLL_MS`: it answers with a page when it does, and with
+// not found, or Envoy's page about Vite being down, when it does
+// not. `undefined` until first asked.
+export const useFrontendServed = (
+  url: string | undefined
+): boolean | undefined => {
+  const [served, setServed] = useState<boolean>();
+  usePoll(url, async (url, cancelled) => {
+    let answer = false;
+    try {
+      const response = await fetch(`${url}${FRONTEND_PATH}`);
+      answer =
+        response.ok &&
+        (response.headers.get("content-type") ?? "").includes("text/html");
+    } catch {
+      answer = false;
+    }
+    if (!cancelled()) {
+      setServed(answer);
+    }
+  });
+  return served;
 };

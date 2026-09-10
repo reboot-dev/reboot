@@ -2940,3 +2940,194 @@ header .state-type-description {
   border-left: 1px solid hsl(var(--border-strong));
   margin-left: 5px;
 }
+/* --- The frontend window --- */
+
+/* The heading with the frontend button at its right, on the same
+   baseline, so the button reads as part of the heading's line. */
+.heading-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.heading-row h1 {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Lit while the window is open, the way a chosen chip is. */
+.frontend-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 7px;
+  border: 1px solid hsl(var(--primary));
+  background: hsl(var(--card));
+  color: hsl(var(--primary));
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.frontend-toggle .connection-dot {
+  background: hsl(146 60% 40%);
+}
+
+.frontend-toggle.is-open {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+/* Over everything, so it can be put anywhere on the screen. */
+.frontend-window {
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid hsl(var(--border-strong));
+  border-radius: 10px;
+  background: hsl(var(--card));
+  box-shadow: 0 6px 24px hsl(215 40% 15% / 0.14);
+  overflow: hidden;
+}
+
+/* The bar drags the window; what is in it that is typed or clicked
+   stops the drag itself. */
+.frontend-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 10px 0 14px;
+  background: hsl(var(--sidebar));
+  border-bottom: 1px solid hsl(var(--border));
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  cursor: grab;
+  user-select: none;
+  flex: none;
+}
+
+.frontend-bar .connection-dot {
+  background: hsl(146 60% 40%);
+  flex: none;
+}
+
+.frontend-bar-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  flex: none;
+}
+
+.frontend-url {
+  flex: 1;
+  min-width: 60px;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  cursor: text;
+}
+
+.frontend-url:hover,
+.frontend-url:focus {
+  outline: none;
+  border-color: hsl(var(--border));
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+}
+
+.frontend-note {
+  flex: none;
+  font-size: 10px;
+  color: hsl(var(--errors));
+}
+
+.frontend-size {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: 0;
+  color: hsl(240 3.8% 62%);
+}
+
+.frontend-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  margin-left: auto;
+}
+
+.frontend-action {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.frontend-action:hover {
+  background: hsl(var(--primary) / 0.08);
+  color: hsl(var(--primary));
+}
+
+.frontend-frame {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  border: 0;
+  background: hsl(var(--card));
+}
+
+/* While the window is dragged or resized the frame takes no pointer
+   events, so the pointer never lands in its document, and the
+   window's outline follows the pointer without the page inside
+   being laid out again on every movement. */
+.frontend-window.is-moving .frontend-frame {
+  pointer-events: none;
+}
+
+.frontend-window.is-moving .frontend-bar {
+  cursor: grabbing;
+}
+
+.frontend-empty {
+  flex: 1;
+  padding: 18px 20px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: hsl(var(--muted-foreground));
+  text-wrap: pretty;
+}
+
+/* The corner that resizes, drawn as a triangle in it. */
+.frontend-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  background: linear-gradient(
+    135deg,
+    transparent 50%,
+    hsl(var(--border-strong)) 50%
+  );
+}

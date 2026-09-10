@@ -15,6 +15,7 @@ ts_project(
         "src/constants.ts",
         "src/feature_files.ts",
         "src/features.ts",
+        "src/frontend_window.tsx",
         "src/graph.tsx",
         "src/json_tree.tsx",
         "src/link_properties_to_data_types.ts",

@@ -113,7 +113,18 @@ import {
   undescribedMethods,
 } from "./features";
 import { drawnCallCount, GraphPage } from "./graph";
-import { useApplicationUrl, useStateIds, useStateTypes } from "./application";
+import {
+  useApplicationUrl,
+  useFrontendServed,
+  useStateIds,
+  useStateTypes,
+} from "./application";
+import {
+  FrontendToggle,
+  FrontendWindow,
+  frontendUrlOf,
+  useFrontendWindowSettings,
+} from "./frontend_window";
 import { Picker } from "./picker";
 import { type Instances, InstancesSplit } from "./states";
 
@@ -2608,16 +2619,19 @@ const Overview: FC<{
     [graphStateTypes]
   );
 
-  // The running application, read for the instances of the state type
-  // the models page's pane shows. A browser holds few connections to
-  // it at once, and shares them with every tab open on the
-  // application itself, so only the two streams the pane shows are
-  // held open, and only while it shows them. The application may not
-  // be running, which the pane says.
+  // The running application, read on the models page: its state
+  // types, which say whether it is running and which types the pane
+  // can show the instances of, and the instances of the type the
+  // pane shows. A browser holds few connections to it at once, and
+  // shares them with every tab open on the application itself, so
+  // only these streams are held open, and only while the page shows
+  // them. The application may not be running, which the pane says.
   const applicationUrl = useApplicationUrl();
-  const instancesType = page === "models" ? paneTarget?.stateTypeId : undefined;
   const { value: servedStateTypes, unreachable: applicationUnreachable } =
-    useStateTypes(instancesType === undefined ? undefined : applicationUrl);
+    useStateTypes(page === "models" ? applicationUrl : undefined);
+  const applicationRunning =
+    servedStateTypes !== undefined && !applicationUnreachable;
+  const instancesType = page === "models" ? paneTarget?.stateTypeId : undefined;
   const served =
     instancesType !== undefined &&
     servedStateTypes !== undefined &&
@@ -2643,6 +2657,21 @@ const Overview: FC<{
           stateType: instancesType,
           ids: instanceIds,
         };
+
+  // The developer's frontend in a window over the models page, and
+  // whether the application is serving one, which is where the
+  // window looks unless told otherwise. The button that shows the
+  // window is there only while the application runs.
+  const [frontendSettings, changeFrontendSettings] =
+    useFrontendWindowSettings();
+  const frontendServed = useFrontendServed(
+    page === "models" ? applicationUrl : undefined
+  );
+  const frontendUrl = frontendUrlOf(
+    frontendSettings,
+    applicationUrl,
+    frontendServed
+  );
 
   const location = useLocation();
 
@@ -2858,7 +2887,18 @@ const Overview: FC<{
           >
             <header>
               <div className="eyebrow">{eyebrow}</div>
-              <h1>{heading}</h1>
+              {page === "models" && applicationRunning ? (
+                <div className="heading-row">
+                  <h1>{heading}</h1>
+                  <FrontendToggle
+                    settings={frontendSettings}
+                    onChange={changeFrontendSettings}
+                    frontendUrl={frontendUrl}
+                  />
+                </div>
+              ) : (
+                <h1>{heading}</h1>
+              )}
               {/* A feature's page names the feature up here, so its
                 file, counts, and description belong here too. */}
               {page === "features" && chosenFeature !== undefined && (
@@ -2927,6 +2967,14 @@ const Overview: FC<{
                   onSelectMethod={onSelectMethod}
                   onOpenStateType={onOpenStateType}
                 />
+                {frontendSettings.open && (
+                  <FrontendWindow
+                    settings={frontendSettings}
+                    onChange={changeFrontendSettings}
+                    frontendUrl={frontendUrl}
+                    served={frontendServed}
+                  />
+                )}
               </>
             ) : featureEntries.length === 0 ? (
               <div className="empty">
