@@ -2,34 +2,35 @@ import asyncio
 import os
 import time
 from reboot.aio.external import ExternalContext
+from reboot.aio.react import QUERY_RESPONSE_WINDOW
 from selenium.webdriver.common.by import By
 from tests.reboot.greeter_rbt import Greeter
 from tests.reboot.react.web_driver_runner import web_driver
 
 STATE_ID = 'greeter-flow-control-test'
 
-# Adjectives to write, in rounds. Every adjective in a round is written
-# while the browser holds back the response it is
-# showing, so the backend passes through all of them and may send only
-# the last.
-ROUNDS = [
-    [f'round-{round}-adjective-{index}'
-     for index in range(10)]
-    for round in range(3)
+# Adjectives to write while the browser holds back the response it is
+# showing; many more than the backend has room to send without hearing
+# back, so that most of them must be skipped.
+ADJECTIVES = [
+    f'adjective-{index}' for index in range(3 * QUERY_RESPONSE_WINDOW)
 ]
 
 
 async def test(context: ExternalContext, uri: str):
     """Tests that a reactive reader whose consumer is slow to ask for a
-    next response skips the states it missed and gets the latest one.
+    next response falls no further behind than the room the backend
+    has to send responses, and then skips to the latest state.
 
     The app in `index.tsx` consumes the reactive read itself and holds
-    each response back until this test releases it,
-    so every state change below is known to have completed while the
-    backend had no response it was allowed to send. Releasing the
-    hold must then produce exactly one response, carrying
-    the last state written in the round rather than the first one the
-    backend passed through."""
+    back every response until this test releases it, so every state
+    change below is known to have completed while the browser had
+    processed nothing beyond the state it started from. The backend
+    may therefore send at most a window's worth of responses however
+    many states are written, and the response that follows them once
+    the browser catches up must carry the last state written rather
+    than the next one the backend passed through. Falling that far
+    behind must also be reported to the browser's console."""
     await Greeter.idempotently(f"Create '{STATE_ID}'").Create(
         context,
         STATE_ID,
@@ -62,6 +63,13 @@ async def test(context: ExternalContext, uri: str):
             time.sleep(0.1)
         return rendered_messages(driver)
 
+    def wait_for_latest_message(driver, latest: str) -> list[str]:
+        rendered = rendered_messages(driver)
+        while len(rendered) == 0 or rendered[-1] != latest:
+            time.sleep(0.1)
+            rendered = rendered_messages(driver)
+        return rendered
+
     with web_driver(
         uri=uri,
         bundle_js_path=os.path.join(os.path.dirname(__file__), 'bundle.js'),
@@ -76,36 +84,52 @@ async def test(context: ExternalContext, uri: str):
         rendered = await asyncio.to_thread(wait_for_message_count, driver, 1)
         assert rendered == [message('tasty')], rendered
 
-        for index, adjectives in enumerate(ROUNDS):
-            # Each of these writes has completed by the time the next
-            # begins, so by the end of this loop the backend has passed
-            # through every one of these states while holding a
-            # response the browser has not continued past.
-            for adjective in adjectives:
-                await greeter.SetAdjective(context, adjective=adjective)
+        # Each of these writes has completed by the time the next
+        # begins, so by the end of this loop the backend has passed
+        # through every one of these states while the browser has
+        # processed nothing beyond the one it started from.
+        for adjective in ADJECTIVES:
+            await greeter.SetAdjective(context, adjective=adjective)
 
-            # Let the browser continue, which is the first moment
-            # the backend may produce a next response.
-            await asyncio.to_thread(
-                driver.execute_script,
-                'window.continueQuery()',
-            )
+        # Let the browser consume, which is the first moment the
+        # backend gets room to produce anything beyond what it sent
+        # before the writes above began.
+        await asyncio.to_thread(driver.execute_script, 'window.stopHolding()')
 
-            rendered = await asyncio.to_thread(
-                wait_for_message_count,
-                driver,
-                index + 2,
-            )
+        rendered = await asyncio.to_thread(
+            wait_for_latest_message,
+            driver,
+            message(ADJECTIVES[-1]),
+        )
 
-            assert rendered[-1] == message(adjectives[-1]), (
-                f"Expected the response after round {index} to carry "
-                f"'{adjectives[-1]}', the last state written in it, but "
-                f"got '{rendered[-1]}'"
-            )
+        # The browser rendered the state it started from, whatever the
+        # backend had room to send while the browser was not
+        # consuming, and one more response carrying the skip to the
+        # latest state. Every state in between was skipped, and none
+        # of them was ever rendered.
+        assert len(rendered) <= QUERY_RESPONSE_WINDOW + 1, rendered
+        assert rendered[0] == message('tasty'), rendered
 
-        # One render for the state the browser started from and one per
-        # round: every intermediate state was skipped, and none of them
-        # was ever rendered.
-        assert rendered == [message('tasty')] + [
-            message(adjectives[-1]) for adjectives in ROUNDS
-        ], rendered
+        # The browser tells its developer that it fell behind, since
+        # it did so for long enough that a user would have seen it.
+        console = await asyncio.to_thread(driver.get_log, 'browser')
+
+        stalls = [
+            entry['message']
+            for entry in console
+            if 'A reactive query to' in entry['message']
+        ]
+
+        assert len(stalls) > 0, console
+        assert 'Greet` skipped' in stalls[0], stalls
+        assert 'updates because this client fell' in stalls[0], stalls
+
+        # Catching up gave the backend its room back, so the query is
+        # not stalled: a state written now still arrives.
+        await greeter.SetAdjective(context, adjective='delicious')
+
+        await asyncio.to_thread(
+            wait_for_latest_message,
+            driver,
+            message('delicious'),
+        )

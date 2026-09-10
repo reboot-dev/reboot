@@ -21325,6 +21325,7 @@ class Ping:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Ping'),
@@ -21345,6 +21346,10 @@ class Ping:
                                 metadata=__metadata__,
                             )
 
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
+                            )
+
                             async for __query_response__ in __call__:
                                 # Clear the backoff so we don't wait
                                 # as long the next time we get
@@ -21363,22 +21368,11 @@ class Ping:
                                     yield PingDescribeResponseFromProto(__response__)
 
                                 # Only now that the caller has processed the
-                                # response do we ask the server for a next one,
-                                # so that we can't fall behind a server that
-                                # produces responses faster than we consume
-                                # them. See
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
                                 # https://github.com/reboot-dev/mono/issues/4754.
-                                # An older backend doesn't send an ID and
-                                # doesn't expect to be asked for more.
-                                if __query_response__.query_response_id != "":
-                                    await __stub__.ContinueQuery(
-                                        IMPORT_rbt_v1alpha1.react_pb2.ContinueQueryRequest(
-                                            query_response_id=__query_response__.query_response_id,
-                                        ),
-                                        # The same metadata ensures we're routed
-                                        # to the same server.
-                                        metadata=__metadata__,
-                                    )
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -21405,6 +21399,13 @@ class Ping:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -21479,6 +21480,7 @@ class Ping:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Ping'),
@@ -21499,6 +21501,10 @@ class Ping:
                                 metadata=__metadata__,
                             )
 
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
+                            )
+
                             async for __query_response__ in __call__:
                                 # Clear the backoff so we don't wait
                                 # as long the next time we get
@@ -21517,22 +21523,11 @@ class Ping:
                                     yield PingNumPingsResponseFromProto(__response__)
 
                                 # Only now that the caller has processed the
-                                # response do we ask the server for a next one,
-                                # so that we can't fall behind a server that
-                                # produces responses faster than we consume
-                                # them. See
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
                                 # https://github.com/reboot-dev/mono/issues/4754.
-                                # An older backend doesn't send an ID and
-                                # doesn't expect to be asked for more.
-                                if __query_response__.query_response_id != "":
-                                    await __stub__.ContinueQuery(
-                                        IMPORT_rbt_v1alpha1.react_pb2.ContinueQueryRequest(
-                                            query_response_id=__query_response__.query_response_id,
-                                        ),
-                                        # The same metadata ensures we're routed
-                                        # to the same server.
-                                        metadata=__metadata__,
-                                    )
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -21559,6 +21554,13 @@ class Ping:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24148,6 +24150,7 @@ class Pong:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Pong'),
@@ -24168,6 +24171,10 @@ class Pong:
                                 metadata=__metadata__,
                             )
 
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
+                            )
+
                             async for __query_response__ in __call__:
                                 # Clear the backoff so we don't wait
                                 # as long the next time we get
@@ -24186,22 +24193,11 @@ class Pong:
                                     yield PongNumPongsResponseFromProto(__response__)
 
                                 # Only now that the caller has processed the
-                                # response do we ask the server for a next one,
-                                # so that we can't fall behind a server that
-                                # produces responses faster than we consume
-                                # them. See
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
                                 # https://github.com/reboot-dev/mono/issues/4754.
-                                # An older backend doesn't send an ID and
-                                # doesn't expect to be asked for more.
-                                if __query_response__.query_response_id != "":
-                                    await __stub__.ContinueQuery(
-                                        IMPORT_rbt_v1alpha1.react_pb2.ContinueQueryRequest(
-                                            query_response_id=__query_response__.query_response_id,
-                                        ),
-                                        # The same metadata ensures we're routed
-                                        # to the same server.
-                                        metadata=__metadata__,
-                                    )
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -24228,6 +24224,13 @@ class Pong:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -26903,6 +26906,7 @@ class User:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
@@ -26923,6 +26927,10 @@ class User:
                                 metadata=__metadata__,
                             )
 
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
+                            )
+
                             async for __query_response__ in __call__:
                                 # Clear the backoff so we don't wait
                                 # as long the next time we get
@@ -26941,22 +26949,11 @@ class User:
                                     yield UserListCountersResponseFromProto(__response__)
 
                                 # Only now that the caller has processed the
-                                # response do we ask the server for a next one,
-                                # so that we can't fall behind a server that
-                                # produces responses faster than we consume
-                                # them. See
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
                                 # https://github.com/reboot-dev/mono/issues/4754.
-                                # An older backend doesn't send an ID and
-                                # doesn't expect to be asked for more.
-                                if __query_response__.query_response_id != "":
-                                    await __stub__.ContinueQuery(
-                                        IMPORT_rbt_v1alpha1.react_pb2.ContinueQueryRequest(
-                                            query_response_id=__query_response__.query_response_id,
-                                        ),
-                                        # The same metadata ensures we're routed
-                                        # to the same server.
-                                        metadata=__metadata__,
-                                    )
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -26983,6 +26980,13 @@ class User:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27057,6 +27061,7 @@ class User:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
@@ -27077,6 +27082,10 @@ class User:
                                 metadata=__metadata__,
                             )
 
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
+                            )
+
                             async for __query_response__ in __call__:
                                 # Clear the backoff so we don't wait
                                 # as long the next time we get
@@ -27095,22 +27104,11 @@ class User:
                                     yield UserWhoamiResponseFromProto(__response__)
 
                                 # Only now that the caller has processed the
-                                # response do we ask the server for a next one,
-                                # so that we can't fall behind a server that
-                                # produces responses faster than we consume
-                                # them. See
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
                                 # https://github.com/reboot-dev/mono/issues/4754.
-                                # An older backend doesn't send an ID and
-                                # doesn't expect to be asked for more.
-                                if __query_response__.query_response_id != "":
-                                    await __stub__.ContinueQuery(
-                                        IMPORT_rbt_v1alpha1.react_pb2.ContinueQueryRequest(
-                                            query_response_id=__query_response__.query_response_id,
-                                        ),
-                                        # The same metadata ensures we're routed
-                                        # to the same server.
-                                        metadata=__metadata__,
-                                    )
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -27137,6 +27135,13 @@ class User:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -30721,6 +30726,7 @@ class Counter:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Counter'),
@@ -30741,6 +30747,10 @@ class Counter:
                                 metadata=__metadata__,
                             )
 
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
+                            )
+
                             async for __query_response__ in __call__:
                                 # Clear the backoff so we don't wait
                                 # as long the next time we get
@@ -30759,22 +30769,11 @@ class Counter:
                                     yield CounterValueResponseFromProto(__response__)
 
                                 # Only now that the caller has processed the
-                                # response do we ask the server for a next one,
-                                # so that we can't fall behind a server that
-                                # produces responses faster than we consume
-                                # them. See
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
                                 # https://github.com/reboot-dev/mono/issues/4754.
-                                # An older backend doesn't send an ID and
-                                # doesn't expect to be asked for more.
-                                if __query_response__.query_response_id != "":
-                                    await __stub__.ContinueQuery(
-                                        IMPORT_rbt_v1alpha1.react_pb2.ContinueQueryRequest(
-                                            query_response_id=__query_response__.query_response_id,
-                                        ),
-                                        # The same metadata ensures we're routed
-                                        # to the same server.
-                                        metadata=__metadata__,
-                                    )
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -30801,6 +30800,13 @@ class Counter:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -30875,6 +30881,7 @@ class Counter:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Counter'),
@@ -30895,6 +30902,10 @@ class Counter:
                                 metadata=__metadata__,
                             )
 
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
+                            )
+
                             async for __query_response__ in __call__:
                                 # Clear the backoff so we don't wait
                                 # as long the next time we get
@@ -30913,22 +30924,11 @@ class Counter:
                                     yield CounterDescriptionResponseFromProto(__response__)
 
                                 # Only now that the caller has processed the
-                                # response do we ask the server for a next one,
-                                # so that we can't fall behind a server that
-                                # produces responses faster than we consume
-                                # them. See
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
                                 # https://github.com/reboot-dev/mono/issues/4754.
-                                # An older backend doesn't send an ID and
-                                # doesn't expect to be asked for more.
-                                if __query_response__.query_response_id != "":
-                                    await __stub__.ContinueQuery(
-                                        IMPORT_rbt_v1alpha1.react_pb2.ContinueQueryRequest(
-                                            query_response_id=__query_response__.query_response_id,
-                                        ),
-                                        # The same metadata ensures we're routed
-                                        # to the same server.
-                                        metadata=__metadata__,
-                                    )
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -30955,6 +30955,13 @@ class Counter:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in

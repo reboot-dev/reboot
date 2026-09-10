@@ -19,20 +19,24 @@ message QueryRequest {
   // Authorization bearer token.
   optional string bearer_token = 3;
 
-  // ID of the `QueryResponse` this client has consumed, after which
-  // it wants the query to continue. This is how a client whose
-  // responses arrive over a websocket continues its query, on that
-  // same websocket, and it is the only way that works for such a
-  // client; see `Query`. Only meaningful on transports where a client
-  // can send more than one message per query, i.e. websockets. When
-  // this is set the other fields are ignored.
-  string continue_query_response_id = 4;
+  // Whether this client tells us which responses it has processed,
+  // so that we can stay at most a bounded number of responses ahead
+  // of it. A client that does not set this gets responses at whatever
+  // rate we produce them, whether or not it can consume them that
+  // fast.
+  bool client_continues_query = 4;
 
-  // Whether this client asks for each next response once it has
-  // consumed the one before it. A client that does not set this gets
-  // responses at whatever rate the server produces them, whether or
-  // not it can consume them that fast.
-  bool client_continues_query = 5;
+  // Sequence number of the last `QueryResponse` this client has fully
+  // processed, which returns to the server the right to send that
+  // many more; see `Query`. This is how a client whose responses
+  // arrive over a websocket continues its query, on that same
+  // websocket, and it is the only way that works for such a client.
+  // Only meaningful on transports where a client can send more than
+  // one message per query, i.e. websockets. When this is set the
+  // other fields are ignored. A heartbeat is an otherwise empty
+  // `QueryRequest`, which is why presence matters here: sequence
+  // number zero is a real response.
+  optional uint64 continue_query_sequence_number = 5;
 }
 
 message QueryResponse {
@@ -56,19 +60,41 @@ message QueryResponse {
   // TODO(benh): send these as bytes?
   repeated string idempotency_keys = 2;
 
-  // Unique ID of this response, which a client names to continue the
-  // query after it. Only set when the client set
+  // Unique ID of the query this response belongs to, which a client
+  // names when it continues that query. The same for every response
+  // of one `Query`. Only set when the client set
   // `client_continues_query` on its `QueryRequest`; an empty ID means
-  // the client is not expected to ask for anything further.
-  string query_response_id = 4;
+  // the client is not expected to continue anything.
+  string query_id = 4;
+
+  // Position of this response within its query, counting from zero.
+  // A client names the last one it has fully processed to continue
+  // the query; see `Query`.
+  uint64 sequence_number = 5;
+
+  // How long this response waited for the client to make room for it,
+  // and how many updates were merged into it while it waited. Both
+  // are zero for a client that kept up. A client that finds them set
+  // is one whose user saw a stale screen for that long, and which
+  // missed that many updates on the way to the state this response
+  // carries; see `Query`.
+  uint32 stall_milliseconds = 6;
+  uint32 skipped_updates = 7;
 }
 
 ////////////////////////////////////////////////////////////////////////
 
 message ContinueQueryRequest {
-  // ID of the `QueryResponse` the client has consumed; the query
-  // continues after it.
-  string query_response_id = 1;
+  // ID of the query being continued, from `QueryResponse.query_id`.
+  string query_id = 1;
+
+  // Sequence number of the last `QueryResponse` the client has fully
+  // processed. The server returns to itself the right to send one
+  // more response for each response between the last number this
+  // client named and this one, so a client that processed several
+  // while a previous `ContinueQuery` was in flight names only the
+  // newest and is credited for all of them.
+  uint64 sequence_number = 2;
 }
 
 message ContinueQueryResponse {}
@@ -121,23 +147,42 @@ message WebSocketsConnectionResponse {}
 service React {
   // Allows users to "watch" the response of a unary reader method for
   // changes. The current response of the method is sent when the
-  // stream is opened. A client that sets `client_continues_query`
-  // asks for each next response once it has consumed the one before
-  // it, and that next response reflects the _latest_ state, skipping
-  // any states that came and went while the client was busy. A client
-  // that does not set it gets responses at whatever rate the server
-  // produces them, whether or not it can consume them that fast.
+  // stream is opened.
   //
-  // How a client asks for the next response is determined by the
-  // transport its responses arrive on, and only that way works: a
-  // client reading over a websocket sends a `QueryRequest` with
-  // `continue_query_response_id` set on that same websocket, and a
-  // client reading over any other transport calls `ContinueQuery`.
-  // The server tracks what it is waiting for per transport, so a
-  // request that arrives the other way names an ID the server has no
-  // record of, which it treats as one it has already handled: the
-  // request is accepted and then ignored, and the query stops
-  // producing responses.
+  // A client that sets `client_continues_query` is sent responses
+  // under a window: the server may run up to a fixed number of
+  // responses ahead of what that client has continued past, and each
+  // response it sends spends one of them. While the window has
+  // room the server sends every state change as it happens, so a
+  // client that keeps up sees every update at the rate they occur.
+  // Once the window is empty the server holds the response it has
+  // ready and merges every state that follows into it, so when the
+  // window reopens the client is sent a single response carrying the
+  // _latest_ state, with `stall_milliseconds` and `skipped_updates`
+  // saying how long it waited and how many updates that one response
+  // stood in for. So a client that keeps up loses nothing, and a
+  // client that cannot is at most a window behind rather than
+  // arbitrarily behind. A client that does not set
+  // `client_continues_query` gets responses at whatever rate the
+  // server produces them, whether or not it can consume them
+  // that fast.
+  //
+  // To continue a query a client names the sequence number of the
+  // last response it has fully processed, and the server credits it
+  // for every response up to that one. A client may therefore process
+  // several responses while a single `ContinueQuery` is in flight and
+  // name only the newest.
+  //
+  // How a client continues its query is determined by the transport
+  // its responses arrive on, and only that way works: a client
+  // reading over a websocket sends a `QueryRequest` with
+  // `continue_query_sequence_number` set on that same websocket, and
+  // a client reading over any other transport calls `ContinueQuery`.
+  // The server tracks each query's window per transport, so one that
+  // arrives the other way names a query the server has no record of,
+  // which it ignores: the request is accepted, no room is returned,
+  // and the query stops producing responses once its window
+  // empties.
   //
   // NOTE: the service name and state ID is expected to be part of the
   // gRPC metadata, exactly like any other reboot requests.
@@ -147,14 +192,14 @@ service React {
     };
   }
 
-  // Tells the server that a client has consumed a response from
-  // `Query` and wants the query to continue. Must be called on the
-  // same server that produced the response.
+  // Tells the server which responses from `Query` a client has fully
+  // processed, returning that much room to the query's window. Must
+  // be called on the same server that produced those responses.
   //
   // For a client whose responses arrive over a websocket this is the
   // wrong mechanism; such a client continues its query on the
   // websocket that carries its responses, by sending a `QueryRequest`
-  // with `continue_query_response_id` set.
+  // with `continue_query_sequence_number` set.
   rpc ContinueQuery(ContinueQueryRequest) returns (ContinueQueryResponse) {
     option (google.api.http) = {
       post: "/rbt.v1alpha1.React/ContinueQuery"

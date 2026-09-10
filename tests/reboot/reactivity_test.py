@@ -5,6 +5,10 @@ from rbt.v1alpha1 import react_pb2, react_pb2_grpc
 from reboot.aio.applications import Application
 from reboot.aio.contexts import ReaderContext
 from reboot.aio.external import ExternalContext
+from reboot.aio.react import (
+    QUERY_RESPONSE_WINDOW,
+    REPORTABLE_STALL_MILLISECONDS,
+)
 from reboot.aio.tests import Reboot
 from tests.reboot import greeter_rbt
 from tests.reboot.greeter_rbt import Greeter
@@ -49,10 +53,11 @@ def query_requests_without_continuations():
     `ReactStub` up on their modules at call time, so patching here
     covers both.
 
-    Yields the IDs this client was driven to continue past, which must
-    stay empty: a client from before `ContinueQuery` existed had no
-    such RPC to call, so a backend that kept the responses coming only
-    because this one called it would strand a real old client."""
+    Yields the IDs of the queries this client was driven to continue,
+    which must stay empty: a client from before `ContinueQuery` existed
+    had no such RPC to call, so a backend that kept the responses
+    coming only because this one called it would strand a real old
+    client."""
     continued: list[str] = []
 
     class ReactStub:
@@ -64,7 +69,7 @@ def query_requests_without_continuations():
             return getattr(self._stub, name)
 
         def ContinueQuery(self, request, **kwargs):
-            continued.append(request.query_response_id)
+            continued.append(request.query_id)
             return self._stub.ContinueQuery(request, **kwargs)
 
     with patch.object(
@@ -141,6 +146,13 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
 
         return self._accumulated_adjectives
 
+    async def accumulate_until_adjective(self, adjective: str) -> list[str]:
+        while self._accumulated_adjectives[-1] != adjective:
+            await self._accumulated_adjective.wait()
+            self._accumulated_adjective.clear()
+
+        return self._accumulated_adjectives
+
     async def test_reactive_get_all_state(self) -> None:
         """
         Regression test for https://github.com/reboot-dev/mono/issues/3135
@@ -179,8 +191,9 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_skip_to_latest(self) -> None:
         """
         Tests that a reactive reader that can't keep up with the rate of
-        state changes skips straight to the latest state, instead of
-        working its way through every state that it missed.
+        state changes falls no further behind than its window, and then
+        skips straight to the latest state instead of working its way
+        through every state that it missed.
         """
         await self.rbt.up(Application(servicers=[MyGreeterServicer]))
         context = self.rbt.create_external_context(name=f"test-{self.id()}")
@@ -197,18 +210,82 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
         await self.start_accumulating_adjectives(greeter, context)
         self.assertEqual(["reactive"], await self.get_adjectives(1))
 
-        # Change the state several times while the reader is blocked.
-        await greeter.SetAdjective(context, adjective="realistic")
-        await greeter.SetAdjective(context, adjective="impressive")
-        await greeter.SetAdjective(context, adjective="marvelous")
-        await greeter.SetAdjective(context, adjective="fantastic")
+        # Change the state many more times than the window gives the
+        # backend room to send without hearing back.
+        adjectives = [
+            f"adjective-{index}" for index in range(3 * QUERY_RESPONSE_WINDOW)
+        ]
 
-        # Now let the reactive reader consume a next response. It must
-        # be the latest state, not the oldest state it missed.
+        for adjective in adjectives:
+            await greeter.SetAdjective(context, adjective=adjective)
+
+        # Now let the reactive reader consume responses again. It must
+        # arrive at the latest state...
         self._can_accumulate_next_adjective.set()
-        self.assertEqual(
-            ["reactive", "fantastic"],
-            await self.get_adjectives(2),
+        accumulated = await self.accumulate_until_adjective(adjectives[-1])
+
+        # ... having seen at most a window's worth of responses on the
+        # way there rather than one per state change, since the backend
+        # stopped producing once it had a window's worth outstanding,
+        # and the states that changed while it waited were skipped. The
+        # window covers the first response too, and one more response
+        # carries the skip to the latest state.
+        self.assertLessEqual(
+            len(accumulated),
+            QUERY_RESPONSE_WINDOW + 1,
+            accumulated,
+        )
+
+    async def test_reports_a_stalled_client(self) -> None:
+        """
+        Tests that a backend holding a response for a client too slow
+        to take it says so, once it has held it for long enough that
+        the client's user could see the delay.
+        """
+        await self.rbt.up(Application(servicers=[MyGreeterServicer]))
+        context = self.rbt.create_external_context(name=f"test-{self.id()}")
+        greeter, _ = await Greeter.Create(
+            context,
+            "my-greeter",
+            title="Mr.",
+            name="Robot",
+            adjective="reactive",
+        )
+
+        # Get the first response, then leave the reactive reader
+        # blocked; it hasn't asked for a next response yet.
+        await self.start_accumulating_adjectives(greeter, context)
+        self.assertEqual(["reactive"], await self.get_adjectives(1))
+
+        with self.assertLogs(
+            'respect.reboot.aio.react',
+            level='INFO',
+        ) as logs:
+            # More changes than the window has room for, so that the
+            # backend ends up holding one it cannot send.
+            adjectives = [
+                f"adjective-{index}"
+                for index in range(2 * QUERY_RESPONSE_WINDOW)
+            ]
+
+            for adjective in adjectives:
+                await greeter.SetAdjective(context, adjective=adjective)
+
+            # Hold it there for longer than a user would fail to
+            # notice.
+            await asyncio.sleep(2 * REPORTABLE_STALL_MILLISECONDS / 1000)
+
+            self._can_accumulate_next_adjective.set()
+            await self.accumulate_until_adjective(adjectives[-1])
+
+        reported = "A client of a reactive query to `GetWholeState` skipped "
+
+        self.assertTrue(
+            any(
+                reported in line and "updates because it fell" in line
+                for line in logs.output
+            ),
+            logs.output,
         )
 
     async def test_transitive_skip_to_latest(self) -> None:
@@ -263,15 +340,20 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
             await get_greetings(1),
         )
 
-        adjectives = [f"adjective-{index}" for index in range(10)]
+        adjectives = [
+            f"adjective-{index}" for index in range(3 * QUERY_RESPONSE_WINDOW)
+        ]
+
         for adjective in adjectives:
             await greeter.SetAdjective(context, adjective=adjective)
 
         # Now let the reader consume responses again. It must arrive at
-        # the latest state without seeing every state it missed; the
-        # transitive read costs it at most one extra response, since the
-        # response it already had in hand for the underlying `Greeter`
-        # was produced before the last of the changes above.
+        # the latest state without seeing every state it missed. Each
+        # hop has a window of its own, but a hop with no room merges
+        # what it is holding rather than letting responses queue up
+        # behind it, so the hops don't add up: this reader is a single
+        # window behind, plus the one response that carries the skip
+        # to the latest state.
         can_greet_again.set()
 
         latest = f"Hi Alice, I am Mr. Robot the {adjectives[-1]}"
@@ -279,7 +361,11 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
             await greeted.wait()
             greeted.clear()
 
-        self.assertLessEqual(len(greetings), 3, greetings)
+        self.assertLessEqual(
+            len(greetings),
+            QUERY_RESPONSE_WINDOW + 1,
+            greetings,
+        )
 
     async def test_client_that_never_continues(self) -> None:
         """

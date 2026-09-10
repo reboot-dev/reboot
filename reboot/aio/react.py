@@ -2,6 +2,7 @@ import asyncio
 import grpc
 import logging
 import reboot.aio.placement
+import time
 import traceback
 import uuid
 import websockets
@@ -26,9 +27,88 @@ from reboot.aio.types import (
 from reboot.nodejs.python import should_print_stacktrace
 from reboot.settings import EVERY_LOCAL_NETWORK_ADDRESS
 from reboot.wait_for_tasks import wait_for_tasks
-from typing import AsyncIterable, Optional
+from typing import AsyncIterable, AsyncIterator, Optional
 
 logger = get_logger(__name__)
+
+# How many responses a query may run ahead of what its client has
+# reported processing. Bigger means a client that keeps up sees state
+# changes sooner, because the server doesn't wait to hear about the
+# previous response before sending the next; it also means a client
+# that can't keep up is further behind, since it works through what is
+# already in flight before it sees current state. One is the most
+# conservative choice and behaves like a strict request-per-response
+# protocol.
+#
+# TODO: estimate this per client from observed throughput rather than
+#       fixing it for everyone.
+QUERY_RESPONSE_WINDOW = 10
+
+# How long a response must wait for room before we say so, in the
+# server's log and in the response itself. 100ms is about where a
+# person stops experiencing an update as immediate and starts
+# perceiving lag, so a client that waits longer than this is one whose
+# user can see it waiting.
+REPORTABLE_STALL_MILLISECONDS = 100
+
+
+class _QueryWindow:
+    """How much room a query has to send responses before it must hear
+    from its client.
+
+    Starts with `QUERY_RESPONSE_WINDOW` room; `take()` spends one and
+    waits when there is none; `processed()` reports the last sequence
+    number a client has fully processed and returns the room that
+    accounts for.
+    """
+
+    def __init__(self):
+        self._room = QUERY_RESPONSE_WINDOW
+        self._has_room = asyncio.Event()
+        self._has_room.set()
+        # Sequence number of the next response to send, and of the
+        # last one the client has reported processing. The client has
+        # reported nothing until it does, hence -1.
+        self.sequence_number = 0
+        self._processed = -1
+
+    def try_take(self) -> Optional[int]:
+        """Returns the sequence number to send, or `None` when there is
+        no room to send anything."""
+        if self._room == 0:
+            return None
+
+        self._room -= 1
+
+        if self._room == 0:
+            self._has_room.clear()
+
+        sequence_number = self.sequence_number
+        self.sequence_number += 1
+        return sequence_number
+
+    async def take(self) -> int:
+        """Waits for room and returns the sequence number to send."""
+        while True:
+            await self._has_room.wait()
+            sequence_number = self.try_take()
+            if sequence_number is not None:
+                return sequence_number
+
+    def processed(self, sequence_number: int) -> None:
+        """Returns the room accounted for by a client reporting that it
+        has processed everything up to `sequence_number`."""
+        # A client can only have processed what we sent, and only ever
+        # more than it last reported; anything else is a duplicate or
+        # a retry, which returns no room rather than inventing any.
+        sequence_number = min(sequence_number, self.sequence_number - 1)
+
+        self._room += max(0, sequence_number - self._processed)
+
+        if self._room > 0:
+            self._has_room.set()
+
+        self._processed = max(self._processed, sequence_number)
 
 
 class _SuppressInvalidHandshakeFilter(logging.Filter):
@@ -73,10 +153,10 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
             self._state_name_by_state_tag[state_tag] = state_type_name
             self._middleware_by_state_type[state_type_name] = middleware
 
-        # Events, keyed by the ID of a response sent by `Query`, that
-        # are set once the client asks for the query to continue past
-        # that response.
-        self._query_continuations: dict[str, asyncio.Event] = {}
+        # Windows, keyed by query ID, for the queries served over a
+        # streaming transport; the websocket path keeps its windows on
+        # the connection instead.
+        self._query_windows: dict[str, _QueryWindow] = {}
 
         self._stop_websockets_serve = asyncio.Event()
 
@@ -343,9 +423,10 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
         query_task = asyncio.current_task()
         assert query_task is not None
 
-        # Events, keyed by query response ID, that are set once the
-        # client asks to continue past the response with that ID.
-        continuations: dict[str, asyncio.Event] = {}
+        # This query's window, if the client asked for one. The
+        # websocket identifies the query, so unlike the streaming
+        # transport there is nothing to key on.
+        window = _QueryWindow() if request.client_continues_query else None
 
         async def consume_requests():
             try:
@@ -359,17 +440,12 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
                     continuation = react_pb2.QueryRequest()
                     continuation.ParseFromString(request_bytes)
 
-                    # Look the event up rather than take it: the loop
-                    # that produced the response owns the entry and
-                    # removes it once it is done waiting. A
-                    # continuation we no longer have an entry for is
-                    # one we have already acted on, or one whose
-                    # response we produced before a restart.
-                    may_continue = continuations.get(
-                        continuation.continue_query_response_id
-                    )
-                    if may_continue is not None:
-                        may_continue.set()
+                    if window is not None and continuation.HasField(
+                        'continue_query_sequence_number'
+                    ):
+                        window.processed(
+                            continuation.continue_query_sequence_number
+                        )
             except Exception:
                 # WebSocket closed (or errored); cancel the main query
                 # task to unblock `_query()` and trigger cleanup.
@@ -378,35 +454,14 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
         requests_task = asyncio.create_task(consume_requests())
 
         try:
-            async for response in self._query(
+            async for response in self._windowed_query(
                 request=request,
                 headers=headers,
                 middleware=middleware,
+                query_id=str(uuid.uuid4()),
+                window=window,
             ):
-                may_continue: Optional[asyncio.Event] = None
-
-                if request.client_continues_query:
-                    response.query_response_id = str(uuid.uuid4())
-                    may_continue = asyncio.Event()
-                    continuations[response.query_response_id] = may_continue
-
-                try:
-                    await websocket.send(response.SerializeToString())
-
-                    # A client that never asks for more gets
-                    # responses as fast as we produce them; the empty
-                    # ID tells it that we expect no such request.
-                    if may_continue is not None:
-                        # Wait for the client to tell us that it is
-                        # ready for a next response, so that it can't
-                        # fall behind us. While we wait here the state
-                        # may change any number of times, and the next
-                        # response we produce reflects the latest of
-                        # those states.
-                        await may_continue.wait()
-                finally:
-                    if may_continue is not None:
-                        del continuations[response.query_response_id]
+                await websocket.send(response.SerializeToString())
         finally:
             requests_task.cancel()
             await asyncio.gather(requests_task, return_exceptions=True)
@@ -472,37 +527,35 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
         request: react_pb2.ContinueQueryRequest,
         grpc_context: grpc.aio.ServicerContext,
     ) -> react_pb2.ContinueQueryResponse:
-        """Implements the React.ContinueQuery RPC that lets a
-        client tell us it has processed a response from `Query` and is
-        ready for a next one."""
+        """Implements the React.ContinueQuery RPC that lets a client
+        tell us which responses from `Query` it has processed, which
+        returns that much room to that query's window."""
         try:
             # Confirm that we are the server that produced the
-            # response.
+            # responses.
             self._middleware_for(Headers.from_grpc_context(grpc_context))
         except Aborted as aborted:
             await grpc_context.abort_with_status(
                 rpc_status.to_status(aborted.to_status())
             )
 
-        # Look the event up rather than take it: the `Query` call that
-        # produced the response owns the entry and removes it once it
-        # is done waiting.
-        may_continue = self._query_continuations.get(request.query_response_id)
+        # Look the window up rather than take it: the `Query` call
+        # owns it and removes it when it ends.
+        window = self._query_windows.get(request.query_id)
 
-        if may_continue is None:
+        if window is None:
             # There are several valid reasons why we may not know this
-            # response:
+            # query:
             # 1. The server may have restarted and lost its memory of
-            #    the response. The client's `Query` call will have been
-            #    broken by that same restart, and it will get a fresh
-            #    response once it reconnects.
-            # 2. The client may have sent the same request twice
-            #    (e.g. retried it), in which case we have already
-            #    produced a next response.
-            # Either way there is nothing left to do.
+            #    it. The client's `Query` call will have been broken by
+            #    that same restart, and it gets a fresh query once it
+            #    reconnects.
+            # 2. The query may have ended between the client sending
+            #    this and us receiving it.
+            # Either way there is no window left to return room to.
             return react_pb2.ContinueQueryResponse()
 
-        may_continue.set()
+        window.processed(request.sequence_number)
 
         return react_pb2.ContinueQueryResponse()
 
@@ -532,6 +585,126 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
                 query_response.response = response.SerializeToString()
 
             yield query_response
+
+    async def _windowed_query(
+        self,
+        *,
+        request: react_pb2.QueryRequest,
+        headers: Headers,
+        middleware: Middleware,
+        query_id: str,
+        window: Optional[_QueryWindow],
+    ) -> AsyncIterator[react_pb2.QueryResponse]:
+        """Produces the responses of `_query()`, each stamped with the
+        query it belongs to and the room it is sent under.
+
+        Asks for states as fast as they are produced even while there
+        is no room to send one. A state that arrives while we are
+        waiting for room is merged into the response we are holding,
+        so the response we send once there is room carries the latest
+        state and says how long it waited and how many updates it
+        stood in for.
+        """
+        responses = self._query(
+            request=request,
+            headers=headers,
+            middleware=middleware,
+        ).__aiter__()
+
+        if window is None:
+            # A client that reports nothing back has no room to wait
+            # for; it gets responses as fast as we produce them.
+            async for response in responses:
+                yield response
+            return
+
+        # The response we have asked for but have no room for yet, and
+        # the room we are waiting on. Both outlive an iteration of the
+        # loop below: dropping an ask for a response would lose the
+        # state that ask is waiting for.
+        asked: Optional[asyncio.Future] = None
+        room: Optional[asyncio.Future] = None
+
+        try:
+            while True:
+                if asked is None:
+                    asked = asyncio.ensure_future(anext(responses, None))
+
+                response = await asked
+                asked = None
+
+                if response is None:
+                    return
+
+                sequence_number = window.try_take()
+
+                if sequence_number is None:
+                    stalled_at = time.monotonic()
+                    skipped = 0
+                    room = asyncio.ensure_future(window.take())
+
+                    while True:
+                        if asked is None:
+                            asked = asyncio.ensure_future(
+                                anext(responses, None)
+                            )
+
+                        await asyncio.wait(
+                            [room, asked],
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+
+                        if asked.done():
+                            update = asked.result()
+                            asked = None
+
+                            if update is None:
+                                # What we hold is the last response of
+                                # this query; it still needs room.
+                                sequence_number = await room
+                                break
+
+                            skipped += 1
+
+                            # `MergeFrom` is exactly what one response
+                            # standing in for two means: the newer
+                            # state replaces the one we hold, an
+                            # update that carries no state of its own
+                            # leaves that state alone, and we keep the
+                            # idempotency keys of both, since a
+                            # mutation reported once must not be lost
+                            # because the response reporting it was
+                            # merged away.
+                            response.MergeFrom(update)
+
+                        if room.done():
+                            sequence_number = room.result()
+                            break
+
+                    room = None
+
+                    stall_milliseconds = round(
+                        (time.monotonic() - stalled_at) * 1000
+                    )
+
+                    response.stall_milliseconds = stall_milliseconds
+                    response.skipped_updates = skipped
+
+                    if stall_milliseconds > REPORTABLE_STALL_MILLISECONDS:
+                        logger.info(
+                            "A client of a reactive query to "
+                            f"`{request.method}` skipped {skipped} updates "
+                            f"because it fell {stall_milliseconds}ms behind"
+                        )
+
+                response.query_id = query_id
+                response.sequence_number = sequence_number
+
+                yield response
+        finally:
+            for future in (asked, room):
+                if future is not None:
+                    future.cancel()
 
     async def Query(
         self,
@@ -570,50 +743,29 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
 
             middleware = self._middleware_for(headers)
 
-            async for response in self._query(
-                request=request,
-                headers=headers,
-                middleware=middleware,
-            ):
-                may_continue: Optional[asyncio.Event] = None
+            query_id = str(uuid.uuid4())
+            window: Optional[_QueryWindow] = None
 
-                if request.client_continues_query:
-                    response.query_response_id = str(uuid.uuid4())
-                    may_continue = asyncio.Event()
-                    self._query_continuations[response.query_response_id
-                                             ] = may_continue
+            if request.client_continues_query:
+                window = _QueryWindow()
+                self._query_windows[query_id] = window
 
-                try:
+            try:
+                async for response in self._windowed_query(
+                    request=request,
+                    headers=headers,
+                    middleware=middleware,
+                    query_id=query_id,
+                    window=window,
+                ):
                     yield response
-
-                    # A client that never asks for more gets
-                    # responses as fast as we produce them; the empty
-                    # ID tells it that we expect no such request.
-                    if may_continue is not None:
-                        # Wait for the client to tell us, via
-                        # `ContinueQuery`, that it is ready
-                        # for a next response, so that it can't fall
-                        # behind us. While we wait here the state may
-                        # change any number of times, and the next
-                        # response we produce reflects the latest of
-                        # those states.
-                        #
-                        # TODO: consider more advanced flow control
-                        #       mechanisms than "one-ack-per-response";
-                        #       e.g. if we could measure the throughput
-                        #       to the client we could proactively send
-                        #       multiple responses without waiting for
-                        #       an ack for each one, which would reduce
-                        #       the user-visible latency of updates.
-                        await may_continue.wait()
-                finally:
-                    # The `yield` is inside this `try` so that closing
-                    # the generator while it is suspended there still
-                    # takes the entry back out of a dictionary that
-                    # lives as long as the service.
-                    if may_continue is not None:
-                        del self._query_continuations[
-                            response.query_response_id]
+            finally:
+                # This `finally` covers the whole loop, so that
+                # closing this generator while it is suspended in a
+                # `yield` still takes the window out of a dictionary
+                # that lives as long as the service.
+                if window is not None:
+                    del self._query_windows[query_id]
         except asyncio.CancelledError:
             # It's pretty normal for a query to be cancelled; it's not useful to
             # print a stack trace.

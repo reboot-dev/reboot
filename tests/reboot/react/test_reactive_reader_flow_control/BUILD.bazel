@@ -39,6 +39,7 @@ py_library(
     visibility = ["//tests:__subpackages__"],
     deps = [
         "//reboot/aio:external_py",
+        "//reboot/aio:react_py",
         "//tests/reboot:greeter_servicers_py",
         "//tests/reboot/react:web_driver_runner",
     ],
