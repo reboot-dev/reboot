@@ -12,7 +12,9 @@ tags: stdlib, OrderedMap, B-tree, collections, range, paginated, ordered
 > error about an unknown actor type. `range` / `reverse_range`
 > require a non-zero `limit=`. Each entry's value is one of
 > `value` (`google.protobuf.Value`), `bytes`, or `any`
-> (`google.protobuf.Any`) — pick **one** per entry.
+> (`google.protobuf.Any`) — pick **one** per entry. Until the map is
+> constructed, by its first `insert` or by `create`, reading it aborts
+> with `StateNotConstructed`.
 
 `OrderedMap` (`reboot.std.collections.ordered_map.v1.ordered_map`) is
 a B-tree-backed sorted `(string key → value)` map. It stores entries
@@ -39,7 +41,7 @@ via `OrderedMap.ref(self.state.<id>)`.
 
 | Method          | Type        | Signature                                                                                                                                                   |
 | --------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `create`        | transaction | `degree?: int = 128, maintain_size?: bool = False` (constructor)                                                                                            |
+| `create`        | transaction | `degree?: int = 128, maintain_size?: bool = False`; call it on a ref: `OrderedMap.ref(id).create(context)`                                                  |
 | `insert`        | transaction | single: `key: str` + one of `value` / `bytes` / `any`; bulk: `entries: dict[str, Item]`. May also pass `degree` / `maintain_size` on implicit construction. |
 | `remove`        | transaction | single: `key: str`; bulk: `keys: list[str]`                                                                                                                 |
 | `search`        | reader      | `key: str` → `SearchResponse(found: bool, value? / bytes? / any?)`                                                                                          |
@@ -77,7 +79,8 @@ if you need something stricter than the default
 
 ### Construct Explicitly or Implicitly
 
-You can construct the map up front with `create`:
+You can construct the map up front with `create`, a transaction
+called on a ref:
 
 ```python
 from reboot.std.collections.ordered_map.v1.ordered_map import OrderedMap
@@ -88,9 +91,7 @@ async def create(
     self, context: TransactionContext, request: CreateRequest,
 ) -> CreateResponse:
     self.state.account_ids_map_id = str(uuid4())
-    await OrderedMap.create(
-        context, self.state.account_ids_map_id,
-    )
+    await OrderedMap.ref(self.state.account_ids_map_id).create(context)
     return CreateResponse()
 ```
 
@@ -101,6 +102,12 @@ are validated against the existing configuration on every subsequent
 call). `degree` defaults to 128 — raise it for shallower trees,
 lower it for narrower ones. The right number depends on key/value
 sizes and write/read mix.
+
+Until one of those happens the map does not exist, and reading it —
+`search`, `range`, `reverse_range` — aborts with
+`StateNotConstructed`. If something may read the map before anything
+is inserted, such as a listing that starts out empty, construct it
+with `create` up front.
 
 ### Canonical Usage
 
