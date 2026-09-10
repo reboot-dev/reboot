@@ -199,7 +199,9 @@ class UserServicer(User.Servicer):
     async def create(self, context: WriterContext) -> None:
         if context.constructor:
             # Just allocate the ID — the OrderedMap is constructed
-            # implicitly on the first `insert`.
+            # implicitly on the first `insert`. Until then, reading it
+            # aborts with `StateNotConstructed`; see
+            # `stdlib-ordered-map.md`.
             self.state.people_index_id = str(uuid4())
 
     async def add_person(
