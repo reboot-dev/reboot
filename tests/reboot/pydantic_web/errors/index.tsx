@@ -44,6 +44,10 @@ const App = () => {
           case "AnotherError":
             setErrorResult(`AnotherError: ${error.reason}`);
             return;
+          case "EmptyError":
+            // `EmptyError` has no fields, only its `type`.
+            setErrorResult(`EmptyError`);
+            return;
           case "FailedPrecondition":
             // `FailedPrecondition` doesn't have additional details.
             setErrorResult(`FailedPrecondition`);
@@ -68,6 +72,12 @@ const App = () => {
         onClick={() => triggerError("another_error")}
       >
         Trigger AnotherError
+      </button>
+      <button
+        id="trigger-empty-error"
+        onClick={() => triggerError("empty_error")}
+      >
+        Trigger EmptyError
       </button>
       <button
         id="trigger-failed-precondition"

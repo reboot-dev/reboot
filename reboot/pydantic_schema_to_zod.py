@@ -291,7 +291,9 @@ def pydantic_to_zod(
         # Help 'mypy' narrow the type.
         input_model: Type[Model] = input
         input_fields = input_model.model_fields
-        if not input_fields:
+        # An error type always gets its `type` literal below, even with
+        # no fields: it is the discriminator of its method's errors.
+        if not input_fields and not is_error:
             output = 'z.object({})'
         else:
             output_fields = []

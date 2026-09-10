@@ -3,6 +3,7 @@ from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import WriterContext
 from tests.reboot.pydantic_web.errors.servicer_api import (
     AnotherError,
+    EmptyError,
     MyError,
     RaiseErrorRequest,
     State,
@@ -35,6 +36,8 @@ class TestServicer(Test.Servicer):
             raise Test.RaiseErrorAborted(
                 AnotherError(reason="This is another error reason")
             )
+        elif request.error_to_trigger == "empty_error":
+            raise Test.RaiseErrorAborted(EmptyError())
         elif request.error_to_trigger == "failed_precondition":
             raise Test.RaiseErrorAborted(FailedPrecondition())
         # Do not raise anything for "none".
