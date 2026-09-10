@@ -1,0 +1,204 @@
+// The filesystem blob data plane's own metadata.
+//
+// `data_plane.proto` defines the interface a data plane implements;
+// this is the state behind one particular implementation, the
+// filesystem data plane that Reboot applications get locally without
+// arranging storage for themselves. Bytes live on disk as part files.
+// What they add up to -- which parts exist, how big they are, whether
+// the object has been committed -- lives here.
+//
+// It lives in Reboot state rather than beside the bytes because a
+// replica runs several servers, each hosting the data plane, and every
+// one of them may serve a part upload or a download for the same blob.
+// Publishing a part and committing an object have to be ordered
+// against each other across all of them, which a state machine does
+// and a file does not.
+
+syntax = "proto3";
+
+package rbt.std.blob.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+// One part of an object, as its bytes on disk were found to be when
+// the part was written.
+message StoredPart {
+  // 1-based part number, following S3 multipart numbering.
+  uint32 number = 1;
+
+  // The size of the part's bytes.
+  uint64 size = 2;
+
+  // The MD5 of the part's bytes, computed while writing them rather
+  // than taken from the client, so that it describes what is on disk.
+  // An ETag, which is all S3 promises it to be: two different parts
+  // may share one, so it does not identify stored bytes.
+  string etag = 3;
+
+  // Which of the files written for this part number holds these
+  // bytes. Minted per write, so that a part uploaded a second time
+  // never lands on the first one's bytes -- not even when the two
+  // have the same ETag.
+  string storage_id = 4;
+}
+
+// One blob's bytes, as the filesystem data plane holds them. Keyed by
+// the same blob ID the `Blob` control plane uses, so that the two can
+// be reasoned about together without a second identifier.
+message StoredBlob {
+  option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
+  };
+
+  // Whether the object is finished. A committed object's bytes are
+  // immutable: a part arriving afterwards is refused rather than
+  // allowed to change what the recorded ETag describes.
+  bool committed = 1;
+
+  // MIME type to serve the bytes with.
+  string content_type = 2;
+
+  // The upload session the parts belong to. Absent before the first
+  // `BeginUpload`.
+  optional string upload_id = 3;
+
+  // The object's ETag, derived from its parts' own. Absent until
+  // committed.
+  optional string etag = 4;
+
+  // Before `Commit`, every part written so far; after it, exactly
+  // the parts the object is made of. A part on disk that is not
+  // listed here belongs to nothing, which is what lets both a part
+  // that lost the race against `Commit` and one the client chose not
+  // to commit be left where they fall.
+  repeated StoredPart parts = 5;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message StoredBlobBeginUploadRequest {
+  // MIME type to serve the bytes with.
+  string content_type = 1;
+}
+
+message StoredBlobBeginUploadResponse {
+  // The session to write parts under, whether freshly minted or the
+  // one an earlier call already established.
+  string upload_id = 1;
+}
+
+message StoredBlobPublishPartRequest {
+  // The session the part was written under. A part written under a
+  // session that is no longer the current one belongs to an abandoned
+  // upload, and is refused.
+  string upload_id = 1;
+
+  // The part, as its bytes on disk were found to be.
+  StoredPart part = 2;
+}
+
+message StoredBlobPublishPartResponse {
+  // Whether the part became part of the object. False when the object
+  // was committed, or the session abandoned, before this part arrived:
+  // its bytes are not in the object and the caller should drop them.
+  // Not an error, because losing that race is a normal outcome of an
+  // upload that ran alongside a commit.
+  bool published = 1;
+
+  // The write this one displaced, when it displaced one: a part
+  // uploaded twice. Nothing is made of those bytes any more, so the
+  // caller removes them rather than leaving a file per attempt for an
+  // upload that may never be committed.
+  optional string superseded_storage_id = 2;
+}
+
+message StoredBlobCommitRequest {
+  // The session being committed.
+  string upload_id = 1;
+
+  // MIME type to serve the bytes with.
+  string content_type = 2;
+
+  // The object's ETag, derived from the parts below.
+  string etag = 3;
+
+  // Exactly the parts the object is made of, ordered by part number.
+  // The client chooses these by reporting them, so a part that was
+  // written but never reported is not in the object -- matching S3,
+  // where completion carries the manifest rather than inferring it.
+  repeated StoredPart parts = 4;
+}
+
+message StoredBlobCommitResponse {
+  // Whether the object was finished. False when a part was uploaded
+  // again between this manifest being read and being committed: the
+  // bytes it names are gone, so the upload has to be reported and
+  // committed again.
+  bool committed = 1;
+}
+
+message StoredBlobMetadataRequest {}
+
+message StoredBlobMetadataResponse {
+  // Absent when nothing has ever been stored under this blob ID, which
+  // a caller must distinguish from an uncommitted object: one may
+  // still receive parts, the other may not.
+  optional StoredBlob blob = 1;
+}
+
+message StoredBlobForgetRequest {}
+
+message StoredBlobForgetResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+service StoredBlobMethods {
+  // Establishes the upload session parts are written under, and
+  // returns it. The control plane retries this inside a workflow, so
+  // the caller asks for it once per workflow: a retry replays the
+  // session that was already established rather than minting a
+  // second one and orphaning the parts written under the first.
+  rpc BeginUpload(StoredBlobBeginUploadRequest)
+      returns (StoredBlobBeginUploadResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: { constructor: {} },
+    };
+  }
+
+  // Records a part as belonging to the object, or refuses it because
+  // the object is committed or the session abandoned. This is the
+  // whole reason this metadata is a state: a part's bytes are written
+  // by whichever server served the upload, and this is where those
+  // writes are ordered against `Commit` across all of them.
+  rpc PublishPart(StoredBlobPublishPartRequest)
+      returns (StoredBlobPublishPartResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  // Finishes the object, fixing its parts and its ETag. A part not
+  // published by now is not in it.
+  rpc Commit(StoredBlobCommitRequest) returns (StoredBlobCommitResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  // The metadata, reporting absence rather than raising, since a blob
+  // that was never begun and one that is merely uncommitted lead to
+  // different answers.
+  rpc Metadata(StoredBlobMetadataRequest)
+      returns (StoredBlobMetadataResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  // Forgets the object, for a blob whose bytes are being deleted.
+  rpc Forget(StoredBlobForgetRequest) returns (StoredBlobForgetResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+}

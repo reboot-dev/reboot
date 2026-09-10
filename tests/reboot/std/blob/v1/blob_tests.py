@@ -1,8 +1,6 @@
 import aiohttp
 import asyncio
 import hashlib
-import tempfile
-import threading
 import unittest
 from rbt.std.blob.v1.blob_rbt import (
     Blob,
@@ -14,16 +12,8 @@ from rbt.std.blob.v1.blob_rbt import (
 )
 from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
-from reboot.std.blob.v1._store import (
-    DEFAULT_PART_SIZE_BYTES,
-    BlobMetadata,
-    BlobStoreError,
-    FilesystemBlobStore,
-    UploadedPart,
-    _encode_blob_id,
-)
+from reboot.std.blob.v1._store import DEFAULT_PART_SIZE_BYTES
 from reboot.std.blob.v1.blob import blob_library
-from unittest import mock
 
 # How long the completion/`PUT` handshake waits before giving up,
 # generous because it only ever elapses when the test is already
@@ -315,55 +305,79 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
             await blob.get_download_url(self.context)
         self.assertIsInstance(raised.exception.error, NotCommitted)
 
-    async def test_store_complete_enforces_max_size(self) -> None:
-        # `complete()` verifies the *real* total size against
-        # `max_size` independently of the control plane's own
-        # (reported-size) check, as defense in depth against untruthful
-        # reported sizes. A store-level test, on its own store.
-        with tempfile.TemporaryDirectory() as directory:
-            store = FilesystemBlobStore(directory)
-            blob_id = "max-size-blob"
-            upload_id = await store.begin_upload(blob_id, "text/plain")
-            encoded = _encode_blob_id(blob_id)
-            data = b"x" * 100
-            with open(store.part_path(encoded, upload_id, 1), "wb") as f:
-                f.write(data)
-            part = UploadedPart(
-                number=1,
-                etag=hashlib.md5(data).hexdigest(),
-                size=len(data),
-            )
-            with self.assertRaises(BlobStoreError):
-                await store.complete(
-                    blob_id,
-                    upload_id,
-                    "text/plain",
-                    [part],
-                    max_size=50,
-                )
-            # Within the bound, it succeeds.
-            etag = await store.complete(
-                blob_id,
-                upload_id,
-                "text/plain",
-                [part],
-                max_size=1000,
-            )
-            self.assertTrue(etag.endswith("-1"))
-
-    async def test_a_part_put_cannot_land_inside_completion(
+    async def test_commit_refuses_a_part_that_was_misreported(
         self,
     ) -> None:
-        # The race the blob's lock exists to close, driven to the
-        # exact interleaving rather than raced for: completion is
-        # paused after it has read the parts and computed their ETag
-        # but before it records either, and a part `PUT` on a
-        # still-valid signed URL is issued into that window.
-        #
-        # `_write_meta` runs on a worker thread (completion's body
-        # goes through `asyncio.to_thread`), so the handshake is
-        # `threading.Event`, not `asyncio.Event`: the thread cannot
-        # await one, and setting one from off the loop is not safe.
+        # The data plane records what each part's bytes turned out to
+        # be, and completion compares that against what the client
+        # said it uploaded. A client that under-reports a part's size
+        # -- the shape of an attempt to slip past `max_size` -- is
+        # refused on the strength of the bytes rather than the claim.
+        data = b"x" * 100
+        blob, _ = await Blob.create(
+            self.context,
+            content_type="text/plain",
+            max_size=1000,
+        )
+        instructions = await self._instructions(blob, [1])
+        etag = await self._put(instructions.instructions[0].url, data)
+        await blob.part_uploaded(
+            self.context,
+            part_number=1,
+            etag=etag,
+            size=len(data) - 1,
+        )
+        await blob.commit(self.context)
+
+        info = await self._wait_until_status(
+            blob, {Blob.State.UPLOADING, Blob.State.COMMITTED}
+        )
+        self.assertEqual(Blob.State.UPLOADING, info.status)
+        self.assertIn("size mismatch", info.commit_error)
+
+    async def test_replaying_a_part_with_the_same_bytes_after_commit(
+        self,
+    ) -> None:
+        # The same bytes, not merely different ones: a part's file is
+        # named by a value minted for the write that produced it, so
+        # even an identical replay lands somewhere of its own. Naming
+        # it after the bytes instead -- by their ETag, say, which is
+        # only an MD5 -- would put this replay on top of the committed
+        # part and then delete it when the replay was refused.
+        data = b"identical bytes"
+
+        blob, _ = await Blob.create(
+            self.context,
+            content_type="text/plain",
+            size=len(data),
+        )
+        instructions = await self._instructions(blob, [1])
+        url = instructions.instructions[0].url
+        etag = await self._put(url, data)
+        await blob.part_uploaded(
+            self.context,
+            part_number=1,
+            etag=etag,
+            size=len(data),
+        )
+        await blob.commit(self.context)
+        await self._wait_until_status(blob, {Blob.State.COMMITTED})
+
+        self.assertEqual(409, await self._put_returning_status(url, data))
+
+        downloaded, _ = await self._download(blob)
+        self.assertEqual(data, downloaded)
+
+    async def test_a_part_published_after_commit_is_refused(
+        self,
+    ) -> None:
+        # The ordering `StoredBlob` exists to impose. A part `PUT` on a
+        # still-valid signed URL, arriving once the object is
+        # committed, must not become part of it -- and must not
+        # replace bytes the recorded ETag already describes. Whichever
+        # server serves that upload asks the state, and the state has
+        # already decided what the object is made of, so this holds
+        # however many servers a replica runs.
         data = b"original bytes"
         replacement = b"REPLACED bytes"
         self.assertEqual(len(data), len(replacement))
@@ -382,71 +396,17 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
             etag=etag,
             size=len(data),
         )
+        await blob.commit(self.context)
+        await self._wait_until_status(blob, {Blob.State.COMMITTED})
 
-        reached_recording = threading.Event()
-        may_record = threading.Event()
-        write_meta = FilesystemBlobStore._write_meta
+        self.assertEqual(
+            409,
+            await self._put_returning_status(url, replacement),
+        )
 
-        def paused_write_meta(
-            self,
-            encoded_blob_id: str,
-            meta: BlobMetadata,
-        ) -> None:
-            # Only completion records a committed blob; `begin_upload`
-            # writes metadata too, and must not be paused.
-            if meta.committed:
-                reached_recording.set()
-                may_record.wait(timeout=_RACE_TIMEOUT_SECONDS)
-            write_meta(self, encoded_blob_id, meta)
-
-        with mock.patch.object(
-            FilesystemBlobStore,
-            "_write_meta",
-            paused_write_meta,
-        ):
-            await blob.commit(self.context)
-            self.assertTrue(
-                await asyncio.to_thread(
-                    reached_recording.wait,
-                    _RACE_TIMEOUT_SECONDS,
-                ),
-                "completion never reached the point where it records "
-                "what it read",
-            )
-
-            # Deliberately not awaited yet: while completion holds the
-            # blob's lock this `PUT` cannot finish, so awaiting it
-            # before releasing completion would deadlock the test
-            # rather than test anything.
-            overwrite = asyncio.ensure_future(
-                self._put_returning_status(url, replacement)
-            )
-            # Long enough for the `PUT` to reach the lock and block on
-            # it -- or, unlocked, to publish its bytes and return.
-            await asyncio.sleep(0.5)
-            may_record.set()
-
-        # Bounded: a `PUT` that did land inside completion leaves the
-        # bytes disagreeing with the ETag completion computed, the
-        # commit fails its own digest check, and the blob never
-        # commits. Without a bound that is a test that hangs instead
-        # of a test that reports what broke.
-        try:
-            await asyncio.wait_for(
-                self._wait_until_status(blob, {Blob.State.COMMITTED}),
-                timeout=_RACE_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            self.fail(
-                "the blob never committed: a part `PUT` published "
-                "bytes inside completion, so the ETag completion "
-                "computed no longer described them"
-            )
-        status = await overwrite
-
-        # Serialized behind completion, the `PUT` finds the blob
-        # committed and refuses rather than publishing.
-        self.assertEqual(409, status)
+        # And what downloads is what was committed.
+        downloaded, _ = await self._download(blob)
+        self.assertEqual(data, downloaded)
 
         # The bytes served are the bytes completion actually read, so
         # they still match the ETag and length it recorded.
@@ -604,13 +564,22 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
                 etag="0" * 32,
                 size=1,
             )
-        # A non-MD5-hex ETag is rejected (it would corrupt the S3
-        # completion XML).
+        # An ETag carrying characters that are not safe to hand on
+        # is rejected (this one would corrupt the S3 completion XML).
         with self.assertRaises(Blob.PartUploadedAborted):
             await blob.part_uploaded(
                 self.context,
                 part_number=1,
                 etag='"><injected/>',
+                size=1,
+            )
+        # Including a trailing newline, which an anchored `match`
+        # would admit: Python's `$` also matches just before one.
+        with self.assertRaises(Blob.PartUploadedAborted):
+            await blob.part_uploaded(
+                self.context,
+                part_number=1,
+                etag="0" * 32 + "\n",
                 size=1,
             )
 

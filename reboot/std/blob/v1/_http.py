@@ -1,54 +1,52 @@
-"""The HTTP byte endpoint of the filesystem blob data-plane server.
+"""The byte endpoints of the filesystem blob data plane.
 
 Serves `PUT` (part upload) and `GET` (download) under
-`/__/reboot/blob/`. The filesystem server (`_filesystem_server.py`)
-runs this on localhost; the application's `Blob` library reverse-
-proxies to it (see `_proxy.py`), so the bytes never leave a single
-origin even though they live in a separate process.
+`/__/reboot/blob/`, on the application's own HTTP server: the data
+plane lives inside the application, so the bytes arrive on the same
+origin as everything else with no hop in between.
 
-These handlers are self-authorizing: every URL carries an expiring
-HMAC signature minted by the data plane, so the handlers never call
-back into Reboot state. They touch only the store's directory,
-mirroring how a presigned S3 URL is served by S3 without consulting
-the application.
+Every URL carries an expiring HMAC signature minted by the data plane,
+and that signature is the caller's whole capability -- these routes are
+reachable by anyone. It is therefore checked before anything else
+happens, in particular before any of the request's own input reaches
+`StoredBlob`. That ordering is what makes it safe for these routes to
+hold an app-internal context (see the DANGER note on
+`reboot.aio.http`): by the time one is used, the request has proven it
+holds a URL this data plane minted for exactly this blob, session and
+part.
 """
 
-import aiofiles
-import asyncio
-import hashlib
+import base64
 import hmac
-import os
 import re
 import time
+from rbt.std.blob.v1.filesystem_rbt import StoredBlob, StoredPart
+from reboot.aio.external import ExternalContext
+from reboot.aio.http import PythonWebFramework
 from reboot.std.blob.v1._content_type import download_headers
 from reboot.std.blob.v1._store import (
-    HTTP_PATH_PREFIX,
+    BLOB_PATH,
     MAX_PARTS,
+    PART_PATH,
     FilesystemBlobStore,
+    PartTooLarge,
 )
-from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
-from starlette.routing import Route
 from typing import Optional
-from uuid import uuid4
-
-_STREAM_CHUNK_SIZE = 1024 * 1024
 
 # Path parameters are also filesystem path components; restrict them
 # to the alphabets the store actually produces (URL-safe base64 blob
 # IDs, hex upload IDs) as defense in depth against traversal — even
-# though a forged path could never carry a valid signature.
-_ENCODED_BLOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+={0,2}$")
-_UPLOAD_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+# though a forged path could never carry a valid signature. Matched
+# with `fullmatch`: `$` would also accept a trailing newline, which is
+# less than the "only this alphabet" these are here to promise.
+_ENCODED_BLOB_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+={0,2}")
+_UPLOAD_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
 
 # Enough digits for any epoch second this will ever mint, and
 # far below the length `int()` refuses.
 _MAX_EXPIRATION_DIGITS = 20
-
-
-class _PartTooLarge(Exception):
-    pass
 
 
 def _signature_matches(expected: str, actual: str) -> bool:
@@ -84,73 +82,65 @@ def _unexpired_expiration(request: Request) -> Optional[int]:
     return parsed
 
 
+def _verified_context(request: Request) -> ExternalContext:
+    """An app-internal context, which is what reaches `StoredBlob`.
+
+    Taken here rather than granted to the route, because a route is
+    granted one on the strength of its path: an application that
+    happens to serve its own handler at one of these paths -- under
+    another method, or through an earlier mount -- would be handed the
+    same privilege without having checked anything. Called only below
+    a verified signature, so what takes this has proven it holds a URL
+    this data plane minted."""
+    return request.state.reboot_app_internal_context(request)
+
+
+def _blob_id(encoded_blob_id: str) -> str:
+    """The blob ID a URL's encoded path segment names."""
+    return base64.urlsafe_b64decode(encoded_blob_id.encode()).decode()
+
+
 def _make_put_part(store: FilesystemBlobStore):
 
-    async def put_part(request: Request) -> Response:
-        blob = request.path_params["blob"]
-        upload = request.path_params["upload"]
+    async def put_part(request: Request):
+        blob = request.query_params.get("blob", "")
+        upload = request.query_params.get("upload", "")
         try:
-            part = int(request.path_params["part"])
+            part_number = int(request.query_params.get("part", ""))
         except ValueError:
             return Response(status_code=400, content="Invalid part number")
 
-        if part < 1 or part > MAX_PARTS:
+        if part_number < 1 or part_number > MAX_PARTS:
             return Response(status_code=400, content="Invalid part number")
         if (
-            not _ENCODED_BLOB_ID_PATTERN.match(blob) or
-            not _UPLOAD_ID_PATTERN.match(upload)
+            not _ENCODED_BLOB_ID_PATTERN.fullmatch(blob) or
+            not _UPLOAD_ID_PATTERN.fullmatch(upload)
         ):
             return Response(status_code=400, content="Invalid blob ID")
         expiration = _unexpired_expiration(request)
         if expiration is None:
             return Response(status_code=403, content="URL expired")
-        expected = store.signature_for_put(blob, upload, part, expiration)
+        expected = store.signature_for_put(
+            blob, upload, part_number, expiration
+        )
         if not _signature_matches(
             expected, request.query_params.get("sig", "")
         ):
             return Response(status_code=403, content="Invalid signature")
 
-        path = store.part_path(blob, upload, part)
-        # The upload directory is created by `begin_upload`; a missing
-        # directory means the blob was never created (or was deleted).
-        if not os.path.isdir(os.path.dirname(path)):
+        # Everything below acts for a caller that has proven it holds a
+        # URL this data plane minted.
+        if not await store.upload_directory_exists(blob, upload):
             return Response(status_code=404, content="No such upload")
 
-        # Refuse to mutate a committed blob's bytes: the part files
-        # *are* the committed object's on-disk representation, so a
-        # part-PUT URL minted just before commit must not still be
-        # usable to tamper with the bytes afterwards.
-        meta = store.read_meta(blob)
-        if meta is not None and meta.committed:
-            return Response(status_code=409, content="Blob already committed")
-
-        # Write somewhere else and publish with a rename, rather than
-        # writing `path` in place: completion reads the part files to
-        # validate them, and a part being rewritten underneath it
-        # would leave a committed blob whose bytes no longer match the
-        # ETag it recorded. A rename is atomic, so completion sees
-        # either the whole old part or the whole new one.
-        temporary = f"{path}.{uuid4().hex}.partial"
-        digest = hashlib.md5()
-        size = 0
         try:
-            # A part is megabytes, so the writes go off the event loop
-            # for the same reason the download below reads off it: this
-            # handler is driven by the loop, and writing inline would
-            # stall every other request this worker is serving.
-            async with aiofiles.open(temporary, "wb") as f:
-                async for chunk in request.stream():
-                    if size + len(chunk) > store.part_size:
-                        raise _PartTooLarge()
-                    digest.update(chunk)
-                    size += len(chunk)
-                    await f.write(chunk)
-                await f.flush()
-                # `aiofiles` has no `fsync`; `fileno()` is proxied
-                # straight through, so the descriptor is the real one.
-                await asyncio.to_thread(os.fsync, f.fileno())
-        except _PartTooLarge:
-            os.unlink(temporary)
+            staged = await store.stage_part(
+                blob,
+                upload,
+                part_number,
+                request.stream(),
+            )
+        except PartTooLarge:
             return Response(
                 status_code=413,
                 content=(
@@ -158,30 +148,44 @@ def _make_put_part(store: FilesystemBlobStore):
                     f"{store.part_size} bytes"
                 ),
             )
-        except BaseException:
-            # Never leave a partial file behind to be mistaken for a
-            # part.
-            if os.path.exists(temporary):
-                os.unlink(temporary)
-            raise
 
-        # Publish under the blob's lock, and re-read the metadata
-        # inside it: completion may have run while these bytes were
-        # being uploaded, and a part must not appear after the blob it
-        # belongs to has been committed.
-        async with store.lock_for(blob):
-            meta = store.read_meta(blob)
-            if meta is not None and meta.committed:
-                os.unlink(temporary)
-                return Response(
-                    status_code=409, content="Blob already committed"
-                )
-            os.replace(temporary, path)
+        # The bytes are on disk under a name of their own; whether
+        # the object is made of them is this call's to decide, and it
+        # decides for every server that might be serving this blob.
+        # Refused bytes go, which is safe because the file's name
+        # belongs to this write alone: no manifest can point at it
+        # unless this very call's claim succeeded. Anything that
+        # outlives an interrupted request is reclaimed at commit, and
+        # with the blob's directory on `Delete`.
+        published = await StoredBlob.ref(
+            _blob_id(blob)
+        ).always().publish_part(
+            _verified_context(request),
+            upload_id=upload,
+            part=StoredPart(
+                number=staged.part.number,
+                size=staged.part.size,
+                etag=staged.part.etag,
+                storage_id=staged.part.storage_id,
+            ),
+        )
+        if not published.published:
+            await store.discard_part(staged)
+            return Response(status_code=409, content="Blob already committed")
+
+        if published.HasField("superseded_storage_id"):
+            # This part had been uploaded before. Nothing is made of
+            # those bytes now, and the manifest that could still name
+            # them is refused at commit, so they go rather than
+            # accumulating a file per attempt.
+            await store.discard_storage_id(
+                blob, upload, part_number, published.superseded_storage_id
+            )
 
         # Match S3: the ETag response header is the part's MD5, quoted.
         return Response(
             status_code=200,
-            headers={"ETag": f'"{digest.hexdigest()}"'},
+            headers={"ETag": f'"{staged.part.etag}"'},
         )
 
     return put_part
@@ -189,9 +193,9 @@ def _make_put_part(store: FilesystemBlobStore):
 
 def _make_get_blob(store: FilesystemBlobStore):
 
-    async def get_blob(request: Request) -> Response:
-        blob = request.path_params["blob"]
-        if not _ENCODED_BLOB_ID_PATTERN.match(blob):
+    async def get_blob(request: Request):
+        blob = request.query_params.get("blob", "")
+        if not _ENCODED_BLOB_ID_PATTERN.fullmatch(blob):
             return Response(status_code=400, content="Invalid blob ID")
         expiration = _unexpired_expiration(request)
         if expiration is None:
@@ -202,33 +206,31 @@ def _make_get_blob(store: FilesystemBlobStore):
         ):
             return Response(status_code=403, content="Invalid signature")
 
-        meta = store.read_meta(blob)
-        if meta is None or not meta.committed:
+        metadata = await StoredBlob.ref(_blob_id(blob)).metadata(
+            _verified_context(request)
+        )
+        stored = metadata.blob if metadata.HasField("blob") else None
+        if stored is None or not stored.committed:
             return Response(status_code=404, content="No such blob")
 
-        # Written in the same atomic update as `committed`.
-        assert meta.upload_id is not None and meta.etag is not None
-        upload_id = meta.upload_id
-        parts = meta.parts
+        upload_id = stored.upload_id
+        parts = sorted(stored.parts, key=lambda part: part.number)
         total_size = sum(part.size for part in parts)
 
         async def stream():
-            for part in sorted(parts, key=lambda part: part.number):
-                path = store.part_path(blob, upload_id, part.number)
-                # Read off the event loop: this generator is driven by
-                # it, and a part is megabytes, so reading inline would
-                # stall every other request this worker is serving.
-                async with aiofiles.open(path, "rb") as file:
-                    while chunk := await file.read(_STREAM_CHUNK_SIZE):
-                        yield chunk
+            for part in parts:
+                async for chunk in store.read_part(
+                    blob, upload_id, part.number, part.storage_id
+                ):
+                    yield chunk
 
-        media_type, safety_headers = download_headers(meta.content_type)
+        media_type, safety_headers = download_headers(stored.content_type)
         return StreamingResponse(
             stream(),
             media_type=media_type,
             headers={
                 "Content-Length": str(total_size),
-                "ETag": f'"{meta.etag}"',
+                "ETag": f'"{stored.etag}"',
                 "Accept-Ranges": "none",
                 **safety_headers,
             },
@@ -237,19 +239,16 @@ def _make_get_blob(store: FilesystemBlobStore):
     return get_blob
 
 
-def build_http_app(store: FilesystemBlobStore) -> Starlette:
-    """Builds the Starlette app serving `store`'s byte `PUT`/`GET`."""
-    return Starlette(
-        routes=[
-            Route(
-                HTTP_PATH_PREFIX + "/{blob}/{upload}/parts/{part}",
-                _make_put_part(store),
-                methods=["PUT"],
-            ),
-            Route(
-                HTTP_PATH_PREFIX + "/{blob}",
-                _make_get_blob(store),
-                methods=["GET"],
-            ),
-        ],
-    )
+def mount_byte_routes(
+    http: PythonWebFramework.HTTP,
+    store: FilesystemBlobStore,
+) -> None:
+    """Registers the data plane's byte endpoints on the application's
+    own HTTP server.
+
+    Registered like any other route, with no privilege of their own:
+    what reaches `StoredBlob` is a context each handler takes for
+    itself once a signature has verified, which is the only point at
+    which it has established anything about its caller."""
+    http.put(PART_PATH)(_make_put_part(store))
+    http.get(BLOB_PATH)(_make_get_blob(store))

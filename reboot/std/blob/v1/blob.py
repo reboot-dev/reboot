@@ -30,6 +30,7 @@ anyone who knows the ID whenever either side is left open.
 """
 
 import log.log
+import os
 import rbt.v1alpha1.errors_pb2
 import re
 import time
@@ -78,20 +79,25 @@ from rbt.std.blob.v1.data_plane_pb2 import (
     DataPlaneGetPartUploadInstructionsRequest,
     DataPlaneUploadedPart,
 )
-from rbt.std.blob.v1.data_plane_pb2_grpc import BlobDataPlaneStub
 from reboot.aio.applications import Application, Library
 from reboot.aio.auth.authorizers import Authorizer, allow_if, is_app_internal
 from reboot.aio.backoff import Backoff
 from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
 from reboot.aio.http import PythonWebFramework
+from reboot.aio.servicers import Servicer
 from reboot.aio.workflows import at_least_once_per_workflow
 from reboot.std.blob.v1._data_plane import (
     ENVVAR_BLOB_DATA_PLANE_URL,
-    proxy_target_from_environment,
-    stub_from_environment,
+    blobs_directory,
+    configured_data_plane_stub,
+    data_plane_stub,
 )
-from reboot.std.blob.v1._proxy import mount_proxy_routes
-from reboot.std.blob.v1._store import MAX_PARTS
+from reboot.std.blob.v1._filesystem_data_plane import (
+    FilesystemDataPlaneServicer,
+)
+from reboot.std.blob.v1._http import mount_byte_routes
+from reboot.std.blob.v1._store import MAX_PARTS, FilesystemBlobStore
+from reboot.std.blob.v1._stored_blob import StoredBlobServicer
 from typing import Optional
 
 logger = log.log.get_logger(__name__)
@@ -114,7 +120,7 @@ DEFAULT_UPLOAD_EXPIRATION = timedelta(hours=24)
 # cannot smuggle arbitrary content into a value a data plane later
 # relies on to finalize the object. Any narrower format belongs to the
 # store that produces it.
-_PART_ETAG_PATTERN = re.compile(r'^[!#-~]{1,128}$')
+_PART_ETAG_PATTERN = re.compile(r'[!#-~]{1,128}')
 
 
 def _size_ceiling(state: Blob.State) -> Optional[int]:
@@ -187,9 +193,8 @@ def _downloader_or_open(
 
 class BlobServicer(Blob.Servicer):
 
-    # The data-plane gRPC stub and the part size it reported, both set
-    # by `BlobLibrary` once it has connected to the data plane.
-    _data_plane: BlobDataPlaneStub
+    # The part size the data plane reported, set by `BlobLibrary`
+    # once it has asked.
     _part_size: int
 
     def authorizer(self) -> Blob.Authorizer:
@@ -263,13 +268,14 @@ class BlobServicer(Blob.Servicer):
         state = await Blob.ref().read(context)
 
         async def provision() -> str:
-            response = await cls._data_plane.BeginUpload(
-                DataPlaneBeginUploadRequest(
-                    blob_id=context.state_id,
-                    content_type=state.content_type,
+            async with data_plane_stub(context) as data_plane:
+                response = await data_plane.BeginUpload(
+                    DataPlaneBeginUploadRequest(
+                        blob_id=context.state_id,
+                        content_type=state.content_type,
+                    )
                 )
-            )
-            return response.upload_id
+                return response.upload_id
 
         upload_id = await at_least_once_per_workflow(
             "provision upload session", context, provision
@@ -296,12 +302,13 @@ class BlobServicer(Blob.Servicer):
         await Blob.ref().write(context, record)
 
         if removed:
-            await cls._data_plane.Delete(
-                DataPlaneDeleteRequest(
-                    blob_id=context.state_id,
-                    upload_ids=[upload_id],
+            async with data_plane_stub(context) as data_plane:
+                await data_plane.Delete(
+                    DataPlaneDeleteRequest(
+                        blob_id=context.state_id,
+                        upload_ids=[upload_id],
+                    )
                 )
-            )
 
         return BeginUploadResponse()
 
@@ -340,13 +347,14 @@ class BlobServicer(Blob.Servicer):
             number for number in request.part_numbers
             if 1 <= number <= max_part_number
         ]
-        response = await self._data_plane.GetPartUploadInstructions(
-            DataPlaneGetPartUploadInstructionsRequest(
-                blob_id=context.state_id,
-                upload_id=self.state.upload_id,
-                part_numbers=part_numbers,
+        async with data_plane_stub(context) as data_plane:
+            response = await data_plane.GetPartUploadInstructions(
+                DataPlaneGetPartUploadInstructionsRequest(
+                    blob_id=context.state_id,
+                    upload_id=self.state.upload_id,
+                    part_numbers=part_numbers,
+                )
             )
-        )
         instructions = [
             PartUploadInstruction(
                 part_number=instruction.part_number,
@@ -375,11 +383,9 @@ class BlobServicer(Blob.Servicer):
         if request.part_number < 1 or request.part_number > MAX_PARTS:
             raise Blob.PartUploadedAborted(IncompleteParts())
 
-        # Validate the ETag as an MD5 hex digest, as the data-plane
-        # contract requires, so a client can't smuggle arbitrary
-        # content into the value a data plane later relies on to
-        # finalize the object.
-        if not _PART_ETAG_PATTERN.match(request.etag):
+        # Check that the ETag is safe to carry; see
+        # `_PART_ETAG_PATTERN` for why that is all this can check.
+        if not _PART_ETAG_PATTERN.fullmatch(request.etag):
             raise Blob.PartUploadedAborted(IncompleteParts())
 
         part = BlobPart(
@@ -466,7 +472,8 @@ class BlobServicer(Blob.Servicer):
             # mismatch): report it back onto the blob so the client can
             # re-upload and re-commit. A gRPC error is transient and
             # propagates, so the workflow retries.
-            response = await cls._data_plane.CompleteUpload(complete_request)
+            async with data_plane_stub(context) as data_plane:
+                response = await data_plane.CompleteUpload(complete_request)
             if response.HasField("error"):
                 return ("failed", response.error)
             return ("committed", response.etag)
@@ -500,9 +507,10 @@ class BlobServicer(Blob.Servicer):
         if superseded[0] and outcome == "committed":
 
             async def cleanup() -> None:
-                await cls._data_plane.Delete(
-                    DataPlaneDeleteRequest(blob_id=context.state_id)
-                )
+                async with data_plane_stub(context) as data_plane:
+                    await data_plane.Delete(
+                        DataPlaneDeleteRequest(blob_id=context.state_id)
+                    )
 
             await at_least_once_per_workflow(
                 "cleanup orphaned bytes", context, cleanup
@@ -544,7 +552,8 @@ class BlobServicer(Blob.Servicer):
         )
         if request.HasField("ttl_seconds"):
             download_request.ttl_seconds = request.ttl_seconds
-        response = await self._data_plane.GetDownloadUrl(download_request)
+        async with data_plane_stub(context) as data_plane:
+            response = await data_plane.GetDownloadUrl(download_request)
         return GetDownloadUrlResponse(
             url=response.url,
             ttl_seconds=response.ttl_seconds,
@@ -578,12 +587,13 @@ class BlobServicer(Blob.Servicer):
         upload_ids = [state.upload_id] if state.HasField("upload_id") else []
 
         async def remove() -> None:
-            await cls._data_plane.Delete(
-                DataPlaneDeleteRequest(
-                    blob_id=context.state_id,
-                    upload_ids=upload_ids,
+            async with data_plane_stub(context) as data_plane:
+                await data_plane.Delete(
+                    DataPlaneDeleteRequest(
+                        blob_id=context.state_id,
+                        upload_ids=upload_ids,
+                    )
                 )
-            )
 
         await at_least_once_per_workflow("remove bytes", context, remove)
 
@@ -618,22 +628,63 @@ BLOBS_LIBRARY_NAME = "reboot.std.blob.v1.blob"
 class BlobLibrary(Library):
     name = BLOBS_LIBRARY_NAME
 
-    def __init__(self) -> None:
-        self._connected = False
+    def __init__(self, *, blobs_directory: Optional[str] = None) -> None:
+        self._blobs_directory = blobs_directory
+        self._store: Optional[FilesystemBlobStore] = None
+        self._prepared = False
 
-    def servicers(self) -> list[type[Blob.Servicer]]:
-        return [BlobServicer]
+    def _hosts_data_plane(self) -> bool:
+        """Whether this application serves its own blob bytes.
+
+        It does unless pointed at a data plane elsewhere, which is how
+        Reboot Cloud hands an application its facilitator."""
+        return not os.environ.get(ENVVAR_BLOB_DATA_PLANE_URL)
+
+    def servicers(self) -> list[type[Servicer]]:
+        if not self._hosts_data_plane():
+            return [BlobServicer]
+        return [BlobServicer, StoredBlobServicer]
+
+    def legacy_grpc_servicers(self) -> list[type]:
+        if not self._hosts_data_plane():
+            return []
+        return [FilesystemDataPlaneServicer]
 
     async def pre_run(self, application: Application) -> None:
         # `pre_run` may be called more than once (e.g. a test that
-        # `up`s an application after a `down`); connect once.
-        if self._connected:
+        # `up`s an application after a `down`); prepare once.
+        if self._prepared:
             return
 
-        stub = stub_from_environment()
-        BlobServicer._data_plane = stub
+        if self._hosts_data_plane():
+            if not isinstance(application.web_framework, PythonWebFramework):
+                # Better to fail here than to hand out URLs that will
+                # 404: without the byte routes this application cannot
+                # serve any bytes it stores.
+                raise RuntimeError(
+                    "Serving blob bytes needs HTTP routes, which only "
+                    "Python applications currently support; configure a "
+                    "data plane that serves its own URLs via "
+                    f"`{ENVVAR_BLOB_DATA_PLANE_URL}`."
+                )
+            store = FilesystemBlobStore(
+                self._blobs_directory or blobs_directory()
+            )
+            self._store = store
+            FilesystemDataPlaneServicer._store = store
+            mount_byte_routes(application.http, store)
+            # Known without asking, since this application is the data
+            # plane; `Configuration` still reports it, for a client
+            # that does not know which data plane it is talking to.
+            BlobServicer._part_size = store.part_size
+            self._prepared = True
+            return
 
-        configuration = await self._configuration(stub)
+        # A data plane elsewhere has to be asked. Asked here, in
+        # `pre_run`, because this runs in every server process, and
+        # `_part_size` is per-process state that each of them serves
+        # `GetPartUploadInstructions` from.
+        configuration = await self._configuration()
         if configuration.part_size == 0:
             # Fail here rather than let a zero reach the browser
             # uploader, which divides the blob's size by it.
@@ -643,35 +694,21 @@ class BlobLibrary(Library):
             )
         BlobServicer._part_size = configuration.part_size
 
-        # A data plane whose URLs are not directly reachable (e.g. the
-        # localhost filesystem server) asks for paths to be forwarded
-        # to it, and the application proxies those to its HTTP
-        # endpoint; one that serves its own URLs (e.g. S3) asks for
-        # none and needs no application routes.
         if configuration.forwarded_paths:
-            if not isinstance(application.web_framework, PythonWebFramework):
-                # Better to fail fast here than to hand out URLs that
-                # will 404: without the proxy routes, a forwarded-path
-                # data plane cannot serve any bytes.
-                raise RuntimeError(
-                    "This blob data plane needs paths forwarded to it, "
-                    "which only Python applications currently support; "
-                    "configure a data plane whose URLs are directly "
-                    "reachable by clients via "
-                    f"`{ENVVAR_BLOB_DATA_PLANE_URL}`."
-                )
-            mount_proxy_routes(
-                application.http,
-                proxy_target_from_environment(configuration.http_port),
-                configuration.forwarded_paths,
+            # Reverse-proxying a data plane's byte endpoints is no
+            # longer something this library does, so a data plane that
+            # needs it would mint URLs nothing serves. Say so now
+            # rather than at the first upload.
+            raise RuntimeError(
+                "This blob data plane asks for paths to be forwarded to "
+                "it, which is no longer supported; configure a data "
+                "plane that serves its own URLs via "
+                f"`{ENVVAR_BLOB_DATA_PLANE_URL}`."
             )
 
-        self._connected = True
+        self._prepared = True
 
-    async def _configuration(
-        self,
-        stub: BlobDataPlaneStub,
-    ) -> ConfigurationResponse:
+    async def _configuration(self) -> ConfigurationResponse:
         # The data plane is normally already running, but tolerate a
         # startup race by retrying while it becomes reachable.
         backoff = Backoff(
@@ -680,7 +717,10 @@ class BlobLibrary(Library):
         deadline = time.monotonic() + _CONFIGURATION_RETRY_SECONDS
         while True:
             try:
-                return await stub.Configuration(ConfigurationRequest())
+                async with configured_data_plane_stub() as data_plane:
+                    return await data_plane.Configuration(
+                        ConfigurationRequest()
+                    )
             except AioRpcError as error:
                 if time.monotonic() >= deadline:
                     raise RuntimeError(

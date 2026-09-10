@@ -1,26 +1,30 @@
 """The filesystem blob store: bytes storage for the open-source blob
 data plane.
 
-A blob's *bytes* live here; all its metadata lives in the `Blob` state
-machine (the control plane), which talks to the data plane only over
-the `BlobDataPlane` gRPC interface (see `data_plane.proto` — that
-interface, not this module, is the contract a data plane implements).
+A blob's *bytes* live here; all its metadata lives in state machines.
+The `Blob` control plane (see `blob.proto`) holds what the application
+knows about a blob, and `StoredBlob` (see `filesystem.proto`) holds
+what this store knows about its parts. Nothing about an object is
+recorded on disk beside the bytes, so any of a replica's servers can
+serve an upload or a download for one blob while agreeing with the
+others on nothing but the directory.
+
 The store mimics S3's multipart-upload semantics (numbered parts,
 per-part MD5 ETags, ETag-validating completion) so that clients drive
 one protocol regardless of which data plane serves them.
 """
 
+import aiofiles
 import asyncio
 import base64
 import hashlib
 import hmac
-import json
 import os
 import shutil
 import time
 from dataclasses import dataclass
 from reboot.crypto import root_keys
-from typing import Any, Optional, Sequence
+from typing import AsyncIterator, Optional, Sequence
 from uuid import uuid4
 
 # The part size clients should use. Every part except the last must be
@@ -41,23 +45,30 @@ DEFAULT_URL_TTL_SECONDS = 15 * 60
 # whatever their signing scheme allows.
 _MAX_URL_TTL_SECONDS = 7 * 24 * 60 * 60
 
-# The URL path prefix under which blob bytes are `PUT` and `GET`: the
-# filesystem data-plane server serves it, and the application's proxy
-# routes (see `_proxy.py`) forward it.
-HTTP_PATH_PREFIX = "/__/reboot/blob"
+# The paths under which blob bytes are `PUT` and `GET` on the
+# application's own HTTP server (see `_http.py`). The blob, session
+# and part travel in the query rather than the path; all of them are
+# covered by the URL's signature either way.
+PART_PATH = "/__/reboot/blob/part"
+BLOB_PATH = "/__/reboot/blob"
 
 # HKDF `info` (domain separator) for the filesystem store's URL-signing
 # key.
 _SIGNING_INFO = b"reboot.std.blob.url-signing"
 
+_STREAM_CHUNK_SIZE = 1024 * 1024
+
 
 class BlobStoreError(Exception):
-    """A permanent storage failure (e.g. a part ETag mismatch at
-    completion time), reported to the control plane as a
-    `CompleteUpload` `error` so the client can re-upload. Transient
-    failures (e.g. network errors) are raised as their original
-    exception types instead, becoming gRPC errors that the control
-    plane's workflow retries."""
+    """A permanent storage failure (e.g. a part missing at completion
+    time), reported to the control plane as a `CompleteUpload` `error`
+    so the client can re-upload. Transient failures (e.g. network
+    errors) are raised as their original exception types instead,
+    becoming gRPC errors that the control plane's workflow retries."""
+
+
+class PartTooLarge(Exception):
+    """A part's bytes exceeded the store's part size."""
 
 
 @dataclass(frozen=True)
@@ -69,59 +80,24 @@ class UploadedPart:
 
 
 @dataclass(frozen=True)
-class PartRecord:
-    """One part of a committed blob: its number, and the size its
-    bytes on disk were found to have at completion."""
+class WrittenPart:
+    """One part of an upload, as this store found its bytes to be."""
     number: int
+    etag: str
     size: int
+    storage_id: str
 
 
 @dataclass(frozen=True)
-class BlobMetadata:
-    """A blob's entry in the store, as `meta.json` holds it.
+class StagedPart:
+    """A part whose bytes are on disk under their final name but not
+    yet claimed by the object.
 
-    `upload_id`, `etag` and `parts` are written in the same atomic
-    update as `committed`, so a committed blob carries all three."""
-    content_type: str
-    committed: bool
-    upload_id: Optional[str] = None
-    etag: Optional[str] = None
-    parts: tuple[PartRecord, ...] = ()
-
-    @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "BlobMetadata":
-        return cls(
-            content_type=data["content_type"],
-            committed=data.get("committed", False),
-            upload_id=data.get("upload_id"),
-            etag=data.get("etag"),
-            parts=tuple(
-                PartRecord(number=part["number"], size=part["size"])
-                for part in data.get("parts", ())
-            ),
-        )
-
-    def to_json(self) -> dict[str, Any]:
-        """The on-disk form. A `dict` is the right shape at this one
-        boundary and nowhere else; absent fields are omitted rather
-        than written as `null`, so the file stays byte-comparable with
-        what earlier versions of this store wrote."""
-        data: dict[str, Any] = {
-            "content_type": self.content_type,
-            "committed": self.committed,
-        }
-        if self.upload_id is not None:
-            data["upload_id"] = self.upload_id
-        if self.etag is not None:
-            data["etag"] = self.etag
-        if self.parts:
-            data["parts"] = [
-                {
-                    "number": part.number,
-                    "size": part.size
-                } for part in self.parts
-            ]
-        return data
+    That name is this write's alone, so publishing a part can never
+    land on another's bytes and the manifest decides which of a part
+    number's files the object is made of."""
+    part: WrittenPart
+    path: str
 
 
 def _encode_blob_id(blob_id: str) -> str:
@@ -130,31 +106,58 @@ def _encode_blob_id(blob_id: str) -> str:
     return base64.urlsafe_b64encode(blob_id.encode()).decode()
 
 
-def _fsync_path(path: str) -> None:
-    fd = os.open(path, os.O_RDONLY)
+def _unlink_if_present(path: str) -> None:
     try:
-        os.fsync(fd)
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+
+
+def _fsync_directory(path: str) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
     finally:
-        os.close(fd)
+        os.close(descriptor)
+
+
+def _publish(temporary: str, path: str) -> None:
+    """Renames a part's bytes into place and makes the rename itself
+    durable.
+
+    Without the directory `fsync` the rename can still be in the page
+    cache when the part is recorded as published, and a crash there
+    leaves the manifest naming a file that does not exist -- which
+    nothing downstream re-checks, since completion works from the
+    digests rather than the bytes."""
+    os.replace(temporary, path)
+    _fsync_directory(os.path.dirname(path))
+
+
+def composite_etag(etags: Sequence[str]) -> str:
+    """An object's ETag, S3-style: the MD5 of its parts' concatenated
+    MD5 digests, suffixed with the part count."""
+    digests = b"".join(bytes.fromhex(etag) for etag in etags)
+    return hashlib.md5(digests).hexdigest() + f"-{len(etags)}"
 
 
 class FilesystemBlobStore:
     """Stores blob bytes as part files on the local filesystem, served
-    over HTTP by the filesystem data-plane server (see `_http.py`).
+    over HTTP by the application (see `_http.py`).
 
     Layout, under `directory`:
 
         {encoded_blob_id}/
-          meta.json                  Content type; part manifest and
-                                     composite ETag once committed.
           {upload_id}/
-            part.{number:08d}        One file per uploaded part.
+            part.{number:08d}.{storage_id}   One file per write of a
+                                             part; the manifest says
+                                             which of them the object
+                                             is made of.
 
-    Parts are written once under a random `upload_id` directory (so no
-    temp-file-and-rename protocol is needed) and fsynced before the
-    data plane returns their ETag. The part files remain the committed
-    object's on-disk representation: downloads stream them in part
-    order, so completion never rewrites bytes.
+    Parts are written under a random `upload_id` directory and fsynced
+    before the store reports what they hold. The part files remain the
+    committed object's on-disk representation: downloads stream them in
+    part order, so completion never rewrites bytes.
     """
 
     def __init__(
@@ -164,23 +167,18 @@ class FilesystemBlobStore:
     ):
         self._directory = directory
         self._part_size = part_size
-        self._locks: dict[str, asyncio.Lock] = {}
         os.makedirs(directory, exist_ok=True)
+        # The store's own entry in its parent, not just its contents:
+        # fsyncing a directory persists what is in it, not its name,
+        # so without this a crash can take the whole store away along
+        # with every committed upload inside it.
+        parent = os.path.dirname(os.path.normpath(directory))
+        if parent:
+            _fsync_directory(parent)
 
     @property
     def directory(self) -> str:
         return self._directory
-
-    def lock_for(self, encoded_blob_id: str) -> asyncio.Lock:
-        """Serializes one blob's completion against the part `PUT`s
-        that publish its bytes.
-
-        Both run in this one process -- the server hosts the gRPC
-        service and the byte endpoint together -- so an in-process
-        lock is enough to make completion see a fixed set of parts.
-        Held only across a `PUT`'s final rename, not across the upload
-        itself, so parts still upload concurrently."""
-        return self._locks.setdefault(encoded_blob_id, asyncio.Lock())
 
     @property
     def part_size(self) -> int:
@@ -230,75 +228,45 @@ class FilesystemBlobStore:
         encoded_blob_id: str,
         upload_id: str,
         part_number: int,
+        storage_id: str,
     ) -> str:
+        """Where one part's bytes live.
+
+        Named by a value minted for the write that produced them as
+        well as by the part number, so that the name is immutable:
+        re-uploading a part writes a second file rather than replacing
+        the first, and what the manifest records is what a download
+        reads. Part numbers still order the object; storage IDs only
+        keep one part's writes apart. Deliberately not the ETag: MD5
+        is what the protocol calls for, and two different parts can
+        share one."""
         return os.path.join(
             self.blob_directory(encoded_blob_id),
             upload_id,
-            f"part.{part_number:08d}",
+            f"part.{part_number:08d}.{storage_id}",
         )
 
-    def _meta_path(self, encoded_blob_id: str) -> str:
-        return os.path.join(self.blob_directory(encoded_blob_id), "meta.json")
-
-    def read_meta(self, encoded_blob_id: str) -> Optional[BlobMetadata]:
-        try:
-            with open(self._meta_path(encoded_blob_id), "r") as f:
-                return BlobMetadata.from_json(json.load(f))
-        except FileNotFoundError:
-            return None
-
-    def _write_meta(
+    async def make_upload_directory(
         self,
-        encoded_blob_id: str,
-        meta: BlobMetadata,
+        blob_id: str,
+        upload_id: str,
     ) -> None:
-        # Write to a temp file and atomically rename, so a crash
-        # mid-write can never leave a torn `meta.json` that a
-        # concurrent `read_meta` would fail to parse.
-        path = self._meta_path(encoded_blob_id)
-        temp_path = f"{path}.{uuid4().hex}.tmp"
-        with open(temp_path, "w") as f:
-            json.dump(meta.to_json(), f)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(temp_path, path)
-        _fsync_path(os.path.dirname(path))
-
-    async def begin_upload(self, blob_id: str, content_type: str) -> str:
+        """Prepares the directory a session's parts are written into."""
         encoded = _encode_blob_id(blob_id)
 
         def sync():
-            # Idempotent by blob ID: if an uncommitted session already
-            # exists (a retried `BeginUpload`), reuse it rather than
-            # orphaning it under a fresh upload ID.
-            existing = self.read_meta(encoded)
-            if (
-                existing is not None and not existing.committed and
-                existing.upload_id is not None
-            ):
-                upload_id = existing.upload_id
-                reuse = True
-            else:
-                upload_id = uuid4().hex
-                reuse = False
-            # Create the upload directory (and, with it, the blob
-            # directory) before writing `meta.json` into the latter.
             os.makedirs(
                 os.path.join(self.blob_directory(encoded), upload_id),
                 exist_ok=True,
             )
-            if not reuse:
-                self._write_meta(
-                    encoded,
-                    BlobMetadata(
-                        content_type=content_type,
-                        committed=False,
-                        upload_id=upload_id,
-                    ),
-                )
-            return upload_id
+            # Each directory is made durable before anything is
+            # written into it: a part file fsynced into a directory
+            # entry that a crash then loses is a manifest naming bytes
+            # that are not there.
+            _fsync_directory(self._directory)
+            _fsync_directory(self.blob_directory(encoded))
 
-        return await asyncio.to_thread(sync)
+        await asyncio.to_thread(sync)
 
     def part_put_url(
         self,
@@ -312,101 +280,9 @@ class FilesystemBlobStore:
             encoded, upload_id, part_number, expiration
         )
         return (
-            f"{HTTP_PATH_PREFIX}/{encoded}/{upload_id}/parts/{part_number}"
-            f"?exp={expiration}&sig={signature}"
+            f"{PART_PATH}?blob={encoded}&upload={upload_id}"
+            f"&part={part_number}&exp={expiration}&sig={signature}"
         )
-
-    async def complete(
-        self,
-        blob_id: str,
-        upload_id: str,
-        content_type: str,
-        parts: list[UploadedPart],
-        max_size: Optional[int] = None,
-    ) -> str:
-
-        def sync():
-            encoded = _encode_blob_id(blob_id)
-            digests = []
-            manifest: list[PartRecord] = []
-            total_size = 0
-            last_part_number = max(part.number for part in parts)
-            for part in sorted(parts, key=lambda part: part.number):
-                path = self.part_path(encoded, upload_id, part.number)
-                digest = hashlib.md5()
-                size = 0
-                try:
-                    with open(path, "rb") as f:
-                        while chunk := f.read(1024 * 1024):
-                            digest.update(chunk)
-                            size += len(chunk)
-                except FileNotFoundError:
-                    raise BlobStoreError(
-                        f"part {part.number} was never uploaded"
-                    )
-                if digest.hexdigest() != part.etag.strip('"'):
-                    raise BlobStoreError(
-                        f"part {part.number} ETag mismatch: the uploaded "
-                        "bytes do not match what was reported via "
-                        "`PartUploaded`"
-                    )
-                if size != part.size:
-                    raise BlobStoreError(
-                        f"part {part.number} size mismatch: uploaded "
-                        f"{size} bytes but {part.size} were reported via "
-                        "`PartUploaded`"
-                    )
-                if part.number != last_part_number and size != self.part_size:
-                    # S3 rejects a short middle part with
-                    # `EntityTooSmall`; reject it here too, so that an
-                    # upload which cannot commit against the S3 store
-                    # cannot commit against this one either.
-                    raise BlobStoreError(
-                        f"part {part.number} is {size} bytes, but every "
-                        f"part except the last must be exactly "
-                        f"{self.part_size} bytes"
-                    )
-                total_size += size
-                digests.append(digest.digest())
-                manifest.append(
-                    PartRecord(number=part.number, size=size)
-                )
-
-            # Verify the *real* total against `max_size` (not the
-            # already-checked reported sizes) as defense in depth.
-            if max_size is not None and total_size > max_size:
-                raise BlobStoreError(
-                    f"uploaded {total_size} bytes exceeds the maximum of "
-                    f"{max_size}"
-                )
-
-            # Composite ETag, S3-style: the MD5 of the concatenated
-            # part MD5 digests, suffixed with the part count.
-            etag = (
-                hashlib.md5(b"".join(digests)).hexdigest() + f"-{len(digests)}"
-            )
-            self._write_meta(
-                encoded,
-                BlobMetadata(
-                    content_type=content_type,
-                    committed=True,
-                    upload_id=upload_id,
-                    etag=etag,
-                    parts=tuple(manifest),
-                ),
-            )
-            return etag
-
-        # Completion validates the bytes on disk and then records
-        # the ETag it computed from them. A part `PUT` landing in
-        # between would leave a committed blob whose bytes no
-        # longer match its recorded ETag, so hold the blob's lock
-        # across the whole of it. (S3 gets this for free: a
-        # concurrent `UploadPart` changes the part's ETag and
-        # `CompleteMultipartUpload` then fails with
-        # `InvalidPart`.)
-        async with self.lock_for(_encode_blob_id(blob_id)):
-            return await asyncio.to_thread(sync)
 
     def download_url(
         self,
@@ -423,24 +299,180 @@ class FilesystemBlobStore:
         expiration = int(time.time()) + ttl
         signature = self.signature_for_get(encoded, expiration)
         url = (
-            f"{HTTP_PATH_PREFIX}/{encoded}?exp={expiration}&sig={signature}"
+            f"{BLOB_PATH}?blob={encoded}&exp={expiration}&sig={signature}"
         )
         return url, ttl
 
-    async def delete(
+    async def stage_part(
         self,
-        blob_id: str,
-        upload_ids: Sequence[str] = (),
+        encoded_blob_id: str,
+        upload_id: str,
+        part_number: int,
+        chunks: AsyncIterator[bytes],
+    ) -> StagedPart:
+        """Writes one part's bytes under a name nothing reads, and
+        reports what they turned out to be, digesting them on the way
+        through so that the ETag describes what landed rather than
+        what was claimed.
+
+        The bytes land under a name minted for this write, which no
+        other write occupies; whether the object is *made of* them is
+        `StoredBlob`'s to say. Raises `PartTooLarge`, having kept
+        nothing, if the bytes exceed the part size."""
+        storage_id = uuid4().hex
+        temporary = os.path.join(
+            self.blob_directory(encoded_blob_id),
+            upload_id,
+            f"part.{part_number:08d}.{storage_id}.partial",
+        )
+        digest = hashlib.md5()
+        size = 0
+        try:
+            # A part is megabytes, so the writes go off the event loop
+            # for the same reason the download reads off it: this runs
+            # on the loop, and writing inline would stall every other
+            # request this server is handling.
+            async with aiofiles.open(temporary, "wb") as file:
+                async for chunk in chunks:
+                    if size + len(chunk) > self._part_size:
+                        raise PartTooLarge()
+                    digest.update(chunk)
+                    size += len(chunk)
+                    await file.write(chunk)
+                await file.flush()
+                # `aiofiles` has no `fsync`; `fileno()` is proxied
+                # straight through, so the descriptor is the real one.
+                await asyncio.to_thread(os.fsync, file.fileno())
+        except BaseException:
+            # Never leave a partial file behind to be mistaken for a
+            # part.
+            await asyncio.to_thread(_unlink_if_present, temporary)
+            raise
+
+        path = self.part_path(
+            encoded_blob_id, upload_id, part_number, storage_id
+        )
+        # Renamed into place rather than written there, so a download
+        # never catches a part half-written. Safe to do before the
+        # manifest claims these bytes, because the name is theirs
+        # alone: at worst they are left unclaimed.
+        await asyncio.to_thread(_publish, temporary, path)
+        return StagedPart(
+            part=WrittenPart(
+                number=part_number,
+                etag=digest.hexdigest(),
+                size=size,
+                storage_id=storage_id,
+            ),
+            path=path,
+        )
+
+    async def discard_storage_id(
+        self,
+        encoded_blob_id: str,
+        upload_id: str,
+        part_number: int,
+        storage_id: str,
     ) -> None:
-        # `upload_ids` is not needed here: a part lives inside the
-        # blob's own directory, so removing the directory removes any
-        # unfinished upload with it.
+        """Drops one write of a part by name."""
+        await asyncio.to_thread(
+            _unlink_if_present,
+            self.part_path(
+                encoded_blob_id, upload_id, part_number, storage_id
+            ),
+        )
+
+    async def discard_part(self, staged: StagedPart) -> None:
+        """Drops a part's bytes, for one the object turned out not to
+        be made of.
+
+        Safe because the name belongs to this write alone: no manifest
+        can be pointing at it unless this write's own `PublishPart`
+        succeeded."""
+        await asyncio.to_thread(_unlink_if_present, staged.path)
+
+    async def reclaim(
+        self,
+        encoded_blob_id: str,
+        upload_id: str,
+        keep: Sequence[tuple[int, str]],
+    ) -> None:
+        """Removes every part file of a session except the ones the
+        object is made of.
+
+        Called once the manifest is fixed, which is the first moment
+        it is known which versions of a part are not in the object:
+        a part re-uploaded with different bytes leaves its earlier
+        version behind, and a client that uploads more parts than it
+        commits leaves those. Until then the extra files are what
+        makes re-uploading a part safe, so they cannot be reclaimed
+        eagerly."""
+        directory = os.path.join(
+            self.blob_directory(encoded_blob_id), upload_id
+        )
+        wanted = {
+            os.path.basename(
+                self.part_path(
+                    encoded_blob_id, upload_id, number, storage_id
+                )
+            ) for number, storage_id in keep
+        }
+
+        def sync():
+            try:
+                names = os.listdir(directory)
+            except FileNotFoundError:
+                return
+            for name in names:
+                if name in wanted:
+                    continue
+                if name.endswith(".partial"):
+                    # A write still in flight. Its own writer removes
+                    # it if it fails and renames it if it succeeds;
+                    # taking it here would turn that writer's refusal
+                    # into a failure to rename.
+                    continue
+                _unlink_if_present(os.path.join(directory, name))
+
+        await asyncio.to_thread(sync)
+
+    async def read_part(
+        self,
+        encoded_blob_id: str,
+        upload_id: str,
+        part_number: int,
+        storage_id: str,
+    ) -> AsyncIterator[bytes]:
+        """Streams one part's bytes: the write the object's manifest
+        recorded, and no later write of that part."""
+        path = self.part_path(
+            encoded_blob_id, upload_id, part_number, storage_id
+        )
+        # Read off the event loop: this generator is driven by it, and
+        # a part is megabytes, so reading inline would stall every
+        # other request this server is handling.
+        async with aiofiles.open(path, "rb") as file:
+            while chunk := await file.read(_STREAM_CHUNK_SIZE):
+                yield chunk
+
+    async def upload_directory_exists(
+        self,
+        encoded_blob_id: str,
+        upload_id: str,
+    ) -> bool:
+        return await asyncio.to_thread(
+            os.path.isdir,
+            os.path.join(self.blob_directory(encoded_blob_id), upload_id),
+        )
+
+    async def delete(self, blob_id: str) -> None:
+        """Removes every byte this store holds for a blob."""
         encoded = _encode_blob_id(blob_id)
 
         def sync():
-            # Only a blob that is already gone is ignored: any
-            # other failure must reach the caller, or `PerformRemove`
-            # would report bytes deleted that are still on disk.
+            # Only a blob that is already gone is ignored: any other
+            # failure must reach the caller, or `PerformRemove` would
+            # report bytes deleted that are still on disk.
             try:
                 shutil.rmtree(self.blob_directory(encoded))
             except FileNotFoundError:

@@ -10,7 +10,6 @@ from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.wait_for_tasks import wait_for_tasks
 from starlette.requests import Request  # type: ignore[import]
-from starlette.routing import compile_path  # type: ignore[import]
 from starlette.types import Receive, Scope, Send  # type: ignore[import]
 from typing import (
     Any,
@@ -89,14 +88,10 @@ class PythonWebFramework(WebFramework):
         def __init__(self):
             self._api_routes: list[PythonWebFramework.APIRoute] = []
             self._mounts: list[PythonWebFramework.Mount] = []
-            # Route paths whose handlers receive an *app-internal*
+            # Exact request paths whose handlers receive an *app-internal*
             # context (one that can call app-internal-only servicers)
             # instead of the usual external one, because they opted in via
             # `app_internal=True`. See the DANGER note in `_api_route`.
-            # These are route paths, so they may carry `{parameters}`;
-            # they are matched as such, not compared literally. Kept as
-            # strings rather than compiled patterns because these routes
-            # are pickled to each server process.
             self._app_internal_paths: set[str] = set()
 
         def _api_route(self, path: str, **kwargs):
@@ -115,6 +110,16 @@ class PythonWebFramework(WebFramework):
             # validated. Never set it on a route that acts on unvalidated
             # request input.
             if kwargs.pop("app_internal", False):
+                if "{" in path:
+                    # The check below compares whole request paths, so
+                    # a route with parameters would never match its own
+                    # requests and would quietly serve them with the
+                    # external context it did not ask for.
+                    raise ValueError(
+                        f"`app_internal=True` needs a path without "
+                        f"parameters, but '{path}' has them; put the "
+                        "parameters in the query instead."
+                    )
                 self._app_internal_paths.add(path)
 
             # TODO: add type annotations for `endpoint` so that what
@@ -286,15 +291,6 @@ class PythonWebFramework(WebFramework):
 
         fastapi = FastAPI()
 
-        # A route path may carry `{parameters}`, so an app-internal
-        # route is recognized by matching the request against the
-        # route's own pattern. Comparing the two as strings would quietly
-        # hand a parameterized route the external context it did not ask
-        # for.
-        app_internal_patterns = [
-            compile_path(path)[0] for path in self._http._app_internal_paths
-        ]
-
         @fastapi.middleware("http")
         async def external_context_middleware(request: Request, call_next):
             # Most routes get an *external* context (no `caller_id`): an
@@ -305,10 +301,7 @@ class PythonWebFramework(WebFramework):
             # `app_internal=True` get an *app-internal* context instead —
             # see the DANGER note on `HTTP._api_route`. We namespace this
             # on `request.state` so other middleware doesn't clash.
-            if any(
-                pattern.fullmatch(request.url.path)
-                for pattern in app_internal_patterns
-            ):
+            if request.url.path in self._http._app_internal_paths:
                 request.state.reboot_external_context = (
                     app_internal_external_context_from_request(request)
                 )
@@ -316,6 +309,15 @@ class PythonWebFramework(WebFramework):
                 request.state.reboot_external_context = (
                     external_context_from_request(request)
                 )
+            # Offered rather than applied, for a handler that can
+            # establish a caller's right itself and only then wants to
+            # act on the application's behalf. Reaching for this is a
+            # handler saying it has done that; the route-level
+            # `app_internal=True` above, which grants the same thing
+            # on the strength of a path alone, cannot make that check.
+            request.state.reboot_app_internal_context = (
+                app_internal_external_context_from_request
+            )
 
             return await call_next(request)
 
