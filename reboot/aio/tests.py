@@ -2,7 +2,6 @@ import jwt
 import os
 import reboot.aio.reboot
 import secrets
-import tempfile
 import unittest
 from reboot.aio.applications import Application, NodeApplication
 from reboot.aio.auth.oauth import OAuth
@@ -23,12 +22,11 @@ from reboot.aio.reboot import ApplicationRevision
 from reboot.aio.servicers import Servicer
 from reboot.run_environments import in_nodejs, on_cloud, running_rbt_serve
 from reboot.settings import (
+    ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG,
     ENVVAR_REBOOT_IN_TEST,
 )
-from reboot.std.blob.v1._data_plane import ENVVAR_BLOB_DATA_PLANE_URL
-from reboot.std.blob.v1._filesystem_server import FilesystemDataPlane
 from typing import (
     Any,
     Awaitable,
@@ -166,47 +164,6 @@ class Reboot(reboot.aio.reboot.Reboot):
         os.environ[ENVVAR_REBOOT_IN_TEST] = 'true'
         # The application under test, or `None` before one is started.
         self._application: Optional[Application] = None
-        self._blob_data_plane: Optional[FilesystemDataPlane] = None
-        self._blob_data_plane_directory: Optional[tempfile.TemporaryDirectory
-                                                 ] = None
-
-    async def start(self):
-        result = await super().start()
-        # Run a filesystem blob data plane for the duration of the
-        # test, so that applications using `reboot.std.blob` work in
-        # unit tests exactly as they do under `rbt dev run` (which
-        # spawns the same data plane). An already-configured data plane
-        # is honored, mirroring the CLI — including one set up by
-        # another live `Reboot` instance in this process, which then
-        # must outlive this instance's use of it.
-        if not os.environ.get(ENVVAR_BLOB_DATA_PLANE_URL):
-            self._blob_data_plane_directory = tempfile.TemporaryDirectory(
-                prefix="reboot-test-blobs-"
-            )
-            self._blob_data_plane = await FilesystemDataPlane.start(
-                directory=self._blob_data_plane_directory.name,
-            )
-            os.environ[ENVVAR_BLOB_DATA_PLANE_URL] = (
-                self._blob_data_plane.url
-            )
-        return result
-
-    async def stop(self) -> None:
-        try:
-            await super().stop()
-        finally:
-            if self._blob_data_plane is not None:
-                await self._blob_data_plane.stop()
-                # Only clear the env var if it still points at our data
-                # plane; another `Reboot` instance may have replaced it
-                # with its own in the meantime.
-                if os.environ.get(ENVVAR_BLOB_DATA_PLANE_URL
-                                 ) == (self._blob_data_plane.url):
-                    os.environ.pop(ENVVAR_BLOB_DATA_PLANE_URL, None)
-                self._blob_data_plane = None
-            if self._blob_data_plane_directory is not None:
-                self._blob_data_plane_directory.cleanup()
-                self._blob_data_plane_directory = None
 
     async def make_valid_oauth_access_token(
         self,
@@ -466,6 +423,16 @@ class Reboot(reboot.aio.reboot.Reboot):
 
         # Should only have `application`, `local_envoy`,
         # `local_envoy_port`, `servers`, `effect_validation`.
+
+        # Published for the libraries set up below and the servers
+        # brought up after them, just as `Application.run()` does for a
+        # real run. Published at `up` rather than at construction
+        # because an `Application` a test constructs under a faked
+        # `RBT_DEV` builds a `Reboot` of its own from this variable,
+        # and that one needs a directory of its own rather than this
+        # harness's database, which is open in this same process.
+        if self.state_directory is not None:
+            os.environ[ENVVAR_RBT_STATE_DIRECTORY] = str(self.state_directory)
 
         # Do any pre-run library set up, just like `Application.run()`
         # does; e.g. a library may register HTTP routes. Libraries must

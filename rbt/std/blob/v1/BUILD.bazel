@@ -41,6 +41,28 @@ py_reboot_library(
     visibility = ["//visibility:public"],
 )
 
+# The filesystem data plane's own metadata state. Python-only: it is
+# an implementation detail of one data plane, not part of any client's
+# API.
+proto_library(
+    name = "filesystem_proto",
+    srcs = [
+        ":filesystem.proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "filesystem_py_reboot",
+    proto = "filesystem.proto",
+    proto_library = ":filesystem_proto",
+    visibility = ["//visibility:public"],
+)
+
 py_reboot_library(
     name = "blob_py_reboot",
     proto = "blob.proto",
