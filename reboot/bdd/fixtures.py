@@ -10,6 +10,7 @@ from jsonpath_ng.exceptions import JSONPathError
 from pydantic import ValidationError
 from reboot.aio.aborted import Aborted
 from reboot.aio.external import ExternalContext
+from reboot.aio.signals import initialize_signals_once
 from reboot.aio.tests import Reboot
 from reboot.api import Model
 from reboot.bdd.loop import EventLoopThread, start_event_loop, stop_event_loop
@@ -22,6 +23,11 @@ def reboot_event_loop() -> Iterator[EventLoopThread]:
     `async def` step run on. One loop per scenario, the way one
     application runs on one event loop under `rbt dev run` and
     `rbt serve`."""
+    # The process signal handlers can only be installed on the main
+    # thread, which pytest runs fixtures on; a scenario's steps run on
+    # the loop's thread, where starting an Envoy in Docker would
+    # otherwise install them and fail.
+    initialize_signals_once()
     event_loop = start_event_loop()
     try:
         yield event_loop
