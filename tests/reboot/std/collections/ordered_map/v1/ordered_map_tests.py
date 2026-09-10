@@ -72,6 +72,28 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
 
         return ordered_map
 
+    async def create_ordered_map_with_two_leaves(
+        self,
+        context,
+    ) -> OrderedMap.WeakReference:
+        """
+        Returns a map holding "10", "20", "30", and "40", split into the
+        leaves ["10", "20"] and ["30", "40"].
+        """
+        ordered_map = OrderedMap.ref("test-map")
+        await ordered_map.Create(context, degree=4, maintain_size=True)
+
+        for key in ["10", "20", "30", "40"]:
+            await ordered_map.Insert(context, key=key, value=from_str(key))
+
+        response = await ordered_map.Stringify(context)
+        self.assertEqual(
+            response.value,
+            "Inner: ['30']\n  Leaf: ['10', '20']\n  Leaf: ['30', '40']\n",
+        )
+
+        return ordered_map
+
     async def test_insert_basic(self) -> None:
         """
         Test that we can insert multiple strings into the B+ tree
@@ -609,6 +631,41 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(entry.HasField("value"))
             self.assertEqual(as_str(entry.value), expected_value)
 
+    async def test_range_from_any_start_key(self) -> None:
+        """
+        Test that a range holds exactly the keys at or after its start
+        key, including when the start key comes after the last key of
+        the leaf it falls in, or after every key.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = await self.create_ordered_map_with_two_leaves(context)
+
+        expected = {
+            "05": ["10", "20", "30", "40"],  # Before every key.
+            "15": ["20", "30", "40"],
+            "25": ["30", "40"],  # After the first leaf's last key.
+            "35": ["40"],
+            "45": [],  # After every key.
+        }
+
+        for start_key, keys in expected.items():
+            response = await ordered_map.Range(
+                context, start_key=start_key, limit=4
+            )
+            self.assertEqual(
+                [entry.key for entry in response.entries],
+                keys,
+                f"start_key={start_key!r}",
+            )
+
     async def test_range_exceeding_limit(self) -> None:
         """
         Test that we can successfully fetch a range with a limit that
@@ -806,6 +863,40 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(entry.key, expected_key)
             self.assertTrue(entry.HasField("value"))
             self.assertEqual(as_str(entry.value), expected_value)
+
+    async def test_reverse_range_from_any_start_key(self) -> None:
+        """
+        Test that a reverse range holds exactly the keys at or before its
+        start key, including when the start key comes before every key.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = await self.create_ordered_map_with_two_leaves(context)
+
+        expected = {
+            "05": [],  # Before every key.
+            "15": ["10"],
+            "25": ["20", "10"],
+            "35": ["30", "20", "10"],
+            "45": ["40", "30", "20", "10"],  # After every key.
+        }
+
+        for start_key, keys in expected.items():
+            response = await ordered_map.ReverseRange(
+                context, start_key=start_key, limit=4
+            )
+            self.assertEqual(
+                [entry.key for entry in response.entries],
+                keys,
+                f"start_key={start_key!r}",
+            )
 
     async def test_reverse_range_exceeding_limit(self) -> None:
         """
