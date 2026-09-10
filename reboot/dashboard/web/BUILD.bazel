@@ -9,14 +9,18 @@ ts_config(
 ts_project(
     name = "dashboard_ts",
     srcs = [
+        "src/application.ts",
         "src/callgraph.ts",
         "src/changelog.ts",
         "src/constants.ts",
         "src/feature_files.ts",
         "src/features.ts",
         "src/graph.tsx",
+        "src/json_tree.tsx",
         "src/link_properties_to_data_types.ts",
         "src/main.tsx",
+        "src/picker.tsx",
+        "src/states.tsx",
     ],
     declaration = True,
     tsconfig = ":tsconfig",
@@ -24,6 +28,7 @@ ts_project(
     visibility = ["//tests/reboot/dashboard:__pkg__"],
     deps = [
         "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@reboot-dev/reboot-api",
         "//:node_modules/@reboot-dev/reboot-react",
         "//:node_modules/@reboot-dev/reboot-std",
         "//:node_modules/@reboot-dev/reboot-std-api",
@@ -42,6 +47,7 @@ ts_project(
         "//rbt/v1alpha1/api:schema_js_proto",
         "//rbt/v1alpha1/bdd:feature_js_proto",
         "//rbt/v1alpha1/bdd:grammar_js_proto",
+        "//rbt/v1alpha1/inspect:inspect_js_proto",
     ],
 )
 

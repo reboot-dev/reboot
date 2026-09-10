@@ -2099,9 +2099,9 @@ header .state-type-description {
   margin-right: 4px;
 }
 
-/* The box the state types to filter by are chosen in: the chosen
-   ones as chips, then the cursor. */
-.type-picker {
+/* The box the items to filter by are chosen in, state types on the
+   features page: the chosen ones as chips, then the cursor. */
+.picker {
   position: relative;
   display: flex;
   flex-wrap: wrap;
@@ -2115,11 +2115,11 @@ header .state-type-description {
   cursor: text;
 }
 
-.type-picker.is-open {
+.picker.is-open {
   border-color: hsl(var(--border-strong));
 }
 
-.type-picker-input {
+.picker-input {
   flex: 1;
   min-width: 24px;
   font: inherit;
@@ -2131,9 +2131,9 @@ header .state-type-description {
   color: hsl(var(--foreground));
 }
 
-/* The state types not yet chosen, listed under the box while the
-   cursor is in it. */
-.type-picker-menu {
+/* The items not yet chosen, listed under the box while the cursor
+   is in it. */
+.picker-menu {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
@@ -2150,24 +2150,24 @@ header .state-type-description {
   box-shadow: 0 6px 20px hsl(0 0% 0% / 0.08);
 }
 
-.type-picker-item {
+.picker-item {
   padding: 3px 4px;
   border-radius: 4px;
   cursor: pointer;
 }
 
-.type-picker-item:hover {
+.picker-item:hover {
   background: hsl(var(--muted));
 }
 
-.type-picker-none {
+.picker-none {
   padding: 4px 6px;
   font-size: 12px;
   color: hsl(var(--muted-foreground));
 }
 
-/* A state type that filters the index: a chip, lit while filtering. */
-.state-type-chip {
+/* An item that filters a list: a chip, lit while filtering. */
+.chip {
   font-family: ui-monospace, Menlo, monospace;
   font-size: 11px;
   padding: 1px 7px;
@@ -2178,11 +2178,11 @@ header .state-type-description {
   cursor: pointer;
 }
 
-.state-type-chip:hover {
+.chip:hover {
   border-color: hsl(var(--border-strong));
 }
 
-.state-type-chip.is-active {
+.chip.is-active {
   background: hsl(var(--primary));
   border-color: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
@@ -2639,4 +2639,304 @@ header .state-type-description {
   gap: 6px 14px;
   font-family: ui-monospace, Menlo, monospace;
   font-size: 12px;
+}
+
+/* --- Instances --- */
+
+/* On the models page the types pane splits: the type above, its
+   instances below, and between them a divider that is dragged. */
+.types-pane-split .types-pane-body {
+  height: 100%;
+}
+
+.instances-resizer {
+  position: relative;
+  height: 9px;
+  margin: -4px 0;
+  z-index: 5;
+}
+
+.instances-resizer::after {
+  content: "";
+  position: absolute;
+  inset: 4px 0;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.instances-resizer[data-separator="hover"]::after,
+.instances-resizer[data-separator="active"]::after,
+.instances-resizer:focus-visible::after {
+  background: hsl(var(--primary));
+}
+
+.instances {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+}
+
+/* With only a line to say, the section is that line tall and the
+   type above takes the rest. */
+.instances-brief {
+  height: auto;
+  flex: none;
+}
+
+/* The head is set like a state type's section eyebrow. */
+.instances-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: hsl(45 30% 97%);
+  border-bottom: 1px solid hsl(var(--border));
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+
+/* Why there is nothing to list: the application is not running, or
+   has no instances of the type. */
+.instances-note {
+  margin: 0;
+  padding: 14px 20px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+  text-wrap: pretty;
+}
+
+.instances-note code {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+
+/* The search over the ids, and under it how many match. An id is
+   long; a chip and the listed ids break rather than push the box
+   wide. */
+.instances-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.instances-search .picker {
+  min-width: 0;
+}
+
+.instances-search .chip {
+  word-break: break-all;
+  text-align: left;
+}
+
+/* The ids, a row each, scrolling within the section; a row opens to
+   its data. */
+.instance-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.instance-row + .instance-row {
+  border-top: 1px solid hsl(var(--border-soft));
+}
+
+/* An open row is tinted so its data below reads as part of it. */
+.instance-row.is-open {
+  background: hsl(var(--accent) / 0.06);
+}
+
+.instance-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 14px;
+}
+
+.instance-row-head:hover {
+  background: hsl(var(--accent) / 0.08);
+}
+
+/* The id is the row's button, filling it so the whole row opens. */
+.instance-row-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 20px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.state-id {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 13px;
+  color: hsl(var(--primary));
+  word-break: break-all;
+}
+
+/* The copy button beside an id or a state's data; quiet until
+   hovered, and a word while it says it copied. */
+.copy-button {
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+  color: hsl(var(--muted-foreground));
+  background: none;
+  border: 0;
+  padding: 2px;
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.copy-button:hover,
+.copy-button.is-copied {
+  color: hsl(var(--foreground));
+  opacity: 1;
+}
+
+/* A state's data, boxed under its row and stepped in past the
+   caret. */
+.state-data {
+  margin: 0 14px 12px 34px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(45 30% 97%);
+  overflow: hidden;
+}
+
+.state-data-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid hsl(var(--border));
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: hsl(var(--muted-foreground));
+}
+
+.state-data-head .copy-button {
+  margin-left: auto;
+}
+
+.state-data-note {
+  padding: 12px 16px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12.5px;
+  font-style: italic;
+  color: hsl(240 3.8% 55%);
+}
+
+/* --- A state's JSON as a tree --- */
+
+.json-tree {
+  padding: 12px 16px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.json-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* An object's or array's row is a button that opens it; it looks
+   like every other row. */
+.json-toggle {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.json-toggle:hover .json-name,
+.json-toggle:hover .json-bracket {
+  color: hsl(var(--primary));
+}
+
+.json-colon {
+  color: hsl(240 3.8% 55%);
+}
+
+.json-kind {
+  color: hsl(28 70% 42%);
+  font-size: 11.5px;
+}
+
+.json-leaf {
+  color: hsl(var(--primary));
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.json-null,
+.json-boolean {
+  color: hsl(var(--muted-foreground));
+}
+
+.json-count {
+  color: hsl(240 3.8% 55%);
+  font-style: italic;
+  font-size: 11.5px;
+}
+
+/* A value that is not what it was: a wash of the accent behind it
+   that fades, so the eye is drawn to what moved. The element is
+   remounted on each change, which is what restarts the animation. */
+@keyframes json-flash {
+  from {
+    background: hsl(var(--accent) / 0.5);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.json-leaf.is-changed,
+.json-count.is-changed {
+  animation: json-flash 1.2s ease-out;
+  border-radius: 3px;
+  padding: 0 2px;
+  margin: 0 -2px;
+}
+
+/* The items under an open object or array, stepped in past the
+   caret with a line down their left, so where each level ends can be
+   seen. */
+.json-items {
+  padding-left: 22px;
+  border-left: 1px solid hsl(var(--border-strong));
+  margin-left: 5px;
 }

@@ -113,6 +113,9 @@ import {
   undescribedMethods,
 } from "./features";
 import { drawnCallCount, GraphPage } from "./graph";
+import { useApplicationUrl, useStateIds, useStateTypes } from "./application";
+import { Picker } from "./picker";
+import { type Instances, InstancesSplit } from "./states";
 
 // One subscriber per tab, for as long as the tab is open.
 const SUBSCRIBER_ID = uuidv4();
@@ -257,7 +260,9 @@ const Description: FC<{ className: string; text: string }> = ({
 // do, each joined with the scenarios, state types and code that make
 // it up; and `changelog` is its history. The state types the API
 // declares and the data types those declare in turn are not pages
-// but the types pane, which every page carries on its right.
+// but the types pane, which every page carries on its right. On the
+// models page the pane also lists the type's instances, read from the
+// running application.
 const PAGES = ["models", "features", "changelog"] as const;
 
 type Page = typeof PAGES[number];
@@ -392,7 +397,7 @@ const PaneAnchor: FC<{ id: string }> = ({ id }) => (
 // `NavLink` is active when the route is this page or an id within it
 // (a `pathOfTypeOnPage` route), and sets `aria-current` itself. The
 // links carry the types pane's search parameter, so switching pages
-// keeps the pane as it is.
+// keeps the pane as it is, except to a page that has no pane.
 const PageSelector: FC<{
   // Which pages have something the developer has not seen: what
   // changed since the page was last open. The others say nothing.
@@ -934,11 +939,13 @@ const DataType: FC<{
 
 // The types pane: one type, state or data, slid open by a link to it
 // from the graph or a page, every method expanded; the X closes it.
-// A link naming a method flashes the method.
+// A link naming a method flashes the method. Given the type's
+// instances, the pane lists them under the type.
 const TypesPane: FC<{
   apis: APIs;
   linkedDataTypes: LinkedDataType[];
   target: PaneTarget;
+  instances?: Instances;
   // The property a followed link named, if any.
   propertyName?: string;
   // The history entry that named the target, so a repeated link
@@ -953,6 +960,7 @@ const TypesPane: FC<{
   apis,
   linkedDataTypes,
   target,
+  instances,
   propertyName,
   flashKey,
   bodyRef,
@@ -981,6 +989,36 @@ const TypesPane: FC<{
     propertyName === undefined || flashKey === undefined
       ? undefined
       : { id: idOfPropertyInPane(typeId, propertyName), key: flashKey };
+  const definition = (
+    <div
+      className="types-pane-body"
+      ref={bodyRef}
+      onScroll={(event) => onScroll(event.currentTarget.scrollTop)}
+    >
+      {foundDataType !== undefined ? (
+        <DataType
+          linkedDataType={foundDataType}
+          flashProperty={flashProperty}
+        />
+      ) : found === undefined ? (
+        <div className="empty">
+          <code>{shortNameOfTypeName(typeId)}</code> is not declared in your
+          API, just used by your code.
+        </div>
+      ) : (
+        <StateType
+          api={found.api}
+          stateType={found.stateType}
+          flash={
+            target.method === undefined || flashKey === undefined
+              ? undefined
+              : { method: target.method, key: flashKey }
+          }
+          flashProperty={flashProperty}
+        />
+      )}
+    </div>
+  );
   return (
     <div className="types-pane">
       <div className="types-pane-header">
@@ -995,34 +1033,11 @@ const TypesPane: FC<{
           ×
         </button>
       </div>
-      <div
-        className="types-pane-body"
-        ref={bodyRef}
-        onScroll={(event) => onScroll(event.currentTarget.scrollTop)}
-      >
-        {foundDataType !== undefined ? (
-          <DataType
-            linkedDataType={foundDataType}
-            flashProperty={flashProperty}
-          />
-        ) : found === undefined ? (
-          <div className="empty">
-            <code>{shortNameOfTypeName(typeId)}</code> is not declared in your
-            API, just used by your code.
-          </div>
-        ) : (
-          <StateType
-            api={found.api}
-            stateType={found.stateType}
-            flash={
-              target.method === undefined || flashKey === undefined
-                ? undefined
-                : { method: target.method, key: flashKey }
-            }
-            flashProperty={flashProperty}
-          />
-        )}
-      </div>
+      {instances === undefined ? (
+        definition
+      ) : (
+        <InstancesSplit definition={definition} instances={instances} />
+      )}
     </div>
   );
 };
@@ -1790,124 +1805,6 @@ const TagPill: FC<{ tag: "wip" | "blocked"; title?: string }> = ({
   </span>
 );
 
-// A state type as a chip that filters the index by it; lit while it
-// is filtering.
-const StateTypeChip: FC<{
-  type: string;
-  active: boolean;
-  onToggle: (type: string) => void;
-}> = ({ type, active, onToggle }) => (
-  <button
-    type="button"
-    className={active ? "state-type-chip is-active" : "state-type-chip"}
-    onClick={() => onToggle(type)}
-    title={active ? `Stop filtering by ${type}` : `Filter by ${type}`}
-  >
-    {type}
-  </button>
-);
-
-// The state types the index is filtered by, chosen in a box that
-// holds the chosen ones as chips and, at the cursor after them, lists
-// the rest as you type: a click on a listed type adds it and shows
-// the list again, Enter takes the first listed, Escape closes the
-// list, and a click on a chosen chip removes it.
-const StateTypePicker: FC<{
-  stateTypes: string[];
-  selected: string[];
-  onToggle: (type: string) => void;
-}> = ({ stateTypes, selected, onToggle }) => {
-  const [text, setText] = useState("");
-  const [open, setOpen] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
-  const listed = stateTypes.filter(
-    (type) =>
-      !selected.includes(type) &&
-      type.toLowerCase().includes(text.trim().toLowerCase())
-  );
-  const choose = (type: string) => {
-    onToggle(type);
-    setText("");
-    input.current?.focus();
-  };
-  return (
-    <div
-      className={open ? "type-picker is-open" : "type-picker"}
-      onMouseDown={(event) => {
-        // A click on the box's empty part puts the cursor there; a
-        // click on a chip or the list is theirs to handle.
-        if (event.target === event.currentTarget) {
-          event.preventDefault();
-          input.current?.focus();
-        }
-      }}
-    >
-      {selected.map((type) => (
-        <StateTypeChip type={type} active onToggle={onToggle} key={type} />
-      ))}
-      <input
-        ref={input}
-        type="text"
-        className="type-picker-input"
-        placeholder={
-          selected.length === 0 && stateTypes.length > 0
-            ? `State type, e.g., ${stateTypes[0]} ...`
-            : ""
-        }
-        value={text}
-        size={Math.max(text.length, selected.length === 0 ? 26 : 2)}
-        onChange={(event) => setText(event.target.value)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && listed.length > 0) {
-            event.preventDefault();
-            choose(listed[0]);
-          } else if (event.key === "Escape") {
-            setText("");
-            input.current?.blur();
-          } else if (
-            event.key === "Backspace" &&
-            text === "" &&
-            selected.length > 0
-          ) {
-            onToggle(selected[selected.length - 1]);
-          }
-        }}
-        aria-label="Filter by state type"
-      />
-      {open && (
-        <ul className="type-picker-menu" role="listbox">
-          {listed.length === 0 ? (
-            <li className="type-picker-none">
-              {stateTypes.length === selected.length
-                ? "Every state type is chosen"
-                : "No state type matches"}
-            </li>
-          ) : (
-            listed.map((type) => (
-              <li
-                className="type-picker-item"
-                role="option"
-                aria-selected={false}
-                // Chosen on mouse down, before the input's blur closes
-                // the list.
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  choose(type);
-                }}
-                key={type}
-              >
-                <code className="state-type-chip">{type}</code>
-              </li>
-            ))
-          )}
-        </ul>
-      )}
-    </div>
-  );
-};
-
 // What the index shows: words to find anywhere in a feature, and
 // the state types a feature must name, chosen from every type the
 // features name.
@@ -1939,10 +1836,12 @@ const FeaturesSearch: FC<{
     />
     <div className="features-search-types">
       <span className="features-search-label">filter by</span>
-      <StateTypePicker
-        stateTypes={stateTypes}
+      <Picker
+        items={stateTypes}
         selected={filter.stateTypes}
+        what="state type"
         onToggle={onToggleStateType}
+        listsAllWhenEmpty
       />
       <WebAppToggle
         active={filter.webApp}
@@ -2709,6 +2608,44 @@ const Overview: FC<{
     [graphStateTypes]
   );
 
+  // The running application, read for the instances of the state type
+  // the models page's pane shows. A browser holds few connections to
+  // it at once, and shares them with every tab open on the
+  // application itself, so only the two streams the pane shows are
+  // held open, and only while it shows them. The application may not
+  // be running, which the pane says.
+  const applicationUrl = useApplicationUrl();
+  const instancesType = page === "models" ? paneTarget?.stateTypeId : undefined;
+  const { value: servedStateTypes, unreachable: applicationUnreachable } =
+    useStateTypes(instancesType === undefined ? undefined : applicationUrl);
+  const served =
+    instancesType !== undefined &&
+    servedStateTypes !== undefined &&
+    servedStateTypes.includes(instancesType);
+  const { value: instanceIds } = useStateIds(
+    applicationUrl,
+    served ? instancesType : undefined
+  );
+  const instances: Instances | undefined =
+    instancesType === undefined
+      ? undefined
+      : applicationUnreachable
+      ? { kind: "not-running" }
+      : servedStateTypes === undefined
+      ? { kind: "reading" }
+      : !served
+      ? { kind: "not-served" }
+      : instanceIds === undefined
+      ? { kind: "reading" }
+      : {
+          kind: "ids",
+          url: applicationUrl,
+          stateType: instancesType,
+          ids: instanceIds,
+        };
+
+  const location = useLocation();
+
   const eyebrow =
     page === "changelog"
       ? "history"
@@ -2784,7 +2721,6 @@ const Overview: FC<{
   );
 
   const pane = useRef<HTMLDivElement>(null);
-  const location = useLocation();
   const loaded = !(isLoading && stateTypeCount === 0) && preferencesLoaded;
 
   const typesBody = useRef<HTMLDivElement>(null);
@@ -3049,6 +2985,7 @@ const Overview: FC<{
                   apis={apis}
                   linkedDataTypes={linkedDataTypes}
                   target={paneTarget}
+                  instances={instances}
                   propertyName={paneProperty}
                   flashKey={returning ? undefined : location.key}
                   bodyRef={typesBody}
