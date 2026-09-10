@@ -26,6 +26,14 @@ class AbstractLibrary(ABC):
         """
         raise NotImplementedError
 
+    def legacy_grpc_servicers(self) -> Sequence[type]:
+        """
+        Return the list of plain gRPC servicers for this library, for a
+        library that offers an interface predating Reboot or shared
+        with something that does not speak Reboot.
+        """
+        return []
+
     async def initialize(self, context: InitializeContext) -> None:
         """
         A function to allow libraries to run initialize steps after the
