@@ -16,7 +16,7 @@ more than the command itself.
 | `rbt generate` | Generate server, client, and React code from your API definitions. |
 | `rbt dev run` | Run your application for development, regenerating code and restarting on change. |
 | `rbt dev expunge` | Delete the state a named development application has persisted. |
-| `rbt dashboard` | Serve the developer dashboard, which watches your API directory as you write it. |
+| `rbt dashboard` | Serve the developer dashboard, which watches your API directory and your [feature files](/features) as you write them. Needs the `reboot[dev]` extra installed. |
 | `rbt inspect type list` | List the state types a running application serves. |
 | `rbt inspect state list` | List the state IDs of one type. |
 | `rbt inspect state get` | Print one instance's state as JSON. |

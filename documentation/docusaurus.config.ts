@@ -231,7 +231,7 @@ const config: Config = {
       prism: {
         theme: prismThemes.github,
         darkTheme: prismThemes.dracula,
-        additionalLanguages: ["protobuf", "bash"],
+        additionalLanguages: ["protobuf", "bash", "gherkin"],
       },
     },
 };

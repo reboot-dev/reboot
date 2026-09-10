@@ -59,7 +59,8 @@ If you build with the Reboot plugin for Claude Code or Codex:
 
 2. Bump your dependency pins to the new version — all of them:
 
-   - `pyproject.toml`: `reboot==X.Y.Z`
+   - `pyproject.toml`: `reboot==X.Y.Z` and, in your development
+     dependencies, `reboot[dev]==X.Y.Z`
    - `package.json`: `@reboot-dev/reboot` (and any other
      `@reboot-dev/*` packages)
    - `Dockerfile`: `FROM ghcr.io/reboot-dev/reboot-base:X.Y.Z`

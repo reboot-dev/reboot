@@ -200,6 +200,7 @@ const sidebars = {
         "idempotency",
         "errors",
         "secrets",
+        "features",
         "testing",
       ],
     },

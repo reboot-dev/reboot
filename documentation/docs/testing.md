@@ -1,5 +1,13 @@
 # Test your application
 
+In Python, an application's behavior is specified and tested with
+[feature files](/features): Gherkin scenarios that call the
+application through built-in steps and, for a web app, drive it in a
+browser. This page covers the test harness those scenarios run on,
+which you use directly for what a scenario cannot express, such as
+crashing the application in the middle of a method, and for
+TypeScript tests.
+
 ## Unit Testing
 
 Testing a Reboot application typically involves testing the servicers you have

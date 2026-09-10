@@ -47,7 +47,11 @@ def unindent_markdown_section(content):
             if new_lines and new_lines[-1].strip():
                 new_lines.append("\n")
             inside_code_block = True
-            new_lines.append(line)
+            # Prism highlights Gherkin under `gherkin`, but the tool
+            # fences a `.feature` file by its extension.
+            new_lines.append(
+                line.replace(CODE_FENCE + "feature", CODE_FENCE + "gherkin")
+            )
         elif inside_code_block and line.lstrip().startswith(CODE_FENCE):
             if code_block_content:
                 unindented_code = unindent_code_snippet(
