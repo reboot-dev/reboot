@@ -1025,7 +1025,8 @@ const TypesPane: FC<{
       <div className="types-pane-body">
         {found === undefined ? (
           <div className="empty">
-            <code>{target.stateTypeId}</code> is no longer declared.
+            <code>{shortNameOfTypeName(target.stateTypeId)}</code> is not
+            declared in your API, just used by your code.
           </div>
         ) : (
           <StateType
