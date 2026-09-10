@@ -2,7 +2,9 @@
 the application under development.
 
 These tests run the dashboard under the `Reboot()` harness, write the
-API state directly, and drive the served page with a browser.
+API state directly, and drive the served page with a browser: the
+models page, whose types pane shows a state type named in the URL's
+`type` parameter and a data type named in its `data` parameter.
 """
 import asyncio
 import socket
@@ -262,16 +264,18 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             driver.quit()
 
     async def test_describes_what_the_api_files_declare(self) -> None:
-        # The page shows a state type because a file on disk declares
-        # one, with no generated code, no build and no running
-        # application. A half-written file is the normal case while
-        # someone is typing, so the page shows the error beside the
-        # state types it last parsed rather than in place of them.
+        # The types pane shows a state type because a file on disk
+        # declares one, with no generated code, no build and no
+        # running application. A half-written file is the normal case
+        # while someone is typing, so the page shows the error beside
+        # the state types it last parsed rather than in place of them.
         def body(driver):
-            driver.get(f'{self.url}{DASHBOARD_PATH}/#/state')
+            driver.get(
+                f'{self.url}{DASHBOARD_PATH}/#/models?type=shop.v1.Shop'
+            )
             WebDriverWait(driver, 60).until(
                 expected_conditions.presence_of_element_located(
-                    (By.CSS_SELECTOR, '[id="/state/shop.v1.Shop"]')
+                    (By.CSS_SELECTOR, '[id="/type/shop.v1.Shop"]')
                 )
             )
             return driver.page_source
@@ -289,262 +293,139 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
         # The method's name, kind, and source file come from the _SHOP
         # declaration, not from anything built into the page, and the
-        # page shows them as the declaration wrote them.
+        # pane shows them as the declaration wrote them.
         self.assertIn('look', page)
         self.assertIn('reader', page)
         self.assertIn('shop/v1/shop.py', page)
 
-        # The page groups state types by proto package, which is the
-        # directory the developer wrote them in.
-        self.assertIn('shop.v1', page)
-
-        # The sidebar shows both counts in one column, and they count
-        # different things, so each label names what it counts. The
-        # fixture declares one of each, so these also check the singular.
-        self.assertIn('1 state type', page)
+        # The pane counts what the state type declares, and names what
+        # it counts. The fixture declares one method, so this also
+        # checks the singular.
         self.assertIn('1 method', page)
 
         # The page shows the error alongside the description, not in
         # place of it.
         self.assertIn('shop.py: SyntaxError: invalid syntax', page)
 
-    # The banner's one link shows one of these labels, and clicking it
-    # does what the label says.
-    _TURN_OFF = "Don't reopen this dashboard on restart"
-    _TURN_ON = 'Open this dashboard on every restart'
+    # The notice's two buttons: one writes the preference and closes
+    # the notice, the other only closes it.
+    _SUPPRESS = "Don't reopen automatically"
+    _CLOSE = 'Close'
 
-    def _click_the_banner(self, driver, showing: str, becomes: str) -> None:
-        """Clicks the banner's link once it reads `showing`, then waits
-        until it reads `becomes`: the new label comes from the reactive
-        read of `Preferences`, so seeing it is how the test knows the
-        choice reached the application and came back.
-        """
-        button = (By.CLASS_NAME, 'banner-link')
-
+    def _dismiss_the_notice(self, driver, label: str) -> None:
+        """Clicks the notice's button reading `label` once the notice
+        shows, then waits for the notice to go."""
+        notice = (By.CLASS_NAME, 'opened-notice')
         WebDriverWait(driver, 60).until(
-            expected_conditions.text_to_be_present_in_element(button, showing)
+            expected_conditions.presence_of_element_located(notice)
         )
-        driver.find_element(*button).click()
+        # The buttons are read by what the page wrote, not by what
+        # the browser renders, which the styling may uppercase.
+        buttons = [
+            button for button in driver.find_elements(
+                By.CLASS_NAME,
+                'opened-notice-button',
+            ) if button.get_attribute('textContent') == label
+        ]
+        self.assertEqual(len(buttons), 1, f'no one button reads {label!r}')
+        buttons[0].click()
         WebDriverWait(driver, 60).until(
-            expected_conditions.text_to_be_present_in_element(button, becomes)
+            expected_conditions.invisibility_of_element_located(notice)
         )
 
-    async def _read_suppress_open_on_restart(self) -> bool:
+    async def _wait_for_suppress_open_on_restart(self, expected: bool) -> None:
+        """Returns once the preference reads `expected`: the notice's
+        write is what the page sends after the click, so seeing it is
+        how the test knows the choice reached the application."""
         context = self.rbt.create_external_context(name=self.id())
-        response = await Preferences.ref(PREFERENCES_ID).Get(context)
-        return response.suppress_open_on_restart
+        async for response in Preferences.ref(PREFERENCES_ID
+                                             ).reactively().Get(context):
+            if response.suppress_open_on_restart == expected:
+                return
 
-    async def test_the_banner_turns_reopening_off_and_back_on(self) -> None:
-        # The banner writes the preference `rbt dev run` reads before
-        # deciding whether to open a dashboard; `open_dashboard_tests`
-        # covers that read. The test clicks in both directions because
-        # the page loaded after a click offers the opposite choice.
+    async def test_the_notice_turns_reopening_off(self) -> None:
+        # The CLI opens the page with `?opened=automatically`, and the
+        # notice that says so offers not to be reopened: that button
+        # writes the preference `rbt dev run` reads before deciding
+        # whether to open a dashboard, which `open_dashboard_tests`
+        # covers. Closing the notice writes nothing, so the test
+        # closes first, then suppresses, and the preference must only
+        # change on the second.
+        def close(driver):
+            driver.get(f'{self.url}{DASHBOARD_PATH}/?opened=automatically')
+            self._dismiss_the_notice(driver, self._CLOSE)
 
-        def body(driver):
-            driver.get(f'{self.url}{DASHBOARD_PATH}/')
-            self._click_the_banner(
-                driver,
-                showing=self._TURN_OFF,
-                becomes=self._TURN_ON,
-            )
+        await asyncio.to_thread(self._run_in_browser, close)
 
-        await asyncio.to_thread(self._run_in_browser, body)
+        await self._wait_for_suppress_open_on_restart(False)
 
-        self.assertTrue(await self._read_suppress_open_on_restart())
+        def suppress(driver):
+            driver.get(f'{self.url}{DASHBOARD_PATH}/?opened=automatically')
+            self._dismiss_the_notice(driver, self._SUPPRESS)
 
-        def back_on(driver):
-            driver.get(f'{self.url}{DASHBOARD_PATH}/')
-            self._click_the_banner(
-                driver,
-                showing=self._TURN_ON,
-                becomes=self._TURN_OFF,
-            )
+        await asyncio.to_thread(self._run_in_browser, suppress)
 
-        await asyncio.to_thread(self._run_in_browser, back_on)
+        await self._wait_for_suppress_open_on_restart(True)
 
-        self.assertFalse(await self._read_suppress_open_on_restart())
+    # Where the pane shows a data type once it is opened: a card with
+    # the type's name as its heading.
+    _DATA_TYPE_HEADING = (By.CSS_SELECTOR, '.data-type-card h3')
 
-    # The two carets the `methods` section's toggle shows.
-    _EXPAND = '▸'
-    _HIDE = '▾'
-
-    def _click_to_expand(self, driver, showing: str, becomes: str) -> None:
-        """Clicks the \`methods\` section's toggle once its caret reads
-        `showing`.
-
-        Waits for `becomes` afterwards: the caret and the detail's
-        height come from the same state, so the new caret proves the
-        click registered.
-        """
-        button = (By.CLASS_NAME, 'section-toggle')
-
-        WebDriverWait(driver, 60).until(
-            expected_conditions.text_to_be_present_in_element(button, showing)
-        )
-        driver.find_element(*button).click()
-        WebDriverWait(driver, 60).until(
-            expected_conditions.text_to_be_present_in_element(button, becomes)
-        )
-
-    @staticmethod
-    def _detail_height(driver) -> float:
-        """Rendered height of the first method's detail.
-
-        The detail stays in the document whether or not its state type
-        is open; closing collapses the grid row around it to zero
-        height, and that collapse is what the height animation
-        transitions.
-        """
-        return driver.execute_script(
-            'const detail = document.querySelector(".method-detail-inner");'
-            'return detail === null'
-            '  ? -1'
-            '  : detail.getBoundingClientRect().height;'
-        )
-
-    def _wait_for_detail(self, driver, opened: bool) -> None:
-        """Waits for the detail's open or close animation to finish."""
-        WebDriverWait(
-            driver, 60
-        ).until(lambda driver: (self._detail_height(driver) > 0) == opened)
-
-    async def _read_expanded_methods(self) -> list[str]:
-        context = self.rbt.create_external_context(name=self.id())
-        response = await Preferences.ref(PREFERENCES_ID).Get(context)
-        return list(response.expanded_methods)
-
-    async def test_a_state_type_stays_expanded_across_a_load(self) -> None:
-        # The click must store the choice in the dashboard
-        # application, which is what a previous `rbt dev run` left
-        # behind and so what a fresh page reads the choice back from.
+    async def test_a_data_type_opens_beside_its_use(self) -> None:
+        # No method names `Shelf`: it is reached only as a property of
+        # `LookResponse`, so it has no place of its own. A link to it,
+        # from a changelog row, names it in the URL beside the state
+        # type that uses it, and the pane opens it as a card beside
+        # that use.
         await self._record_state_types()
 
         def body(driver):
-            driver.get(f'{self.url}{DASHBOARD_PATH}/#/state')
-            self._click_to_expand(
-                driver,
-                showing=self._EXPAND,
-                becomes=self._HIDE,
+            driver.get(
+                f'{self.url}{DASHBOARD_PATH}/'
+                '#/models?type=shop.v1.Shop&data=shop.v1.shop.Shelf'
             )
-            self._wait_for_detail(driver, opened=True)
-
-            # The detail's height is animated, not switched.
-            self.assertIn(
-                'grid-template-rows',
-                driver.execute_script(
-                    'const detail ='
-                    '  document.querySelector(".method-detail");'
-                    'return getComputedStyle(detail).transitionProperty;'
-                ),
-            )
-
-        await asyncio.to_thread(self._run_in_browser, body)
-
-        self.assertEqual(
-            await self._read_expanded_methods(), ['shop.v1.Shop.look']
-        )
-
-        # `_run_in_browser` starts a new browser, so the expanded state can only
-        # have come from the Preferences actor, not from the tab.
-        def reloaded(driver):
-            driver.get(f'{self.url}{DASHBOARD_PATH}/#/state')
             WebDriverWait(driver, 60).until(
                 expected_conditions.text_to_be_present_in_element(
-                    (By.CLASS_NAME, 'section-toggle'),
-                    self._HIDE,
+                    self._DATA_TYPE_HEADING,
+                    'Shelf',
                 )
             )
-            self._wait_for_detail(driver, opened=True)
+            return driver.page_source
 
-        await asyncio.to_thread(self._run_in_browser, reloaded)
+        page = await asyncio.to_thread(self._run_in_browser, body)
 
-    async def test_a_deep_link_lands_on_a_type_that_nothing_names(
-        self
-    ) -> None:
-        # No method names `Shelf`: it is reached only as a property of
-        # `LookResponse`, so the data page is the only place that
-        # writes it out. The section's `id` equals the route, so the
-        # browser looks able to scroll to it on its own. It cannot: the
-        # section is not rendered yet when the browser reads the
-        # fragment on load, so the page scrolls to it itself.
-        await self._record_state_types()
-
-        def body(driver):
-            # A viewport this small leaves Shelf, the last of three
-            # types, off screen, so the page has to scroll to reach it.
-            driver.set_window_size(900, 600)
-            driver.get(f'{self.url}{DASHBOARD_PATH}/#/data/shop.v1.shop.Shelf')
-            WebDriverWait(driver, 60).until(
-                expected_conditions.presence_of_element_located(
-                    (By.CSS_SELECTOR, '[id="/data/shop.v1.shop.Shelf"]')
-                )
-            )
-            # The property row whose type is `Shelf` links to it by that
-            # name.
-            link = driver.find_element(
-                By.CSS_SELECTOR,
-                '.type-block a[href="#/data/shop.v1.shop.Shelf"]',
-            )
-            self.assertEqual(link.text, 'Shelf')
-            return driver.execute_script(
-                'const pane = document.querySelector(".pane");'
-                'const shelf ='
-                '  document.querySelector(\'[id="/data/shop.v1.shop.Shelf"]\');'
-                'const box = shelf.getBoundingClientRect();'
-                'return {'
-                '  scrolled: pane.scrollTop,'
-                '  top: box.top,'
-                '  height: window.innerHeight,'
-                '  page: document.documentElement.outerHTML,'
-                '};'
-            )
-
-        landed = await asyncio.to_thread(self._run_in_browser, body)
-
-        self.assertGreater(landed['scrolled'], 0)
-        self.assertGreaterEqual(landed['top'], 0)
-        self.assertLess(landed['top'], landed['height'])
-
-        page = landed['page']
-
-        # The data page lists every type the file declares except the
-        # state type's own state, which the state page shows.
-        self.assertIn('LookRequest', page)
-        self.assertIn('LookResponse', page)
+        # The card shows what the file declares about the type: its
+        # description and its properties.
         self.assertIn('Where an item sits.', page)
-        self.assertNotIn('/data/shop.v1.shop.ShopState', page)
+        self.assertIn('aisle', page)
 
-        # And the property or method that contains each type, so the page
-        # lists both what a type contains and what contains it.
-        self.assertIn('LookResponse.shelf', page)
-        self.assertIn('Shop.look (takes)', page)
-
-    async def test_a_contained_type_is_followed_to_the_data_page(self) -> None:
-        # The convention is one level deep: a page names the type a
-        # property contains, and the link on that name goes to the type's
-        # data page.
+    async def test_a_contained_type_opens_from_the_signature(self) -> None:
+        # The convention is one level deep: a signature names the type
+        # a property contains, and clicking that name opens the type's
+        # card beside the method.
         await self._record_state_types()
 
         def body(driver):
-            driver.get(f'{self.url}{DASHBOARD_PATH}/#/state')
-            self._click_to_expand(
-                driver,
-                showing=self._EXPAND,
-                becomes=self._HIDE,
+            driver.get(
+                f'{self.url}{DASHBOARD_PATH}/#/models?type=shop.v1.Shop'
             )
-            self._wait_for_detail(driver, opened=True)
-
-            driver.find_element(
-                By.CSS_SELECTOR,
-                '.method-signature a[href="#/data/shop.v1.shop.Shelf"]',
-            ).click()
-
-            # The link changes the hash to a page that was not rendered
-            # yet, so wait for that page to render the Shelf section
-            # before it scrolls to it.
             WebDriverWait(driver, 60).until(
                 expected_conditions.presence_of_element_located(
-                    (By.CSS_SELECTOR, '[id="/data/shop.v1.shop.Shelf"]')
+                    (By.CSS_SELECTOR, '[id="/type/shop.v1.Shop"]')
+                )
+            )
+            shelves = [
+                name for name in driver.find_elements(
+                    By.CSS_SELECTOR,
+                    '.method-signature .type-name-button',
+                ) if name.get_attribute('textContent') == 'Shelf'
+            ]
+            self.assertEqual(len(shelves), 1)
+            shelves[0].click()
+            WebDriverWait(driver, 60).until(
+                expected_conditions.text_to_be_present_in_element(
+                    self._DATA_TYPE_HEADING,
+                    'Shelf',
                 )
             )
             return driver.page_source
