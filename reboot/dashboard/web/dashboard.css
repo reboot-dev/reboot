@@ -1056,6 +1056,15 @@ header h1 {
   bottom: auto;
 }
 
+/* The types pane's body scrolls, so it clips whatever leaves it: a
+   definition centred on a pill near the pane's left edge would lose
+   its left half. In the pane a definition starts at the pill's left
+   edge instead, which keeps it inside. */
+.types-pane .definition {
+  left: 0;
+  transform: none;
+}
+
 /* The section eyebrow sits at the pane's left edge, and the pane
    clips whatever leaves it, so a centred tooltip loses its left
    half. Open rightward from the label instead. */
