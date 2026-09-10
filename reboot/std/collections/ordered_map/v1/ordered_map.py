@@ -592,10 +592,12 @@ class NodeServicer(Node.singleton.Servicer):
         if state.is_leaf:
             start_ordered_map = 0
             if request.start_key:
-                for i, k in enumerate(state.keys):
-                    if request.start_key <= k:
-                        start_ordered_map = i
-                        break
+                # The first key at or after `start_key`; `len(state.keys)`
+                # when every key here comes before it, which leaves the
+                # range to the next leaf.
+                start_ordered_map = bisect.bisect_left(
+                    state.keys, request.start_key
+                )
 
             remaining = request.limit
             for i in range(
@@ -647,11 +649,12 @@ class NodeServicer(Node.singleton.Servicer):
         if state.is_leaf:
             start_ordered_map = len(state.keys) - 1
             if request.start_key:
-                for i in range(len(state.keys) - 1, -1, -1):
-                    k = state.keys[i]
-                    if request.start_key >= k:
-                        start_ordered_map = i
-                        break
+                # The last key at or before `start_key`; `-1` when every
+                # key here comes after it, which leaves the range to the
+                # previous leaf.
+                start_ordered_map = bisect.bisect_right(
+                    state.keys, request.start_key
+                ) - 1
 
             remaining = request.limit
             for i in range(
