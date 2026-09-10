@@ -2439,14 +2439,16 @@ header .state-type-description {
 .types-pane-body {
   flex: 1;
   overflow-y: auto;
-  padding-top: 24px;
 }
 
 /* The pane's card is the state type's card, set in a narrower
    column. */
+/* The pane's header already sets the state type off, so the rule a
+   state type draws above itself on a page would be a second line. */
 .types-pane-body .state-type {
   max-width: none;
-  padding: 24px 20px 32px;
+  padding: 14px 20px 32px;
+  border-top: none;
 }
 
 .types-pane-body .state-type h2 {
