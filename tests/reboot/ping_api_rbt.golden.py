@@ -21325,21 +21325,29 @@ class Ping:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Ping'),
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='Describe',
                                     request=PingDescribeRequestToProto(
                                     ).SerializeToString(),
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
+                            )
+
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
                             )
 
                             async for __query_response__ in __call__:
@@ -21353,13 +21361,18 @@ class Ping:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = reboot.ping.ping_api_pb2.PingDescribeResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield PingDescribeResponseFromProto(__response__)
 
-                                __response__ = reboot.ping.ping_api_pb2.PingDescribeResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield PingDescribeResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -21386,6 +21399,13 @@ class Ping:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -21460,21 +21480,29 @@ class Ping:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Ping'),
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='NumPings',
                                     request=PingNumPingsRequestToProto(
                                     ).SerializeToString(),
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
+                            )
+
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
                             )
 
                             async for __query_response__ in __call__:
@@ -21488,13 +21516,18 @@ class Ping:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = reboot.ping.ping_api_pb2.PingNumPingsResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield PingNumPingsResponseFromProto(__response__)
 
-                                __response__ = reboot.ping.ping_api_pb2.PingNumPingsResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield PingNumPingsResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -21521,6 +21554,13 @@ class Ping:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24110,21 +24150,29 @@ class Pong:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Pong'),
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='NumPongs',
                                     request=PongNumPongsRequestToProto(
                                     ).SerializeToString(),
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
+                            )
+
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
                             )
 
                             async for __query_response__ in __call__:
@@ -24138,13 +24186,18 @@ class Pong:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = reboot.ping.ping_api_pb2.PongNumPongsResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield PongNumPongsResponseFromProto(__response__)
 
-                                __response__ = reboot.ping.ping_api_pb2.PongNumPongsResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield PongNumPongsResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -24171,6 +24224,13 @@ class Pong:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -26846,21 +26906,29 @@ class User:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='ListCounters',
                                     request=UserListCountersRequestToProto(
                                     ).SerializeToString(),
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
+                            )
+
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
                             )
 
                             async for __query_response__ in __call__:
@@ -26874,13 +26942,18 @@ class User:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = reboot.ping.ping_api_pb2.UserListCountersResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield UserListCountersResponseFromProto(__response__)
 
-                                __response__ = reboot.ping.ping_api_pb2.UserListCountersResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield UserListCountersResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -26907,6 +26980,13 @@ class User:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -26981,21 +27061,29 @@ class User:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='Whoami',
                                     request=UserWhoamiRequestToProto(
                                     ).SerializeToString(),
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
+                            )
+
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
                             )
 
                             async for __query_response__ in __call__:
@@ -27009,13 +27097,18 @@ class User:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = reboot.ping.ping_api_pb2.UserWhoamiResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield UserWhoamiResponseFromProto(__response__)
 
-                                __response__ = reboot.ping.ping_api_pb2.UserWhoamiResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield UserWhoamiResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -27042,6 +27135,13 @@ class User:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -30626,21 +30726,29 @@ class Counter:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Counter'),
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='Value',
                                     request=CounterValueRequestToProto(
                                     ).SerializeToString(),
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
+                            )
+
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
                             )
 
                             async for __query_response__ in __call__:
@@ -30654,13 +30762,18 @@ class Counter:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = reboot.ping.ping_api_pb2.CounterValueResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield CounterValueResponseFromProto(__response__)
 
-                                __response__ = reboot.ping.ping_api_pb2.CounterValueResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield CounterValueResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -30687,6 +30800,13 @@ class Counter:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -30761,21 +30881,29 @@ class Counter:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Counter'),
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='Description',
                                     request=CounterDescriptionRequestToProto(
                                     ).SerializeToString(),
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
+                            )
+
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
                             )
 
                             async for __query_response__ in __call__:
@@ -30789,13 +30917,18 @@ class Counter:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = reboot.ping.ping_api_pb2.CounterDescriptionResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield CounterDescriptionResponseFromProto(__response__)
 
-                                __response__ = reboot.ping.ping_api_pb2.CounterDescriptionResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield CounterDescriptionResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -30822,6 +30955,13 @@ class Counter:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in

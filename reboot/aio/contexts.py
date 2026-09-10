@@ -342,6 +342,65 @@ class Participants:
         return participants
 
 
+class QueryContinuations:
+    """Calls `React.ContinueQuery` for the responses of a `React.Query`
+    that a client has fully processed, which is what returns room to
+    that query's window.
+
+    Keeps at most one call in flight. While one is on its way the
+    client keeps processing, so the next call names only the newest
+    response it has handled; the server credits every response up to
+    that one, so nothing is lost by not naming each individually.
+    """
+
+    def __init__(
+        self,
+        stub: react_pb2_grpc.ReactStub,
+        metadata: GrpcMetadata,
+    ):
+        self._stub = stub
+        self._metadata = metadata
+        self._continuation: Optional[asyncio.Future] = None
+
+    async def continue_past(
+        self,
+        query_response: react_pb2.QueryResponse,
+    ) -> None:
+        """Continues the query past `query_response`, if there is no
+        call already in flight. Raises whatever a previous call raised,
+        so that a failure to continue surfaces on the read."""
+        if query_response.query_id == '':
+            # An older backend doesn't send a query ID and doesn't
+            # expect to be told.
+            return
+
+        if self._continuation is not None and self._continuation.done():
+            await self._continuation
+            self._continuation = None
+
+        if self._continuation is None:
+            self._continuation = asyncio.ensure_future(
+                self._stub.ContinueQuery(
+                    react_pb2.ContinueQueryRequest(
+                        query_id=query_response.query_id,
+                        sequence_number=query_response.sequence_number,
+                    ),
+                    # The same metadata ensures we're routed to the
+                    # same server.
+                    metadata=self._metadata,
+                )
+            )
+
+    async def stop(self) -> None:
+        if self._continuation is not None:
+            self._continuation.cancel()
+            try:
+                await self._continuation
+            except BaseException:
+                pass
+            self._continuation = None
+
+
 class React:
     """Encapsulates machinery necessary for contexts that are "reactive",
     aka, those that are initiated from calls to `React.Query` and who
@@ -474,10 +533,13 @@ class React:
                         self._state_type_name, self._state_ref
                     )
 
-                    call = react_pb2_grpc.ReactStub(channel).Query(
+                    stub = react_pb2_grpc.ReactStub(channel)
+
+                    call = stub.Query(
                         react_pb2.QueryRequest(
                             method=self._method,
                             request=serialized_request,
+                            client_continues_query=True,
                         ),
                         metadata=metadata,
                     )
@@ -498,27 +560,37 @@ class React:
                         assert task is not None
 
                         async for query_response in call:
-                            if not query_response.HasField('response'):
-                                continue
+                            if query_response.HasField('response'):
+                                response = self._response_type()
+                                response.ParseFromString(
+                                    query_response.response
+                                )
 
-                            response = self._response_type()
-                            response.ParseFromString(query_response.response)
+                                self._used_response[task].clear()
 
-                            self._used_response[task].clear()
+                                self._calls[task] = call
 
-                            self._calls[task] = call
+                                self._responses[task] = asyncio.Future()
+                                self._responses[task].set_result(response)
 
-                            self._responses[task] = asyncio.Future()
-                            self._responses[task].set_result(response)
+                                if not have_first_response.is_set():
+                                    have_first_response.set()
+                                else:
+                                    self._event.set()
 
-                            if not have_first_response.is_set():
-                                have_first_response.set()
-                            else:
-                                self._event.set()
+                                await self._used_response[task].wait()
 
-                            await self._used_response[task].wait()
+                            # Only now that the response has been used
+                            # do we continue past it, so that we can't
+                            # fall behind a server that produces
+                            # responses faster than we consume them.
+                            # See
+                            # https://github.com/reboot-dev/mono/issues/4754.
+                            await continuations.continue_past(query_response)
 
                         raise RuntimeError('React.Query should be infinite')
+
+                    continuations = QueryContinuations(stub, metadata)
 
                     try:
                         await loop()
@@ -549,6 +621,12 @@ class React:
 
                         # Let's retry after a backoff!
                         await backoff()
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        await continuations.stop()
 
             task = asyncio.create_task(query(), name=f'query() in {__name__}')
 

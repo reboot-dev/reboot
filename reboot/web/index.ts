@@ -381,6 +381,7 @@ export function reactively<
         const queryRequest = new react_pb.QueryRequest({
           method,
           request: request.toBinary(),
+          clientContinuesQuery: true,
           ...((bearerToken !== undefined && {
             bearerToken: await bearerToken(),
           }) ||
@@ -418,6 +419,86 @@ export function reactively<
   return [responses(), setRequest];
 }
 
+// How long a response must have waited for us before we say so in
+// the console. 100ms is about where a person stops experiencing an
+// update as immediate and starts perceiving lag, so a response that
+// waited longer than this is one whose delay our user could see; the
+// backend uses the same threshold for its own log.
+const LOGGED_STALL_MILLISECONDS = 100;
+
+// Tells the developer that this client fell far enough behind its
+// backend that the backend merged updates it would otherwise have
+// sent. The state we go on to render is still the latest one; what
+// was lost is the updates on the way there.
+function logStall(method: string, response: react_pb.QueryResponse) {
+  if (response.stallMilliseconds > LOGGED_STALL_MILLISECONDS) {
+    console.info(
+      `[Reboot] A reactive query to \`${method}\` skipped ` +
+        `${response.skippedUpdates} updates because this client fell ` +
+        `${response.stallMilliseconds}ms behind`
+    );
+  }
+}
+
+// Tells the backend which responses of a query we have fully
+// processed, which returns that much room to the query's window.
+// Retries until the backend confirms, since a lost request would
+// leave the `Query` stream with less room than it should have, and
+// eventually with none.
+async function continueQuery({
+  endpoint,
+  headers,
+  queryId,
+  sequenceNumber,
+  signal,
+}: {
+  endpoint: string;
+  headers: Headers;
+  queryId: string;
+  sequenceNumber: bigint;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const url = new URL(`${endpoint}/rbt.v1alpha1.React/ContinueQuery`);
+
+  const backoff = new Backoff();
+
+  while (true) {
+    try {
+      // Pass the options separately rather than pre-building a
+      // `Request`: `guardedFetch` reads `signal` off them to tell a
+      // deliberate cancellation apart from a server it cannot reach.
+      const response = await guardedFetch(url.toString(), {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          queryId,
+          sequenceNumber: sequenceNumber.toString(),
+        }),
+        signal,
+      });
+      // A `fetch()` only throws on network errors; an HTTP error
+      // response resolves successfully, so we have to check for it
+      // ourselves.
+      if (!response.ok) {
+        throw new Error(
+          `Continuing query '${queryId}' past response ` +
+            `${sequenceNumber} failed with HTTP status ${response.status}`
+        );
+      }
+      return;
+    } catch (e) {
+      if (signal?.aborted) {
+        throw e;
+      }
+      console.warn(
+        `[Reboot] Failed to continue query '${queryId}' past response ` +
+          `${sequenceNumber}, retrying after backoff ...`
+      );
+      await backoff.wait();
+    }
+  }
+}
+
 export async function* reactiveReader({
   endpoint,
   request,
@@ -430,14 +511,18 @@ export async function* reactiveReader({
   websockets: boolean;
 }): AsyncGenerator<react_pb.QueryResponse, void, unknown> {
   const url = new URL(`${endpoint}/rbt.v1alpha1.React/Query`);
+
+  const headers = new Headers();
+
+  if (request.bearerToken !== undefined) {
+    headers.set("Authorization", `Bearer ${request.bearerToken}`);
+  }
+
   if (url.protocol === "https:" && !websockets) {
-    const headers = new Headers();
+    const continueHeaders = new Headers(headers);
+    continueHeaders.set("Content-Type", "application/json");
 
-    if (request.bearerToken !== undefined) {
-      headers.set("Authorization", `Bearer ${request.bearerToken}`);
-    }
-
-    yield* grpcServerStream({
+    const responses = grpcServerStream({
       endpoint: url.toString(),
       method: "POST",
       headers,
@@ -445,6 +530,54 @@ export async function* reactiveReader({
       responseType: react_pb.QueryResponse,
       signal,
     });
+
+    // The one `ContinueQuery` that may be in flight at a time, and
+    // whether it has settled; see below.
+    let continuation: Promise<void> | undefined = undefined;
+    let settled = true;
+
+    for await (const response of responses) {
+      logStall(request.method, response);
+
+      yield response;
+
+      // Only now that our consumer has processed the response do we
+      // continue past it, so that we can't fall behind a backend that
+      // produces responses faster than we consume them.
+      if (response.queryId === "") {
+        // An older backend doesn't send a query ID and doesn't expect
+        // to be told.
+        continue;
+      }
+
+      // At most one `ContinueQuery` is in flight. While one is on its
+      // way we keep consuming, so the one we send next names only the
+      // newest response we have processed; the backend credits us for
+      // every response up to that one.
+      if (continuation !== undefined && settled) {
+        // Throws if continuing failed, which reconnects the query.
+        await continuation;
+        continuation = undefined;
+      }
+
+      if (continuation === undefined) {
+        settled = false;
+        continuation = continueQuery({
+          endpoint,
+          headers: continueHeaders,
+          queryId: response.queryId,
+          sequenceNumber: response.sequenceNumber,
+          signal,
+        }).finally(() => {
+          settled = true;
+        });
+
+        // A failure surfaces on the `await` above, but a read that
+        // ends before we get there leaves it unobserved; observe it
+        // here too so that it can't become an unhandled rejection.
+        continuation.catch(() => {});
+      }
+    }
   } else {
     // TODO: while technically we could `await
     // grpcWebsocketServerStream(...)` doing so will leak websockets
@@ -458,12 +591,26 @@ export async function* reactiveReader({
       heartbeatRequest: new react_pb.QueryRequest(),
       responseType: react_pb.QueryResponse,
       signal,
+      // Continuations go back over the same websocket, so that a
+      // reactive read costs no extra round trips; since sending one
+      // costs nothing extra we continue past every response as soon
+      // as we have processed it, rather than past the newest of
+      // several.
+      continueRequest: (response: react_pb.QueryResponse) =>
+        response.queryId !== ""
+          ? new react_pb.QueryRequest({
+              continueQuerySequenceNumber: response.sequenceNumber,
+            })
+          : undefined,
     });
     for await (const response of responses) {
       if (response.responseOrStatus.case == "status") {
         responses.return();
         throw Status.fromJsonString(response.responseOrStatus.value);
       }
+
+      logStall(request.method, response);
+
       yield response;
     }
   }
@@ -755,12 +902,16 @@ export async function* grpcWebsocketServerStream<
   heartbeatRequest,
   responseType,
   signal,
+  continueRequest,
 }: {
   url: URL;
   request: RequestType;
   heartbeatRequest: RequestType;
   responseType: MessageType<ResponseType>;
   signal: AbortSignal;
+  // Produces the request, if any, to send back once the consumer has
+  // processed a response.
+  continueRequest?: (response: ResponseType) => RequestType | undefined;
 }): AsyncGenerator<ResponseType, void, unknown> {
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
 
@@ -848,7 +999,17 @@ export async function* grpcWebsocketServerStream<
       // suspended at `yield`; the loop re-checks after each one).
       let data: ArrayBuffer | undefined = undefined;
       while ((data = messages.shift()) !== undefined) {
-        yield responseType.fromBinary(new Uint8Array(data));
+        const response = responseType.fromBinary(new Uint8Array(data));
+
+        yield response;
+
+        const continuation = continueRequest?.(response);
+        if (
+          continuation !== undefined &&
+          websocket.readyState === WebSocket.OPEN
+        ) {
+          websocket.send(continuation.toBinary());
+        }
       }
 
       if (error !== undefined) {

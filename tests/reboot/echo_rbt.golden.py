@@ -20838,22 +20838,30 @@ class Echo:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='Replay',
                                     request=EchoReplayRequestToProto(
                                         __request__
                                     ).SerializeToString(),
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
+                            )
+
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
                             )
 
                             async for __query_response__ in __call__:
@@ -20867,13 +20875,18 @@ class Echo:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = tests.reboot.echo_pb2.ReplayResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield EchoReplayResponseFromProto(__response__)
 
-                                __response__ = tests.reboot.echo_pb2.ReplayResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield EchoReplayResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -20900,6 +20913,13 @@ class Echo:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -21015,22 +21035,30 @@ class Echo:
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
                     __call__ = None
+                    __continuations__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='WaitFor',
                                     request=EchoWaitForRequestToProto(
                                         __request__
                                     ).SerializeToString(),
+                                    client_continues_query=True,
                                 ),
                                 metadata=__metadata__,
+                            )
+
+                            __continuations__ = IMPORT_reboot_aio_contexts.QueryContinuations(
+                                __stub__, __metadata__
                             )
 
                             async for __query_response__ in __call__:
@@ -21044,13 +21072,18 @@ class Echo:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = tests.reboot.echo_pb2.WaitForResponse()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield EchoWaitForResponseFromProto(__response__)
 
-                                __response__ = tests.reboot.echo_pb2.WaitForResponse()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield EchoWaitForResponseFromProto(__response__)
+                                # Only now that the caller has processed the
+                                # response do we continue past it, so that we
+                                # can't fall behind a server that produces
+                                # responses faster than we consume them. See
+                                # https://github.com/reboot-dev/mono/issues/4754.
+                                await __continuations__.continue_past(__query_response__)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -21077,6 +21110,13 @@ class Echo:
                             ) from None
 
                         raise
+                    finally:
+                        # Whether we are retrying or giving up, this
+                        # attempt's continuation is about to be
+                        # irrelevant: a fresh `Query` gets a fresh
+                        # window.
+                        if __continuations__ is not None:
+                            await __continuations__.stop()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in

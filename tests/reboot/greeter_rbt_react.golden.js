@@ -1882,6 +1882,7 @@ class GreeterInstance {
         const queryRequest = new reboot_api.react_pb.QueryRequest({
             method,
             request: serializedRequest,
+            clientContinuesQuery: true,
             ...(bearerToken !== undefined && { bearerToken } || {}),
         });
         let expecteds = [];
@@ -1981,17 +1982,40 @@ class GreeterInstance {
                         // orphans list with a length greater than 0. In this case, we don't
                         // want to skip checking the expecteds list just because we have
                         // already checked the orphans list.
-                        if (expecteds.length > 0 &&
-                            queryResponse.idempotencyKeys.includes(expecteds[0].idempotencyKey)) {
-                            await expecteds[0].observed(() => {
+                        //
+                        // A single query response can report the idempotency keys of
+                        // several mutations at once, because the backend aggregates the
+                        // keys of every state it skipped over on its way to the state this
+                        // response reflects. Two mutations may also share an idempotency
+                        // key. So observe _every_ mutation whose key this response
+                        // reports, not just the oldest one.
+                        // Both of these are looked up by set rather than scanned:
+                        // a response reports the keys of every state the backend
+                        // skipped, so the further behind a client falls the longer
+                        // both of these lists get.
+                        const reportedKeys = new Set(queryResponse.idempotencyKeys);
+                        const observeds = expecteds.filter(expected => reportedKeys.has(expected.idempotencyKey));
+                        if (observeds.length > 0) {
+                            const observedSet = new Set(observeds);
+                            expecteds = expecteds.filter(expected => !observedSet.has(expected));
+                            // The one response we have in hand is the response for
+                            // every one of these mutations, so publish it once, on
+                            // the last of them, rather than handing every listener
+                            // and the offline cache the same response N times. This
+                            // is the same shape as the `orphans` loop above, and it
+                            // matters more now that a response can report the keys
+                            // of every state the backend skipped.
+                            for (let i = 0; i < observeds.length - 1; i++) {
+                                observeds[i].observed(() => { });
+                            }
+                            await observeds[observeds.length - 1].observed(() => {
                                 if (response !== undefined) {
                                     reader.setResponse(response);
                                 }
-                                expecteds.shift();
                             });
                         }
                         // If we don't have any orphans to observe and we don't have any expecteds to observe,
-                        // or at least, the first expecteds _is not observed_ by this response, then go ahead and
+                        // or at least, none of the expecteds _is observed_ by this response, then go ahead and
                         // pass on the response because it might contain new data that should get shown to the
                         // user (e.g., in a chat room this could be a new message from a different user).
                         else if (response !== undefined && !haveOrphans) {
