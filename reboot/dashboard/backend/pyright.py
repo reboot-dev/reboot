@@ -196,9 +196,7 @@ class Pyright:
                     self._request('shutdown'), SHUTDOWN_SECONDS
                 )
                 await self._notify('exit')
-                await asyncio.wait_for(
-                    self._process.wait(), SHUTDOWN_SECONDS
-                )
+                await asyncio.wait_for(self._process.wait(), SHUTDOWN_SECONDS)
             except (asyncio.TimeoutError, RuntimeError):
                 # The server didn't shut down when asked, so kill the
                 # entry point and the Node server together: starting the
@@ -517,7 +515,11 @@ class Pyright:
         self._responses[id] = future
         # A method that takes no parameters, such as `shutdown`, is sent
         # without any.
-        message: dict[str, Any] = {'jsonrpc': '2.0', 'id': id, 'method': method}
+        message: dict[str, Any] = {
+            'jsonrpc': '2.0',
+            'id': id,
+            'method': method
+        }
         if params is not None:
             message['params'] = params
         self._write(message)
