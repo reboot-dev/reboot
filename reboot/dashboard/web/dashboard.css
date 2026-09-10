@@ -1470,6 +1470,29 @@ header h1 {
   border-radius: 10px;
 }
 
+/* The box's resize controls: its sides and corners, shown while the
+   box is hovered, in the colour a dragged divider takes. */
+.graph-canvas .react-flow__resize-control.line {
+  border-color: transparent;
+  border-width: 3px;
+}
+
+.graph-canvas .react-flow__resize-control.handle {
+  width: 8px;
+  height: 8px;
+  border: 1px solid hsl(var(--card));
+  border-radius: 2px;
+  background: hsl(var(--primary));
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.graph-canvas
+  .react-flow__node-expanded:hover
+  .react-flow__resize-control.handle {
+  opacity: 1;
+}
+
 /* 38px tall, which `graph.tsx` lays out by. */
 .graph-expanded-package-head {
   display: flex;
