@@ -163,10 +163,7 @@ const DEFINITIONS: Record<string, string> = {
 // that `.definition` in dashboard.css offsets the definition by.
 const DEFINITION_GAP = 8;
 
-// A pill that shows its definition on hover, when it has one. The
-// mark on the pill tells the reader a definition exists; a label
-// set as an eyebrow leaves the mark off, since a row of eyebrows
-// each trailing a mark reads as clutter.
+// A pill that shows its definition on hover, when it has one.
 //
 // The definition opens above the pill so it does not cover the row
 // the reader is on. The scroll pane holding the pill clips content
@@ -1487,7 +1484,6 @@ const ScenarioRow: FC<{
             className="scenario-video is-unrecorded"
             label="not recorded yet"
             meaning="This scenario uses a web browser, run the test in order to see its video and screenshot recordings."
-            mark={false}
           />
         )}
         {tags.includes(WIP_TAG) && (
