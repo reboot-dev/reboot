@@ -1,5 +1,6 @@
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 load("@fremtind_rules_vitest//vitest:defs.bzl", "vitest_test")
+load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_test")
 load("//tests/reboot/react:py_web_test_suite_env.bzl", "py_web_test_suite_env")
 
@@ -71,6 +72,7 @@ py_test(
     ],
     main = "code_watcher_tests.py",
     deps = [
+        requirement("psutil"),
         "//reboot/aio:tests_py",
         "//reboot/dashboard/backend:code_watcher_py",
         "//reboot/dashboard/backend:main_py",

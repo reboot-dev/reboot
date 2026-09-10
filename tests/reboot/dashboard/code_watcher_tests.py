@@ -6,6 +6,7 @@ is what sets the dashboard looking for the file that implements it.
 import ast
 import hashlib
 import os
+import psutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -775,6 +776,36 @@ class GoldenDefinitionsTest(unittest.TestCase):
         self.assertEqual(
             {definition.state_type for definition in definitions},
             {'tests.reboot.Greeter'},
+        )
+
+
+def _running(process: psutil.Process) -> bool:
+    """Whether the process still runs; a zombie has already ended."""
+    try:
+        return process.status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
+
+
+class PyrightTest(unittest.IsolatedAsyncioTestCase):
+
+    async def test_stop_ends_the_node_server_too(self) -> None:
+        """The `pyright.langserver` entry point runs the Node server as
+        a child of its own. Stopping has to end both."""
+        with tempfile.TemporaryDirectory() as directory:
+            pyright = Pyright()
+            await pyright.start(root=Path(directory), extra_paths=[])
+            assert pyright._process is not None
+            entry_point = psutil.Process(pyright._process.pid)
+            processes = [entry_point, *entry_point.children(recursive=True)]
+            # The entry point and, under it, the Node server.
+            self.assertGreater(len(processes), 1)
+
+            await pyright.stop()
+
+        self.assertEqual(
+            [process.pid for process in processes if _running(process)],
+            [],
         )
 
 

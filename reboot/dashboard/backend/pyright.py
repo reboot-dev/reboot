@@ -17,10 +17,14 @@ import hashlib
 import itertools
 import json
 import os
+import signal
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
+
+# How long a server gets to shut down when asked, before it is killed.
+SHUTDOWN_SECONDS = 5
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -106,6 +110,11 @@ class Pyright:
         # that nothing depends on the `PATH`; the package, a
         # dependency of `reboot`, brings the server and, through its
         # `[nodejs]` extra, the Node it runs on.
+        #
+        # The entry point runs the Node server as a child of its own,
+        # holding our pipes, rather than becoming it. In a session of
+        # its own, the entry point and the Node server form a process
+        # group that `stop` can kill as one.
         self._process = await asyncio.create_subprocess_exec(
             sys.executable,
             '-m',
@@ -114,6 +123,7 @@ class Pyright:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            start_new_session=True,
         )
 
         self._reader = asyncio.create_task(self._read())
@@ -175,12 +185,41 @@ class Pyright:
         )
 
     async def stop(self) -> None:
-        """Stops the server. Questions after this raise."""
+        """Stops the server, the Node process it runs included.
+        Questions after this raise."""
+        if self._process is not None and self._process.returncode is None:
+            try:
+                # Asked the way the protocol defines, the Node server
+                # exits by itself; the entry point, whose child it is,
+                # then reaps it and exits too, closing our pipes.
+                await asyncio.wait_for(
+                    self._request('shutdown'), SHUTDOWN_SECONDS
+                )
+                await self._notify('exit')
+                await asyncio.wait_for(
+                    self._process.wait(), SHUTDOWN_SECONDS
+                )
+            except (asyncio.TimeoutError, RuntimeError):
+                # The server didn't shut down when asked, so kill the
+                # entry point and the Node server together: starting the
+                # server in a session of its own put both in one process
+                # group.
+                #
+                # Then wait only for the entry point, which is our own
+                # child. Don't wait for the Node server: with its parent
+                # gone it now belongs to whichever process adopted it,
+                # and a dead process only fully disappears once that
+                # adopter collects it. Under `rbt dashboard` the adopter
+                # is the CLI, which collects only when the dashboard
+                # exits. Its pipes close the moment it dies, so waiting
+                # for the entry point is enough.
+                try:
+                    os.killpg(self._process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                await self._process.wait()
         if self._reader is not None:
             self._reader.cancel()
-        if self._process is not None:
-            self._process.terminate()
-            await self._process.wait()
 
     async def sync(
         self,
@@ -469,31 +508,32 @@ class Pyright:
     async def _request(
         self,
         method: str,
-        params: dict[str, Any],
+        params: Optional[dict[str, Any]] = None,
     ) -> Any:
         assert self._process is not None and self._process.stdin is not None
         id = next(self._ids)
         future: asyncio.Future[Any] = asyncio.get_running_loop().create_future(
         )
         self._responses[id] = future
-        self._write(
-            {
-                'jsonrpc': '2.0',
-                'id': id,
-                'method': method,
-                'params': params,
-            }
-        )
+        # A method that takes no parameters, such as `shutdown`, is sent
+        # without any.
+        message: dict[str, Any] = {'jsonrpc': '2.0', 'id': id, 'method': method}
+        if params is not None:
+            message['params'] = params
+        self._write(message)
         await self._process.stdin.drain()
         return await future
 
     async def _notify(
         self,
         method: str,
-        params: dict[str, Any],
+        params: Optional[dict[str, Any]] = None,
     ) -> None:
         assert self._process is not None and self._process.stdin is not None
-        self._write({'jsonrpc': '2.0', 'method': method, 'params': params})
+        message: dict[str, Any] = {'jsonrpc': '2.0', 'method': method}
+        if params is not None:
+            message['params'] = params
+        self._write(message)
         await self._process.stdin.drain()
 
     def _write(self, message: dict[str, Any]) -> None:
