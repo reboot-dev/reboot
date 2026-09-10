@@ -1,27 +1,32 @@
 ---
 title: Lay Out a Reboot Backend Test Suite
 impact: MEDIUM
-impactDescription: Without correct layout and pytest paths, generated `_rbt` modules and servicers can't be imported by tests
-tags: testing, pytest, layout, pyproject, conftest, uv
+impactDescription: Without `reboot[dev]`, the pytest paths, and the git-ignore, the built-in steps are missing, generated `_rbt` modules can't be imported, and recordings get committed
+tags: testing, pytest, layout, pyproject, conftest, uv, reboot-dev, gitignore, recordings
 ---
 
 ## Lay Out a Reboot Backend Test Suite
 
-> **Critical:** Reboot tests are plain `unittest.IsolatedAsyncioTestCase`
-> classes discovered by `pytest`. They do **not** need `pytest-asyncio`
-> — `IsolatedAsyncioTestCase` runs `async def` test methods natively
-> via the `unittest` runner that `pytest` falls back to.
+> **Critical:** a Reboot application's tests are Gherkin `.feature`
+> files in `backend/tests/`, run by `reboot.bdd` through `pytest`.
+> The built-in steps come with the `reboot[dev]` extra, which a
+> development environment always installs; without it the scenarios
+> have no steps and `rbt dashboard` refuses to start. No
+> `pytest-asyncio`: `reboot.bdd` and `IsolatedAsyncioTestCase` run
+> `async def` code on their own.
 
-This reference covers the project-level scaffolding that every Reboot
-backend test suite shares. The in-test patterns (booting `Reboot()`,
-creating contexts, mocking, etc.) live in
+This reference covers the project-level scaffolding every Reboot
+backend test suite shares. Writing the scenarios is
+[testing-features.md](testing-features.md); driving the web app from
+them is [testing-web-app.md](testing-web-app.md); the harness and
+context patterns a custom step or a harness test uses are
 [testing-harness.md](testing-harness.md) and
 [testing-external-context.md](testing-external-context.md).
 
 ## Where Tests Live
 
-The convention is **one test file per servicer**, in
-`backend/tests/`:
+**One `.feature` file per capability, one test module per
+application configuration**, in `backend/tests/`:
 
 ```
 <app>/
@@ -31,20 +36,29 @@ The convention is **one test file per servicer**, in
 │   │   └── servicers/
 │   │       └── chat_room.py
 │   ├── tests/
-│   │   ├── chat_room_servicer_test.py
-│   │   └── conftest.py       # Optional, see below.
+│   │   ├── posting.feature           # One feature per capability.
+│   │   ├── moderation.feature
+│   │   ├── chat_room_test.py         # `application` fixture + `scenarios(...)`.
+│   │   ├── web_test.py               # The scenarios that open the web app.
+│   │   ├── posting.recordings/       # Made by running; git-ignored.
+│   │   └── conftest.py               # Optional, see below.
 │   └── .pytest.ini
 ├── api/                      # `*.py` pydantic API definitions.
+├── .gitignore                # Includes `*.recordings/`.
 └── pyproject.toml
 ```
 
-Test files end in `_test.py` so `pytest`'s default discovery picks
-them up. The class name convention is `Test<Servicer>` or
-`<Servicer>Test`; either is fine.
-
-For apps with cross-servicer flows (e.g. a checkout that touches a
-cart and an order), a single `full_<app>_test.py` that boots all
-servicers in one `Application(...)` is also a valid layout.
+- A feature file is named for the activity (`transfers.feature`),
+  not for a state type.
+- A test module ends in `_test.py` so `pytest` picks it up, defines
+  the `application` fixture returning the `Application(...)` its
+  scenarios run against, and calls `scenarios('a.feature', 'b.feature')` from `reboot.bdd`. One module per way of configuring
+  the application: with authorizers, with a scheduled job turned
+  off, with a scripted LLM, with the web app served. The minimal
+  module is in [testing-features.md](testing-features.md).
+- A crash-and-recover test
+  ([testing-failure-recovery.md](testing-failure-recovery.md)) is
+  an `IsolatedAsyncioTestCase` in its own `_test.py` module.
 
 ## `.pytest.ini` — Make Generated Modules Importable
 
@@ -92,16 +106,20 @@ import os
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-placeholder")
 ```
 
-Avoid putting fixtures or hooks here unless you actually need them
-across multiple test files — Reboot tests rely on
-`asyncSetUp`/`asyncTearDown` rather than pytest fixtures.
+Put a fixture here only when several test modules share it. A
+stand-in for a model or a dependency is an autouse fixture in the
+one test module whose scenarios use it, since a module's scenarios
+share its fixtures ([testing-features.md](testing-features.md)).
 
 ## Dev Dependencies
 
-Add `pytest` to the dev-dependency section of your `pyproject.toml`.
-Do **not** add `pytest-asyncio` — `IsolatedAsyncioTestCase` handles
-async test methods on its own, and adding `pytest-asyncio` can
-conflict with that path.
+Add `reboot[dev]`, at the same pin as `reboot`, and `pytest` to the
+dev-dependency section of your `pyproject.toml`. An application
+whose scenarios open its web app also needs `playwright` and
+`pytest-playwright` (and `uv run playwright install chromium`
+once). Do **not** add `pytest-asyncio`: `reboot.bdd` runs its steps
+on the harness's event loop, `IsolatedAsyncioTestCase` handles its
+own, and `pytest-asyncio` conflicts with both.
 
 ```toml
 # pyproject.toml
@@ -115,15 +133,38 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "reboot[dev]==<your-pinned-version>",
     "mypy==<pinned>",
     "pytest>=7.4.2",
+    "playwright>=1.55.0",           # Only with web app scenarios.
+    "pytest-playwright>=0.7.1",     # Only with web app scenarios.
     "types-protobuf>=4.24.0.20240129",
 ]
 ```
 
-`uv sync` installs the `dev` group by default (it's a uv default
-group), so `uv run pytest` and `uv run mypy backend/` just work.
+`reboot[dev]` carries what `reboot.bdd` and the dashboard's Features
+page run on, and registers the built-in steps as a pytest plugin, so
+no test module imports them. `uv sync` installs the `dev` group by
+default (it's a uv default group), so `uv run pytest`,
+`uv run mypy backend/`, and `uv run rbt dashboard` just work.
 `[tool.uv.dev-dependencies]` is an accepted alias for the same list.
+An application packaged for `rbt serve` installs plain `reboot`.
+
+## `.gitignore` — Recordings Are Made, Not Committed
+
+Running a scenario that opens the web app records a video and
+screenshots into `<feature>.recordings/` beside the feature file
+([testing-web-app.md](testing-web-app.md)). The project-root
+`.gitignore` (template in
+[lifecycle-project-setup.md](lifecycle-project-setup.md)) must have:
+
+```gitignore
+# Recordings of browser scenarios, made by running the tests.
+*.recordings/
+```
+
+Check that line is present whenever adding the first web app
+scenario to a project.
 
 ## Running Tests
 
@@ -133,22 +174,32 @@ From the application root:
 # Whole suite.
 cd backend && uv run pytest
 
-# Single test file.
-cd backend && uv run pytest tests/chat_room_servicer_test.py
+# One test module (the feature files it runs).
+cd backend && uv run pytest tests/chat_room_test.py
 
-# Single test method.
-cd backend && uv run pytest \
-    tests/chat_room_servicer_test.py::TestChatRoom::test_chat_room
+# One scenario, by (part of) its name.
+cd backend && uv run pytest -k "posts a message"
+
+# What is being worked on, or everything but.
+cd backend && uv run pytest -m wip
+cd backend && uv run pytest -m "not wip"
 
 # Verbose, with print() output flowing to the terminal.
 cd backend && uv run pytest -v -s
 ```
 
+A `@blocked` scenario is skipped, with its description as the reason,
+so it shows in the summary without failing the suite.
+
 ## Don't Construct Servicer Instances Directly
 
 The #1 trap for new Reboot test authors is calling
-`ChatRoomServicer().send(...)` directly. That bypasses identity,
-context, persistence, and authorization — it tests literally
-nothing the framework does. Always boot a harness and call through
-`Service.ref(id).method(context, ...)`. See
-[testing-harness.md](testing-harness.md) for the canonical pattern.
+`ChatRoomServicer().send(...)` directly, in a custom step or a
+harness test. That bypasses identity, context, persistence, and
+authorization — it tests literally nothing the framework does. The
+built-in steps call through the application; a custom step does the
+same with `world.context(user)` and
+`Service.ref(id).method(context, ...)`
+([testing-features.md](testing-features.md)), and a harness test
+with `rbt.create_external_context(...)`
+([testing-harness.md](testing-harness.md)).

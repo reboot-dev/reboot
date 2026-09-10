@@ -27,3 +27,6 @@ Then run `uv lock` (or the project's equivalent) so the lock file
 records the extra. A project with a single dependency list may put
 `reboot[dev]==<version>` in place of `reboot==<version>`, at the cost
 of shipping the extra's packages with the application.
+
+A project that already lists `reboot[pytest-bdd]` renames it to
+`reboot[dev]`; the old extra is gone.

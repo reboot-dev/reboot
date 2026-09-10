@@ -109,16 +109,18 @@ approval.
 ## Step 6 — Apply the code migrations
 
 Apply the fragments' steps to the application, in ascending version
-order. These are code-only changes; do not bump version pins
-or regenerate yet. (This ordering is deliberate: if the upgrade is
+order. A fragment may ask for the developer's input partway (which
+feature a test belongs to, for instance); ask, and finish that
+fragment before starting the next. These are code-only changes; do
+not bump version pins or regenerate yet. (This ordering is deliberate: if the upgrade is
 interrupted partway, the application still pins its old version, so
 the version-mismatch check fires on the next run and this skill can
 simply be run again.)
 
 ## Step 7 — Bump every pin, once, to the exact target version
 
-- `pyproject.toml`: every exact `reboot` pin (including dev
-  dependencies).
+- `pyproject.toml`: every exact `reboot` pin, including
+  `reboot[dev]` and any other dev dependency on it.
 - `package.json`: every `@reboot-dev/*` dependency that has an exact
   version (leave `workspace:*` entries alone).
 - `Dockerfile` (if present): the `ghcr.io/reboot-dev/reboot-base`

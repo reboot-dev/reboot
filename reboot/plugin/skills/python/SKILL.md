@@ -1,6 +1,6 @@
 ---
 name: python
-description: Reboot Python framework for building transactional microservices with durable actor state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, changing an API of an application that has already been deployed or has persisted state (schema evolution rules; see `references/api-schema-evolution.md`), implementing Servicers, calling actor refs across services, scheduling work (including recurring / "cron" jobs), building durable workflows with the right call primitive (`.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` for Reboot calls; `at_least_once` / `at_most_once` for external calls; `until` / `until_changes` for reactive waiting on Reboot state), calling an LLM / building an AI agent in the backend via the durable `reboot.agents.pydantic_ai.Agent`, or testing Reboot applications with the `Reboot()` test harness.
+description: Reboot Python framework for building transactional microservices with durable actor state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, changing an API of an application that has already been deployed or has persisted state (schema evolution rules; see `references/api-schema-evolution.md`), implementing Servicers, calling actor refs across services, scheduling work (including recurring / "cron" jobs), building durable workflows with the right call primitive (`.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` for Reboot calls; `at_least_once` / `at_most_once` for external calls; `until` / `until_changes` for reactive waiting on Reboot state), calling an LLM / building an AI agent in the backend via the durable `reboot.agents.pydantic_ai.Agent`, or testing Reboot applications with Gherkin feature files run by `reboot.bdd` (and, for crash recovery, the `Reboot()` test harness).
 license: Apache-2.0
 metadata:
   author: reboot
@@ -47,7 +47,8 @@ Reference these guidelines when:
 - Calling an LLM or building an AI agent in the backend via the
   durable `reboot.agents.pydantic_ai.Agent`
 - Using the standard library (`OrderedMap`, mailgun, etc.)
-- Writing tests with the `Reboot()` harness
+- Writing tests: Gherkin feature files run by `reboot.bdd`, and
+  crash-recovery tests on the `Reboot()` harness
 - Verifying any change: **type-check with `mypy backend/` and fix all
   errors** before considering Python work done (see "Type-checking"
   below)
@@ -145,15 +146,28 @@ file is the source of truth (see `references/api-pydantic.md`):
 from reboot.api import API, Field, Methods, Model, Reader, Type, Writer
 
 
-# Every Field needs an explicit default (see Key Constraints below).
+# Every Field needs an explicit default and a description (see Key
+# Constraints below).
 class ChatRoomState(Model):
-    messages: list[str] = Field(tag=1, default_factory=list)
+    messages: list[str] = Field(
+        tag=1,
+        default_factory=list,
+        description="Every message posted to the room, oldest first.",
+    )
 
 class SendRequest(Model):
-    message: str = Field(tag=1, default="")
+    message: str = Field(
+        tag=1,
+        default="",
+        description="The text to post, as the sender typed it.",
+    )
 
 class MessagesResponse(Model):
-    messages: list[str] = Field(tag=1, default_factory=list)
+    messages: list[str] = Field(
+        tag=1,
+        default_factory=list,
+        description="Every message posted so far, oldest first.",
+    )
 
 api = API(
     ChatRoom=Type(
@@ -207,6 +221,13 @@ messages nested as attributes, the `Servicer` base class, and the
   domain defaults (`turn="r"`, `delay=1.0`, etc.) inside the
   constructor method, not on the Field. Applies to state,
   request/response, and error Models.
+- **Every `Field(tag=N)` gets a `description=`** saying what the
+  value means, in state, request, response, and error Models alike.
+  The dashboard shows it beside the property, and a property without
+  one shows a request to add it. Never add a property without a
+  description, and describe the value, not the type: "What the
+  account holds, in dollars, never below zero", not "The balance
+  (float)".
 - Cross-actor and external-service calls belong in `TransactionContext`
   (one-shot) or `WorkflowContext` (durable, long-running).
 - **Changing an API after the application has persisted state or has
@@ -376,17 +397,33 @@ with "unknown actor type."
 
 ### Testing
 
+An application's tests are Gherkin `.feature` files run by
+`reboot.bdd`; the order of work that writes them (agree on the
+feature in English, tag it `@wip`, iterate on scenarios) is the
+[`feature` skill](../feature/SKILL.md).
+
 - `references/testing-project-setup.md` — `backend/tests/` layout,
-  `.pytest.ini`, dev-deps, `uv run pytest`
-- `references/testing-harness.md` — `Reboot()` harness used in tests,
-  how to do auth impersonation in tests.
-- `references/testing-external-context.md` — `create_external_context`,
-  asserting on `<Method>Aborted`, waiting on tasks/workflows, mocking
-  external services / LLMs, one-test-per-user-story
+  `.pytest.ini`, `reboot[dev]` and the other dev-deps, `.gitignore`,
+  `uv run pytest`
+- `references/testing-features.md` — **always read before writing a
+  scenario**: the built-in steps' spelling (who calls, factories
+  making ids up, saved values, assertions, `eventually`, attempts
+  and aborts, tasks), `@wip` / `@blocked`, feature / rule / scenario
+  structure, custom steps as plain Reboot code, mocks and stand-ins
+- `references/testing-web-app.md` — scenarios that open the web app:
+  the `frontend` fixture, the web app steps, the accessible markup
+  the page needs, sign-in, recordings
+- `references/testing-harness.md` — the `Reboot()` harness the
+  scenarios run on, and how a custom step or a harness test
+  impersonates a user
+- `references/testing-external-context.md` — `create_external_context`
+  in custom steps and harness tests, asserting on `<Method>Aborted`,
+  waiting on tasks/workflows, mocking external services / LLMs
 - `references/testing-failure-recovery.md` — restarting the app under
   test with `rbt.down()` / `rbt.up(revision=...)`, landing the crash
   inside a method with a stalling mock, and asserting work happened
-  exactly once across it
+  exactly once across it; the one kind of test that stays on the
+  harness instead of in a feature file
 
 ### Type-checking (do this after every change)
 
@@ -501,6 +538,8 @@ above lists the right ones grouped by task type. The full catalog:
 **Testing** (`testing-`):
 
 - `references/testing-project-setup.md`
+- `references/testing-features.md`
+- `references/testing-web-app.md`
 - `references/testing-harness.md`
 - `references/testing-external-context.md`
 - `references/testing-failure-recovery.md`

@@ -16,6 +16,7 @@
       "strict": false,
       "skills": [
         "./skills/app",
+        "./skills/feature",
         "./skills/mcp-ui",
         "./skills/web-app",
         "./skills/run",

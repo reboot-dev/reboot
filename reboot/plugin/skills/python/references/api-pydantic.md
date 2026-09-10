@@ -16,6 +16,9 @@ tags: pydantic, api, Model, Methods, Reader, Writer, Transaction, factory
 >    `False`, empty list/dict). Non-zero defaults raise
 >    `UserPydanticError` at import. Set domain defaults inside the
 >    constructor or a `start`-style writer, not on the Field.
+> 3. Every `Field(tag=N)` gets a `description=` saying what the value
+>    means. The dashboard shows it beside the property; a property
+>    without one shows a request to add it.
 
 Reboot APIs are defined in pydantic `.py` files. `rbt generate`
 consumes them and produces a `<name>_rbt.py` module with the typed
@@ -49,23 +52,46 @@ from reboot.api import API, Field, Methods, Model, Reader, Type, Writer
 
 
 class AccountState(Model):
-    balance: float = Field(tag=1, default=0.0)
+    balance: float = Field(
+        tag=1,
+        default=0.0,
+        description="What the account holds, in dollars: every deposit "
+        "added and every withdrawal and transfer out taken away, and "
+        "never below zero.",
+    )
 
 
 class BalanceResponse(Model):
-    amount: float = Field(tag=1, default=0.0)
+    amount: float = Field(
+        tag=1,
+        default=0.0,
+        description="The balance at the moment of the read, in dollars.",
+    )
 
 
 class DepositRequest(Model):
-    amount: float = Field(tag=1, default=0.0)
+    amount: float = Field(
+        tag=1,
+        default=0.0,
+        description="How much to add, in dollars; any amount is accepted.",
+    )
 
 
 class WithdrawRequest(Model):
-    amount: float = Field(tag=1, default=0.0)
+    amount: float = Field(
+        tag=1,
+        default=0.0,
+        description="How much to take out, in dollars.",
+    )
 
 
 class OverdraftError(Model):
-    amount: float = Field(tag=1, default=0.0)
+    amount: float = Field(
+        tag=1,
+        default=0.0,
+        description="By how much the withdrawal exceeded the balance, in "
+        "dollars.",
+    )
 
 
 AccountMethods = Methods(
@@ -115,6 +141,37 @@ api = API(
     ),
 )
 ```
+
+## Every Property Has a Description
+
+Each `Field(...)` takes `description=`, a sentence or two saying
+what the value means to the application, the way a method's
+`description=` says what the method does. Write one for every
+property of every Model: state, request, response, and error. The
+dashboard's Models page shows the description beside the property,
+and for a property without one shows "No description provided,
+please ask your friendly coding agent to add one for you.", so a
+missing description is visible to the developer at once.
+
+Describe the meaning and the units, and any invariant the value
+obeys, not the type, which the annotation already says:
+
+```python
+# DON'T — restates the annotation.
+balance: float = Field(tag=1, default=0.0, description="The balance.")
+
+# DO — says what the number is and what is true of it.
+balance: float = Field(
+    tag=1,
+    default=0.0,
+    description="What the account holds, in dollars: every deposit "
+    "added and every withdrawal and transfer out taken away, and "
+    "never below zero.",
+)
+```
+
+When adding a property to an existing Model, add its description in
+the same change.
 
 ## Method Factories
 

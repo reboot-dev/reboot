@@ -113,8 +113,11 @@ reminder=$(
 - Do not guess Reboot platform behavior (idempotency, scheduling,
 authorizers, state construction, contexts, generated APIs). Before
 coding around any Reboot behavior, read the relevant reference in the
-Reboot plugin's skills (`python`, `mcp-ui`, `web-app`, `run`,
-`upgrade`) and state what it says.
+Reboot plugin's skills (`python`, `feature`, `mcp-ui`, `web-app`,
+`run`, `upgrade`) and state what it says.
+- An application's behavior is specified and tested as `.feature`
+files (the `feature` skill): agree on a feature in English before
+writing its API or code, and iterate on its scenarios with the user.
 - Before hand-rolling a primitive (maps, queues, pub/sub, presence,
 encryption), check Reboot's standard library: the `stdlib-*.md`
 references in the `python` skill.

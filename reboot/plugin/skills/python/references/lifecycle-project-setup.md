@@ -49,7 +49,10 @@ my-app/
 ## `pyproject.toml`
 
 Reboot supports Python 3.10+. The only required runtime dependency is
-`reboot`. Use `uv` or `pip` — Reboot doesn't care.
+`reboot`; a development environment always installs the `reboot[dev]`
+extra as well, which is what the tests (`reboot.bdd`) and the
+dashboard's Features page run on. Use `uv` or `pip` — Reboot doesn't
+care.
 
 ```toml
 [project]
@@ -62,11 +65,17 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "reboot[dev]==1.5.0",
     "mypy==1.18.1",
     "pytest>=7.4.2",
     "types-protobuf>=4.24.0.20240129",
 ]
 ```
+
+`reboot[dev]` pins the same version as `reboot`; it adds the packages
+`reboot.bdd` and the dashboard need, and `rbt dashboard` refuses to
+start without it (`rbt dev run` warns). An application packaged for
+`rbt serve` installs plain `reboot` and carries none of it.
 
 `name` and `version` are required — `uv` refuses to sync without them.
 There is **no `[build-system]` table**: that tells `uv` this is a
@@ -87,7 +96,8 @@ add `name`/`version`, and replace `requirements*.lock` with `uv lock`.
 Create a project-root `.gitignore` when scaffolding the project.
 Reboot projects produce artifacts that must never be committed:
 `rbt dev run` persists application state under `.rbt/`, `rbt generate` output is recreated from the API definitions on every run,
-and `.env` holds secrets (see `lifecycle-secrets.md`).
+`.env` holds secrets (see `lifecycle-secrets.md`), and running the
+tests records every browser scenario (see `testing-web-app.md`).
 
 ```gitignore
 # Reboot dev-server state.
@@ -99,6 +109,9 @@ frontend/api/
 
 # Secrets; see `lifecycle-secrets.md`.
 .env
+
+# Recordings of browser scenarios, made by running the tests.
+*.recordings/
 
 # Python virtual environment and caches.
 .venv/

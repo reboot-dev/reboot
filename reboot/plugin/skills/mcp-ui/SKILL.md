@@ -232,13 +232,19 @@ under Key Framework Concepts):
   reads the ID from the URL; a shared `rbt_session` keeps the user
   signed in across frontends.
 
-**Before the tests:** the four `python/references/testing-*.md`
-files, plus `python/references/patterns-idempotency.md` — it
-explains `IdempotencyUncertainError`, which is otherwise the one
-runtime error whose cause is not in any reference you have read.
+**Before the tests:** `python/references/testing-project-setup.md`
+and `python/references/testing-features.md` (the built-in steps'
+spelling; always), plus `python/references/patterns-idempotency.md`
+— it explains `IdempotencyUncertainError`, which is otherwise the
+one runtime error whose cause is not in any reference you have
+read. `python/references/testing-harness.md` and
+`testing-external-context.md` are for custom steps;
 `testing-failure-recovery.md` is the one to read whenever the app
 has a spawned task, a `Workflow`, or `schedule()`d work: it covers
 restarting the app under test and asserting that work survived.
+The order of work around the feature files (agree in English, tag
+`@wip`, iterate on scenarios) is the
+[`feature` skill](../feature/SKILL.md).
 
 **Before running the app:** the [`run` skill](../run/SKILL.md).
 
@@ -672,11 +678,14 @@ a worked set are in
 │   └── <pkg>/v1/
 │       └── <name>.py        # API definition
 ├── backend/
-│   └── src/
-│       ├── main.py          # Application entrypoint
-│       ├── example_prompts.py  # Wizard example prompts
-│       └── servicers/
-│           └── <name>.py    # Servicer implementation
+│   ├── src/
+│   │   ├── main.py          # Application entrypoint
+│   │   ├── example_prompts.py  # Wizard example prompts
+│   │   └── servicers/
+│   │       └── <name>.py    # Servicer implementation
+│   └── tests/
+│       ├── <capability>.feature  # One feature per capability
+│       └── <name>_test.py   # `application` fixture + `scenarios(...)`
 └── frontend/
     ├── package.json
     ├── build.mjs            # Discovers + builds every UI
@@ -739,31 +748,28 @@ a worked set are in
     [`references/react-app-tsx.md`](references/react-app-tsx.md) for
     `App.tsx` patterns.
 12. `cd frontend && npm run build`.
-13. **Write and run backend unit tests covering each user-facing
-    user story before handing the app off.** Enumerate the user
-    stories from the design — every action the user should be able
-    to _do_ through the MCP tool surface (e.g. "create a new
-    todo list", "add an item and see it listed", "rename a
-    list"). Write one test method per user story in
-    `backend/tests/<servicer>_test.py`, following the patterns
-    in `python/references/testing-project-setup.md`,
-    `python/references/testing-harness.md`, and
-    `python/references/testing-external-context.md`. Use one
-    `IsolatedAsyncioTestCase`, one external context per test
-    (`name=f"test-{self.id()}"`), and
-    `Service.ref(id).method(context, ...)` for all calls —
-    never instantiate Servicers directly. Register the **real**
-    servicers — never subclass a servicer in tests to weaken its
-    `authorizer()`. Impersonate users instead with
-    `await rbt.create_external_context_as(name, user_id)` — see
-    the impersonation pattern in `testing-harness.md`. Run
+13. **Write and run the scenarios of every feature before handing
+    the app off.** Each feature file from the design phase (the
+    [`feature` skill](../feature/SKILL.md)) gets its scenarios now:
+    every action the user should be able to _do_ through the MCP
+    tool surface ("create a new todo list", "add an item and see it
+    listed", "rename a list") is a scenario in the built-in steps
+    of `python/references/testing-features.md`, calling the
+    methods the tools call. Every step names who calls; a user is
+    declared with `"alice" is an authenticated user`, which is how
+    the real authorizers get exercised: register the **real**
+    servicers and never subclass one to weaken its `authorizer()`.
+    Let factories make ids up. Tag what cannot pass yet `@blocked`
+    with its reason; leave `@wip` where work continues. Run
     `cd backend && uv run pytest` and fix anything that fails.
     Then type-check: run `uv run mypy backend/` from the project
     root and fix every error (config and rationale in
     `python/references/lifecycle-project-setup.md`). Do not
-    proceed to the next step until every user-story test passes
-    and mypy is green — together they are the gate that catches
-    contract bugs before the user sees them in MCPJam.
+    proceed to the next step until every scenario passes (or is
+    `@blocked` with a reason) and mypy is green — together they
+    are what catches contract bugs before the user sees them in
+    MCPJam. Point the user at the dashboard's Features page to
+    review the features.
 14. Run the app — load the [`run` skill](../run/SKILL.md) and
     follow it. It is the single canonical "start the app"
     procedure: it detects the app type, makes sure dependencies

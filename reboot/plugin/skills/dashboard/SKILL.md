@@ -1,6 +1,6 @@
 ---
 name: dashboard
-description: Start the Reboot developer dashboard (`rbt dashboard`) for a project and open it in the browser. Puts the minimum files in place (a `pyproject.toml` depending on `reboot`, a `.rbtrc`, the API directory), starts the dashboard in a background shell if one is not already serving, and opens its URL once. Use this while BUILDING an app — the dashboard watches the API directory from before anything is running, so the developer watches the API take shape as it is written. Not for running an app; `rbt dev run` manages its dashboard itself once the app exists (see the run skill).
+description: Start the Reboot developer dashboard (`rbt dashboard`) for a project and open it in the browser. Puts the minimum files in place (a `pyproject.toml` depending on `reboot[dev]`, a `.rbtrc`, the API directory), starts the dashboard in a background shell if one is not already serving, and opens its URL once. Use this while BUILDING an app — the dashboard watches the API directory from before anything is running, so the developer watches the API take shape as it is written. Not for running an app; `rbt dev run` manages its dashboard itself once the app exists (see the run skill).
 argument-hint: [<project-directory>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -12,8 +12,12 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 > says how and when to react.
 
 The developer dashboard is a browser page, served by
-`rbt dashboard`, that shows a Reboot application's API and a
-changelog of how it has evolved. It reads the API **files**, not a
+`rbt dashboard`, that shows a Reboot application's API (the Models
+page), its features as the `.feature` files under `backend/tests/`
+specify them (the Features page, with each feature's rules and
+scenarios, the methods it uses, its `@wip` and `@blocked` marks, and
+the recordings of its browser scenarios), and a changelog of how the
+API has evolved. It reads the API and feature **files**, not a
 running application, so it works from before the first API file is
 written — which is exactly when to start it: bring the dashboard up
 early in a build and the developer watches the API take shape while
@@ -47,10 +51,13 @@ the project visibly keeps its API elsewhere (look for the
 scaffolding step has already created all of them — check, and only
 create what is missing:
 
-1. **`pyproject.toml` depending on `reboot`** (plus
-   `.python-version`), so `uv run rbt` resolves. If missing, create
-   both following the templates in
-   `../python/references/lifecycle-project-setup.md`.
+1. **`pyproject.toml` depending on `reboot` and, in its dev group,
+   `reboot[dev]`** (plus `.python-version`), so `uv run rbt`
+   resolves. `rbt dashboard` refuses to start without the
+   `reboot[dev]` extra, which carries what its Features page runs
+   on; a project that pins only `reboot` gets `reboot[dev]` added at
+   the same version. If missing, create both files following the
+   templates in `../python/references/lifecycle-project-setup.md`.
 2. **`.rbtrc`.** Everything the dashboard reads of the project comes
    from here: the API directory from the `generate <dir>` line, and,
    for its code checks, the application from `dev run --application=`

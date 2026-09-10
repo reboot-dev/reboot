@@ -8,6 +8,7 @@ agent. The same skills work in both **Claude Code** and **Codex**.
 | Skill                        | Description                                                                                                                               |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | [`app`](skills/app/)         | Build a Reboot app from a description — routes to `mcp-ui` or `web-app`                                                                   |
+| [`feature`](skills/feature/) | Specify a feature in plain English, write it down as a `@wip` feature file, then iterate on its scenarios with the user                   |
 | [`mcp-ui`](skills/mcp-ui/)   | Build MCP UIs for ChatGPT, Claude, VSCode, Goose, and others — layers on top of `python`                                                  |
 | [`web-app`](skills/web-app/) | Build standalone Reboot Web Apps — a Reboot backend behind a browser-facing React frontend — layers on top of `python`                    |
 | [`run`](skills/run/)         | Run an existing Reboot app — detects MCP UI vs. Web App and starts every process it needs                                                 |

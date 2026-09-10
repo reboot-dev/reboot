@@ -51,14 +51,14 @@ backend behind a standalone React frontend served at a normal URL.
 
 The Reboot backend is identical. The deltas are all on the frontend:
 
-| Concern      | MCP UI (`mcp-ui`)                                        | Web App (this skill)                                                                   |
-| ------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Front door   | MCP host (ChatGPT, Claude, …) creates a `User` per user. | Browser user signs in via `Application(oauth=...)`; same `User` per upstream identity. |
-| API exposure | `mcp=Tool()` on writer/transaction methods.              | Methods exposed only through the generated React client.                               |
-| UI shape     | `UI()` methods → artifacts embedded in the MCP host.     | A normal SPA at `web/` opened at a URL.                                                |
-| Vite config  | Special — nested `dist/<ui-path>/index.html` for MCP.    | Stock single-page Vite output.                                                         |
-| Test surface | MCPJam inspector.                                        | Browser + the standard React devtools / Playwright.                                    |
-| `User` type  | Required — the MCP entry point.                          | Optional — only if your app needs per-user state.                                      |
+| Concern      | MCP UI (`mcp-ui`)                                        | Web App (this skill)                                                                      |
+| ------------ | -------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Front door   | MCP host (ChatGPT, Claude, …) creates a `User` per user. | Browser user signs in via `Application(oauth=...)`; same `User` per upstream identity.    |
+| API exposure | `mcp=Tool()` on writer/transaction methods.              | Methods exposed only through the generated React client.                                  |
+| UI shape     | `UI()` methods → artifacts embedded in the MCP host.     | A normal SPA at `web/` opened at a URL.                                                   |
+| Vite config  | Special — nested `dist/<ui-path>/index.html` for MCP.    | Stock single-page Vite output.                                                            |
+| Test surface | MCPJam inspector.                                        | Scenarios that drive the app through Playwright (`python/references/testing-web-app.md`). |
+| `User` type  | Required — the MCP entry point.                          | Optional — only if your app needs per-user state.                                         |
 
 Backend mechanics (state, methods, Servicers, workflows, refs,
 scheduling, stdlib actors, errors, auth predicates, testing) are
@@ -291,13 +291,21 @@ above for the dev-vs-prod sequence):
   `{ response, aborted }` instead of throwing, the typed error
   classes, and the snake→camel naming rules.
 
-**Before the tests:** the four `python/references/testing-*.md`
-files, plus `python/references/patterns-idempotency.md` — it
-explains `IdempotencyUncertainError`, which is otherwise the one
+**Before the tests:** `python/references/testing-project-setup.md`,
+`python/references/testing-features.md` (the built-in steps'
+spelling; always), and `python/references/testing-web-app.md` (the
+`frontend` fixture, the web app steps, and the accessible markup
+the page needs), plus `python/references/patterns-idempotency.md` —
+it explains `IdempotencyUncertainError`, which is otherwise the one
 runtime error whose cause is not in any reference you have read.
+`python/references/testing-harness.md` and
+`testing-external-context.md` are for custom steps;
 `testing-failure-recovery.md` is the one to read whenever the app
 has a spawned task, a `Workflow`, or `schedule()`d work: it covers
 restarting the app under test and asserting that work survived.
+The order of work around the feature files (agree in English, tag
+`@wip`, iterate on scenarios) is the
+[`feature` skill](../feature/SKILL.md).
 
 **Before running the app:** the [`run` skill](../run/SKILL.md).
 
@@ -330,6 +338,11 @@ wrong means regenerating everything across the project.
 
 ### Design Phase
 
+0. For each capability the app has, follow the
+   [`feature` skill](../feature/SKILL.md): agree on it in plain
+   English with the user, and write it down as a `@wip` feature
+   file before the API exists. The design below is derived from
+   those features.
 1. Analyze the user's description using the State Model Assessment
    below.
 2. State the design you are about to build:
@@ -479,7 +492,9 @@ Before writing code, analyze the user's request:
 │   │   └── servicers/
 │   │       └── <name>.py    # Servicer implementation
 │   └── tests/
-│       └── <name>_test.py   # One test per user story
+│       ├── <capability>.feature  # One feature per capability
+│       ├── <name>_test.py   # `application` fixture + `scenarios(...)`
+│       └── web_test.py      # The scenarios that open the app
 └── web/
     ├── .env.development     # VITE_REBOOT_URL=http://localhost:9991
     ├── package.json
@@ -554,37 +569,36 @@ Key differences from a `mcp-ui` layout:
     `web/src/api/**/*_rbt_react.ts` to check them — it is tens of
     thousands of lines that then ride along on every later turn.
 12. `cd web && npm run build` (sanity check the bundle).
-13. **Write and run backend unit tests covering each user-facing
-    user story before handing the app off.** Enumerate the user
-    stories from the design — every action the user should be able
-    to _do_ in the UI (e.g. "sign up and see my profile",
-    "submit the form and see the result on the dashboard",
-    "delete an item and have it disappear"). Write one test
-    method per user story in
-    `backend/tests/<servicer>_test.py`, following the patterns
-    in `python/references/testing-project-setup.md`,
-    `python/references/testing-harness.md`, and
-    `python/references/testing-external-context.md`. When a test fails
-    for a reason that looks like it is inside the framework, check
-    `python/references/patterns-idempotency.md` and
-    `patterns-common-gotchas.md` before reading `site-packages`. Use one
-    `IsolatedAsyncioTestCase`, one external context per test
-    (`name=f"test-{self.id()}"`), and
-    `Service.ref(id).method(context, ...)` for all calls —
-    never instantiate Servicers directly. Register the **real**
-    servicers — never subclass a servicer in tests to weaken its
-    `authorizer()`. Impersonate users instead: keep
-    `Application(..., token_verifier=<your IdP verifier>)` exactly
-    as in production and call
-    `await rbt.create_external_context_as(name, user_id)` — see the
-    impersonation pattern in `testing-harness.md`. Run
-    `cd backend && uv run pytest` and fix anything that fails.
+13. **Write and run the scenarios of every feature before handing
+    the app off.** Each feature file from the design phase gets its
+    scenarios now: every action the user should be able to _do_ in
+    the UI ("sign up and see my profile", "submit the form and see
+    the result", "delete an item and have it disappear") is a
+    scenario in the built-in steps of
+    `python/references/testing-features.md`, and the flows a person
+    clicks through are web app scenarios per
+    `python/references/testing-web-app.md` (they need `playwright`,
+    `pytest-playwright`, `uv run playwright install chromium`, and
+    the page's accessible markup from step 11). Every step names
+    who calls; a user who must be signed in is declared with
+    `"alice" is an authenticated user`, which is how the real
+    authorizers get exercised: register the **real** servicers and
+    never subclass one to weaken its `authorizer()`. Let factories
+    make ids up. Tag what cannot pass yet `@blocked` with its
+    reason; leave `@wip` where work continues. When a scenario
+    fails for a reason that looks like it is inside the framework,
+    check `python/references/patterns-idempotency.md` and
+    `patterns-common-gotchas.md` before reading `site-packages`.
+    Run `cd backend && uv run pytest` and fix anything that fails.
     Then type-check: run `uv run mypy backend/` from the project
     root and fix every error (config and rationale in
     `python/references/lifecycle-project-setup.md`). Do not
-    proceed to the next step until every user-story test passes
-    and mypy is green — together they are what catches
-    contract bugs before the user opens the browser.
+    proceed to the next step until every scenario passes (or is
+    `@blocked` with a reason) and mypy is green — together they
+    are what catches contract bugs before the user opens the
+    browser. Point the user at the dashboard's Features page to
+    review the features, and at the recordings of the browser
+    scenarios.
 14. Run the app — load the [`run` skill](../run/SKILL.md) and
     follow it. It is the single canonical "start the app"
     procedure: it makes sure dependencies and secrets are in
@@ -602,13 +616,21 @@ When modifying an existing app:
    has been deployed, read
    `python/references/api-schema-evolution.md` to understand the
    rules you must follow for API schema evolution.
-3. Update the API definition → re-run `uv run rbt generate`.
-4. Update servicer methods.
-5. Update React components and routes.
-6. Re-verify the backend: run `uv run mypy backend/` from the
-   project root and `cd backend && uv run pytest`; fix every
-   error and failure before handing back.
-7. If the app isn't already running, bring it up with the
+3. Agree on the changed or new feature in English and write it
+   down first, per the [`feature` skill](../feature/SKILL.md):
+   the feature file, tagged `@wip`, before the API changes.
+4. Update the API definition (every new property with a
+   `description=`) → re-run `uv run rbt generate`.
+5. Update servicer methods.
+6. Update React components and routes, keeping the markup
+   accessible (labels paired with inputs, buttons that say what
+   they do) so scenarios can drive the new page.
+7. Update the scenarios: the feature file's, and a web app
+   scenario for a flow a person clicks through. Re-verify the
+   backend: run `uv run mypy backend/` from the project root and
+   `cd backend && uv run pytest`; fix every error and failure
+   before handing back, and ask before removing `@wip`.
+8. If the app isn't already running, bring it up with the
    [`run` skill](../run/SKILL.md). If it is already running under
    `rbt dev run`, the `--watch` globs reload it automatically — no
    restart needed. Editing `.env` likewise triggers a restart, so

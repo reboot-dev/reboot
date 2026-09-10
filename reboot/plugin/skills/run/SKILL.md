@@ -59,7 +59,13 @@ the app type changes whether the setup wizard is opened.
 
 From the project root:
 
-- Backend: if `.venv/` is missing, run `uv sync`.
+- Backend: if `.venv/` is missing, run `uv sync`. If `rbt dev run`
+  later warns that `reboot[dev]` is not installed, add
+  `reboot[dev]` at the same pin as `reboot` to the dev group of
+  `pyproject.toml` (template in
+  `../python/references/lifecycle-project-setup.md`) and `uv sync`
+  again; the extra is what the tests and the dashboard's Features
+  page run on.
 - Frontend: if the frontend's `node_modules/` is missing, run
   `npm install` in the frontend directory — `frontend/` for an MCP
   MCP UI, `web/` for a standalone Web App.

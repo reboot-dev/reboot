@@ -13,10 +13,15 @@ tags: testing, Reboot, harness, IsolatedAsyncioTestCase, setup, authorizer, libr
 > then call methods through `Service.ref(id).method(context, ...)`.
 
 Reboot ships an in-process test harness at `reboot.aio.tests.Reboot`.
-Use it from a `unittest.IsolatedAsyncioTestCase` to start a Reboot
-runtime, register an `Application` via `rbt.up(...)`, and tear it
-down between tests. Pytest discovers `IsolatedAsyncioTestCase`
-subclasses automatically — see
+The scenarios of a feature file run on it through `reboot.bdd`
+([testing-features.md](testing-features.md)), which is where an
+application's behavior is tested; the `application` fixture a test
+module defines is the `Application(...)` the patterns below pass to
+`rbt.up(...)`. Use the harness directly, from a
+`unittest.IsolatedAsyncioTestCase`, for what a scenario cannot say:
+crashing the application mid-method and bringing it back
+([testing-failure-recovery.md](testing-failure-recovery.md)). Pytest
+discovers `IsolatedAsyncioTestCase` subclasses automatically — see
 [testing-project-setup.md](testing-project-setup.md) for the
 project-level wiring.
 
