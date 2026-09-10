@@ -5218,9 +5218,9 @@ class {{ client.proto.state_name }}:
                     assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                     __request__ = __request_or_options__
 
-                    {# When specifying __request__ directly, we need to ensure that all other input fields are None. #}
+                    {# When specifying __request__ directly, we need to ensure that no input field was also given. #}
                     {% for name in method.input_type_fields %}
-                    assert {{ name }} is None
+                    assert {{ name }} is UNSET
                     {% endfor %}
                 else:
                     assert __options__ is None

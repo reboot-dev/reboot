@@ -21108,7 +21108,7 @@ class Echo:
                     assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                     __request__ = __request_or_options__
 
-                    assert message is None
+                    assert message is UNSET
                 else:
                     assert __options__ is None
                     assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)

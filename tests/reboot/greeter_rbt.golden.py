@@ -21811,8 +21811,8 @@ class Greeter:
                     assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                     __request__ = __request_or_options__
 
-                    assert name is None
-                    assert metadata is None
+                    assert name is UNSET
+                    assert metadata is UNSET
                 else:
                     assert __options__ is None
                     assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
@@ -22332,7 +22332,7 @@ class Greeter:
                     assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                     __request__ = __request_or_options__
 
-                    assert sleep_time_seconds is None
+                    assert sleep_time_seconds is UNSET
                 else:
                     assert __options__ is None
                     assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
