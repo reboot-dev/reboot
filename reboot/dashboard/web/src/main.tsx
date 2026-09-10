@@ -592,8 +592,8 @@ const Signature: FC<{
       : propertiesOfDataType({ api, name: method.response.name });
 
   return (
-    <div className="method-signature">
-      <div>
+    <span className="method-signature">
+      <span>
         {"("}
         {takes.length > 0 && <Keys properties={takes} />}
         {") "}
@@ -603,9 +603,9 @@ const Signature: FC<{
         ) : (
           <span className="nothing">nothing</span>
         )}
-      </div>
+      </span>
       {method.errors.length > 0 && (
-        <div className="errors">
+        <span className="errors">
           {"raises "}
           {method.errors.map(({ name }, index) => (
             <Fragment key={name}>
@@ -616,9 +616,9 @@ const Signature: FC<{
               />
             </Fragment>
           ))}
-        </div>
+        </span>
       )}
-    </div>
+    </span>
   );
 };
 
@@ -653,35 +653,37 @@ const Method: FC<{
       id={id}
       key={flashKey}
     >
-      <div className="method-head">
-        <div className="method-title">
-          <span className="method-name">{method.name}</span>
-          {/* The kind comes before the tags because every method has
-              one, so it sits in the same column in every row. The tags
-              are optional. */}
-          <Kind kind={kindOfMethod(method)} />
-          <span className="tags">
-            {method.factory && (
-              <Pill
-                className="tag tag-factory"
-                label="factory"
-                meaning={DEFINITIONS.factory}
-              />
-            )}
-            {method.mcp !== undefined && (
-              <Pill
-                className="tag tag-mcp"
-                label="MCP"
-                meaning={DEFINITIONS.mcp}
-              />
-            )}
-          </span>
-        </div>
-      </div>
-      <div className="method-detail">
-        <div className="method-detail-inner">
-          <OpenDataTypeContext.Provider value={onOpenDataType}>
+      <OpenDataTypeContext.Provider value={onOpenDataType}>
+        <div className="method-head">
+          <div className="method-title">
+            <span className="method-name">{method.name}</span>
             <Signature api={api} method={method} />
+          </div>
+          <div className="method-tags">
+            {/* The kind comes before the tags because every method
+                has one, so it sits in the same column in every row.
+                The tags are optional. */}
+            <Kind kind={kindOfMethod(method)} />
+            <span className="tags">
+              {method.factory && (
+                <Pill
+                  className="tag tag-factory"
+                  label="factory"
+                  meaning={DEFINITIONS.factory}
+                />
+              )}
+              {method.mcp !== undefined && (
+                <Pill
+                  className="tag tag-mcp"
+                  label="MCP"
+                  meaning={DEFINITIONS.mcp}
+                />
+              )}
+            </span>
+          </div>
+        </div>
+        <div className="method-detail">
+          <div className="method-detail-inner">
             {method.description !== undefined && (
               <Description
                 className="method-description"
@@ -695,9 +697,9 @@ const Method: FC<{
                 onClose={onCloseDataType}
               />
             )}
-          </OpenDataTypeContext.Provider>
+          </div>
         </div>
-      </div>
+      </OpenDataTypeContext.Provider>
     </div>
   );
 };

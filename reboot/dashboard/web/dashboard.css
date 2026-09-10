@@ -867,7 +867,7 @@ header h1 {
 .methods {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 6px;
 }
 
 /* Deliberately not a scroll container. Nothing inside a card paints
@@ -876,22 +876,39 @@ header h1 {
    tooltip, which opens above the card, and the subgrid below, which
    stops propagating at a scroll container. */
 .method {
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border-soft));
   border-radius: var(--radius);
-  background: hsl(var(--card));
+  background: hsl(var(--surface-sunken));
 }
 
 .method-head {
-  padding: 14px 18px 12px;
-  cursor: pointer;
-  user-select: none;
+  padding: 10px 14px;
 }
 
+/* The method's name and its signature on one line, set the way a
+   property's name and type are. */
 .method-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+}
+
+.method-name {
+  color: hsl(var(--foreground));
+  font-weight: 600;
+}
+
+/* The pills, on their own line under the title, where each keeps
+   its color and none pushes the signature aside. */
+.method-tags {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  margin-top: 8px;
 }
 
 /* Whatever tags a method has, side by side. Taken out of the
@@ -921,20 +938,20 @@ header h1 {
 /* Both pills are one width with the label centred in it, so a
    column of them reads as a column rather than as ragged text.
    `min-width` rather than `width`: a label longer than any we
-   have today widens its own pill instead of being clipped. 92px
+   have today widens its own pill instead of being clipped. 80px
    fits the longest, `transaction`. */
 .kind,
 .tag {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 92px;
+  min-width: 80px;
 }
 
 .kind {
   font-family: ui-monospace, Menlo, monospace;
-  font-size: 10px;
-  padding: 2px 8px;
+  font-size: 9px;
+  padding: 1px 7px;
   border-radius: 999px;
   background: hsl(var(--muted));
   border: 1px solid hsl(240 5.9% 84%);
@@ -971,9 +988,9 @@ header h1 {
 
 .tag {
   font-family: ui-monospace, Menlo, monospace;
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 600;
-  padding: 2px 7px;
+  padding: 1px 6px;
   border: 1px solid transparent;
   border-radius: 999px;
   color: hsl(0 0% 100%);
@@ -1047,12 +1064,19 @@ header h1 {
   transform: none;
 }
 
+/* Code in a method's description sits on the card's sunken tone, so
+   it takes the page's white to stand out, as a property's does. */
+.method-description code {
+  background: hsl(var(--card));
+}
+
 .method-description {
+  max-width: 62ch;
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 1.5;
   color: hsl(var(--prose));
   margin: 0;
-  padding: 0 18px 12px;
+  padding: 0 14px 10px;
   text-wrap: pretty;
 }
 
@@ -1061,16 +1085,14 @@ header h1 {
    that type's name rather than its keys. Set in the mono face
    because it is read as a signature rather than as prose. */
 .method-signature {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 18px;
-  background: hsl(var(--surface-sunken));
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 11.5px;
+  display: inline;
   color: hsl(var(--muted-foreground));
   /* A long signature wraps rather than widening the card. */
   overflow-wrap: anywhere;
+}
+
+.method-signature .errors {
+  margin-left: 8px;
 }
 
 .arrow {
