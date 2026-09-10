@@ -2256,7 +2256,7 @@ header .state-type-description {
   padding: 16px 18px;
   border: 1px solid hsl(var(--border));
   border-radius: 10px;
-  background: hsl(var(--background));
+  background: hsl(var(--sidebar));
 }
 
 .feature-summary-name {
