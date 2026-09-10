@@ -2554,6 +2554,14 @@ header .state-type-description {
   text-wrap: pretty;
 }
 
+/* A property nobody described yet: set apart from a description, so
+   it reads as the page asking rather than the developer writing. */
+.property-description.is-missing {
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+  opacity: 0.85;
+}
+
 .property-description code {
   font-family: ui-monospace, Menlo, monospace;
   font-size: 0.9em;

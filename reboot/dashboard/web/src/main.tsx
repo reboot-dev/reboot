@@ -509,11 +509,16 @@ const Properties: FC<{
                 </Link>
               )}
             </div>
-            {property.description !== undefined && (
+            {property.description !== undefined ? (
               <Description
                 className="property-description"
                 text={property.description}
               />
+            ) : (
+              <p className="property-description is-missing">
+                No description provided, please ask your friendly coding agent
+                to add one for you.
+              </p>
             )}
             {property.constraints !== undefined && (
               <div className="property-constraints">{property.constraints}</div>
