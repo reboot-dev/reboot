@@ -36,6 +36,11 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(application(), local_envoy=True)
         self.url = f'http://127.0.0.1:{self.rbt.envoy_port()}'
         self.dashboard_url = f'{self.url}{DASHBOARD_PATH}/'
+        # An open the developer did not ask for tells the page so, which
+        # is what lets the page offer not to be opened again.
+        self.automatically_opened_url = (
+            f'{self.dashboard_url}?opened=automatically'
+        )
         self._connections: list[asyncio.Task] = []
 
     async def asyncTearDown(self) -> None:
@@ -102,7 +107,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
 
         # The browser gets the dashboard's path; `ExternalContext` only
         # ever sees the origin, which is all it accepts.
-        browser.assert_called_once_with(self.dashboard_url)
+        browser.assert_called_once_with(self.automatically_opened_url)
 
     async def test_does_not_open_when_somebody_is_looking(self) -> None:
         await self._view('a-tab-that-is-open')
@@ -142,7 +147,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         with patch('webbrowser.open', return_value=True) as browser:
             await _open_dashboard_once(dashboard_url=self.url, forced=False)
 
-        browser.assert_called_once_with(self.dashboard_url)
+        browser.assert_called_once_with(self.automatically_opened_url)
 
     async def test_does_not_open_when_the_developer_asked_it_not_to(
         self
@@ -174,7 +179,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         with patch('webbrowser.open', return_value=True) as browser:
             await _open_dashboard_once(dashboard_url=self.url, forced=False)
 
-        browser.assert_called_once_with(self.dashboard_url)
+        browser.assert_called_once_with(self.automatically_opened_url)
 
     async def test_forcing_opens_whatever_would_have_held_it_back(
         self
