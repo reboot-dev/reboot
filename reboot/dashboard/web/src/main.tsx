@@ -1011,9 +1011,7 @@ const TypesPane: FC<{
   return (
     <div className="types-pane">
       <div className="types-pane-header">
-        <span className="types-pane-title">
-          {found?.stateType.name ?? shortNameOfTypeName(target.stateTypeId)}
-        </span>
+        <span className="types-pane-title">{target.stateTypeId}</span>
         <button
           type="button"
           className="types-hide"
