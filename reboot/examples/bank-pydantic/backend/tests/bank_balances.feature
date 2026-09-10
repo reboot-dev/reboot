@@ -11,11 +11,11 @@ Feature: The bank can see every customer's balances
   Rule: The bank's view of an account agrees with the account itself
 
     Scenario: Two customers with an account each
-      Given "anonymous" does a `sign_up` on `Bank` of "<bank id>" with `customer_id="ann@example.com"`
-      And "anonymous" does a `sign_up` on `Bank` of "<bank id>" with `customer_id="bob@example.com"`
-      And "anonymous" does an `open_account` on `Customer` of "ann@example.com" with `initial_deposit=100.0`
+      Given "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of "<bank id>"
+      And "anonymous" does a `sign_up` with `customer_id="bob@example.com"` on `Bank` of "<bank id>"
+      And "anonymous" does an `open_account` with `initial_deposit=100.0` on `Customer` of "ann@example.com"
       And the resulting `account_id` is saved as "ann account id"
-      And "anonymous" does an `open_account` on `Customer` of "bob@example.com" with `initial_deposit=50.0`
+      And "anonymous" does an `open_account` with `initial_deposit=50.0` on `Customer` of "bob@example.com"
       And the resulting `account_id` is saved as "bob account id"
       Then as "anonymous", `all_customer_ids` on the `Bank` for "<bank id>" has `customer_ids=["ann@example.com", "bob@example.com"]`
       And as "anonymous", `account_balances` on the `Bank` for "<bank id>" has `balances` of length `2` and `balances[0].customer_id="ann@example.com"` and `balances[0].accounts` of length `1` and `balances[0].accounts[0].account_id=<ann account id>` and `balances[0].accounts[0].balance=100.0` and `balances[1].customer_id="bob@example.com"` and `balances[1].accounts[0].balance=50.0`

@@ -23,8 +23,9 @@ class ReadTest(unittest.TestCase):
 
     def test_a_call_with_assignments(self) -> None:
         syntax = parse(
-            '"u" spawns a `transfer` on `Bank` of "test-bank" with '
-            '`from_account_id=<first_account_id>` and `amount=250.0`'
+            '"u" spawns a `transfer` with '
+            '`from_account_id=<first_account_id>` and `amount=250.0` on '
+            '`Bank` of "test-bank"'
         )
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'does')
@@ -72,7 +73,7 @@ class ReadTest(unittest.TestCase):
         )
 
         syntax = parse(
-            '"u" does a `deposit` on `Account` of "alice" with `amount=1`'
+            '"u" does a `deposit` with `amount=1` on `Account` of "alice"'
         )
         assert syntax is not None
         self.assertFalse(syntax.does.spawned)
@@ -157,8 +158,8 @@ class ReadTest(unittest.TestCase):
 
     def test_a_read_says_the_reader_properties(self) -> None:
         syntax = parse(
-            'as "u", `has_at_least` on the `Account` for "alice" with '
-            '`amount=50` has `enough=true`'
+            'as "u", `has_at_least` with `amount=50` on the `Account` for '
+            '"alice" has `enough=true`'
         )
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'has')
@@ -169,24 +170,24 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(len(syntax.has.assertions), 1)
 
         syntax = parse(
-            'as "u", `has_at_least` on the `Account` for "alice" with '
-            '`amount=50` eventually has `enough=true` within 5 seconds'
+            'as "u", `has_at_least` with `amount=50` on the `Account` for '
+            '"alice" eventually has `enough=true` within 5 seconds'
         )
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'eventually_has')
         self.assertEqual(len(syntax.eventually_has.arguments), 1)
 
         syntax = parse(
-            'as "u", `has_at_least` on the `Account` for "alice" with '
-            '`amount=50` has `enough` saved as "covered"'
+            'as "u", `has_at_least` with `amount=50` on the `Account` for '
+            '"alice" has `enough` saved as "covered"'
         )
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'has_saved_as')
         self.assertEqual(len(syntax.has_saved_as.arguments), 1)
 
         syntax = parse(
-            'as "u", `has_at_least` on the `Account` for "alice" with '
-            '`amount=50` aborts with `Unauthenticated`'
+            'as "u", `has_at_least` with `amount=50` on the `Account` for '
+            '"alice" aborts with `Unauthenticated`'
         )
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'aborts_with')
@@ -262,14 +263,14 @@ class ReadTest(unittest.TestCase):
         """A call starts with the user it calls as and a read with
         'as "...",'; a step with neither is no step of the grammar."""
         syntax = parse(
-            '"alice" does a `deposit` on `Account` of "a" with `amount=1`'
+            '"alice" does a `deposit` with `amount=1` on `Account` of "a"'
         )
         assert syntax is not None
         self.assertEqual(syntax.does.user, 'alice')
         self.assertEqual(syntax.does.state.id, 'a')
 
         self.assertIsNone(
-            parse('does a `deposit` on `Account` of "a" with `amount=1`')
+            parse('does a `deposit` with `amount=1` on `Account` of "a"')
         )
         self.assertIsNone(
             parse('the `Account` for "a" gets a `deposit` with `amount=1`')

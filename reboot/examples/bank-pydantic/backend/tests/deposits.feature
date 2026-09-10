@@ -8,5 +8,5 @@ Feature: Customers can deposit into an account
   Scenario: A deposit into a new account
     Given "anonymous" creates an `Account` via `open`
     And the resulting state id is saved as "account id"
-    When "anonymous" does a `deposit` on `Account` of "<account id>" with `amount=10.0`
+    When "anonymous" does a `deposit` with `amount=10.0` on `Account` of "<account id>"
     Then as "anonymous", `balance` on the `Account` for "<account id>" has `amount=10.0`

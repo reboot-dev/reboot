@@ -37,9 +37,9 @@ Feature: Users can sign in
     Scenario: Two customers in the app at once
       Given "alice" is an authenticated user
       And "carol" is an authenticated user
-      And "alice" does an `open_account` on `User` of "alice" with `initial_deposit=100.0`
+      And "alice" does an `open_account` with `initial_deposit=100.0` on `User` of "alice"
       And the resulting `account_id` is saved as "alice account id"
-      And "carol" does an `open_account` on `User` of "carol" with `initial_deposit=200.0`
+      And "carol" does an `open_account` with `initial_deposit=200.0` on `User` of "carol"
       And the resulting `account_id` is saved as "carol account id"
       When "alice" opens the web app
       And "carol" opens the web app

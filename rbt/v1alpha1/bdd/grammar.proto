@@ -124,8 +124,8 @@ message CreatesVia {
   string user = 4;
 }
 
-// '"alice" does a `deposit` on `Account` of "alice" with ...', or
-// '"alice" spawns a `deposit` on `Account` of "alice" with ...' to
+// '"alice" does a `deposit` with ... on `Account` of "alice"', or
+// '"alice" spawns a `deposit` with ... on `Account` of "alice"' to
 // run the call as a task.
 message Does {
   State state = 1;
@@ -141,7 +141,7 @@ message Does {
   string user = 5;
 }
 
-// '"alice" attempts a `withdraw` on `Account` of "alice" with ...'.
+// '"alice" attempts a `withdraw` with ... on `Account` of "alice"'.
 message Attempts {
   State state = 1;
 

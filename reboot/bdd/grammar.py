@@ -144,12 +144,14 @@ ON_STATE = r'on `(?P<state_type>[\w.]+)` of "(?P<state_id>[^"]*)"'
 AS = r'as "(?P<user>[^"]*)", '
 USER = r'"(?P<user>[^"]*)"'
 
-# A step's optional trailing property list.
+# A call's optional property list, the request, said right after the
+# method: '"alice" does a `deposit` with `amount=50` on `Account` of
+# "alice"'.
 PROPERTIES = rf'(?: with (?P<clauses>{PROPERTY_CLAUSES}))?'
 
-# A read's optional property list, the reader's request, said before
-# what the read asserts or saves: 'as "alice", `has_at_least` on the
-# `Account` for "a" with `amount=50` has `enough=true`'.
+# A read's optional property list, the reader's request, said the
+# same way: 'as "alice", `has_at_least` with `amount=50` on the
+# `Account` for "a" has `enough=true`'.
 ARGUMENTS = rf'(?: with (?P<arguments>{PROPERTY_CLAUSES}))?'
 
 # The shape of each built-in step's text: what the step registers
@@ -170,11 +172,11 @@ CREATES_VIA = (
 )
 # 'does' calls and 'spawns' runs the call as a task.
 DOES = (
-    rf'{USER} (?P<verb>does|spawns) (?:a|an) `(?P<method>\w+)` {ON_STATE}'
-    rf'{PROPERTIES}$'
+    rf'{USER} (?P<verb>does|spawns) (?:a|an) `(?P<method>\w+)`{PROPERTIES} '
+    rf'{ON_STATE}$'
 )
 ATTEMPTS = (
-    rf'{USER} attempts (?:a|an) `(?P<method>\w+)` {ON_STATE}{PROPERTIES}$'
+    rf'{USER} attempts (?:a|an) `(?P<method>\w+)`{PROPERTIES} {ON_STATE}$'
 )
 AWAITS_TASK = (
     rf'{USER} awaits the `(?P<method>\w+)` task "<(?P<name>[^<>"]+)>" on '
@@ -185,19 +187,19 @@ ATTEMPT_ABORTS_WITH = (
     rf'(?: with (?P<clauses>{ASSERT_CLAUSES}))?$'
 )
 HAS = (
-    rf'{AS}`(?P<method>\w+)` on {STATE}{ARGUMENTS} has '
+    rf'{AS}`(?P<method>\w+)`{ARGUMENTS} on {STATE} has '
     rf'(?P<clauses>{ASSERT_CLAUSES})$'
 )
 EVENTUALLY_HAS = (
-    rf'{AS}`(?P<method>\w+)` on {STATE}{ARGUMENTS} '
+    rf'{AS}`(?P<method>\w+)`{ARGUMENTS} on {STATE} '
     rf'eventually has (?P<clauses>{ASSERT_CLAUSES}) within (?P<within>.+)$'
 )
 HAS_SAVED_AS = (
-    rf'{AS}`(?P<method>\w+)` on {STATE}{ARGUMENTS} has '
+    rf'{AS}`(?P<method>\w+)`{ARGUMENTS} on {STATE} has '
     rf'(?P<clauses>{SAVE_CLAUSES})$'
 )
 ABORTS_WITH = (
-    rf'{AS}`(?P<method>\w+)` on {STATE}{ARGUMENTS} aborts with '
+    rf'{AS}`(?P<method>\w+)`{ARGUMENTS} on {STATE} aborts with '
     rf'`(?P<error_type>\w+)`(?: with (?P<clauses>{ASSERT_CLAUSES}))?$'
 )
 RESULT_HAS = rf'the result has (?P<clauses>{ASSERT_CLAUSES})$'

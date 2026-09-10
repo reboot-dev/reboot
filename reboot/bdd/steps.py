@@ -38,8 +38,8 @@ value's type parses it as. A dotted path nests when calling, e.g.
     Given the application is up
     And "alice" is an authenticated user
     And "alice" creates an `Account` of "alice" via `open`
-    When "alice" does a `deposit` on `Account` of "alice" with
-      `amount=50`
+    When "alice" does a `deposit` with `amount=50` on `Account` of
+      "alice"
     Then as "alice", `balance` on the `Account` for "alice" has
       `balance=50`
 
@@ -83,8 +83,8 @@ way 'has' refuses writers, and a reader's abort is asserted with
 '`reader` on ... aborts with ...'. A reader that takes properties is
 given them before the 'has', the way a call is given its own:
 
-    Then as "alice", `has_at_least` on the `Account` for "alice" with
-      `amount=50` has `enough=true`
+    Then as "alice", `has_at_least` with `amount=50` on the `Account`
+      for "alice" has `enough=true`
 
 An asserting list can also say the predicates `path` containing
 `value` (a substring of a string, an element of a list, or a key of
@@ -99,8 +99,8 @@ string); a save may not use a column's name:
     When as "alice", `get_owner` on the `Account` for "frank" has
       `owner.name` saved as "owner_name"
     And the resulting `updated_balance` is saved as "balance"
-    And "alice" does a `deposit` on `Account` of "<owner_name>" with
-      `amount=1`
+    And "alice" does a `deposit` with `amount=1` on `Account` of
+      "<owner_name>"
 """
 
 # The step functions below take the `rbt` and `world`
@@ -1496,19 +1496,19 @@ def _almost_mixing_clauses() -> None:
 @given(
     parsers.re(
         rf'.+ with (?=.*`\s+saved\s){CLAUSE}'
-        rf'(?:{SEPARATOR}{CLAUSE})*$'
+        rf'(?:{SEPARATOR}{CLAUSE})*(?: on .+)?$'
     )
 )
 @when(
     parsers.re(
         rf'.+ with (?=.*`\s+saved\s){CLAUSE}'
-        rf'(?:{SEPARATOR}{CLAUSE})*$'
+        rf'(?:{SEPARATOR}{CLAUSE})*(?: on .+)?$'
     )
 )
 @then(
     parsers.re(
         rf'.+ with (?=.*`\s+saved\s){CLAUSE}'
-        rf'(?:{SEPARATOR}{CLAUSE})*$'
+        rf'(?:{SEPARATOR}{CLAUSE})*(?: on .+)?$'
     )
 )
 def _almost_saving_in_with() -> None:
@@ -1521,13 +1521,13 @@ def _almost_saving_in_with() -> None:
 @given(
     parsers.re(
         rf'.+ with (?=.*`\s+contain|.*`\s+(?:of\s+)?length)'
-        rf'{ASSERT_CLAUSES}$'
+        rf'{ASSERT_CLAUSES}(?: on .+)?$'
     )
 )
 @when(
     parsers.re(
         rf'.+ with (?=.*`\s+contain|.*`\s+(?:of\s+)?length)'
-        rf'{ASSERT_CLAUSES}$'
+        rf'{ASSERT_CLAUSES}(?: on .+)?$'
     )
 )
 def _almost_predicate_in_call_with() -> None:

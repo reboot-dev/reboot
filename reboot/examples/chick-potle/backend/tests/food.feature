@@ -13,25 +13,25 @@ Feature: Food orders
   Scenario: Adding the same item twice increments its quantity
     Given "alice" does a `start_order` on `User` of "alice"
     And the resulting `order_id` is saved as "order_id"
-    When "alice" does a `add_to_cart` on `FoodOrder` of "<order_id>" with `item_index=0` and `quantity=1`
-    And "alice" does a `add_to_cart` on `FoodOrder` of "<order_id>" with `item_index=0` and `quantity=1`
-    And "alice" does a `add_to_cart` on `FoodOrder` of "<order_id>" with `item_index=1` and `quantity=1`
+    When "alice" does a `add_to_cart` with `item_index=0` and `quantity=1` on `FoodOrder` of "<order_id>"
+    And "alice" does a `add_to_cart` with `item_index=0` and `quantity=1` on `FoodOrder` of "<order_id>"
+    And "alice" does a `add_to_cart` with `item_index=1` and `quantity=1` on `FoodOrder` of "<order_id>"
     Then as "alice", `get_cart` on the `FoodOrder` for "<order_id>" has `entries` of length `2` and `entries[0].item_index=0` and `entries[0].quantity=2` and `entries[1].item_index=1` and `entries[1].quantity=1` and `total_cents=3470`
-    When "alice" does a `remove_from_cart` on `FoodOrder` of "<order_id>" with `item_index=0`
+    When "alice" does a `remove_from_cart` with `item_index=0` on `FoodOrder` of "<order_id>"
     Then as "alice", `get_cart` on the `FoodOrder` for "<order_id>" has `entries` of length `1` and `entries[0].item_index=1` and `total_cents=1240`
 
   Scenario: A quantity of zero means one
     Given "alice" does a `start_order` on `User` of "alice"
     And the resulting `order_id` is saved as "order_id"
-    When "alice" does a `add_to_cart` on `FoodOrder` of "<order_id>" with `item_index=0` and `quantity=0`
+    When "alice" does a `add_to_cart` with `item_index=0` and `quantity=0` on `FoodOrder` of "<order_id>"
     Then as "alice", `get_cart` on the `FoodOrder` for "<order_id>" has `entries` of length `1` and `entries[0].quantity=1`
 
   Scenario: Out-of-range menu indexes are refused
     Given "alice" does a `start_order` on `User` of "alice"
     And the resulting `order_id` is saved as "order_id"
-    When "alice" attempts a `add_to_cart` on `FoodOrder` of "<order_id>" with `item_index=10` and `quantity=1`
+    When "alice" attempts a `add_to_cart` with `item_index=10` and `quantity=1` on `FoodOrder` of "<order_id>"
     Then the attempt aborts with `Unknown`
-    When "alice" attempts a `add_to_cart` on `FoodOrder` of "<order_id>" with `item_index=-1` and `quantity=1`
+    When "alice" attempts a `add_to_cart` with `item_index=-1` and `quantity=1` on `FoodOrder` of "<order_id>"
     Then the attempt aborts with `Unknown`
 
   Scenario: Another user cannot touch the order
@@ -39,5 +39,5 @@ Feature: Food orders
     And the resulting `order_id` is saved as "order_id"
     And "bob" is an authenticated user
     Then as "bob", `get_cart` on the `FoodOrder` for "<order_id>" aborts with `PermissionDenied`
-    When "bob" attempts a `add_to_cart` on `FoodOrder` of "<order_id>" with `item_index=0` and `quantity=1`
+    When "bob" attempts a `add_to_cart` with `item_index=0` and `quantity=1` on `FoodOrder` of "<order_id>"
     Then the attempt aborts with `PermissionDenied`

@@ -568,8 +568,8 @@ const withClauses = (
     ? { head: [], clauses: [] }
     : { head: [text(` ${word} `)], clauses };
 
-// A read's properties inline, before what the read asserts or saves:
-// ' with `amount=50`', the clauses joined by commas, or nothing.
+// A read's properties inline, right after the reader: ' with
+// `amount=50`', the clauses joined by commas, or nothing.
 const inlineClauses = (word: string, clauses: Span[][]): Span[] =>
   clauses.length === 0
     ? []
@@ -661,6 +661,8 @@ export const printBuiltInSyntax = (
         tail: [],
       };
     }
+    // A call's properties come right after the method, and the state
+    // after them, so the state is the tail, after the clauses.
     case "does": {
       const spawned = step.value.spawned;
       const clauses = withClauses(
@@ -674,11 +676,10 @@ export const printBuiltInSyntax = (
             `${spawned ? " spawns " : " does "}${articleOf(step.value.method)}`
           ),
           { text: step.value.method, role: "method" },
-          ...spansOfStateOn(step.value.state),
           ...clauses.head,
         ],
         clauses: clauses.clauses,
-        tail: [],
+        tail: spansOfStateOn(step.value.state),
       };
     }
     case "attempts": {
@@ -691,11 +692,10 @@ export const printBuiltInSyntax = (
           ...spansOfUser(step.value.user),
           text(` attempts ${articleOf(step.value.method)}`),
           { text: step.value.method, role: "method" },
-          ...spansOfStateOn(step.value.state),
           ...clauses.head,
         ],
         clauses: clauses.clauses,
-        tail: [],
+        tail: spansOfStateOn(step.value.state),
       };
     }
     case "awaitsTask":
@@ -734,9 +734,9 @@ export const printBuiltInSyntax = (
         head: [
           ...spansOfCaller(step.value.user),
           { text: step.value.method, role: "method" },
+          ...inlineClauses("with", step.value.arguments.map(spansOfAssignment)),
           text(" on "),
           ...spansOfState(step.value.state),
-          ...inlineClauses("with", step.value.arguments.map(spansOfAssignment)),
           text(" has "),
         ],
         clauses: step.value.assertions.map(spansOfAssertion),
@@ -747,9 +747,9 @@ export const printBuiltInSyntax = (
         head: [
           ...spansOfCaller(step.value.user),
           { text: step.value.method, role: "method" },
+          ...inlineClauses("with", step.value.arguments.map(spansOfAssignment)),
           text(" on "),
           ...spansOfState(step.value.state),
-          ...inlineClauses("with", step.value.arguments.map(spansOfAssignment)),
           text(" eventually has "),
         ],
         clauses: step.value.assertions.map(spansOfAssertion),
@@ -760,9 +760,9 @@ export const printBuiltInSyntax = (
         head: [
           ...spansOfCaller(step.value.user),
           { text: step.value.method, role: "method" },
+          ...inlineClauses("with", step.value.arguments.map(spansOfAssignment)),
           text(" on "),
           ...spansOfState(step.value.state),
-          ...inlineClauses("with", step.value.arguments.map(spansOfAssignment)),
           text(" has "),
         ],
         clauses: step.value.saves.map(spansOfSave),
@@ -777,9 +777,9 @@ export const printBuiltInSyntax = (
         head: [
           ...spansOfCaller(step.value.user),
           { text: step.value.method, role: "method" },
+          ...inlineClauses("with", step.value.arguments.map(spansOfAssignment)),
           text(" on "),
           ...spansOfState(step.value.state),
-          ...inlineClauses("with", step.value.arguments.map(spansOfAssignment)),
           text(" aborts with "),
           { text: step.value.errorType, role: "error-type" },
           ...clauses.head,

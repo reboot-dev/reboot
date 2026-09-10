@@ -5,7 +5,7 @@ Feature: Hello with tasks
     And "anonymous" is an unauthenticated user
 
   Scenario: Sent messages get a warning and then erase
-    When "anonymous" does a `send` on `Hello` of "testing-hello" with `message="Hello, World!"`
+    When "anonymous" does a `send` with `message="Hello, World!"` on `Hello` of "testing-hello"
     And the resulting `task_id` is saved as "warning_task_id"
     # A completed task's response is the result, so the erase task's
     # ID saves from it the way any response property does.

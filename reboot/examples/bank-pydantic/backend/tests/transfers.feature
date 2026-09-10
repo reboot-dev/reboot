@@ -13,21 +13,21 @@ Feature: Customers can transfer money between accounts
       Given "anonymous" is an unauthenticated user
       And "anonymous" creates a `Bank` via `create`
       And the resulting state id is saved as "bank id"
-      When "anonymous" does a `sign_up` on `Bank` of "<bank id>" with `customer_id="test@reboot.dev"`
-      And "anonymous" does an `open_account` on `Customer` of "test@reboot.dev" with `initial_deposit=1000.0`
+      When "anonymous" does a `sign_up` with `customer_id="test@reboot.dev"` on `Bank` of "<bank id>"
+      And "anonymous" does an `open_account` with `initial_deposit=1000.0` on `Customer` of "test@reboot.dev"
       And the resulting `account_id` is saved as "first account id"
-      And "anonymous" does a `sign_up` on `Bank` of "<bank id>" with `customer_id="test2@reboot.dev"`
-      And "anonymous" does an `open_account` on `Customer` of "test2@reboot.dev" with `initial_deposit=0.0`
+      And "anonymous" does a `sign_up` with `customer_id="test2@reboot.dev"` on `Bank` of "<bank id>"
+      And "anonymous" does an `open_account` with `initial_deposit=0.0` on `Customer` of "test2@reboot.dev"
       And the resulting `account_id` is saved as "second account id"
-      And "anonymous" does a `transfer` on `Bank` of "<bank id>" with `from_account_id=<first account id>` and `to_account_id=<second account id>` and `amount=250.0`
+      And "anonymous" does a `transfer` with `from_account_id=<first account id>` and `to_account_id=<second account id>` and `amount=250.0` on `Bank` of "<bank id>"
       Then as "anonymous", `balance` on the `Account` for "<first account id>" has `amount=750.0`
       And as "anonymous", `balance` on the `Account` for "<second account id>" has `amount=250.0`
 
     Scenario: Transferring between two of the customer's accounts in the web app
       Given "alice" is an authenticated user
-      And "alice" does an `open_account` on `User` of "alice" with `initial_deposit=1000.0`
+      And "alice" does an `open_account` with `initial_deposit=1000.0` on `User` of "alice"
       And the resulting `account_id` is saved as "first account id"
-      And "alice" does an `open_account` on `User` of "alice" with `initial_deposit=0.0`
+      And "alice" does an `open_account` with `initial_deposit=0.0` on `User` of "alice"
       And the resulting `account_id` is saved as "second account id"
       When "alice" opens the web app
       And "alice" selects "<first account id>" in "From Account" in the web app
@@ -47,13 +47,13 @@ Feature: Customers can transfer money between accounts
       Given "anonymous" is an unauthenticated user
       And "anonymous" creates a `Bank` via `create`
       And the resulting state id is saved as "bank id"
-      When "anonymous" does a `sign_up` on `Bank` of "<bank id>" with `customer_id="payer@reboot.dev"`
-      And "anonymous" does an `open_account` on `Customer` of "payer@reboot.dev" with `initial_deposit=100.0`
+      When "anonymous" does a `sign_up` with `customer_id="payer@reboot.dev"` on `Bank` of "<bank id>"
+      And "anonymous" does an `open_account` with `initial_deposit=100.0` on `Customer` of "payer@reboot.dev"
       And the resulting `account_id` is saved as "payer account id"
-      And "anonymous" does a `sign_up` on `Bank` of "<bank id>" with `customer_id="payee@reboot.dev"`
-      And "anonymous" does an `open_account` on `Customer` of "payee@reboot.dev" with `initial_deposit=0.0`
+      And "anonymous" does a `sign_up` with `customer_id="payee@reboot.dev"` on `Bank` of "<bank id>"
+      And "anonymous" does an `open_account` with `initial_deposit=0.0` on `Customer` of "payee@reboot.dev"
       And the resulting `account_id` is saved as "payee account id"
-      And "anonymous" attempts a `transfer` on `Bank` of "<bank id>" with `from_account_id=<payer account id>` and `to_account_id=<payee account id>` and `amount=250.0`
+      And "anonymous" attempts a `transfer` with `from_account_id=<payer account id>` and `to_account_id=<payee account id>` and `amount=250.0` on `Bank` of "<bank id>"
       Then the attempt aborts with `OverdraftError` with `amount=150.0`
       And as "anonymous", `balance` on the `Account` for "<payer account id>" has `amount=100.0`
       And as "anonymous", `balance` on the `Account` for "<payee account id>" has `amount=0.0`
