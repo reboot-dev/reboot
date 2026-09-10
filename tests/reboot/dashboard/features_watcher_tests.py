@@ -103,14 +103,14 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
     async def test_scenarios_appear_and_follow_changes(self) -> None:
         """What a feature file declares is recorded against its path,
         and a save is read again."""
-        self._write_feature_file('backend/tests/bank.feature', BANK)
+        self._write_feature_file('tests/bank.feature', BANK)
 
         await self._start_dashboard()
         features = await self._wait_for_features(
             lambda features: len(features) == 1
         )
 
-        feature = features['backend/tests/bank.feature']
+        feature = features['tests/bank.feature']
         self.assertEqual(feature.name, 'Bank accounts')
         self.assertEqual(
             feature.description, 'Money that is deposited can be withdrawn.'
@@ -158,7 +158,7 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         # A second scenario, saved while the dashboard is watching.
         self._write_feature_file(
-            'backend/tests/bank.feature',
+            'tests/bank.feature',
             BANK + '''
   Scenario: A second withdrawal is also refused
     When "anonymous" attempts a `withdraw` with `amount=2` on `Account` of "alice"
@@ -168,8 +168,8 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         features = await self._wait_for_features(
             lambda features: len(features) == 1 and
-            len(features['backend/tests/bank.feature'].rules) == 1 and
-            len(features['backend/tests/bank.feature'].rules[0].scenarios) == 2
+            len(features['tests/bank.feature'].rules) == 1 and
+            len(features['tests/bank.feature'].rules[0].scenarios) == 2
         )
 
     async def test_recordings_are_named_against_scenarios_and_steps(
@@ -180,11 +180,11 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
         now, are named by their paths, appear when recorded while the
         dashboard is watching, and are served; recordings under an
         earlier digest mark the scenario stale instead."""
-        self._write_feature_file('backend/tests/bank.feature', BANK)
+        self._write_feature_file('tests/bank.feature', BANK)
         parsed = feature.parse(BANK)
         assert parsed is not None
         deposit = recordings.recording_directory(
-            self.directory / 'backend/tests/bank.feature',
+            self.directory / 'tests/bank.feature',
             parsed.scenarios[0],
             [parsed.background],
         )
@@ -194,7 +194,7 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
         (deposit / '2.png').write_bytes(b'png')
         # The rule's scenario was recorded before its steps changed.
         withdrawal = recordings.scenario_directory(
-            self.directory / 'backend/tests/bank.feature',
+            self.directory / 'tests/bank.feature',
             'Withdrawing more than the balance',
         ) / ('0' * 16)
         withdrawal.mkdir(parents=True)
@@ -205,7 +205,7 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
             lambda features: len(features) == 1
         )
 
-        scenario = features['backend/tests/bank.feature'].scenarios[0]
+        scenario = features['tests/bank.feature'].scenarios[0]
         relative = str(deposit.relative_to(self.directory))
         self.assertEqual(
             [(video.user, video.path) for video in scenario.videos],
@@ -215,7 +215,7 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([step.line for step in scenario.steps], [9, 10])
         self.assertFalse(scenario.steps[0].HasField('screenshot'))
         self.assertEqual(scenario.steps[1].screenshot, f'{relative}/2.png')
-        stale = features['backend/tests/bank.feature'].rules[0].scenarios[0]
+        stale = features['tests/bank.feature'].rules[0].scenarios[0]
         self.assertEqual(len(stale.videos), 0)
         self.assertTrue(stale.recordings_stale)
 
@@ -230,7 +230,7 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
             b'png',
         )
         self.assertEqual(
-            await self._fetch('/recordings/backend/tests/bank.feature'),
+            await self._fetch('/recordings/tests/bank.feature'),
             None,
         )
 
@@ -238,7 +238,7 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
         # dashboard is watching, replaces the stale one.
         shutil.rmtree(withdrawal)
         current = recordings.recording_directory(
-            self.directory / 'backend/tests/bank.feature',
+            self.directory / 'tests/bank.feature',
             parsed.rules[0].scenarios[0],
             [parsed.background],
         )
@@ -247,8 +247,7 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         await self._wait_for_features(
             lambda features: len(features) == 1 and len(
-                features['backend/tests/bank.feature'].rules[0].scenarios[0].
-                videos
+                features['tests/bank.feature'].rules[0].scenarios[0].videos
             ) == 1
         )
 
@@ -299,7 +298,7 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         """A `.venv` or `node_modules` carries installed packages'
         feature files, which are not the developer's."""
-        self._write_feature_file('backend/tests/bank.feature', BANK)
+        self._write_feature_file('tests/bank.feature', BANK)
         self._write_feature_file(
             '.venv/lib/site-packages/other/their.feature',
             'Feature: theirs\n',
@@ -315,7 +314,7 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             list(features.keys()),
-            ['backend/tests/bank.feature'],
+            ['tests/bank.feature'],
         )
 
 

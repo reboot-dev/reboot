@@ -1,7 +1,8 @@
 ## Tests become feature files
 
 Reboot applications now specify and test their behavior with
-Gherkin `.feature` files in `backend/tests/`, run by `reboot.bdd`
+Gherkin `.feature` files in `tests/` at the project root, run by
+`reboot.bdd`
 (installed by the `reboot[dev]` extra) and shown by the dashboard's
 Features page. An existing suite of `unittest.IsolatedAsyncioTestCase`
 tests keeps running, but the developer gets none of that until the
@@ -27,7 +28,13 @@ applied:
 4. Keep the tests that are about Reboot's recovery, the ones that
    crash the application mid-method and bring it back; they stay on
    the harness.
-5. Tag every new feature `@wip`, add `*.recordings/` to
+5. A suite that lives in `backend/tests/` moves to `tests/` at the
+   project root, with a root `pytest.ini` whose `pythonpath` lists
+   `backend/src`, `backend/api`, and `api` (and `testpaths = tests`)
+   in place of `backend/.pytest.ini`; `tests` replaces
+   `backend/tests` in `.mypy.ini`, and `mypy backend/ tests/` and a
+   bare `pytest` replace the old invocations in any script.
+6. Tag every new feature `@wip`, add `*.recordings/` to
    `.gitignore`, run both suites until the scenarios cover the
    tests, then delete the converted tests and ask the developer to
    review the feature files (the dashboard's Features page shows

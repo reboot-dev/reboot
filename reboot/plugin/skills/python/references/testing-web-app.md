@@ -34,7 +34,7 @@ Scenario: Opening a first account in the web app
 `testing-features.md` covers the backend steps and the shape of a
 feature; this reference covers what the browser adds. The
 [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic)
-example's `backend/tests/web_test.py` and the scenarios of its
+example's `tests/web_test.py` and the scenarios of its
 `opening_accounts.feature`, `transfers.feature`, and
 `sign_in.feature` are the reference.
 
@@ -233,8 +233,8 @@ after each assertion step, with the asserted element scrolled into
 view and outlined. They land beside the feature file:
 
 ```
-backend/tests/opening_accounts.feature
-backend/tests/opening_accounts.recordings/
+tests/opening_accounts.feature
+tests/opening_accounts.recordings/
   opening-a-first-account-in-the-web-app/
     3f9c2a1b7d4e6f80/
       alice.webm
@@ -264,11 +264,11 @@ backend/tests/opening_accounts.recordings/
 ## Running
 
 ```sh
-cd backend && uv run pytest tests/web_test.py
-cd backend && uv run pytest tests/web_test.py -k "first account"
-cd backend && uv run pytest tests/web_test.py --recording-slowmo=0 --recording-dwell=0
+uv run pytest tests/web_test.py
+uv run pytest tests/web_test.py -k "first account"
+uv run pytest tests/web_test.py --recording-slowmo=0 --recording-dwell=0
 ```
 
 A CI script without a browser or `node_modules` runs the backend
-suite with `--ignore=backend/tests/web_test.py`, as the bank's
+suite with `--ignore=tests/web_test.py`, as the bank's
 `.tests/test.sh` does.

@@ -136,7 +136,7 @@ scripted Pydantic AI `FunctionModel`).
 
 ```bash
 uv sync
-uv run pytest backend/
+uv run pytest
 ```
 
 ## Try it out

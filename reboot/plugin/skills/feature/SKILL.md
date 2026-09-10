@@ -12,7 +12,7 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit, AskUserQuestion
 > says how and when to react.
 
 A feature of a Reboot application is written down once, as a
-`.feature` file in `backend/tests/`, and that one file is the
+`.feature` file in `tests/`, and that one file is the
 specification the developer reviews, the tests `pytest` runs, and
 the card the dashboard's Features page shows. This skill is the
 order of work that keeps the file true while the feature is built:
@@ -30,7 +30,7 @@ skill's references; read them at the step that needs them:
   opens the web app: the `frontend` fixture, the web app steps, the
   accessible markup the page needs, recordings.
 - `../python/references/testing-project-setup.md` — the files a
-  suite needs (`reboot[dev]`, `.pytest.ini`, `.gitignore`).
+  suite needs (`reboot[dev]`, `pytest.ini`, `.gitignore`).
 
 ## Step 1 — Propose the feature in English
 
@@ -59,7 +59,7 @@ first.
 
 ## Step 2 — Write it down, tagged `@wip`
 
-Once agreed, create `backend/tests/<capability>.feature`, named for
+Once agreed, create `tests/<capability>.feature`, named for
 the activity (`transfers.feature`, not `bank.feature`), with the
 agreed name and description, and the rules with their descriptions
 where the user agreed on some. It may have no scenarios yet; write
@@ -141,8 +141,8 @@ run it. Concretely:
 - **Suggest a rule only for a real invariant**, one that would be
   worth formal verification; when a scenario shows what an
   operation does and nothing more, leave it at the top level.
-- **Run the suite** (`cd backend && uv run pytest`, or `-m wip` for
-  what is in progress) and `uv run mypy backend/`; fix what fails.
+- **Run the suite** (`uv run pytest`, or `-m wip` for
+  what is in progress) and `uv run mypy backend/ tests/`; fix what fails.
 - **Suggest reviewing in the dashboard** after each round: the
   feature's card, its rules, the methods it uses and the ones no
   feature uses, and the recordings.

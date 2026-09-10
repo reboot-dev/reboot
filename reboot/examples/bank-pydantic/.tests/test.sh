@@ -46,11 +46,11 @@ RBT_FLAGS="--state-directory=$(mktemp -d)"
 
 rbt $RBT_FLAGS generate
 
-mypy backend/
+mypy backend/ tests/
 
 # The web app's scenarios need its npm dependencies and a browser,
 # which this script does not install.
-pytest backend/ --ignore=backend/tests/web_test.py
+pytest --ignore=tests/web_test.py
 
 if [ -n "$EXPECTED_RBT_DEV_OUTPUT_FILE" ]; then
   actual_output_file=$(mktemp)

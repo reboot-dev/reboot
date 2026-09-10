@@ -1,7 +1,7 @@
 # Specify your application with features
 
 The behavior of a Reboot application is written down as **feature
-files**: Gherkin `.feature` files in `backend/tests/` that describe,
+files**: Gherkin `.feature` files in `tests/` that describe,
 in sentences, what someone can do with the application and what
 happens when they do. One file is three things at once:
 
@@ -20,8 +20,8 @@ and for tests that a scenario cannot express, see
 
 ## A feature file
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/backend/tests/withdrawals.feature) -->
-<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/backend/tests/withdrawals.feature -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/withdrawals.feature) -->
+<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/tests/withdrawals.feature -->
 
 ```gherkin
 Feature: Customers can withdraw from an account
@@ -100,8 +100,8 @@ An application packaged for `rbt serve` installs plain `reboot`.
 Then, beside your feature files, a test module that says which
 application they run against:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/backend/tests/interest_test.py&lines=5-22) -->
-<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/backend/tests/interest_test.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/interest_test.py&lines=5-22) -->
+<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/tests/interest_test.py -->
 
 ```py
 import pytest
@@ -159,8 +159,8 @@ unauthenticated caller names them `"anonymous"`.
 
 ## Calling, saving, and asserting
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/backend/tests/opening_accounts.feature&lines=17-25) -->
-<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/backend/tests/opening_accounts.feature -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/opening_accounts.feature&lines=17-25) -->
+<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/tests/opening_accounts.feature -->
 
 ```gherkin
 Scenario: Opening an account with a deposit
@@ -216,8 +216,8 @@ Scenario: Opening an account with a deposit
 To wait for something asynchronous, a [task](/tasks), a scheduled
 call, a workflow, read reactively with a bound. Never sleep:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/backend/tests/interest.feature&lines=13-16) -->
-<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/backend/tests/interest.feature -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/interest.feature&lines=13-16) -->
+<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/tests/interest.feature -->
 
 ```gherkin
 Scenario: A new account earns its first period's interest
@@ -230,8 +230,8 @@ Scenario: A new account earns its first period's interest
 
 ## Errors, attempts, and tasks
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/backend/tests/withdrawals.feature&lines=16-31) -->
-<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/backend/tests/withdrawals.feature -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/withdrawals.feature&lines=16-31) -->
+<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/tests/withdrawals.feature -->
 
 ```gherkin
 Rule: Overdrafts are refused
@@ -277,8 +277,8 @@ And the result has `updated_balance=15`
 
 ## Work in progress and blocked scenarios
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/backend/tests/sign_up.feature&lines=16-29) -->
-<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/backend/tests/sign_up.feature -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/sign_up.feature&lines=16-29) -->
+<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/tests/sign_up.feature -->
 
 ```gherkin
 Rule: A user signs up once
@@ -315,8 +315,8 @@ A scenario can open your web app in a real browser, driven with
 [Playwright](https://playwright.dev), against the same backend its
 other steps call:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/backend/tests/opening_accounts.feature&lines=27-35) -->
-<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/backend/tests/opening_accounts.feature -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/opening_accounts.feature&lines=27-35) -->
+<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/tests/opening_accounts.feature -->
 
 ```gherkin
 Scenario: Opening a first account in the web app
@@ -348,8 +348,8 @@ asserts absence.
 Signing in is clicked through the app like a person would, and
 then bound to the user:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/backend/tests/sign_in.feature&lines=17-30) -->
-<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/backend/tests/sign_in.feature -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/sign_in.feature&lines=17-30) -->
+<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/tests/sign_in.feature -->
 
 ```gherkin
 Scenario: Signing in and out with the Development picker
@@ -377,8 +377,8 @@ To serve the app, add `playwright` and `pytest-playwright` to your
 dev dependencies, run `playwright install chromium` once, and give
 the test module a `frontend` fixture. For a Vite project:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/backend/tests/web_test.py&lines=34-37) -->
-<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/backend/tests/web_test.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/web_test.py&lines=34-37) -->
+<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/tests/web_test.py -->
 
 ```py
 @pytest.fixture
@@ -394,8 +394,8 @@ cross-origin, so the session cookie and CORS are exercised the way
 a deployment exercises them; the `application` fixture takes the
 `frontend` and allows its origin:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/backend/tests/web_test.py&lines=50-78) -->
-<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/backend/tests/web_test.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/web_test.py&lines=50-78) -->
+<!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/tests/web_test.py -->
 
 ```py
 @pytest.fixture

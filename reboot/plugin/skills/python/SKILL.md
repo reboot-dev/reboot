@@ -49,7 +49,7 @@ Reference these guidelines when:
 - Using the standard library (`OrderedMap`, mailgun, etc.)
 - Writing tests: Gherkin feature files run by `reboot.bdd`, and
   crash-recovery tests on the `Reboot()` harness
-- Verifying any change: **type-check with `mypy backend/` and fix all
+- Verifying any change: **type-check with `mypy backend/ tests/` and fix all
   errors** before considering Python work done (see "Type-checking"
   below)
 
@@ -402,8 +402,8 @@ An application's tests are Gherkin `.feature` files run by
 feature in English, tag it `@wip`, iterate on scenarios) is the
 [`feature` skill](../feature/SKILL.md).
 
-- `references/testing-project-setup.md` — `backend/tests/` layout,
-  `.pytest.ini`, `reboot[dev]` and the other dev-deps, `.gitignore`,
+- `references/testing-project-setup.md` — `tests/` layout,
+  `pytest.ini`, `reboot[dev]` and the other dev-deps, `.gitignore`,
   `uv run pytest`
 - `references/testing-features.md` — **always read before writing a
   scenario**: the built-in steps' spelling (who calls, factories
@@ -437,14 +437,14 @@ optional extra:
 
 - Every project ships a project-root `.mypy.ini` (config and rationale
   in `references/lifecycle-project-setup.md`). It puts `backend/src`,
-  `backend/api`, and `backend/tests` on `mypy_path` with
+  `backend/api`, `tests`, and `api` on `mypy_path` with
   `explicit_package_bases = True` so the generated `*_rbt.py` modules
   resolve. If it's missing, create it first — `mypy` is useless
   without it.
 - After writing or editing any Python under `backend/`, run
-  `uv run mypy backend/` (or `mypy backend/`) from the project root and
+  `uv run mypy backend/ tests/` (or `mypy backend/ tests/`) from the project root and
   fix **every** error.
-- "Done" means both `mypy backend/` and `uv run pytest` are green.
+- "Done" means both `mypy backend/ tests/` and `uv run pytest` are green.
 
 ### Always relevant
 

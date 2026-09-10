@@ -13,7 +13,7 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 
 The developer dashboard is a browser page, served by
 `rbt dashboard`, that shows a Reboot application's API (the Models
-page), its features as the `.feature` files under `backend/tests/`
+page), its features as the `.feature` files under `tests/`
 specify them (the Features page, with each feature's rules and
 scenarios, the methods it uses, its `@wip` and `@blocked` marks, and
 the recordings of its browser scenarios), and a changelog of how the

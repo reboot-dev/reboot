@@ -82,7 +82,7 @@ There is **no `[build-system]` table**: that tells `uv` this is a
 virtual (non-package) project — it installs the dependencies into
 `.venv` but never tries to build/install the app itself. `uv sync`
 installs the runtime deps plus the `dev` group (a uv default group)
-in one shot; then `uv run mypy backend/` and `uv run pytest` use
+in one shot; then `uv run mypy backend/ tests/` and `uv run pytest` use
 that environment.
 
 If an older project still has a `[tool.rye]` table (`dev-dependencies`,
@@ -138,7 +138,7 @@ your servicer code (`backend/src/`) have **no `__init__.py`** —
 `from chat_room.v1.chat_room_rbt import ChatRoom` out of the box. A
 project-root `.mypy.ini` fixes this by adding the source roots to
 `mypy_path` and turning on `explicit_package_bases`. Without it,
-`mypy backend/` fails with bogus "module not found" errors and the
+`mypy backend/ tests/` fails with bogus "module not found" errors and the
 type-check is useless. Create it at the project root, substituting
 your API package name for `<pkg>` in the last stanza:
 
@@ -151,7 +151,7 @@ warn_unused_configs = True
 # Find modules in our source tree (and tests). Since `protoc` doesn't
 # generate `__init__.py` files, treat these as explicit package bases:
 #   https://mypy.readthedocs.io/en/stable/running_mypy.html#mapping-file-paths-to-modules
-mypy_path = backend/tests:backend/src:backend/api:api
+mypy_path = tests:backend/src:backend/api:api
 explicit_package_bases = True
 
 # Stricter than the default, but cheap to adhere to and high value.
@@ -200,7 +200,7 @@ method called with the wrong context type, a response field that
 doesn't exist):
 
 ```bash
-uv run mypy backend/   # or `mypy backend/`
+uv run mypy backend/   # or `mypy backend/ tests/`
 ```
 
 A green mypy run plus passing `uv run pytest` (see
@@ -210,7 +210,7 @@ A green mypy run plus passing `uv run pytest` (see
 
 Adding `__init__.py` inside `api/` will confuse `rbt generate`'s
 package detection. The `backend/` tree (`backend/api/`,
-`backend/src/`, `backend/tests/`) doesn't need them either: the
+`backend/src/`) and `tests/` don't need them either: the
 `.mypy.ini` above resolves imports via `explicit_package_bases`, and
 at runtime the interpreter resolves them via the `PYTHONPATH` that
 `rbt` sets up. Resist the packaging reflex ("a directory of modules

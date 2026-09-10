@@ -677,15 +677,16 @@ a worked set are in
 ├── api/
 │   └── <pkg>/v1/
 │       └── <name>.py        # API definition
+├── pytest.ini               # testpaths: tests; pythonpath: backend/src backend/api api
 ├── backend/
-│   ├── src/
-│   │   ├── main.py          # Application entrypoint
-│   │   ├── example_prompts.py  # Wizard example prompts
-│   │   └── servicers/
-│   │       └── <name>.py    # Servicer implementation
-│   └── tests/
-│       ├── <capability>.feature  # One feature per capability
-│       └── <name>_test.py   # `application` fixture + `scenarios(...)`
+│   └── src/
+│       ├── main.py          # Application entrypoint
+│       ├── example_prompts.py  # Wizard example prompts
+│       └── servicers/
+│           └── <name>.py    # Servicer implementation
+├── tests/
+│   ├── <capability>.feature  # One feature per capability
+│   └── <name>_test.py       # `application` fixture + `scenarios(...)`
 └── frontend/
     ├── package.json
     ├── build.mjs            # Discovers + builds every UI
@@ -761,8 +762,8 @@ a worked set are in
     servicers and never subclass one to weaken its `authorizer()`.
     Let factories make ids up. Tag what cannot pass yet `@blocked`
     with its reason; leave `@wip` where work continues. Run
-    `cd backend && uv run pytest` and fix anything that fails.
-    Then type-check: run `uv run mypy backend/` from the project
+    `uv run pytest` and fix anything that fails.
+    Then type-check: run `uv run mypy backend/ tests/` from the project
     root and fix every error (config and rationale in
     `python/references/lifecycle-project-setup.md`). Do not
     proceed to the next step until every scenario passes (or is
@@ -802,8 +803,8 @@ When modifying an existing app:
 6. When the change adds a new user-facing capability, add or update
    an example prompt in `backend/src/example_prompts.py` so the
    wizard surfaces the new flow.
-7. Re-verify the backend: run `uv run mypy backend/` from the
-   project root and `cd backend && uv run pytest`; fix every
+7. Re-verify the backend: run `uv run mypy backend/ tests/` from the
+   project root and `uv run pytest`; fix every
    error and failure before handing back.
 8. If the app isn't already running, bring it up with the
    [`run` skill](../run/SKILL.md). If it is already running under

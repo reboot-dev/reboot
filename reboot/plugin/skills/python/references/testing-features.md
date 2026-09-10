@@ -24,22 +24,21 @@ only if it says things the built-in steps understand, so learn the
 spelling before writing.
 
 The [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic)
-example's `backend/tests/*.feature` files are the reference for
+example's `tests/*.feature` files are the reference for
 every pattern here.
 
 ## What Goes Where
 
 ```
-backend/
-├── .pytest.ini                 # pythonpath: src/ api/ ../api/
-└── tests/
-    ├── opening_accounts.feature   # One feature per capability.
-    ├── transfers.feature
-    ├── withdrawals.feature
-    ├── full_bank_test.py          # One module per application setup.
-    ├── interest_test.py
-    ├── web_test.py                # The scenarios that drive the web app.
-    └── opening_accounts.recordings/   # Made by running; git-ignored.
+pytest.ini                     # testpaths: tests; pythonpath: backend/src backend/api api
+tests/
+├── opening_accounts.feature   # One feature per capability.
+├── transfers.feature
+├── withdrawals.feature
+├── full_bank_test.py          # One module per application setup.
+├── interest_test.py
+├── web_test.py                # The scenarios that drive the web app.
+└── opening_accounts.recordings/   # Made by running; git-ignored.
 ```
 
 - **One `.feature` file per capability**, named for the activity:
@@ -85,7 +84,8 @@ them as a pytest plugin, active whenever `reboot[dev]` is installed
 (`testing-project-setup.md` has the `pyproject.toml`). A module runs
 a second application by naming it: `Given the "proxy" application is up` runs what a `proxy_application` fixture returns.
 
-Run the suite the usual way: `cd backend && uv run pytest`, one
+Run the suite the usual way: `uv run pytest` from the project root,
+one
 file with `uv run pytest tests/full_bank_test.py`, one scenario
 with `-k "transfer between two"`, and by tag with `-m wip` or
 `-m "not wip"`.

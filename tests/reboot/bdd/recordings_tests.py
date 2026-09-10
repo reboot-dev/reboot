@@ -16,18 +16,18 @@ class RecordingsTest(unittest.TestCase):
 
     def test_the_directory_is_beside_the_feature_file(self) -> None:
         self.assertEqual(
-            recordings.recordings_directory(Path('backend/tests/web.feature')),
-            Path('backend/tests/web.recordings'),
+            recordings.recordings_directory(Path('tests/web.feature')),
+            Path('tests/web.recordings'),
         )
 
     def test_a_scenario_is_named_by_its_slug(self) -> None:
         self.assertEqual(
             recordings.scenario_directory(
-                Path('backend/tests/web.feature'),
+                Path('tests/web.feature'),
                 "Transferring between two of the customer's accounts",
             ),
             Path(
-                'backend/tests/web.recordings/'
+                'tests/web.recordings/'
                 'transferring-between-two-of-the-customer-s-accounts'
             ),
         )
@@ -42,9 +42,9 @@ class RecordingsTest(unittest.TestCase):
         self.assertRegex(digest, '^[0-9a-f]{16}$')
         self.assertEqual(
             recordings.recording_directory(
-                Path('backend/tests/web.feature'), scenario, []
+                Path('tests/web.feature'), scenario, []
             ),
-            Path(f'backend/tests/web.recordings/s/{digest}'),
+            Path(f'tests/web.recordings/s/{digest}'),
         )
         # The same scenario digests the same, however it is described
         # or tagged, since neither changes what a recording shows.

@@ -481,20 +481,20 @@ Before writing code, analyze the user's request:
 ├── .python-version
 ├── .rbtrc
 ├── .mypy.ini                # Type-check config (python skill)
+├── pytest.ini               # testpaths: tests; pythonpath: backend/src backend/api api
 ├── pyproject.toml
 ├── api/
 │   └── <pkg>/v1/
 │       └── <name>.py        # API definition (pydantic)
 ├── backend/
-│   ├── .pytest.ini          # pythonpath: src/ api/ ../api/
-│   ├── src/
-│   │   ├── main.py          # Application entrypoint
-│   │   └── servicers/
-│   │       └── <name>.py    # Servicer implementation
-│   └── tests/
-│       ├── <capability>.feature  # One feature per capability
-│       ├── <name>_test.py   # `application` fixture + `scenarios(...)`
-│       └── web_test.py      # The scenarios that open the app
+│   └── src/
+│       ├── main.py          # Application entrypoint
+│       └── servicers/
+│           └── <name>.py    # Servicer implementation
+├── tests/
+│   ├── <capability>.feature  # One feature per capability
+│   ├── <name>_test.py       # `application` fixture + `scenarios(...)`
+│   └── web_test.py          # The scenarios that open the app
 └── web/
     ├── .env.development     # VITE_REBOOT_URL=http://localhost:9991
     ├── package.json
@@ -589,8 +589,8 @@ Key differences from a `mcp-ui` layout:
     fails for a reason that looks like it is inside the framework,
     check `python/references/patterns-idempotency.md` and
     `patterns-common-gotchas.md` before reading `site-packages`.
-    Run `cd backend && uv run pytest` and fix anything that fails.
-    Then type-check: run `uv run mypy backend/` from the project
+    Run `uv run pytest` and fix anything that fails.
+    Then type-check: run `uv run mypy backend/ tests/` from the project
     root and fix every error (config and rationale in
     `python/references/lifecycle-project-setup.md`). Do not
     proceed to the next step until every scenario passes (or is
@@ -627,8 +627,8 @@ When modifying an existing app:
    they do) so scenarios can drive the new page.
 7. Update the scenarios: the feature file's, and a web app
    scenario for a flow a person clicks through. Re-verify the
-   backend: run `uv run mypy backend/` from the project root and
-   `cd backend && uv run pytest`; fix every error and failure
+   backend: run `uv run mypy backend/ tests/` from the project root and
+   `uv run pytest`; fix every error and failure
    before handing back, and ask before removing `@wip`.
 8. If the app isn't already running, bring it up with the
    [`run` skill](../run/SKILL.md). If it is already running under

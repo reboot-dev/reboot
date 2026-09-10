@@ -59,8 +59,8 @@ to external services or handling sensitive data. In tests, set the
 required environment variables before starting the test harness.
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../reboot/examples/boutique/backend/tests/full_app_test.py&lines=25-25) -->
-<!-- The below code snippet is automatically added from ../../reboot/examples/boutique/backend/tests/full_app_test.py -->
+(CODE:src=../../reboot/examples/boutique/tests/full_app_test.py&lines=25-25) -->
+<!-- The below code snippet is automatically added from ../../reboot/examples/boutique/tests/full_app_test.py -->
 
 ```py
 os.environ["MAILGUN_API_KEY"] = MAILGUN_API_KEY

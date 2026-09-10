@@ -7,8 +7,8 @@ ignored by git: running a scenario makes them, the dashboard shows
 the last run's, and a project that wants a version's recordings in
 history beside that version's scenarios may choose to check them in.
 
-    backend/tests/web.feature
-    backend/tests/web.recordings/
+    tests/web.feature
+    tests/web.recordings/
       opening-a-first-account/
         3f9c2a1b7d4e6f80/
           alice.webm

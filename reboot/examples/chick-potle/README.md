@@ -78,7 +78,7 @@ no MCP client, no browser, no external services.
 
 ```bash
 uv sync
-uv run pytest backend/
+uv run pytest
 ```
 
 ## Try it out

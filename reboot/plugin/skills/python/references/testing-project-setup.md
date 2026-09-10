@@ -8,7 +8,8 @@ tags: testing, pytest, layout, pyproject, conftest, uv, reboot-dev, gitignore, r
 ## Lay Out a Reboot Backend Test Suite
 
 > **Critical:** a Reboot application's tests are Gherkin `.feature`
-> files in `backend/tests/`, run by `reboot.bdd` through `pytest`.
+> files in `tests/` at the project root, run by `reboot.bdd` through
+> `pytest`.
 > The built-in steps come with the `reboot[dev]` extra, which a
 > development environment always installs; without it the scenarios
 > have no steps and `rbt dashboard` refuses to start. No
@@ -26,25 +27,27 @@ context patterns a custom step or a harness test uses are
 ## Where Tests Live
 
 **One `.feature` file per capability, one test module per
-application configuration**, in `backend/tests/`:
+application configuration**, in `tests/` at the project root, next
+to `api/` and `backend/`. The tests are the application's, not the
+backend's: a scenario that opens the web app drives the frontend too.
 
 ```
 <app>/
+├── api/                      # `*.py` pydantic API definitions.
 ├── backend/
 │   ├── api/                  # Generated `_rbt` modules.
-│   ├── src/
-│   │   └── servicers/
-│   │       └── chat_room.py
-│   ├── tests/
-│   │   ├── posting.feature           # One feature per capability.
-│   │   ├── moderation.feature
-│   │   ├── chat_room_test.py         # `application` fixture + `scenarios(...)`.
-│   │   ├── web_test.py               # The scenarios that open the web app.
-│   │   ├── posting.recordings/       # Made by running; git-ignored.
-│   │   └── conftest.py               # Optional, see below.
-│   └── .pytest.ini
-├── api/                      # `*.py` pydantic API definitions.
+│   └── src/
+│       └── servicers/
+│           └── chat_room.py
+├── tests/
+│   ├── posting.feature           # One feature per capability.
+│   ├── moderation.feature
+│   ├── chat_room_test.py         # `application` fixture + `scenarios(...)`.
+│   ├── web_test.py               # The scenarios that open the web app.
+│   ├── posting.recordings/       # Made by running; git-ignored.
+│   └── conftest.py               # Optional, see below.
 ├── .gitignore                # Includes `*.recordings/`.
+├── pytest.ini                # `testpaths` and `pythonpath`, see below.
 └── pyproject.toml
 ```
 
@@ -60,36 +63,34 @@ application configuration**, in `backend/tests/`:
   ([testing-failure-recovery.md](testing-failure-recovery.md)) is
   an `IsolatedAsyncioTestCase` in its own `_test.py` module.
 
-## `.pytest.ini` — Make Generated Modules Importable
+## `pytest.ini` — Make Generated Modules Importable
 
-Generated Reboot modules live under `api/` and your servicer code
-lives under `src/` (or `backend/src/`). Tests `import` from both —
+Generated Reboot modules live under `backend/api/` and your servicer
+code under `backend/src/`. Tests `import` from both —
 e.g. `from chat_room.v1.chat_room_rbt import ChatRoom` resolves into
-`api/` and `from chat_room_servicer import ChatRoomServicer`
-resolves into `src/`. Add both to the `pythonpath` so neither
-needs a `pip install -e .`:
+`backend/api/` and `from chat_room_servicer import ChatRoomServicer`
+resolves into `backend/src/`. A project-root `pytest.ini` puts both
+on the `pythonpath` so neither needs a `pip install -e .`, and names
+the test directory so a bare `pytest` runs the suite:
 
 ```ini
-# backend/.pytest.ini
+# pytest.ini
 [pytest]
-pythonpath=
-  src/
-  api/
-  ../api/
+testpaths = tests
+pythonpath =
+  backend/src
+  backend/api
+  api
 ```
 
-**Three entries, not two.** `src/` and `api/` cover your servicers
-and the generated `_rbt` modules, but tests also import the
-hand-written API definition itself — the typed errors and models —
-as `from <pkg>.v1.<name> import QuotaExceededError`, and that module
-lives in the project-root `api/` directory, one level up from
-`backend/`. Leave `../api/` out and the suite fails at import with
+**Three entries, not two.** `backend/src` and `backend/api` cover
+your servicers and the generated `_rbt` modules, but tests also
+import the hand-written API definition itself — the typed errors and
+models — as `from <pkg>.v1.<name> import QuotaExceededError`, and
+that module lives in the project-root `api/` directory. Leave `api`
+out and the suite fails at import with
 `ModuleNotFoundError: No module named '<pkg>.v1.<name>'`, which
 looks like a codegen failure but is a path problem.
-
-If the layout uses `backend/src` from the project root instead of
-running pytest from `backend/`, adjust the paths accordingly (e.g.
-`pythonpath = backend/src backend/api api`).
 
 ## `conftest.py` — Only When Needed
 
@@ -100,7 +101,7 @@ constructs a client at import time. Set a placeholder so the import
 succeeds; tests must still mock the real call before any RPC fires:
 
 ```python
-# backend/tests/conftest.py
+# tests/conftest.py
 import os
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-placeholder")
@@ -146,7 +147,7 @@ dev = [
 page run on, and registers the built-in steps as a pytest plugin, so
 no test module imports them. `uv sync` installs the `dev` group by
 default (it's a uv default group), so `uv run pytest`,
-`uv run mypy backend/`, and `uv run rbt dashboard` just work.
+`uv run mypy backend/ tests/`, and `uv run rbt dashboard` just work.
 `[tool.uv.dev-dependencies]` is an accepted alias for the same list.
 An application packaged for `rbt serve` installs plain `reboot`.
 
@@ -172,20 +173,20 @@ From the application root:
 
 ```bash
 # Whole suite.
-cd backend && uv run pytest
+uv run pytest
 
 # One test module (the feature files it runs).
-cd backend && uv run pytest tests/chat_room_test.py
+uv run pytest tests/chat_room_test.py
 
 # One scenario, by (part of) its name.
-cd backend && uv run pytest -k "posts a message"
+uv run pytest -k "posts a message"
 
 # What is being worked on, or everything but.
-cd backend && uv run pytest -m wip
-cd backend && uv run pytest -m "not wip"
+uv run pytest -m wip
+uv run pytest -m "not wip"
 
 # Verbose, with print() output flowing to the terminal.
-cd backend && uv run pytest -v -s
+uv run pytest -v -s
 ```
 
 A `@blocked` scenario is skipped, with its description as the reason,

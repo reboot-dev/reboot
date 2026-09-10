@@ -85,7 +85,8 @@ Here is a suggested file layout:
 | -------- | ------- |
 | API definitions (`*.py`, `*.ts`) | `api/` |
 | Backend source `*.py`, `*.ts/js` | `backend/src` |
-| Backend tests `*.py`, `*.ts/js` | `backend/tests` |
+| Tests: feature files and `*.py` | `tests` |
+| Backend tests `*.ts/js` | `backend/tests` |
 | Generated React client | `frontend/api` |
 | Browser app | `frontend/web` |
 | React Native app | `frontend/mobile` |

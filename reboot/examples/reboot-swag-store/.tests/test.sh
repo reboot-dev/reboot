@@ -46,7 +46,7 @@ RBT_FLAGS="--state-directory=$(mktemp -d)"
 
 rbt $RBT_FLAGS generate
 
-pytest backend/
+pytest
 
 if [ -n "$EXPECTED_RBT_DEV_OUTPUT_FILE" ]; then
   actual_output_file=$(mktemp)
