@@ -51,14 +51,19 @@ create what is missing:
    `.python-version`), so `uv run rbt` resolves. If missing, create
    both following the templates in
    `../python/references/lifecycle-project-setup.md`.
-2. **`.rbtrc`.** The dashboard never reads its flags; it only uses
-   the file's location as the project anchor (working directory and
-   `.rbt/` state directory). An existing `.rbtrc` of any shape is
-   fine. If there is none yet, create a stub the later scaffolding
-   will replace:
+2. **`.rbtrc`.** Everything the dashboard reads of the project comes
+   from here: the API directory from the `generate <dir>` line, and,
+   for its code checks, the application from `dev run --application=`
+   and the generated Python from `generate --python=`. The file's
+   location is also the project anchor (working directory and `.rbt/`
+   state directory). Without a `generate <dir>` line, `rbt dashboard`
+   refuses to start. If there is no `.rbtrc` yet, create a stub the
+   later scaffolding will extend:
 
    ```
-   # Reboot configuration; see the rbt documentation.
+   generate api/
+   generate --python=backend/api/
+   dev run --application=backend/src/main.py
    ```
 
 3. **The API directory** from Step 1 (`mkdir -p api`). It may be
@@ -93,12 +98,12 @@ remember that a later `rbt dev run` then needs
 From the project root, in its own background shell:
 
 ```sh
-uv run rbt dashboard --api-directory=api
+uv run rbt dashboard
 ```
 
-(`--api-directory=` takes the directory from Step 1, spelled
-relative to the project root — that is how file names are shown in
-the dashboard.)
+It takes the API directory from the `generate <dir>` line in
+`.rbtrc` (Step 2), spelled relative to the project root — that is how
+file names are shown in the dashboard.
 
 It prints `Your dashboard is at http://127.0.0.1:9871/dashboard/`
 immediately and keeps running; wait until the probe from Step 3
