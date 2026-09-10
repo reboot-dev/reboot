@@ -15,8 +15,9 @@ async def test(context: ExternalContext, uri: str):
     on the frontend. This tests:
     1. MyError (Pydantic) - should have message and code fields
     2. AnotherError (Pydantic) - should have reason field
-    3. FailedPrecondition (Protobuf) - standard protobuf error
-    4. No error case
+    3. EmptyError (Pydantic) - has no fields, only its type
+    4. FailedPrecondition (Protobuf) - standard protobuf error
+    5. No error case
     """
 
     def run_selenium_test():
@@ -84,6 +85,22 @@ async def test(context: ExternalContext, uri: str):
                 expected_conditions.text_to_be_present_in_element(
                     (By.ID, 'error-result'),
                     "AnotherError: This is another error reason",
+                )
+            )
+
+            # Test triggering `EmptyError`, which has no fields.
+            empty_error_button = wait.until(
+                expected_conditions.element_to_be_clickable(
+                    (By.ID, 'trigger-empty-error')
+                )
+            )
+            empty_error_button.click()
+
+            # Verify `EmptyError` is displayed.
+            wait.until(
+                expected_conditions.text_to_be_present_in_element(
+                    (By.ID, 'error-result'),
+                    "EmptyError",
                 )
             )
 

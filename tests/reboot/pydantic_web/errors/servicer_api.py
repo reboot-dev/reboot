@@ -15,10 +15,15 @@ class AnotherError(Model):
     reason: str = Field(tag=1)
 
 
+class EmptyError(Model):
+    pass
+
+
 class RaiseErrorRequest(Model):
     error_to_trigger: Literal[
         "my_error",
         "another_error",
+        "empty_error",
         "failed_precondition",
         "none",
     ] = Field(tag=1)
@@ -34,7 +39,7 @@ TestMethods = Methods(
     raise_error=Writer(
         request=RaiseErrorRequest,
         response=None,
-        errors=[MyError, AnotherError],
+        errors=[MyError, AnotherError, EmptyError],
         mcp=None,
     ),
 )
