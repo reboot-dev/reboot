@@ -1,5 +1,4 @@
 import aiohttp
-import asyncio
 import hashlib
 import unittest
 from rbt.std.blob.v1.blob_rbt import (
@@ -50,14 +49,13 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
     async def _instructions(self, blob, part_numbers: list[int]):
         """Fetches upload instructions, waiting for the `BeginUpload`
         workflow to have provisioned the upload session."""
-        while True:
-            response = await blob.get_part_upload_instructions(
-                self.context,
-                part_numbers=part_numbers,
-            )
+        async for response in blob.reactively().get_part_upload_instructions(
+            self.context,
+            part_numbers=part_numbers,
+        ):
             if response.ready:
                 return response
-            await asyncio.sleep(0.05)
+        raise AssertionError("Reacting to a blob ended without a session")
 
     async def _part_numbers(self, blob, part_numbers: list[int]) -> list[int]:
         """The part numbers that upload instructions were minted for,
@@ -108,11 +106,10 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
             )
 
     async def _wait_until_status(self, blob, statuses) -> InfoResponse:
-        while True:
-            info = await blob.info(self.context)
+        async for info in blob.reactively().info(self.context):
             if info.status in statuses:
                 return info
-            await asyncio.sleep(0.05)
+        raise AssertionError("Reacting to a blob ended before its status did")
 
     async def _download(self, blob) -> tuple[bytes, str]:
         """Downloads the blob's bytes via its download URL, returning
