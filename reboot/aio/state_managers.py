@@ -3668,7 +3668,13 @@ class SidecarStateManager(
             # has already started (i.e., calls were made
             # concurrently). We must wait for that first call to
             # acquire the per-state lock before we continue here.
-            await transaction.acquired_lock
+            #
+            # Shield for the same reason as `_committed`:
+            # `acquired_lock` is shared with every other concurrent
+            # call on this state, so a cancellation reaching it would
+            # leave `_transaction_participant_start()` unable to
+            # resolve it.
+            await asyncio.shield(transaction.acquired_lock)
 
             if transaction.finished():
                 # TODO(benh): add a test case for this!
