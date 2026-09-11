@@ -6,6 +6,7 @@ import time
 import traceback
 import uuid
 import websockets
+from asyncio import CancelledError
 from google.protobuf.json_format import MessageToJson
 from google.rpc import code_pb2, status_pb2
 from grpc_health.v1 import health_pb2
@@ -53,62 +54,34 @@ REPORTABLE_STALL_MILLISECONDS = 100
 
 
 class _QueryWindow:
-    """How much room a query has to send responses before it must hear
-    from its client.
+    """
+    A helper class to track whether there is room in a sending window.
 
-    Starts with `QUERY_RESPONSE_WINDOW` room; `take()` spends one and
-    waits when there is none; `processed()` reports the last sequence
-    number a client has fully processed and returns the room that
-    accounts for.
+    Its main added value is to convert "I've seen response sequence number X" to
+    "we can send N more responses".
     """
 
     def __init__(self):
-        self._room = QUERY_RESPONSE_WINDOW
-        self._has_room = asyncio.Event()
-        self._has_room.set()
-        # Sequence number of the next response to send, and of the
-        # last one the client has reported processing. The client has
-        # reported nothing until it does, hence -1.
-        self.sequence_number = 0
-        self._processed = -1
+        self._room = asyncio.Semaphore(QUERY_RESPONSE_WINDOW)
+        # Neither has happened yet, and the first response to be sent
+        # is sequence number 0, hence -1.
+        self._last_acquired_sequence_number = -1
+        self._last_released_sequence_number = -1
 
-    def try_take(self) -> Optional[int]:
-        """Returns the sequence number to send, or `None` when there is
-        no room to send anything."""
-        if self._room == 0:
-            return None
+    async def acquire(self) -> int:
+        await self._room.acquire()
+        self._last_acquired_sequence_number += 1
+        return self._last_acquired_sequence_number
 
-        self._room -= 1
+    def release(self, sequence_number: int) -> None:
+        # A client can only reasonably send us a sequence number that's been
+        # issued.
+        if sequence_number > self._last_acquired_sequence_number:
+            return
 
-        if self._room == 0:
-            self._has_room.clear()
-
-        sequence_number = self.sequence_number
-        self.sequence_number += 1
-        return sequence_number
-
-    async def take(self) -> int:
-        """Waits for room and returns the sequence number to send."""
-        while True:
-            await self._has_room.wait()
-            sequence_number = self.try_take()
-            if sequence_number is not None:
-                return sequence_number
-
-    def processed(self, sequence_number: int) -> None:
-        """Returns the room accounted for by a client reporting that it
-        has processed everything up to `sequence_number`."""
-        # A client can only have processed what we sent, and only ever
-        # more than it last reported; anything else is a duplicate or
-        # a retry, which returns no room rather than inventing any.
-        sequence_number = min(sequence_number, self.sequence_number - 1)
-
-        self._room += max(0, sequence_number - self._processed)
-
-        if self._room > 0:
-            self._has_room.set()
-
-        self._processed = max(self._processed, sequence_number)
+        while sequence_number > self._last_released_sequence_number:
+            self._room.release()
+            self._last_released_sequence_number += 1
 
 
 class _SuppressInvalidHandshakeFilter(logging.Filter):
@@ -443,7 +416,7 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
                     if window is not None and continuation.HasField(
                         'continue_query_sequence_number'
                     ):
-                        window.processed(
+                        window.release(
                             continuation.continue_query_sequence_number
                         )
             except Exception:
@@ -555,7 +528,7 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
             # Either way there is no window left to return room to.
             return react_pb2.ContinueQueryResponse()
 
-        window.processed(request.sequence_number)
+        window.release(request.sequence_number)
 
         return react_pb2.ContinueQueryResponse()
 
@@ -595,15 +568,14 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
         query_id: str,
         window: Optional[_QueryWindow],
     ) -> AsyncIterator[react_pb2.QueryResponse]:
-        """Produces the responses of `_query()`, each stamped with the
-        query it belongs to and the room it is sent under.
+        """
+        Produces the responses of `_query()`, but only when there is room in
+        `window`. While there is no room in `window`, accumulates responses into
+        a single response.
 
-        Asks for states as fast as they are produced even while there
-        is no room to send one. A state that arrives while we are
-        waiting for room is merged into the response we are holding,
-        so the response we send once there is room carries the latest
-        state and says how long it waited and how many updates it
-        stood in for.
+        The produced responses carry information about the query that produced
+        them, their sequence number, and how long they were stalled waiting for
+        `window` to have room.
         """
         responses = self._query(
             request=request,
@@ -618,93 +590,117 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
                 yield response
             return
 
-        # The response we have asked for but have no room for yet, and
-        # the room we are waiting on. Both outlive an iteration of the
-        # loop below: dropping an ask for a response would lose the
-        # state that ask is waiting for.
-        asked: Optional[asyncio.Future] = None
-        room: Optional[asyncio.Future] = None
+        # We'll run two loops concurrently:
+        # 1. Consume responses from the stream, and merge them into a single
+        #    "next response".
+        # 2. Wait for there to be room in our window, and send the next
+        #    response.
+        #
+        # Under normal conditions (if there's always room in the window), this
+        # will mostly forward the incoming responses verbatim - the assumption
+        # being that loop (1) will normally run slower than loop (2). If there's
+        # no room in the window, or for any other reason sending a response
+        # becomes very slow, loop (1) outpaces loop (2); in that case it'll
+        # start merging responses together, ensuring that clients always get the
+        # latest available result.
+        next_response: Optional[react_pb2.QueryResponse] = None
+        have_next_response = asyncio.Event()
+        responses_accumulated = 0
+        failure: Optional[BaseException] = None
+
+        async def accumulate_next_response():
+            nonlocal next_response, responses_accumulated, failure
+
+            while True:
+                try:
+                    response = await anext(
+                        responses
+                        # `responses` is never exhausted, so no default
+                        # is needed.
+                    )
+                except CancelledError:
+                    raise
+                except BaseException as exception:
+                    # Producing a state failed; that needs to be propagated to
+                    # the caller of `Query`. We can't just `raise` it from here,
+                    # because this loop is a background task, so we signal the
+                    # response-sending loop instead.
+                    failure = exception
+                    have_next_response.set()
+                    return
+
+                if next_response is None:
+                    next_response = response
+                else:
+                    # `MergeFrom` is exactly what one response standing in for two
+                    # means: the newer state replaces the one we hold, an update
+                    # that carries no state of its own leaves that state alone, and
+                    # we keep the idempotency keys of both, since a mutation
+                    # reported once must not be lost because the response reporting
+                    # it was merged away.
+                    next_response.MergeFrom(response)
+
+                responses_accumulated += 1
+
+                have_next_response.set()
+
+        accumulator: asyncio.Task[None] = asyncio.create_task(
+            accumulate_next_response()
+        )
 
         try:
             while True:
-                if asked is None:
-                    asked = asyncio.ensure_future(anext(responses, None))
+                # Wait for there to be some next response to send, or for
+                # producing one to have failed.
+                await have_next_response.wait()
 
-                response = await asked
-                asked = None
+                if failure is not None:
+                    raise failure
 
-                if response is None:
-                    return
+                # Wait for there to be room in the window.
+                stall_start = time.monotonic()
+                sequence_number = await window.acquire()
 
-                sequence_number = window.try_take()
+                # Consume the `next_response`, clearing it so the other loop can
+                # accumulate a fresh one. It's important to note that this is
+                # done atomically, without yielding the event loop.
+                assert next_response is not None
+                response = next_response
+                next_response = None
+                skipped_updates = responses_accumulated - 1
+                responses_accumulated = 0
 
-                if sequence_number is None:
-                    stalled_at = time.monotonic()
-                    skipped = 0
-                    room = asyncio.ensure_future(window.take())
+                # Leave the event set if the accumulator failed while
+                # we waited for room: its `set()` landed on an event
+                # that was already set, so clearing here would throw
+                # away the only notice we get, and the next iteration
+                # would wait on a task that has already ended.
+                if failure is None:
+                    have_next_response.clear()
 
-                    while True:
-                        if asked is None:
-                            asked = asyncio.ensure_future(
-                                anext(responses, None)
-                            )
-
-                        await asyncio.wait(
-                            [room, asked],
-                            return_when=asyncio.FIRST_COMPLETED,
-                        )
-
-                        if asked.done():
-                            update = asked.result()
-                            asked = None
-
-                            if update is None:
-                                # What we hold is the last response of
-                                # this query; it still needs room.
-                                sequence_number = await room
-                                break
-
-                            skipped += 1
-
-                            # `MergeFrom` is exactly what one response
-                            # standing in for two means: the newer
-                            # state replaces the one we hold, an
-                            # update that carries no state of its own
-                            # leaves that state alone, and we keep the
-                            # idempotency keys of both, since a
-                            # mutation reported once must not be lost
-                            # because the response reporting it was
-                            # merged away.
-                            response.MergeFrom(update)
-
-                        if room.done():
-                            sequence_number = room.result()
-                            break
-
-                    room = None
-
-                    stall_milliseconds = round(
-                        (time.monotonic() - stalled_at) * 1000
+                stall_milliseconds = round(
+                    (time.monotonic() - stall_start) * 1000
+                )
+                if stall_milliseconds > REPORTABLE_STALL_MILLISECONDS:
+                    logger.info(
+                        f"A client of a reactive query to `{request.method}` "
+                        f"skipped {skipped_updates} updates because it fell "
+                        f"{stall_milliseconds}ms behind"
                     )
 
-                    response.stall_milliseconds = stall_milliseconds
-                    response.skipped_updates = skipped
-
-                    if stall_milliseconds > REPORTABLE_STALL_MILLISECONDS:
-                        logger.info(
-                            "A client of a reactive query to "
-                            f"`{request.method}` skipped {skipped} updates "
-                            f"because it fell {stall_milliseconds}ms behind"
-                        )
-
+                # Send the response we'd accumulated.
                 response.query_id = query_id
                 response.sequence_number = sequence_number
-
+                response.skipped_updates = skipped_updates
+                response.stall_milliseconds = stall_milliseconds
                 yield response
+
         finally:
-            for future in (asked, room):
-                if future is not None:
-                    future.cancel()
+            accumulator.cancel()
+            try:
+                await accumulator
+            except CancelledError:
+                pass
 
     async def Query(
         self,
