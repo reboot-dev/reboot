@@ -1,13 +1,16 @@
 import asyncio
 import contextlib
+import dataclasses
 import grpc
 import log.log
 import logging
 import reboot.aio.internals.channel_manager
+import time
 import unittest
 import uuid
 from ast import literal_eval
 from collections import namedtuple
+from google.protobuf.empty_pb2 import Empty
 from rbt.v1alpha1 import errors_pb2, transactions_pb2
 from rbt.v1alpha1.errors_pb2 import StateNotConstructed
 from reboot.aio.aborted import SystemAborted
@@ -33,6 +36,7 @@ from reboot.aio.tests import Reboot
 from reboot.aio.types import ApplicationId, StateRef
 from reboot.server.database import DatabaseClient
 from reboot.std.collections.v1.sorted_map import SortedMap, sorted_map_library
+from reboot.uuidv7 import uuid7
 from tests.reboot import bank_pb2, bank_pb2_grpc, bank_rbt
 from tests.reboot.bank import SINGLETON_BANK_ID, AccountServicer, BankServicer
 from tests.reboot.bank_rbt import Account, Bank
@@ -151,6 +155,308 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertFalse(transferrable_response.transferrable)
+
+    async def test_opposite_transfers_do_not_deadlock(self) -> None:
+        """Two transfers in opposite directions each take one account's
+        lock and then wait for the other's, which is a deadlock. The
+        younger of the two aborts with `TransactionShouldRetry` once it
+        has waited out the grace period, is retried carrying its age,
+        and both complete long before the lock deadline.
+        """
+
+        # A call from an external context carries an idempotency key,
+        # so a transaction it starts holds its root state's lock
+        # exclusively and two transfers through one bank would
+        # serialize there. Root each transfer at its own bank so that
+        # they meet only at the accounts.
+        async def create_any_bank(servicer, context, request):
+            return Empty()
+
+        # Make both transfers wait after their withdraw until the
+        # other has withdrawn too, so that each holds one account
+        # when it asks for the other and the deadlock is certain
+        # rather than a matter of timing. Arrivals are by account
+        # rather than counted because the aborted transfer withdraws
+        # again when it is retried.
+        withdraw = AccountServicer.withdraw
+        withdrawn: set[str] = set()
+        both_withdrawn = asyncio.Event()
+
+        async def withdraw_then_wait_for_other(
+            servicer, context, state, request
+        ):
+            response = await withdraw(servicer, context, state, request)
+            withdrawn.add(context.state_id)
+            if len(withdrawn) == 2:
+                both_withdrawn.set()
+            await both_withdrawn.wait()
+            return response
+
+        # Record every `TransactionShouldRetry` the client parses, and
+        # the call it was parsed for, to prove the deadlock was
+        # resolved by a presumed deadlock and not by the lock
+        # deadline, and to check what the retry then carried.
+        transaction_should_retry = UnaryRetriedCall._transaction_should_retry
+        should_retries: list[tuple[UnaryRetriedCall,
+                                   errors_pb2.TransactionShouldRetry]] = []
+
+        async def mock_transaction_should_retry(unary_retried_call):
+            should_retry = await transaction_should_retry(unary_retried_call)
+            if should_retry is not None:
+                should_retries.append((unary_retried_call, should_retry))
+            return should_retry
+
+        with mock.patch.object(
+            BankServicer,
+            'create',
+            create_any_bank,
+        ), mock.patch.object(
+            AccountServicer,
+            'withdraw',
+            withdraw_then_wait_for_other,
+        ), mock.patch(
+            'reboot.aio.stubs.UnaryRetriedCall._transaction_should_retry',
+            mock_transaction_should_retry,
+        ):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer]),
+                # Effect validation runs a transaction's method twice,
+                # the second pass as a new transaction that can wait
+                # behind the first pass's participants still releasing
+                # and be presumed deadlocked with them. Run each
+                # transfer once so that the only deadlock is the one
+                # between the two transfers.
+                effect_validation=EffectValidation.DISABLED,
+            )
+
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            other_bank, _ = await Bank.Create(context, 'other-bank')
+
+            await bank.SignUp(context, account_id='ben', initial_deposit=100)
+            await bank.SignUp(
+                context,
+                account_id='jonathan',
+                initial_deposit=100,
+            )
+            # A sign-up's participants release their locks once told to
+            # commit, which is after the client hears back. Reading each
+            # account waits for that, so that the transfers below meet
+            # only each other and not a sign-up still committing, which
+            # the older-owner rule would also treat as a deadlock.
+            await Account.ref('ben').Balance(context)
+            await Account.ref('jonathan').Balance(context)
+            # A sign-up may itself have died and retried while setting
+            # up, waiting behind another sign-up still committing. Only
+            # the transfers' deaths are checked.
+            should_retries.clear()
+
+            started = time.monotonic()
+
+            await asyncio.gather(
+                bank.Transfer(
+                    context,
+                    from_account_id='ben',
+                    to_account_id='jonathan',
+                    amount=10,
+                ),
+                other_bank.Transfer(
+                    context,
+                    from_account_id='jonathan',
+                    to_account_id='ben',
+                    amount=30,
+                ),
+            )
+
+            elapsed = time.monotonic() - started
+
+        # Resolved by the grace period, not the 30 second lock
+        # deadline.
+        self.assertLess(elapsed, 15)
+
+        ben_balance = await Account.ref('ben').Balance(context)
+        jonathan_balance = await Account.ref('jonathan').Balance(context)
+        self.assertEqual(ben_balance.amount, 120)
+        self.assertEqual(jonathan_balance.amount, 80)
+
+        # At least one of the two died for a presumed deadlock; a retry
+        # can die again while the transaction it lost to is still
+        # committing. Each death carried the age of the transaction's
+        # first attempt, and each retry sent that age back.
+        self.assertGreater(len(should_retries), 0)
+        for call, should_retry in should_retries:
+            self.assertEqual(
+                should_retry.reason,
+                errors_pb2.TransactionShouldRetry.PRESUMED_DEADLOCK,
+            )
+            self.assertNotEqual(should_retry.retry_age, '')
+            self.assertIn(
+                (TRANSACTION_RETRY_AGE_HEADER, should_retry.retry_age),
+                call._metadata,
+            )
+
+    async def test_carried_age_decides_which_transfer_retries(self) -> None:
+        """A retry carries the age of its first attempt, and it is that
+        age, not the root id, that wait-die compares. A transfer that
+        carries an age older than a transfer started before it wins
+        the deadlock, and the earlier transfer is the one that
+        retries.
+        """
+
+        async def create_any_bank(servicer, context, request):
+            return Empty()
+
+        # The same barrier as above: each transfer holds one account
+        # before it asks for the other.
+        withdraw = AccountServicer.withdraw
+        withdrawn: set[str] = set()
+        first_withdrawn = asyncio.Event()
+        both_withdrawn = asyncio.Event()
+
+        async def withdraw_then_wait_for_other(
+            servicer, context, state, request
+        ):
+            response = await withdraw(servicer, context, state, request)
+            withdrawn.add(context.state_id)
+            if len(withdrawn) == 1:
+                first_withdrawn.set()
+            if len(withdrawn) == 2:
+                both_withdrawn.set()
+            await both_withdrawn.wait()
+            return response
+
+        # Give every call to the second bank an age from long ago, the
+        # way a retry carries its first attempt's age, so that the
+        # second transfer is older than the first by age although
+        # younger by root id. The age goes on the headers the stub
+        # builds for the call, which is where a retry puts it, so the
+        # very first attempt carries it: the generated code starts
+        # that attempt's RPC before handing it to `UnaryRetriedCall`,
+        # so setting it there would reach only the retries.
+        carried_age = uuid7(timestamp_ms=1000)
+        other_bank_state_ref = StateRef.from_id(
+            Bank.__state_type_name__, 'other-bank'
+        )
+        stub_init = Stub.__init__
+
+        def mock_stub_init(stub, **kwargs):
+            stub_init(stub, **kwargs)
+            if (
+                kwargs['context'] is None and
+                kwargs['state_ref'].to_str() == other_bank_state_ref.to_str()
+            ):
+                stub._headers = dataclasses.replace(
+                    stub._headers, transaction_retry_age=carried_age
+                )
+
+        transaction_should_retry = UnaryRetriedCall._transaction_should_retry
+        should_retries: list[tuple[UnaryRetriedCall,
+                                   errors_pb2.TransactionShouldRetry]] = []
+
+        async def mock_transaction_should_retry(unary_retried_call):
+            should_retry = await transaction_should_retry(unary_retried_call)
+            if should_retry is not None:
+                should_retries.append((unary_retried_call, should_retry))
+            return should_retry
+
+        with mock.patch.object(
+            BankServicer,
+            'create',
+            create_any_bank,
+        ), mock.patch.object(
+            AccountServicer,
+            'withdraw',
+            withdraw_then_wait_for_other,
+        ), mock.patch(
+            'reboot.aio.stubs.Stub.__init__',
+            mock_stub_init,
+        ), mock.patch(
+            'reboot.aio.stubs.UnaryRetriedCall._transaction_should_retry',
+            mock_transaction_should_retry,
+        ):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer]),
+                # Effect validation runs a transaction's method twice,
+                # the second pass as a new transaction that can wait
+                # behind the first pass's participants still releasing
+                # and be presumed deadlocked with them. Run each
+                # transfer once so that the only deadlock is the one
+                # between the two transfers.
+                effect_validation=EffectValidation.DISABLED,
+            )
+
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            other_bank, _ = await Bank.Create(context, 'other-bank')
+
+            await bank.SignUp(context, account_id='ben', initial_deposit=100)
+            await bank.SignUp(
+                context,
+                account_id='jonathan',
+                initial_deposit=100,
+            )
+            # A sign-up's participants release their locks once told to
+            # commit, which is after the client hears back. Reading each
+            # account waits for that, so that the transfers below meet
+            # only each other and not a sign-up still committing, which
+            # the older-owner rule would also treat as a deadlock.
+            await Account.ref('ben').Balance(context)
+            await Account.ref('jonathan').Balance(context)
+            # A sign-up may itself have died and retried while setting
+            # up, waiting behind another sign-up still committing. Only
+            # the transfers' deaths are checked.
+            should_retries.clear()
+
+            # The first transfer starts first, so its root id is the
+            # older of the two.
+            first = asyncio.create_task(
+                bank.Transfer(
+                    context,
+                    from_account_id='ben',
+                    to_account_id='jonathan',
+                    amount=10,
+                )
+            )
+            await asyncio.wait_for(first_withdrawn.wait(), timeout=10)
+
+            second = asyncio.create_task(
+                other_bank.Transfer(
+                    context,
+                    from_account_id='jonathan',
+                    to_account_id='ben',
+                    amount=30,
+                )
+            )
+
+            await asyncio.gather(first, second)
+
+        ben_balance = await Account.ref('ben').Balance(context)
+        jonathan_balance = await Account.ref('jonathan').Balance(context)
+        self.assertEqual(ben_balance.amount, 120)
+        self.assertEqual(jonathan_balance.amount, 80)
+
+        # The first transfer, older by root id but younger by carried
+        # age, is the one that died and retried, possibly more than
+        # once while the second was still committing; the second,
+        # carrying the older age on every attempt, never did.
+        deaths = [
+            (dict(call._metadata)[STATE_REF_HEADER], should_retry.retry_age)
+            for call, should_retry in should_retries
+        ]
+        self.assertGreater(len(should_retries), 0)
+        for call, should_retry in should_retries:
+            self.assertEqual(
+                should_retry.reason,
+                errors_pb2.TransactionShouldRetry.PRESUMED_DEADLOCK,
+                deaths,
+            )
+            self.assertIn(
+                (STATE_REF_HEADER, bank._state_ref.to_str()),
+                call._metadata,
+                deaths,
+            )
 
     async def test_retry_carries_the_age_of_the_first_attempt(self) -> None:
         """A call that aborts with a `TransactionShouldRetry` whose
@@ -515,6 +821,17 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             else:
                 return await abort(state_manager, request, grpc_context)
 
+        # Whether the client may retry. Off while the bank server is
+        # stopped, so that its going down surfaces as `Unavailable`
+        # rather than an endless retry; on again once it is back,
+        # since a fresh call then waits behind the transaction being
+        # recovered and may be asked to retry after the grace period.
+        retries_enabled = True
+        should_retry = UnaryRetriedCall._should_retry
+
+        def mock_should_retry(unary_retried_call, error):
+            return retries_enabled and should_retry(unary_retried_call, error)
+
         with mock.patch(
             'reboot.aio.state_managers.SidecarStateManager.Prepare',
             mock_prepare
@@ -525,10 +842,8 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             'transaction_coordinator_cleanup',
             mock_transaction_coordinator_cleanup
         ), mock.patch(
-            # Disable retries on error, so that we can get a clear
-            # signal when a server has gone down.
             'reboot.aio.stubs.UnaryRetriedCall._should_retry',
-            lambda *args, **kwargs: False
+            mock_should_retry,
         ):
             await self.rbt.up(
                 Application(servicers=[AccountServicer, BankServicer]),
@@ -559,6 +874,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             fail_transaction_coordinator_cleanup = True
 
+            retries_enabled = False
             bank_server = await self.rbt.server_stop(bank_server_id)
 
             prepare_waiting.set()
@@ -582,6 +898,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             fail_transaction_coordinator_cleanup = False
 
             await self.rbt.server_start(bank_server)
+            retries_enabled = True
 
             bank = Bank.ref(SINGLETON_BANK_ID)
 
@@ -642,6 +959,17 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
                 database_client, **kwargs
             )
 
+        # Whether the client may retry. Off while the bank server is
+        # stopped, so that its going down surfaces as `Unavailable`
+        # rather than an endless retry; on again once it is back,
+        # since a fresh call then waits behind the transaction being
+        # recovered and may be asked to retry after the grace period.
+        retries_enabled = True
+        should_retry = UnaryRetriedCall._should_retry
+
+        def mock_should_retry(unary_retried_call, error):
+            return retries_enabled and should_retry(unary_retried_call, error)
+
         with mock.patch(
             'reboot.aio.state_managers.SidecarStateManager.Prepare',
             mock_prepare
@@ -652,10 +980,8 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             'transaction_coordinator_prepare',
             mock_transaction_coordinator_prepare
         ), mock.patch(
-            # Disable retries on error, so that we can get a clear
-            # signal when a server has gone down.
             'reboot.aio.stubs.UnaryRetriedCall._should_retry',
-            lambda *args, **kwargs: False
+            mock_should_retry,
         ):
             await self.rbt.up(
                 Application(servicers=[AccountServicer, BankServicer]),
@@ -688,6 +1014,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             await account_prepared.wait()
             await transaction_coordinator_prepare_called.wait()
 
+            retries_enabled = False
             bank_server = await self.rbt.server_stop(bank_server_id)
 
             with self.assertRaises(Bank.SignUpAborted) as aborted:
@@ -704,6 +1031,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             block_transaction_coordinator_prepare = False
 
             await self.rbt.server_start(bank_server)
+            retries_enabled = True
 
             bank = Bank.ref(SINGLETON_BANK_ID)
 

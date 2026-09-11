@@ -1901,6 +1901,15 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                                     ),
                                 )
                             if (
+                                should_retry.reason ==
+                                IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry.PRESUMED_DEADLOCK
+                            ):
+                                logger.warning(
+                                    "Retrying 'Create' because its "
+                                    "transaction is presumed deadlocked: "
+                                    f"{error.details()}"
+                                )
+                            if (
                                 should_retry.reason in IMPORT_reboot.aio.aborted.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF
                                 and not backoff_elided
                             ):
@@ -2002,6 +2011,15 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                                     ),
                                 )
                             if (
+                                should_retry.reason ==
+                                IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry.PRESUMED_DEADLOCK
+                            ):
+                                logger.warning(
+                                    "Retrying 'SetAdjective' because its "
+                                    "transaction is presumed deadlocked: "
+                                    f"{error.details()}"
+                                )
+                            if (
                                 should_retry.reason in IMPORT_reboot.aio.aborted.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF
                                 and not backoff_elided
                             ):
@@ -2085,6 +2103,15 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                                     transaction_retry_age=IMPORT_uuid.UUID(
                                         should_retry.retry_age
                                     ),
+                                )
+                            if (
+                                should_retry.reason ==
+                                IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry.PRESUMED_DEADLOCK
+                            ):
+                                logger.warning(
+                                    "Retrying 'TransactionSetAdjective' because its "
+                                    "transaction is presumed deadlocked: "
+                                    f"{error.details()}"
                                 )
                             if (
                                 should_retry.reason in IMPORT_reboot.aio.aborted.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF
@@ -2218,6 +2245,15 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                                     transaction_retry_age=IMPORT_uuid.UUID(
                                         should_retry.retry_age
                                     ),
+                                )
+                            if (
+                                should_retry.reason ==
+                                IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry.PRESUMED_DEADLOCK
+                            ):
+                                logger.warning(
+                                    "Retrying 'TestLongRunningWriter' because its "
+                                    "transaction is presumed deadlocked: "
+                                    f"{error.details()}"
                                 )
                             if (
                                 should_retry.reason in IMPORT_reboot.aio.aborted.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF
@@ -2359,6 +2395,15 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                                     ),
                                 )
                             if (
+                                should_retry.reason ==
+                                IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry.PRESUMED_DEADLOCK
+                            ):
+                                logger.warning(
+                                    "Retrying 'DangerousFields' because its "
+                                    "transaction is presumed deadlocked: "
+                                    f"{error.details()}"
+                                )
+                            if (
                                 should_retry.reason in IMPORT_reboot.aio.aborted.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF
                                 and not backoff_elided
                             ):
@@ -2442,6 +2487,15 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                                     transaction_retry_age=IMPORT_uuid.UUID(
                                         should_retry.retry_age
                                     ),
+                                )
+                            if (
+                                should_retry.reason ==
+                                IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry.PRESUMED_DEADLOCK
+                            ):
+                                logger.warning(
+                                    "Retrying 'StoreRecursiveMessage' because its "
+                                    "transaction is presumed deadlocked: "
+                                    f"{error.details()}"
                                 )
                             if (
                                 should_retry.reason in IMPORT_reboot.aio.aborted.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF
@@ -2543,6 +2597,15 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                                     transaction_retry_age=IMPORT_uuid.UUID(
                                         should_retry.retry_age
                                     ),
+                                )
+                            if (
+                                should_retry.reason ==
+                                IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry.PRESUMED_DEADLOCK
+                            ):
+                                logger.warning(
+                                    "Retrying 'ConstructAndStoreRecursiveMessage' because its "
+                                    "transaction is presumed deadlocked: "
+                                    f"{error.details()}"
                                 )
                             if (
                                 should_retry.reason in IMPORT_reboot.aio.aborted.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF

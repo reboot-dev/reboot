@@ -721,6 +721,7 @@ py_test(
     deps = [
         ":bank_py",
         ":general_boilerplate_py_reboot",
+        "//reboot:uuidv7_py",
         "//reboot/aio:tests_py",
         "//reboot/std/collections/v1:sorted_map_py",
     ],

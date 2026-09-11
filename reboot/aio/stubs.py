@@ -188,6 +188,15 @@ class UnaryRetriedCall(Generic[ResponseT]):
                         should_retry.retry_age != ''
                     ):
                         self._retry_age = uuid.UUID(should_retry.retry_age)
+                    if (
+                        should_retry is not None and should_retry.reason
+                        == errors_pb2.TransactionShouldRetry.PRESUMED_DEADLOCK
+                    ):
+                        logger.warning(
+                            f"Retrying '{self._method_name}' because its "
+                            "transaction is presumed deadlocked: "
+                            f"{error.details()}"
+                        )
                     apply_backoff = (
                         backoff_elided or should_retry is None or
                         should_retry.reason

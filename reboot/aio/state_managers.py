@@ -10,6 +10,7 @@ import itertools
 import log.log
 import logging
 import math
+import os
 import sys
 import time
 import traceback
@@ -80,6 +81,7 @@ from reboot.server.database import (
     SORTED_MAP_TYPE_NAME,
     DatabaseClient,
 )
+from reboot.settings import ENVVAR_REBOOT_TRANSACTION_DEADLOCK_GRACE_MS
 from reboot.time import DateTimeWithTimeZone
 from reboot.uuidv7 import uuid7_timestamp_ms
 from reboot.wait_for_tasks import wait_for_tasks
@@ -300,6 +302,11 @@ class StateManager(ABC):
                     ) else Lock.Mode.SHARED
                 ),
                 idempotency_key=context.idempotency_key,
+                # A retry carries the age of its first attempt; a first
+                # attempt is as old as its root transaction id.
+                age=(
+                    context.transaction_retry_age or context.transaction_ids[0]
+                ),
                 using_restart_detection=using_restart_detection,
             )
 
@@ -329,6 +336,7 @@ class StateManager(ABC):
                 # however, since, the lock will have been released at
                 # this point.
                 mode=Lock.Mode.EXCLUSIVE,
+                age=uuid.UUID(bytes=transaction.transaction_ids[0]),
                 stored=True,
                 prepared=transaction.prepared,
                 # During recovery any transactions that were not
@@ -359,6 +367,7 @@ class StateManager(ABC):
             state_ref: StateRef,
             tasks_dispatcher: TasksDispatcher,
             mode: Lock.Mode,
+            age: uuid.UUID,
             stored: bool = False,
             prepared: bool = False,
             unrecoverable_abort: bool = False,
@@ -404,6 +413,15 @@ class StateManager(ABC):
             # The mode in which this transaction currently holds the
             # per-state `Lock` for `(state_type, state_ref)`.
             self.mode = mode
+
+            # The age of the transaction: the root transaction id of
+            # its first attempt, so a retry is as old as its first
+            # attempt. Root ids are UUIDv7s stamped from the database
+            # timestamp and so order by creation: a smaller age is an
+            # older transaction. Two transactions waiting on each
+            # other's states are resolved by the younger aborting (see
+            # `TransactionShouldRetry.PRESUMED_DEADLOCK`).
+            self.age = age
 
             # Resolved by the first method called on the state as part
             # of this transaction once the per-state lock has been
@@ -1038,7 +1056,7 @@ class StateManager(ABC):
             exclusive = self.mode == Lock.Mode.EXCLUSIVE
             self.mode = snapshot.mode
             if exclusive and self.mode == Lock.Mode.SHARED:
-                lock.downgrade()
+                lock.downgrade(transaction=self)
 
         def _notify_streaming_readers(
             self,
@@ -1524,6 +1542,24 @@ except RuntimeError:
 LOCK_ACQUIRE_DEADLINE_DEFAULT = timedelta(seconds=30)
 
 
+def _transaction_deadlock_grace() -> timedelta:
+    """How long a transaction waits on a state owned by an older
+    transaction before it presumes a deadlock and aborts with
+    `TransactionShouldRetry` so that the older one can proceed.
+    Waits shorter than this never abort anything, so ordinary
+    contention on a busy state resolves on its own; a deadlock lasts
+    at most this long, since every cycle of waiting transactions has
+    at least one waiting on an older owner.
+    """
+    milliseconds = os.environ.get(ENVVAR_REBOOT_TRANSACTION_DEADLOCK_GRACE_MS)
+    if milliseconds is None:
+        return timedelta(milliseconds=250)
+    return timedelta(milliseconds=int(milliseconds))
+
+
+TRANSACTION_DEADLOCK_GRACE = _transaction_deadlock_grace()
+
+
 class Lock:
     """Async per-state shared/exclusive lock with in-place upgrade.
 
@@ -1550,6 +1586,20 @@ class Lock:
       transaction. Passing `deadline=None` means wait forever or until
       the task is cancelled.
 
+    - A transaction identifies itself by passing its participant as
+      `transaction` when acquiring, upgrading, downgrading, and
+      releasing; `holders` lists the participants currently holding
+      the lock so that a waiter can tell whether an older transaction
+      holds what it needs. A reader or writer outside any transaction
+      passes none and is only counted.
+
+    - A waiter may pass `grace` and `on_grace`: `on_grace()` is called
+      each time `grace` elapses while the waiter is still queued, and
+      may raise to give up the wait, in which case the waiter is
+      removed and the exception propagates. This is how a transaction
+      that has waited on an older transaction's state for longer than
+      the grace period aborts itself instead of deadlocking.
+
     - A waiter whose `deadline` elapsed or whose task was cancelled
       may still be granted the hold it queued for, because a release
       can reach it before it is resumed to take itself off the queue.
@@ -1573,10 +1623,17 @@ class Lock:
         queue, so a resolved future means this waiter holds the lock,
         even if whoever queued it has since given up."""
 
-        __slots__ = ("mode", "future")
+        __slots__ = ("mode", "transaction", "future")
 
-        def __init__(self, mode: Lock.Mode) -> None:
+        def __init__(
+            self,
+            mode: Lock.Mode,
+            transaction: Optional['StateManager.Transaction'],
+        ) -> None:
             self.mode = mode
+            # The participant that becomes a holder when the waiter is
+            # granted, if the waiter identified itself.
+            self.transaction = transaction
             self.future: asyncio.Future[None] = (
                 asyncio.get_event_loop().create_future()
             )
@@ -1588,6 +1645,11 @@ class Lock:
         self._exclusive: bool = False
         # Pending upgrader, if any.
         self._upgrader: Optional[Lock._Waiter] = None
+        # The participant holding the lock exclusively, if the holder
+        # is a transaction.
+        self._exclusive_holder: Optional['StateManager.Transaction'] = None
+        # The participants holding the lock shared.
+        self._shared_holders: set['StateManager.Transaction'] = set()
         # FIFO of shared / exclusive waiters; new arrivals append, the
         # head is granted next.
         self._waiters: list[Lock._Waiter] = []
@@ -1602,35 +1664,104 @@ class Lock:
         """`True` if the lock is currently held in any mode."""
         return self.is_shared_locked() or self.is_exclusive_locked()
 
+    @property
+    def holders(self) -> list['StateManager.Transaction']:
+        """The participants currently holding the lock, in either
+        mode."""
+        holders = list(self._shared_holders)
+        if self._exclusive_holder is not None:
+            holders.append(self._exclusive_holder)
+        return holders
+
+    def _add_shared_holder(
+        self,
+        transaction: Optional['StateManager.Transaction'],
+    ) -> None:
+        if transaction is not None:
+            assert transaction not in self._shared_holders, (
+                f"{transaction!r} already holds the lock shared"
+            )
+            self._shared_holders.add(transaction)
+
+    def _remove_shared_holder(
+        self,
+        transaction: Optional['StateManager.Transaction'],
+    ) -> None:
+        if transaction is not None:
+            assert transaction in self._shared_holders, (
+                f"{transaction!r} does not hold the lock shared"
+            )
+            self._shared_holders.remove(transaction)
+
+    def _set_exclusive_holder(
+        self,
+        transaction: Optional['StateManager.Transaction'],
+    ) -> None:
+        assert self._exclusive_holder is None, (
+            f"{self._exclusive_holder!r} already holds the lock exclusively"
+        )
+        self._exclusive_holder = transaction
+
+    def _unset_exclusive_holder(
+        self,
+        transaction: Optional['StateManager.Transaction'],
+    ) -> None:
+        assert self._exclusive_holder is transaction, (
+            f"{transaction!r} does not hold the lock exclusively"
+        )
+        self._exclusive_holder = None
+
     async def acquire_shared(
         self,
         *,
         deadline: Optional[timedelta],
+        transaction: Optional['StateManager.Transaction'] = None,
+        grace: Optional[timedelta] = None,
+        on_grace: Optional[Callable[[], None]] = None,
     ) -> None:
-        if self.try_acquire_shared():
+        if self.try_acquire_shared(transaction=transaction):
             return
-        await self._wait(mode=Lock.Mode.SHARED, deadline=deadline)
+        await self._wait(
+            mode=Lock.Mode.SHARED,
+            transaction=transaction,
+            deadline=deadline,
+            grace=grace,
+            on_grace=on_grace,
+        )
 
     async def acquire_exclusive(
         self,
         *,
         deadline: Optional[timedelta],
+        transaction: Optional['StateManager.Transaction'] = None,
+        grace: Optional[timedelta] = None,
+        on_grace: Optional[Callable[[], None]] = None,
     ) -> None:
-        if self.try_acquire_exclusive():
+        if self.try_acquire_exclusive(transaction=transaction):
             return
-        await self._wait(mode=Lock.Mode.EXCLUSIVE, deadline=deadline)
+        await self._wait(
+            mode=Lock.Mode.EXCLUSIVE,
+            transaction=transaction,
+            deadline=deadline,
+            grace=grace,
+            on_grace=on_grace,
+        )
 
     async def upgrade(
         self,
         *,
         deadline: Optional[timedelta],
+        transaction: Optional['StateManager.Transaction'] = None,
+        grace: Optional[timedelta] = None,
+        on_grace: Optional[Callable[[], None]] = None,
     ) -> None:
         """Atomically promote a held shared hold to exclusive.
 
-        Caller MUST already hold a shared hold. On success the
-        shared hold is consumed and the caller now holds exclusive.
-        On failure (another upgrade pending, or deadline exceeded),
-        the caller still holds the shared.
+        Caller MUST already hold a shared hold, as `transaction` if it
+        identified itself. On success the shared hold is consumed and
+        the caller now holds exclusive, as the exclusive holder. On
+        failure (another upgrade pending, or deadline exceeded), the
+        caller still holds the shared.
         """
         assert self._shared > 0, (
             "upgrade() requires the caller to already hold shared"
@@ -1642,18 +1773,31 @@ class Lock:
         if self._shared == 1 and not self._exclusive:
             self._shared = 0
             self._exclusive = True
+            self._remove_shared_holder(transaction)
+            self._set_exclusive_holder(transaction)
             return
         # Otherwise lets `_wait` as an upgrade.
-        await self._wait(upgrade=True, deadline=deadline)
+        await self._wait(
+            upgrade=True,
+            transaction=transaction,
+            deadline=deadline,
+            grace=grace,
+            on_grace=on_grace,
+        )
 
-    def downgrade(self) -> None:
+    def downgrade(
+        self,
+        *,
+        transaction: Optional['StateManager.Transaction'] = None,
+    ) -> None:
         """Atomically demote a held exclusive hold to shared.
 
-        Caller MUST already hold exclusive. On return the caller holds
-        shared, and any queued shared waiters (up to the first queued
-        exclusive waiter) are granted now that they are compatible
-        with the caller's shared hold; queued exclusive waiters stay
-        queued. Synchronous and never fails.
+        Caller MUST already hold exclusive, as `transaction` if it
+        identified itself. On return the caller holds shared, as a
+        shared holder, and any queued shared waiters (up to the first
+        queued exclusive waiter) are granted now that they are
+        compatible with the caller's shared hold; queued exclusive
+        waiters stay queued. Synchronous and never fails.
         """
         assert self._exclusive, (
             "downgrade() requires the caller to already hold exclusive"
@@ -1664,16 +1808,31 @@ class Lock:
         # (shared) waiters.
         assert self._shared == 0
         self._shared = 1
+        self._unset_exclusive_holder(transaction)
+        self._add_shared_holder(transaction)
         self._maybe_grant_next(released=Lock.Mode.EXCLUSIVE)
 
-    def release_shared(self) -> None:
+    def release_shared(
+        self,
+        *,
+        transaction: Optional['StateManager.Transaction'] = None,
+    ) -> None:
+        """Releases a shared hold acquired by `transaction`."""
         assert self._shared > 0
         self._shared -= 1
+        self._remove_shared_holder(transaction)
         self._maybe_grant_next(released=Lock.Mode.SHARED)
 
-    def release_exclusive(self) -> None:
+    def release_exclusive(
+        self,
+        *,
+        transaction: Optional['StateManager.Transaction'] = None,
+    ) -> None:
+        """Releases the exclusive hold acquired, or upgraded to, by
+        `transaction`."""
         assert self._exclusive
         self._exclusive = False
+        self._unset_exclusive_holder(transaction)
         self._maybe_grant_next(released=Lock.Mode.EXCLUSIVE)
 
     @asynccontextmanager
@@ -1681,38 +1840,52 @@ class Lock:
         self,
         *,
         deadline: Optional[timedelta],
+        transaction: Optional['StateManager.Transaction'] = None,
     ) -> AsyncIterator[None]:
-        await self.acquire_shared(deadline=deadline)
+        await self.acquire_shared(deadline=deadline, transaction=transaction)
         try:
             yield
         finally:
-            self.release_shared()
+            self.release_shared(transaction=transaction)
 
     @asynccontextmanager
     async def exclusive(
         self,
         *,
         deadline: Optional[timedelta],
+        transaction: Optional['StateManager.Transaction'] = None,
     ) -> AsyncIterator[None]:
-        await self.acquire_exclusive(deadline=deadline)
+        await self.acquire_exclusive(
+            deadline=deadline, transaction=transaction
+        )
         try:
             yield
         finally:
-            self.release_exclusive()
+            self.release_exclusive(transaction=transaction)
 
-    def try_acquire_shared(self) -> bool:
+    def try_acquire_shared(
+        self,
+        *,
+        transaction: Optional['StateManager.Transaction'] = None,
+    ) -> bool:
         if self._exclusive or self._upgrader is not None:
             return False
         # Exclusive-waiter-starvation guard.
         if any(waiter.mode == Lock.Mode.EXCLUSIVE for waiter in self._waiters):
             return False
         self._shared += 1
+        self._add_shared_holder(transaction)
         return True
 
-    def try_acquire_exclusive(self) -> bool:
+    def try_acquire_exclusive(
+        self,
+        *,
+        transaction: Optional['StateManager.Transaction'] = None,
+    ) -> bool:
         if self._exclusive or self._shared > 0 or self._upgrader is not None:
             return False
         self._exclusive = True
+        self._set_exclusive_holder(transaction)
         return True
 
     def _remove_waiter(self, waiter: Lock._Waiter) -> None:
@@ -1726,7 +1899,10 @@ class Lock:
         self,
         *,
         mode: Lock.Mode,
+        transaction: Optional['StateManager.Transaction'],
         deadline: Optional[timedelta],
+        grace: Optional[timedelta] = None,
+        on_grace: Optional[Callable[[], None]] = None,
     ) -> None:
         ...
 
@@ -1735,7 +1911,10 @@ class Lock:
         self,
         *,
         upgrade: Literal[True],
+        transaction: Optional['StateManager.Transaction'],
         deadline: Optional[timedelta],
+        grace: Optional[timedelta] = None,
+        on_grace: Optional[Callable[[], None]] = None,
     ) -> None:
         ...
 
@@ -1744,18 +1923,23 @@ class Lock:
         *,
         mode: Optional[Lock.Mode] = None,
         upgrade: bool = False,
+        transaction: Optional['StateManager.Transaction'],
         deadline: Optional[timedelta],
+        grace: Optional[timedelta] = None,
+        on_grace: Optional[Callable[[], None]] = None,
     ) -> None:
         """
         Construct a waiter and block until it is granted by
-        `_maybe_grant_next`.
+        `_maybe_grant_next`, calling `on_grace()` each time `grace`
+        elapses while still waiting.
         """
+        assert (grace is None) == (on_grace is None)
         assert (mode is None) == upgrade
         if upgrade:
             mode = Lock.Mode.EXCLUSIVE
         assert mode is not None
 
-        waiter = Lock._Waiter(mode)
+        waiter = Lock._Waiter(mode, transaction)
 
         if upgrade:
             # If we've already got a upgrader that is waiting we fail
@@ -1781,9 +1965,32 @@ class Lock:
             # future itself. A grant then stays the only thing that can
             # resolve it, which is what lets us tell below whether the
             # hold became ours while we were on our way out.
-            await asyncio.wait_for(
-                asyncio.shield(waiter.future), timeout=timeout
-            )
+            if grace is None or on_grace is None:
+                await asyncio.wait_for(
+                    asyncio.shield(waiter.future), timeout=timeout
+                )
+            else:
+                # Wait one grace period at a time so that `on_grace()`
+                # runs each time one elapses, until granted or until
+                # the deadline, which is the same absolute moment it
+                # would have been without a grace period.
+                loop = asyncio.get_running_loop()
+                cutoff = (
+                    loop.time() + timeout if timeout is not None else None
+                )
+                while True:
+                    step = grace.total_seconds()
+                    if cutoff is not None:
+                        step = min(step, max(0.0, cutoff - loop.time()))
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.shield(waiter.future), timeout=step
+                        )
+                        break
+                    except asyncio.TimeoutError:
+                        if cutoff is not None and loop.time() >= cutoff:
+                            raise
+                        on_grace()
         except BaseException as exception:
             if waiter.future.done():
                 # A release reached us before we could take ourselves
@@ -1796,11 +2003,11 @@ class Lock:
                     # that caller holding the shared hold it upgrades
                     # from, so hand that back rather than releasing
                     # the exclusive hold outright.
-                    self.downgrade()
+                    self.downgrade(transaction=waiter.transaction)
                 elif mode == Lock.Mode.SHARED:
-                    self.release_shared()
+                    self.release_shared(transaction=waiter.transaction)
                 else:
-                    self.release_exclusive()
+                    self.release_exclusive(transaction=waiter.transaction)
             elif upgrade:
                 # Only a grant takes a waiter out of the upgrade slot,
                 # and a granted waiter took the branch above, so the
@@ -1844,6 +2051,8 @@ class Lock:
                 self._upgrader = None
                 self._shared = 0
                 self._exclusive = True
+                self._remove_shared_holder(upgrader.transaction)
+                self._set_exclusive_holder(upgrader.transaction)
                 upgrader.future.set_result(None)
             # While we have an upgrader nothing else gets granted.
             return
@@ -1868,11 +2077,13 @@ class Lock:
                     return
                 self._waiters.pop(0)
                 self._exclusive = True
+                self._set_exclusive_holder(waiter.transaction)
                 waiter.future.set_result(None)
                 return
             # The mode is `Lock.Mode.SHARED`.
             self._waiters.pop(0)
             self._shared += 1
+            self._add_shared_holder(waiter.transaction)
             waiter.future.set_result(None)
             # Continue granting a cohort of shared waiters up until
             # the first exclusive waiter.
@@ -2511,6 +2722,48 @@ class SidecarStateManager(
     def latest_timestamp_ms(self) -> Optional[int]:
         return self._latest_timestamp_ms
 
+    def _abort_if_presumed_deadlock(
+        self,
+        state_type: StateTypeName,
+        state_ref: StateRef,
+        transaction: StateManager.Transaction,
+    ) -> None:
+        """Raises `SystemAborted(TransactionShouldRetry(...))`, with
+        reason `PRESUMED_DEADLOCK`, when the lock on `(state_type,
+        state_ref)` is held by a transaction older than `transaction`,
+        so that `transaction` aborts and the older one proceeds: the
+        younger of two transactions waiting on each other's states is
+        always the one to go. A lock held only by younger transactions,
+        or by a plain reader or writer outside any transaction (which
+        never waits on anything and so does not identify itself to the
+        lock), keeps `transaction` waiting.
+        """
+        for holder in self._locks[state_type][state_ref].holders:
+            # An upgrader is itself among the holders through the
+            # shared hold it upgrades from.
+            if holder is transaction:
+                continue
+            if holder.age < transaction.age:
+                grace_ms = TRANSACTION_DEADLOCK_GRACE // timedelta(
+                    milliseconds=1
+                )
+                message = (
+                    f"Transaction {transaction.root_id} waited longer than "
+                    f"{grace_ms}ms for state '{state_ref.id}' of type "
+                    f"'{state_type}', which is held by the older transaction "
+                    f"{holder.root_id} (age {holder.age}), and is presumed "
+                    "deadlocked with it; aborting so that the older "
+                    "transaction proceeds. Retry required."
+                )
+                logger.warning(message)
+                raise SystemAborted(
+                    TransactionShouldRetry(
+                        reason=TransactionShouldRetry.PRESUMED_DEADLOCK,
+                        retry_age=str(transaction.age),
+                    ),
+                    message=message,
+                )
+
     def _lookup_participant_transactions(
         self,
         state_type: StateTypeName,
@@ -2563,9 +2816,9 @@ class SidecarStateManager(
 
         lock = self._locks[state_type][state_ref]
         if transaction.mode == Lock.Mode.EXCLUSIVE:
-            lock.release_exclusive()
+            lock.release_exclusive(transaction=transaction)
         else:
-            lock.release_shared()
+            lock.release_shared(transaction=transaction)
 
     def _can_use_restart_detection(
         self,
@@ -3881,6 +4134,35 @@ class SidecarStateManager(
                         f'_transaction_participant_watch(...) in {__name__}',
                     )
 
+    async def _upgrade_lock(
+        self,
+        state_type: StateTypeName,
+        state_ref: StateRef,
+        transaction: StateManager.Transaction,
+    ) -> None:
+        """Upgrades `transaction`'s shared hold of the lock on
+        `(state_type, state_ref)` to exclusive, aborting `transaction`
+        with `TransactionShouldRetry` (presumed deadlock) instead if it
+        has waited longer than the grace period on a shared holder that
+        is older.
+        """
+        assert transaction.mode == Lock.Mode.SHARED
+
+        def on_grace() -> None:
+            self._abort_if_presumed_deadlock(
+                state_type,
+                state_ref,
+                transaction,
+            )
+
+        await self._locks[state_type][state_ref].upgrade(
+            deadline=LOCK_ACQUIRE_DEADLINE_DEFAULT,
+            transaction=transaction,
+            grace=TRANSACTION_DEADLOCK_GRACE,
+            on_grace=on_grace,
+        )
+        transaction.mode = Lock.Mode.EXCLUSIVE
+
     @asynccontextmanager_span(
         # We expect an `EffectValidationRetry` exception; that's not an error.
         set_status_on_exception=False
@@ -4208,10 +4490,11 @@ class SidecarStateManager(
             # the later it fails the more of the transaction's work is
             # wasted.
             if transaction.mode == Lock.Mode.SHARED:
-                await self._locks[state_type_name][state_ref].upgrade(
-                    deadline=LOCK_ACQUIRE_DEADLINE_DEFAULT
+                await self._upgrade_lock(
+                    state_type_name,
+                    state_ref,
+                    transaction,
                 )
-                transaction.mode = Lock.Mode.EXCLUSIVE
                 # And now `context.participants` should no longer
                 # propagate this participant as read-only.
                 context.participants.add(
@@ -4627,10 +4910,11 @@ class SidecarStateManager(
                     # it as shared but we've got effects that need
                     # exclusive.
                     if transaction.mode == Lock.Mode.SHARED:
-                        await self._locks[state_type_name][state_ref].upgrade(
-                            deadline=LOCK_ACQUIRE_DEADLINE_DEFAULT
+                        await self._upgrade_lock(
+                            state_type_name,
+                            state_ref,
+                            transaction,
                         )
-                        transaction.mode = Lock.Mode.EXCLUSIVE
                     context.participants.add(
                         state_type_name,
                         state_ref,
@@ -5021,14 +5305,27 @@ class SidecarStateManager(
         # success / failure we resolve `transaction.acquired_lock`
         # so concurrent callers on the same transaction can
         # proceed (or propagate our failure).
+        def on_grace() -> None:
+            self._abort_if_presumed_deadlock(
+                state_type,
+                state_ref,
+                transaction,
+            )
+
         try:
             if transaction.mode == Lock.Mode.SHARED:
                 await self._locks[state_type][state_ref].acquire_shared(
-                    deadline=LOCK_ACQUIRE_DEADLINE_DEFAULT
+                    deadline=LOCK_ACQUIRE_DEADLINE_DEFAULT,
+                    transaction=transaction,
+                    grace=TRANSACTION_DEADLOCK_GRACE,
+                    on_grace=on_grace,
                 )
             else:
                 await self._locks[state_type][state_ref].acquire_exclusive(
-                    deadline=LOCK_ACQUIRE_DEADLINE_DEFAULT
+                    deadline=LOCK_ACQUIRE_DEADLINE_DEFAULT,
+                    transaction=transaction,
+                    grace=TRANSACTION_DEADLOCK_GRACE,
+                    on_grace=on_grace,
                 )
         except BaseException as exception:
             transaction.acquired_lock.set_exception(exception)
@@ -6356,10 +6653,11 @@ class SidecarStateManager(
             assert not self._locks[transaction.state_type][
                 transaction.state_ref].is_locked()
 
-            await self._locks[transaction.state_type][transaction.state_ref
-                                                     ].acquire_exclusive(
-                                                         deadline=None,
-                                                     )
+            await self._locks[transaction.state_type
+                             ][transaction.state_ref].acquire_exclusive(
+                                 deadline=None,
+                                 transaction=transaction,
+                             )
 
             # TODO(benh): don't just "watch" the transaction, also
             # proactively tell the coordinator if this transaction has

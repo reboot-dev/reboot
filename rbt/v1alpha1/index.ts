@@ -634,10 +634,13 @@ export const REBOOT_ERROR_TYPES = [
 
 // Reasons a `TransactionShouldRetry` may carry after which the caller
 // skips its backoff before the first retry, because the cause was not
-// load: a participant with a stale timestamp rather than a busy
-// server.
+// load: a participant with a stale timestamp, or a state being handed
+// to an older transaction, rather than a busy server.
 export const TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF: ReadonlySet<errors_pb.TransactionShouldRetry_Reason> =
-  new Set([errors_pb.TransactionShouldRetry_Reason.RESTART_DETECTED]);
+  new Set([
+    errors_pb.TransactionShouldRetry_Reason.RESTART_DETECTED,
+    errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK,
+  ]);
 
 export type GrpcError = InstanceTypeForErrorTypes<
   typeof GRPC_ERROR_TYPES

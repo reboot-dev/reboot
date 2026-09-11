@@ -778,6 +778,15 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                                     ),
                                 )
                             if (
+                                should_retry.reason ==
+                                IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry.PRESUMED_DEADLOCK
+                            ):
+                                logger.warning(
+                                    "Retrying '{{ method.proto.name }}' because its "
+                                    "transaction is presumed deadlocked: "
+                                    f"{error.details()}"
+                                )
+                            if (
                                 should_retry.reason in IMPORT_reboot.aio.aborted.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF
                                 and not backoff_elided
                             ):

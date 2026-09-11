@@ -46,6 +46,11 @@ message TransactionShouldRetry {
     // began, so it may already have taken part and lost that state,
     // and refuses to join.
     RESTART_DETECTED = 1;
+    // The transaction waited longer than the grace period on a state
+    // owned by an older transaction and is presumed deadlocked with
+    // it. It aborts so that the older one proceeds, which is what
+    // keeps two transactions waiting on each other from deadlocking.
+    PRESUMED_DEADLOCK = 2;
   }
 
   Reason reason = 1;

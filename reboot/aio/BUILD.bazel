@@ -455,6 +455,7 @@ py_library(
         ":tasks_py",
         requirement("bitarray"),
         ":exceptions_py",
+        "//reboot:settings_py",
         "//reboot:time_py",
         "//reboot:uuidv7_py",
         "//reboot:wait_for_tasks_py",
