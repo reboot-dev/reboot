@@ -17,15 +17,15 @@ policy belongs (enforced directly or via `size`/`max_size`). The
 blob's framework-generated random ID then acts as a capability.
 Upload-side calls (`GetPartUploadInstructions`, `PartUploaded`, `Commit`) and
 `Remove` are restricted to the `uploader_id` recorded at `Create` —
-unless `uploader_id` is left empty, which deliberately allows anyone
+unless `uploader_id` is omitted, which deliberately allows anyone
 who knows the blob's ID to upload (for applications without end-user
 authentication). Downloads (`GetDownloadUrl`) are open to anyone who knows
 the ID by default, but if `Create` (or a later `SetDownloaders`)
-records a `downloader_ids` allow-list only the listed users may download;
+records a `downloaders` allow-list only the listed users may download;
 an empty list restricts downloads to app-internal callers, and the
 uploader is *not* implicitly a downloader. `Info` (metadata and upload
 progress, watchable reactively) is visible to anyone who may upload or
-download the blob: the `uploader_id` and listed `downloader_ids`, plus
+download the blob: the `uploader_id` and listed `downloaders`, plus
 anyone who knows the ID whenever either side is left open.
 """
 
@@ -143,7 +143,7 @@ def _uploader_or_open(
 ) -> Authorizer.Decision:
     """Allow app-internal callers and the blob's recorded uploader to
     make upload-side calls, or anyone when no uploader was recorded. An
-    empty `uploader_id` means the blob was created without end-user
+    absent `uploader_id` means the blob was created without end-user
     authentication, so anyone who knows the blob's ID may upload into
     it. This handles the app-internal case itself (rather than
     composing `is_app_internal` via `any=[...]`) so that an
@@ -153,7 +153,7 @@ def _uploader_or_open(
         return rbt.v1alpha1.errors_pb2.Ok()
     if state is None:
         return rbt.v1alpha1.errors_pb2.PermissionDenied()
-    if state.uploader_id == "":
+    if not state.HasField("uploader_id"):
         return rbt.v1alpha1.errors_pb2.Ok()
     if context.auth is None or context.auth.user_id is None:
         return rbt.v1alpha1.errors_pb2.Unauthenticated()
@@ -170,7 +170,7 @@ def _downloader_or_open(
     **kwargs,
 ) -> Authorizer.Decision:
     """Allow app-internal callers, and restrict `GetDownloadUrl` to the
-    blob's download allow-list. When no `downloader_ids` list was
+    blob's download allow-list. When no `downloaders` list was
     recorded (the
     field is unset) anyone who knows the blob's ID may download; when
     one was recorded only the listed users may (an empty list means no
@@ -182,11 +182,11 @@ def _downloader_or_open(
         return rbt.v1alpha1.errors_pb2.Ok()
     if state is None:
         return rbt.v1alpha1.errors_pb2.PermissionDenied()
-    if not state.HasField("downloader_ids"):
+    if not state.HasField("downloaders"):
         return rbt.v1alpha1.errors_pb2.Ok()
     if context.auth is None or context.auth.user_id is None:
         return rbt.v1alpha1.errors_pb2.Unauthenticated()
-    if context.auth.user_id in state.downloader_ids.user_ids:
+    if context.auth.user_id in state.downloaders.user_ids:
         return rbt.v1alpha1.errors_pb2.Ok()
     return rbt.v1alpha1.errors_pb2.PermissionDenied()
 
@@ -225,9 +225,10 @@ class BlobServicer(Blob.Servicer):
     ) -> CreateResponse:
         self.state.status = Blob.State.UPLOADING
         self.state.content_type = request.content_type
-        self.state.uploader_id = request.uploader_id
-        if request.HasField("downloader_ids"):
-            self.state.downloader_ids.CopyFrom(request.downloader_ids)
+        if request.HasField("uploader_id"):
+            self.state.uploader_id = request.uploader_id
+        if request.HasField("downloaders"):
+            self.state.downloaders.CopyFrom(request.downloaders)
         if request.HasField("size"):
             self.state.size = request.size
         if request.HasField("max_size"):
@@ -249,14 +250,14 @@ class BlobServicer(Blob.Servicer):
         context: WriterContext,
         request: SetDownloadersRequest,
     ) -> SetDownloadersResponse:
-        # Replace semantics: a present `downloader_ids` (even empty)
+        # Replace semantics: a present `downloaders` (even empty)
         # restricts downloads to the listed users; an omitted one
         # removes any restriction so anyone who knows the ID may
         # download again.
-        if request.HasField("downloader_ids"):
-            self.state.downloader_ids.CopyFrom(request.downloader_ids)
+        if request.HasField("downloaders"):
+            self.state.downloaders.CopyFrom(request.downloaders)
         else:
-            self.state.ClearField("downloader_ids")
+            self.state.ClearField("downloaders")
         return SetDownloadersResponse()
 
     @classmethod
@@ -526,7 +527,10 @@ class BlobServicer(Blob.Servicer):
         response = InfoResponse(
             status=self.state.status,
             content_type=self.state.content_type,
-            uploader_id=self.state.uploader_id,
+            uploader_id=(
+                self.state.uploader_id
+                if self.state.HasField("uploader_id") else None
+            ),
             bytes_uploaded=sum(part.size for part in self.state.parts),
             parts=self.state.parts,
         )
