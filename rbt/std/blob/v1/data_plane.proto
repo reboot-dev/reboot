@@ -154,13 +154,17 @@ message DataPlaneCompleteUploadRequest {
 }
 
 message DataPlaneCompleteUploadResponse {
-  // The committed object's composite ETag. Empty when `error` is set.
-  string etag = 1;
+  // Completion either finished the object or did not; there is no
+  // answer that is both.
+  oneof outcome {
+    // The committed object's composite ETag.
+    string etag = 1;
 
-  // A permanent-failure reason, if completion failed in a way the
-  // client can fix by re-uploading. When set, `etag` is empty and the
-  // control plane reverts the blob to UPLOADING with this message.
-  optional string error = 2;
+    // A permanent-failure reason: completion failed in a way the
+    // client can fix by re-uploading. The control plane reverts the
+    // blob to UPLOADING with this message.
+    string error = 2;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////

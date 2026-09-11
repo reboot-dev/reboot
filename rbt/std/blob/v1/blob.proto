@@ -102,10 +102,10 @@ message Blob {
     uint64 max_size = 4;
   }
 
-  // The ID of the user that may upload into this blob. Empty means
+  // The ID of the user that may upload into this blob. Absent means
   // anyone who knows this blob's ID may upload; see the authorizer
   // note in `reboot.std.blob.v1.blob`.
-  string uploader_id = 5;
+  optional string uploader_id = 5;
 
   // The IDs of the users who may download this blob. When unset
   // (omitted at `Create`), anyone who knows the blob's ID may
@@ -113,7 +113,7 @@ message Blob {
   // means no one but app-internal callers). The uploader is NOT
   // implicitly a downloader. See the authorizer note in
   // `reboot.std.blob.v1.blob`.
-  optional Downloaders downloader_ids = 10;
+  optional Downloaders downloaders = 10;
 
   // Data-plane upload session ID, set by the `BeginUpload` workflow.
   // `GetPartUploadInstructions` reports `ready: false` until this is set.
@@ -159,9 +159,9 @@ message CreateRequest {
     uint64 max_size = 3;
   }
 
-  // The ID of the user that may upload into this blob. Leave empty to
+  // The ID of the user that may upload into this blob. Omit it to
   // allow anyone who knows this blob's ID to upload.
-  string uploader_id = 4;
+  optional string uploader_id = 4;
 
   // The IDs of the users who may download this blob. Omit the field
   // entirely to let anyone who knows the blob's ID download it; set it
@@ -169,7 +169,7 @@ message CreateRequest {
   // The uploader is NOT implicitly a downloader — omit them from the
   // list if they shouldn't be able to download (e.g. a drop-box). Can
   // be changed later with `SetDownloaders`.
-  optional Downloaders downloader_ids = 5;
+  optional Downloaders downloaders = 5;
 }
 
 message CreateResponse {}
@@ -181,7 +181,7 @@ message SetDownloadersRequest {
   // Omit the field entirely to remove any restriction (anyone who
   // knows the blob's ID may download); set it (even to an empty list)
   // to restrict downloads to the listed users.
-  optional Downloaders downloader_ids = 1;
+  optional Downloaders downloaders = 1;
 }
 
 message SetDownloadersResponse {}
@@ -263,7 +263,9 @@ message InfoResponse {
     uint64 max_size = 4;
   }
 
-  string uploader_id = 5;
+  // Mirrors `Blob.uploader_id`: absent means anyone who knows this
+  // blob's ID may upload.
+  optional string uploader_id = 5;
 
   // Total bytes across the parts reported uploaded so far. Together
   // with `size` this gives upload progress, observable reactively by
@@ -322,7 +324,7 @@ service BlobMethods {
   // backend. Only application code may call this; it is the
   // application's chance to enforce quota and size policy (directly,
   // or by setting `max_size`), to record which user may upload
-  // (`uploader_id`), and to restrict who may download (`downloader_ids`).
+  // (`uploader_id`), and to restrict who may download (`downloaders`).
   rpc Create(CreateRequest) returns (CreateResponse) {
     option (rbt.v1alpha1.method) = {
       writer: { constructor: {} },
@@ -330,7 +332,7 @@ service BlobMethods {
   }
 
   // Replaces the blob's download allow-list. Application-mediated
-  // (app-internal only), like `Create`. Omit `downloader_ids` in the
+  // (app-internal only), like `Create`. Omit `downloaders` in the
   // request to remove any restriction (anyone who knows the ID may
   // download again); set it to restrict downloads to the listed
   // users.
@@ -403,7 +405,7 @@ service BlobMethods {
 
   // Metadata and upload progress. Reactive: watch it to render a
   // progress bar. Visible to anyone who may upload or download the
-  // blob: the `uploader_id` and any listed `downloader_ids`, plus anyone
+  // blob: the `uploader_id` and any listed `downloaders`, plus anyone
   // who knows the ID whenever either side is left open.
   rpc Info(InfoRequest) returns (InfoResponse) {
     option (rbt.v1alpha1.method) = {
