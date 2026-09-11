@@ -25,16 +25,10 @@ message PrepareRequest {
   // false (the default) and new participants fall back to writing to
   // disk for prepare/commit.
   bool read_only_aware = 3;
-  // When true, the coordinator recorded this participant in the
-  // read-only subset of its `Participants` record, which is what
-  // allowed the participant to elide its prepare/commit disk writes,
-  // release its shared lock and forget the transaction on an earlier
-  // `Prepare`. It lets the participant answer a `Prepare` for a
-  // transaction it no longer knows about: having not restarted since
-  // the transaction began, the only way it can have forgotten is by
-  // having already prepared and committed. New coordinators set this
-  // alongside `read_only_aware`; old coordinators leave it false (the
-  // default) and the participant answers `abort = true` as before.
+  // When true, the coordinator has recorded this participant as a
+  // read-only participant of this transaction. New coordinators set
+  // this alongside `read_only_aware`; old coordinators leave it false
+  // (the default).
   bool read_only = 4;
 }
 
