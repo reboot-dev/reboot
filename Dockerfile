@@ -70,6 +70,11 @@ ARG TARGETARCH
 # Ubuntu Jammy does not have Python installed, so we use the ppa to install it.
 ARG PYTHON_VERSION=3.10
 
+# Transient DNS and connection failures on CI runners make single-shot
+# `apt` fetches flaky, so have `apt` retry each acquire a few times.
+# Every stage built from this one inherits the setting.
+RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
+
 # Install tzdata package to provide timezone files that tzlocal depends on.
 # Without this, /etc/localtime symlink to /usr/share/zoneinfo/Etc/UTC breaks,
 # causing "tzlocal() does not support non-zoneinfo timezones" errors.
@@ -763,6 +768,11 @@ ARG PYTHON_VERSION=3.10
 #            `build-essential` are only installed during a build stage, and are
 #            absent in the final runtime container - at the expense of a more
 #            complex Dockerfile.
+
+# This image starts from an upstream base rather than from
+# `respect-current-minimum`, so it needs the same `apt` retries.
+RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     python3 \
