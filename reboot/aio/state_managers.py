@@ -5225,7 +5225,14 @@ class SidecarStateManager(
         any `SystemAborted` as "safe to abort".
         """
 
-        async def prepare(state_type: StateTypeName, state_ref: StateRef):
+        read_only_participants = set(participants.read_only())
+
+        async def prepare(
+            state_type: StateTypeName,
+            state_ref: StateRef,
+            *,
+            read_only: bool,
+        ):
             # We retry indefinitely on any non-definitive outcome: we
             # cannot report the transaction as aborted to the caller
             # unless we have a definitive "never prepared" answer from
@@ -5265,6 +5272,7 @@ class SidecarStateManager(
                             # `Prepare`. Old participants ignore this
                             # field and do the disk-writes.
                             read_only_aware=True,
+                            read_only=read_only,
                         ),
                         metadata=Headers(
                             application_id=application_id,
@@ -5316,7 +5324,11 @@ class SidecarStateManager(
                 ) from None
 
         await concurrently(
-            prepare(state_type, state_ref) for (state_type, state_ref) in
+            prepare(
+                state_type,
+                state_ref,
+                read_only=(state_type, state_ref) in read_only_participants,
+            ) for (state_type, state_ref) in
             # On re-prepare `skip_read_only=True` because by then
             # read-only participants may have already forgotten the
             # transaction.
@@ -5526,15 +5538,24 @@ class SidecarStateManager(
                     ).to_grpc_metadata(),
                 )
 
-                if not watch_response.aborted:
-                    # It is worth noting here that if this participant
-                    # was read-only then
-                    # `transaction_participant_commit` will be a no-op
-                    # because the only way a transaction commits is if
-                    # it was prepared and thus this read-only
-                    # participant must have prepared so
-                    # `transaction_participant_commit` will find a
-                    # `finished` transaction.
+                # Committing requires a prepared transaction: the
+                # database persists a participant transaction only
+                # once it is prepared, and rejects a commit for one
+                # that is not, so an unprepared participant reaches a
+                # terminal outcome by aborting, which is also what
+                # releases this state's lock.
+                #
+                # A recovering coordinator re-prepares with
+                # `skip_read_only=True`, so a read-only participant
+                # whose original `Prepare` was lost when the
+                # coordinator crashed is still unprepared by the time
+                # that coordinator's `Watch` reports the transaction
+                # as committed.
+                #
+                # A participant that elided its prepare and commit is
+                # already `finished()`, which makes either call below
+                # a no-op for it.
+                if not watch_response.aborted and transaction.prepared():
                     await self.transaction_participant_commit(transaction)
                 else:
                     await self.transaction_participant_abort(transaction)
@@ -5646,8 +5667,11 @@ class SidecarStateManager(
             state_type, state_ref, transaction_id
         )
         if transaction is None:
+            can_use_restart_detection = self._can_use_restart_detection(
+                transaction_id, state_type
+            )
             if (
-                self._can_use_restart_detection(transaction_id, state_type) and
+                can_use_restart_detection and
                 # `_can_use_restart_detection` ensures that
                 # `self._recovery_timestamp_ms` is not `None`.
                 self._recovery_timestamp_ms  # type: ignore[operator]
@@ -5681,6 +5705,43 @@ class SidecarStateManager(
                     f"recovered at {recovery_time})."
                 )
             if request.abort_via_response:
+                if (
+                    request.read_only and request.read_only_aware and
+                    can_use_restart_detection
+                ):
+                    # A `read_only_aware` coordinator recorded this
+                    # transaction as read-only here, and the check
+                    # above establishes that this server has not
+                    # restarted since this transaction began. Were we
+                    # still holding this transaction, the lookup above
+                    # would have found it, so the one remaining
+                    # explanation is that an earlier `Prepare`
+                    # prepared and committed it in memory and released
+                    # the shared lock (see
+                    # `transaction_participant_prepare`). Answer
+                    # prepared: the coordinator retries `Prepare` on
+                    # any RPC-level error, and "abort" here would turn
+                    # a transaction that did prepare into an abort.
+                    #
+                    # The `read_only` flag alone establishes none of
+                    # this: it reflects our own classification, made
+                    # when we joined and sent up to the coordinator,
+                    # and `Participants.retain_as_read_only()` can
+                    # move a participant into that set later. The
+                    # local restart check is what rules out having
+                    # lost this transaction along with the rest of
+                    # memory.
+                    #
+                    # That check is per process: shards are fixed when
+                    # a state manager is constructed, so a shard
+                    # changes owner only via a new process, which the
+                    # recovery timestamp catches. If we implement
+                    # reassignment of shards into already running
+                    # servers, this check needs a per-shard recovery
+                    # timestamp, or this answer would claim a
+                    # transaction the new owner never saw was
+                    # prepared.
+                    return transactions_pb2.PrepareResponse()
                 logger.warning(
                     f"Failed to prepare transaction '{transaction_id}': "
                     f"No pending transaction for state type '{state_type}' "

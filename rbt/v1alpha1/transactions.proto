@@ -25,6 +25,11 @@ message PrepareRequest {
   // false (the default) and new participants fall back to writing to
   // disk for prepare/commit.
   bool read_only_aware = 3;
+  // When true, the coordinator has recorded this participant as a
+  // read-only participant of this transaction. New coordinators set
+  // this alongside `read_only_aware`; old coordinators leave it false
+  // (the default).
+  bool read_only = 4;
 }
 
 message PrepareResponse {

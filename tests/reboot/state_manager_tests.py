@@ -8,7 +8,7 @@ from datetime import timedelta
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.timestamp_pb2 import Timestamp
 from google.protobuf.wrappers_pb2 import StringValue
-from rbt.v1alpha1 import database_pb2, tasks_pb2
+from rbt.v1alpha1 import database_pb2, tasks_pb2, transactions_pb2
 from rbt.v1alpha1.errors_pb2 import (
     StateAlreadyConstructed,
     StateNotConstructed,
@@ -26,7 +26,11 @@ from reboot.aio.contexts import (
 )
 from reboot.aio.headers import Headers
 from reboot.aio.internals.channel_manager import _ChannelManager
-from reboot.aio.internals.contextvars import Servicing, _servicing
+from reboot.aio.internals.contextvars import (
+    Servicing,
+    _servicing,
+    use_application_id,
+)
 from reboot.aio.internals.tasks_dispatcher import TasksDispatcher
 from reboot.aio.placement import StaticPlacementClient
 from reboot.aio.resolvers import NoResolver
@@ -36,6 +40,7 @@ from reboot.aio.state_managers import (
     Lock,
     ScalableBloomFilter,
     SidecarStateManager,
+    StateManager,
 )
 from reboot.aio.tasks import TaskEffect
 from reboot.aio.types import ApplicationId, StateId, StateRef, StateTypeName
@@ -835,6 +840,347 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
         ) as transaction:
             assert transaction is not None
             self.assertEqual(transaction.mode, Lock.Mode.EXCLUSIVE)
+
+    def create_grpc_context_mock(
+        self,
+        state_ref: StateRef,
+    ) -> grpc.aio.ServicerContext:
+        """Create the gRPC context a `Participant` servicer method
+        reads its headers from, so these tests can call `Prepare`
+        the way a coordinator does."""
+        grpc_context = unittest.mock.MagicMock(spec=grpc.aio.ServicerContext)
+        grpc_context.invocation_metadata.return_value = Headers(
+            application_id=ApplicationId('test-app'),
+            state_ref=state_ref,
+        ).to_grpc_metadata()
+        return grpc_context
+
+    async def join_read_only_participant(
+        self,
+        state_id: StateId,
+        *,
+        database_timestamp_ms: int,
+    ) -> TransactionContext:
+        """Join a read-only transaction (shared lock, no idempotency
+        key, restart detection available) as a participant on
+        `state_id` and leave it joined, i.e. in the state a
+        coordinator's first `Prepare` finds it in."""
+        context = self.create_transaction_context(
+            state_id,
+            database_timestamp_ms=database_timestamp_ms,
+        )
+        async with self.state_manager.transactionally(
+            context,
+            self.create_task_dispatcher_mock(),
+            aborted_type=None,
+        ) as transaction:
+            assert transaction is not None
+            self.assertEqual(transaction.mode, Lock.Mode.SHARED)
+            self.assertTrue(transaction.using_restart_detection)
+        return context
+
+    async def send_prepare(
+        self,
+        context: TransactionContext,
+        *,
+        read_only: bool,
+        read_only_aware: bool = True,
+    ) -> transactions_pb2.PrepareResponse:
+        """Send the `Prepare` a modern coordinator sends, telling the
+        participant whether the coordinator recorded it as
+        read-only."""
+        assert context.transaction_root_id is not None
+        # A `Participant` servicer method reads the application id
+        # from the asyncio context variable that every server's
+        # `UseApplicationIdInterceptor` sets.
+        with use_application_id(ApplicationId('test-app')):
+            return await self.state_manager.Prepare(
+                transactions_pb2.PrepareRequest(
+                    transaction_id=context.transaction_root_id.bytes,
+                    abort_via_response=True,
+                    read_only_aware=read_only_aware,
+                    read_only=read_only,
+                ),
+                self.create_grpc_context_mock(context._state_ref),
+            )
+
+    async def watch_coordinator_answering(
+        self,
+        transaction: StateManager.Transaction,
+        *,
+        aborted: bool,
+    ) -> None:
+        """Run the participant's watch control loop once against a
+        coordinator whose `Watch` answers `aborted`, which is how a
+        participant that the coordinator does not contact directly
+        learns its transaction's outcome."""
+        # The participant started a watch task of its own when it
+        # joined; this loop replaces it, so stop that one.
+        assert transaction.watch_task is not None
+        transaction.watch_task.cancel()
+
+        stub = unittest.mock.MagicMock()
+
+        async def watch(request, metadata):
+            return transactions_pb2.WatchResponse(aborted=aborted)
+
+        stub.Watch = watch
+
+        with unittest.mock.patch(
+            'reboot.aio.state_managers.transactions_pb2_grpc.CoordinatorStub',
+            return_value=stub,
+        ):
+            await self.state_manager._transaction_participant_watch(
+                ApplicationId('test-app'),
+                unittest.mock.MagicMock(spec=_ChannelManager),
+                transaction,
+            )
+
+    def lookup_joined_transaction(
+        self,
+        context: TransactionContext,
+    ) -> StateManager.Transaction:
+        """Return the participant transaction `context` joined."""
+        assert context.transaction_root_id is not None
+        transaction = self.state_manager._lookup_participant_transaction(
+            MyGreeterServicer.__state_type_name__,
+            context._state_ref,
+            context.transaction_root_id,
+        )
+        assert transaction is not None
+        return transaction
+
+    async def test_unprepared_read_only_participant_told_to_commit_aborts(
+        self,
+    ) -> None:
+        """A read-only participant told that a transaction it never
+        prepared committed aborts, releasing its shared lock.
+
+        A coordinator writes its participants to disk and sends
+        `Prepare` concurrently, so it can crash with the participants
+        durably recorded and a read-only participant's `Prepare` never
+        sent; that participant stays joined, unprepared and holding
+        its shared lock. The recovered coordinator re-prepares with
+        `skip_read_only=True` and then answers this participant's
+        `Watch` with "committed", which is a transaction the database
+        never prepared and therefore refuses to commit. Aborting is
+        the outcome this participant can still reach, and it is safe
+        because a read-only participant has nothing to apply.
+        """
+        self.state_manager._recovery_timestamp_ms = 1000
+
+        context = await self.join_read_only_participant(
+            "test-1234",
+            database_timestamp_ms=2000,
+        )
+        state_type = MyGreeterServicer.__state_type_name__
+        state_ref = context._state_ref
+        transaction = self.lookup_joined_transaction(context)
+        self.assertFalse(transaction.prepared())
+        self.assertTrue(
+            self.state_manager._locks[state_type][state_ref].is_shared_locked()
+        )
+
+        await self.watch_coordinator_answering(transaction, aborted=False)
+
+        self.assertTrue(transaction.aborted())
+        self.assertIsNone(
+            self.state_manager._lookup_participant_transaction(
+                state_type,
+                state_ref,
+                context.transaction_root_id,
+            )
+        )
+        self.assertFalse(
+            self.state_manager._locks[state_type][state_ref].is_locked()
+        )
+
+    async def test_abort_of_an_elided_read_only_participant_is_a_no_op(
+        self,
+    ) -> None:
+        """A read-only participant that already elided its prepare and
+        commit tolerates a later abort: it is `finished()`, so the
+        abort leaves it committed and leaves its released lock
+        alone."""
+        self.state_manager._recovery_timestamp_ms = 1000
+
+        context = await self.join_read_only_participant(
+            "test-1234",
+            database_timestamp_ms=2000,
+        )
+        state_type = MyGreeterServicer.__state_type_name__
+        state_ref = context._state_ref
+        transaction = self.lookup_joined_transaction(context)
+
+        elided = await self.send_prepare(context, read_only=True)
+        self.assertFalse(elided.abort)
+        self.assertTrue(transaction.committed())
+
+        await self.state_manager.transaction_participant_abort(transaction)
+
+        self.assertTrue(transaction.committed())
+        self.assertFalse(
+            self.state_manager._locks[state_type][state_ref].is_locked()
+        )
+
+    async def test_read_only_prepare_elides_and_releases_the_lock(
+        self,
+    ) -> None:
+        """A read-only participant's first `Prepare` prepares and
+        commits in memory, drops the participant entry and releases
+        the shared lock, all without a disk write."""
+        self.state_manager._recovery_timestamp_ms = 1000
+
+        context = await self.join_read_only_participant(
+            "test-1234",
+            database_timestamp_ms=2000,
+        )
+        state_type = MyGreeterServicer.__state_type_name__
+        state_ref = context._state_ref
+        self.assertTrue(
+            self.state_manager._locks[state_type][state_ref].is_shared_locked()
+        )
+
+        response = await self.send_prepare(context, read_only=True)
+
+        self.assertFalse(response.abort)
+        self.assertIsNone(
+            self.state_manager._lookup_participant_transaction(
+                state_type,
+                state_ref,
+                context.transaction_root_id,
+            )
+        )
+        self.assertFalse(
+            self.state_manager._locks[state_type][state_ref].is_locked()
+        )
+
+    async def test_reprepared_read_only_participant_answers_prepared(
+        self,
+    ) -> None:
+        """A `Prepare` re-sent to a read-only participant that already
+        elided is answered "prepared".
+
+        The coordinator retries `Prepare` on any RPC-level error,
+        because such an error says nothing about whether the
+        participant prepared. If the first `Prepare` did arrive, the
+        participant elided it and forgot the transaction, so the retry
+        asks about a transaction that is gone precisely because it
+        succeeded. The participant has not restarted since the
+        transaction began, so that is the only way it can have
+        forgotten, and answering "abort" would turn a transaction that
+        did prepare into an abort.
+        """
+        self.state_manager._recovery_timestamp_ms = 1000
+
+        context = await self.join_read_only_participant(
+            "test-1234",
+            database_timestamp_ms=2000,
+        )
+        elided = await self.send_prepare(context, read_only=True)
+        self.assertFalse(elided.abort)
+
+        response = await self.send_prepare(context, read_only=True)
+
+        self.assertFalse(response.abort)
+        self.assertFalse(response.restart_detected)
+
+    async def test_reprepared_participant_aborts_for_old_coordinator(
+        self,
+    ) -> None:
+        """An old coordinator does not set `read_only`, so it still
+        gets the definitive abort it expects.
+
+        Its participant record may not distinguish read-only
+        participants at all, so "I have no pending transaction" has to
+        keep meaning abort for it.
+        """
+        self.state_manager._recovery_timestamp_ms = 1000
+
+        context = await self.join_read_only_participant(
+            "test-1234",
+            database_timestamp_ms=2000,
+        )
+        elided = await self.send_prepare(context, read_only=True)
+        self.assertFalse(elided.abort)
+
+        response = await self.send_prepare(context, read_only=False)
+
+        self.assertTrue(response.abort)
+        self.assertFalse(response.restart_detected)
+
+    async def test_reprepared_participant_aborts_without_read_only_aware(
+        self,
+    ) -> None:
+        """A coordinator that has not promised to skip read-only
+        participants on recovery still gets a definitive abort.
+
+        That promise is what permits the elision, so without it a
+        missing participant entry has no benign explanation.
+        """
+        self.state_manager._recovery_timestamp_ms = 1000
+
+        context = await self.join_read_only_participant(
+            "test-1234",
+            database_timestamp_ms=2000,
+        )
+        elided = await self.send_prepare(context, read_only=True)
+        self.assertFalse(elided.abort)
+
+        response = await self.send_prepare(
+            context,
+            read_only=True,
+            read_only_aware=False,
+        )
+
+        self.assertTrue(response.abort)
+
+    async def test_reprepared_read_only_participant_aborts_after_restart(
+        self,
+    ) -> None:
+        """A participant that restarted since the transaction began
+        reports the restart rather than claiming it prepared: it may
+        have lost the transaction with its memory, so the coordinator
+        must retry rather than count it as prepared."""
+        self.state_manager._recovery_timestamp_ms = 1000
+
+        context = await self.join_read_only_participant(
+            "test-1234",
+            database_timestamp_ms=2000,
+        )
+        elided = await self.send_prepare(context, read_only=True)
+        self.assertFalse(elided.abort)
+
+        # The server recovered after this transaction began, which is
+        # what it looks like to have restarted mid-transaction.
+        self.state_manager._recovery_timestamp_ms = 3000
+
+        response = await self.send_prepare(context, read_only=True)
+
+        self.assertTrue(response.abort)
+        self.assertTrue(response.restart_detected)
+
+    async def test_reprepared_read_only_participant_aborts_without_uuid7(
+        self,
+    ) -> None:
+        """Without restart detection a participant cannot tell "I
+        finished and forgot" from "I lost my state", so it keeps
+        answering abort.
+
+        A UUIDv4 transaction id carries no timestamp to compare the
+        recovery timestamp against. Such a transaction never elides
+        either, so a missing participant entry really is unexplained.
+        """
+        self.state_manager._recovery_timestamp_ms = 1000
+
+        context = self.create_transaction_context("test-1234")
+        assert context.transaction_root_id is not None
+        self.assertEqual(context.transaction_root_id.version, 4)
+
+        response = await self.send_prepare(context, read_only=True)
+
+        self.assertTrue(response.abort)
+        self.assertFalse(response.restart_detected)
 
 
 class LockTest(unittest.IsolatedAsyncioTestCase):
