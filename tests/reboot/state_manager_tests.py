@@ -36,6 +36,7 @@ from reboot.aio.state_managers import (
     Lock,
     ScalableBloomFilter,
     SidecarStateManager,
+    StateManager,
 )
 from reboot.aio.tasks import TaskEffect
 from reboot.aio.types import ApplicationId, StateId, StateRef, StateTypeName
@@ -1155,6 +1156,187 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         lock.release_shared()
         lock.release_shared()
         self.assertFalse(lock.is_locked())
+
+    async def test_holders_follow_the_participants(self) -> None:
+        """The lock lists the participants holding it, through upgrade
+        and downgrade, and leaves out holders outside any transaction.
+        """
+        lock = Lock()
+        # Participants only identify the lock's holders, so stand-ins
+        # of the participant type suffice.
+        first = unittest.mock.Mock(spec=StateManager.Transaction)
+        second = unittest.mock.Mock(spec=StateManager.Transaction)
+
+        await lock.acquire_shared(deadline=None, transaction=first)
+        await lock.acquire_shared(deadline=None)  # Outside a transaction.
+        await lock.acquire_shared(deadline=None, transaction=second)
+        self.assertCountEqual(lock.holders, [first, second])
+
+        lock.release_shared(transaction=second)
+        lock.release_shared()
+        self.assertEqual(lock.holders, [first])
+
+        # The sole remaining holder upgrades and downgrades; it stays
+        # listed throughout.
+        await lock.upgrade(deadline=None, transaction=first)
+        self.assertTrue(lock.is_exclusive_locked())
+        self.assertEqual(lock.holders, [first])
+        lock.downgrade(transaction=first)
+        self.assertEqual(lock.holders, [first])
+
+        lock.release_shared(transaction=first)
+        self.assertEqual(lock.holders, [])
+        self.assertFalse(lock.is_locked())
+
+    async def test_holders_include_a_granted_waiter(self) -> None:
+        """A waiter is listed once it is granted, not while it waits."""
+        lock = Lock()
+        first = unittest.mock.Mock(spec=StateManager.Transaction)
+        second = unittest.mock.Mock(spec=StateManager.Transaction)
+
+        await lock.acquire_exclusive(deadline=None, transaction=first)
+        acquire_task = asyncio.create_task(
+            lock.acquire_exclusive(deadline=None, transaction=second)
+        )
+        await asyncio.sleep(0)
+        self.assertEqual(lock.holders, [first])
+
+        lock.release_exclusive(transaction=first)
+        await asyncio.wait_for(acquire_task, timeout=1.0)
+        self.assertEqual(lock.holders, [second])
+        lock.release_exclusive(transaction=second)
+
+    async def test_holders_follow_a_granted_upgrader(self) -> None:
+        """An upgrader that waited on another shared holder becomes the
+        exclusive owner once that holder releases."""
+        lock = Lock()
+        upgrader = unittest.mock.Mock(spec=StateManager.Transaction)
+        other = unittest.mock.Mock(spec=StateManager.Transaction)
+
+        await lock.acquire_shared(deadline=None, transaction=upgrader)
+        await lock.acquire_shared(deadline=None, transaction=other)
+        upgrade_task = asyncio.create_task(
+            lock.upgrade(deadline=None, transaction=upgrader)
+        )
+        await asyncio.sleep(0)
+        self.assertCountEqual(lock.holders, [upgrader, other])
+
+        lock.release_shared(transaction=other)
+        await asyncio.wait_for(upgrade_task, timeout=1.0)
+        self.assertTrue(lock.is_exclusive_locked())
+        self.assertEqual(lock.holders, [upgrader])
+        lock.release_exclusive(transaction=upgrader)
+        self.assertFalse(lock.is_locked())
+
+    async def test_on_grace_runs_each_grace_period_until_granted(
+        self,
+    ) -> None:
+        lock = Lock()
+        await lock.acquire_exclusive(deadline=None)
+
+        grace_elapsed = 0
+
+        def on_grace() -> None:
+            nonlocal grace_elapsed
+            grace_elapsed += 1
+
+        acquire_task = asyncio.create_task(
+            lock.acquire_shared(
+                deadline=None,
+                grace=timedelta(milliseconds=20),
+                on_grace=on_grace,
+            )
+        )
+        await asyncio.sleep(0.1)
+        self.assertFalse(acquire_task.done())
+        self.assertGreaterEqual(grace_elapsed, 2)
+
+        lock.release_exclusive()
+        await asyncio.wait_for(acquire_task, timeout=1.0)
+        self.assertTrue(lock.is_shared_locked())
+        lock.release_shared()
+
+    async def test_on_grace_not_called_when_granted_within_grace(
+        self,
+    ) -> None:
+        lock = Lock()
+        await lock.acquire_exclusive(deadline=None)
+
+        def on_grace() -> None:
+            self.fail("Granted within the grace period; must not be called")
+
+        acquire_task = asyncio.create_task(
+            lock.acquire_shared(
+                deadline=None,
+                grace=timedelta(seconds=10),
+                on_grace=on_grace,
+            )
+        )
+        await asyncio.sleep(0)
+        lock.release_exclusive()
+        await asyncio.wait_for(acquire_task, timeout=1.0)
+        self.assertTrue(lock.is_shared_locked())
+        lock.release_shared()
+
+    async def test_on_grace_raising_gives_up_the_wait(self) -> None:
+        lock = Lock()
+        await lock.acquire_exclusive(deadline=None)
+
+        class GiveUp(Exception):
+            pass
+
+        def on_grace() -> None:
+            raise GiveUp()
+
+        with self.assertRaises(GiveUp):
+            await lock.acquire_shared(
+                deadline=None,
+                grace=timedelta(milliseconds=10),
+                on_grace=on_grace,
+            )
+        # The waiter is gone: releasing grants nobody and leaves the
+        # lock free.
+        lock.release_exclusive()
+        self.assertFalse(lock.is_locked())
+
+    async def test_upgrade_on_grace_raising_keeps_shared_hold(self) -> None:
+        lock = Lock()
+        await lock.acquire_shared(deadline=None)
+        await lock.acquire_shared(deadline=None)  # Second shared holder.
+
+        class GiveUp(Exception):
+            pass
+
+        def on_grace() -> None:
+            raise GiveUp()
+
+        with self.assertRaises(GiveUp):
+            await lock.upgrade(
+                deadline=None,
+                grace=timedelta(milliseconds=10),
+                on_grace=on_grace,
+            )
+        # The upgrader still holds shared, and the upgrade slot is
+        # free for another upgrader.
+        self.assertTrue(lock.is_shared_locked())
+        self.assertFalse(lock.is_exclusive_locked())
+        lock.release_shared()
+        await lock.upgrade(deadline=None)
+        self.assertTrue(lock.is_exclusive_locked())
+        lock.release_exclusive()
+
+    async def test_deadline_still_applies_with_grace(self) -> None:
+        lock = Lock()
+        await lock.acquire_exclusive(deadline=None)
+        with self.assertRaises(SystemAborted) as aborted:
+            await lock.acquire_shared(
+                deadline=timedelta(milliseconds=50),
+                grace=timedelta(milliseconds=10),
+                on_grace=lambda: None,
+            )
+        self.assertEqual(type(aborted.exception.error), Unavailable)
+        self.assertTrue(lock.is_exclusive_locked())
+        lock.release_exclusive()
 
     async def test_cancelled_exclusive_waiter_leaves_lock_free(self) -> None:
         """A queued exclusive waiter whose task is cancelled can still

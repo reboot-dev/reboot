@@ -4209,6 +4209,10 @@ export function useGreeter({ id: providedId } = {}) {
                                 if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
                                     transactionRetryAge = shouldRetry.retryAge;
                                 }
+                                if (shouldRetry.reason ===
+                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
+                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.Greet\` because its transaction is presumed deadlocked: ${status.message}`);
+                                }
                             }
                             // Handled in the 'catch' block below.
                             throw GreeterGreetAborted.fromStatus(status);
@@ -4636,6 +4640,10 @@ export function useGreeter({ id: providedId } = {}) {
                                 if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
                                     transactionRetryAge = shouldRetry.retryAge;
                                 }
+                                if (shouldRetry.reason ===
+                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
+                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.TryToConstructContext\` because its transaction is presumed deadlocked: ${status.message}`);
+                                }
                             }
                             // Handled in the 'catch' block below.
                             throw GreeterTryToConstructContextAborted.fromStatus(status);
@@ -4973,6 +4981,10 @@ export function useGreeter({ id: providedId } = {}) {
                                 if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
                                     transactionRetryAge = shouldRetry.retryAge;
                                 }
+                                if (shouldRetry.reason ===
+                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
+                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.TryToConstructExternalContext\` because its transaction is presumed deadlocked: ${status.message}`);
+                                }
                             }
                             // Handled in the 'catch' block below.
                             throw GreeterTryToConstructExternalContextAborted.fromStatus(status);
@@ -5309,6 +5321,10 @@ export function useGreeter({ id: providedId } = {}) {
                                     reboot_api.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF.has(shouldRetry.reason);
                                 if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
                                     transactionRetryAge = shouldRetry.retryAge;
+                                }
+                                if (shouldRetry.reason ===
+                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
+                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.TestLongRunningFetch\` because its transaction is presumed deadlocked: ${status.message}`);
                                 }
                             }
                             // Handled in the 'catch' block below.
@@ -5692,6 +5708,10 @@ export function useGreeter({ id: providedId } = {}) {
                                 if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
                                     transactionRetryAge = shouldRetry.retryAge;
                                 }
+                                if (shouldRetry.reason ===
+                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
+                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.GetWholeState\` because its transaction is presumed deadlocked: ${status.message}`);
+                                }
                             }
                             // Handled in the 'catch' block below.
                             throw GreeterGetWholeStateAborted.fromStatus(status);
@@ -6029,6 +6049,10 @@ export function useGreeter({ id: providedId } = {}) {
                                 if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
                                     transactionRetryAge = shouldRetry.retryAge;
                                 }
+                                if (shouldRetry.reason ===
+                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
+                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.FailWithException\` because its transaction is presumed deadlocked: ${status.message}`);
+                                }
                             }
                             // Handled in the 'catch' block below.
                             throw GreeterFailWithExceptionAborted.fromStatus(status);
@@ -6365,6 +6389,10 @@ export function useGreeter({ id: providedId } = {}) {
                                     reboot_api.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF.has(shouldRetry.reason);
                                 if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
                                     transactionRetryAge = shouldRetry.retryAge;
+                                }
+                                if (shouldRetry.reason ===
+                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
+                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.FailWithAborted\` because its transaction is presumed deadlocked: ${status.message}`);
                                 }
                             }
                             // Handled in the 'catch' block below.
@@ -6792,6 +6820,10 @@ export function useGreeter({ id: providedId } = {}) {
                                     reboot_api.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF.has(shouldRetry.reason);
                                 if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
                                     transactionRetryAge = shouldRetry.retryAge;
+                                }
+                                if (shouldRetry.reason ===
+                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
+                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.ReadRecursiveMessage\` because its transaction is presumed deadlocked: ${status.message}`);
                                 }
                             }
                             // Handled in the 'catch' block below.

@@ -309,6 +309,14 @@ ENVVAR_BAZEL_TEST = 'REBOOT_BAZEL_TEST'
 # Specific for running 'rbt dev run' in a bazel test.
 ENVVAR_REBOOT_USE_TTY = 'REBOOT_USE_TTY'
 
+# How long, in milliseconds, a transaction waits on a state owned by
+# an older transaction before it presumes a deadlock and aborts with
+# `TransactionShouldRetry` so that the older one can proceed.
+# Waits shorter than this never abort anything; a deadlock lasts at
+# most this long. Unset means the default in
+# `reboot.aio.state_managers`.
+ENVVAR_REBOOT_TRANSACTION_DEADLOCK_GRACE_MS = 'REBOOT_TRANSACTION_DEADLOCK_GRACE_MS'
+
 # An environment variable to enable event loop lag monitoring.
 # Turned off by default, if set we will print warnings about event loop lag.
 ENVVAR_REBOOT_ENABLE_EVENT_LOOP_LAG_MONITORING = 'REBOOT_ENABLE_EVENT_LOOP_LAG_MONITORING'

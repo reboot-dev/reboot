@@ -122,12 +122,13 @@ FROM_BACKEND_AND_RECOVERABLE_ERROR_TYPES: tuple[type[Message], ...] = (
 
 # Reasons a `TransactionShouldRetry` may carry after which the caller
 # skips its backoff before the first retry, because the cause was not
-# load: a participant with a stale timestamp rather than a busy
-# server.
+# load: a participant with a stale timestamp, or a state being handed
+# to an older transaction, rather than a busy server.
 TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF: frozenset[int] = (
     frozenset(
         {
             rbt.v1alpha1.errors_pb2.TransactionShouldRetry.RESTART_DETECTED,
+            rbt.v1alpha1.errors_pb2.TransactionShouldRetry.PRESUMED_DEADLOCK,
         }
     )
 )
@@ -136,7 +137,8 @@ TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF: frozenset[int] = (
 # happened, but which a transaction can not commit through.
 FROM_BACKEND_AND_UNRECOVERABLE_ERROR_TYPES: tuple[type[Message], ...] = (
     # Raised by a participant asking for the transaction to be started
-    # over, e.g., because the participant restarted.
+    # over, e.g., because the participant restarted or because the
+    # transaction is presumed deadlocked with an older one.
     rbt.v1alpha1.errors_pb2.TransactionShouldRetry,
 )
 

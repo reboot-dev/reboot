@@ -225,6 +225,14 @@ export async function httpCall<
                 ) {
                   transactionRetryAge = shouldRetry.retryAge;
                 }
+                if (
+                  shouldRetry.reason ===
+                  errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK
+                ) {
+                  console.warn(
+                    `[Reboot] Retrying call to \`${method}\` because its transaction is presumed deadlocked: ${aborted.message}`
+                  );
+                }
               }
               // Log the error later in the 'catch' block.
               throw aborted;
