@@ -413,7 +413,7 @@ Every call to a mutator returns both a `response` and an `aborted`; successful c
 [Learn more about Reboot errors and error types.](/errors)
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=181-200) -->
+(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=181-201) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
@@ -437,6 +437,7 @@ if (aborted !== undefined) {
     setError(`Couldn't send your message: ${aborted.message}`);
   }
   return;
+}
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
