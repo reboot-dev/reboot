@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import grpc
 import unittest
 from rbt.v1alpha1 import react_pb2, react_pb2_grpc
 from reboot.aio.applications import Application
@@ -13,7 +14,7 @@ from reboot.aio.tests import Reboot
 from tests.reboot import greeter_rbt
 from tests.reboot.greeter_rbt import Greeter
 from tests.reboot.greeter_servicers import MyGreeterServicer
-from typing import Optional
+from typing import Any, Iterator, Optional
 from unittest.mock import patch
 
 # `title` that marks a `Greeter` as one whose `Greet` reads another
@@ -40,13 +41,13 @@ class QueryRequestWithoutContinuations:
     SerializeToString = QUERY_REQUEST.SerializeToString
     FromString = QUERY_REQUEST.FromString
 
-    def __new__(cls, **kwargs):
+    def __new__(cls, **kwargs: Any) -> react_pb2.QueryRequest:
         kwargs.pop('client_continues_query', None)
         return QUERY_REQUEST(**kwargs)
 
 
 @contextlib.contextmanager
-def query_requests_without_continuations():
+def query_requests_without_continuations() -> Iterator[list[str]]:
     """Makes every reactive reader send a `QueryRequest` the way a
     client from before `ContinueQuery` existed did. Both the generated
     clients and `reboot.aio.contexts` look `QueryRequest` and
@@ -62,13 +63,17 @@ def query_requests_without_continuations():
 
     class ReactStub:
 
-        def __init__(self, channel):
+        def __init__(self, channel: grpc.aio.Channel) -> None:
             self._stub = REACT_STUB(channel)
 
-        def __getattr__(self, name):
+        def __getattr__(self, name: str) -> Any:
             return getattr(self._stub, name)
 
-        def ContinueQuery(self, request, **kwargs):
+        def ContinueQuery(
+            self,
+            request: react_pb2.ContinueQueryRequest,
+            **kwargs,
+        ) -> Any:
             continued.append(request.query_id)
             return self._stub.ContinueQuery(request, **kwargs)
 
@@ -131,7 +136,7 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
 
         self._accumulate_task = asyncio.create_task(_do())
 
-    async def _stop_accumulating(self):
+    async def _stop_accumulating(self) -> None:
         assert self._accumulate_task is not None
         self._accumulate_task.cancel()
         try:
@@ -317,7 +322,7 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
         greeted = asyncio.Event()
         can_greet_again = asyncio.Event()
 
-        async def accumulate_greetings():
+        async def accumulate_greetings() -> None:
             async for response in proxy.reactively().Greet(
                 context,
                 name="Alice",

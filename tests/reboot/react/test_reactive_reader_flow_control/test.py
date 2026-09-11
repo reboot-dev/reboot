@@ -4,6 +4,7 @@ import time
 from reboot.aio.external import ExternalContext
 from reboot.aio.react import QUERY_RESPONSE_WINDOW
 from selenium.webdriver.common.by import By
+from selenium.webdriver.remote.webdriver import WebDriver
 from tests.reboot.greeter_rbt import Greeter
 from tests.reboot.react.web_driver_runner import web_driver
 
@@ -17,7 +18,7 @@ ADJECTIVES = [
 ]
 
 
-async def test(context: ExternalContext, uri: str):
+async def test(context: ExternalContext, uri: str) -> None:
     """Tests that a reactive reader whose consumer is slow to ask for a
     next response falls no further behind than the room the backend
     has to send responses, and then skips to the latest state.
@@ -44,7 +45,7 @@ async def test(context: ExternalContext, uri: str):
     def message(adjective: str) -> str:
         return f'Hi Jonathan, I am Count Chocula the {adjective}'
 
-    def rendered_messages(driver) -> list[str]:
+    def rendered_messages(driver: WebDriver) -> list[str]:
         """Returns every message the browser has rendered, in order."""
         try:
             rendered = driver.find_element(By.ID, 'rendered'
@@ -58,12 +59,18 @@ async def test(context: ExternalContext, uri: str):
     # We poll the browser rather than using `reactively()` because what
     # we are waiting for is the browser's rendered DOM, which Reboot
     # cannot observe.
-    def wait_for_message_count(driver, count: int) -> list[str]:
+    def wait_for_message_count(
+        driver: WebDriver,
+        count: int,
+    ) -> list[str]:
         while len(rendered_messages(driver)) < count:
             time.sleep(0.1)
         return rendered_messages(driver)
 
-    def wait_for_latest_message(driver, latest: str) -> list[str]:
+    def wait_for_latest_message(
+        driver: WebDriver,
+        latest: str,
+    ) -> list[str]:
         rendered = rendered_messages(driver)
         while len(rendered) == 0 or rendered[-1] != latest:
             time.sleep(0.1)

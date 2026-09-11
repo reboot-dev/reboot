@@ -357,7 +357,7 @@ class QueryContinuations:
         self,
         stub: react_pb2_grpc.ReactStub,
         metadata: GrpcMetadata,
-    ):
+    ) -> None:
         self._stub = stub
         self._metadata = metadata
         self._continuation: Optional[asyncio.Future] = None

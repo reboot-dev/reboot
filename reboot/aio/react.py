@@ -61,7 +61,7 @@ class _QueryWindow:
     "we can send N more responses".
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._room = asyncio.Semaphore(QUERY_RESPONSE_WINDOW)
         # Neither has happened yet, and the first response to be sent
         # is sequence number 0, hence -1.
@@ -401,7 +401,7 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
         # transport there is nothing to key on.
         window = _QueryWindow() if request.client_continues_query else None
 
-        async def consume_requests():
+        async def consume_requests() -> None:
             try:
                 while True:
                     request_bytes = await websocket.recv()
@@ -608,7 +608,7 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
         responses_accumulated = 0
         failure: Optional[BaseException] = None
 
-        async def accumulate_next_response():
+        async def accumulate_next_response() -> None:
             nonlocal next_response, responses_accumulated, failure
 
             while True:
