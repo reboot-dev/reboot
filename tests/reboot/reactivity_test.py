@@ -348,12 +348,11 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
             await greeter.SetAdjective(context, adjective=adjective)
 
         # Now let the reader consume responses again. It must arrive at
-        # the latest state without seeing every state it missed. Each
-        # hop has a window of its own, but a hop with no room merges
-        # what it is holding rather than letting responses queue up
-        # behind it, so the hops don't add up: this reader is a single
-        # window behind, plus the one response that carries the skip
-        # to the latest state.
+        # the latest state without seeing every state it missed. Only
+        # the hop to this reader has a window; the `Greeter` read that
+        # the proxy does behind it keeps just the latest state it was
+        # sent. So this reader is a single window behind, plus the one
+        # response that carries the skip to the latest state.
         can_greet_again.set()
 
         latest = f"Hi Alice, I am Mr. Robot the {adjectives[-1]}"

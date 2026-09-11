@@ -539,7 +539,6 @@ class React:
                         react_pb2.QueryRequest(
                             method=self._method,
                             request=serialized_request,
-                            client_continues_query=True,
                         ),
                         metadata=metadata,
                     )
@@ -559,14 +558,29 @@ class React:
                     async def loop():
                         assert task is not None
 
+                        # Keep consuming however fast they arrive,
+                        # letting each response replace the one before
+                        # it. A reader that reads faster than this one
+                        # can re-run therefore has its updates
+                        # accumulated into the latest state, which is
+                        # the one waiting here when this reader next
+                        # asks for it. See
+                        # https://github.com/reboot-dev/mono/issues/4754.
+                        #
+                        # Replacing drops the idempotency keys the
+                        # response carried, which is deliberate: the
+                        # keys a reactive read reports upward are the
+                        # ones for its own state's mutations, which
+                        # `reactively()` aggregates for it, and a
+                        # browser observes a mutation on the query of
+                        # the state it mutated. Keys kept here would
+                        # reach no one.
                         async for query_response in call:
                             if query_response.HasField('response'):
                                 response = self._response_type()
                                 response.ParseFromString(
                                     query_response.response
                                 )
-
-                                self._used_response[task].clear()
 
                                 self._calls[task] = call
 
@@ -578,19 +592,7 @@ class React:
                                 else:
                                     self._event.set()
 
-                                await self._used_response[task].wait()
-
-                            # Only now that the response has been used
-                            # do we continue past it, so that we can't
-                            # fall behind a server that produces
-                            # responses faster than we consume them.
-                            # See
-                            # https://github.com/reboot-dev/mono/issues/4754.
-                            await continuations.continue_past(query_response)
-
                         raise RuntimeError('React.Query should be infinite')
-
-                    continuations = QueryContinuations(stub, metadata)
 
                     try:
                         await loop()
@@ -621,12 +623,6 @@ class React:
 
                         # Let's retry after a backoff!
                         await backoff()
-                    finally:
-                        # Whether we are retrying or giving up, this
-                        # attempt's continuation is about to be
-                        # irrelevant: a fresh `Query` gets a fresh
-                        # window.
-                        await continuations.stop()
 
             task = asyncio.create_task(query(), name=f'query() in {__name__}')
 
