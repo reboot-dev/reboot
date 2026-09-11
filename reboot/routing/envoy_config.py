@@ -434,7 +434,6 @@ def _routes_for_server(
     server: ServerInfo,
     kind: ClusterKind,
     file_descriptor_set: FileDescriptorSet,
-    trust_caller_id: bool,
 ) -> list[route_components_pb2.Route]:
     # Every server gets routes to the websocket port, the gRPC
     # port, and the HTTP "catchall" port as described below.
@@ -479,11 +478,6 @@ def _routes_for_server(
                     cluster=cluster_name,
                     max_stream_duration=route_components_pb2.RouteAction.
                     MaxStreamDuration(grpc_timeout_header_max=ZERO_SECONDS)
-                ),
-                request_headers_to_remove=(
-                    # If we don't trust the caller ID header, remove it
-                    # so that the upstream server can't be misled.
-                    [CALLER_ID_HEADER] if not trust_caller_id else []
                 ),
             ),
             # This route sends traffic with the 'x-reboot-server-id'
@@ -776,6 +770,15 @@ def _filter_http_connection_manager(
         codec_type=http_connection_manager_pb2.HttpConnectionManager.AUTO,
         route_config=route_pb2.RouteConfiguration(
             name="local_route",
+            # If we don't trust the caller ID header, remove it so that
+            # the upstream server can't be misled. This belongs to the
+            # whole route configuration rather than to any one route:
+            # what a caller may claim about itself cannot depend on
+            # which route their request happens to match, and a request
+            # matches whichever route it matches.
+            request_headers_to_remove=(
+                [CALLER_ID_HEADER] if not trust_caller_id else []
+            ),
             virtual_hosts=[
                 route_components_pb2.VirtualHost(
                     name="local_service",
@@ -800,7 +803,6 @@ def _filter_http_connection_manager(
                                 server=server,
                                 kind=kind,
                                 file_descriptor_set=file_descriptor_set,
-                                trust_caller_id=trust_caller_id,
                             )
                         ]
                     ),
