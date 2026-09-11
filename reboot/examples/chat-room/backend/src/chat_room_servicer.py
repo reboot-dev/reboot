@@ -37,7 +37,7 @@ class ChatRoomServicer(ChatRoom.Servicer):
         # enforced; the blobs' random IDs then act as upload/download
         # capabilities. This example has no end-user authentication,
         # so `uploader_id` is left empty: anyone who knows a blob's ID
-        # may upload into it. `downloader_ids` is likewise omitted, so
+        # may upload into it. `downloaders` is likewise omitted, so
         # anyone who knows a blob's ID may download it too.
         attachment_blob_ids = []
         for attachment in request.attachments:

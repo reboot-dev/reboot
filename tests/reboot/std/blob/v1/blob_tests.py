@@ -636,7 +636,7 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
         blob, _ = await Blob.create(
             self.context,
             content_type="text/plain",
-            downloader_ids=Downloaders(user_ids=["bob"]),
+            downloaders=Downloaders(user_ids=["bob"]),
         )
         await self._upload(blob, data)
         await blob.commit(self.context)
@@ -684,13 +684,13 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
         # Restrict downloads to a user the external caller is not.
         await blob.set_downloaders(
             self.context,
-            downloader_ids=Downloaders(user_ids=["bob"]),
+            downloaders=Downloaders(user_ids=["bob"]),
         )
         with self.assertRaises(Blob.GetDownloadUrlAborted):
             await Blob.ref(blob.state_id
                           ).get_download_url(self.external_context)
 
-        # Remove the restriction again by omitting `downloader_ids`.
+        # Remove the restriction again by omitting `downloaders`.
         await blob.set_downloaders(self.context)
         response = await Blob.ref(blob.state_id
                                  ).get_download_url(self.external_context)
@@ -705,7 +705,7 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
             self.context,
             content_type="text/plain",
             uploader_id="alice",
-            downloader_ids=Downloaders(user_ids=["bob"]),
+            downloaders=Downloaders(user_ids=["bob"]),
         )
         with self.assertRaises(Blob.InfoAborted):
             await Blob.ref(locked.state_id).info(self.external_context)
@@ -716,12 +716,12 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
         upload_open, _ = await Blob.create(
             self.context,
             content_type="text/plain",
-            downloader_ids=Downloaders(user_ids=["bob"]),
+            downloaders=Downloaders(user_ids=["bob"]),
         )
         info = await Blob.ref(upload_open.state_id).info(self.external_context)
         self.assertEqual(info.status, Blob.State.UPLOADING)
 
-        # Open download side (omitted `downloader_ids`): anyone who may
+        # Open download side (omitted `downloaders`): anyone who may
         # download may read `Info`, even with a specific uploader.
         download_open, _ = await Blob.create(
             self.context,
