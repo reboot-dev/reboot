@@ -40,6 +40,7 @@ from reboot.aio.state_managers import (
     Lock,
     ScalableBloomFilter,
     SidecarStateManager,
+    StateManager,
 )
 from reboot.aio.tasks import TaskEffect
 from reboot.aio.types import ApplicationId, StateId, StateRef, StateTypeName
@@ -902,6 +903,125 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
                 ),
                 self.create_grpc_context_mock(context._state_ref),
             )
+
+    async def watch_coordinator_answering(
+        self,
+        transaction: StateManager.Transaction,
+        *,
+        aborted: bool,
+    ) -> None:
+        """Run the participant's watch control loop once against a
+        coordinator whose `Watch` answers `aborted`, which is how a
+        participant that the coordinator does not contact directly
+        learns its transaction's outcome."""
+        # The participant started a watch task of its own when it
+        # joined; this loop replaces it, so stop that one.
+        assert transaction.watch_task is not None
+        transaction.watch_task.cancel()
+
+        stub = unittest.mock.MagicMock()
+
+        async def watch(request, metadata):
+            return transactions_pb2.WatchResponse(aborted=aborted)
+
+        stub.Watch = watch
+
+        with unittest.mock.patch(
+            'reboot.aio.state_managers.transactions_pb2_grpc.CoordinatorStub',
+            return_value=stub,
+        ):
+            await self.state_manager._transaction_participant_watch(
+                ApplicationId('test-app'),
+                unittest.mock.MagicMock(spec=_ChannelManager),
+                transaction,
+            )
+
+    def lookup_joined_transaction(
+        self,
+        context: TransactionContext,
+    ) -> StateManager.Transaction:
+        """Return the participant transaction `context` joined."""
+        assert context.transaction_root_id is not None
+        transaction = self.state_manager._lookup_participant_transaction(
+            MyGreeterServicer.__state_type_name__,
+            context._state_ref,
+            context.transaction_root_id,
+        )
+        assert transaction is not None
+        return transaction
+
+    async def test_unprepared_read_only_participant_told_to_commit_aborts(
+        self,
+    ) -> None:
+        """A read-only participant told that a transaction it never
+        prepared committed aborts, releasing its shared lock.
+
+        A coordinator writes its participants to disk and sends
+        `Prepare` concurrently, so it can crash with the participants
+        durably recorded and a read-only participant's `Prepare` never
+        sent; that participant stays joined, unprepared and holding
+        its shared lock. The recovered coordinator re-prepares with
+        `skip_read_only=True` and then answers this participant's
+        `Watch` with "committed", which is a transaction the database
+        never prepared and therefore refuses to commit. Aborting is
+        the outcome this participant can still reach, and it is safe
+        because a read-only participant has nothing to apply.
+        """
+        self.state_manager._recovery_timestamp_ms = 1000
+
+        context = await self.join_read_only_participant(
+            "test-1234",
+            database_timestamp_ms=2000,
+        )
+        state_type = MyGreeterServicer.__state_type_name__
+        state_ref = context._state_ref
+        transaction = self.lookup_joined_transaction(context)
+        self.assertFalse(transaction.prepared())
+        self.assertTrue(
+            self.state_manager._locks[state_type][state_ref].is_shared_locked()
+        )
+
+        await self.watch_coordinator_answering(transaction, aborted=False)
+
+        self.assertTrue(transaction.aborted())
+        self.assertIsNone(
+            self.state_manager._lookup_participant_transaction(
+                state_type,
+                state_ref,
+                context.transaction_root_id,
+            )
+        )
+        self.assertFalse(
+            self.state_manager._locks[state_type][state_ref].is_locked()
+        )
+
+    async def test_abort_of_an_elided_read_only_participant_is_a_no_op(
+        self,
+    ) -> None:
+        """A read-only participant that already elided its prepare and
+        commit tolerates a later abort: it is `finished()`, so the
+        abort leaves it committed and leaves its released lock
+        alone."""
+        self.state_manager._recovery_timestamp_ms = 1000
+
+        context = await self.join_read_only_participant(
+            "test-1234",
+            database_timestamp_ms=2000,
+        )
+        state_type = MyGreeterServicer.__state_type_name__
+        state_ref = context._state_ref
+        transaction = self.lookup_joined_transaction(context)
+
+        elided = await self.send_prepare(context, read_only=True)
+        self.assertFalse(elided.abort)
+        self.assertTrue(transaction.committed())
+
+        await self.state_manager.transaction_participant_abort(transaction)
+
+        self.assertTrue(transaction.committed())
+        self.assertFalse(
+            self.state_manager._locks[state_type][state_ref].is_locked()
+        )
 
     async def test_read_only_prepare_elides_and_releases_the_lock(
         self,
