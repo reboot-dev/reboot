@@ -1116,7 +1116,15 @@ class StateManager(ABC):
             """Awaits for transaction to finish, i.e., aborted or committed."""
 
             async def closure():
-                await self._committed
+                # Shield so that cancelling a waiter cancels only that
+                # waiter. `_committed` is shared with every other
+                # waiter and with the participant paths that resolve
+                # it, so a cancellation reaching it would leave
+                # `finished()` reporting a transaction that `commit()`
+                # and `abort()` can no longer resolve. The
+                # coordinator's participants future is shielded for
+                # the same reason.
+                await asyncio.shield(self._committed)
 
             return closure().__await__()
 
@@ -3660,7 +3668,13 @@ class SidecarStateManager(
             # has already started (i.e., calls were made
             # concurrently). We must wait for that first call to
             # acquire the per-state lock before we continue here.
-            await transaction.acquired_lock
+            #
+            # Shield for the same reason as `_committed`:
+            # `acquired_lock` is shared with every other concurrent
+            # call on this state, so a cancellation reaching it would
+            # leave `_transaction_participant_start()` unable to
+            # resolve it.
+            await asyncio.shield(transaction.acquired_lock)
 
             if transaction.finished():
                 # TODO(benh): add a test case for this!
