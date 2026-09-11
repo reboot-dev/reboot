@@ -272,6 +272,45 @@ class TestPubsub(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(items.items), 5)
         self.assertEqual(as_str(items.items[2].value), "apple")
 
+    async def test_subscribe_twice(self) -> None:
+        """
+        Test that subscribing the same queue to a topic twice still
+        delivers every published item exactly once.
+        """
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    pubsub_library(),
+                    queue_library(),
+                    sorted_map_library(),
+                ]
+            )
+        )
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        test_topic = Topic.ref("test-topic")
+        test_queue = Queue.ref("receiving-queue")
+
+        # Subscribing the same queue twice leaves the topic with a
+        # single subscription for it, so the broker calls `Enqueue` on
+        # that queue exactly once per publish.
+        await test_topic.subscribe(context, queue_id=test_queue.state_id)
+        await test_topic.subscribe(context, queue_id=test_queue.state_id)
+
+        # Publish to the topic.
+        await test_topic.publish(context, bytes=b"first message")
+        await test_topic.publish(context, bytes=b"second message")
+
+        # Both messages arrive exactly once, in order.
+        message1 = await test_queue.dequeue(context)
+        message2 = await test_queue.dequeue(context)
+        self.assertEqual(message1.bytes, b"first message")
+        self.assertEqual(message2.bytes, b"second message")
+
 
 if __name__ == '__main__':
     unittest.main()
