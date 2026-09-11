@@ -13,16 +13,14 @@ Your entrypoint will construct an `Application` and then `run` it:
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=26-34) -->
+(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=26-32) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/backend/src/main.py -->
 
 ```py
 async def main():
     await Application(
         servicers=[ChatRoomServicer],
-        # Message attachments are stored as blobs; `rbt dev run` and
-        # `rbt serve run` provide a local filesystem data plane (see
-        # `REBOOT_BLOB_DATA_PLANE_URL` for using a custom one).
+        # Message attachments are stored as blobs.
         libraries=[blob_library()],
         initialize=initialize,
     ).run()
@@ -46,6 +44,20 @@ new Application({
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
+
+### `libraries`
+
+The optional `libraries` argument brings in [library
+services](/library_services/overview): state machines that Reboot
+implements for you, which your application serves alongside its own.
+The example above uses `blob_library()`, which gives the application
+the `Blob` state machine its message attachments are stored in.
+
+A library service may need somewhere to keep what it holds. Blobs keep
+bytes, and `rbt dev run` and `rbt serve run` give them a data plane on
+the local filesystem, under the application's state directory. Setting
+`REBOOT_BLOB_DATA_PLANE_URL` points them at a different one instead --
+on Reboot Cloud, that is how blobs come to live in object storage.
 
 ### `initialize` functions
 
