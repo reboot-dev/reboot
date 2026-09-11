@@ -5538,15 +5538,24 @@ class SidecarStateManager(
                     ).to_grpc_metadata(),
                 )
 
-                if not watch_response.aborted:
-                    # It is worth noting here that if this participant
-                    # was read-only then
-                    # `transaction_participant_commit` will be a no-op
-                    # because the only way a transaction commits is if
-                    # it was prepared and thus this read-only
-                    # participant must have prepared so
-                    # `transaction_participant_commit` will find a
-                    # `finished` transaction.
+                # Committing requires a prepared transaction: the
+                # database persists a participant transaction only
+                # once it is prepared, and rejects a commit for one
+                # that is not, so an unprepared participant reaches a
+                # terminal outcome by aborting, which is also what
+                # releases this state's lock.
+                #
+                # A recovering coordinator re-prepares with
+                # `skip_read_only=True`, so a read-only participant
+                # whose original `Prepare` was lost when the
+                # coordinator crashed is still unprepared by the time
+                # that coordinator's `Watch` reports the transaction
+                # as committed.
+                #
+                # A participant that elided its prepare and commit is
+                # already `finished()`, which makes either call below
+                # a no-op for it.
+                if not watch_response.aborted and transaction.prepared():
                     await self.transaction_participant_commit(transaction)
                 else:
                     await self.transaction_participant_abort(transaction)
