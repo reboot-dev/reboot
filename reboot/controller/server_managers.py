@@ -47,6 +47,8 @@ from reboot.settings import (
     ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_NODEJS,
     EVERY_LOCAL_NETWORK_ADDRESS,
+    ONLY_LOCALHOST_NETWORK_ADDRESS,
+    LocalEnvoyMode,
 )
 from typing import Awaitable, Callable, Optional, Sequence
 
@@ -784,7 +786,17 @@ class LocalServerManager(ServerManager):
         async def launch():
             assert self._revision is not None
 
-            host = EVERY_LOCAL_NETWORK_ADDRESS
+            # Loopback is as much as a server needs to offer: what
+            # reaches it is Envoy, on the same host. Two cases need
+            # more. Envoy in a Docker container reaches the host from
+            # outside it, and on Reboot Cloud the platform reaches a
+            # server from outside its pod.
+            host = ONLY_LOCALHOST_NETWORK_ADDRESS
+            if on_cloud() or (
+                self._revision.local_envoy and
+                LocalEnvoyFactory.pick_mode() is LocalEnvoyMode.DOCKER
+            ):
+                host = EVERY_LOCAL_NETWORK_ADDRESS
 
             if not self._revision.in_process:
                 return await self._launch_subprocess_server(

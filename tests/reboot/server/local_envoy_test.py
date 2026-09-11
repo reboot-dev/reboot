@@ -14,7 +14,7 @@ from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import ReaderContext, WriterContext
 from reboot.aio.external import ExternalContext
-from reboot.aio.headers import SERVER_ID_HEADER
+from reboot.aio.headers import CALLER_ID_HEADER, SERVER_ID_HEADER
 from reboot.aio.interceptors import LegacyGrpcContext
 from reboot.aio.tests import Reboot, temporary_environ
 from reboot.aio.types import StateRef, StateTypeName
@@ -109,6 +109,105 @@ class LegacyIdentifierServicer(LegacyGeneralServicer):
         return GeneralResponse(content=content)
 
 
+class CallerIdServicer(LegacyGeneralServicer):
+    """Answers with the caller ID the request arrived carrying, so
+    that a test can see what a route let through."""
+
+    async def LegacyCall(
+        self,
+        request: GeneralRequest,
+        context: LegacyGrpcContext,
+    ) -> GeneralResponse:
+        content = Struct()
+        content[CALLER_ID_HEADER] = next(
+            (
+                value for key, value in context.invocation_metadata()
+                if key == CALLER_ID_HEADER
+            ),
+            "",
+        )
+        return GeneralResponse(content=content)
+
+
+# A gRPC request carries a one-byte compression flag and a four-byte
+# length before its message; an empty `GeneralRequest` is all header.
+_EMPTY_GRPC_FRAME = b"\x00\x00\x00\x00\x00"
+
+
+def _caller_id_seen_by(
+    endpoint: str,
+    *,
+    content_type: str,
+    caller_id: str,
+) -> str:
+    """Calls `LegacyCall` over a hand-written HTTP/2 request, so that
+    its `content-type` can be one a client library would not send, and
+    answers the caller ID that reached the servicer.
+
+    The empty string means none did."""
+    host, _, port = endpoint.rpartition(":")
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.connect((host, int(port)))
+    try:
+        connection = h2.connection.H2Connection(
+            config=h2.config.H2Configuration(client_side=True)
+        )
+        connection.initiate_connection()
+        sock.sendall(connection.data_to_send())
+
+        stream_id = connection.get_next_available_stream_id()
+        connection.send_headers(
+            stream_id,
+            [
+                (":method", "POST"),
+                (":path", "/tests.reboot.LegacyGeneral/LegacyCall"),
+                (":authority", endpoint),
+                (":scheme", "http"),
+                ("content-type", content_type),
+                ("te", "trailers"),
+                (CALLER_ID_HEADER, caller_id),
+            ],
+        )
+        connection.send_data(stream_id, _EMPTY_GRPC_FRAME, end_stream=True)
+        sock.sendall(connection.data_to_send())
+
+        headers: dict = {}
+        trailers: dict = {}
+        data = b""
+        while True:
+            received = sock.recv(4096)
+            if not received:
+                break
+            done = False
+            for event in connection.receive_data(received):
+                if isinstance(event, h2.events.ResponseReceived):
+                    headers = dict(event.headers)
+                elif isinstance(event, h2.events.DataReceived):
+                    data += event.data
+                elif isinstance(event, h2.events.TrailersReceived):
+                    trailers = dict(event.headers)
+                elif isinstance(event, h2.events.StreamEnded):
+                    done = True
+            sock.sendall(connection.data_to_send())
+            if done:
+                break
+    finally:
+        sock.close()
+
+    status = headers.get(b":status", b"")
+    grpc_status = headers.get(b"grpc-status") or trailers.get(b"grpc-status")
+    assert status == b"200" and grpc_status in (None, b"0"), (
+        f"the call did not reach the servicer: HTTP {status!r}, "
+        f"grpc-status {grpc_status!r}, "
+        f"grpc-message {headers.get(b'grpc-message')!r}"
+    )
+
+    response = GeneralResponse()
+    response.ParseFromString(data[len(_EMPTY_GRPC_FRAME):])
+    return response.content[CALLER_ID_HEADER]
+
+
 def _reader_path(state_id: str) -> str:
     """The path a JS client puts on the wire to call
     `tests.reboot.General`'s `Reader` on `state_id`."""
@@ -151,6 +250,76 @@ async def _post_exact_path(url: str, path: str) -> tuple[int, bytes]:
     finally:
         writer.close()
         await writer.wait_closed()
+
+
+class CallerIdTestCase(unittest.IsolatedAsyncioTestCase):
+    """An `is_app_internal` authorizer believes `x-reboot-caller-id`,
+    so what a caller may claim about itself is decided entirely by
+    whether Envoy lets the header through."""
+
+    FORGED = "application_id=a-forged-application"
+
+    async def _up(self) -> Reboot:
+        temporary_environ(self, {ENVVAR_LOCAL_ENVOY_DEBUG: 'true'})
+
+        rbt = Reboot()
+        await rbt.start()
+        self.addAsyncCleanup(rbt.stop)
+
+        await rbt.up(
+            Application(
+                servicers=[IdentifierServicer],
+                legacy_grpc_servicers=[CallerIdServicer],
+            ),
+            local_envoy=True,
+            local_envoy_tls=False,
+            servers=1,
+        )
+        return rbt
+
+    async def test_the_public_port_removes_a_forged_caller_id(self) -> None:
+        # `application/grpc+proto` is a content type gRPC permits, and
+        # it is not the one the route carrying the removal used to
+        # match exactly -- so this request used to fall through to a
+        # per-method route and arrive with its caller ID intact.
+        rbt = await self._up()
+
+        seen = await asyncio.to_thread(
+            _caller_id_seen_by,
+            rbt.url().removeprefix("http://"),
+            content_type="application/grpc+proto",
+            caller_id=self.FORGED,
+        )
+
+        self.assertEqual("", seen)
+
+    async def test_the_public_port_removes_it_from_a_plain_grpc_call(
+        self,
+    ) -> None:
+        rbt = await self._up()
+
+        seen = await asyncio.to_thread(
+            _caller_id_seen_by,
+            rbt.url().removeprefix("http://"),
+            content_type="application/grpc",
+            caller_id=self.FORGED,
+        )
+
+        self.assertEqual("", seen)
+
+    async def test_the_trusted_port_keeps_it(self) -> None:
+        # The application reaches itself here, and what it says about
+        # itself is the whole point of the port.
+        rbt = await self._up()
+
+        seen = await asyncio.to_thread(
+            _caller_id_seen_by,
+            f"localhost:{rbt.envoy_trusted_port()}",
+            content_type="application/grpc",
+            caller_id=self.FORGED,
+        )
+
+        self.assertEqual(self.FORGED, seen)
 
 
 class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
