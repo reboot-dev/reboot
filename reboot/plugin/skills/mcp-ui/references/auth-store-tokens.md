@@ -69,11 +69,10 @@ def _google() -> Google:
 async def main() -> None:
     application = Application(
         servicers=[UserServicer],
-        # `store_tokens=True` persists tokens via the `oauth` library,
-        # which encrypts them via `ciphertext`, which in turn needs
-        # `ordered_map`. Without all three the app fails fast at startup.
-        libraries=[oauth_library(), ciphertext_library(),
-                   ordered_map_library()],
+        # `store_tokens=True` persists tokens via the `oauth` library;
+        # the `ciphertext` and `ordered_map` libraries it builds on come
+        # along automatically.
+        libraries=[oauth_library()],
         oauth=OAuth(
             provider=OAuthProviderByEnvironment(
                 # The calendar needs a real provider token even in

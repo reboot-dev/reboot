@@ -7,9 +7,10 @@ tags: stdlib, ciphertext, encryption, envelope, crypto-shred, gdpr, right-to-era
 
 ## Use `Ciphertext` for Envelope Encryption and Crypto-Shredding
 
-> **Critical:** register **both** `ciphertext_library()` **and** > `ordered_map_library()` in `Application(libraries=[...])` —
-> `Ciphertext` depends on `OrderedMap`; forgetting either fails at boot
-> with "unknown actor type." `associated_data` must be supplied
+> **Critical:** register `ciphertext_library()` in
+> `Application(libraries=[...])`; it brings along the `OrderedMap`
+> library it depends on. Forgetting it fails at boot with "unknown
+> actor type." `associated_data` must be supplied
 > **byte-for-byte identical** at decrypt as at encrypt — build it with
 > `make_associated_data`, never an ad-hoc string. These methods are
 > **app-internal by default** (no authorizer); call them from within
@@ -47,15 +48,12 @@ root KEK   — derived from REBOOT_CRYPTO_ROOT_KEYS (auto-provisioned); never st
 
 ```python
 from reboot.std.ciphertext.v1.ciphertext import ciphertext_library
-from reboot.std.collections.ordered_map.v1.ordered_map import (
-    ordered_map_library,
-)
 
 
 async def main():
     await Application(
         servicers=[VaultServicer],
-        libraries=[ciphertext_library(), ordered_map_library()],
+        libraries=[ciphertext_library()],
     ).run()
 ```
 

@@ -65,7 +65,15 @@ from reboot.settings import (
 from reboot.version import REBOOT_VERSION
 from reboot.versioning import version_less_than
 from starlette.staticfiles import StaticFiles
-from typing import Any, Awaitable, Callable, Mapping, NoReturn, Optional
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    ClassVar,
+    Mapping,
+    NoReturn,
+    Optional,
+)
 
 logger = get_logger(__name__)
 
@@ -184,6 +192,12 @@ class Library(AbstractLibrary):
     any checks on subclasses.
     """
 
+    # Every library class by its `name`, so that a library's
+    # `requirements()` can be constructed without the application
+    # listing them. A class defined later under the same name replaces
+    # the earlier one, which keeps reloading a module harmless.
+    _registry: ClassVar[dict[str, type['Library']]] = {}
+
     def __init_subclass__(cls, **kwargs):
         # `name` checked here because this class expects its subclasses
         # to define it.
@@ -193,6 +207,7 @@ class Library(AbstractLibrary):
                 "Please set `name` as a class variable. For best practices, "
                 "please define the name as a constant in your library module."
             )
+        Library._registry[cls.name] = cls
 
     async def pre_run(self, application: Application) -> None:
         """
@@ -231,6 +246,25 @@ class NodeAdaptorLibrary(Library):
             await self._initialize(context)
 
 
+def _construct_library(name: str, required_by: str) -> Library:
+    """Constructs, with its defaults, the library registered as `name`."""
+    library_type = Library._registry.get(name)
+    if library_type is None:
+        raise ValueError(
+            f"Library `{required_by}` requires library `{name}`, which is "
+            "not one Reboot can construct itself. Please construct it and "
+            "pass it in the `libraries` parameter."
+        )
+    try:
+        return library_type()
+    except TypeError as error:
+        raise ValueError(
+            f"Library `{required_by}` requires library `{name}`, which can "
+            "not be constructed without arguments. Please construct it and "
+            "pass it in the `libraries` parameter."
+        ) from error
+
+
 class Application:
     """Entry point for all Reboot applications."""
 
@@ -258,7 +292,10 @@ class Application:
         :param legacy_grpc_servicers: the types of legacy gRPC servicers
             (not using Reboot libraries) that this Application will
             serve.
-        :param libraries: the libraries this Application will use.
+        :param libraries: the libraries this Application will use. A
+            library's own requirements are added automatically; list a
+            required library yourself only to customize it, e.g. with
+            an authorizer.
         :param initialize: will be called after the Application's
             servicers have started for the first time, so that it can
             perform initialization logic (e.g., creating some well-known
@@ -321,23 +358,30 @@ class Application:
                     "library once in `libraries`."
                 )
 
-            # Verify we have all the requirements for libraries.
-            requirements_names = set(
-                requirement for library in libraries
-                for requirement in library.requirements()
-            )
-            needed_requirements = requirements_names - library_names
-
-            if len(needed_requirements) > 0:
-                raise ValueError(
-                    "Missing required libraries: "
-                    f"{', '.join(needed_requirements)}. "
-                    "Please add these libraries and pass them to the "
-                    "`libraries` parameter."
-                )
+            # Add each library's requirements, and theirs in turn, so
+            # that listing a library is enough to run it. A library the
+            # application lists itself takes precedence over one
+            # constructed here, which is how an application customizes
+            # a dependency, e.g. with an authorizer.
+            libraries_by_name = {
+                library.name: library for library in libraries
+            }
+            pending = list(libraries)
+            while len(pending) > 0:
+                library = pending.pop()
+                for requirement in library.requirements():
+                    if requirement in libraries_by_name:
+                        continue
+                    required = _construct_library(
+                        requirement, required_by=library.name
+                    )
+                    libraries_by_name[requirement] = required
+                    pending.append(required)
 
             # Sort libraries by name for guaranteed ordering.
-            libraries = sorted(libraries, key=lambda library: library.name)
+            libraries = sorted(
+                libraries_by_name.values(), key=lambda library: library.name
+            )
 
             # Add the library servicers to the list of servicers.
             library_servicers = [
@@ -958,27 +1002,26 @@ class Application:
 
     def _require_oauth_libraries(self) -> None:
         """Fail fast if an OAuth provider with `store_tokens=True` is used
-        without the `oauth` (and its `ciphertext`) library mounted — they
-        encrypt and persist the identity provider's tokens.
+        without the `oauth` library mounted — it (with the `ciphertext`
+        library it builds on) encrypts and persists the identity
+        provider's tokens.
         """
-        # Imported lazily: both libraries import `reboot.aio.applications`,
+        # Imported lazily: the library imports `reboot.aio.applications`,
         # so a module-level import would be circular.
-        from reboot.std.ciphertext.v1.ciphertext import CIPHERTEXT_LIBRARY_NAME
         from reboot.std.oauth.v1.oauth import OAUTH_LIBRARY_NAME
         names = {library.name for library in (self._libraries or [])}
-        if OAUTH_LIBRARY_NAME in names and CIPHERTEXT_LIBRARY_NAME in names:
+        if OAUTH_LIBRARY_NAME in names:
             return
         raise InputError(
             reason=(
                 "An OAuth provider with `store_tokens=True` needs the "
-                "`oauth` and `ciphertext` libraries to encrypt and persist "
-                "the identity provider's tokens, but they aren't all "
-                "mounted. Add them to your `Application`, e.g. "
-                "`Application(..., libraries=[oauth_library(), "
-                "ciphertext_library(), ordered_map_library()])` (import "
-                "`oauth_library` from `reboot.std.oauth.v1.oauth` and "
-                "`ciphertext_library` from "
-                "`reboot.std.ciphertext.v1.ciphertext`)."
+                "`oauth` library to encrypt and persist the identity "
+                "provider's tokens, but it isn't mounted. Add it to your "
+                "`Application`, e.g. `Application(..., "
+                "libraries=[oauth_library()])` (import `oauth_library` "
+                "from `reboot.std.oauth.v1.oauth`); the `ciphertext` and "
+                "`ordered_map` libraries it builds on come along "
+                "automatically."
             ),
         )
 

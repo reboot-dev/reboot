@@ -34,12 +34,9 @@ fails fast at startup:
 
 ```python
 from reboot.std.oauth.v1.oauth import oauth_library
-from reboot.std.ciphertext.v1.ciphertext import ciphertext_library
-from reboot.std.collections.ordered_map.v1.ordered_map import (
-    ordered_map_library,
-)
 
-# libraries=[oauth_library(), ciphertext_library(), ordered_map_library()]
+# libraries=[oauth_library()]; the `ciphertext` and `ordered_map`
+# libraries it builds on come along automatically.
 ```
 
 `REBOOT_CRYPTO_ROOT_KEYS` backs the encryption; it is auto-provisioned
@@ -310,7 +307,7 @@ await KeyManager.ref(_key_manager_id(GOOGLE)).shred(context, scope=user_id)
 
 ## Checklist
 
-- [ ] `libraries=[oauth_library(), ciphertext_library(), ordered_map_library()]` on the `Application` (Path C needs only the latter two).
+- [ ] `libraries=[oauth_library()]` on the `Application` (Path C needs only `ciphertext_library()`).
 - [ ] **Capture** — Path A (identity provider's own API):
       `scopes=[...]` (least privilege) + `store_tokens=True`. Path B
       (any other service): your own authorize + callback routes, callback registered `app_internal=True`, the

@@ -47,25 +47,23 @@ topic's buffer into each subscriber's queue.
 ### Register the Library
 
 `Topic` is built on `Queue`, which is itself backed by an internal
-stdlib sorted-map actor:
+stdlib sorted-map actor. Registering `pubsub_library()` mounts all
+three:
 
 ```python
-from reboot.std.pubsub.v1 import pubsub
-from reboot.std.collections.v1.sorted_map import sorted_map_library
+from reboot.std.pubsub.v1.pubsub import pubsub_library
 
 
 async def main():
     await Application(
-        servicers=[MyServicer] + pubsub.servicers(),
-        libraries=[sorted_map_library()],
+        servicers=[MyServicer],
+        libraries=[pubsub_library()],
     ).run()
 ```
 
-`pubsub.servicers()` returns `[TopicServicer] + queue.servicers()`, so
-you don't need to add `queue.servicers()` separately. The
-`sorted_map_library()` registration is the only place you mention
-the backing sorted-map actor — for a user-facing sorted key/value
-collection, use `OrderedMap` (see `stdlib-ordered-map.md`).
+You should not reach for the backing queue or sorted-map actors'
+types directly in application code. For a user-facing sorted
+key/value collection, use `OrderedMap` (see `stdlib-ordered-map.md`).
 
 ### Subscribe a Queue to a Topic
 

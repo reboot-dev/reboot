@@ -54,8 +54,9 @@ application — you do not need to set it yourself.
 
 ## Imports and servicers
 
-The `ciphertext` library depends on [`OrderedMap`](./ordered_map), so include
-both when starting your `Application`.
+The `ciphertext` library depends on [`OrderedMap`](./ordered_map). In
+Python, listing `ciphertext_library()` brings it along; in TypeScript,
+list both.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
@@ -63,14 +64,11 @@ both when starting your `Application`.
 ```py
 
 from reboot.std.ciphertext.v1.ciphertext import ciphertext_library
-from reboot.std.collections.ordered_map.v1.ordered_map import (
-    ordered_map_library,
-)
 
 async def main():
     application = Application(
         servicers=[MyServicer],
-        libraries=[ciphertext_library(), ordered_map_library()],
+        libraries=[ciphertext_library()],
     )
     await application.run()
 ```
