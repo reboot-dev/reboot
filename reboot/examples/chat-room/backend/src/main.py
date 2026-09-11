@@ -26,9 +26,7 @@ async def initialize(context: InitializeContext):
 async def main():
     await Application(
         servicers=[ChatRoomServicer],
-        # Message attachments are stored as blobs; `rbt dev run` and
-        # `rbt serve run` provide a local filesystem data plane (see
-        # `REBOOT_BLOB_DATA_PLANE_URL` for using a custom one).
+        # Message attachments are stored as blobs.
         libraries=[blob_library()],
         initialize=initialize,
     ).run()
