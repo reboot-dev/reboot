@@ -9,7 +9,7 @@ import time
 import unittest
 import uuid
 from ast import literal_eval
-from collections import namedtuple
+from collections import defaultdict, namedtuple
 from google.protobuf.empty_pb2 import Empty
 from rbt.v1alpha1 import errors_pb2, transactions_pb2
 from rbt.v1alpha1.errors_pb2 import StateNotConstructed
@@ -31,7 +31,11 @@ from reboot.aio.headers import (
 from reboot.aio.internals.contextvars import Servicing, _servicing
 from reboot.aio.resolvers import NoResolver
 from reboot.aio.state_managers import Lock, SidecarStateManager, StateManager
-from reboot.aio.stubs import Stub, UnaryRetriedCall
+from reboot.aio.stubs import (
+    NestedTransactionUnaryRetriedCall,
+    Stub,
+    UnaryRetriedCall,
+)
 from reboot.aio.tests import Reboot
 from reboot.aio.types import ApplicationId, StateRef
 from reboot.server.database import DatabaseClient
@@ -457,6 +461,211 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
                 call._metadata,
                 deaths,
             )
+
+    async def test_sibling_nested_transactions_do_not_deadlock(self) -> None:
+        """Two nested transactions started concurrently by one root each
+        own their own state when they ask for the other's, which is a
+        deadlock that wait-die between transactions cannot see: both
+        share the root's age. The younger sibling aborts with
+        `NestedTransactionShouldRetry` once it has waited out the grace
+        period and rolls back, the root's call that started it is
+        re-issued, and the whole transaction commits long before the
+        ownership deadline.
+        """
+
+        # Make each sibling wait, once it owns its own state, until the
+        # other owns its state too, so that each asks for the other's
+        # state only once the other holds it and the deadlock is
+        # certain rather than a matter of timing. Arrivals are by state
+        # rather than counted because the aborted sibling arrives again
+        # when it is re-issued, and then passes straight through. The
+        # nested transaction id of each arrival is recorded so that the
+        # test can tell which sibling was the younger.
+        arrived: set[str] = set()
+        both_arrived = asyncio.Event()
+        nested_transaction_ids: dict[str, list[uuid.UUID]] = defaultdict(list)
+
+        class TransferServicer(GeneralServicer):
+            """Accounts as `General` states with a `balance` in their
+            content. The root transaction gathers a transfer from each
+            of two accounts to the other; each transfer is a nested
+            transaction on the account it takes from, which then
+            deposits into the other."""
+
+            def authorizer(self):
+                return allow()
+
+            async def ConstructorWriter(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                state.content["balance"] = request.content["balance"]
+                return GeneralResponse()
+
+            async def Reader(
+                self,
+                context: ReaderContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse(content=state.content)
+
+            async def ConstructorTransaction(
+                self,
+                context: TransactionContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                first = request.content["first"]
+                second = request.content["second"]
+                await asyncio.gather(
+                    General.ref(first).Transaction(
+                        context,
+                        content={
+                            "to": second,
+                            "amount": request.content["first_amount"],
+                        },
+                    ),
+                    General.ref(second).Transaction(
+                        context,
+                        content={
+                            "to": first,
+                            "amount": request.content["second_amount"],
+                        },
+                    ),
+                )
+                return GeneralResponse()
+
+            async def Transaction(
+                self,
+                context: TransactionContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                nested_transaction_ids[context.state_id].append(
+                    context.transaction_id
+                )
+                arrived.add(context.state_id)
+                if len(arrived) == 2:
+                    both_arrived.set()
+                await both_arrived.wait()
+                amount = int(request.content["amount"])
+                state.content["balance"] = str(
+                    int(state.content["balance"]) - amount
+                )
+                await General.ref(request.content["to"]).Writer(
+                    context,
+                    content={"amount": request.content["amount"]},
+                )
+                return GeneralResponse()
+
+            async def Writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                amount = int(request.content["amount"])
+                state.content["balance"] = str(
+                    int(state.content["balance"]) + amount
+                )
+                return GeneralResponse()
+
+        # Record every `NestedTransactionShouldRetry` a stub re-issues
+        # a call for, to prove the deadlock was resolved by a presumed
+        # deadlock and not by the ownership deadline, and to check
+        # which sibling went.
+        nested_transaction_should_retry = (
+            NestedTransactionUnaryRetriedCall._nested_transaction_should_retry
+        )
+        should_retries: list[errors_pb2.NestedTransactionShouldRetry] = []
+
+        async def mock_nested_transaction_should_retry(retried_call):
+            should_retry = await nested_transaction_should_retry(retried_call)
+            if should_retry is not None:
+                should_retries.append(should_retry)
+            return should_retry
+
+        with mock.patch(
+            'reboot.aio.stubs.NestedTransactionUnaryRetriedCall.'
+            '_nested_transaction_should_retry',
+            mock_nested_transaction_should_retry,
+        ):
+            await self.rbt.up(
+                Application(servicers=[TransferServicer]),
+                # Effect validation runs a transaction's method twice,
+                # the second pass as a new transaction that can wait
+                # behind the first pass's participants still releasing
+                # and be presumed deadlocked with them. Run the root
+                # once so that the only deadlock is the one between the
+                # two siblings.
+                effect_validation=EffectValidation.DISABLED,
+            )
+
+            context = self.rbt.create_external_context(name=self.id())
+
+            await General.ConstructorWriter(
+                context,
+                'ben',
+                content={"balance": "100"},
+            )
+            await General.ConstructorWriter(
+                context,
+                'jonathan',
+                content={"balance": "100"},
+            )
+
+            started = time.monotonic()
+
+            await General.ConstructorTransaction(
+                context,
+                'transfers',
+                content={
+                    "first": "ben",
+                    "second": "jonathan",
+                    "first_amount": "10",
+                    "second_amount": "30",
+                },
+            )
+
+            elapsed = time.monotonic() - started
+
+        # Resolved by the grace period, not the 30 second ownership
+        # deadline.
+        self.assertLess(elapsed, 15)
+
+        ben = await General.ref('ben').Reader(context)
+        jonathan = await General.ref('jonathan').Reader(context)
+        self.assertEqual(ben.content["balance"], "120")
+        self.assertEqual(jonathan.content["balance"], "80")
+
+        # Of the two siblings' first attempts, the one with the younger
+        # nested transaction id is the one that died and was re-issued,
+        # possibly more than once while the older was still handing its
+        # states back; the older ran exactly once.
+        first_attempts = {
+            account_id: ids[0]
+            for account_id, ids in nested_transaction_ids.items()
+        }
+        self.assertEqual(set(first_attempts), {'ben', 'jonathan'})
+        younger_account_id = max(
+            first_attempts,
+            key=lambda account_id: first_attempts[account_id],
+        )
+        older_account_id = min(
+            first_attempts,
+            key=lambda account_id: first_attempts[account_id],
+        )
+        self.assertGreater(len(should_retries), 0)
+        for should_retry in should_retries:
+            self.assertIn(
+                uuid.UUID(should_retry.transaction_id),
+                nested_transaction_ids[younger_account_id],
+            )
+        self.assertGreater(len(nested_transaction_ids[younger_account_id]), 1)
+        self.assertEqual(len(nested_transaction_ids[older_account_id]), 1)
 
     async def test_retry_carries_the_age_of_the_first_attempt(self) -> None:
         """A call that aborts with a `TransactionShouldRetry` whose
