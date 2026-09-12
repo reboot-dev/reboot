@@ -720,6 +720,8 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
         error = aborted.exception.error
         assert isinstance(error, TransactionShouldRetry)
         self.assertEqual(error.reason, TransactionShouldRetry.RESTART_DETECTED)
+        # A first attempt's age is its root transaction id.
+        self.assertEqual(error.retry_age, str(context.transaction_ids[0]))
         # It is retried like UNAVAILABLE.
         self.assertEqual(aborted.exception.code, grpc.StatusCode.UNAVAILABLE)
         assert aborted.exception.message is not None

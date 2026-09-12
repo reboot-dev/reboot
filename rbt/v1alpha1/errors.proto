@@ -37,8 +37,8 @@ message TransactionParticipantFailedToCommit {}
 ////////////////////////////////////////////////////////////////////////
 
 // Raised by a transaction participant when the current transaction
-// must be started over from its root. Retried like `Unavailable`;
-// `reason` says why.
+// must be started over from its root. Retried like `Unavailable`; the
+// fields say why, and how the retry should behave.
 message TransactionShouldRetry {
   enum Reason {
     UNKNOWN = 0;
@@ -49,6 +49,13 @@ message TransactionShouldRetry {
   }
 
   Reason reason = 1;
+
+  // The age of the aborted transaction: the root transaction id of
+  // its first attempt, as a string. A retry sends it back as the
+  // transaction's age so that the retried transaction is as old as
+  // its first attempt rather than younger than every transaction
+  // started since.
+  string retry_age = 2;
 }
 
 ////////////////////////////////////////////////////////////////////////

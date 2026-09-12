@@ -3730,6 +3730,12 @@ class SidecarStateManager(
                     raise SystemAborted(
                         TransactionShouldRetry(
                             reason=TransactionShouldRetry.RESTART_DETECTED,
+                            # The retry is as old as this attempt's
+                            # first attempt.
+                            retry_age=str(
+                                context.transaction_retry_age or
+                                root_transaction_id
+                            ),
                         ),
                         message=(
                             f"Transaction {root_transaction_id} was "

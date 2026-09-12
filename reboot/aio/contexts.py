@@ -1035,6 +1035,14 @@ class Context(ABC, IdempotencyManager):
             return None
 
     @property
+    def transaction_retry_age(self) -> Optional[uuid.UUID]:
+        """Return the age of the transaction as carried by a retry: the
+        root transaction id of its first attempt. `None` on a first
+        attempt, whose age is its own root transaction id.
+        """
+        return self._headers.transaction_retry_age
+
+    @property
     def workflow_id(self) -> Optional[uuid.UUID]:
         """Return workflow id.
         """

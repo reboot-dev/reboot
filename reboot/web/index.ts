@@ -4,8 +4,10 @@ import {
   Backoff,
   Event,
   Status,
+  TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF,
   assert,
   check_bufbuild_protobuf_library,
+  errorFromGoogleRpcStatusDetails,
   errors_pb,
   react_pb,
   retryForever,
@@ -153,6 +155,12 @@ export async function httpCall<
   let response: Response | undefined;
   let aborted: A | undefined;
 
+  // The age of the transaction this call started, once an error has
+  // told us: the root transaction id of its first attempt. A retry
+  // carries it so that the retried transaction is as old as its first
+  // attempt rather than younger than every transaction started since.
+  let transactionRetryAge: string | undefined;
+
   while (true) {
     // Rebuild the headers on every attempt: if a retry follows
     // `onUnauthenticated` rotating the session, it must carry the
@@ -163,8 +171,16 @@ export async function httpCall<
       aborted?: A;
     }> => {
       const backoff = new Backoff();
+      // A `TransactionShouldRetry` may ask us to retry immediately,
+      // but we elide the backoff only once: a transaction that keeps
+      // being asked to start over should still back off.
+      let backoffElided = false;
 
       while (true) {
+        let retryWithoutBackoff = false;
+        if (transactionRetryAge !== undefined) {
+          headers.set("x-reboot-transaction-retry-age", transactionRetryAge);
+        }
         try {
           // Invariant here is that we use the '/package.service.method' path and
           // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
@@ -195,6 +211,21 @@ export async function httpCall<
             if (response.headers.get("content-type") === "application/json") {
               const status = Status.fromJson(await response.json());
               const aborted = abortedType.fromStatus(status);
+              const shouldRetry = errorFromGoogleRpcStatusDetails(status, [
+                errors_pb.TransactionShouldRetry,
+              ] as const);
+              if (shouldRetry !== undefined) {
+                retryWithoutBackoff =
+                  TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF.has(
+                    shouldRetry.reason
+                  );
+                if (
+                  transactionRetryAge === undefined &&
+                  shouldRetry.retryAge !== ""
+                ) {
+                  transactionRetryAge = shouldRetry.retryAge;
+                }
+              }
               // Log the error later in the 'catch' block.
               throw aborted;
             } else {
@@ -221,6 +252,11 @@ export async function httpCall<
           } else {
             console.error(`Unknown error: ${JSON.stringify(e)}`);
           }
+        }
+
+        if (retryWithoutBackoff && !backoffElided) {
+          backoffElided = true;
+          continue;
         }
 
         await backoff.wait({

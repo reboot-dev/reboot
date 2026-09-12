@@ -21,7 +21,11 @@ from reboot.aio.contexts import (
     WorkflowContext,
 )
 from reboot.aio.external import ExternalContext, InitializeContext
-from reboot.aio.headers import IDEMPOTENCY_KEY_HEADER, Headers
+from reboot.aio.headers import (
+    IDEMPOTENCY_KEY_HEADER,
+    TRANSACTION_RETRY_AGE_HEADER,
+    Headers,
+)
 from reboot.aio.idempotency import (
     IdempotencyManager,
     make_expiring_idempotency_key,
@@ -100,6 +104,15 @@ class UnaryRetriedCall(Generic[ResponseT]):
         self._metadata = metadata
         self._aborted_type = aborted_type
 
+        # The age of the transaction this call started, once known:
+        # the root transaction id of its first attempt, learned from
+        # the first `TransactionShouldRetry` the call aborts with. A
+        # retry carries it as the transaction's age so that the
+        # retried transaction is as old as its first attempt rather
+        # than younger than every transaction started since, which
+        # would let it be aborted the same way again and again.
+        self._retry_age: Optional[uuid.UUID] = None
+
     async def trailing_metadata(self) -> GrpcMetadata:
         """Return the trailing metadata from the call."""
         if self._call is None:
@@ -134,6 +147,18 @@ class UnaryRetriedCall(Generic[ResponseT]):
             return error
         return None
 
+    def _metadata_with_retry_age(self) -> GrpcMetadata:
+        """The call's metadata with the transaction age header set to
+        the transaction's age, for a retry; unchanged while the age is
+        unknown or once the header is present."""
+        if self._retry_age is None or any(
+            key == TRANSACTION_RETRY_AGE_HEADER for key, _ in self._metadata
+        ):
+            return self._metadata
+        return self._metadata + (
+            (TRANSACTION_RETRY_AGE_HEADER, str(self._retry_age)),
+        )
+
     async def _call_with_retries(self) -> ResponseT:
         backoff = Backoff()
         # A `TransactionShouldRetry` may ask us to retry immediately,
@@ -157,6 +182,12 @@ class UnaryRetriedCall(Generic[ResponseT]):
                         f"retryable error: {error}; will retry..."
                     )
                     should_retry = await self._transaction_should_retry()
+                    if (
+                        self._retry_age is None and
+                        should_retry is not None and
+                        should_retry.retry_age != ''
+                    ):
+                        self._retry_age = uuid.UUID(should_retry.retry_age)
                     apply_backoff = (
                         backoff_elided or should_retry is None or
                         should_retry.reason
@@ -167,7 +198,8 @@ class UnaryRetriedCall(Generic[ResponseT]):
                     else:
                         backoff_elided = True
                     # We need to create a fresh call object for the
-                    # retry.
+                    # retry, carrying the age of the first attempt.
+                    self._metadata = self._metadata_with_retry_age()
                     self._call = None
                     continue
 
@@ -220,6 +252,7 @@ class Stub:
         transaction_ids: Optional[list[uuid.UUID]] = None
         transaction_coordinator_state_type: Optional[StateTypeName] = None
         transaction_coordinator_state_ref: Optional[StateRef] = None
+        transaction_retry_age: Optional[uuid.UUID] = None
 
         workflow_iteration: Optional[int] = None
 
@@ -238,6 +271,11 @@ class Stub:
             transaction_ids = context.transaction_ids
             transaction_coordinator_state_type = context.transaction_coordinator_state_type
             transaction_coordinator_state_ref = context.transaction_coordinator_state_ref
+            # Every state a retried transaction touches orders it by
+            # the age of its first attempt, not only the state the
+            # retry arrived at.
+            transaction_retry_age = context.transaction_retry_age
+
             # If we are the transaction coordinator then let our
             # participants know that we are read-only aware.
             #
@@ -271,6 +309,7 @@ class Stub:
             transaction_coordinator_state_type=
             transaction_coordinator_state_type,
             transaction_coordinator_state_ref=transaction_coordinator_state_ref,
+            transaction_retry_age=transaction_retry_age,
             bearer_token=bearer_token,
             caller_id=caller_id,
             internal_call=context is not None,

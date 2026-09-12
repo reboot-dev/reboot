@@ -10,6 +10,7 @@ from reboot.aio.headers import (
     IDEMPOTENCY_KEY_HEADER,
     SERVER_ID_HEADER,
     STATE_REF_HEADER,
+    TRANSACTION_RETRY_AGE_HEADER,
     WORKFLOW_ID_HEADER,
 )
 
@@ -26,6 +27,7 @@ CORS_ALLOW_HEADERS = (
     SERVER_ID_HEADER,
     IDEMPOTENCY_KEY_HEADER,
     WORKFLOW_ID_HEADER,
+    TRANSACTION_RETRY_AGE_HEADER,
     'keep-alive',
     'user-agent',
     'cache-control',
