@@ -59,7 +59,7 @@ RebootError: TypeAlias = Union[
     rbt.v1alpha1.errors_pb2.StateNotConstructed,
     rbt.v1alpha1.errors_pb2.TransactionParticipantFailedToPrepare,
     rbt.v1alpha1.errors_pb2.TransactionParticipantFailedToCommit,
-    rbt.v1alpha1.errors_pb2.TransactionShouldRetryWithoutBackoff,
+    rbt.v1alpha1.errors_pb2.TransactionShouldRetry,
     rbt.v1alpha1.errors_pb2.UnknownService,
     rbt.v1alpha1.errors_pb2.UnknownTask,
     rbt.v1alpha1.errors_pb2.InvalidMethod,
@@ -89,7 +89,7 @@ REBOOT_ERROR_TYPES: list[type[Message]] = [
     rbt.v1alpha1.errors_pb2.StateNotConstructed,
     rbt.v1alpha1.errors_pb2.TransactionParticipantFailedToPrepare,
     rbt.v1alpha1.errors_pb2.TransactionParticipantFailedToCommit,
-    rbt.v1alpha1.errors_pb2.TransactionShouldRetryWithoutBackoff,
+    rbt.v1alpha1.errors_pb2.TransactionShouldRetry,
     rbt.v1alpha1.errors_pb2.UnknownService,
     rbt.v1alpha1.errors_pb2.UnknownTask,
     rbt.v1alpha1.errors_pb2.InvalidMethod,
@@ -120,13 +120,24 @@ FROM_BACKEND_AND_RECOVERABLE_ERROR_TYPES: tuple[type[Message], ...] = (
     rbt.v1alpha1.errors_pb2.DataLoss,
 )
 
+# Reasons a `TransactionShouldRetry` may carry after which the caller
+# skips its backoff before the first retry, because the cause was not
+# load: a participant with a stale timestamp rather than a busy
+# server.
+TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF: frozenset[int] = (
+    frozenset(
+        {
+            rbt.v1alpha1.errors_pb2.TransactionShouldRetry.RESTART_DETECTED,
+        }
+    )
+)
+
 # Errors that tell us a backend raised them, and thus that no mutation
 # happened, but which a transaction can not commit through.
 FROM_BACKEND_AND_UNRECOVERABLE_ERROR_TYPES: tuple[type[Message], ...] = (
-    # Raised by a participant refusing to take part in a transaction
-    # which started before the participant last recovered, i.e.,
-    # before the participant ran any of the transaction's code.
-    rbt.v1alpha1.errors_pb2.TransactionShouldRetryWithoutBackoff,
+    # Raised by a participant asking for the transaction to be started
+    # over, e.g., because the participant restarted.
+    rbt.v1alpha1.errors_pb2.TransactionShouldRetry,
 )
 
 # Every error that tells us a backend raised it. The recoverable and
@@ -354,14 +365,11 @@ class Aborted(Exception):
         elif isinstance(error, rbt.v1alpha1.errors_pb2.Unavailable):
             return grpc.StatusCode.UNAVAILABLE
 
-        elif isinstance(
-            error,
-            rbt.v1alpha1.errors_pb2.TransactionShouldRetryWithoutBackoff,
-        ):
+        elif isinstance(error, rbt.v1alpha1.errors_pb2.TransactionShouldRetry):
             # Behaves like `Unavailable` (it is retryable), but its
-            # distinct type lets the runtime recognize the restart,
-            # refresh the coordinator's timestamp, and skip the
-            # backoff before the first retry.
+            # distinct type carries why, whether to skip the backoff
+            # before the first retry, and the age the retry should
+            # carry.
             return grpc.StatusCode.UNAVAILABLE
 
         elif isinstance(error, rbt.v1alpha1.errors_pb2.DataLoss):

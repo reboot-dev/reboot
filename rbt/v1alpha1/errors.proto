@@ -36,11 +36,20 @@ message TransactionParticipantFailedToCommit {}
 
 ////////////////////////////////////////////////////////////////////////
 
-// Raised by a transaction participant that detects that the current
-// transaction should be retried from scratch for any reason. As
-// opposed to `Unavailable` (which also results in a retry), this error
-// signals that no backoff is required before the retry.
-message TransactionShouldRetryWithoutBackoff {}
+// Raised by a transaction participant when the current transaction
+// must be started over from its root. Retried like `Unavailable`;
+// `reason` says why.
+message TransactionShouldRetry {
+  enum Reason {
+    UNKNOWN = 0;
+    // The participant's server recovered after the transaction
+    // began, so it may already have taken part and lost that state,
+    // and refuses to join.
+    RESTART_DETECTED = 1;
+  }
+
+  Reason reason = 1;
+}
 
 ////////////////////////////////////////////////////////////////////////
 // gRPC:

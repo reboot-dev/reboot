@@ -11,7 +11,7 @@ from rbt.v1alpha1.errors_pb2 import (
     StateAlreadyConstructed,
     StateNotConstructed,
     TransactionParticipantFailedToCommit,
-    TransactionShouldRetryWithoutBackoff,
+    TransactionShouldRetry,
     Unavailable,
     Unknown,
 )
@@ -40,7 +40,11 @@ class AbortedClassificationTest(unittest.TestCase):
         # started before the participant last recovered, i.e., before
         # it ran any of the transaction's code, so we know definitively
         # that no mutation happened.
-        aborted = SystemAborted(TransactionShouldRetryWithoutBackoff())
+        aborted = SystemAborted(
+            TransactionShouldRetry(
+                reason=TransactionShouldRetry.RESTART_DETECTED,
+            )
+        )
 
         self.assertTrue(
             DeclaresNothingAborted.is_from_backend(aborted),

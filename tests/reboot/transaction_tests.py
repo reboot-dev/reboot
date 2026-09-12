@@ -5,10 +5,12 @@ import log.log
 import logging
 import reboot.aio.internals.channel_manager
 import unittest
+import uuid
 from ast import literal_eval
 from collections import namedtuple
 from rbt.v1alpha1 import errors_pb2, transactions_pb2
 from rbt.v1alpha1.errors_pb2 import StateNotConstructed
+from reboot.aio.aborted import SystemAborted
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import (
@@ -20,12 +22,15 @@ from reboot.aio.contexts import (
 from reboot.aio.headers import (
     STATE_REF_HEADER,
     TRANSACTION_PARTICIPANTS_HEADER,
+    TRANSACTION_RETRY_AGE_HEADER,
     Headers,
 )
+from reboot.aio.internals.contextvars import Servicing, _servicing
+from reboot.aio.resolvers import NoResolver
 from reboot.aio.state_managers import Lock, SidecarStateManager, StateManager
-from reboot.aio.stubs import UnaryRetriedCall
+from reboot.aio.stubs import Stub, UnaryRetriedCall
 from reboot.aio.tests import Reboot
-from reboot.aio.types import StateRef
+from reboot.aio.types import ApplicationId, StateRef
 from reboot.server.database import DatabaseClient
 from reboot.std.collections.v1.sorted_map import SortedMap, sorted_map_library
 from tests.reboot import bank_pb2, bank_pb2_grpc, bank_rbt
@@ -146,6 +151,115 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertFalse(transferrable_response.transferrable)
+
+    async def test_retry_carries_the_age_of_the_first_attempt(self) -> None:
+        """A call that aborts with a `TransactionShouldRetry` whose
+        reason skips backoff learns the transaction's age from the
+        error and retries at once, carrying the age in its
+        metadata."""
+        age = uuid.uuid4()
+        status = SystemAborted(
+            errors_pb2.TransactionShouldRetry(
+                reason=errors_pb2.TransactionShouldRetry.RESTART_DETECTED,
+                retry_age=str(age),
+            ),
+            message='retry required',
+        ).to_status()
+
+        async def abort_with_unavailable():
+            raise grpc.aio.AioRpcError(
+                grpc.StatusCode.UNAVAILABLE,
+                grpc.aio.Metadata(),
+                grpc.aio.Metadata(),
+                details='retry required',
+            )
+
+        async def respond():
+            return bank_pb2.TransferResponse()
+
+        stub_method = mock.MagicMock(
+            side_effect=[abort_with_unavailable(),
+                         respond()]
+        )
+
+        call = UnaryRetriedCall(
+            call=None,
+            stub_method=stub_method,
+            method_name='unused',
+            request=bank_pb2.TransferRequest(),
+            metadata=(('x-unrelated', 'kept'),),
+            aborted_type=Bank.TransferAborted,
+        )
+
+        # Nothing to carry until an error has told us the age.
+        self.assertEqual(
+            call._metadata_with_retry_age(), (('x-unrelated', 'kept'),)
+        )
+
+        with mock.patch(
+            'reboot.aio.stubs.rpc_status.from_call',
+            mock.AsyncMock(return_value=status),
+        ):
+            response = await call
+
+        self.assertIsInstance(response, bank_pb2.TransferResponse)
+        self.assertEqual(stub_method.call_count, 2)
+        self.assertEqual(
+            stub_method.call_args_list[1].kwargs['metadata'],
+            (
+                ('x-unrelated', 'kept'),
+                (TRANSACTION_RETRY_AGE_HEADER, str(age)),
+            ),
+        )
+        # The age is the first attempt's; a later retry does not add
+        # another header.
+        self.assertEqual(call._metadata_with_retry_age(), call._metadata)
+
+    async def test_stub_forwards_the_transaction_retry_age(self) -> None:
+        """A stub built from a context inside a retried transaction
+        sends the transaction's carried age on to the state it calls,
+        so that every participant, not only the state the retry
+        arrived at, orders the transaction as its first attempt."""
+        age = uuid.uuid4()
+        channel_manager = (
+            reboot.aio.internals.channel_manager._ChannelManager(
+                NoResolver(), secure=False
+            )
+        )
+        _servicing.set(Servicing.INITIALIZING)
+        try:
+            context = TransactionContext(
+                channel_manager=channel_manager,
+                headers=Headers(
+                    application_id=ApplicationId('unused'),
+                    state_ref=StateRef.from_id(
+                        BankServicer.__state_type_name__, SINGLETON_BANK_ID
+                    ),
+                    transaction_retry_age=age,
+                ),
+                state_type_name=BankServicer.__state_type_name__,
+                method='unused',
+                effect_validation=EffectValidation.ENABLED,
+            )
+        finally:
+            _servicing.set(Servicing.NO)
+
+        stub = Stub(
+            channel_manager=channel_manager,
+            idempotency_manager=context,
+            state_ref=StateRef.from_id(
+                AccountServicer.__state_type_name__, 'ben'
+            ),
+            context=context,
+            bearer_token=None,
+            caller_id=None,
+        )
+
+        self.assertEqual(stub._headers.transaction_retry_age, age)
+        self.assertIn(
+            (TRANSACTION_RETRY_AGE_HEADER, str(age)),
+            stub._headers.to_grpc_metadata(),
+        )
 
     async def test_transactions_after_down(self) -> None:
         """Tests that a transaction that constructed actors correctly

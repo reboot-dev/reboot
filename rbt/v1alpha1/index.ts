@@ -526,7 +526,11 @@ export const ZOD_ERRORS = z.discriminatedUnion("type", [
     type: z.literal("TransactionParticipantFailedToCommit"),
   }),
   z.object({
-    type: z.literal("TransactionShouldRetryWithoutBackoff"),
+    type: z.literal("TransactionShouldRetry"),
+    reason: z
+      .nativeEnum(errors_pb.TransactionShouldRetry_Reason)
+      .optional()
+      .meta({ tag: 1 }),
   }),
   z.object({
     type: z.literal("Cancelled"),
@@ -622,7 +626,7 @@ export const REBOOT_ERROR_TYPES = [
   errors_pb.StateNotConstructed,
   errors_pb.TransactionParticipantFailedToPrepare,
   errors_pb.TransactionParticipantFailedToCommit,
-  errors_pb.TransactionShouldRetryWithoutBackoff,
+  errors_pb.TransactionShouldRetry,
   errors_pb.UnknownService,
   errors_pb.UnknownTask,
 ] as const; // Need `as const` to ensure TypeScript infers this as a tuple!
@@ -694,10 +698,10 @@ export function grpcStatusCodeFromError<ErrorType>(
     return StatusCode.UNAVAILABLE;
   }
 
-  // Behaves like `Unavailable` (the call is retried); the distinct type
-  // lets the runtime recognize the restart and refresh its timestamp
-  // before retrying.
-  if (error instanceof errors_pb.TransactionShouldRetryWithoutBackoff) {
+  // Behaves like `Unavailable` (the call is retried); carries why the
+  // transaction must start over, whether to skip the first backoff,
+  // and the age the retry should carry.
+  if (error instanceof errors_pb.TransactionShouldRetry) {
     return StatusCode.UNAVAILABLE;
   }
 
@@ -880,8 +884,10 @@ export function errorFromZodError(
       return new errors_pb.TransactionParticipantFailedToPrepare();
     case "TransactionParticipantFailedToCommit":
       return new errors_pb.TransactionParticipantFailedToCommit();
-    case "TransactionShouldRetryWithoutBackoff":
-      return new errors_pb.TransactionShouldRetryWithoutBackoff();
+    case "TransactionShouldRetry":
+      return new errors_pb.TransactionShouldRetry({
+        reason: error.reason,
+      });
   }
 }
 
@@ -937,8 +943,11 @@ export function zodErrorFromError(
     return { type: "TransactionParticipantFailedToPrepare" };
   } else if (error instanceof errors_pb.TransactionParticipantFailedToCommit) {
     return { type: "TransactionParticipantFailedToCommit" };
-  } else if (error instanceof errors_pb.TransactionShouldRetryWithoutBackoff) {
-    return { type: "TransactionShouldRetryWithoutBackoff" };
+  } else if (error instanceof errors_pb.TransactionShouldRetry) {
+    return {
+      type: "TransactionShouldRetry",
+      reason: error.reason,
+    };
   }
   throw new Error(`Unknown error type '${error.getType().typeName}'`);
 }

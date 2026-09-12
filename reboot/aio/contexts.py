@@ -863,8 +863,7 @@ class Context(ABC, IdempotencyManager):
     # of a generic "must abort" error, so that a caller which catches
     # and discards an abort still gets the same outcome as one which
     # lets it propagate, e.g., an `Unavailable` or a
-    # `TransactionShouldRetryWithoutBackoff` still asks the
-    # coordinator for a retry.
+    # `TransactionShouldRetry` still asks the coordinator for a retry.
     transaction_unrecoverable_abort: Optional[BaseException]
 
     # Extra machinery for handling reactive contexts. Set when using

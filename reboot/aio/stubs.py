@@ -7,7 +7,11 @@ from google.protobuf.message import Message
 from grpc.aio import AioRpcError
 from log.log import get_logger
 from rbt.v1alpha1 import errors_pb2
-from reboot.aio.aborted import Aborted, SystemAborted
+from reboot.aio.aborted import (
+    TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF,
+    Aborted,
+    SystemAborted,
+)
 from reboot.aio.backoff import Backoff
 from reboot.aio.caller_id import CallerID
 from reboot.aio.contexts import (
@@ -112,25 +116,30 @@ class UnaryRetriedCall(Generic[ResponseT]):
         # For now, the only retriable error is UNAVAILABLE.
         return error.code() == grpc.StatusCode.UNAVAILABLE
 
-    async def _should_retry_without_backoff(self) -> bool:
-        """Whether the failed call aborted with
-        `TransactionShouldRetryWithoutBackoff`."""
+    async def _transaction_should_retry(
+        self,
+    ) -> Optional[errors_pb2.TransactionShouldRetry]:
+        """The `TransactionShouldRetry` the failed call aborted with, or
+        `None` if it aborted with something else."""
         if self._call is None:
-            return False
+            return None
         status = await rpc_status.from_call(self._call)
         if status is None:
-            return False
-        return Aborted.error_from_google_rpc_status_details(
+            return None
+        error = Aborted.error_from_google_rpc_status_details(
             status,
-            [errors_pb2.TransactionShouldRetryWithoutBackoff],
-        ) is not None
+            [errors_pb2.TransactionShouldRetry],
+        )
+        if isinstance(error, errors_pb2.TransactionShouldRetry):
+            return error
+        return None
 
     async def _call_with_retries(self) -> ResponseT:
         backoff = Backoff()
-        # A `TransactionShouldRetryWithoutBackoff` asks us to retry
-        # immediately, but we elide the backoff only once: a transaction
-        # that keeps restarting should still back off rather than hammer
-        # the cluster with immediate retries.
+        # A `TransactionShouldRetry` may ask us to retry immediately,
+        # but we elide the backoff only once: a transaction that keeps
+        # being asked to start over should still back off rather than
+        # hammer the cluster with immediate retries.
         backoff_elided = False
         while True:
             if self._call is None:
@@ -147,8 +156,11 @@ class UnaryRetriedCall(Generic[ResponseT]):
                         f"Unary call to '{self._method_name}' encountered "
                         f"retryable error: {error}; will retry..."
                     )
-                    apply_backoff = backoff_elided or not (
-                        await self._should_retry_without_backoff()
+                    should_retry = await self._transaction_should_retry()
+                    apply_backoff = (
+                        backoff_elided or should_retry is None or
+                        should_retry.reason
+                        not in TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF
                     )
                     if apply_backoff:
                         await backoff()
@@ -226,7 +238,6 @@ class Stub:
             transaction_ids = context.transaction_ids
             transaction_coordinator_state_type = context.transaction_coordinator_state_type
             transaction_coordinator_state_ref = context.transaction_coordinator_state_ref
-
             # If we are the transaction coordinator then let our
             # participants know that we are read-only aware.
             #

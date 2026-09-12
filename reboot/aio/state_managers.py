@@ -37,7 +37,7 @@ from rbt.v1alpha1.errors_pb2 import (
     StateNotConstructed,
     TransactionParticipantFailedToCommit,
     TransactionParticipantFailedToPrepare,
-    TransactionShouldRetryWithoutBackoff,
+    TransactionShouldRetry,
     Unavailable,
 )
 from reboot.admin.export_import_converters import ExportImportItemConverters
@@ -106,19 +106,22 @@ logger = log.log.get_logger(__name__)
 logger.setLevel(logging.WARNING)
 
 
-def _should_retry_without_backoff(exception: BaseException) -> bool:
-    """Whether `exception` is an `Aborted` carrying a
-    `TransactionShouldRetryWithoutBackoff` (raised by a participant
-    that recovered after the transaction began). The error may be
-    wrapped in any method's generated `Aborted` subtype, so we inspect
-    `.error` rather than the exception type."""
+def _restart_detected(exception: BaseException) -> bool:
+    """Whether `exception` is an `Aborted` raised by a participant
+    that recovered after the transaction began: a
+    `TransactionShouldRetry` with reason `RESTART_DETECTED`. The error
+    may be wrapped in any method's generated `Aborted` subtype, so we
+    inspect `.error` rather than the exception type."""
     if not isinstance(exception, Aborted):
         return False
     try:
         error = exception.error
     except NotImplementedError:
         return False
-    return isinstance(error, TransactionShouldRetryWithoutBackoff)
+    return (
+        isinstance(error, TransactionShouldRetry) and
+        error.reason == TransactionShouldRetry.RESTART_DETECTED
+    )
 
 
 def check_idempotency_key_not_expired(idempotency_key: uuid.UUID) -> None:
@@ -3711,11 +3714,11 @@ class SidecarStateManager(
                     # Server recovered after this transaction started,
                     # which means it may have already participated and
                     # lost in-memory state when it restarted. Abort with
-                    # `TransactionShouldRetryWithoutBackoff` (retried
-                    # like `Unavailable`) so the caller retries with a
-                    # fresh transaction; the distinct type lets the
-                    # coordinator refresh its timestamp and skip the
-                    # first retry's backoff.
+                    # `TransactionShouldRetry` (retried like
+                    # `Unavailable`) so the caller retries with a fresh
+                    # transaction; the reason lets the coordinator
+                    # refresh its timestamp, and the retry skips its
+                    # first backoff.
                     transaction_time = datetime.fromtimestamp(
                         transaction_timestamp_ms / 1000,
                         tz=timezone.utc,
@@ -3725,7 +3728,9 @@ class SidecarStateManager(
                         tz=timezone.utc,
                     ).isoformat()
                     raise SystemAborted(
-                        TransactionShouldRetryWithoutBackoff(),
+                        TransactionShouldRetry(
+                            reason=TransactionShouldRetry.RESTART_DETECTED,
+                        ),
                         message=(
                             f"Transaction {root_transaction_id} was "
                             f"created at {transaction_time} but this "
@@ -4723,13 +4728,11 @@ class SidecarStateManager(
             else:
                 # We are the coordinator, so we are the one who stamps
                 # the transaction with a timestamp. If a participant
-                # aborted with `TransactionShouldRetryWithoutBackoff`,
-                # advance our clock so the upcoming retry is stamped
-                # with a newer timestamp - that addresses a reason why
-                # `TransactionShouldRetryWithoutBackoff` might have been
-                # raised (the participant might have restarted after the
-                # transaction started).
-                if _should_retry_without_backoff(exception):
+                # aborted because it restarted after the transaction
+                # started, advance our clock so the upcoming retry is
+                # stamped with a newer timestamp, which is what lets
+                # that participant accept the retry.
+                if _restart_detected(exception):
                     try:
                         self._update_latest_timestamp(
                             await self._database_client.refresh_timestamp()

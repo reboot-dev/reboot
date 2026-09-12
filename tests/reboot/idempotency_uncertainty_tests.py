@@ -1,10 +1,7 @@
 import asyncio
 import unittest
 from google.protobuf.message import Message
-from rbt.v1alpha1.errors_pb2 import (
-    TransactionShouldRetryWithoutBackoff,
-    Unavailable,
-)
+from rbt.v1alpha1.errors_pb2 import TransactionShouldRetry, Unavailable
 from reboot.aio.aborted import SystemAborted
 from reboot.aio.idempotency import (
     IdempotencyManager,
@@ -57,7 +54,11 @@ class UncertainMutationTestCase(unittest.IsolatedAsyncioTestCase):
         for state_id in ["sibling-1", "sibling-2", "sibling-3"]:
             with self.assertRaises(SystemAborted):
                 with self._idempotently(manager, state_id=state_id):
-                    raise SystemAborted(TransactionShouldRetryWithoutBackoff())
+                    raise SystemAborted(
+                        TransactionShouldRetry(
+                            reason=TransactionShouldRetry.RESTART_DETECTED,
+                        )
+                    )
 
         # A later mutation must still be allowed, i.e., nothing was
         # recorded as uncertain.
