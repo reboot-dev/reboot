@@ -12,7 +12,7 @@ from rbt.v1alpha1 import database_pb2, tasks_pb2
 from rbt.v1alpha1.errors_pb2 import (
     StateAlreadyConstructed,
     StateNotConstructed,
-    TransactionShouldRetryWithoutBackoff,
+    TransactionShouldRetry,
     Unavailable,
 )
 from reboot.aio.aborted import SystemAborted
@@ -694,8 +694,8 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_stale_uuid7_transaction_id_retries_without_backoff(self):
         """Test that a UUIDv7 with a timestamp older than the recovery
-        timestamp aborts with `TransactionShouldRetryWithoutBackoff`
-        (which is retried like UNAVAILABLE).
+        timestamp aborts with `TransactionShouldRetry`, reason
+        `RESTART_DETECTED` (which is retried like UNAVAILABLE).
         """
         # Server recovered at time 5000.
         self.state_manager._recovery_timestamp_ms = 5000
@@ -717,10 +717,9 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
             ):
                 pass
 
-        self.assertEqual(
-            type(aborted.exception.error),
-            TransactionShouldRetryWithoutBackoff,
-        )
+        error = aborted.exception.error
+        assert isinstance(error, TransactionShouldRetry)
+        self.assertEqual(error.reason, TransactionShouldRetry.RESTART_DETECTED)
         # It is retried like UNAVAILABLE.
         self.assertEqual(aborted.exception.code, grpc.StatusCode.UNAVAILABLE)
         assert aborted.exception.message is not None
