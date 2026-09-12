@@ -1385,6 +1385,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             # we're executing React (e.g., browser, next.js server
             # component, etc).
             call_backoff = IMPORT_reboot_aio_backoff.Backoff()
+            # A `TransactionShouldRetry` may ask us to retry
+            # immediately, but we elide the backoff only once, and the
+            # retry carries the age of the first attempt, the same way
+            # `UnaryRetriedCall` does.
+            backoff_elided = False
             while True:
                 # We make a full-fledged gRPC call, so that if this traffic
                 # was misrouted (i.e. this server is not authoritative
@@ -1408,7 +1413,37 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     return await call
                 except IMPORT_grpc.aio.AioRpcError as error:
                     if error.code() == IMPORT_grpc.StatusCode.UNAVAILABLE:
-                        await call_backoff()
+                        status = await IMPORT_rpc_status_async.from_call(call)
+                        should_retry = (
+                            None if status is None else
+                            IMPORT_reboot.aio.aborted.Aborted.error_from_google_rpc_status_details(
+                                status,
+                                [IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry],
+                            )
+                        )
+                        if isinstance(
+                            should_retry,
+                            IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry,
+                        ):
+                            if (
+                                headers.transaction_retry_age is None and
+                                should_retry.retry_age != ''
+                            ):
+                                headers = IMPORT_dataclasses.replace(
+                                    headers,
+                                    transaction_retry_age=IMPORT_uuid.UUID(
+                                        should_retry.retry_age
+                                    ),
+                                )
+                            if (
+                                should_retry.reason in IMPORT_reboot.aio.aborted.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF
+                                and not backoff_elided
+                            ):
+                                backoff_elided = True
+                            else:
+                                await call_backoff()
+                        else:
+                            await call_backoff()
                         continue
 
                     # Reconstitute the error that the server threw, if it was a declared error.
@@ -1499,6 +1534,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             # we're executing React (e.g., browser, next.js server
             # component, etc).
             call_backoff = IMPORT_reboot_aio_backoff.Backoff()
+            # A `TransactionShouldRetry` may ask us to retry
+            # immediately, but we elide the backoff only once, and the
+            # retry carries the age of the first attempt, the same way
+            # `UnaryRetriedCall` does.
+            backoff_elided = False
             while True:
                 # We make a full-fledged gRPC call, so that if this traffic
                 # was misrouted (i.e. this server is not authoritative
@@ -1522,7 +1562,37 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     return await call
                 except IMPORT_grpc.aio.AioRpcError as error:
                     if error.code() == IMPORT_grpc.StatusCode.UNAVAILABLE:
-                        await call_backoff()
+                        status = await IMPORT_rpc_status_async.from_call(call)
+                        should_retry = (
+                            None if status is None else
+                            IMPORT_reboot.aio.aborted.Aborted.error_from_google_rpc_status_details(
+                                status,
+                                [IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry],
+                            )
+                        )
+                        if isinstance(
+                            should_retry,
+                            IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry,
+                        ):
+                            if (
+                                headers.transaction_retry_age is None and
+                                should_retry.retry_age != ''
+                            ):
+                                headers = IMPORT_dataclasses.replace(
+                                    headers,
+                                    transaction_retry_age=IMPORT_uuid.UUID(
+                                        should_retry.retry_age
+                                    ),
+                                )
+                            if (
+                                should_retry.reason in IMPORT_reboot.aio.aborted.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF
+                                and not backoff_elided
+                            ):
+                                backoff_elided = True
+                            else:
+                                await call_backoff()
+                        else:
+                            await call_backoff()
                         continue
 
                     # Reconstitute the error that the server threw, if it was a declared error.
@@ -1549,6 +1619,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             # we're executing React (e.g., browser, next.js server
             # component, etc).
             call_backoff = IMPORT_reboot_aio_backoff.Backoff()
+            # A `TransactionShouldRetry` may ask us to retry
+            # immediately, but we elide the backoff only once, and the
+            # retry carries the age of the first attempt, the same way
+            # `UnaryRetriedCall` does.
+            backoff_elided = False
             while True:
                 # We make a full-fledged gRPC call, so that if this traffic
                 # was misrouted (i.e. this server is not authoritative
@@ -1572,7 +1647,37 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     return await call
                 except IMPORT_grpc.aio.AioRpcError as error:
                     if error.code() == IMPORT_grpc.StatusCode.UNAVAILABLE:
-                        await call_backoff()
+                        status = await IMPORT_rpc_status_async.from_call(call)
+                        should_retry = (
+                            None if status is None else
+                            IMPORT_reboot.aio.aborted.Aborted.error_from_google_rpc_status_details(
+                                status,
+                                [IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry],
+                            )
+                        )
+                        if isinstance(
+                            should_retry,
+                            IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry,
+                        ):
+                            if (
+                                headers.transaction_retry_age is None and
+                                should_retry.retry_age != ''
+                            ):
+                                headers = IMPORT_dataclasses.replace(
+                                    headers,
+                                    transaction_retry_age=IMPORT_uuid.UUID(
+                                        should_retry.retry_age
+                                    ),
+                                )
+                            if (
+                                should_retry.reason in IMPORT_reboot.aio.aborted.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF
+                                and not backoff_elided
+                            ):
+                                backoff_elided = True
+                            else:
+                                await call_backoff()
+                        else:
+                            await call_backoff()
                         continue
 
                     # Reconstitute the error that the server threw, if it was a declared error.
@@ -1605,6 +1710,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             # we're executing React (e.g., browser, next.js server
             # component, etc).
             call_backoff = IMPORT_reboot_aio_backoff.Backoff()
+            # A `TransactionShouldRetry` may ask us to retry
+            # immediately, but we elide the backoff only once, and the
+            # retry carries the age of the first attempt, the same way
+            # `UnaryRetriedCall` does.
+            backoff_elided = False
             while True:
                 # We make a full-fledged gRPC call, so that if this traffic
                 # was misrouted (i.e. this server is not authoritative
@@ -1628,7 +1738,37 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     return await call
                 except IMPORT_grpc.aio.AioRpcError as error:
                     if error.code() == IMPORT_grpc.StatusCode.UNAVAILABLE:
-                        await call_backoff()
+                        status = await IMPORT_rpc_status_async.from_call(call)
+                        should_retry = (
+                            None if status is None else
+                            IMPORT_reboot.aio.aborted.Aborted.error_from_google_rpc_status_details(
+                                status,
+                                [IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry],
+                            )
+                        )
+                        if isinstance(
+                            should_retry,
+                            IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry,
+                        ):
+                            if (
+                                headers.transaction_retry_age is None and
+                                should_retry.retry_age != ''
+                            ):
+                                headers = IMPORT_dataclasses.replace(
+                                    headers,
+                                    transaction_retry_age=IMPORT_uuid.UUID(
+                                        should_retry.retry_age
+                                    ),
+                                )
+                            if (
+                                should_retry.reason in IMPORT_reboot.aio.aborted.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF
+                                and not backoff_elided
+                            ):
+                                backoff_elided = True
+                            else:
+                                await call_backoff()
+                        else:
+                            await call_backoff()
                         continue
 
                     # Reconstitute the error that the server threw, if it was a declared error.
@@ -1685,6 +1825,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             # we're executing React (e.g., browser, next.js server
             # component, etc).
             call_backoff = IMPORT_reboot_aio_backoff.Backoff()
+            # A `TransactionShouldRetry` may ask us to retry
+            # immediately, but we elide the backoff only once, and the
+            # retry carries the age of the first attempt, the same way
+            # `UnaryRetriedCall` does.
+            backoff_elided = False
             while True:
                 # We make a full-fledged gRPC call, so that if this traffic
                 # was misrouted (i.e. this server is not authoritative
@@ -1708,7 +1853,37 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     return await call
                 except IMPORT_grpc.aio.AioRpcError as error:
                     if error.code() == IMPORT_grpc.StatusCode.UNAVAILABLE:
-                        await call_backoff()
+                        status = await IMPORT_rpc_status_async.from_call(call)
+                        should_retry = (
+                            None if status is None else
+                            IMPORT_reboot.aio.aborted.Aborted.error_from_google_rpc_status_details(
+                                status,
+                                [IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry],
+                            )
+                        )
+                        if isinstance(
+                            should_retry,
+                            IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry,
+                        ):
+                            if (
+                                headers.transaction_retry_age is None and
+                                should_retry.retry_age != ''
+                            ):
+                                headers = IMPORT_dataclasses.replace(
+                                    headers,
+                                    transaction_retry_age=IMPORT_uuid.UUID(
+                                        should_retry.retry_age
+                                    ),
+                                )
+                            if (
+                                should_retry.reason in IMPORT_reboot.aio.aborted.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF
+                                and not backoff_elided
+                            ):
+                                backoff_elided = True
+                            else:
+                                await call_backoff()
+                        else:
+                            await call_backoff()
                         continue
 
                     # Reconstitute the error that the server threw, if it was a declared error.
@@ -1735,6 +1910,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             # we're executing React (e.g., browser, next.js server
             # component, etc).
             call_backoff = IMPORT_reboot_aio_backoff.Backoff()
+            # A `TransactionShouldRetry` may ask us to retry
+            # immediately, but we elide the backoff only once, and the
+            # retry carries the age of the first attempt, the same way
+            # `UnaryRetriedCall` does.
+            backoff_elided = False
             while True:
                 # We make a full-fledged gRPC call, so that if this traffic
                 # was misrouted (i.e. this server is not authoritative
@@ -1758,7 +1938,37 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     return await call
                 except IMPORT_grpc.aio.AioRpcError as error:
                     if error.code() == IMPORT_grpc.StatusCode.UNAVAILABLE:
-                        await call_backoff()
+                        status = await IMPORT_rpc_status_async.from_call(call)
+                        should_retry = (
+                            None if status is None else
+                            IMPORT_reboot.aio.aborted.Aborted.error_from_google_rpc_status_details(
+                                status,
+                                [IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry],
+                            )
+                        )
+                        if isinstance(
+                            should_retry,
+                            IMPORT_rbt_v1alpha1.errors_pb2.TransactionShouldRetry,
+                        ):
+                            if (
+                                headers.transaction_retry_age is None and
+                                should_retry.retry_age != ''
+                            ):
+                                headers = IMPORT_dataclasses.replace(
+                                    headers,
+                                    transaction_retry_age=IMPORT_uuid.UUID(
+                                        should_retry.retry_age
+                                    ),
+                                )
+                            if (
+                                should_retry.reason in IMPORT_reboot.aio.aborted.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF
+                                and not backoff_elided
+                            ):
+                                backoff_elided = True
+                            else:
+                                await call_backoff()
+                        else:
+                            await call_backoff()
                         continue
 
                     # Reconstitute the error that the server threw, if it was a declared error.

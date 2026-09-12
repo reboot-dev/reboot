@@ -76,6 +76,12 @@ TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER = (
 TRANSACTION_COORDINATOR_READ_ONLY_AWARE_HEADER = (
     'x-reboot-transaction-coordinator-read-only-aware'
 )
+# The age of the transaction: the root transaction id of its first
+# attempt. A retry carries it so that participants order the retried
+# transaction as its first attempt rather than as a new, younger,
+# transaction. Absent on a first attempt, whose age is then its own
+# root transaction id.
+TRANSACTION_RETRY_AGE_HEADER = 'x-reboot-transaction-retry-age'
 
 # The header that carries the idempotency key for a mutation.
 #
@@ -149,6 +155,10 @@ class Headers:
     transaction_ids: Optional[list[uuid.UUID]] = None
     transaction_coordinator_state_type: Optional[StateTypeName] = None
     transaction_coordinator_state_ref: Optional[StateRef] = None
+
+    # The root transaction id of the transaction's first attempt; see
+    # `TRANSACTION_RETRY_AGE_HEADER`.
+    transaction_retry_age: Optional[uuid.UUID] = None
 
     idempotency_key: Optional[uuid.UUID] = None
 
@@ -318,6 +328,11 @@ class Headers:
             if transaction_coordinator_state_ref_str is not None else None
         )
 
+        transaction_retry_age: Optional[uuid.UUID] = extract_maybe(
+            TRANSACTION_RETRY_AGE_HEADER,
+            convert=lambda value: uuid.UUID(value),
+        )
+
         idempotency_key: Optional[uuid.UUID] = extract_maybe(
             IDEMPOTENCY_KEY_HEADER,
             convert=lambda value: uuid.UUID(value),
@@ -365,6 +380,7 @@ class Headers:
             transaction_coordinator_state_type=
             transaction_coordinator_state_type,
             transaction_coordinator_state_ref=transaction_coordinator_state_ref,
+            transaction_retry_age=transaction_retry_age,
             idempotency_key=idempotency_key,
             bearer_token=bearer_token,
             task_schedule=task_schedule,
@@ -445,6 +461,22 @@ class Headers:
                 )
             return ()
 
+        def maybe_add_transaction_retry_age_header(
+        ) -> GrpcMetadata | tuple[()]:
+            # Sent apart from the transaction headers above because a
+            # retried transaction's age is carried by the call that
+            # starts the transaction over, which has no transaction
+            # ids yet: the coordinator mints those when the call
+            # arrives and keeps the age it came with.
+            if self.transaction_retry_age is not None:
+                return (
+                    (
+                        TRANSACTION_RETRY_AGE_HEADER,
+                        str(self.transaction_retry_age)
+                    ),
+                )
+            return ()
+
         def maybe_add_idempotency_key_header() -> GrpcMetadata | tuple[()]:
             if self.idempotency_key is not None:
                 return ((IDEMPOTENCY_KEY_HEADER, str(self.idempotency_key)),)
@@ -480,8 +512,9 @@ class Headers:
             ((STATE_REF_HEADER, self.state_ref.to_str()),) +
             maybe_add_application_id_header() + maybe_add_server_id_header() +
             maybe_add_authorization_header() + maybe_add_cookie_header() +
-            maybe_add_transaction_headers() + maybe_add_workflow_headers() +
-            maybe_add_idempotency_key_header() +
+            maybe_add_transaction_headers() +
+            maybe_add_transaction_retry_age_header() +
+            maybe_add_workflow_headers() + maybe_add_idempotency_key_header() +
             maybe_add_opentelemetry_headers() + maybe_add_caller_id_header() +
             maybe_add_internal_call_header() +
             maybe_add_coordinator_read_only_aware_header()

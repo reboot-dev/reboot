@@ -1840,29 +1840,85 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
     const request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
 
-    // Fetch with retry, using a backoff, i.e., if we get disconnected.
+    // The age of the transaction this call started, once an error has
+    // told us: the root transaction id of its first attempt. A retry
+    // carries it so that the retried transaction is as old as its first
+    // attempt rather than younger than every transaction started since.
+    let transactionRetryAge: string | undefined;
+
+    // Fetch with retry, using a backoff, i.e., if we get disconnected
+    // or the server asks us to try again.
     const { response, aborted } = await (async () => {
       const backoff = new reboot_api.Backoff();
+      // A `TransactionShouldRetry` may ask us to retry immediately, but
+      // we elide the backoff only once: a transaction that keeps being
+      // asked to start over should still back off.
+      let backoffElided = false;
 
       while (true) {
+        let retryWithoutBackoff = false;
+        // Copied per attempt so that a retry age set for this call does
+        // not outlive it on the hook's shared headers.
+        const attemptHeaders = new Headers(headers);
+        if (transactionRetryAge !== undefined) {
+          attemptHeaders.set("x-reboot-transaction-retry-age", transactionRetryAge);
+        }
         try {
           // Invariant here is that we use the '/package.service.method' path and
           // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
           //
           // See also 'reboot/helpers.py'.
-          return {
-            response: await reboot_web.guardedFetch(
-              `${rebootClient.url}/__/reboot/rpc/${stateRef}/{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}`,
-              {
-                ...options,
-                method: "POST",
-                headers,
-                body: request.toJsonString()
+          const response = await reboot_web.guardedFetch(
+            `${rebootClient.url}/__/reboot/rpc/${stateRef}/{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}`,
+            {
+              ...options,
+              method: "POST",
+              headers: attemptHeaders,
+              body: request.toJsonString()
+            }
+          );
+          // A 'fetch' does not throw on these, so check the status and
+          // retry the same way a failed 'fetch' is retried:
+          // - 502 (Bad Gateway): the proxy can not reach the backend.
+          // - 503 (Unavailable): the server is temporarily unavailable,
+          //   or is asking for the transaction to be started over.
+          // - 499 (Cancelled): the request was cancelled, often because
+          //   the server is shutting down.
+          if (
+            response.status === 502 ||
+            response.status === 503 ||
+            response.status === 499
+          ) {
+            if (response.headers.get("content-type") === "application/json") {
+              const status = reboot_api.Status.fromJson(await response.json());
+              const shouldRetry = reboot_api.errorFromGoogleRpcStatusDetails(
+                status,
+                [reboot_api.errors_pb.TransactionShouldRetry] as const
+              );
+              if (shouldRetry !== undefined) {
+                retryWithoutBackoff =
+                  reboot_api.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF.has(
+                    shouldRetry.reason
+                  );
+                if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
+                  transactionRetryAge = shouldRetry.retryAge;
+                }
               }
-            )
-          };
+              // Handled in the 'catch' block below.
+              throw {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(status);
+            }
+            throw new {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
+              new reboot_api.errors_pb.Unknown(), {
+                message: `Unknown error with HTTP status ${response.status}`
+              }
+            );
+          }
+          return { response };
         } catch (e: unknown) {
           if (options?.signal?.aborted || !retry) {
+            if (e instanceof {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted) {
+              return { aborted: e };
+            }
             const aborted = new {{ service.options.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
               new reboot_api.errors_pb.Aborted(), {
                 message: e instanceof Error
@@ -1877,6 +1933,11 @@ export const use{{ client.proto.state_name | to_camel }} = (
           } else {
             console.error(`[Reboot] Unknown error: ${JSON.stringify(e)}`);
           }
+        }
+
+        if (retryWithoutBackoff && !backoffElided) {
+          backoffElided = true;
+          continue;
         }
 
         await backoff.wait(`[Reboot] Retrying call to \`{{ proto.package_name }}.{{ service.proto.name }}.{{ method.proto.name }}\` with backoff...`);

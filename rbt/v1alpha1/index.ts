@@ -531,6 +531,7 @@ export const ZOD_ERRORS = z.discriminatedUnion("type", [
       .nativeEnum(errors_pb.TransactionShouldRetry_Reason)
       .optional()
       .meta({ tag: 1 }),
+    retryAge: z.string().optional().meta({ tag: 2 }),
   }),
   z.object({
     type: z.literal("Cancelled"),
@@ -630,6 +631,13 @@ export const REBOOT_ERROR_TYPES = [
   errors_pb.UnknownService,
   errors_pb.UnknownTask,
 ] as const; // Need `as const` to ensure TypeScript infers this as a tuple!
+
+// Reasons a `TransactionShouldRetry` may carry after which the caller
+// skips its backoff before the first retry, because the cause was not
+// load: a participant with a stale timestamp rather than a busy
+// server.
+export const TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF: ReadonlySet<errors_pb.TransactionShouldRetry_Reason> =
+  new Set([errors_pb.TransactionShouldRetry_Reason.RESTART_DETECTED]);
 
 export type GrpcError = InstanceTypeForErrorTypes<
   typeof GRPC_ERROR_TYPES
@@ -887,6 +895,7 @@ export function errorFromZodError(
     case "TransactionShouldRetry":
       return new errors_pb.TransactionShouldRetry({
         reason: error.reason,
+        retryAge: error.retryAge,
       });
   }
 }
@@ -947,6 +956,7 @@ export function zodErrorFromError(
     return {
       type: "TransactionShouldRetry",
       reason: error.reason,
+      retryAge: error.retryAge,
     };
   }
   throw new Error(`Unknown error type '${error.getType().typeName}'`);
