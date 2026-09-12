@@ -37,6 +37,7 @@ from reboot.aio.state_managers import (
     ScalableBloomFilter,
     SidecarStateManager,
     StateManager,
+    presumed_deadlocked_nested_transaction,
 )
 from reboot.aio.tasks import TaskEffect
 from reboot.aio.types import ApplicationId, StateId, StateRef, StateTypeName
@@ -45,7 +46,7 @@ from reboot.server.database import (
     DatabaseServer,
     NonexistentTaskId,
 )
-from reboot.uuidv7 import uuid7_timestamp_ms
+from reboot.uuidv7 import uuid7, uuid7_timestamp_ms
 from tempfile import TemporaryDirectory
 from tests.reboot import greeter_rbt
 from tests.reboot.greeter_servicers import MyGreeterServicer
@@ -837,6 +838,77 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
         ) as transaction:
             assert transaction is not None
             self.assertEqual(transaction.mode, Lock.Mode.EXCLUSIVE)
+
+
+class PresumedDeadlockedNestedTransactionTest(unittest.TestCase):
+    """Which nested transaction, if any, a call waiting for ownership
+    presumes deadlocked with the owner."""
+
+    def setUp(self) -> None:
+        # UUIDv7s at increasing timestamps, so `older < younger`.
+        self.root = uuid7(timestamp_ms=1000)
+        self.older = uuid7(timestamp_ms=2000)
+        self.younger = uuid7(timestamp_ms=3000)
+        self.deeper = uuid7(timestamp_ms=4000)
+
+    def test_younger_sibling_is_presumed_deadlocked(self) -> None:
+        self.assertEqual(
+            presumed_deadlocked_nested_transaction(
+                [self.root, self.younger],
+                [self.root, self.older],
+            ),
+            self.younger,
+        )
+
+    def test_older_sibling_keeps_waiting(self) -> None:
+        self.assertIsNone(
+            presumed_deadlocked_nested_transaction(
+                [self.root, self.older],
+                [self.root, self.younger],
+            )
+        )
+
+    def test_call_deeper_within_the_younger_sibling_dies_with_it(
+        self,
+    ) -> None:
+        # The sibling at the level where the chains diverge is the one
+        # to go, not the deeper nested transaction making the call.
+        self.assertEqual(
+            presumed_deadlocked_nested_transaction(
+                [self.root, self.younger, self.deeper],
+                [self.root, self.older],
+            ),
+            self.younger,
+        )
+
+    def test_siblings_deeper_down_are_compared_at_their_level(
+        self,
+    ) -> None:
+        # Two nested transactions started by the same nested
+        # transaction are siblings at the level below it.
+        self.assertEqual(
+            presumed_deadlocked_nested_transaction(
+                [self.root, self.older, self.deeper],
+                [self.root, self.older, self.younger],
+            ),
+            self.deeper,
+        )
+
+    def test_ancestor_of_the_owner_keeps_waiting(self) -> None:
+        # A state owned by a descendant is handed back when that
+        # descendant finishes, which needs nothing of the caller.
+        self.assertIsNone(
+            presumed_deadlocked_nested_transaction(
+                [self.root],
+                [self.root, self.older],
+            )
+        )
+        self.assertIsNone(
+            presumed_deadlocked_nested_transaction(
+                [self.root, self.older],
+                [self.root, self.older, self.deeper],
+            )
+        )
 
 
 class LockTest(unittest.IsolatedAsyncioTestCase):

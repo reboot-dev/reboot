@@ -64,6 +64,21 @@ message TransactionShouldRetry {
 }
 
 ////////////////////////////////////////////////////////////////////////
+
+// Raised by a transaction participant when one nested transaction
+// must be started over while the rest of its transaction continues:
+// it waited longer than the grace period for a state owned by an
+// older nested transaction of the same root and is presumed
+// deadlocked with it. The nested transaction rolls back and the call
+// that started it is re-issued, so that the older one proceeds.
+message NestedTransactionShouldRetry {
+  // The nested transaction to start over, as a string. Every level of
+  // the transaction within it aborts; the level that started it
+  // re-issues the call.
+  string transaction_id = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
 // gRPC:
 ////////////////////////////////////////////////////////////////////////
 

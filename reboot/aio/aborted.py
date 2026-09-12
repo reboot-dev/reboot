@@ -60,6 +60,7 @@ RebootError: TypeAlias = Union[
     rbt.v1alpha1.errors_pb2.TransactionParticipantFailedToPrepare,
     rbt.v1alpha1.errors_pb2.TransactionParticipantFailedToCommit,
     rbt.v1alpha1.errors_pb2.TransactionShouldRetry,
+    rbt.v1alpha1.errors_pb2.NestedTransactionShouldRetry,
     rbt.v1alpha1.errors_pb2.UnknownService,
     rbt.v1alpha1.errors_pb2.UnknownTask,
     rbt.v1alpha1.errors_pb2.InvalidMethod,
@@ -90,6 +91,7 @@ REBOOT_ERROR_TYPES: list[type[Message]] = [
     rbt.v1alpha1.errors_pb2.TransactionParticipantFailedToPrepare,
     rbt.v1alpha1.errors_pb2.TransactionParticipantFailedToCommit,
     rbt.v1alpha1.errors_pb2.TransactionShouldRetry,
+    rbt.v1alpha1.errors_pb2.NestedTransactionShouldRetry,
     rbt.v1alpha1.errors_pb2.UnknownService,
     rbt.v1alpha1.errors_pb2.UnknownTask,
     rbt.v1alpha1.errors_pb2.InvalidMethod,
@@ -118,6 +120,11 @@ FROM_BACKEND_AND_RECOVERABLE_ERROR_TYPES: tuple[type[Message], ...] = (
     rbt.v1alpha1.errors_pb2.Aborted,
     rbt.v1alpha1.errors_pb2.OutOfRange,
     rbt.v1alpha1.errors_pb2.DataLoss,
+    # Raised by a participant asking for one nested transaction to be
+    # started over because it is presumed deadlocked with a sibling.
+    # That nested transaction rolls back the way one aborting with a
+    # declared error does, and the rest of the transaction goes on.
+    rbt.v1alpha1.errors_pb2.NestedTransactionShouldRetry,
 )
 
 # Reasons a `TransactionShouldRetry` may carry after which the caller
@@ -372,6 +379,15 @@ class Aborted(Exception):
             # distinct type carries why, whether to skip the backoff
             # before the first retry, and the age the retry should
             # carry.
+            return grpc.StatusCode.UNAVAILABLE
+
+        elif isinstance(
+            error, rbt.v1alpha1.errors_pb2.NestedTransactionShouldRetry
+        ):
+            # Re-issued in place by the level of the transaction that
+            # started the nested transaction; `Unavailable` so that,
+            # should it ever reach a transaction's client instead, the
+            # whole transaction is retried.
             return grpc.StatusCode.UNAVAILABLE
 
         elif isinstance(error, rbt.v1alpha1.errors_pb2.DataLoss):

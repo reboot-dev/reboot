@@ -230,6 +230,113 @@ class UnaryRetriedCall(Generic[ResponseT]):
         raise RuntimeError("This is unreachable")
 
 
+class NestedTransactionUnaryRetriedCall(Generic[ResponseT]):
+    """A unary call made within a transaction, re-issued each time it
+    fails with `NestedTransactionShouldRetry` for a nested transaction
+    the caller is not within: the nested transaction the call started,
+    or one deeper, was presumed deadlocked with a sibling and has
+    rolled back, and the caller is the level that must start it over.
+    Whatever the rolled-back nested transaction claimed is still a
+    participant on the transaction's behalf, so each failed attempt's
+    participants are merged into the caller's. Any other failure is
+    raised as is.
+    """
+
+    def __init__(
+        self,
+        *,
+        stub_method: Callable[..., grpc.aio.UnaryUnaryCall],
+        method_name: str,
+        request: Message,
+        metadata: GrpcMetadata,
+        context: Context,
+    ) -> None:
+        self._stub_method = stub_method
+        self._method_name = method_name
+        self._request = request
+        self._metadata = metadata
+        self._context = context
+        # The latest attempt, once one has been made.
+        self.call: Optional[grpc.aio.UnaryUnaryCall] = None
+
+    async def code(self) -> grpc.StatusCode:
+        """The status code of the latest attempt."""
+        assert self.call is not None, "No attempt has been made"
+        return await self.call.code()
+
+    async def details(self) -> str:
+        """The status details of the latest attempt."""
+        assert self.call is not None, "No attempt has been made"
+        return await self.call.details()
+
+    async def trailing_metadata(self) -> GrpcMetadata:
+        """The trailing metadata of the latest attempt; empty before
+        one has been made."""
+        if self.call is None:
+            return ()
+        return await self.call.trailing_metadata()
+
+    def __await__(self) -> Generator[Any, None, ResponseT]:
+        return self._call_with_retries().__await__()
+
+    async def _nested_transaction_should_retry(
+        self,
+    ) -> Optional[errors_pb2.NestedTransactionShouldRetry]:
+        """The `NestedTransactionShouldRetry` the latest attempt failed
+        with, or `None` if it failed with something else."""
+        assert self.call is not None, "No attempt has been made"
+        status = await rpc_status.from_call(self.call)
+        if status is None:
+            return None
+        error = Aborted.error_from_google_rpc_status_details(
+            status,
+            [errors_pb2.NestedTransactionShouldRetry],
+        )
+        if isinstance(error, errors_pb2.NestedTransactionShouldRetry):
+            return error
+        return None
+
+    async def _call_with_retries(self) -> ResponseT:
+        transaction_ids = self._context.transaction_ids
+        assert transaction_ids is not None
+        backoff = Backoff()
+        # The first re-issue is immediate: the nested transaction has
+        # rolled back, so what it claimed is free or is about to be
+        # claimed by the older sibling it lost to. A nested transaction
+        # that keeps losing backs off so that it is not re-issued into
+        # the same conflict again and again.
+        backoff_elided = False
+        while True:
+            self.call = self._stub_method(
+                self._request, metadata=self._metadata
+            )
+            try:
+                response: ResponseT = await self.call
+                return response
+            except grpc.aio.AioRpcError as error:
+                should_retry = await self._nested_transaction_should_retry()
+                if (
+                    should_retry is None or
+                    uuid.UUID(should_retry.transaction_id) in transaction_ids
+                ):
+                    raise
+                self._context.participants.union(
+                    Participants.from_grpc_metadata(
+                        await self.call.trailing_metadata()
+                    )
+                )
+                logger.warning(
+                    f"Re-issuing '{self._method_name}' because the nested "
+                    f"transaction {should_retry.transaction_id} it started "
+                    "is presumed deadlocked with a sibling and has rolled "
+                    f"back: {error.details()}"
+                )
+                if backoff_elided:
+                    await backoff()
+                else:
+                    backoff_elided = True
+
+
 class Stub:
     """Common base class for generated reboot stubs.
     """
@@ -509,6 +616,8 @@ class Stub:
                 async with self._call_transactionally(
                     stub_method,
                     request_or_requests,
+                    method=method,
+                    unary=unary,
                     aborted_type=aborted_type,
                     metadata=metadata,
                 ) as call:
@@ -573,21 +682,35 @@ class Stub:
         stub_method: Callable[..., CallT],
         request_or_requests: RequestT | AsyncIterable[RequestT],
         *,
+        method: str,
+        unary: bool,
         aborted_type: type[Aborted],
         metadata: GrpcMetadata,
-    ) -> AsyncIterator[CallT]:
+    ) -> AsyncIterator[CallT | NestedTransactionUnaryRetriedCall]:
         """Helper for making an unreactive RPC and properly tracking it if it
-        is part of a transaction.
+        is part of a transaction. A unary RPC is re-issued when a
+        nested transaction it started is presumed deadlocked with a
+        sibling; see `NestedTransactionUnaryRetriedCall`.
         """
         assert self._context is not None
         assert self._context.transaction_id is not None
 
         self._context.outstanding_rpcs += 1
 
-        call: Optional[CallT] = None
+        call: Optional[CallT | NestedTransactionUnaryRetriedCall] = None
 
         try:
-            call = stub_method(request_or_requests, metadata=metadata)
+            if unary:
+                assert isinstance(request_or_requests, Message)
+                call = NestedTransactionUnaryRetriedCall(
+                    stub_method=stub_method,
+                    method_name=method,
+                    request=request_or_requests,
+                    metadata=metadata,
+                    context=self._context,
+                )
+            else:
+                call = stub_method(request_or_requests, metadata=metadata)
             assert call is not None
             yield call
         except AioRpcError as error:

@@ -34,6 +34,7 @@ from rbt.v1alpha1 import (
 )
 from rbt.v1alpha1.errors_pb2 import (
     FailedPrecondition,
+    NestedTransactionShouldRetry,
     StateAlreadyConstructed,
     StateNotConstructed,
     TransactionParticipantFailedToCommit,
@@ -234,6 +235,81 @@ AuthorizeCallable: TypeAlias = Callable[[Optional[StateT]], Awaitable[None]]
 # timeout mitigates a nested transaction whose server died before
 # sending `RelinquishOwnership`.
 OWNERSHIP_DEADLINE_DEFAULT = timedelta(seconds=30)
+
+
+def _transaction_deadlock_grace() -> timedelta:
+    """How long a transaction waits on a state held by an older
+    transaction, or a nested transaction on a state owned by an older
+    sibling within the same transaction, before it presumes a deadlock
+    and aborts so that the older one can proceed. Waits shorter than
+    this never abort anything, so ordinary contention on a busy state
+    resolves on its own; a deadlock lasts at most this long, since
+    every cycle of waiting transactions has at least one waiting on an
+    older one.
+    """
+    milliseconds = os.environ.get(ENVVAR_REBOOT_TRANSACTION_DEADLOCK_GRACE_MS)
+    if milliseconds is None:
+        return timedelta(milliseconds=250)
+    return timedelta(milliseconds=int(milliseconds))
+
+
+TRANSACTION_DEADLOCK_GRACE = _transaction_deadlock_grace()
+
+
+def presumed_deadlocked_nested_transaction(
+    transaction_ids: list[uuid.UUID],
+    owner_ids: list[uuid.UUID],
+) -> Optional[uuid.UUID]:
+    """The nested transaction, among the `transaction_ids` of a call
+    waiting to claim a state owned by `owner_ids`, that is presumed
+    deadlocked with the state's owner, or `None` if the call should
+    keep waiting.
+
+    Where the two chains first differ the two ids are siblings, both
+    started by the transaction above them, and the younger of the two
+    is presumed deadlocked with the older: nested transaction ids
+    order by creation (UUIDv7), so of two siblings waiting on each
+    other's states the younger is always the one to go, and it goes
+    whatever else it may be waiting on in between. A call whose chain
+    is a prefix of `owner_ids` is waiting for its own descendant to
+    finish, which needs nothing of it, and keeps waiting.
+
+    In the examples below `R` is the root and `A < B < C` are nested
+    transaction ids in creation order.
+
+    Presumed deadlocked, so the named nested transaction dies:
+
+        transaction_ids  owner_ids     returns  why
+        [R, B]           [R, A]        B        B is A's younger sibling
+        [R, B, C]        [R, A]        B        the call is within B, and
+                                                it is B's holds A waits on
+        [R, A, C]        [R, A, B]     C        C is B's younger sibling,
+                                                both started by A
+
+    Kept waiting, so `None`:
+
+        transaction_ids  owner_ids     why
+        [R, A]           [R, B]        A is the older sibling; B dies
+                                       or hands the state back
+        [R]              [R, A]        the root waits for its own
+                                       nested transaction to finish
+        [R, A]           [R, A, B]     A waits for its own nested
+                                       transaction B to finish
+    """
+    ids_by_level = zip(transaction_ids, owner_ids)
+    for level, (transaction_id, owner_id) in enumerate(ids_by_level):
+        if transaction_id == owner_id:
+            continue
+        # Root ids never differ: a participant is looked up by root
+        # id, so a call only ever waits on owners of its own root.
+        assert level > 0, (
+            f"Call of transaction {transaction_ids[0]} waiting on state "
+            f"owned by transaction {owner_ids[0]}"
+        )
+        if transaction_id > owner_id:
+            return transaction_id
+        return None
+    return None
 
 
 class StateManager(ABC):
@@ -542,14 +618,20 @@ class StateManager(ABC):
             condition: Callable[[], bool],
             *,
             deadline: Optional[timedelta],
+            grace: Optional[timedelta] = None,
+            on_grace: Optional[Callable[[], None]] = None,
         ) -> None:
-            """Waits until `condition()` holds, re-evaluating every time ownership
-            changes. Raises `SystemAborted(Unavailable())` once
-            `deadline` elapses (pass `None` to wait forever), so the
-            caller retries the surrounding transaction (this also
-            mitigates a nested transaction whose server died before
-            sending `RelinquishOwnership`).
+            """Waits until `condition()` holds, re-evaluating every time
+            ownership changes, and calling `on_grace()` each time
+            `grace` elapses with it still not holding; `on_grace()`
+            raising ends the wait with that exception. Raises
+            `SystemAborted(Unavailable())` once `deadline` elapses (pass
+            `None` to wait forever), so the caller retries the
+            surrounding transaction (this also mitigates a nested
+            transaction whose server died before sending
+            `RelinquishOwnership`).
             """
+            assert (grace is None) == (on_grace is None)
             # Compute a single absolute cutoff so we'll never wait
             # more than `deadline` across loop iterations.
             cutoff: Optional[datetime] = (
@@ -580,11 +662,26 @@ class StateManager(ABC):
                         0.0,
                         (cutoff - datetime.now(timezone.utc)).total_seconds(),
                     )
+                    # Wait one grace period at a time so that
+                    # `on_grace()` runs each time one elapses, until
+                    # the deadline, which stays the same absolute
+                    # moment it would have been without a grace period.
+                    if grace is not None:
+                        timeout = min(
+                            timeout if timeout is not None else math.inf,
+                            grace.total_seconds(),
+                        )
                     await asyncio.wait_for(
                         self._ownership_changed.wait(),
                         timeout=timeout,
                     )
                 except asyncio.TimeoutError:
+                    if on_grace is not None and (
+                        cutoff is None or datetime.now(timezone.utc) < cutoff
+                    ):
+                        # A grace period elapsed, not the deadline.
+                        on_grace()
+                        continue
                     raise SystemAborted(
                         Unavailable(),
                         message=(
@@ -611,9 +708,15 @@ class StateManager(ABC):
             """
             transaction_ids = context.transaction_ids
             assert transaction_ids is not None
+
+            def on_grace() -> None:
+                self._abort_if_presumed_sibling_deadlock(transaction_ids)
+
             await self.wait_ownership(
                 lambda: self.is_claimable_by(transaction_ids),
                 deadline=deadline,
+                grace=TRANSACTION_DEADLOCK_GRACE,
+                on_grace=on_grace,
             )
             if self.owner_ids == transaction_ids:
                 # Transaction already owns this state.
@@ -632,6 +735,46 @@ class StateManager(ABC):
 
             self.owner_ids = list(transaction_ids)
             self._notify_ownership_changed()
+
+        def _abort_if_presumed_sibling_deadlock(
+            self,
+            transaction_ids: list[uuid.UUID],
+        ) -> None:
+            """Raises `SystemAborted(NestedTransactionShouldRetry(...))`
+            when the nested transaction owning this state is an older
+            sibling of a nested transaction among `transaction_ids`, so
+            that the younger sibling rolls back, ownership of what it
+            claimed returns to the transaction that started it, and the
+            older sibling proceeds: the younger of two siblings waiting
+            on each other's states is always the one to go. A state
+            owned by a younger sibling, or by a descendant of the
+            caller, keeps the caller waiting.
+            """
+            nested_transaction_id = presumed_deadlocked_nested_transaction(
+                transaction_ids,
+                self.owner_ids,
+            )
+            if nested_transaction_id is None:
+                return
+            level = transaction_ids.index(nested_transaction_id)
+            owner_id = self.owner_ids[level]
+            grace_ms = TRANSACTION_DEADLOCK_GRACE // timedelta(milliseconds=1)
+            message = (
+                f"Nested transaction {nested_transaction_id} waited longer "
+                f"than {grace_ms}ms for state '{self.state_ref.id}' "
+                f"of type '{self.state_type}', which is owned by the older "
+                f"nested transaction {owner_id} of the same transaction "
+                f"{self.root_id}, and is presumed deadlocked with it; "
+                "rolling back so that the older one proceeds. Retry "
+                "required."
+            )
+            logger.warning(message)
+            raise SystemAborted(
+                NestedTransactionShouldRetry(
+                    transaction_id=str(nested_transaction_id),
+                ),
+                message=message,
+            )
 
         def relinquish_ownership(
             self,
@@ -1540,24 +1683,6 @@ except RuntimeError:
 # blocking forever so that a deadlock can not wedge the system
 # indefinitely.
 LOCK_ACQUIRE_DEADLINE_DEFAULT = timedelta(seconds=30)
-
-
-def _transaction_deadlock_grace() -> timedelta:
-    """How long a transaction waits on a state owned by an older
-    transaction before it presumes a deadlock and aborts with
-    `TransactionShouldRetry` so that the older one can proceed.
-    Waits shorter than this never abort anything, so ordinary
-    contention on a busy state resolves on its own; a deadlock lasts
-    at most this long, since every cycle of waiting transactions has
-    at least one waiting on an older owner.
-    """
-    milliseconds = os.environ.get(ENVVAR_REBOOT_TRANSACTION_DEADLOCK_GRACE_MS)
-    if milliseconds is None:
-        return timedelta(milliseconds=250)
-    return timedelta(milliseconds=int(milliseconds))
-
-
-TRANSACTION_DEADLOCK_GRACE = _transaction_deadlock_grace()
 
 
 class Lock:

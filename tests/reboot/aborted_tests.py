@@ -1,4 +1,6 @@
+import grpc
 import unittest
+import uuid
 from google.protobuf.message import Message
 from rbt.v1alpha1.errors_pb2 import (
     Aborted,
@@ -6,6 +8,7 @@ from rbt.v1alpha1.errors_pb2 import (
     DataLoss,
     FailedPrecondition,
     InvalidArgument,
+    NestedTransactionShouldRetry,
     NotFound,
     OutOfRange,
     StateAlreadyConstructed,
@@ -55,6 +58,21 @@ class AbortedClassificationTest(unittest.TestCase):
         self.assertFalse(
             DeclaresNothingAborted.is_from_backend_and_recoverable(aborted),
         )
+
+    def test_nested_transaction_should_retry_is_recoverable(self):
+        # A participant raises this when a nested transaction is
+        # presumed deadlocked with a sibling. That nested transaction
+        # rolls back and is started over while the rest of the
+        # transaction continues, the way one aborting with a declared
+        # error is, so it is recoverable...
+        aborted = SystemAborted(
+            NestedTransactionShouldRetry(transaction_id=str(uuid.uuid4()))
+        )
+        self.assertTrue(
+            DeclaresNothingAborted.is_from_backend_and_recoverable(aborted),
+        )
+        # ... and retried like `Unavailable` should it reach a client.
+        self.assertEqual(aborted.code, grpc.StatusCode.UNAVAILABLE)
 
     def test_construction_errors_are_recoverable(self):
         for error in (StateNotConstructed(), StateAlreadyConstructed()):
