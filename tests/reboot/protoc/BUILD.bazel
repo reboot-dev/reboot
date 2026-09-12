@@ -115,6 +115,26 @@ failure_test(
 )
 
 failure_test(
+    name = "transaction_without_mode",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/transaction_without_mode.proto':
+        Transaction 'Reply' does not say how it holds the lock on its own
+        state while it runs. Every transaction must declare one of:
+        exclusive: {} takes the lock exclusive from the start, so that
+        concurrent callers of the same state queue behind it. The choice for
+        a transaction that writes its own state, which is most of them.
+        shared: {} takes the lock shared and upgrades it to exclusive only if
+        the transaction writes its own state, so that callers proceed
+        concurrently while none of them writes it. The choice for a
+        transaction that mostly reads its own state while writing others.
+        For example:
+        option (rbt.v1alpha1.method) = {
+        transaction: { exclusive: {} },
+        };
+    """,
+)
+
+failure_test(
     name = "missing_state_annotation",
     expected_error = """
         Error processing 'tests/reboot/protoc/missing_state_annotation.proto':

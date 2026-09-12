@@ -2,6 +2,7 @@ from bank.v1.account import OverdraftError
 from reboot.api import (
     API,
     UI,
+    Exclusive,
     Field,
     Methods,
     Model,
@@ -57,6 +58,7 @@ class AccountBalancesResponse(Model):
 
 BankMethods = Methods(
     create=Transaction(
+        mode=Exclusive(),
         request=None,
         response=None,
         factory=True,
@@ -64,6 +66,7 @@ BankMethods = Methods(
         mcp=None,
     ),
     sign_up=Transaction(
+        mode=Exclusive(),
         request=SignUpRequest,
         response=None,
         description="Sign up a new customer with the given "
@@ -79,6 +82,7 @@ BankMethods = Methods(
         mcp=Tool(),
     ),
     transfer=Transaction(
+        mode=Exclusive(),
         request=TransferRequest,
         response=None,
         errors=[OverdraftError],
@@ -90,6 +94,7 @@ BankMethods = Methods(
         mcp=Tool(),
     ),
     open_customer_account=Transaction(
+        mode=Exclusive(),
         request=OpenCustomerAccountRequest,
         response=None,
         description="Open a new account for an existing "

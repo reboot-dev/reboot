@@ -732,6 +732,13 @@ async def generate_from_api(
             if method.factory:
                 await proto.write("        constructor: {},\n")
 
+            if method.WhichOneof('kind') == 'transaction':
+                # The mode's arm is named for it: `exclusive` or
+                # `shared`, the same names as the proto option's.
+                mode = method.transaction.WhichOneof('mode')
+                assert mode is not None
+                await proto.write(f"        {mode}: {{}},\n")
+
             await proto.write("      },\n")
 
             if method.errors:

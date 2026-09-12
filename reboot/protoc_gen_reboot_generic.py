@@ -164,6 +164,10 @@ class ProtoMcpOptions:
 class ProtoMethodOptions:
     kind: str
     constructor: bool
+    # For a `transaction`, whether it holds the lock on its own state
+    # exclusive from the start rather than shared; `False` for every
+    # other kind.
+    exclusive: bool
     state_streaming: bool
     has_errors: bool
     description: Optional[str]
@@ -893,6 +897,31 @@ class RebootProtocPlugin(ProtocPlugin):
             ):
                 state_streaming = False
 
+        exclusive = False
+        if kind == 'transaction':
+            mode = method_options.transaction.WhichOneof('mode')
+            if mode is None:
+                raise UserProtoError(
+                    f"Transaction '{method.name}' does not say how it holds "
+                    "the lock on its own state while it runs. Every "
+                    "transaction must declare one of:\n"
+                    "  exclusive: {} takes the lock exclusive from the "
+                    "start, so that concurrent callers of the same state "
+                    "queue behind it. The choice for a transaction that "
+                    "writes its own state, which is most of them.\n"
+                    "  shared: {} takes the lock shared and upgrades it to "
+                    "exclusive only if the transaction writes its own "
+                    "state, so that callers proceed concurrently while "
+                    "none of them writes it. The choice for a transaction "
+                    "that mostly reads its own state while writing "
+                    "others.\n"
+                    "For example:\n"
+                    "  option (rbt.v1alpha1.method) = {\n"
+                    "    transaction: { exclusive: {} },\n"
+                    "  };"
+                )
+            exclusive = mode == 'exclusive'
+
         # Extract MCP options if present.
         mcp_options: Optional[ProtoMcpOptions] = None
         if method_options.HasField('mcp'):
@@ -920,6 +949,7 @@ class RebootProtocPlugin(ProtocPlugin):
         return ProtoMethodOptions(
             kind=kind,
             constructor=self._is_method_constructor(method),
+            exclusive=exclusive,
             state_streaming=state_streaming,
             has_errors=len(method_options.errors) > 0,
             description=description,

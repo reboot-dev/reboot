@@ -1684,6 +1684,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ proto.package_name }}.{{ service.options.proto.state_name }}'),
                     method='{{ method.proto.name }}',
                     context_type=IMPORT_reboot_aio_contexts.{{ method.options.proto.kind | to_camel }}Context,
+                    {% if method.options.proto.kind == 'transaction' %}
+                    exclusive={{ method.options.proto.exclusive }},
+                    {% endif %}
                 )
                 assert context is not None
 

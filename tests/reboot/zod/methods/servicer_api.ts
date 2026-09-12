@@ -1,4 +1,5 @@
 import {
+  exclusive,
   EMPTY_ARRAY,
   EMPTY_RECORD,
   reader,
@@ -55,6 +56,7 @@ export const Test = {
       },
     }),
     transaction: transaction({
+      mode: exclusive(),
       request: {},
       response: z.void(),
     }),

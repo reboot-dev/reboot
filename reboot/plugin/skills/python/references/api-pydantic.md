@@ -187,6 +187,18 @@ constructor with `factory=True` (only valid on `Writer` and
 `Transaction`, see below). Say what the method does with
 `description="..."`; see `api-methods.md`.
 
+Every `Transaction(...)` must also say how it holds the lock on its
+own state while it runs, with `mode=Exclusive()` or `mode=Shared()`
+(both imported from `reboot.api`); `rbt generate` refuses a
+transaction without one. `Exclusive()` takes the lock exclusive from
+the start, so concurrent callers of the same state queue behind it:
+the choice for a transaction that writes its own state, which is most
+of them, and the safe choice when in doubt. `Shared()` takes the lock
+shared and upgrades it only if the body writes its own state, so
+callers proceed concurrently while none of them writes it: the choice
+for a transaction that mostly reads its own state while writing
+others, such as the root of a tree of states.
+
 ### `factory=True` Only Works on `Writer` and `Transaction`
 
 `factory=True` is **only supported on `Writer` and `Transaction`**.
@@ -244,6 +256,7 @@ deposit=Writer(
     mcp=None,
 ),
 transfer=Transaction(
+    mode=Exclusive(),
     request=TransferRequest, response=None,
     description="Move funds between two accounts, both sides landing "
     "together or neither.",
@@ -452,6 +465,7 @@ api = API(
     User=Type(
         methods=Methods(
             create_checkers_game=Transaction(
+                mode=Exclusive(),
                 request=None,
                 response=CreateCheckersGameResponse,
                 description="Start a checkers game, returning its id.",

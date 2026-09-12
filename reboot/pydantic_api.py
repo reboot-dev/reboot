@@ -11,7 +11,17 @@ import hashlib
 import os
 from rbt.v1alpha1.api import api_pb2
 from rbt.v1alpha1.api.schema_pb2 import Reference
-from reboot.api import API, UI, MethodKind, MethodModel, Resource, Tool
+from reboot.api import (
+    API,
+    UI,
+    Exclusive,
+    MethodKind,
+    MethodModel,
+    Resource,
+    Shared,
+    Tool,
+    Transaction,
+)
 from reboot.pydantic_schema import Schemas, reference_name, schema_of
 from reboot.settings import AUTO_CONSTRUCT_STATE_TYPE
 from types import MappingProxyType
@@ -146,7 +156,16 @@ def api_of(api: API, *, filename: str) -> api_pb2.API:
                 case MethodKind.WRITER:
                     method.writer.CopyFrom(api_pb2.Writer())
                 case MethodKind.TRANSACTION:
-                    method.transaction.CopyFrom(api_pb2.Transaction())
+                    assert isinstance(method_spec, Transaction)
+                    transaction = api_pb2.Transaction()
+                    # `Type` refused a transaction without a mode.
+                    assert method_spec.mode is not None
+                    if isinstance(method_spec.mode, Exclusive):
+                        transaction.exclusive.CopyFrom(api_pb2.Exclusive())
+                    else:
+                        assert isinstance(method_spec.mode, Shared)
+                        transaction.shared.CopyFrom(api_pb2.Shared())
+                    method.transaction.CopyFrom(transaction)
                 case MethodKind.WORKFLOW:
                     method.workflow.CopyFrom(api_pb2.Workflow())
 

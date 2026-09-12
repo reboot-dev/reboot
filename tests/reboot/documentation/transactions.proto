@@ -48,6 +48,7 @@ service BankMethods {
 
   rpc Transfer(TransferRequest) returns (TransferResponse) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 }

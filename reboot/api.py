@@ -963,8 +963,33 @@ class Reader(MethodModel):
     kind: MethodKind = MethodKind.READER
 
 
+class Exclusive(pydantic.BaseModel):
+    """A `Transaction(...)`'s `mode=`: the transaction takes the lock on
+    its own state exclusive from the start, so that concurrent callers
+    of the same state queue behind it. The choice for a transaction
+    that writes its own state, which is most of them: two such
+    transactions can never run to completion concurrently anyway, and
+    starting shared is what lets them deadlock on the upgrade.
+    """
+
+
+class Shared(pydantic.BaseModel):
+    """A `Transaction(...)`'s `mode=`: the transaction takes the lock on
+    its own state shared and upgrades it to exclusive only if it writes
+    its own state, so that callers proceed concurrently while none of
+    them writes it. The choice for a transaction that mostly reads its
+    own state while writing others, such as the root of a tree of
+    states that every call descends through.
+    """
+
+
 class Transaction(MethodModel):
     kind: MethodKind = MethodKind.TRANSACTION
+    # How the transaction holds the lock on its own state while it
+    # runs, `Exclusive()` or `Shared()`. Required; `Type` refuses a
+    # transaction that has not chosen one, so that the choice is made
+    # rather than defaulted.
+    mode: Optional[Union[Exclusive, Shared]] = None
 
 
 class Workflow(MethodModel):
@@ -1164,6 +1189,23 @@ class Type(pydantic.BaseModel):
                         method_name,
                     )
             elif isinstance(method, MethodModel):
+                if isinstance(method, Transaction) and method.mode is None:
+                    raise UserPydanticError(
+                        f"Transaction '{method_name}' does not say how it "
+                        "holds the lock on its own state while it runs. "
+                        "Every transaction must declare one of:\n"
+                        "  mode=Exclusive() takes the lock exclusive from "
+                        "the start, so that concurrent callers of the same "
+                        "state queue behind it. The choice for a "
+                        "transaction that writes its own state, which is "
+                        "most of them.\n"
+                        "  mode=Shared() takes the lock shared and upgrades "
+                        "it to exclusive only if the transaction writes its "
+                        "own state, so that callers proceed concurrently "
+                        "while none of them writes it. The choice for a "
+                        "transaction that mostly reads its own state while "
+                        "writing others."
+                    )
                 if method.request is not None:
                     validate_all_fields_are_reboot_base_classes(
                         method.request,
@@ -1311,6 +1353,8 @@ class API(pydantic.BaseModel):
                     request=None,
                     response=None,
                     factory=True,
+                    # Constructing the state always writes it.
+                    mode=Exclusive(),
                     # The `User.create` method is reserved for auto
                     # construction a `User` state for new AI session. It
                     # is called by the Reboot internally and shouldn't
@@ -1328,6 +1372,8 @@ class API(pydantic.BaseModel):
                     request=SetClaimsRequest,
                     response=None,
                     factory=False,
+                    # Storing the claims writes the state.
+                    mode=Exclusive(),
                     # `set_claims` is only called app-internal, so never
                     # over MCP.
                     mcp=None,

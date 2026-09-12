@@ -15,11 +15,13 @@ service TaskMethods {
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
       constructor: {},
+      exclusive: {},
     };
   }
 
   rpc Transaction(google.protobuf.Empty) returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -31,6 +33,7 @@ service TaskMethods {
   rpc ScheduledTransaction(google.protobuf.Empty)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 

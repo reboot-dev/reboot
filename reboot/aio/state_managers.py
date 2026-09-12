@@ -365,16 +365,19 @@ class StateManager(ABC):
                 state_ref=context._state_ref,
                 tasks_dispatcher=tasks_dispatcher,
                 # A `writer` is always exclusive; a `reader` is
-                # shared, and a `transaction` starts shared and may
-                # upgrade later if it requires exclusive.
+                # shared; a `transaction` is whichever mode it
+                # declared: exclusive from the start, or shared and
+                # upgraded later only if it writes its state.
                 #
                 # An idempotency key is itself something to persist,
                 # so a transaction carrying one starts exclusive to
                 # ensure it is persisted properly.
                 mode=(
                     Lock.Mode.EXCLUSIVE if (
-                        isinstance(context, WriterContext) or
-                        context.idempotency_key is not None
+                        isinstance(context, WriterContext) or (
+                            isinstance(context, TransactionContext) and
+                            context.exclusive
+                        ) or context.idempotency_key is not None
                     ) else Lock.Mode.SHARED
                 ),
                 idempotency_key=context.idempotency_key,
@@ -5007,6 +5010,14 @@ class SidecarStateManager(
         # restarted. Instead, we want to fail and propagate that
         # failure as soon as possible.
         assert not transaction.unrecoverable_abort
+
+        # A transaction declared exclusive holds the lock exclusive
+        # from the start. The participant may nonetheless hold it
+        # shared when an earlier call of the same transaction, e.g. a
+        # reader, joined this state first; upgrade now, before the
+        # body runs, the way a writer does.
+        if context.exclusive and transaction.mode == Lock.Mode.SHARED:
+            await self._upgrade_lock(state_type_name, state_ref, transaction)
 
         # We store a byte snapshot of the state, set after `_load()`
         # returns and before the user body runs; in order to be able

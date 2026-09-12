@@ -1,6 +1,7 @@
 from reboot.api import (
     API,
     UI,
+    Exclusive,
     Field,
     Methods,
     Model,
@@ -163,6 +164,7 @@ api = API(
         state=UserState,
         methods=Methods(
             create_wiki=Transaction(
+                mode=Exclusive(),
                 request=UserCreateWikiRequest,
                 response=UserCreateWikiResponse,
                 description="Create a new Wiki under the "
@@ -258,6 +260,7 @@ api = API(
                 mcp=None,
             ),
             add_transcript=Transaction(
+                mode=Exclusive(),
                 request=WikiAddTranscriptRequest,
                 response=WikiAddTranscriptResponse,
                 description="Add a conversation transcript "

@@ -11,12 +11,13 @@ import "bank/v1/errors.proto";
 service BankMethods {
   rpc SignUp(SignUpRequest) returns (SignUpResponse) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
   rpc Transfer(TransferRequest) returns (TransferResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
       errors: [ "OverdraftError" ],
     };
   }

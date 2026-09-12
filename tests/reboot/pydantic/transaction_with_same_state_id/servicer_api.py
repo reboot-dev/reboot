@@ -1,5 +1,6 @@
 from reboot.api import (
     API,
+    Exclusive,
     Field,
     Methods,
     Model,
@@ -42,6 +43,7 @@ api = API(
         state=MainTestState,
         methods=Methods(
             transaction=Transaction(
+                mode=Exclusive(),
                 request=TransactionRequest,
                 response=None,
                 mcp=None,

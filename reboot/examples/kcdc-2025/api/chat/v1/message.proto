@@ -21,13 +21,13 @@ service MessageMethods {
 
   rpc AddReaction(AddReactionRequest) returns (AddReactionResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
     };
   }
 
   rpc RemoveReaction(RemoveReactionRequest) returns (RemoveReactionResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
     };
   }
 }

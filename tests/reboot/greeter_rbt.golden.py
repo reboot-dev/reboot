@@ -5863,6 +5863,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     state_type_name = IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
                     method='TransactionSetAdjective',
                     context_type=IMPORT_reboot_aio_contexts.TransactionContext,
+                    exclusive=True,
                 )
                 assert context is not None
 
@@ -11701,6 +11702,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     state_type_name = IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
                     method='ConstructAndStoreRecursiveMessage',
                     context_type=IMPORT_reboot_aio_contexts.TransactionContext,
+                    exclusive=True,
                 )
                 assert context is not None
 

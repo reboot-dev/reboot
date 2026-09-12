@@ -33,6 +33,34 @@ message TransactionMethodOptions {
   // and an actor can not be _implicitly_ constructed but instead
   // must be constructed via a constructor.
   optional ConstructorMethodOptions constructor = 2;
+
+  // How the transaction holds the lock on its own state while it
+  // runs. Required: code generation refuses a transaction that has
+  // not chosen one.
+  oneof mode {
+    ExclusiveTransactionMethodOptions exclusive = 3;
+    SharedTransactionMethodOptions shared = 4;
+  }
+}
+
+// A transaction that takes the lock on its own state exclusive from
+// the start, so that concurrent callers of the same state queue
+// behind it. The choice for a transaction that writes its own state,
+// which is most of them: two such transactions can never run to
+// completion concurrently anyway, and starting shared is what lets
+// them deadlock on the upgrade.
+message ExclusiveTransactionMethodOptions {
+  // Nothing here yet, but is a placeholder for describing things.
+}
+
+// A transaction that takes the lock on its own state shared and
+// upgrades it to exclusive only if it writes its own state, so that
+// callers proceed concurrently while none of them writes it. The
+// choice for a transaction that mostly reads its own state while
+// writing others, such as the root of a tree of states that every
+// call descends through.
+message SharedTransactionMethodOptions {
+  // Nothing here yet, but is a placeholder for describing things.
 }
 
 message WorkflowMethodOptions {

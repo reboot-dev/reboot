@@ -117,6 +117,24 @@ class GeneralServicer(General.singleton.Servicer):
         # https://docs.reboot.dev/learn_more/implement/transactions
         raise NotImplementedError
 
+    async def shared_transaction(
+        self,
+        context: TransactionContext,
+        state: General.State,
+        request: GeneralRequest,
+    ) -> GeneralResponse:
+        # TODO: implement your own business logic here!
+        #
+        # Update `state` as neccessary.
+        #
+        # state.field = ...
+        #
+        # return GeneralResponse()
+        #
+        # Read more about the transaction methods in the Reboot documentation:
+        # https://docs.reboot.dev/learn_more/implement/transactions
+        raise NotImplementedError
+
     @classmethod
     async def workflow(
         cls,

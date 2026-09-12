@@ -1,4 +1,4 @@
-import { reader, transaction, writer } from "@reboot-dev/reboot-api";
+import { exclusive, reader, transaction, writer } from "@reboot-dev/reboot-api";
 import { z } from "zod/v4";
 
 export const MainTest = {
@@ -7,6 +7,7 @@ export const MainTest = {
   },
   methods: {
     transaction: transaction({
+      mode: exclusive(),
       request: z.object({
         mainTestData: z.string().meta({ tag: 1 }),
         secondaryTestData: z.array(z.string()).meta({ tag: 2 }),

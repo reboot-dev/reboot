@@ -1,6 +1,7 @@
 from reboot.api import (
     API,
     UI,
+    Exclusive,
     Field,
     Methods,
     Model,
@@ -133,6 +134,7 @@ api = API(
                 description="Interactive UI for the Ping's counter.",
             ),
             do_ping=Transaction(
+                mode=Exclusive(),
                 request=None,
                 response=DoPingResponse,
                 mcp=Tool(),
@@ -173,6 +175,7 @@ api = API(
         state=UserState,
         methods=Methods(
             create_counter=Transaction(
+                mode=Exclusive(),
                 request=CreateCounterRequest,
                 response=CreateCounterResponse,
                 description="Create a new Counter with a "

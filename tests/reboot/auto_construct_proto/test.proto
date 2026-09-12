@@ -36,11 +36,13 @@ service UserMethods {
   rpc Create(google.protobuf.Empty) returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
       constructor: {}
+      exclusive: {},
     };
   }
 
   rpc SetClaims(UserSetClaimsRequest) returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 

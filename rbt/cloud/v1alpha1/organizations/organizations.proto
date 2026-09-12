@@ -41,7 +41,7 @@ service OrganizationsMethods {
   rpc SetBillingExempt(SetBillingExemptRequest)
       returns (SetBillingExemptResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
       errors: [ "InvalidInputError" ],
     };
   }

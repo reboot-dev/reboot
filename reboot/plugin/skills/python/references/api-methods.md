@@ -23,7 +23,10 @@ Servicer method and the isolation level applied:
 - **`Writer(...)`** — mutates `self.state` for one actor. Serialized with
   other writes/transactions on that actor. Signature: `context: WriterContext`.
 - **`Transaction(...)`** — atomic across multiple actors and external
-  effects. Signature: `context: TransactionContext`.
+  effects. Signature: `context: TransactionContext`. Must say how it
+  holds the lock on its own state with `mode=Exclusive()` (writes its
+  own state, or in doubt) or `mode=Shared()` (mostly reads its own
+  state while writing others); see `api-pydantic.md`.
 - **`Workflow(...)`** — durable, long-running, restartable. Implemented as
   a `@classmethod` (no `self.state`). Signature: `context: WorkflowContext`.
   See `servicer-workflow.md` — the single, comprehensive workflow
@@ -45,7 +48,7 @@ AccountMethods = Methods(
 
 ```python
 from reboot.api import (
-    API, Field, Methods, Model, Reader, Transaction, Type, Writer,
+    API, Exclusive, Field, Methods, Model, Reader, Transaction, Type, Writer,
 )
 
 AccountMethods = Methods(
@@ -63,6 +66,7 @@ AccountMethods = Methods(
 
 BankMethods = Methods(
     transfer=Transaction(
+        mode=Exclusive(),
         request=TransferRequest, response=TransferResponse,
         description="Move funds between two accounts, both sides "
         "landing together or neither.",
@@ -97,6 +101,7 @@ snake_case. So
 
 ```python
 add_task=Transaction(
+    mode=Exclusive(),
     request=AddTaskRequest, response=AddTaskResponse,
     description="Append one task, returning the id it was given.",
     mcp=None,
@@ -107,6 +112,7 @@ lists=Reader(
     mcp=None,
 ),
 ensure=Transaction(
+    mode=Exclusive(),
     request=None, response=None,
     description="Create the user's default list if they have none.",
     mcp=None,

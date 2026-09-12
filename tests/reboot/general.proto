@@ -14,6 +14,7 @@ service GeneralMethods {
   rpc ConstructorTransaction(GeneralRequest) returns (GeneralResponse) {
     option (rbt.v1alpha1.method).transaction = {
       constructor: {},
+      exclusive: {},
     };
   }
 
@@ -35,8 +36,16 @@ service GeneralMethods {
 
   rpc Transaction(GeneralRequest) returns (GeneralResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {}
+      transaction: { exclusive: {} }
       errors: [ "GeneralError" ]
+    };
+  }
+
+  // A transaction that takes the lock on its own state shared, so
+  // that callers proceed concurrently while none of them writes it.
+  rpc SharedTransaction(GeneralRequest) returns (GeneralResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+      shared: {},
     };
   }
 

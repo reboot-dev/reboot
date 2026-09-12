@@ -2,6 +2,7 @@
 from reboot.api import (
     API,
     UI,
+    Exclusive,
     Field,
     Methods,
     Model,
@@ -65,6 +66,7 @@ api = API(
         state=UserState,
         methods=Methods(
             create_counter=Transaction(
+                mode=Exclusive(),
                 request=CreateCounterRequest,
                 response=CreateCounterResponse,
                 description="Create a new Counter with a "

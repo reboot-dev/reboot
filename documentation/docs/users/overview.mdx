@@ -30,6 +30,7 @@ type.
 # api/todos/v1/todos.py
 from reboot.api import (
     API,
+    Exclusive,
     Field,
     Methods,
     Model,
@@ -106,6 +107,7 @@ api = API(
                 mcp=Tool(),
             ),
             create_todo_list=Transaction(
+                mode=Exclusive(),
                 request=CreateTodoListRequest,
                 response=CreateTodoListResponse,
                 description="Create a todo list for the signed-in "

@@ -50,6 +50,8 @@ class ServiceDescriptorValidatorProtoTestCase(unittest.TestCase):
     echo_with_message: FileDescriptorSet
     echo_with_message_id: FileDescriptorSet
     reply_transaction: FileDescriptorSet
+    reply_transaction_exclusive: FileDescriptorSet
+    reply_transaction_shared: FileDescriptorSet
     reply_writer_constructor: FileDescriptorSet
     reply_transaction_constructor: FileDescriptorSet
     errors_added: FileDescriptorSet
@@ -112,6 +114,12 @@ class ServiceDescriptorValidatorProtoTestCase(unittest.TestCase):
         )
         cls.reply_transaction = get_descriptor_set(
             'echo_reply_transaction_pb2'
+        )
+        cls.reply_transaction_exclusive = get_descriptor_set(
+            'echo_reply_transaction_exclusive_pb2'
+        )
+        cls.reply_transaction_shared = get_descriptor_set(
+            'echo_reply_transaction_shared_pb2'
         )
         cls.reply_writer_constructor = get_descriptor_set(
             'echo_reply_writer_constructor_pb2'
@@ -734,6 +742,42 @@ class ServiceDescriptorValidatorProtoTestCase(unittest.TestCase):
                 self.reply_writer_constructor,
                 self.reply_transaction,
             )
+
+    def test_legal_transaction_mode_chosen(self):
+        """A transaction from before modes existed may choose one."""
+        validate_descriptor_sets_are_backwards_compatible(
+            self.reply_transaction,
+            self.reply_transaction_exclusive,
+        )
+        validate_descriptor_sets_are_backwards_compatible(
+            self.reply_transaction,
+            self.reply_transaction_shared,
+        )
+
+    def test_legal_transaction_mode_change(self):
+        """A transaction may change how it holds the lock on its own
+        state either way; it changes scheduling, not what is stored."""
+        validate_descriptor_sets_are_backwards_compatible(
+            self.reply_transaction_exclusive,
+            self.reply_transaction_shared,
+        )
+        validate_descriptor_sets_are_backwards_compatible(
+            self.reply_transaction_shared,
+            self.reply_transaction_exclusive,
+        )
+
+    def test_legal_method_type_change_with_mode(self):
+        """A writer may become a transaction with a mode, and back: the
+        mode has no writer counterpart and is left out of the
+        comparison of the two kinds' options."""
+        validate_descriptor_sets_are_backwards_compatible(
+            self.original,
+            self.reply_transaction_exclusive,
+        )
+        validate_descriptor_sets_are_backwards_compatible(
+            self.reply_transaction_exclusive,
+            self.original,
+        )
 
     def test_errors_added(self):
         """Test that adding declared errors to a method is allowed."""

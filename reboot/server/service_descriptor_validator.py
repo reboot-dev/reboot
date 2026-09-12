@@ -281,14 +281,31 @@ def legal_diff_method_type_change(
         return False
 
     # Ensure the sub-options (e.g., `constructor`) are preserved
-    # across the type change.
+    # across the type change. A transaction's mode has no writer
+    # counterpart, and is allowed to change anyway, so it is left out
+    # of the comparison.
     old_opts = MessageToDict(
         old.writer if old_kind == 'writer' else old.transaction
     )
     new_opts = MessageToDict(
         new.writer if new_kind == 'writer' else new.transaction
     )
+    for opts in (old_opts, new_opts):
+        opts.pop('exclusive', None)
+        opts.pop('shared', None)
     return old_opts == new_opts
+
+
+def legal_diff_transaction_mode_change(
+    diff: PathDiff,
+    old: options_pb2.MethodOptions,
+    new: options_pb2.MethodOptions,
+) -> bool:
+    """Choosing, or changing, how a transaction holds the lock on its
+    own state is always allowed: it changes how concurrent callers of
+    the state are scheduled, not what is sent or persisted."""
+    path, _, _ = diff
+    return path in ('transaction.exclusive', 'transaction.shared')
 
 
 def legal_diff_errors_change(
@@ -326,6 +343,7 @@ _LEGAL_REBOOT_METHOD_OPTION_DIFFS: list[LegalMethodOptionDiffPredicate] = [
     legal_diff_constructor_to_message,
     legal_diff_task_to_message,
     legal_diff_method_type_change,
+    legal_diff_transaction_mode_change,
     legal_diff_errors_change,
     legal_diff_mcp_change,
 ]

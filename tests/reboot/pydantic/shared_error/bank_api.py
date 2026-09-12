@@ -1,6 +1,6 @@
 """A bank whose `transfer` declares an error another API file
 defines: the account's `OverdraftError`."""
-from reboot.api import API, Field, Methods, Model, Transaction, Type
+from reboot.api import API, Exclusive, Field, Methods, Model, Transaction, Type
 from tests.reboot.pydantic.shared_error.account_api import OverdraftError
 
 
@@ -16,12 +16,14 @@ class TransferRequest(Model):
 
 BankMethods = Methods(
     create=Transaction(
+        mode=Exclusive(),
         request=None,
         response=None,
         factory=True,
         mcp=None,
     ),
     transfer=Transaction(
+        mode=Exclusive(),
         request=TransferRequest,
         response=None,
         errors=[OverdraftError],

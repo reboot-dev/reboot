@@ -1205,12 +1205,15 @@ class TransactionContext(Context):
         state_type_name: StateTypeName,
         method: str,
         effect_validation: EffectValidation,
+        exclusive: bool,
         task: Optional[TaskEffect] = None,
         database_timestamp_ms: Optional[int] = None,
     ):
         assert (
             headers.transaction_ids is None or len(headers.transaction_ids) > 0
         )
+
+        self._exclusive = exclusive
 
         # Use UUIDv7 with database-sourced timestamp when available
         # (for restart detection), otherwise fall back to UUIDv4.
@@ -1248,6 +1251,15 @@ class TransactionContext(Context):
             task=task,
             effect_validation=effect_validation,
         )
+
+    @property
+    def exclusive(self) -> bool:
+        """Whether the transaction method declared that it holds the lock
+        on its own state exclusive from the start, so that concurrent
+        callers of the state queue behind it, rather than shared and
+        upgraded to exclusive only if it writes its state.
+        """
+        return self._exclusive
 
     @property
     def transaction_ids(self) -> list[uuid.UUID]:
