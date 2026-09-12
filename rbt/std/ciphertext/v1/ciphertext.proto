@@ -238,9 +238,12 @@ service WrappingKeyMethods {
   // Wraps `dek` under this key, lazily generating the key's material on
   // first use (registering it with the `KeyManager`) and migrating it
   // forward to the active root key version.
+  // Shared: wrapping reads the key and writes it only the first time it
+  // is used and when the root key has rotated since, so the many
+  // ciphertexts wrapped under one key proceed concurrently.
   rpc Wrap(WrapRequest) returns (WrapResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: { exclusive: {} },
+      transaction: { shared: {} },
       errors: [ "ScopeShredded", "UnknownRootKeyVersion" ],
     };
   }
@@ -409,9 +412,10 @@ service KeyManagerMethods {
   // `Ciphertext` encrypted under it becomes permanently unrecoverable.
   // Idempotent. This is the supported way to shred a scope; the
   // underlying `WrappingKey` is an implementation detail.
+  // Shared: shredding only revokes the wrapping key, another state.
   rpc Shred(ShredRequest) returns (ShredResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: { exclusive: {} },
+      transaction: { shared: {} },
     };
   }
 

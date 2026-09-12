@@ -19,7 +19,7 @@ service ChannelMethods {
 
   rpc Post(PostRequest) returns (PostResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: { exclusive: {} },
+      transaction: { shared: {} },
     };
   }
 

@@ -6,6 +6,7 @@ from reboot.api import (
     Methods,
     Model,
     Reader,
+    Shared,
     Tool,
     Transaction,
     Type,
@@ -244,7 +245,7 @@ api = API(
                 mcp=Tool(),
             ),
             create_cart=Transaction(
-                mode=Exclusive(),
+                mode=Shared(),
                 request=None,
                 response=CreateCartResponse,
                 description="Create a new shopping cart. "

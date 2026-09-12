@@ -40,7 +40,9 @@ async def transfer(
 
 ```python
 transfer=Transaction(
-    mode=Exclusive(),
+    # The bank only coordinates: it reads nothing of its own state and
+    # writes the accounts, so transfers proceed through it concurrently.
+    mode=Shared(),
     request=TransferRequest,
     response=None,
     description="Move funds between two accounts, both sides landing "

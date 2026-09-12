@@ -106,13 +106,13 @@ service BankMethods {
 
   rpc SignUp(SignUpRequest) returns (SignUpResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: { exclusive: {} }
+      transaction: { shared: {} }
     };
   }
 
   rpc Transfer(TransferRequest) returns (TransferResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: { exclusive: {} },
+      transaction: { shared: {} },
     };
   }
 

@@ -256,7 +256,8 @@ deposit=Writer(
     mcp=None,
 ),
 transfer=Transaction(
-    mode=Exclusive(),
+    # Coordinates two accounts without writing the bank's own state.
+    mode=Shared(),
     request=TransferRequest, response=None,
     description="Move funds between two accounts, both sides landing "
     "together or neither.",

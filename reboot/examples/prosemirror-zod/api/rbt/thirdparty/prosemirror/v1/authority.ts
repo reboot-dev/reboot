@@ -1,9 +1,9 @@
 import {
-  exclusive,
   reader,
   transaction,
   workflow,
   writer,
+  shared,
 } from "@reboot-dev/reboot-api";
 import { z } from "zod/v4";
 
@@ -32,7 +32,7 @@ export const Authority = {
   },
   methods: {
     create: transaction({
-      mode: exclusive(),
+      mode: shared(),
       request: {},
       response: {
         doc: Doc.meta({ tag: 1 }),
