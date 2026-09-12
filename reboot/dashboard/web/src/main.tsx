@@ -104,10 +104,20 @@ import {
   rowOfChange,
   timeAgo,
 } from "./changelog";
-import { DashboardGetResponse_NeedsGenerateReason as NeedsGenerateReason } from "../../../../rbt/dashboard/v1/dashboard_pb";
+import {
+  Agent_Tool_How as ToolHow,
+  DashboardGetResponse_NeedsGenerateReason as NeedsGenerateReason,
+} from "../../../../rbt/dashboard/v1/dashboard_pb";
 import type * as feature_pb from "../../../../rbt/v1alpha1/bdd/feature_pb";
 import type * as grammar_pb from "../../../../rbt/v1alpha1/bdd/grammar_pb";
-import { joinStateTypes, type GraphStateType } from "./callgraph";
+import {
+  agentId,
+  isAgentRowId,
+  joinAgents,
+  joinStateTypes,
+  type GraphAgent,
+  type GraphStateType,
+} from "./callgraph";
 import {
   exercisedMethods,
   graphStateTypeNamed,
@@ -138,6 +148,11 @@ const DEFINITIONS: Record<string, string> = {
     "Brings a state into existence: it is called with a new id " +
     "rather than on a state that already exists.",
   mcp: "Callable by AI agents as a tool, over the Model Context " + "Protocol.",
+  agent:
+    "A model the application hands work to, with tools it may call " +
+    "back with. Reboot runs one inside a workflow, so every model " +
+    "call and every tool call is durable: a restart replays what " +
+    "already happened rather than asking again.",
   "state type":
     "A durable data type. Each instance, named by an id, has properties " +
     "that Reboot persists for you. Methods are the way to read and " +
@@ -323,40 +338,51 @@ interface PaneRows {
 const PaneRowsContext = createContext<PaneRows | undefined>(undefined);
 
 // What the `type` search parameter names: one state type or one of
-// its methods, `bank.v1.Account` or `bank.v1.Account.deposit`, or one
-// data type, `bank.v1.bank.CustomerAccount`. The pane exists only
-// while the parameter names something.
+// its methods, `bank.v1.Account` or `bank.v1.Account.deposit`, one
+// data type, `bank.v1.bank.CustomerAccount`, or one agent or one of
+// its tools, `agent:librarian` or `agent:librarian.get_page`. The
+// pane exists only while the parameter names something.
 type PaneTarget =
-  | { stateTypeId: string; method?: string; dataTypeId?: undefined }
-  | { dataTypeId: string; stateTypeId?: undefined; method?: undefined };
+  | { kind: "stateType"; id: string; method?: string }
+  | { kind: "dataType"; id: string }
+  | { kind: "agent"; id: string; tool?: string };
 
-// The id of the type a target shows, whichever kind it is.
-const typeIdOfTarget = (target: PaneTarget): string =>
-  target.dataTypeId ?? target.stateTypeId;
+// The id of the thing a target shows, whichever kind it is, which is
+// what the URL carries.
+const typeIdOfTarget = (target: PaneTarget): string => target.id;
 
 const paneTargetOf = (
   raw: string | null,
   isStateTypeId: (id: string) => boolean,
-  isDataTypeId: (id: string) => boolean
+  isDataTypeId: (id: string) => boolean,
+  isAgentId: (id: string) => boolean
 ): PaneTarget | undefined => {
   if (raw === null) {
     return undefined;
   }
   if (isDataTypeId(raw)) {
-    return { dataTypeId: raw };
+    return { kind: "dataType", id: raw };
   }
   const separator = raw.lastIndexOf(".");
-  if (
-    !isStateTypeId(raw) &&
-    separator !== -1 &&
-    isStateTypeId(raw.slice(0, separator))
-  ) {
+  const before = separator === -1 ? undefined : raw.slice(0, separator);
+  if (isAgentRowId(raw)) {
+    if (!isAgentId(raw) && before !== undefined && isAgentId(before)) {
+      return {
+        kind: "agent",
+        id: before,
+        tool: raw.slice(separator + 1),
+      };
+    }
+    return { kind: "agent", id: raw };
+  }
+  if (!isStateTypeId(raw) && before !== undefined && isStateTypeId(before)) {
     return {
-      stateTypeId: raw.slice(0, separator),
+      kind: "stateType",
+      id: before,
       method: raw.slice(separator + 1),
     };
   }
-  return { stateTypeId: raw };
+  return { kind: "stateType", id: raw };
 };
 
 // The search string a link to a type produces. The path is left
@@ -930,12 +956,111 @@ const DataType: FC<{
   );
 };
 
-// The types pane: one type, state or data, slid open by a link to it
-// from the graph or a page, every method expanded; the X closes it.
-// A link naming a method flashes the method.
+// How the agent was given a tool, said where the tool is listed.
+const LABEL_OF_TOOL_HOW: Record<ToolHow, string> = {
+  [ToolHow.UNKNOWN]: "tool",
+  [ToolHow.DECORATED]: "decorated",
+  [ToolHow.CONSTRUCTED]: "constructed with",
+  [ToolHow.RUN]: "passed at a run",
+};
+
+// One agent, on the pane the way a state type is: what it is told to
+// be, and what it may call back with. The prompt is what the agent
+// is, so it is shown whole, in the shape it was written in.
+const AgentPane: FC<{ agent: GraphAgent }> = ({ agent }) => (
+  <section className="state-type" id={idOfTypeInPane(agent.id)}>
+    <div>
+      <Pill className="eyebrow" label="agent" meaning={DEFINITIONS.agent} />
+    </div>
+    <div className="state-type-head">
+      <div className="state-type-heading">
+        <h2>
+          <span aria-hidden="true">🤖 </span>
+          {agent.name}
+        </h2>
+        <PaneAnchor id={agent.id} />
+        <span className="summary-line">
+          {countWithNoun(agent.tools.length, "tool")}
+        </span>
+      </div>
+    </div>
+    {agent.model !== undefined && <div className="file">{agent.model}</div>}
+    {agent.description !== undefined && (
+      <Description
+        className="state-type-description"
+        text={agent.description}
+      />
+    )}
+
+    <div className="eyebrow section">system prompt</div>
+    {agent.systemPrompt.length === 0 ? (
+      <div className="empty">
+        No prompt written down. One computed rather than written is not
+        something the dashboard can read.
+      </div>
+    ) : (
+      <div className="agent-prompt">{agent.systemPrompt.join("\n\n")}</div>
+    )}
+
+    <div className="eyebrow section">tools</div>
+    {agent.tools.length === 0 ? (
+      <div className="empty">
+        No tools. The agent answers out of the prompt alone, or out of tools the
+        dashboard cannot read, such as an MCP server's.
+      </div>
+    ) : (
+      <div className="methods">
+        {agent.tools.map((tool) => (
+          <div className="agent-tool" key={tool.name}>
+            <div className="agent-tool-head">
+              <code className="agent-tool-name">{tool.name}</code>
+              <span className="eyebrow">{LABEL_OF_TOOL_HOW[tool.how]}</span>
+            </div>
+            {tool.description !== undefined && (
+              <Description
+                className="state-type-description"
+                text={tool.description}
+              />
+            )}
+            {tool.calls.length + tool.runs.length > 0 && (
+              <div className="agent-tool-calls">
+                {tool.calls.map((call) => (
+                  <TypeLink
+                    className="type-link"
+                    id={`${call.stateTypeName}.${call.methodName}`}
+                    key={`${call.stateTypeName}.${call.methodName}`}
+                  >
+                    <code>
+                      {shortNameOfTypeName(call.stateTypeName)}.
+                      {call.methodName}
+                    </code>
+                  </TypeLink>
+                ))}
+                {tool.runs.map((run) => (
+                  <TypeLink
+                    className="type-link"
+                    id={agentId(run.agentName)}
+                    key={run.agentName}
+                  >
+                    <code>🤖 {run.agentName}</code>
+                  </TypeLink>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    )}
+  </section>
+);
+
+// The types pane: one type, state or data, or one agent, slid open
+// by a link to it from the graph or a page, every method expanded;
+// the X closes it. A link naming a method flashes the method.
 const TypesPane: FC<{
   apis: APIs;
   linkedDataTypes: LinkedDataType[];
+  agents: GraphAgent[];
   target: PaneTarget;
   // The property a followed link named, if any.
   propertyName?: string;
@@ -950,6 +1075,7 @@ const TypesPane: FC<{
 }> = ({
   apis,
   linkedDataTypes,
+  agents,
   target,
   propertyName,
   flashKey,
@@ -959,7 +1085,7 @@ const TypesPane: FC<{
 }) => {
   const typeId = typeIdOfTarget(target);
   const found =
-    target.stateTypeId === undefined
+    target.kind !== "stateType"
       ? undefined
       : sortedAPIs(apis)
           .flatMap((api) =>
@@ -967,14 +1093,18 @@ const TypesPane: FC<{
           )
           .find(
             ({ api, stateType }) =>
-              qualifiedName({ api, stateType }) === target.stateTypeId
+              qualifiedName({ api, stateType }) === target.id
           );
   const foundDataType =
-    target.dataTypeId === undefined
+    target.kind !== "dataType"
       ? undefined
       : linkedDataTypes.find(
-          (linkedDataType) => linkedDataType.id === target.dataTypeId
+          (linkedDataType) => linkedDataType.id === target.id
         );
+  const foundAgent =
+    target.kind !== "agent"
+      ? undefined
+      : agents.find((agent) => agent.id === target.id);
   const flashProperty =
     propertyName === undefined || flashKey === undefined
       ? undefined
@@ -982,7 +1112,9 @@ const TypesPane: FC<{
   return (
     <div className="types-pane">
       <div className="types-pane-header">
-        <span className="types-pane-title">{typeId}</span>
+        <span className="types-pane-title">
+          {foundAgent === undefined ? typeId : `🤖 ${foundAgent.name}`}
+        </span>
         <button
           type="button"
           className="types-hide"
@@ -998,7 +1130,14 @@ const TypesPane: FC<{
         ref={bodyRef}
         onScroll={(event) => onScroll(event.currentTarget.scrollTop)}
       >
-        {foundDataType !== undefined ? (
+        {foundAgent !== undefined ? (
+          <AgentPane agent={foundAgent} />
+        ) : target.kind === "agent" ? (
+          <div className="empty">
+            <code>{typeId.slice("agent:".length)}</code> is no agent your code
+            runs any more.
+          </div>
+        ) : foundDataType !== undefined ? (
           <DataType
             linkedDataType={foundDataType}
             flashProperty={flashProperty}
@@ -1013,7 +1152,9 @@ const TypesPane: FC<{
             api={found.api}
             stateType={found.stateType}
             flash={
-              target.method === undefined || flashKey === undefined
+              target.kind !== "stateType" ||
+              target.method === undefined ||
+              flashKey === undefined
                 ? undefined
                 : { method: target.method, key: flashKey }
             }
@@ -2560,9 +2701,16 @@ const Overview: FC<{
     [response?.servicers]
   );
 
+  // The agents the analysis found, one record per file that met
+  // each, joined into one agent apiece.
+  const graphAgents = useMemo(
+    () => joinAgents(response?.agents ?? []),
+    [response?.agents]
+  );
+
   const graphStateTypes = useMemo(
-    () => joinStateTypes(apis, servicers),
-    [apis, servicers]
+    () => joinStateTypes(apis, servicers, graphAgents),
+    [apis, servicers, graphAgents]
   );
 
   // Why `rbt generate` has to run, derived by the backend from
@@ -2617,9 +2765,21 @@ const Overview: FC<{
     return (id: string): boolean => ids.has(id);
   }, [linkedDataTypes]);
 
+  // Whether an id names one of the agents the analysis found.
+  const isAgentId = useMemo(() => {
+    const ids = new Set(graphAgents.map((agent) => agent.id));
+    return (id: string): boolean => ids.has(id);
+  }, [graphAgents]);
+
   const paneTarget = useMemo(
-    () => paneTargetOf(searchParams.get("type"), isStateTypeId, isDataTypeId),
-    [searchParams, isStateTypeId, isDataTypeId]
+    () =>
+      paneTargetOf(
+        searchParams.get("type"),
+        isStateTypeId,
+        isDataTypeId,
+        isAgentId
+      ),
+    [searchParams, isStateTypeId, isDataTypeId, isAgentId]
   );
 
   // What the page links carry of the pane: the type it shows, but
@@ -2704,8 +2864,8 @@ const Overview: FC<{
   ]);
 
   const calls = useMemo(
-    () => drawnCallCount(graphStateTypes),
-    [graphStateTypes]
+    () => drawnCallCount(graphStateTypes, graphAgents),
+    [graphStateTypes, graphAgents]
   );
 
   const eyebrow =
@@ -2724,7 +2884,11 @@ const Overview: FC<{
       ? `${countWithNoun(calls, "call")} between ${countWithNoun(
           graphStateTypes.length,
           "state type"
-        )}`
+        )}${
+          graphAgents.length === 0
+            ? ""
+            : ` and ${countWithNoun(graphAgents.length, "agent")}`
+        }`
       : chosenFeature === undefined
       ? countWithNoun(featureEntries.length, "feature")
       : chosenFeature.feature.name ?? chosenFeature.filename;
@@ -2755,7 +2919,8 @@ const Overview: FC<{
 
   const navigate = useNavigate();
 
-  // Opens one state type in the types pane, named by the URL.
+  // Opens one state type, or one agent, in the types pane, named by
+  // the URL.
   const onOpenStateType = useCallback(
     (id: string): void => {
       setSearchParams({ type: id });
@@ -2763,12 +2928,13 @@ const Overview: FC<{
     [setSearchParams]
   );
 
-  // Choosing a method in the graph also opens it in the types pane:
-  // one navigation naming it as both the chosen method and the
-  // pane's target, which flashes it, as any link to a method does.
-  // `id` is a `methodId`, `bank.v1.Account.deposit`. Letting the
-  // method go keeps the pane as it is, without its flash target.
-  const onSelectMethod = useCallback(
+  // Choosing a row in the graph also opens it in the types pane: one
+  // navigation naming it as both the chosen row and the pane's
+  // target, which flashes it, as any link to a method does. `id` is
+  // a `methodId`, `bank.v1.Account.deposit`, or a `toolId`,
+  // `agent:librarian.get_page`. Letting the row go keeps the pane as
+  // it is, without its flash target.
+  const onSelectRow = useCallback(
     (id: string | null, replace?: boolean): void => {
       if (id === null) {
         navigate({ pathname: "/models", search: carriedSearch }, { replace });
@@ -2816,8 +2982,8 @@ const Overview: FC<{
     const id =
       paneProperty !== undefined
         ? idOfPropertyInPane(typeIdOfTarget(paneTarget), paneProperty)
-        : paneTarget.method !== undefined
-        ? idOfTypeInPane(`${paneTarget.stateTypeId}.${paneTarget.method}`)
+        : paneTarget.kind === "stateType" && paneTarget.method !== undefined
+        ? idOfTypeInPane(`${paneTarget.id}.${paneTarget.method}`)
         : undefined;
     if (id === undefined) {
       return;
@@ -2986,9 +3152,11 @@ const Overview: FC<{
                 ) : null}
                 <GraphPage
                   stateTypes={graphStateTypes}
-                  selectedMethodId={target ?? null}
-                  onSelectMethod={onSelectMethod}
+                  agents={graphAgents}
+                  selectedRowId={target ?? null}
+                  onSelectRow={onSelectRow}
                   onOpenStateType={onOpenStateType}
+                  onOpenAgent={onOpenStateType}
                 />
               </>
             ) : featureEntries.length === 0 ? (
@@ -3047,6 +3215,7 @@ const Overview: FC<{
                 <TypesPane
                   apis={apis}
                   linkedDataTypes={linkedDataTypes}
+                  agents={graphAgents}
                   target={paneTarget}
                   propertyName={paneProperty}
                   flashKey={returning ? undefined : location.key}

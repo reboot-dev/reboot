@@ -6,9 +6,18 @@
 // package; a collapsed box hides its cards, and the calls leaving it
 // fold into one counted arrow per box they reach.
 //
+// A card per agent too, with a row per tool, which runs land on and
+// the calls the tools make leave from: an agent stands beside the
+// packages rather than in one, since it belongs to no package of the
+// API, and is never collapsed.
+//
 // React Flow draws; ELK places. React Flow deliberately has no layout
 // of its own.
-import { Servicer_Method_Call_How as How } from "../../../../rbt/dashboard/v1/dashboard_pb";
+import {
+  Agent_Run_How as RunHow,
+  Agent_Tool_How as ToolHow,
+  Servicer_Method_Call_How as How,
+} from "../../../../rbt/dashboard/v1/dashboard_pb";
 import {
   Background,
   BaseEdge,
@@ -31,14 +40,21 @@ import type { Viewport } from "@xyflow/react";
 import { useLocation, useNavigationType } from "react-router";
 import ELK from "elkjs/lib/elk.bundled.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FC, MouseEvent } from "react";
+import type { FC, MouseEvent, ReactNode } from "react";
 import type {
+  GraphAgent,
   GraphCall,
-  GraphMethod,
   GraphPackage,
+  GraphRun,
   GraphStateType,
 } from "./callgraph";
-import { groupStateTypesByPackage, methodId } from "./callgraph";
+import {
+  agentId,
+  groupStateTypesByPackage,
+  isAgentRowId,
+  methodId,
+  toolId,
+} from "./callgraph";
 import type { Kind } from "./link_properties_to_data_types";
 import {
   labelOfKind,
@@ -71,15 +87,34 @@ const KIND_TEXT: Record<Kind, string> = {
   workflow: "hsl(28 80% 33%)",
 };
 
-const colorOfKind = (kind: Kind | undefined): string =>
-  kind === undefined ? NEUTRAL_COLOR : KIND_COLOR[kind];
+// An agent is a kind of nothing the API declares, so its card, its
+// rows, and the arrows leaving its tools wear a hue of their own.
+const AGENT_COLOR = "hsl(291 45% 48%)";
+const AGENT_TEXT = "hsl(291 45% 36%)";
 
-const textColorOfKind = (kind: Kind | undefined): string =>
-  kind === undefined ? NEUTRAL_TEXT : KIND_TEXT[kind];
+// What a row's dot and an arrow are drawn in: the kind of the method
+// it belongs to, or an agent's own hue.
+type Hue = Kind | "agent";
 
-// The kind's CSS class, which colours the row's dot.
-const classNameOfKind = (kind: Kind | undefined): string =>
-  `graph-kind-${kind === undefined ? "unknown" : labelOfKind(kind)}`;
+const colorOfHue = (hue: Hue | undefined): string =>
+  hue === undefined
+    ? NEUTRAL_COLOR
+    : hue === "agent"
+    ? AGENT_COLOR
+    : KIND_COLOR[hue];
+
+const textColorOfHue = (hue: Hue | undefined): string =>
+  hue === undefined
+    ? NEUTRAL_TEXT
+    : hue === "agent"
+    ? AGENT_TEXT
+    : KIND_TEXT[hue];
+
+// The hue's CSS class, which colours the row's dot.
+const classNameOfHue = (hue: Hue | undefined): string =>
+  `graph-kind-${
+    hue === undefined ? "unknown" : hue === "agent" ? "agent" : labelOfKind(hue)
+  }`;
 
 // How a call is reached, said in one word on the edge. A plain call
 // says nothing: it is the ordinary case, and labelling every edge
@@ -96,6 +131,26 @@ const HOW_LABEL: Partial<Record<How, string>> = {
 const HOW_DASH: Partial<Record<How, string>> = {
   [How.SCHEDULE]: "7 5",
   [How.SPAWN]: "7 5",
+};
+
+// How an agent is run, said in one word on the edge. Every run says
+// something: handing the work to a model is never the ordinary case
+// an unlabelled arrow means.
+const HOW_RUN_LABEL: Record<RunHow, string> = {
+  [RunHow.UNKNOWN]: "runs",
+  [RunHow.RUN]: "runs",
+  [RunHow.ITER]: "iterates",
+  [RunHow.RUN_STREAM]: "streams",
+  [RunHow.RUN_STREAM_EVENTS]: "streams",
+};
+
+// How the agent was given a tool, which is what its row says when
+// the pointer rests on it.
+const HOW_TOOL_TITLE: Record<ToolHow, string> = {
+  [ToolHow.UNKNOWN]: "a tool",
+  [ToolHow.DECORATED]: "decorated on the agent",
+  [ToolHow.CONSTRUCTED]: "given where the agent is constructed",
+  [ToolHow.RUN]: "given where the agent is run",
 };
 
 // A workflow's calls are dashed too: it runs past the call that
@@ -122,16 +177,34 @@ const COLLAPSED_PACKAGE_HEIGHT = 78;
 const EXPANDED_PACKAGE_HEAD_HEIGHT = 38;
 const EXPANDED_PACKAGE_PAD = 20;
 
+// An agent's card is wider, because what it is is a prompt, and its
+// head is taller: the emoji and the name, then the model, then the
+// first lines of the prompt, which `.graph-agent-prompt` clamps to
+// the height below. An agent with no prompt to show has a head of
+// `AGENT_HEAD_HEIGHT` alone.
+const AGENT_CARD_WIDTH = 260;
+const AGENT_HEAD_HEIGHT = 40;
+const AGENT_PROMPT_HEIGHT = 48;
+
 const heightOfStateType = (stateType: GraphStateType): number =>
   HEAD_HEIGHT + stateType.methods.length * ROW_HEIGHT + CARD_SLACK;
+
+// What an agent's tool rows start below, which is its head with the
+// prompt it shows, if it shows one.
+const headHeightOfAgent = (agent: GraphAgent): number =>
+  AGENT_HEAD_HEIGHT + (agent.systemPrompt.length > 0 ? AGENT_PROMPT_HEIGHT : 0);
+
+const heightOfAgent = (agent: GraphAgent): number =>
+  headHeightOfAgent(agent) + agent.tools.length * ROW_HEIGHT + CARD_SLACK;
 
 // A package's node id, kept apart from state type ids, which are
 // fully qualified names and could equal a package's.
 const packageNodeId = (name: string): string => `pkg:${name}`;
 
-// `bank.v1.Account` for `bank.v1.Account.deposit`.
-const stateTypeNameOfMethodId = (id: string): string =>
-  id.slice(0, id.lastIndexOf("."));
+// The card a row belongs to: `bank.v1.Account` for
+// `bank.v1.Account.deposit`, and `agent:librarian` for
+// `agent:librarian.get_page`.
+const cardOfRowId = (id: string): string => id.slice(0, id.lastIndexOf("."));
 
 // ---------------------------------------------------------------
 // Layout.
@@ -147,6 +220,19 @@ interface PackageData extends Record<string, unknown> {
 interface ExpandedPackageData extends Record<string, unknown> {
   name: string;
   onCollapse?: (name: string) => void;
+}
+
+interface AgentData extends Record<string, unknown> {
+  agent: GraphAgent;
+  // The chosen row's id, when one is chosen, which may be a tool of
+  // this agent or anything else the graph draws.
+  selectedRow?: string | null;
+  onSelectRow?: (id: string, cones: Cones) => void;
+  onOpenAgent?: (id: string) => void;
+  cones?: Cones;
+  onToggleCone?: (cone: keyof Cones) => void;
+  withCallers?: Set<string>;
+  withCalls?: Set<string>;
 }
 
 // Which cones of the chosen method the graph lights: what it calls
@@ -180,14 +266,14 @@ const CONES_OF_THIRD: Record<RowThird, Cones> = {
 
 interface StateTypeData extends Record<string, unknown> {
   stateType: GraphStateType;
-  // The chosen method's id, when one is chosen.
-  selectedMethod?: string | null;
-  onSelectMethod?: (id: string, cones: Cones) => void;
+  // The chosen row's id, when one is chosen.
+  selectedRow?: string | null;
+  onSelectRow?: (id: string, cones: Cones) => void;
   onOpenStateType?: (id: string) => void;
   cones?: Cones;
   onToggleCone?: (cone: keyof Cones) => void;
-  // The methods some drawn call lands on, and the methods that make
-  // one; a button with nothing to light is never shown.
+  // The rows some drawn arrow lands on, and the rows that make one;
+  // a button with nothing to light is never shown.
   withCallers?: Set<string>;
   withCalls?: Set<string>;
 }
@@ -195,7 +281,8 @@ interface StateTypeData extends Record<string, unknown> {
 type GraphNode =
   | Node<PackageData, "package">
   | Node<ExpandedPackageData, "expanded">
-  | Node<StateTypeData, "stateType">;
+  | Node<StateTypeData, "stateType">
+  | Node<AgentData, "agent">;
 
 interface Point {
   x: number;
@@ -213,12 +300,13 @@ const ELK_LAYERED_OPTIONS = {
 
 // Where everything goes: callers to the left of what they call, the
 // way an edge leaves a row on its right and enters one on its left.
-// Each expanded box's cards are laid out alone, then the boxes are
-// laid out at the size their cards came to, so an open box never
-// lands on a neighbour. A card or box calling itself has no say in
-// where it goes.
+// Each expanded box's cards are laid out alone, then the boxes and
+// the agents' cards are laid out at the size their contents came to,
+// so an open box never lands on a neighbour. A card or box calling
+// itself has no say in where it goes.
 const layoutPackages = async (
   packages: GraphPackage[],
+  agents: GraphAgent[],
   collapsed: ReadonlySet<string>
 ): Promise<GraphNode[]> => {
   const cardLayoutsByPackage = new Map<
@@ -286,15 +374,50 @@ const layoutPackages = async (
     });
   }
 
-  const callPairsBetweenPackages = new Set<string>();
+  // Between the boxes and the agents' cards, which are laid out
+  // together: a package's calls reach the packages they name and the
+  // agents its methods run, and an agent's tools reach the packages
+  // they call and the agents they run.
+  const pairsBetweenBoxes = new Set<string>();
+  const agentIds = new Set(agents.map((agent) => agent.id));
+  const reaches = (source: string, target: string): void => {
+    if (source !== target) {
+      pairsBetweenBoxes.add(`${source}\u0000${target}`);
+    }
+  };
   for (const pkg of packages) {
+    const source = packageNodeId(pkg.name);
     for (const stateType of pkg.stateTypes) {
       for (const method of stateType.methods) {
         for (const call of method.calls) {
-          const target = packageOfStateTypeName(call.stateTypeName);
-          if (isDrawn(call) && target !== pkg.name) {
-            callPairsBetweenPackages.add(`${pkg.name}>${target}`);
+          if (isDrawn(call)) {
+            reaches(
+              source,
+              packageNodeId(packageOfStateTypeName(call.stateTypeName))
+            );
           }
+        }
+        for (const run of method.runs) {
+          if (agentIds.has(agentId(run.agentName))) {
+            reaches(source, agentId(run.agentName));
+          }
+        }
+      }
+    }
+  }
+  for (const agent of agents) {
+    for (const tool of agent.tools) {
+      for (const call of tool.calls) {
+        if (isDrawn(call)) {
+          reaches(
+            agent.id,
+            packageNodeId(packageOfStateTypeName(call.stateTypeName))
+          );
+        }
+      }
+      for (const run of tool.runs) {
+        if (agentIds.has(agentId(run.agentName))) {
+          reaches(agent.id, agentId(run.agentName));
         }
       }
     }
@@ -307,37 +430,49 @@ const layoutPackages = async (
       "elk.spacing.nodeNode": "60",
       "elk.layered.spacing.nodeNodeBetweenLayers": "140",
     },
-    children: packages.map((pkg) => {
-      const cardLayout = cardLayoutsByPackage.get(pkg.name);
-      return {
-        id: packageNodeId(pkg.name),
-        width: cardLayout?.width ?? COLLAPSED_PACKAGE_WIDTH,
-        height: cardLayout?.height ?? COLLAPSED_PACKAGE_HEIGHT,
-      };
-    }),
-    edges: [...callPairsBetweenPackages].map((pair) => {
-      const [source, target] = pair.split(">");
-      return {
-        id: pair,
-        sources: [packageNodeId(source)],
-        targets: [packageNodeId(target)],
-      };
+    children: [
+      ...packages.map((pkg) => {
+        const cardLayout = cardLayoutsByPackage.get(pkg.name);
+        return {
+          id: packageNodeId(pkg.name),
+          width: cardLayout?.width ?? COLLAPSED_PACKAGE_WIDTH,
+          height: cardLayout?.height ?? COLLAPSED_PACKAGE_HEIGHT,
+        };
+      }),
+      ...agents.map((agent) => ({
+        id: agent.id,
+        width: AGENT_CARD_WIDTH,
+        height: heightOfAgent(agent),
+      })),
+    ],
+    edges: [...pairsBetweenBoxes].map((pair) => {
+      const [source, target] = pair.split("\u0000");
+      return { id: pair, sources: [source], targets: [target] };
     }),
   });
 
-  const packagePositions = new Map<string, Point>(
-    (elkPackageLayout.children ?? []).map((elkPackage) => [
-      elkPackage.id,
-      { x: elkPackage.x ?? 0, y: elkPackage.y ?? 0 },
+  const boxPositions = new Map<string, Point>(
+    (elkPackageLayout.children ?? []).map((elkBox) => [
+      elkBox.id,
+      { x: elkBox.x ?? 0, y: elkBox.y ?? 0 },
     ])
   );
 
   // A parent precedes its children: React Flow resolves a elkCard's
   // position, relative to its parent, in array order.
   const nodes: GraphNode[] = [];
+  for (const agent of agents) {
+    nodes.push({
+      id: agent.id,
+      type: "agent",
+      position: boxPositions.get(agent.id) ?? { x: 0, y: 0 },
+      width: AGENT_CARD_WIDTH,
+      data: { agent },
+    });
+  }
   for (const pkg of packages) {
     const boxId = packageNodeId(pkg.name);
-    const position = packagePositions.get(boxId) ?? { x: 0, y: 0 };
+    const position = boxPositions.get(boxId) ?? { x: 0, y: 0 };
     const cardLayout = cardLayoutsByPackage.get(pkg.name);
     if (cardLayout === undefined) {
       nodes.push({
@@ -390,93 +525,154 @@ const layoutPackages = async (
 // Edges.
 
 interface CallEdgeData extends Record<string, unknown> {
-  // Absent on a folded edge, which carries calls reached every way.
+  // Absent on a folded edge, which carries calls reached every way,
+  // and on an edge that is a run rather than a call.
   how?: How;
-  // The calling method's kind, which is the edge's colour. Absent
-  // for a method the API does not declare, and on a folded edge.
-  kind?: Kind;
+  // Which way an agent is run, on an edge that is a run, and
+  // `UNKNOWN` on a folded one, which carries runs made every way.
+  runHow?: RunHow;
+  // The hue the edge is drawn in: the calling method's kind, or an
+  // agent's own for an edge leaving one of its tools. Absent for a
+  // method the API does not declare, and on a folded edge.
+  hue?: Hue;
   count: number;
-  // Every calling method whose calls this edge carries: one for an
-  // edge from a method row, each contributor for a folded edge.
-  // What choosing a method keeps, transitively.
-  sourceMethodIds: string[];
-  // Every called method the same way, which is what says whether
+  // Every row whose arrows this edge carries: one for an edge from a
+  // method's or a tool's row, each contributor for a folded edge.
+  // What choosing a row keeps, transitively.
+  sourceIds: string[];
+  // Every row it lands on the same way, which is what says whether
   // the edge lands inside the upstream cone.
-  targetMethodIds: string[];
-  // Set while another method is chosen. The label fades off this
+  targetIds: string[];
+  // Set while another row is chosen. The label fades off this
   // rather than off the edge's class: `EdgeLabelRenderer` draws
   // labels in a layer of their own, out of the class's reach.
   faded?: boolean;
 }
 
-// Every method the chosen one calls, transitively, itself included:
-// the downstream closure over the drawn calls. Collapse-blind, so
-// the path continues through a collapsed box.
-const reachableMethodIds = (
-  from: string,
-  packages: GraphPackage[]
-): Set<string> => {
-  const callsByMethodId = new Map(
-    packages.flatMap((pkg) =>
-      pkg.stateTypes.flatMap((stateType) =>
-        stateType.methods.map(
-          (method) =>
-            [methodId(stateType.id, method.name), method.calls] as const
-        )
-      )
-    )
-  );
-  const reached = new Set([from]);
-  const frontier = [from];
-  while (frontier.length > 0) {
-    for (const call of callsByMethodId.get(frontier.pop()!) ?? []) {
-      if (!isDrawn(call)) {
-        continue;
-      }
-      const callee = methodId(call.stateTypeName, call.methodName);
-      if (!reached.has(callee)) {
-        reached.add(callee);
-        frontier.push(callee);
-      }
-    }
+// Where a run lands: an agent's card is one thing to run, however
+// many tools it has, so every run enters it at its head.
+const AGENT_TARGET_HANDLE = "t:agent";
+
+// One arrow, drawn or folded into the one already drawn between the
+// same two places, which is what a collapsed box's arrows become.
+const addEdge = (
+  edgesById: Map<string, Edge<CallEdgeData>>,
+  edge: {
+    id: string;
+    source: string;
+    sourceHandle?: string;
+    target: string;
+    targetHandle?: string;
+    hue?: Hue;
+    how?: How;
+    runHow?: RunHow;
+    count: number;
+    sourceId: string;
+    targetId: string;
   }
-  return reached;
+): void => {
+  const folded = edgesById.get(edge.id);
+  if (folded !== undefined) {
+    const data = folded.data!;
+    data.count += edge.count;
+    if (!data.sourceIds.includes(edge.sourceId)) {
+      data.sourceIds.push(edge.sourceId);
+    }
+    if (!data.targetIds.includes(edge.targetId)) {
+      data.targetIds.push(edge.targetId);
+    }
+    if (data.runHow !== undefined && data.runHow !== edge.runHow) {
+      data.runHow = RunHow.UNKNOWN;
+    }
+    return;
+  }
+  edgesById.set(edge.id, {
+    id: edge.id,
+    source: edge.source,
+    sourceHandle: edge.sourceHandle,
+    target: edge.target,
+    targetHandle: edge.targetHandle,
+    type: "call",
+    data: {
+      how: edge.how,
+      runHow: edge.runHow,
+      hue: edge.hue,
+      count: edge.count,
+      sourceIds: [edge.sourceId],
+      targetIds: [edge.targetId],
+    },
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: colorOfHue(edge.hue),
+      width: 16,
+      height: 16,
+    },
+  });
 };
 
-// Every method that calls the chosen one, transitively, itself
-// included: the upstream closure over the same drawn calls,
-// collapse-blind the same way.
-const reachingMethodIds = (
-  to: string,
-  packages: GraphPackage[]
-): Set<string> => {
-  const callersByMethodId = new Map<string, string[]>();
+// Who calls whom, over everything the graph draws, by row: a method
+// leads to the methods its calls name and to the agents it runs; an
+// agent leads to each of its tools, which is what running it
+// reaches; and a tool leads on the way a method does. Collapse-blind,
+// so a path continues through a collapsed box.
+interface Reachability {
+  callees: Map<string, string[]>;
+  callers: Map<string, string[]>;
+}
+
+const reachability = (
+  packages: GraphPackage[],
+  agents: GraphAgent[]
+): Reachability => {
+  const callees = new Map<string, string[]>();
+  const callers = new Map<string, string[]>();
+  const leads = (from: string, to: string): void => {
+    callees.set(from, [...(callees.get(from) ?? []), to]);
+    callers.set(to, [...(callers.get(to) ?? []), from]);
+  };
+  const leadsFrom = (id: string, calls: GraphCall[], runs: GraphRun[]) => {
+    for (const call of calls) {
+      if (isDrawn(call)) {
+        leads(id, methodId(call.stateTypeName, call.methodName));
+      }
+    }
+    for (const run of runs) {
+      leads(id, agentId(run.agentName));
+    }
+  };
+
   for (const pkg of packages) {
     for (const stateType of pkg.stateTypes) {
       for (const method of stateType.methods) {
-        const caller = methodId(stateType.id, method.name);
-        for (const call of method.calls) {
-          if (!isDrawn(call)) {
-            continue;
-          }
-          const callee = methodId(call.stateTypeName, call.methodName);
-          const callers = callersByMethodId.get(callee);
-          if (callers === undefined) {
-            callersByMethodId.set(callee, [caller]);
-          } else {
-            callers.push(caller);
-          }
-        }
+        leadsFrom(
+          methodId(stateType.id, method.name),
+          method.calls,
+          method.runs
+        );
       }
     }
   }
-  const reached = new Set([to]);
-  const frontier = [to];
+  for (const agent of agents) {
+    for (const tool of agent.tools) {
+      const id = toolId(agent.id, tool.name);
+      leads(agent.id, id);
+      leadsFrom(id, tool.calls, tool.runs);
+    }
+  }
+
+  return { callees, callers };
+};
+
+// Everything the chosen row leads to, transitively, itself included,
+// and everything that leads to it, over the same graph.
+const closure = (from: string, edges: Map<string, string[]>): Set<string> => {
+  const reached = new Set([from]);
+  const frontier = [from];
   while (frontier.length > 0) {
-    for (const caller of callersByMethodId.get(frontier.pop()!) ?? []) {
-      if (!reached.has(caller)) {
-        reached.add(caller);
-        frontier.push(caller);
+    for (const next of edges.get(frontier.pop()!) ?? []) {
+      if (!reached.has(next)) {
+        reached.add(next);
+        frontier.push(next);
       }
     }
   }
@@ -486,16 +682,25 @@ const reachingMethodIds = (
 // The edges as the boxes show them. A call whose box is expanded
 // leaves from its own method row; otherwise it leaves from the box,
 // and every call the box hides folds into one counted edge per node
-// they reach.
-const edgesOfPackages = (
+// they reach. An agent's card is never in a box and never collapsed,
+// so its tools' arrows always leave their own rows, and a run always
+// lands on the agent's head.
+const edgesOf = (
   packages: GraphPackage[],
+  agents: GraphAgent[],
   collapsed: ReadonlySet<string>
 ): Edge<CallEdgeData>[] => {
   const edgesById = new Map<string, Edge<CallEdgeData>>();
+  const agentsByName = new Map(agents.map((agent) => [agent.name, agent]));
+
   for (const pkg of packages) {
     const sourceExpanded = !collapsed.has(pkg.name);
     for (const stateType of pkg.stateTypes) {
       for (const method of stateType.methods) {
+        const source = sourceExpanded ? stateType.id : packageNodeId(pkg.name);
+        const sourceHandle = sourceExpanded ? `s:${method.name}` : undefined;
+        const caller = methodId(stateType.id, method.name);
+
         for (const call of method.calls) {
           if (!isDrawn(call)) {
             continue;
@@ -508,59 +713,109 @@ const edgesOfPackages = (
             continue;
           }
 
-          const source = sourceExpanded
-            ? stateType.id
-            : packageNodeId(pkg.name);
-          const sourceHandle = sourceExpanded ? `s:${method.name}` : undefined;
           const target = targetExpanded
             ? call.stateTypeName
             : packageNodeId(targetPackage);
           const targetHandle = targetExpanded
             ? `t:${call.methodName}`
             : undefined;
-          const id = sourceExpanded
-            ? `${source}|${sourceHandle}>${target}|${targetHandle}:${call.how}`
-            : `${source}>${target}|${targetHandle}`;
 
-          const caller = methodId(stateType.id, method.name);
-          const callee = methodId(call.stateTypeName, call.methodName);
-          const edgeFoldedInto = edgesById.get(id);
-          if (edgeFoldedInto !== undefined) {
-            edgeFoldedInto.data!.count += call.count;
-            if (!edgeFoldedInto.data!.sourceMethodIds.includes(caller)) {
-              edgeFoldedInto.data!.sourceMethodIds.push(caller);
-            }
-            if (!edgeFoldedInto.data!.targetMethodIds.includes(callee)) {
-              edgeFoldedInto.data!.targetMethodIds.push(callee);
-            }
-            continue;
-          }
-          const kind = sourceExpanded ? method.kind : undefined;
-          edgesById.set(id, {
-            id,
+          addEdge(edgesById, {
+            id: sourceExpanded
+              ? `${source}|${sourceHandle}>${target}|${targetHandle}:${call.how}`
+              : `${source}>${target}|${targetHandle}`,
             source,
             sourceHandle,
             target,
             targetHandle,
-            type: "call",
-            data: {
-              how: sourceExpanded ? call.how : undefined,
-              kind,
-              count: call.count,
-              sourceMethodIds: [caller],
-              targetMethodIds: [callee],
-            },
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-              color: colorOfKind(kind),
-              width: 16,
-              height: 16,
-            },
+            hue: sourceExpanded ? method.kind : undefined,
+            how: sourceExpanded ? call.how : undefined,
+            count: call.count,
+            sourceId: caller,
+            targetId: methodId(call.stateTypeName, call.methodName),
+          });
+        }
+
+        for (const run of method.runs) {
+          const agent = agentsByName.get(run.agentName);
+          // A run naming an agent the analysis never recorded has
+          // nowhere to land.
+          if (agent === undefined) {
+            continue;
+          }
+          addEdge(edgesById, {
+            id: sourceExpanded
+              ? `${source}|${sourceHandle}>${agent.id}:${run.how}`
+              : `${source}>${agent.id}`,
+            source,
+            sourceHandle,
+            target: agent.id,
+            targetHandle: AGENT_TARGET_HANDLE,
+            hue: sourceExpanded ? method.kind : undefined,
+            runHow: sourceExpanded ? run.how : RunHow.UNKNOWN,
+            count: run.count,
+            sourceId: caller,
+            targetId: agent.id,
           });
         }
       }
     }
   }
+
+  for (const agent of agents) {
+    for (const tool of agent.tools) {
+      const source = agent.id;
+      const sourceHandle = `s:${tool.name}`;
+      const caller = toolId(agent.id, tool.name);
+
+      for (const call of tool.calls) {
+        if (!isDrawn(call)) {
+          continue;
+        }
+        const targetPackage = packageOfStateTypeName(call.stateTypeName);
+        const targetExpanded = !collapsed.has(targetPackage);
+        const target = targetExpanded
+          ? call.stateTypeName
+          : packageNodeId(targetPackage);
+        const targetHandle = targetExpanded
+          ? `t:${call.methodName}`
+          : undefined;
+
+        addEdge(edgesById, {
+          id: `${source}|${sourceHandle}>${target}|${targetHandle}:${call.how}`,
+          source,
+          sourceHandle,
+          target,
+          targetHandle,
+          hue: "agent",
+          how: call.how,
+          count: call.count,
+          sourceId: caller,
+          targetId: methodId(call.stateTypeName, call.methodName),
+        });
+      }
+
+      for (const run of tool.runs) {
+        const target = agentsByName.get(run.agentName);
+        if (target === undefined) {
+          continue;
+        }
+        addEdge(edgesById, {
+          id: `${source}|${sourceHandle}>${target.id}:${run.how}`,
+          source,
+          sourceHandle,
+          target: target.id,
+          targetHandle: AGENT_TARGET_HANDLE,
+          hue: "agent",
+          runHow: run.how,
+          count: run.count,
+          sourceId: caller,
+          targetId: target.id,
+        });
+      }
+    }
+  }
+
   return [...edgesById.values()];
 };
 
@@ -602,58 +857,66 @@ const ExpandedPackageNode: FC<
   </div>
 );
 
-// an edge landing on its left or leaving on its right. The handles
-// are invisible: the edge just needs somewhere to land. Hovering the
-// row shows, beside the card, the cones a click there lights: the
-// left third of the row, the arrow in, who calls the method; the
-// right third, the arrow out, what it calls; the middle, both. A
-// click chooses the method with those cones, which also opens it in
-// the types pane, and a click asking for what is already lit lets it
-// go.
-const MethodRow: FC<{
+// One row of a card: a method of a state type, or a tool of an
+// agent, with an edge landing on its left or leaving on its right.
+interface CardRow {
+  // The row's id, in the one space every arrow's ends are named in.
   id: string;
-  method: GraphMethod;
+  name: string;
+  hue?: Hue;
+  // What the row says of itself when the pointer rests on it.
+  title: string;
+  // A word the row wears at its right, e.g. `factory`.
+  badge?: string;
+}
+
+// The handles are invisible: the edge just needs somewhere to land.
+// Hovering the row shows, beside the card, the cones a click there
+// lights: the left third of the row, the arrow in, who calls it; the
+// right third, the arrow out, what it calls; the middle, both. A
+// click chooses the row with those cones, which also opens it in the
+// types pane, and a click asking for what is already lit lets it go.
+const Row: FC<{
+  row: CardRow;
   selected: boolean;
   onHover: (third: RowThird | null) => void;
   onSelect: (id: string, cones: Cones) => void;
-}> = ({ id, method, selected, onHover, onSelect }) => (
+}> = ({ row, selected, onHover, onSelect }) => (
   <div
-    className={`graph-method ${classNameOfKind(method.kind)}${
+    className={`graph-method ${classNameOfHue(row.hue)}${
       selected ? " selected" : ""
     }`}
     onMouseMove={(event) => onHover(thirdOfPointer(event))}
     onMouseLeave={() => onHover(null)}
     onClick={(event) => {
       event.stopPropagation();
-      onSelect(id, CONES_OF_THIRD[thirdOfPointer(event)]);
+      onSelect(row.id, CONES_OF_THIRD[thirdOfPointer(event)]);
     }}
-    title={
-      method.kind === undefined
-        ? "unknown"
-        : `${labelOfKind(method.kind)}${method.factory ? ", factory" : ""}`
-    }
+    title={row.title}
   >
     <Handle
       type="target"
       position={Position.Left}
-      id={`t:${method.name}`}
+      id={`t:${row.name}`}
       className="graph-port"
     />
     <span className="graph-method-dot" aria-hidden="true" />
-    <span className="graph-method-name">{method.name}</span>
-    {method.factory && <span className="graph-method-factory">factory</span>}
+    <span className="graph-method-name">{row.name}</span>
+    {row.badge !== undefined && (
+      <span className="graph-method-factory">{row.badge}</span>
+    )}
     <Handle
       type="source"
       position={Position.Right}
-      id={`s:${method.name}`}
+      id={`s:${row.name}`}
       className="graph-port"
     />
   </div>
 );
 
 // A button beside the card, level with a row, for one of the row's
-// cones: lit in the method's kind colour while that cone is shown,
-// and unlit again under the pointer, since a click then puts it out.
+// cones: lit in the row's hue while that cone is shown, and unlit
+// again under the pointer, since a click then puts it out.
 const ConeButton: FC<{
   cone: keyof Cones;
   top: number;
@@ -716,21 +979,39 @@ const ConeButton: FC<{
 // the card, past the row's edge.
 const HOVER_LINGER_MS = 250;
 
-const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
-  data,
+// What a state type and an agent are both drawn as: a head, a row
+// each, and the cone buttons flanking the chosen row. `headHeight`
+// is what the head comes out at, which is what places the buttons,
+// since the card clips its contents and they are siblings of it.
+const RowsCard: FC<{
+  className: string;
+  head: ReactNode;
+  headHeight: number;
+  rows: CardRow[];
+  selectedRow?: string | null;
+  onSelectRow?: (id: string, cones: Cones) => void;
+  cones?: Cones;
+  onToggleCone?: (cone: keyof Cones) => void;
+  // The rows some drawn arrow lands on, and the rows that make one;
+  // a button with nothing to light is never shown.
+  withCallers?: Set<string>;
+  withCalls?: Set<string>;
+}> = ({
+  className,
+  head,
+  headHeight,
+  rows,
+  selectedRow,
+  onSelectRow,
+  cones,
+  onToggleCone,
+  withCallers,
+  withCalls,
 }) => {
-  // The chosen row's place in the card, for the cone buttons that
-  // flank it. The card clips its contents, so the buttons are
-  // siblings of it, placed by the layout's own row arithmetic.
   const selectedIndex =
-    data.selectedMethod == null
-      ? -1
-      : data.stateType.methods.findIndex(
-          (method) =>
-            methodId(data.stateType.id, method.name) === data.selectedMethod
-        );
+    selectedRow == null ? -1 : rows.findIndex((row) => row.id === selectedRow);
   const topOfRow = (index: number): number =>
-    1 + HEAD_HEIGHT + index * ROW_HEIGHT + ROW_HEIGHT / 2;
+    1 + headHeight + index * ROW_HEIGHT + ROW_HEIGHT / 2;
 
   // The row the pointer is over and which third of it, with the
   // hide put off a moment when the pointer leaves, so it can reach
@@ -755,13 +1036,13 @@ const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
   }, [keepShown]);
   useEffect(() => keepShown, [keepShown]);
 
-  // The cones a method has anything to light in.
+  // The cones a row has anything to light in.
   const availableCones = (id: string): Cones => ({
-    upstream: data.withCallers?.has(id) ?? false,
-    downstream: data.withCalls?.has(id) ?? false,
+    upstream: withCallers?.has(id) ?? false,
+    downstream: withCalls?.has(id) ?? false,
   });
 
-  // Chooses a method with the cones asked for, of those it has; a
+  // Chooses a row with the cones asked for, of those it has; a
   // click asking only for a cone it lacks lights what it has.
   const select = (id: string, asked: Cones): void => {
     const available = availableCones(id);
@@ -769,7 +1050,7 @@ const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
       upstream: asked.upstream && available.upstream,
       downstream: asked.downstream && available.downstream,
     };
-    data.onSelectMethod?.(
+    onSelectRow?.(
       id,
       wanted.upstream || wanted.downstream ? wanted : available
     );
@@ -780,25 +1061,23 @@ const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
   // asks for a cone it has not lit shows that cone's button too,
   // which lights it. Any other hovered row shows the buttons for the
   // cones its third asks for, of those it has, and clicking one
-  // chooses the method with that cone alone.
+  // chooses the row with that cone alone.
   const asked = hovered === null ? undefined : CONES_OF_THIRD[hovered.third];
   const buttonsOf = (
     index: number
-  ): { id: string; method: GraphMethod; show: Cones } | undefined => {
+  ): { row: CardRow; show: Cones } | undefined => {
     if (index === -1) {
       return undefined;
     }
-    const method = data.stateType.methods[index];
-    const id = methodId(data.stateType.id, method.name);
-    const available = availableCones(id);
+    const row = rows[index];
+    const available = availableCones(row.id);
     const lit =
       index === selectedIndex
-        ? data.cones ?? DEFAULT_CONES
+        ? cones ?? DEFAULT_CONES
         : { upstream: false, downstream: false };
     const hoveredHere = hovered?.index === index && asked !== undefined;
     return {
-      id,
-      method,
+      row,
       show: {
         upstream:
           available.upstream &&
@@ -817,38 +1096,24 @@ const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
 
   return (
     <>
-      <div className="graph-state-type">
-        {/* The name is the way to the state type in the types pane. */}
-        <div
-          className="graph-state-type-head graph-method-open"
-          title="open in the types pane"
-          onClick={(event) => {
-            event.stopPropagation();
-            data.onOpenStateType?.(data.stateType.id);
-          }}
-        >
-          {data.stateType.name}
-        </div>
-        {data.stateType.methods.map((method, index) => {
-          const id = methodId(data.stateType.id, method.name);
-          return (
-            <MethodRow
-              id={id}
-              method={method}
-              selected={data.selectedMethod === id}
-              onHover={(third) => {
-                if (third === null) {
-                  hideSoon();
-                } else {
-                  keepShown();
-                  setHovered({ index, third });
-                }
-              }}
-              onSelect={select}
-              key={method.name}
-            />
-          );
-        })}
+      <div className={className}>
+        {head}
+        {rows.map((row, index) => (
+          <Row
+            row={row}
+            selected={selectedRow === row.id}
+            onHover={(third) => {
+              if (third === null) {
+                hideSoon();
+              } else {
+                keepShown();
+                setHovered({ index, third });
+              }
+            }}
+            onSelect={select}
+            key={row.id}
+          />
+        ))}
       </div>
       {selectedButtons !== undefined &&
         (["upstream", "downstream"] as const).map(
@@ -857,18 +1122,18 @@ const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
               <ConeButton
                 cone={cone}
                 top={topOfRow(selectedIndex)}
-                lit={data.cones?.[cone] ?? false}
-                color={colorOfKind(selectedButtons.method.kind)}
+                lit={cones?.[cone] ?? false}
+                color={colorOfHue(selectedButtons.row.hue)}
                 title={
-                  data.cones?.[cone]
+                  cones?.[cone]
                     ? cone === "upstream"
-                      ? "Hide who calls this method"
-                      : "Hide what this method calls"
+                      ? "Hide what calls this"
+                      : "Hide what this calls"
                     : cone === "upstream"
-                    ? "Show who calls this method"
-                    : "Show what this method calls"
+                    ? "Show what calls this"
+                    : "Show what this calls"
                 }
-                onClick={() => data.onToggleCone?.(cone)}
+                onClick={() => onToggleCone?.(cone)}
                 onMouseEnter={keepShown}
                 onMouseLeave={hideSoon}
                 key={cone}
@@ -884,14 +1149,14 @@ const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
                 cone={cone}
                 top={topOfRow(hovered.index)}
                 lit={false}
-                color={colorOfKind(hoveredButtons.method.kind)}
+                color={colorOfHue(hoveredButtons.row.hue)}
                 title={
                   cone === "upstream"
-                    ? "Show who calls this method"
-                    : "Show what this method calls"
+                    ? "Show what calls this"
+                    : "Show what this calls"
                 }
                 onClick={() =>
-                  select(hoveredButtons.id, {
+                  select(hoveredButtons.row.id, {
                     upstream: cone === "upstream",
                     downstream: cone === "downstream",
                   })
@@ -905,6 +1170,103 @@ const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
     </>
   );
 };
+
+const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
+  data,
+}) => (
+  <RowsCard
+    className="graph-state-type"
+    headHeight={HEAD_HEIGHT}
+    head={
+      // The name is the way to the state type in the types pane.
+      <div
+        className="graph-state-type-head graph-method-open"
+        title="open in the types pane"
+        onClick={(event) => {
+          event.stopPropagation();
+          data.onOpenStateType?.(data.stateType.id);
+        }}
+      >
+        {data.stateType.name}
+      </div>
+    }
+    rows={data.stateType.methods.map((method) => ({
+      id: methodId(data.stateType.id, method.name),
+      name: method.name,
+      hue: method.kind,
+      badge: method.factory ? "factory" : undefined,
+      title:
+        method.kind === undefined
+          ? "unknown"
+          : `${labelOfKind(method.kind)}${method.factory ? ", factory" : ""}`,
+    }))}
+    selectedRow={data.selectedRow}
+    onSelectRow={data.onSelectRow}
+    cones={data.cones}
+    onToggleCone={data.onToggleCone}
+    withCallers={data.withCallers}
+    withCalls={data.withCalls}
+  />
+);
+
+// An agent: the robot, its name and its model, the first of its
+// prompt, and a row per tool. Runs land on its head, since running
+// it is running the whole of it, and each tool's own calls leave its
+// row.
+const AgentNode: FC<NodeProps<Node<AgentData, "agent">>> = ({ data }) => (
+  <RowsCard
+    className="graph-agent"
+    headHeight={headHeightOfAgent(data.agent)}
+    head={
+      <>
+        <div
+          className="graph-agent-head graph-method-open"
+          title="open the agent in the types pane"
+          onClick={(event) => {
+            event.stopPropagation();
+            data.onOpenAgent?.(data.agent.id);
+          }}
+        >
+          <Handle
+            type="target"
+            position={Position.Left}
+            id={AGENT_TARGET_HANDLE}
+            className="graph-port"
+          />
+          <div className="graph-agent-title">
+            <span className="graph-agent-emoji" aria-hidden="true">
+              🤖
+            </span>
+            <span className="graph-agent-name">{data.agent.name}</span>
+          </div>
+          {data.agent.model !== undefined && (
+            <span className="graph-agent-model">{data.agent.model}</span>
+          )}
+        </div>
+        {data.agent.systemPrompt.length > 0 && (
+          <div className="graph-agent-prompt">
+            {data.agent.systemPrompt.join("\n\n")}
+          </div>
+        )}
+      </>
+    }
+    rows={data.agent.tools.map((tool) => ({
+      id: toolId(data.agent.id, tool.name),
+      name: tool.name,
+      hue: "agent" as const,
+      title:
+        tool.description === undefined
+          ? HOW_TOOL_TITLE[tool.how]
+          : `${HOW_TOOL_TITLE[tool.how]}\n\n${tool.description}`,
+    }))}
+    selectedRow={data.selectedRow}
+    onSelectRow={data.onSelectRow}
+    cones={data.cones}
+    onToggleCone={data.onToggleCone}
+    withCallers={data.withCallers}
+    withCalls={data.withCalls}
+  />
+);
 
 const CallEdge: FC<EdgeProps<Edge<CallEdgeData>>> = ({
   id,
@@ -949,14 +1311,22 @@ const CallEdge: FC<EdgeProps<Edge<CallEdgeData>>> = ({
     });
   }
 
-  const kind = data?.kind;
+  const hue = data?.hue;
   const how = data?.how;
+  const runHow = data?.runHow;
   const count = data?.count ?? 1;
-  const howWord = how === undefined ? undefined : HOW_LABEL[how];
+  // A run always says so; a plain call says nothing, since it is the
+  // ordinary case, and labelling every edge "calls" would be noise.
+  const howWord =
+    runHow !== undefined
+      ? HOW_RUN_LABEL[runHow]
+      : how === undefined
+      ? undefined
+      : HOW_LABEL[how];
   const label = count > 1 ? `${howWord ?? "calls"} ×${count}` : howWord;
   const dashPattern =
     (how === undefined ? undefined : HOW_DASH[how]) ??
-    (kind === "workflow" ? WORKFLOW_DASH : undefined);
+    (hue === "workflow" ? WORKFLOW_DASH : undefined);
 
   return (
     <>
@@ -965,7 +1335,7 @@ const CallEdge: FC<EdgeProps<Edge<CallEdgeData>>> = ({
         path={path}
         markerEnd={markerEnd}
         style={{
-          stroke: colorOfKind(kind),
+          stroke: colorOfHue(hue),
           strokeWidth: 1.6,
           strokeDasharray: dashPattern,
         }}
@@ -979,7 +1349,7 @@ const CallEdge: FC<EdgeProps<Edge<CallEdgeData>>> = ({
             className="graph-edge-label"
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              color: textColorOfKind(kind),
+              color: textColorOfHue(hue),
               opacity: data?.faded ? 0.1 : 1,
             }}
           >
@@ -1015,7 +1385,7 @@ const Legend: FC = () => (
         {(["reader", "writer", "transaction", "workflow"] as Kind[]).map(
           (kind) => (
             <div
-              className={`graph-legend-row ${classNameOfKind(kind)}`}
+              className={`graph-legend-row ${classNameOfHue(kind)}`}
               key={kind}
             >
               <span className="graph-method-dot" aria-hidden="true" />
@@ -1023,11 +1393,15 @@ const Legend: FC = () => (
             </div>
           )
         )}
-        <div className={`graph-legend-row ${classNameOfKind(undefined)}`}>
+        <div className={`graph-legend-row ${classNameOfHue(undefined)}`}>
           <span className="graph-method-dot" aria-hidden="true" />
           <span>
             <em>unknown</em>
           </span>
+        </div>
+        <div className={`graph-legend-row ${classNameOfHue("agent")}`}>
+          <span className="graph-method-dot" aria-hidden="true" />
+          <span>an agent's tool</span>
         </div>
       </div>
       <div className="graph-legend-rows">
@@ -1046,6 +1420,12 @@ const Legend: FC = () => (
       </div>
       <div className="graph-legend-rows">
         <div className="graph-legend-row">
+          <span aria-hidden="true">🤖</span>
+          <span>an agent and its tools</span>
+        </div>
+      </div>
+      <div className="graph-legend-rows">
+        <div className="graph-legend-row">
           <span className="graph-method-factory">factory</span>
           <span>constructs the state</span>
         </div>
@@ -1059,6 +1439,7 @@ const nodeTypes = {
   package: PackageNode,
   expanded: ExpandedPackageNode,
   stateType: StateTypeNode,
+  agent: AgentNode,
 };
 
 const edgeTypes = { call: CallEdge };
@@ -1080,12 +1461,22 @@ const graphViews = new Map<
 
 const GraphCanvas: FC<{
   packages: GraphPackage[];
-  // The chosen method's id, which is what the URL names: choosing
-  // one is a navigation, so back steps to the one chosen before.
-  selectedMethodId: string | null;
-  onSelectMethod: (id: string | null, replace?: boolean) => void;
+  agents: GraphAgent[];
+  // The chosen row's id, a method's or a tool's, which is what the
+  // URL names: choosing one is a navigation, so back steps to the
+  // one chosen before.
+  selectedRowId: string | null;
+  onSelectRow: (id: string | null, replace?: boolean) => void;
   onOpenStateType: (id: string) => void;
-}> = ({ packages, selectedMethodId, onSelectMethod, onOpenStateType }) => {
+  onOpenAgent: (id: string) => void;
+}> = ({
+  packages,
+  agents,
+  selectedRowId,
+  onSelectRow,
+  onOpenStateType,
+  onOpenAgent,
+}) => {
   const location = useLocation();
   const saved =
     useNavigationType() === "POP" ? graphViews.get(location.key) : undefined;
@@ -1134,7 +1525,7 @@ const GraphCanvas: FC<{
 
   useEffect(() => {
     const thisLayoutRun = ++layoutRun.current;
-    layoutPackages(packages, collapsed).then((nodes) => {
+    layoutPackages(packages, agents, collapsed).then((nodes) => {
       if (layoutRun.current !== thisLayoutRun) {
         return;
       }
@@ -1185,11 +1576,18 @@ const GraphCanvas: FC<{
         });
       }
     });
-  }, [packages, collapsed, fitView]);
+  }, [packages, agents, collapsed, fitView]);
 
   const edges = useMemo(
-    () => edgesOfPackages(packages, collapsed),
-    [packages, collapsed]
+    () => edgesOf(packages, agents, collapsed),
+    [packages, agents, collapsed]
+  );
+
+  // Who leads to whom over everything drawn, which the cones and the
+  // cone buttons are both read off.
+  const reach = useMemo(
+    () => reachability(packages, agents),
+    [packages, agents]
   );
 
   const togglePackage = useCallback(
@@ -1206,17 +1604,18 @@ const GraphCanvas: FC<{
       });
       // Closing the chosen method's own box lets it go, since its
       // row is gone; replaced rather than pushed, since the reader
-      // clicked the box, not the choice.
+      // clicked the box, not the choice. An agent's row is in no
+      // box, so it stays.
       if (
-        selectedMethodId !== null &&
-        packageOfStateTypeName(stateTypeNameOfMethodId(selectedMethodId)) ===
-          name &&
+        selectedRowId !== null &&
+        !isAgentRowId(selectedRowId) &&
+        packageOfStateTypeName(cardOfRowId(selectedRowId)) === name &&
         !collapsed.has(name)
       ) {
-        onSelectMethod(null, true);
+        onSelectRow(null, true);
       }
     },
-    [collapsed, selectedMethodId, onSelectMethod]
+    [collapsed, selectedRowId, onSelectRow]
   );
 
   const setAllCollapsed = useCallback(
@@ -1226,11 +1625,15 @@ const GraphCanvas: FC<{
       setCollapsed(
         new Set(allCollapsed ? packages.map((pkg) => pkg.name) : [])
       );
-      if (allCollapsed && selectedMethodId !== null) {
-        onSelectMethod(null, true);
+      if (
+        allCollapsed &&
+        selectedRowId !== null &&
+        !isAgentRowId(selectedRowId)
+      ) {
+        onSelectRow(null, true);
       }
     },
-    [packages, selectedMethodId, onSelectMethod]
+    [packages, selectedRowId, onSelectRow]
   );
 
   // Which cones of the chosen method the graph lights: what the
@@ -1247,58 +1650,32 @@ const GraphCanvas: FC<{
   useEffect(() => {
     setCones(askedCones.current ?? DEFAULT_CONES);
     askedCones.current = null;
-  }, [selectedMethodId]);
+  }, [selectedRowId]);
 
-  const toggleMethodSelection = useCallback(
+  const toggleRowSelection = useCallback(
     (id: string, asked: Cones) => {
-      if (selectedMethodId !== id) {
+      if (selectedRowId !== id) {
         askedCones.current = asked;
-        onSelectMethod(id);
+        onSelectRow(id);
       } else if (sameCones(cones, asked)) {
-        onSelectMethod(null);
+        onSelectRow(null);
       } else {
         setCones(asked);
       }
     },
-    [selectedMethodId, cones, onSelectMethod]
+    [selectedRowId, cones, onSelectRow]
   );
 
   const toggleCone = useCallback((cone: keyof Cones): void => {
     setCones((current) => ({ ...current, [cone]: !current[cone] }));
   }, []);
 
-  // The methods some drawn call lands on, self-calls included, and
-  // the methods that make one: what a cone button needs to have
-  // anything to light.
-  const withCallers = useMemo(() => {
-    const ids = new Set<string>();
-    for (const pkg of packages) {
-      for (const stateType of pkg.stateTypes) {
-        for (const method of stateType.methods) {
-          for (const call of method.calls) {
-            if (isDrawn(call)) {
-              ids.add(methodId(call.stateTypeName, call.methodName));
-            }
-          }
-        }
-      }
-    }
-    return ids;
-  }, [packages]);
+  // The rows some drawn arrow lands on, self-calls included, and the
+  // rows that make one: what a cone button needs to have anything to
+  // light.
+  const withCallers = useMemo(() => new Set(reach.callers.keys()), [reach]);
 
-  const withCalls = useMemo(() => {
-    const ids = new Set<string>();
-    for (const pkg of packages) {
-      for (const stateType of pkg.stateTypes) {
-        for (const method of stateType.methods) {
-          if (method.calls.some(isDrawn)) {
-            ids.add(methodId(stateType.id, method.name));
-          }
-        }
-      }
-    }
-    return ids;
-  }, [packages]);
+  const withCalls = useMemo(() => new Set(reach.callees.keys()), [reach]);
 
   // With a method chosen, its lit cones: downstream, the methods it
   // calls transitively and the arrows carrying those calls;
@@ -1308,12 +1685,10 @@ const GraphCanvas: FC<{
   // in a cone when any method folded into it is. An expanded box
   // never fades: it is the room its cards are in.
   const unfaded = useMemo(() => {
-    if (selectedMethodId === null) {
+    if (selectedRowId === null) {
       return null;
     }
-    const nodeIds = new Set<string>([
-      stateTypeNameOfMethodId(selectedMethodId),
-    ]);
+    const nodeIds = new Set<string>([cardOfRowId(selectedRowId)]);
     const edgeIds = new Set<string>();
     const light = (edge: Edge<CallEdgeData>): void => {
       edgeIds.add(edge.id);
@@ -1321,26 +1696,26 @@ const GraphCanvas: FC<{
       nodeIds.add(edge.target);
     };
     if (cones.downstream) {
-      const reached = reachableMethodIds(selectedMethodId, packages);
+      const reached = closure(selectedRowId, reach.callees);
       for (const edge of edges) {
-        if (edge.data!.sourceMethodIds.some((id) => reached.has(id))) {
+        if (edge.data!.sourceIds.some((id) => reached.has(id))) {
           light(edge);
         }
       }
     }
     if (cones.upstream) {
-      const reaching = reachingMethodIds(selectedMethodId, packages);
+      const reaching = closure(selectedRowId, reach.callers);
       for (const edge of edges) {
         if (
-          edge.data!.sourceMethodIds.some((id) => reaching.has(id)) &&
-          edge.data!.targetMethodIds.some((id) => reaching.has(id))
+          edge.data!.sourceIds.some((id) => reaching.has(id)) &&
+          edge.data!.targetIds.some((id) => reaching.has(id))
         ) {
           light(edge);
         }
       }
     }
     return { nodeIds, edgeIds };
-  }, [selectedMethodId, cones, packages, edges]);
+  }, [selectedRowId, cones, reach, edges]);
 
   const shownNodes = useMemo(
     () =>
@@ -1363,9 +1738,24 @@ const GraphCanvas: FC<{
               className,
               data: {
                 ...node.data,
-                selectedMethod: selectedMethodId,
-                onSelectMethod: toggleMethodSelection,
+                selectedRow: selectedRowId,
+                onSelectRow: toggleRowSelection,
                 onOpenStateType,
+                cones,
+                onToggleCone: toggleCone,
+                withCallers,
+                withCalls,
+              },
+            };
+          case "agent":
+            return {
+              ...node,
+              className,
+              data: {
+                ...node.data,
+                selectedRow: selectedRowId,
+                onSelectRow: toggleRowSelection,
+                onOpenAgent,
                 cones,
                 onToggleCone: toggleCone,
                 withCallers,
@@ -1379,10 +1769,11 @@ const GraphCanvas: FC<{
     [
       nodes,
       unfaded,
-      selectedMethodId,
-      toggleMethodSelection,
+      selectedRowId,
+      toggleRowSelection,
       togglePackage,
       onOpenStateType,
+      onOpenAgent,
       cones,
       toggleCone,
       withCallers,
@@ -1415,8 +1806,8 @@ const GraphCanvas: FC<{
         }
       }}
       onPaneClick={() => {
-        if (selectedMethodId !== null) {
-          onSelectMethod(null);
+        if (selectedRowId !== null) {
+          onSelectRow(null);
         }
       }}
       // ELK places the nodes, so they don't move one by one. Left
@@ -1457,25 +1848,52 @@ const GraphCanvas: FC<{
   );
 };
 
-// How many calls the graph draws: counted from the data rather than
-// the edges, which collapse when their box is collapsed.
-export const drawnCallCount = (stateTypes: GraphStateType[]): number =>
-  stateTypes.reduce(
-    (count, stateType) =>
-      count +
-      stateType.methods.reduce(
-        (count, method) => count + method.calls.filter(isDrawn).length,
-        0
-      ),
-    0
+// How many arrows the graph draws: every call and every run,
+// whoever makes it, counted from the data rather than the edges,
+// which fold when their box is collapsed.
+export const drawnCallCount = (
+  stateTypes: GraphStateType[],
+  agents: GraphAgent[]
+): number => {
+  const drawn = (calls: GraphCall[], runs: GraphRun[]): number =>
+    calls.filter(isDrawn).length + runs.length;
+  return (
+    stateTypes.reduce(
+      (count, stateType) =>
+        count +
+        stateType.methods.reduce(
+          (count, method) => count + drawn(method.calls, method.runs),
+          0
+        ),
+      0
+    ) +
+    agents.reduce(
+      (count, agent) =>
+        count +
+        agent.tools.reduce(
+          (count, tool) => count + drawn(tool.calls, tool.runs),
+          0
+        ),
+      0
+    )
   );
+};
 
 export const GraphPage: FC<{
   stateTypes: GraphStateType[];
-  selectedMethodId: string | null;
-  onSelectMethod: (id: string | null, replace?: boolean) => void;
+  agents: GraphAgent[];
+  selectedRowId: string | null;
+  onSelectRow: (id: string | null, replace?: boolean) => void;
   onOpenStateType: (id: string) => void;
-}> = ({ stateTypes, selectedMethodId, onSelectMethod, onOpenStateType }) => {
+  onOpenAgent: (id: string) => void;
+}> = ({
+  stateTypes,
+  agents,
+  selectedRowId,
+  onSelectRow,
+  onOpenStateType,
+  onOpenAgent,
+}) => {
   const packages = useMemo(
     () => groupStateTypesByPackage(stateTypes),
     [stateTypes]
@@ -1486,9 +1904,11 @@ export const GraphPage: FC<{
       <ReactFlowProvider>
         <GraphCanvas
           packages={packages}
-          selectedMethodId={selectedMethodId}
-          onSelectMethod={onSelectMethod}
+          agents={agents}
+          selectedRowId={selectedRowId}
+          onSelectRow={onSelectRow}
           onOpenStateType={onOpenStateType}
+          onOpenAgent={onOpenAgent}
         />
       </ReactFlowProvider>
     </div>

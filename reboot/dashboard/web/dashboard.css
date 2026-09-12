@@ -877,6 +877,50 @@ header h1 {
   gap: 6px;
 }
 
+/* The agent's prompt on the pane, whole and in the shape it was
+   written in: it is a piece of prose the developer wrote, and its
+   paragraphs and its lists are what it means. */
+.agent-prompt {
+  border: 1px solid hsl(var(--border-soft));
+  border-radius: var(--radius);
+  background: hsl(var(--surface-sunken));
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: hsl(var(--foreground));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* One tool, set the way a method is. */
+.agent-tool {
+  border: 1px solid hsl(var(--border-soft));
+  border-radius: var(--radius);
+  background: hsl(var(--surface-sunken));
+  padding: 10px 14px;
+}
+
+.agent-tool-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.agent-tool-name {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+/* What the tool reaches: each a link to the method, or the agent, in
+   the pane. */
+.agent-tool-calls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 /* Deliberately not a scroll container. Nothing inside a card paints
    out to its edges, so there is no corner for `overflow: hidden` to
    clip, and it would clip two things that must escape: a pill's
@@ -1318,6 +1362,12 @@ header h1 {
   --kind: 211 25% 60%;
 }
 
+/* An agent is no kind of method, so its card and its tools' rows
+   wear a hue of their own, the one `graph.tsx` gives their edges. */
+.graph-kind-agent {
+  --kind: 291 45% 48%;
+}
+
 .graph-method-dot {
   flex: none;
   width: 7px;
@@ -1346,6 +1396,83 @@ header h1 {
 
 .graph-method-open:hover {
   text-decoration: underline;
+}
+
+/* An agent: a card like a state type's, marked out by the hue of its
+   head, with a row per tool. Never in a package's box, so it carries
+   its own tint rather than sitting in one. */
+.graph-agent {
+  width: 100%;
+  background: hsl(var(--card));
+  border: 1px solid hsl(291 45% 48% / 0.4);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px hsl(240 10% 40% / 0.1);
+  overflow: hidden;
+}
+
+/* 40px tall, which `graph.tsx` lays out by: the name on one line and
+   the model under it, rather than the two sharing a line, where a
+   long model name would eat the name the reader came for. */
+.graph-agent-head {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 40px;
+  padding: 0 12px;
+  background: hsl(291 45% 48% / 0.08);
+  border-bottom: 1px solid hsl(291 45% 48% / 0.25);
+  color: hsl(var(--foreground));
+}
+
+.graph-agent-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.graph-agent-emoji {
+  flex: none;
+  font-size: 13px;
+}
+
+.graph-agent-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-agent-model {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: hsl(var(--muted-foreground));
+}
+
+/* The first of the prompt, which is what the agent is: three lines
+   of it, clamped to the 48px `graph.tsx` lays out by, which is
+   exactly three at this line height plus the padding above them. The
+   whole of it, in the shape it was written in, is in the types pane,
+   a click on the head away; here its lines run on, so that three of
+   them carry as much of it as they can. */
+.graph-agent-prompt {
+  height: 48px;
+  padding: 5px 12px 1px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  font-size: 10px;
+  line-height: 14px;
+  color: hsl(var(--muted-foreground));
 }
 
 /* The stubs of the arrows at the chosen row's flanks: the right one
