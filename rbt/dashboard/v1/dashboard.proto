@@ -731,6 +731,7 @@ service DashboardMethods {
   rpc UpdateApi(DashboardUpdateApiRequest)
       returns (DashboardUpdateApiResponse) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -739,6 +740,7 @@ service DashboardMethods {
   rpc UpdateCode(DashboardUpdateCodeRequest)
       returns (DashboardUpdateCodeResponse) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 

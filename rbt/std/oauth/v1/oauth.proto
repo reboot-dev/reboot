@@ -83,7 +83,7 @@ service OAuthTokenManagerMethods {
   // stored tokens. Implicitly constructs the manager on first use.
   rpc Store(StoreRequest) returns (StoreResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
     };
   }
 

@@ -25,13 +25,13 @@ service NodeMethods {
 
   rpc Insert(NodeInsertRequest) returns (NodeInsertResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
     };
   }
 
   rpc Remove(NodeRemoveRequest) returns (NodeRemoveResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
     };
   }
 
@@ -202,7 +202,7 @@ message InvalidRangeError {
 service OrderedMapMethods {
   rpc Create(OrderedMapCreateRequest) returns (OrderedMapCreateResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
       errors: [ "rbt.v1alpha1.StateAlreadyConstructed" ],
     };
   }
@@ -215,13 +215,13 @@ service OrderedMapMethods {
 
   rpc Insert(OrderedMapInsertRequest) returns (OrderedMapInsertResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {}
+      transaction: { exclusive: {} }
     };
   }
 
   rpc Remove(OrderedMapRemoveRequest) returns (OrderedMapRemoveResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {}
+      transaction: { exclusive: {} }
     };
   }
 

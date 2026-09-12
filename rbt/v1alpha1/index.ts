@@ -80,9 +80,55 @@ export const errorsSchema = z.union([
 
 export type Errors = z.infer<typeof errorsSchema>;
 
-export const constructibleMethodSchema = z.object({
-  kind: z.literal(["writer", "transaction"]),
+// The two ways a transaction may hold the lock on its own state while
+// it runs; see `exclusive()` and `shared()`. Each is an object so that
+// either can grow options later.
+export const exclusiveSchema = z.object({
+  type: z.literal("exclusive"),
+});
+
+export const sharedSchema = z.object({
+  type: z.literal("shared"),
+});
+
+export type Exclusive = z.infer<typeof exclusiveSchema>;
+export type Shared = z.infer<typeof sharedSchema>;
+
+// How a transaction holds the lock on its own state while it runs. The
+// error is what a transaction declared without one is told, since the
+// choice is required.
+export const modeSchema = z.discriminatedUnion(
+  "type",
+  [exclusiveSchema, sharedSchema],
+  {
+    error:
+      "A transaction must say how it holds the lock on its own state " +
+      "while it runs. Every transaction must declare one of: " +
+      "`mode: exclusive()` takes " +
+      "the lock exclusive from the start, so that concurrent callers of " +
+      "the same state queue behind it, the choice for a transaction that " +
+      "writes its own state, which is most of them; `mode: shared()` " +
+      "takes the lock shared and upgrades it to exclusive only if the " +
+      "transaction writes its own state, so that callers proceed " +
+      "concurrently while none of them writes it, the choice for a " +
+      "transaction that mostly reads its own state while writing others.",
+  }
+);
+
+export type Mode = z.infer<typeof modeSchema>;
+
+export const writerMethodSchema = z.object({
+  kind: z.literal("writer"),
   factory: z.object({}).optional(),
+  request: requestSchema,
+  response: responseSchema,
+  errors: errorsSchema.optional(),
+});
+
+export const transactionMethodSchema = z.object({
+  kind: z.literal("transaction"),
+  factory: z.object({}).optional(),
+  mode: modeSchema,
   request: requestSchema,
   response: responseSchema,
   errors: errorsSchema.optional(),
@@ -98,7 +144,8 @@ export const notConstructibleMethodSchema = z.object({
 export const methodsSchema = z.record(
   z.string(),
   z.discriminatedUnion("kind", [
-    constructibleMethodSchema,
+    writerMethodSchema,
+    transactionMethodSchema,
     notConstructibleMethodSchema,
   ])
 );
@@ -132,11 +179,32 @@ export type Transaction<
   ErrorsType extends Errors | undefined
 > = {
   kind: "transaction";
+  mode: Mode;
   request: RequestType;
   response: ResponseType;
   errors?: ErrorsType;
   factory?: {};
 };
+
+// A `transaction(...)`'s `mode`: the transaction takes the lock on its
+// own state exclusive from the start, so that concurrent callers of the
+// same state queue behind it. The choice for a transaction that writes
+// its own state, which is most of them: two such transactions can never
+// run to completion concurrently anyway, and starting shared is what
+// lets them deadlock on the upgrade.
+export function exclusive(): Exclusive {
+  return { type: "exclusive" as const };
+}
+
+// A `transaction(...)`'s `mode`: the transaction takes the lock on its
+// own state shared and upgrades it to exclusive only if it writes its
+// own state, so that callers proceed concurrently while none of them
+// writes it. The choice for a transaction that mostly reads its own
+// state while writing others, such as the root of a tree of states that
+// every call descends through.
+export function shared(): Shared {
+  return { type: "shared" as const };
+}
 
 export type Workflow<
   RequestType extends Request,
@@ -199,11 +267,15 @@ export function transaction<
   ResponseType extends Response,
   ErrorsType extends Errors | undefined
 >({
+  mode,
   request,
   response,
   errors,
   factory,
 }: {
+  // How the transaction holds the lock on its own state while it
+  // runs: `exclusive()` or `shared()`.
+  mode: Mode;
   request: RequestType;
   response: ResponseType;
   errors?: ErrorsType;
@@ -211,6 +283,7 @@ export function transaction<
 }): Transaction<RequestType, ResponseType, ErrorsType> {
   return {
     kind: "transaction" as const,
+    mode,
     request,
     response,
     errors,

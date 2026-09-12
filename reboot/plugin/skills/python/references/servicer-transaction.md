@@ -16,7 +16,12 @@ tags: servicer, transaction, TransactionContext, atomic, multi-actor
 A method declared with `Transaction(...)` in the API file receives a
 `TransactionContext` and is the only place where you can atomically
 mutate multiple actors. The runtime serializes transactions that touch
-overlapping actors.
+overlapping actors. The declaration's `mode=` says how the transaction
+holds the lock on its own state: `Exclusive()` takes it exclusive as
+the transaction starts, so concurrent callers of the actor queue, and
+is the choice for a body that writes `state`; `Shared()` takes it
+shared and upgrades only if the body writes `state`, so callers that
+only read proceed concurrently.
 
 **Incorrect (multi-actor work in a writer):**
 
@@ -35,6 +40,7 @@ async def transfer(
 
 ```python
 transfer=Transaction(
+    mode=Exclusive(),
     request=TransferRequest,
     response=None,
     description="Move funds between two accounts, both sides landing "

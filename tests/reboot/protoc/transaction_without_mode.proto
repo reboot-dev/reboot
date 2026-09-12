@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+
+package tests.reboot.protoc;
+
+service EchoMethods {
+  option (rbt.v1alpha1.service) = {
+  };
+
+  rpc Reply(Text) returns (Text) {
+    // TESTS: a transaction that does not say whether it is exclusive or
+    //        shared.
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+}

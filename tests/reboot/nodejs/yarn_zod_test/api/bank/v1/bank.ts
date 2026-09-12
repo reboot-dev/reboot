@@ -1,4 +1,4 @@
-import { reader, transaction, writer } from "@reboot-dev/reboot-api";
+import { exclusive, reader, transaction, writer } from "@reboot-dev/reboot-api";
 import { z } from "zod/v4";
 
 export const Bank = {
@@ -11,11 +11,13 @@ export const Bank = {
       response: z.void(),
     }),
     create: transaction({
+      mode: exclusive(),
       factory: {},
       request: {},
       response: z.void(),
     }),
     signUp: transaction({
+      mode: exclusive(),
       request: {
         accountId: z.string().meta({ tag: 1 }),
         initialDeposit: z.number().meta({ tag: 2 }),
@@ -23,6 +25,7 @@ export const Bank = {
       response: z.void(),
     }),
     transfer: transaction({
+      mode: exclusive(),
       request: {
         fromAccountId: z.string().meta({ tag: 1 }),
         toAccountId: z.string().meta({ tag: 2 }),

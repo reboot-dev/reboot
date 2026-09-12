@@ -12,8 +12,10 @@ from reboot.api import (
     API,
     COLLECTION_TYPE,
     PRIMITIVE_TYPE,
+    Exclusive,
     MethodModel,
     Model,
+    Transaction,
     UserPydanticError,
     get_field_tag,
     is_annotation_any,
@@ -709,6 +711,17 @@ async def _generate_api_schemas(
             if method_spec.factory:
                 assert method_kind in ['writer', 'transaction']
                 await zod.write('        factory: {},\n')
+
+            if isinstance(method_spec, Transaction):
+                # `Type` refused a transaction without a mode; the
+                # zod helper is named for it, `exclusive()` or
+                # `shared()`.
+                assert method_spec.mode is not None
+                mode = (
+                    'exclusive'
+                    if isinstance(method_spec.mode, Exclusive) else 'shared'
+                )
+                await zod.write(f'        mode: reboot_api.{mode}(),\n')
 
             await zod.write(f'        request: {request_schema_ref},\n')
             await zod.write(f'        response: {response_schema_ref},\n')

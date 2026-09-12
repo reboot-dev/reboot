@@ -1,4 +1,10 @@
-import { reader, transaction, writer } from "@reboot-dev/reboot-api";
+import {
+  exclusive,
+  reader,
+  transaction,
+  writer,
+  shared,
+} from "@reboot-dev/reboot-api";
 import { z } from "zod/v4";
 
 export const Counter = {
@@ -26,10 +32,11 @@ export const Counter = {
     }),
     // The rest are pairs of a root transaction and the nested
     // transaction it calls on `peerId`. A nested call carries no
-    // idempotency key, so the nested transaction takes its state's
-    // lock in shared mode, which is what lets several of them run on
-    // one state at the same time.
+    // idempotency key, and the nested transaction is declared shared,
+    // so it takes its state's lock in shared mode, which is what lets
+    // several of them run on one state at the same time.
     callInner: transaction({
+      mode: exclusive(),
       request: z.object({
         peerId: z.string().meta({ tag: 1 }),
       }),
@@ -39,6 +46,7 @@ export const Counter = {
     // on the peer's state rather than the driver's and so cannot work
     // that out from its own context.
     inner: transaction({
+      mode: shared(),
       request: z.object({
         driverId: z.string().meta({ tag: 1 }),
       }),
@@ -47,6 +55,7 @@ export const Counter = {
       }),
     }),
     callParkedIncrement: transaction({
+      mode: exclusive(),
       request: z.object({
         peerId: z.string().meta({ tag: 1 }),
       }),
@@ -54,12 +63,14 @@ export const Counter = {
     }),
     // Waits to be released, then increments through a writer.
     parkedIncrement: transaction({
+      mode: shared(),
       request: z.object({}),
       response: z.object({
         count: z.number().meta({ tag: 1 }),
       }),
     }),
     callTouch: transaction({
+      mode: exclusive(),
       request: z.object({
         peerId: z.string().meta({ tag: 1 }),
       }),
@@ -68,6 +79,7 @@ export const Counter = {
     // Becomes a participant on the state and completes without
     // writing anything.
     touch: transaction({
+      mode: shared(),
       request: z.object({}),
       response: z.void(),
     }),

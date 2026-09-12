@@ -23,6 +23,7 @@ service CustomerMethods {
 
   rpc OpenAccount(OpenAccountRequest) returns (OpenAccountResponse) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 

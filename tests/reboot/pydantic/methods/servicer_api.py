@@ -1,5 +1,6 @@
 from reboot.api import (
     API,
+    Exclusive,
     Field,
     Methods,
     Model,
@@ -293,6 +294,7 @@ TestMethods = Methods(
         mcp=None,
     ),
     transaction_state_update=Transaction(
+        mode=Exclusive(),
         request=TransactionUpdateRequest,
         response=None,
         mcp=None,
@@ -303,6 +305,7 @@ TestMethods = Methods(
         mcp=None,
     ),
     transaction=Transaction(
+        mode=Exclusive(),
         request=None,
         response=None,
         mcp=None,

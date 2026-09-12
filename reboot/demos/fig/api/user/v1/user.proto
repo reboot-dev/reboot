@@ -23,7 +23,7 @@ service UsersMethods {
 
   rpc Add(AddRequest) returns (AddResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
     };
   }
 }

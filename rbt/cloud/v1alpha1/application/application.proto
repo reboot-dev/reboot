@@ -125,6 +125,7 @@ service ApplicationMethods {
     option (rbt.v1alpha1.method) = {
       transaction: {
         constructor: {},
+        exclusive: {},
       },
       errors: [ "InvalidInputError" ],
     };
@@ -138,7 +139,7 @@ service ApplicationMethods {
 
   rpc Up(UpRequest) returns (UpResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
       errors: [
         "InvalidInputError",
         "ConcurrentModificationError",
@@ -157,7 +158,7 @@ service ApplicationMethods {
 
   rpc Down(DownRequest) returns (DownResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
       errors: [ "ConcurrentModificationError" ],
     };
   }

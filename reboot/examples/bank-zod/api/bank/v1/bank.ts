@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
 
-import { reader, transaction } from "@reboot-dev/reboot-api";
+import { exclusive, reader, transaction } from "@reboot-dev/reboot-api";
 
 export const Bank = {
   state: {
@@ -8,11 +8,13 @@ export const Bank = {
   },
   methods: {
     create: transaction({
+      mode: exclusive(),
       factory: {},
       request: {},
       response: z.void(),
     }),
     signUp: transaction({
+      mode: exclusive(),
       request: {
         customerId: z.string().meta({ tag: 1 }),
       },
@@ -25,6 +27,7 @@ export const Bank = {
       },
     }),
     transfer: transaction({
+      mode: exclusive(),
       request: {
         fromAccountId: z.string().meta({ tag: 1 }),
         toAccountId: z.string().meta({ tag: 2 }),
@@ -33,6 +36,7 @@ export const Bank = {
       response: z.void(),
     }),
     openCustomerAccount: transaction({
+      mode: exclusive(),
       request: {
         initialDeposit: z.number().meta({ tag: 1 }),
         customerId: z.string().meta({ tag: 2 }),

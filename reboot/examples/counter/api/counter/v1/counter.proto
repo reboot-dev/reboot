@@ -18,6 +18,7 @@ service CounterMethods {
 
   rpc Take(TakeRequest) returns (TakeResponse) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 }

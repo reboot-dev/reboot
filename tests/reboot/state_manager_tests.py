@@ -214,6 +214,7 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
             state_type_name=(MyGreeterServicer.__state_type_name__),
             method="unused",
             effect_validation=EffectValidation.ENABLED,
+            exclusive=False,
             database_timestamp_ms=database_timestamp_ms,
         )
         _servicing.set(Servicing.NO)

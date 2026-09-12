@@ -100,18 +100,19 @@ service BankMethods {
   rpc Create(CreateRequest) returns (CreateResponse) {
     option (rbt.v1alpha1.method).transaction = {
       constructor: {},
+      exclusive: {},
     };
   }
 
   rpc SignUp(SignUpRequest) returns (SignUpResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {}
+      transaction: { exclusive: {} }
     };
   }
 
   rpc Transfer(TransferRequest) returns (TransferResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
     };
   }
 

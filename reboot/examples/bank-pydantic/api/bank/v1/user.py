@@ -1,5 +1,6 @@
 from reboot.api import (
     API,
+    Exclusive,
     Field,
     Methods,
     Model,
@@ -41,6 +42,7 @@ api = API(
         state=UserState,
         methods=Methods(
             open_account=Transaction(
+                mode=Exclusive(),
                 request=OpenAccountRequest,
                 response=OpenAccountResponse,
                 description="Open a new account for the signed-in "

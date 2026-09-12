@@ -1,5 +1,6 @@
 from reboot.api import (
     API,
+    Exclusive,
     Field,
     Methods,
     Model,
@@ -46,6 +47,7 @@ CustomerMethods = Methods(
         mcp=None,
     ),
     open_account=Transaction(
+        mode=Exclusive(),
         request=OpenAccountRequest,
         response=OpenAccountResponse,
         description="Open an account for this customer with an "

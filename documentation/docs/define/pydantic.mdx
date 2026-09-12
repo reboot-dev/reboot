@@ -15,6 +15,7 @@ Here is a `ChatRoom` with a `reader` and a `writer`:
 from typing import Optional
 from reboot.api import (
     API,
+    Exclusive,
     Field,
     Methods,
     Reader,
@@ -117,6 +118,7 @@ so an [MCP client](/frontends/mcp_ui) can call them:
 from reboot.api import (
     API,
     UI,
+    Exclusive,
     Field,
     Methods,
     Model,
@@ -180,6 +182,7 @@ api = API(
         state=UserState,
         methods=Methods(
             create_counter=Transaction(
+                mode=Exclusive(),
                 request=CreateCounterRequest,
                 response=CreateCounterResponse,
                 description="Create a new Counter with a "
@@ -263,6 +266,7 @@ from reboot.api import Tool
 UserMethods = Methods(
     # AI-callable — the AI can call this.
     create_counter=Transaction(
+        mode=Exclusive(),
         request=None,
         response=CreateCounterResponse,
         description="Create a new Counter. Returns "

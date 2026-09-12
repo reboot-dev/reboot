@@ -2,7 +2,7 @@
 # isort: skip_file
 # ruff: noqa
 # mypy: disable-error-code="func-returns-value"
-# Generated from an API digesting to 744088c24c5a34e28b6dcca523b3a92e1e336a6990f2042b1fe2636c1c7397ad.
+# Generated from an API digesting to 07f11c913717f77cda1dcb03a1598f12dbaf8a905b7e74113390afd4f9f2db7a.
 
 
 
@@ -2016,6 +2016,7 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     state_type_name = IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Ping'),
                     method='DoPing',
                     context_type=IMPORT_reboot_aio_contexts.TransactionContext,
+                    exclusive=True,
                 )
                 assert context is not None
 
@@ -6727,6 +6728,7 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     state_type_name = IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
                     method='CreateCounter',
                     context_type=IMPORT_reboot_aio_contexts.TransactionContext,
+                    exclusive=True,
                 )
                 assert context is not None
 
@@ -8211,6 +8213,7 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     state_type_name = IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
                     method='Create',
                     context_type=IMPORT_reboot_aio_contexts.TransactionContext,
+                    exclusive=True,
                 )
                 assert context is not None
 
@@ -8726,6 +8729,7 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     state_type_name = IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
                     method='SetClaims',
                     context_type=IMPORT_reboot_aio_contexts.TransactionContext,
+                    exclusive=True,
                 )
                 assert context is not None
 

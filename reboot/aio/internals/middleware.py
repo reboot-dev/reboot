@@ -143,6 +143,10 @@ class Middleware(ABC):
         method: str,
         context_type: type[ContextT],
         task: Optional[TaskEffect] = None,
+        # For a `TransactionContext` only: whether the transaction
+        # method declared that it holds the lock on its own state
+        # exclusive from the start.
+        exclusive: Optional[bool] = None,
         # These parameters are used in the `WorkflowContext` only.
         reactively_state_manager: Optional[StateManager] = None,
         reactively_state_type: Optional[type] = None,
@@ -179,6 +183,10 @@ class Middleware(ABC):
             kwargs['reactively_state_manager'] = reactively_state_manager
             kwargs['reactively_state_type'] = reactively_state_type
         if context_type == TransactionContext:
+            assert exclusive is not None, (
+                "`exclusive` is required for `TransactionContext`"
+            )
+            kwargs['exclusive'] = exclusive
             kwargs['database_timestamp_ms'] = self._get_database_timestamp_ms()
         context = context_type(**kwargs)
 

@@ -125,6 +125,26 @@ class GeneralServicer extends General.singleton.Servicer {
     throw new Error("Not implemented");
   }
 
+  async sharedTransaction(
+    context: TransactionContext,
+    state: General.State,
+    request: general_pb.GeneralRequest
+  ): Promise<general_pb.GeneralResponse | PartialMessage<general_pb.GeneralResponse>> {
+    // TODO: implement your own business logic here!
+    //
+    // Update `state` as neccessary.
+    //
+    // state.field = ...
+    //
+    // return {
+    //    message: "This is a partial response",
+    // }
+    //
+    // Read more about the transaction methods in the Reboot documentation:
+    // https://docs.reboot.dev/learn_more/implement/transactions
+    throw new Error("Not implemented");
+  }
+
   static async workflow(
     context: WorkflowContext,
     request: general_pb.GeneralRequest

@@ -229,6 +229,36 @@ py_proto_library(
 )
 
 proto_library(
+    name = "echo_reply_transaction_exclusive_proto",
+    srcs = ["echo_reply_transaction_exclusive.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_reply_transaction_exclusive_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_reply_transaction_exclusive_proto"],
+)
+
+proto_library(
+    name = "echo_reply_transaction_shared_proto",
+    srcs = ["echo_reply_transaction_shared.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_reply_transaction_shared_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_reply_transaction_shared_proto"],
+)
+
+proto_library(
     name = "echo_reply_transaction_constructor_proto",
     srcs = ["echo_reply_transaction_constructor.proto"],
     deps = [
@@ -449,7 +479,9 @@ py_test(
         ":echo_replay_option_changed_py_proto",
         ":echo_replay_type_changed_py_proto",
         ":echo_reply_transaction_constructor_py_proto",
+        ":echo_reply_transaction_exclusive_py_proto",
         ":echo_reply_transaction_py_proto",
+        ":echo_reply_transaction_shared_py_proto",
         ":echo_reply_writer_constructor_py_proto",
         ":echo_state_message_changed_py_proto",
         ":echo_state_message_name_changed_py_proto",

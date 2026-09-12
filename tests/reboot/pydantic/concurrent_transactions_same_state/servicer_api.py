@@ -1,9 +1,11 @@
 from reboot.api import (
     API,
+    Exclusive,
     Field,
     Methods,
     Model,
     Reader,
+    Shared,
     Transaction,
     Type,
     Writer,
@@ -49,10 +51,12 @@ api = API(
             ),
             # The rest are pairs of a root transaction and the nested
             # transaction it calls on `peer_id`. A nested call carries
-            # no idempotency key, so the nested transaction takes its
-            # state's lock in shared mode, which is what lets several
-            # of them run on one state at the same time.
+            # no idempotency key, and the nested transaction is declared
+            # shared, so it takes its state's lock in shared mode, which
+            # is what lets several of them run on one state at the same
+            # time.
             call_inner=Transaction(
+                mode=Exclusive(),
                 request=PeerRequest,
                 response=None,
                 mcp=None,
@@ -61,22 +65,26 @@ api = API(
             # on the peer's state rather than the driver's and so cannot
             # work that out from its own context.
             inner=Transaction(
+                mode=Shared(),
                 request=DriverRequest,
                 response=CountResponse,
                 mcp=None,
             ),
             call_parked_increment=Transaction(
+                mode=Exclusive(),
                 request=PeerRequest,
                 response=None,
                 mcp=None,
             ),
             # Waits to be released, then increments through a writer.
             parked_increment=Transaction(
+                mode=Shared(),
                 request=None,
                 response=CountResponse,
                 mcp=None,
             ),
             call_touch=Transaction(
+                mode=Exclusive(),
                 request=PeerRequest,
                 response=None,
                 mcp=None,
@@ -84,6 +92,7 @@ api = API(
             # Becomes a participant on the state and completes
             # without writing anything.
             touch=Transaction(
+                mode=Shared(),
                 request=None,
                 response=None,
                 mcp=None,

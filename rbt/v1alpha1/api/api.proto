@@ -98,8 +98,22 @@ message Reader {}
 // What a `Writer(...)` alone declares: nothing yet.
 message Writer {}
 
-// What a `Transaction(...)` alone declares: nothing yet.
-message Transaction {}
+// What a `Transaction(...)` alone declares.
+message Transaction {
+  // How the transaction holds the lock on its own state while it
+  // runs, its `mode=`; each is what the same-named
+  // `rbt.v1alpha1.TransactionMethodOptions` mode is.
+  oneof mode {
+    Exclusive exclusive = 1;
+    Shared shared = 2;
+  }
+}
+
+// What `Exclusive()` declares: nothing yet.
+message Exclusive {}
+
+// What `Shared()` declares: nothing yet.
+message Shared {}
 
 // What a `Workflow(...)` alone declares: nothing yet.
 message Workflow {}

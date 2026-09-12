@@ -17,6 +17,7 @@ service ChatbotMethods {
     option (rbt.v1alpha1.method) = {
       transaction: {
         constructor: {},
+        exclusive: {},
       },
     };
   }
@@ -30,7 +31,7 @@ service ChatbotMethods {
 
   rpc Approve(ApproveRequest) returns (ApproveResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
     };
   }
 

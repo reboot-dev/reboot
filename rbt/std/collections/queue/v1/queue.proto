@@ -12,7 +12,7 @@ import "rbt/v1alpha1/options.proto";
 service QueueMethods {
   rpc Enqueue(EnqueueRequest) returns (EnqueueResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
     };
   }
 
@@ -24,7 +24,7 @@ service QueueMethods {
 
   rpc TryDequeue(DequeueRequest) returns (DequeueResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
     };
   }
 

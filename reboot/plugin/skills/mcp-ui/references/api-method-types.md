@@ -107,6 +107,7 @@ a `request=<Model>` field.
 ```python
 from reboot.api import (
     API,
+    Exclusive,
     UI,
     Field,
     Methods,
@@ -152,6 +153,7 @@ api = API(
         state=UserState,
         methods=Methods(
             create_counter=Transaction(
+                mode=Exclusive(),
                 request=None,
                 response=CreateCounterResponse,
                 description="Create a new Counter. Returns the ID of "
@@ -340,6 +342,7 @@ references — load them before writing the body.
 ```python
 from reboot.api import (
     API,
+    Exclusive,
     Field,
     Methods,
     Model,

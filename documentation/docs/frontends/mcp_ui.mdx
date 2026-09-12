@@ -37,7 +37,7 @@ Three things map across:
 **Methods become tools.** Any method on any type is exposed as an MCP
 tool when you declare it with `mcp=Tool()`:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-ui-counter/api/mcp_ui_counter/v1/counter.py&lines=63-88&syntax=python) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-ui-counter/api/mcp_ui_counter/v1/counter.py&lines=64-90&syntax=python) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter/api/mcp_ui_counter/v1/counter.py -->
 
 ```python
@@ -46,6 +46,7 @@ api = API(
         state=UserState,
         methods=Methods(
             create_counter=Transaction(
+                mode=Exclusive(),
                 request=CreateCounterRequest,
                 response=CreateCounterResponse,
                 description="Create a new Counter with a "

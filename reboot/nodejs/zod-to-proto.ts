@@ -997,6 +997,12 @@ const main = async () => {
           }
         }
 
+        if (method.kind === "transaction") {
+          // The mode's arm is named for it: `exclusive` or `shared`,
+          // the same names as the proto option's.
+          proto.write(`        ${method.mode.type}: {},\n`);
+        }
+
         proto.write(`      },\n`);
 
         if (method.errors !== undefined) {

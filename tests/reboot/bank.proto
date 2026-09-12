@@ -71,7 +71,10 @@ message CatchReadOnlyUndeclaredRequest {
 service AccountMethods {
   rpc Open(OpenRequest) returns (OpenResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: { constructor: {} },
+      transaction: {
+        constructor: {},
+        exclusive: {}
+      },
       errors: [ "ZeroDepositError" ],
     };
   }
@@ -148,7 +151,7 @@ service AccountMethods {
   rpc TestNestedTransactionThatAborts(google.protobuf.Empty)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
       errors: [ "UserError" ],
     };
   }
@@ -156,7 +159,7 @@ service AccountMethods {
   rpc TestReadOnlyNestedTransactionThatAborts(google.protobuf.Empty)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
       errors: [ "UserError" ],
     };
   }
@@ -166,6 +169,7 @@ service AccountMethods {
   rpc ReadOnlyUndeclaredAbort(google.protobuf.Empty)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -175,6 +179,7 @@ service AccountMethods {
   rpc CatchReadOnlyUndeclared(CatchReadOnlyUndeclaredRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 }
@@ -324,6 +329,7 @@ service BankMethods {
   // Signs up and constructs an account transactionally!
   rpc SignUp(SignUpRequest) returns (SignUpResponse) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -347,13 +353,14 @@ service BankMethods {
   // transaction!
   rpc Transferrable(TransferrableRequest) returns (TransferrableResponse) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
   // Performs a transfer.
   rpc Transfer(TransferRequest) returns (TransferResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
       // NOTE: we are explicitly not including 'ZeroDepositError' as a
       // possible error here in order to test propagating an
       // undeclared error.
@@ -379,6 +386,7 @@ service BankMethods {
   rpc TryCatchUndeclaredError(TryCatchUndeclaredErrorRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -387,6 +395,7 @@ service BankMethods {
   rpc TryCatchUnavailable(TryCatchUnavailableRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -396,6 +405,7 @@ service BankMethods {
   rpc TryCatchThenCall(TryCatchThenCallRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -404,6 +414,7 @@ service BankMethods {
   rpc TryCatchDeclaredError(TryCatchDeclaredErrorRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -412,6 +423,7 @@ service BankMethods {
   rpc TestUnconstructedReaderFails(TestUnconstructedReaderFailsRequest)
       returns (TestUnconstructedReaderFailsResponse) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -421,6 +433,7 @@ service BankMethods {
       TestUnconstructedStreamingReaderFailsRequest)
       returns (TestUnconstructedStreamingReaderFailsResponse) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -436,6 +449,7 @@ service BankMethods {
   rpc TestCallingLegacyGrpcService(TestCallingLegacyGrpcServiceRequest)
       returns (TestCallingLegacyGrpcServiceResponse) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -443,6 +457,7 @@ service BankMethods {
   rpc TestNestedTransactions(TestNestedTransactionsRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -463,18 +478,21 @@ service BankMethods {
   rpc TestNestedTransactionThatAborts(TestNestedTransactionThatAbortsRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
   rpc TestInheritedOwnershipAbort(TestInheritedOwnershipAbortRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
   rpc TestInheritedOwnershipAbortNested(TestInheritedOwnershipAbortRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -486,6 +504,7 @@ service BankMethods {
       TestRetainReadLockAfterDeclaredAbortRequest)
       returns (TestRetainReadLockAfterDeclaredAbortResponse) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -495,6 +514,7 @@ service BankMethods {
   rpc TestNestedCatchUndeclared(TestNestedCatchUndeclaredRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -507,6 +527,7 @@ service BankMethods {
   rpc TestNestedReadOnlyDoomedSubtree(TestNestedReadOnlyDoomedSubtreeRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -521,6 +542,7 @@ service BankMethods {
       TestPrepareWaitForNestedAbortRollbackRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+      exclusive: {},
     };
   }
 
@@ -530,7 +552,7 @@ service BankMethods {
   rpc DepositRemoteThenAbort(DepositRemoteThenAbortRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
       errors: [ "UserError" ],
     };
   }

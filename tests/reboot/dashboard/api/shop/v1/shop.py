@@ -1,5 +1,6 @@
 from reboot.api import (
     API,
+    Exclusive,
     Field,
     Methods,
     Model,
@@ -51,8 +52,11 @@ class OutOfStockError(Model):
 
 
 ShopMethods = Methods(
-    create=Transaction(request=None, response=None, factory=True, mcp=None),
+    create=Transaction(
+        mode=Exclusive(), request=None, response=None, factory=True, mcp=None
+    ),
     stock=Transaction(
+        mode=Exclusive(),
         request=StockRequest,
         response=None,
         description="Add stock of an item.",

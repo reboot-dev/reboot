@@ -12,13 +12,14 @@ service ChannelMethods {
     option (rbt.v1alpha1.method) = {
       transaction: {
         constructor: {},
+        exclusive: {},
       },
     };
   }
 
   rpc Post(PostRequest) returns (PostResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
     };
   }
 

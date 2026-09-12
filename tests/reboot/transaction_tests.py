@@ -667,6 +667,156 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(len(nested_transaction_ids[younger_account_id]), 1)
         self.assertEqual(len(nested_transaction_ids[older_account_id]), 1)
 
+    async def test_exclusive_transactions_on_one_state_do_not_overlap(
+        self,
+    ) -> None:
+        """Two transactions declared `exclusive`, each nested in its own
+        root so that neither carries an idempotency key, take the same
+        state's lock exclusive as they join, so the second body runs
+        only once the first transaction has committed.
+        """
+        # When each body of the target's transaction ran, as
+        # `(entered, exited)` monotonic times, in the order they ran.
+        runs: list[tuple[float, float]] = []
+
+        class TargetServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def ConstructorWriter(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            # A root that calls the target's exclusive transaction.
+            async def ConstructorTransaction(
+                self,
+                context: TransactionContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                await General.ref(request.content["target"]
+                                 ).Transaction(context)
+                return GeneralResponse()
+
+            # The target's transaction reads its state and lingers, so
+            # that a second body running concurrently would overlap.
+            async def Transaction(
+                self,
+                context: TransactionContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                entered = time.monotonic()
+                await asyncio.sleep(0.5)
+                runs.append((entered, time.monotonic()))
+                return GeneralResponse()
+
+        await self.rbt.up(
+            Application(servicers=[TargetServicer]),
+            # Run each body once, so that the two runs recorded are
+            # the two transactions' and not effect validation's
+            # second passes.
+            effect_validation=EffectValidation.DISABLED,
+        )
+        context = self.rbt.create_external_context(name=self.id())
+
+        await General.ConstructorWriter(context, 'target')
+
+        await asyncio.gather(
+            General.ConstructorTransaction(
+                context,
+                'root-1',
+                content={"target": "target"},
+            ),
+            General.ConstructorTransaction(
+                context,
+                'root-2',
+                content={"target": "target"},
+            ),
+        )
+
+        self.assertEqual(len(runs), 2)
+        (_, first_exited), (second_entered, _) = runs
+        self.assertGreaterEqual(second_entered, first_exited)
+
+    async def test_shared_transactions_on_one_state_overlap(self) -> None:
+        """Two transactions declared `shared`, each nested in its own root
+        so that neither carries an idempotency key, take the same
+        state's lock shared as they join and, since neither writes the
+        state, both bodies run at once.
+        """
+        # Each body waits for the other to have entered too, which
+        # only two bodies running at once can satisfy.
+        both_entered = asyncio.Event()
+        entered = 0
+
+        class TargetServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def ConstructorWriter(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            # A root that calls the target's shared transaction.
+            async def ConstructorTransaction(
+                self,
+                context: TransactionContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                await General.ref(request.content["target"]
+                                 ).SharedTransaction(context)
+                return GeneralResponse()
+
+            async def SharedTransaction(
+                self,
+                context: TransactionContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                nonlocal entered
+                entered += 1
+                if entered == 2:
+                    both_entered.set()
+                await asyncio.wait_for(both_entered.wait(), timeout=10)
+                return GeneralResponse()
+
+        await self.rbt.up(
+            Application(servicers=[TargetServicer]),
+            # Run each body once, so that exactly the two transactions'
+            # bodies are the ones waiting on each other.
+            effect_validation=EffectValidation.DISABLED,
+        )
+        context = self.rbt.create_external_context(name=self.id())
+
+        await General.ConstructorWriter(context, 'target')
+
+        await asyncio.gather(
+            General.ConstructorTransaction(
+                context,
+                'root-1',
+                content={"target": "target"},
+            ),
+            General.ConstructorTransaction(
+                context,
+                'root-2',
+                content={"target": "target"},
+            ),
+        )
+
+        self.assertTrue(both_entered.is_set())
+
     async def test_retry_carries_the_age_of_the_first_attempt(self) -> None:
         """A call that aborts with a `TransactionShouldRetry` whose
         reason skips backoff learns the transaction's age from the
@@ -755,6 +905,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
                 state_type_name=BankServicer.__state_type_name__,
                 method='unused',
                 effect_validation=EffectValidation.ENABLED,
+                exclusive=False,
             )
         finally:
             _servicing.set(Servicing.NO)

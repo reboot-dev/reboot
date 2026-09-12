@@ -1,6 +1,6 @@
 """A second API file in the shop's package, whose `pick` declares the
 error `shop.py` defines and declares."""
-from reboot.api import API, Field, Methods, Model, Transaction, Type
+from reboot.api import API, Exclusive, Field, Methods, Model, Transaction, Type
 from shop.v1.shop import OutOfStockError, StockRequest
 
 
@@ -9,8 +9,11 @@ class WarehouseState(Model):
 
 
 WarehouseMethods = Methods(
-    create=Transaction(request=None, response=None, factory=True, mcp=None),
+    create=Transaction(
+        mode=Exclusive(), request=None, response=None, factory=True, mcp=None
+    ),
     pick=Transaction(
+        mode=Exclusive(),
         request=StockRequest,
         response=None,
         errors=[OutOfStockError],
