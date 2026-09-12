@@ -43,7 +43,7 @@ message ListResponse {
 service UserMethods {
   rpc Create(CreateRequest) returns (CreateResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: { exclusive: {} },
+      transaction: { shared: {} },
     };
   }
 

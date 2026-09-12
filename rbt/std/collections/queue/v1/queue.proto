@@ -10,9 +10,12 @@ import "rbt/v1alpha1/options.proto";
 ////////////////////////////////////////////////////////////////////////
 
 service QueueMethods {
+  // Shared: the queue only points at the map that holds its items and
+  // writes itself only on the first enqueue, so enqueues and dequeues
+  // proceed through it concurrently.
   rpc Enqueue(EnqueueRequest) returns (EnqueueResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: { exclusive: {} },
+      transaction: { shared: {} },
     };
   }
 
@@ -22,9 +25,10 @@ service QueueMethods {
     };
   }
 
+  // Shared for the same reason as `Enqueue`.
   rpc TryDequeue(DequeueRequest) returns (DequeueResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: { exclusive: {} },
+      transaction: { shared: {} },
     };
   }
 

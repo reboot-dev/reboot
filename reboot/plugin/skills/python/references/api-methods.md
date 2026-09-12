@@ -48,7 +48,8 @@ AccountMethods = Methods(
 
 ```python
 from reboot.api import (
-    API, Exclusive, Field, Methods, Model, Reader, Transaction, Type, Writer,
+    API, Exclusive, Field, Methods, Model, Reader, Shared, Transaction, Type,
+    Writer,
 )
 
 AccountMethods = Methods(
@@ -66,7 +67,9 @@ AccountMethods = Methods(
 
 BankMethods = Methods(
     transfer=Transaction(
-        mode=Exclusive(),
+        # The bank only coordinates the two accounts and never writes
+        # its own state, so transfers proceed through it concurrently.
+        mode=Shared(),
         request=TransferRequest, response=TransferResponse,
         description="Move funds between two accounts, both sides "
         "landing together or neither.",

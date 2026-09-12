@@ -81,9 +81,11 @@ message FetchResponse {
 service OAuthTokenManagerMethods {
   // Encrypts and persists `tokens` for `user_id`, replacing any previously
   // stored tokens. Implicitly constructs the manager on first use.
+  // Shared: the manager has no state of its own to write; it encrypts
+  // the tokens into a `Ciphertext` and indexes them in a map.
   rpc Store(StoreRequest) returns (StoreResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: { exclusive: {} },
+      transaction: { shared: {} },
     };
   }
 

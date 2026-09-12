@@ -23,15 +23,22 @@ service NodeMethods {
     };
   }
 
+  // Shared because one method serves every node of the tree: an
+  // inner node only reads its keys to pick the children to descend
+  // into, and writes itself only when a child splits, so inserts
+  // into different subtrees proceed through it concurrently. A leaf
+  // always writes itself and upgrades.
   rpc Insert(NodeInsertRequest) returns (NodeInsertResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: { exclusive: {} },
+      transaction: { shared: {} },
     };
   }
 
+  // Shared for the same reason as `Insert`: an inner node only reads
+  // itself to descend, and a leaf upgrades to write.
   rpc Remove(NodeRemoveRequest) returns (NodeRemoveResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: { exclusive: {} },
+      transaction: { shared: {} },
     };
   }
 
@@ -213,15 +220,20 @@ service OrderedMapMethods {
     };
   }
 
+  // Shared: every call descends through the map's root, which only
+  // reads its own state to find the root `Node` and writes itself
+  // only when the root splits (or on every call when `maintain_size`
+  // is set), so callers proceed through it concurrently.
   rpc Insert(OrderedMapInsertRequest) returns (OrderedMapInsertResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: { exclusive: {} }
+      transaction: { shared: {} }
     };
   }
 
+  // Shared for the same reason as `Insert`.
   rpc Remove(OrderedMapRemoveRequest) returns (OrderedMapRemoveResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: { exclusive: {} }
+      transaction: { shared: {} }
     };
   }
 
