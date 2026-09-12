@@ -97,7 +97,7 @@ jobs:
     secrets: inherit
     with:
       cancel-workflow-on-failure: true
-      runs-on: 4_core_GitHub_hosted
+      runs-on: depot-ubuntu-24.04-32
       run: |
         # Run check code style from dev-tools on all of our files using our
         # codespace image. This ensures that the version of code checking tools
