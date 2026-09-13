@@ -573,12 +573,17 @@ message Agent {
   // One run of an agent, made by a servicer method's implementation
   // or by another agent's tool, through any of `Agent`'s entry points:
   // `run`, `iter`, `run_stream` or `run_stream_events`. Which one says
-  // nothing about what the application does, so it is not recorded;
-  // a message rather than the name alone, so that something a run
-  // does say can be added later without changing what reads it.
+  // nothing about what the application does, so it is not recorded.
   message Run {
     // Represents the agent run, spelled as `Agent.name` spells it.
     string agent = 1;
+
+    // Represents, one sentence apiece, why the run may give the agent
+    // tools the analysis has not seen: a `toolsets=` passed to the
+    // run, which is not followed, e.g. "Agent 'librarian' is called
+    // via `run` and passed `toolsets` that are not analyzed". Empty
+    // when the run gives the agent nothing beyond what it has.
+    repeated string tool_caveats = 2;
   }
 
   // One tool an agent may call, and what analyzing its
@@ -640,8 +645,20 @@ message Agent {
   optional string description = 8;
 
   // Represents every tool this file's analysis found the agent has,
-  // in the order it met them.
+  // in the order it met them: each function decorated as one with
+  // `@agent.tool` or `@agent.tool_plain`, the one way of giving an
+  // agent a tool that can always be followed.
   repeated Tool tools = 9;
+
+  // Represents, one sentence apiece, every way this file's analysis
+  // found the agent is given tools that are not followed, and so may
+  // not be in `tools`: a `tools=` or a `toolsets=` passed to its
+  // construction, an agent built elsewhere adopted with `Agent.wrap`,
+  // and `tools=` passed to `override`. E.g. "Agent 'librarian' is
+  // called via `override` and passed `tools` that are not analyzed".
+  // The tools a run is given are said on the run; see
+  // `Run.tool_caveats`. Empty when `tools` is everything.
+  repeated string tool_caveats = 10;
 }
 
 // What analyzing one of the developer's files used: the digest

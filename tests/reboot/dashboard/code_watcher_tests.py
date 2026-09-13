@@ -314,12 +314,6 @@ class Agent:
 # What an agent's tools may be wrapped in where they are given, which
 # the analysis reads without asking what either is.
 PYDANTIC_AI_MODULE = '''
-class Tool:
-
-    def __init__(self, function, *, name=None, description=None, **kwargs):
-        pass
-
-
 class FunctionToolset:
 
     def __init__(self, tools=(), **kwargs):
@@ -1405,6 +1399,14 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(agent.system_prompt), ['You are the librarian.'])
         self.assertEqual(agent.description, 'Keeps the shelves in order.')
 
+        # Everything the agent can reach is analyzed, so nothing is
+        # said about tools it may be missing.
+        self.assertEqual(list(agent.tool_caveats), [])
+        self.assertEqual(
+            [list(run.tool_caveats) for run in method.runs],
+            [[]],
+        )
+
         [tool] = agent.tools
         self.assertEqual(tool.name, 'look_up')
         self.assertEqual(tool.description, 'Reads the depot.')
@@ -1450,44 +1452,32 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             ['librarian'] * 4,
         )
 
-    async def test_the_tools_a_construction_and_a_run_give_an_agent(
+    async def test_tools_and_toolsets_given_are_said_not_followed(
         self,
     ) -> None:
-        """A tool written out where the agent is constructed, in its
-        `tools` or in a toolset in its `toolsets`, is the agent's;
-        one written out at a run site is the agent's for that run.
-        Each says what the registration calls it, and what its
-        implementation does."""
+        """A `tools` or a `toolsets` given where an agent is constructed,
+        or a `toolsets` given where it is run, can be written in more
+        shapes than can be followed reliably, so neither is followed,
+        even when it names a function that could be: the agent, or the
+        run, says in a sentence that it may have tools the analysis has
+        not seen."""
         servicer = self._write(
             'shop_servicer.py',
             source=(
-                'from pydantic_ai import FunctionToolset, Tool\n'
+                'from pydantic_ai import FunctionToolset\n'
                 'from reboot.agents.pydantic_ai import Agent\n'
                 'from shop.v1.depot_rbt import Depot\n'
                 'from shop.v1.shop_rbt import Shop\n'
                 '\n'
                 '\n'
                 'async def restock(context):\n'
-                '    """Fills the depot."""\n'
                 "    await Depot.ref('d').look(context)\n"
-                '\n'
-                '\n'
-                'async def audit(context):\n'
-                "    await Shop.ref('s').look(context)\n"
-                '\n'
-                '\n'
-                'async def count(context):\n'
-                '    pass\n'
                 '\n'
                 '\n'
                 'librarian = Agent(\n'
                 "    name='librarian',\n"
                 '    tools=[restock],\n'
-                '    toolsets=[\n'
-                '        FunctionToolset(\n'
-                "            tools=[Tool(audit, name='checker')],\n"
-                '        ),\n'
-                '    ],\n'
+                '    toolsets=[FunctionToolset(tools=[restock])],\n'
                 ')\n'
                 '\n'
                 '\n'
@@ -1497,7 +1487,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 '        await librarian.run(\n'
                 '            context,\n'
                 "            'Tidy up',\n"
-                '            toolsets=[FunctionToolset(tools=[count])],\n'
+                '            toolsets=[FunctionToolset(tools=[restock])],\n'
                 '        )\n'
             ),
         )
@@ -1506,21 +1496,90 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         found = await self._analyze(application)
 
         [agent] = found[servicer].agents
-        # The construction's first, in the order written, then the run
-        # site's.
+        self.assertEqual(list(agent.tools), [])
         self.assertEqual(
-            [tool.name for tool in agent.tools],
-            ['restock', 'checker', 'count'],
+            list(agent.tool_caveats),
+            [
+                "Agent 'librarian' is constructed with `tools` that are not "
+                "analyzed",
+                "Agent 'librarian' is constructed with `toolsets` that are "
+                "not analyzed",
+            ],
         )
-        restock, checker, _ = agent.tools
-        self.assertEqual(restock.description, 'Fills the depot.')
+
+        [found_servicer] = found[servicer].servicers
+        [method] = found_servicer.methods
+        [run] = method.runs
         self.assertEqual(
-            [(call.state_type, call.method) for call in restock.calls],
-            [('shop.v1.Depot', 'look')],
+            list(run.tool_caveats),
+            [
+                "Agent 'librarian' is called via `run` and passed `toolsets` "
+                "that are not analyzed",
+            ],
+        )
+
+    async def test_override_and_wrap_tools_are_said_not_followed(
+        self,
+    ) -> None:
+        """`tools=` passed to `override`, which reach the runs inside
+        it, and an agent built elsewhere adopted with `Agent.wrap`,
+        whose tools are wherever it was built, are said on the agent
+        rather than followed."""
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'from reboot.agents.pydantic_ai import Agent\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                'async def lookup(context):\n'
+                "    await Shop.ref('s').look(context)\n"
+                '\n'
+                '\n'
+                'existing = None\n'
+                '\n'
+                "librarian = Agent('test', name='librarian')\n"
+                'adopted = Agent.wrap(existing)\n'
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                '        with librarian.override(tools=[lookup]):\n'
+                "            await librarian.run(context, 'Tidy up')\n"
+                "        await adopted.run(context, 'Carry on')\n"
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        agents = {agent.name: agent for agent in found[servicer].agents}
+        self.assertEqual(
+            {
+                name: list(agent.tools) for name, agent in agents.items()
+            },
+            {
+                'librarian': [],
+                'adopted': []
+            },
         )
         self.assertEqual(
-            [(call.state_type, call.method) for call in checker.calls],
-            [('shop.v1.Shop', 'look')],
+            {
+                name: list(agent.tool_caveats) for name, agent in agents.items()
+            },
+            {
+                'librarian':
+                    [
+                        "Agent 'librarian' is called via `override` and "
+                        "passed `tools` that are not analyzed",
+                    ],
+                'adopted':
+                    [
+                        "Agent 'adopted' wraps `existing`, whose tools are "
+                        "not analyzed",
+                    ],
+            },
         )
 
     async def test_an_agent_constructed_in_another_file(self) -> None:
@@ -1731,6 +1790,9 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         [agent] = found[servicer].agents
         self.assertEqual(agent.name, 'librarian')
         self.assertEqual(list(agent.system_prompt), ['Tidy the shelves.'])
+        # Adopted from a construction written out right there, so its
+        # tools are as readable as any.
+        self.assertEqual(list(agent.tool_caveats), [])
 
     async def test_a_base_from_a_function_return_type_is_resolved(
         self,

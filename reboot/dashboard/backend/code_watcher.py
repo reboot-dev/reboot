@@ -35,10 +35,14 @@ line constructing one, which says the agent's name, its model and
 the prompt it is given. An agent's tools are found by their
 definitions rather than their spellings too: a function whose
 decorator resolves to the `tool` a Reboot `Agent` registers one
-with, and every tool written out in a construction's or a run site's
-`tools=` or `toolsets=`. Each tool's body is analyzed exactly as a
-servicer method's is, so what the model can reach through an agent
-is recorded beside what the application calls itself.
+with. Each tool's body is analyzed exactly as a servicer method's
+is, so what the model can reach through an agent is recorded beside
+what the application calls itself. Tools given any other way -- a
+`tools=` or a `toolsets=`, at a construction or a run, `tools=`
+passed to `override`, an agent built elsewhere adopted with
+`Agent.wrap` -- can be written in more shapes than can be followed
+reliably, so none is: the agent says instead, a sentence apiece,
+that it may have tools the analysis has not seen.
 
 Where following stops is what makes this the developer's code rather
 than somebody else's. A module resolves to a file only if a root
@@ -89,7 +93,7 @@ from reboot.dashboard.backend.walk import (
     _walk,
 )
 from types import MappingProxyType
-from typing import Mapping, Optional, Sequence
+from typing import Mapping, MutableSequence, Optional, Sequence
 
 # One Reboot call a method's implementation makes: which state type,
 # which method, and how the call is reached. Aliased from where it
@@ -537,6 +541,27 @@ def _keyword(call: ast.Call, name: str) -> Optional[ast.expr]:
     return None
 
 
+def _passes(call: ast.Call, name: str) -> bool:
+    """Returns whether a call passes a keyword argument that could give
+    an agent tools: one it passes anything but `None`, or an empty list
+    or tuple written out."""
+    match _keyword(call, name):
+        case None | ast.Constant(value=None):
+            return False
+        case ast.List(elts=[]) | ast.Tuple(elts=[]):
+            return False
+    return True
+
+
+def _add_caveat(caveats: MutableSequence[str], caveat: str) -> None:
+    """Adds a sentence saying where an agent may be given tools the
+    analysis has not seen, once: the same `override` in two of a
+    file's methods is one thing the agent's card cannot account
+    for."""
+    if caveat not in caveats:
+        caveats.append(caveat)
+
+
 def _try_constant_string(node: Optional[ast.expr]) -> Optional[str]:
     """Returns the string an expression is, and `None` for an
     expression that is anything else: a name, an f-string, a call.
@@ -572,88 +597,18 @@ def _constant_strings(node: Optional[ast.expr]) -> list[str]:
 
 
 @dataclass(frozen=True, kw_only=True)
-class ToolExpression:
-    """One tool as it was written where an agent was given it: the
-    expression naming the function, with what was said about it
-    there."""
-
-    # The expression the function is named by, e.g. `get_wiki` in
-    # `tools=[get_wiki]`, to be resolved where it is written.
-    function: ast.expr
-
-    # What the registration says the tool is called and does, e.g.
-    # the `name` and `description` of a `Tool(get_wiki, name='get')`.
-    # Absent when it says neither, which leaves the function's own
-    # name and docstring to say.
-    name: Optional[str] = None
-    description: Optional[str] = None
-
-
-def _tool_expression(element: ast.expr) -> ToolExpression:
-    """Returns one element of a `tools=[...]` as a tool: the
-    function it names, and, for a function wrapped in a
-    `Tool(function, name=..., description=...)`, what the wrapping
-    says."""
-    match element:
-        case ast.Call(args=[function, *_]):
-            return ToolExpression(
-                function=function,
-                name=_try_constant_string(_keyword(element, 'name')),
-                description=_try_constant_string(
-                    _keyword(element, 'description')
-                ),
-            )
-    return ToolExpression(function=element)
-
-
-def _tool_expressions_in_toolset(toolset: ast.Call) -> list[ToolExpression]:
-    """Returns the tools a toolset written out gives an agent: what
-    a `FunctionToolset(tools=[...])`, or a `FunctionToolset([...])`,
-    is built with.
-
-    A toolset whose tools are not written out gives none that can be
-    read here: an MCP server's are whatever it answers with when the
-    application runs, and a toolset gathered elsewhere is wherever
-    it was gathered.
-    """
-    tools = _keyword(toolset, 'tools')
-    if tools is None and len(toolset.args) > 0:
-        tools = toolset.args[0]
-    return [_tool_expression(element) for element in _elements(tools)]
-
-
-def _tool_expressions(call: ast.Call) -> list[ToolExpression]:
-    """Returns every tool a construction or a run site gives an
-    agent: each element of its `tools=`, and the tools each toolset
-    written out in its `toolsets=` is built with."""
-    expressions = [
-        _tool_expression(element)
-        for element in _elements(_keyword(call, 'tools'))
-    ]
-    for element in _elements(_keyword(call, 'toolsets')):
-        match element:
-            case ast.Call():
-                expressions.extend(_tool_expressions_in_toolset(element))
-    return expressions
-
-
-@dataclass(frozen=True, kw_only=True)
 class AgentDefinition:
     """A line constructing an agent, e.g.
     `librarian = Agent('anthropic:claude-sonnet-4-6', name=...)`.
 
     What a run of an agent, and a `@agent.tool` decorator, lead to:
-    the agent both name, with everything its construction says about
-    it.
+    the agent both are made on, with everything its construction says
+    about it.
     """
 
     # The file it is constructed in, in the spelling
     # `_standardized_path` returns.
     filename: Path
-
-    # The decoded text of that file, for syncing with pyright before
-    # the analysis asks where its tools are defined.
-    text: str
 
     # Where in the file, the line counting from one and the column
     # counting from zero.
@@ -672,9 +627,9 @@ class AgentDefinition:
     system_prompt: tuple[str, ...]
     description: Optional[str]
 
-    # The tools its construction gives it, to be resolved against
-    # `filename`.
-    tools: tuple[ToolExpression, ...]
+    # Every way its construction gives it tools the analysis does
+    # not follow, one sentence apiece; see `Agent.tool_caveats`.
+    tool_caveats: tuple[str, ...]
 
 
 def _try_agent_construction(value: ast.expr) -> Optional[ast.Call]:
@@ -694,18 +649,59 @@ def _try_agent_construction(value: ast.expr) -> Optional[ast.Call]:
     return None
 
 
+def _try_wrapped_elsewhere(value: ast.Call) -> Optional[ast.expr]:
+    """Returns what an `Agent.wrap(...)` adopts when it is not a
+    construction written out right there, e.g. `pydantic_agent` in
+    `Agent.wrap(pydantic_agent)`, whose tools -- in its own `tools=`,
+    or decorated on it with pydantic_ai's own decorators -- are
+    wherever it was built; and `None` for anything else."""
+    match value:
+        case ast.Call(
+            func=ast.Attribute(attr='wrap'),
+            args=[wrapped, *_],
+        ) if not isinstance(wrapped, ast.Call):
+            return wrapped
+    return None
+
+
 def _agent_definition(
-    construction: ast.Call,
+    value: ast.Call,
     *,
     filename: Path,
-    text: str,
     line: int,
     character: int,
     bound: Optional[str],
 ) -> AgentDefinition:
-    """Returns what a construction says the agent is. `bound` is the
-    name the construction is assigned to, which names the agent when
-    its `name` is not a literal."""
+    """Returns what a construction says the agent is. `value` is the
+    call the agent comes from: its construction, or an `Agent.wrap`
+    of one. `bound` is the name it is assigned to, which names the
+    agent when its `name` is not a literal."""
+    construction = _try_agent_construction(value)
+    # A call is always a construction, or the `Agent.wrap` of one:
+    # `_try_agent_construction` returns the call itself for anything
+    # it does not unwrap.
+    assert construction is not None
+
+    name = _try_constant_string(_keyword(construction, 'name')) or bound or ''
+
+    # Where the construction gives the agent tools the analysis does
+    # not follow or cannot read, said rather than passed over, so a
+    # card never reads as the whole of what an agent can reach when
+    # it is not.
+    tool_caveats: list[str] = []
+    wrapped = _try_wrapped_elsewhere(value)
+    if wrapped is not None:
+        tool_caveats.append(
+            f"Agent '{name}' wraps `{ast.unparse(wrapped)}`, whose tools "
+            "are not analyzed"
+        )
+    for keyword in ('tools', 'toolsets'):
+        if _passes(construction, keyword):
+            tool_caveats.append(
+                f"Agent '{name}' is constructed with `{keyword}` that are "
+                "not analyzed"
+            )
+
     # The model is the first argument, wherever it is passed:
     # `Agent('anthropic:claude-sonnet-4-6')` or `Agent(model=...)`.
     model = _keyword(construction, 'model')
@@ -714,12 +710,9 @@ def _agent_definition(
 
     return AgentDefinition(
         filename=filename,
-        text=text,
         line=line,
         character=character,
-        name=(
-            _try_constant_string(_keyword(construction, 'name')) or bound or ''
-        ),
+        name=name,
         model=_try_constant_string(model),
         system_prompt=tuple(
             _constant_strings(_keyword(construction, 'system_prompt')) +
@@ -728,7 +721,7 @@ def _agent_definition(
         description=_try_constant_string(
             _keyword(construction, 'description')
         ),
-        tools=tuple(_tool_expressions(construction)),
+        tool_caveats=tuple(tool_caveats),
     )
 
 
@@ -767,14 +760,12 @@ def _agent_definitions(
             case _:
                 continue
 
-        construction = _try_agent_construction(value)
-        if construction is None:
+        if not isinstance(value, ast.Call):
             continue
 
         definitions[node.lineno] = _agent_definition(
-            construction,
+            value,
             filename=filename,
-            text=parse.text,
             line=node.lineno,
             character=node.col_offset,
             bound=bound,
@@ -1094,9 +1085,10 @@ async def _analyze_function(
     `Agent`'s entry points, `run`, `iter`, `run_stream` or
     `run_stream_events`, in the module Reboot writes them in. Which
     agent is run is what the receiver of the call resolves to, a
-    line constructing one; the record of that agent, with the tools
-    its construction and this run site give it, joins `agents`,
-    which is every agent the file being analyzed has found so far.
+    line constructing one; the record of that agent joins `agents`,
+    which is every agent the file being analyzed has found so far,
+    and a `toolsets=` the run is given is said on the run rather
+    than followed.
 
     A call defined by a function the generator did not write, the
     developer's own or an installed package's, is followed: that
@@ -1183,15 +1175,39 @@ async def _analyze_function(
             entry_point, analysis = await analysis.helper_definition_at(
                 location
             )
-            if (
-                entry_point is None or entry_point.syntax.name not in RUN_NAMES
-            ):
+            entry_point_name = (
+                None if entry_point is None else entry_point.syntax.name
+            )
+
+            if entry_point_name == 'override':
+                # An `override` changes the agent for whatever runs
+                # inside it, and its `tools=` reach those runs. They
+                # are not followed; that the agent may have tools
+                # the analysis has not seen is said instead. Its
+                # `toolsets=` needs no saying: a Reboot `Agent`
+                # rejects it.
+                if _passes(node, 'tools'):
+                    constructed, analysis = await _agent_at(
+                        callee,
+                        filename=filename,
+                        text=text,
+                        analysis=analysis,
+                    )
+                    if constructed is not None and constructed.name != '':
+                        agent = _agent_record(constructed, agents=agents)
+                        _add_caveat(
+                            agent.tool_caveats,
+                            f"Agent '{agent.name}' is called via `override` "
+                            "and passed `tools` that are not analyzed",
+                        )
+                continue
+
+            if entry_point_name not in RUN_NAMES:
                 # Reboot's own machinery around a run: the `tool`
                 # a decorator registers a tool with, which the walk
                 # over the file's own functions finds where it is
-                # written, or an `override`, or a construction.
-                # Followed no further than the generator's
-                # machinery is.
+                # written, or a construction. Followed no further
+                # than the generator's machinery is.
                 continue
 
             constructed, analysis = await _agent_at(
@@ -1204,23 +1220,23 @@ async def _analyze_function(
                 ambiguous.append(ast.unparse(callee))
                 continue
 
-            runs.append(Run(agent=constructed.name))
+            runs.append(
+                Run(
+                    agent=constructed.name,
+                    # The tools a run site gives the agent, for that
+                    # run alone, are not followed; that there may be
+                    # some is said instead.
+                    tool_caveats=(
+                        [
+                            f"Agent '{constructed.name}' is called via "
+                            f"`{entry_point_name}` and passed `toolsets` "
+                            "that are not analyzed"
+                        ] if _passes(node, 'toolsets') else []
+                    ),
+                )
+            )
 
-            agent, analysis = await _agent_record(
-                constructed,
-                analysis=analysis,
-                agents=agents,
-            )
-            # The tools the run site gives the agent, which it has
-            # for that run alone.
-            analysis = await _add_tools(
-                agent,
-                _tool_expressions(node),
-                filename=filename,
-                text=text,
-                analysis=analysis,
-                agents=agents,
-            )
+            _agent_record(constructed, agents=agents)
             continue
 
         helper, analysis = await analysis.helper_definition_at(location)
@@ -1279,15 +1295,9 @@ async def _agent_at(
 
     match receiver:
         case ast.Call():
-            construction = _try_agent_construction(receiver)
-            # A receiver that is a call is a construction, since
-            # `_try_agent_construction` returns the call itself for
-            # anything it does not unwrap.
-            assert construction is not None
             return _agent_definition(
-                construction,
+                receiver,
                 filename=filename,
-                text=text,
                 line=receiver.lineno,
                 character=receiver.col_offset,
                 bound=None,
@@ -1308,24 +1318,22 @@ async def _agent_at(
     return None, analysis
 
 
-async def _agent_record(
+def _agent_record(
     definition: AgentDefinition,
     *,
-    analysis: Analysis,
     agents: dict[str, Agent],
-) -> tuple[Agent, Analysis]:
+) -> Agent:
     """Returns the record the file being analyzed keeps of an agent,
-    making it the first time the file finds the agent: what its
-    construction says it is, with the tools that construction gives
-    it.
+    making it, from what its construction says, the first time the
+    file finds the agent.
 
     `agents` is every agent the file has found so far, by name, so
-    that an agent run in several of the file's methods is one
-    record, analyzed once.
+    that an agent run in several of the file's methods, and
+    decorated with a tool besides, is one record.
     """
     found = agents.get(definition.name)
     if found is not None:
-        return found, analysis
+        return found
 
     agent = Agent(
         name=definition.name,
@@ -1335,98 +1343,10 @@ async def _agent_record(
         model=definition.model,
         system_prompt=definition.system_prompt,
         description=definition.description,
+        tool_caveats=definition.tool_caveats,
     )
-
-    # Recorded before its tools are analyzed, so that a tool running
-    # the agent it belongs to, or two agents handing work to each
-    # other, find the record here rather than making another
-    # forever.
     agents[definition.name] = agent
-
-    analysis = await _add_tools(
-        agent,
-        definition.tools,
-        filename=definition.filename,
-        text=definition.text,
-        analysis=analysis,
-        agents=agents,
-    )
-
-    return agent, analysis
-
-
-async def _add_tools(
-    agent: Agent,
-    expressions: Sequence[ToolExpression],
-    *,
-    filename: Path,
-    text: str,
-    analysis: Analysis,
-    agents: dict[str, Agent],
-) -> Analysis:
-    """Adds to an agent the tools some expressions name, each
-    analyzed the way a servicer method is: what the tool does when
-    the model calls it.
-
-    `filename` is the file the expressions are written in, which is
-    where each name is resolved from: the file constructing the
-    agent, for the tools its construction gives it, and the file
-    running it, for the tools a run site does. A name that resolves
-    to no function of the developer's own, such as a tool an
-    installed package builds, adds nothing.
-    """
-    for expression in expressions:
-        match expression.function:
-            case ast.Name() | ast.Attribute() as named:
-                pass
-            case _:
-                # An expression that is not a name, such as a
-                # lambda, has no definition to ask about.
-                continue
-
-        line, character = _position_at_last_character(named)
-        location = await analysis.pyright.definition_at(
-            filename=filename,
-            line=line,
-            character=character,
-            text=text,
-        )
-        if location is None:
-            continue
-
-        function, analysis = await analysis.helper_definition_at(location)
-        if function is None:
-            continue
-
-        name = expression.name or function.syntax.name
-        # Once per name, which is what the model calls it by: a tool
-        # the agent is given in two places is one tool.
-        if any(tool.name == name for tool in agent.tools):
-            continue
-
-        implementation, analysis = await _analyze_function(
-            function.syntax,
-            filename=function.filename,
-            text=function.text,
-            analysis=analysis,
-            visited=frozenset(),
-            agents=agents,
-        )
-
-        agent.tools.append(
-            Tool(
-                name=name,
-                description=(
-                    expression.description or
-                    ast.get_docstring(function.syntax) or None
-                ),
-                calls=implementation.calls,
-                runs=implementation.runs,
-                ambiguous=implementation.ambiguous,
-            )
-        )
-
-    return analysis
+    return agent
 
 
 async def _analyze_decorated_tools(
@@ -1500,11 +1420,7 @@ async def _analyze_decorated_tools(
             if definition is None or definition.name == '':
                 continue
 
-            agent, analysis = await _agent_record(
-                definition,
-                analysis=analysis,
-                agents=agents,
-            )
+            agent = _agent_record(definition, agents=agents)
 
             name = (
                 None if given is None else
