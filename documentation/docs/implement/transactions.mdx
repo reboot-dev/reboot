@@ -143,3 +143,91 @@ In addition to returning a response and updating state, a
 `transaction` can also schedule [async tasks](/tasks), which
 are atomically started (or enqueued) if and only if the `transaction`
 completes successfully.
+
+## Exclusive or shared
+
+Every `transaction` declares how it holds the lock on _its own_ state
+while it runs. There is no default: `rbt generate` refuses a
+`transaction` that has not chosen, because the choice decides both how
+many callers of one state can run at once and whether two of them can
+deadlock.
+
+- **Exclusive.** The `transaction` takes the lock on its own state
+  exclusive from the start, so concurrent callers of the same state
+  queue behind it. Choose this for a `transaction` that writes its
+  own state, which is most of them: two such transactions can never
+  run to completion concurrently anyway, and starting shared is what
+  lets them deadlock when each tries to upgrade. When in doubt,
+  choose exclusive; it is never wrong, only sometimes slower.
+- **Shared.** The `transaction` takes the lock shared and upgrades it
+  to exclusive only if it writes its own state, so callers proceed
+  concurrently while none of them writes it. Choose this for a
+  `transaction` that mostly reads its own state while writing
+  _other_ states, such as `Bank.Transfer` above, which only writes
+  two accounts, or the root of a tree of states that every call
+  descends through.
+
+The declaration is part of the method's definition:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+
+```py
+from reboot.api import Exclusive, Shared, Transaction
+
+BankMethods = Methods(
+    # Writes the bank's own state, so callers queue.
+    sign_up=Transaction(
+        mode=Exclusive(),
+        request=SignUpRequest,
+        response=None,
+        mcp=None,
+    ),
+    # Only writes the two accounts, so transfers proceed concurrently.
+    transfer=Transaction(
+        mode=Shared(),
+        request=TransferRequest,
+        response=None,
+        mcp=None,
+    ),
+)
+```
+
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+
+```ts
+import { exclusive, shared, transaction } from "@reboot-dev/reboot-api";
+
+export const Bank = {
+  state: { ... },
+  methods: {
+    // Writes the bank's own state, so callers queue.
+    signUp: transaction({
+      mode: exclusive(),
+      request: { ... },
+      response: z.void(),
+    }),
+    // Only writes the two accounts, so transfers proceed concurrently.
+    transfer: transaction({
+      mode: shared(),
+      request: { ... },
+      response: z.void(),
+    }),
+  },
+};
+```
+
+  </TabItem>
+</Tabs>
+
+Changing a `transaction` from one to the other later is backwards
+compatible: it changes how concurrent callers are scheduled, not what
+is sent or stored.
+
+Whatever it declares, a `transaction` never deadlocks for long. Two
+transactions waiting on each other's states are detected after a
+short grace period, and the younger one aborts and is retried
+automatically, carrying its original age so that it is not the
+victim again. The declaration decides how often that happens:
+exclusive transactions on one state never form that cycle at all.

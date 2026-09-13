@@ -20,7 +20,23 @@ each transaction makes it.
 
 When in doubt, choose exclusive: it is never wrong, only sometimes
 slower. Choose shared only for a transaction whose body reads its own
-state and rarely, or never, writes it.
+state and rarely, or never, writes it. Decide by reading each
+transaction's servicer body: if it assigns to or mutates its own
+state (`self.state`, the `state` argument, or `state.<field>` in
+TypeScript), choose exclusive; if it only calls other states' methods,
+choose shared.
+
+Until every transaction declares one, `rbt generate` fails with an
+error naming the method, for example:
+
+```text
+Transaction 'Transfer' does not say how it holds the lock on its own
+state while it runs. Every transaction must declare one of: ...
+```
+
+Only the API definition changes. Servicer bodies, callers, and the
+generated code are untouched; the generated TypeScript types for a
+Pydantic API pick up the declaration on regeneration.
 
 Apply the declaration in whichever API surface the application uses.
 

@@ -353,5 +353,14 @@ only read (e.g., `Reader`) or both read and write (e.g., `Writer`) the
 state. A type can have any number of `Reader`, `Writer`,
 `Transaction`, `Workflow`, and [`UI`](/frontends/ui_methods) methods.
 
+Every `Transaction` also says how it holds the lock on its own state
+while it runs, with `mode=Exclusive()` or `mode=Shared()`, both
+imported from `reboot.api`. `Exclusive()` queues concurrent callers of
+the state and is the choice for a transaction that writes its own
+state, which is most of them; `Shared()` lets callers proceed
+concurrently while none of them writes it and is the choice for a
+transaction that mostly reads its own state while writing others. See
+[Exclusive or shared](/implement/transactions#exclusive-or-shared).
+
 To learn more about how you implement each data type's methods see
 [Implement your API](/implement/servicers).
