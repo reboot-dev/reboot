@@ -13,11 +13,7 @@
 //
 // React Flow draws; ELK places. React Flow deliberately has no layout
 // of its own.
-import {
-  Agent_Run_How as RunHow,
-  Agent_Tool_How as ToolHow,
-  Servicer_Method_Call_How as How,
-} from "../../../../rbt/dashboard/v1/dashboard_pb";
+import { Servicer_Method_Call_How as How } from "../../../../rbt/dashboard/v1/dashboard_pb";
 import {
   Background,
   BaseEdge,
@@ -87,34 +83,15 @@ const KIND_TEXT: Record<Kind, string> = {
   workflow: "hsl(28 80% 33%)",
 };
 
-// An agent is a kind of nothing the API declares, so its card, its
-// rows, and the arrows leaving its tools wear a hue of their own.
-const AGENT_COLOR = "hsl(291 45% 48%)";
-const AGENT_TEXT = "hsl(291 45% 36%)";
+const colorOfKind = (kind: Kind | undefined): string =>
+  kind === undefined ? NEUTRAL_COLOR : KIND_COLOR[kind];
 
-// What a row's dot and an arrow are drawn in: the kind of the method
-// it belongs to, or an agent's own hue.
-type Hue = Kind | "agent";
+const textColorOfKind = (kind: Kind | undefined): string =>
+  kind === undefined ? NEUTRAL_TEXT : KIND_TEXT[kind];
 
-const colorOfHue = (hue: Hue | undefined): string =>
-  hue === undefined
-    ? NEUTRAL_COLOR
-    : hue === "agent"
-    ? AGENT_COLOR
-    : KIND_COLOR[hue];
-
-const textColorOfHue = (hue: Hue | undefined): string =>
-  hue === undefined
-    ? NEUTRAL_TEXT
-    : hue === "agent"
-    ? AGENT_TEXT
-    : KIND_TEXT[hue];
-
-// The hue's CSS class, which colours the row's dot.
-const classNameOfHue = (hue: Hue | undefined): string =>
-  `graph-kind-${
-    hue === undefined ? "unknown" : hue === "agent" ? "agent" : labelOfKind(hue)
-  }`;
+// The kind's CSS class, which colours the row's dot.
+const classNameOfKind = (kind: Kind | undefined): string =>
+  `graph-kind-${kind === undefined ? "unknown" : labelOfKind(kind)}`;
 
 // How a call is reached, said in one word on the edge. A plain call
 // says nothing: it is the ordinary case, and labelling every edge
@@ -131,26 +108,6 @@ const HOW_LABEL: Partial<Record<How, string>> = {
 const HOW_DASH: Partial<Record<How, string>> = {
   [How.SCHEDULE]: "7 5",
   [How.SPAWN]: "7 5",
-};
-
-// How an agent is run, said in one word on the edge. Every run says
-// something: handing the work to a model is never the ordinary case
-// an unlabelled arrow means.
-const HOW_RUN_LABEL: Record<RunHow, string> = {
-  [RunHow.UNKNOWN]: "runs",
-  [RunHow.RUN]: "runs",
-  [RunHow.ITER]: "iterates",
-  [RunHow.RUN_STREAM]: "streams",
-  [RunHow.RUN_STREAM_EVENTS]: "streams",
-};
-
-// How the agent was given a tool, which is what its row says when
-// the pointer rests on it.
-const HOW_TOOL_TITLE: Record<ToolHow, string> = {
-  [ToolHow.UNKNOWN]: "a tool",
-  [ToolHow.DECORATED]: "decorated on the agent",
-  [ToolHow.CONSTRUCTED]: "given where the agent is constructed",
-  [ToolHow.RUN]: "given where the agent is run",
 };
 
 // A workflow's calls are dashed too: it runs past the call that
@@ -528,13 +485,14 @@ interface CallEdgeData extends Record<string, unknown> {
   // Absent on a folded edge, which carries calls reached every way,
   // and on an edge that is a run rather than a call.
   how?: How;
-  // Which way an agent is run, on an edge that is a run, and
-  // `UNKNOWN` on a folded one, which carries runs made every way.
-  runHow?: RunHow;
-  // The hue the edge is drawn in: the calling method's kind, or an
-  // agent's own for an edge leaving one of its tools. Absent for a
-  // method the API does not declare, and on a folded edge.
-  hue?: Hue;
+  // Set on an edge that is a run of an agent rather than a call,
+  // which always says so.
+  run?: boolean;
+  // The calling method's kind, which is the edge's colour. An agent's
+  // tools run in the workflow that runs the agent, so an edge leaving
+  // one is a workflow's. Absent for a method the API does not
+  // declare, and on a folded edge.
+  kind?: Kind;
   count: number;
   // Every row whose arrows this edge carries: one for an edge from a
   // method's or a tool's row, each contributor for a folded edge.
@@ -563,9 +521,9 @@ const addEdge = (
     sourceHandle?: string;
     target: string;
     targetHandle?: string;
-    hue?: Hue;
+    kind?: Kind;
     how?: How;
-    runHow?: RunHow;
+    run?: boolean;
     count: number;
     sourceId: string;
     targetId: string;
@@ -581,9 +539,6 @@ const addEdge = (
     if (!data.targetIds.includes(edge.targetId)) {
       data.targetIds.push(edge.targetId);
     }
-    if (data.runHow !== undefined && data.runHow !== edge.runHow) {
-      data.runHow = RunHow.UNKNOWN;
-    }
     return;
   }
   edgesById.set(edge.id, {
@@ -595,15 +550,15 @@ const addEdge = (
     type: "call",
     data: {
       how: edge.how,
-      runHow: edge.runHow,
-      hue: edge.hue,
+      run: edge.run,
+      kind: edge.kind,
       count: edge.count,
       sourceIds: [edge.sourceId],
       targetIds: [edge.targetId],
     },
     markerEnd: {
       type: MarkerType.ArrowClosed,
-      color: colorOfHue(edge.hue),
+      color: colorOfKind(edge.kind),
       width: 16,
       height: 16,
     },
@@ -728,7 +683,7 @@ const edgesOf = (
             sourceHandle,
             target,
             targetHandle,
-            hue: sourceExpanded ? method.kind : undefined,
+            kind: sourceExpanded ? method.kind : undefined,
             how: sourceExpanded ? call.how : undefined,
             count: call.count,
             sourceId: caller,
@@ -745,14 +700,14 @@ const edgesOf = (
           }
           addEdge(edgesById, {
             id: sourceExpanded
-              ? `${source}|${sourceHandle}>${agent.id}:${run.how}`
+              ? `${source}|${sourceHandle}>${agent.id}`
               : `${source}>${agent.id}`,
             source,
             sourceHandle,
             target: agent.id,
             targetHandle: AGENT_TARGET_HANDLE,
-            hue: sourceExpanded ? method.kind : undefined,
-            runHow: sourceExpanded ? run.how : RunHow.UNKNOWN,
+            kind: sourceExpanded ? method.kind : undefined,
+            run: true,
             count: run.count,
             sourceId: caller,
             targetId: agent.id,
@@ -787,7 +742,7 @@ const edgesOf = (
           sourceHandle,
           target,
           targetHandle,
-          hue: "agent",
+          kind: "workflow",
           how: call.how,
           count: call.count,
           sourceId: caller,
@@ -801,13 +756,13 @@ const edgesOf = (
           continue;
         }
         addEdge(edgesById, {
-          id: `${source}|${sourceHandle}>${target.id}:${run.how}`,
+          id: `${source}|${sourceHandle}>${target.id}`,
           source,
           sourceHandle,
           target: target.id,
           targetHandle: AGENT_TARGET_HANDLE,
-          hue: "agent",
-          runHow: run.how,
+          kind: "workflow",
+          run: true,
           count: run.count,
           sourceId: caller,
           targetId: target.id,
@@ -863,7 +818,11 @@ interface CardRow {
   // The row's id, in the one space every arrow's ends are named in.
   id: string;
   name: string;
-  hue?: Hue;
+  kind?: Kind;
+  // Set on an agent's tool, whose dot is a ring: it runs in the
+  // workflow that runs the agent, but no API declares it and it is
+  // the agent, not the application, that calls it.
+  tool?: boolean;
   // What the row says of itself when the pointer rests on it.
   title: string;
   // A word the row wears at its right, e.g. `factory`.
@@ -883,9 +842,9 @@ const Row: FC<{
   onSelect: (id: string, cones: Cones) => void;
 }> = ({ row, selected, onHover, onSelect }) => (
   <div
-    className={`graph-method ${classNameOfHue(row.hue)}${
-      selected ? " selected" : ""
-    }`}
+    className={`graph-method ${classNameOfKind(row.kind)}${
+      row.tool ? " graph-tool" : ""
+    }${selected ? " selected" : ""}`}
     onMouseMove={(event) => onHover(thirdOfPointer(event))}
     onMouseLeave={() => onHover(null)}
     onClick={(event) => {
@@ -915,7 +874,7 @@ const Row: FC<{
 );
 
 // A button beside the card, level with a row, for one of the row's
-// cones: lit in the row's hue while that cone is shown, and unlit
+// cones: lit in the row's kind colour while that cone is shown, and unlit
 // again under the pointer, since a click then puts it out.
 const ConeButton: FC<{
   cone: keyof Cones;
@@ -1123,7 +1082,7 @@ const RowsCard: FC<{
                 cone={cone}
                 top={topOfRow(selectedIndex)}
                 lit={cones?.[cone] ?? false}
-                color={colorOfHue(selectedButtons.row.hue)}
+                color={colorOfKind(selectedButtons.row.kind)}
                 title={
                   cones?.[cone]
                     ? cone === "upstream"
@@ -1149,7 +1108,7 @@ const RowsCard: FC<{
                 cone={cone}
                 top={topOfRow(hovered.index)}
                 lit={false}
-                color={colorOfHue(hoveredButtons.row.hue)}
+                color={colorOfKind(hoveredButtons.row.kind)}
                 title={
                   cone === "upstream"
                     ? "Show what calls this"
@@ -1193,7 +1152,7 @@ const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
     rows={data.stateType.methods.map((method) => ({
       id: methodId(data.stateType.id, method.name),
       name: method.name,
-      hue: method.kind,
+      kind: method.kind,
       badge: method.factory ? "factory" : undefined,
       title:
         method.kind === undefined
@@ -1253,11 +1212,9 @@ const AgentNode: FC<NodeProps<Node<AgentData, "agent">>> = ({ data }) => (
     rows={data.agent.tools.map((tool) => ({
       id: toolId(data.agent.id, tool.name),
       name: tool.name,
-      hue: "agent" as const,
-      title:
-        tool.description === undefined
-          ? HOW_TOOL_TITLE[tool.how]
-          : `${HOW_TOOL_TITLE[tool.how]}\n\n${tool.description}`,
+      kind: "workflow" as const,
+      tool: true,
+      title: tool.description ?? "an agent's tool",
     }))}
     selectedRow={data.selectedRow}
     onSelectRow={data.onSelectRow}
@@ -1311,22 +1268,20 @@ const CallEdge: FC<EdgeProps<Edge<CallEdgeData>>> = ({
     });
   }
 
-  const hue = data?.hue;
+  const kind = data?.kind;
   const how = data?.how;
-  const runHow = data?.runHow;
   const count = data?.count ?? 1;
   // A run always says so; a plain call says nothing, since it is the
   // ordinary case, and labelling every edge "calls" would be noise.
-  const howWord =
-    runHow !== undefined
-      ? HOW_RUN_LABEL[runHow]
-      : how === undefined
-      ? undefined
-      : HOW_LABEL[how];
+  const howWord = data?.run
+    ? "runs"
+    : how === undefined
+    ? undefined
+    : HOW_LABEL[how];
   const label = count > 1 ? `${howWord ?? "calls"} ×${count}` : howWord;
   const dashPattern =
     (how === undefined ? undefined : HOW_DASH[how]) ??
-    (hue === "workflow" ? WORKFLOW_DASH : undefined);
+    (kind === "workflow" ? WORKFLOW_DASH : undefined);
 
   return (
     <>
@@ -1335,7 +1290,7 @@ const CallEdge: FC<EdgeProps<Edge<CallEdgeData>>> = ({
         path={path}
         markerEnd={markerEnd}
         style={{
-          stroke: colorOfHue(hue),
+          stroke: colorOfKind(kind),
           strokeWidth: 1.6,
           strokeDasharray: dashPattern,
         }}
@@ -1349,7 +1304,7 @@ const CallEdge: FC<EdgeProps<Edge<CallEdgeData>>> = ({
             className="graph-edge-label"
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              color: textColorOfHue(hue),
+              color: textColorOfKind(kind),
               opacity: data?.faded ? 0.1 : 1,
             }}
           >
@@ -1385,7 +1340,7 @@ const Legend: FC = () => (
         {(["reader", "writer", "transaction", "workflow"] as Kind[]).map(
           (kind) => (
             <div
-              className={`graph-legend-row ${classNameOfHue(kind)}`}
+              className={`graph-legend-row ${classNameOfKind(kind)}`}
               key={kind}
             >
               <span className="graph-method-dot" aria-hidden="true" />
@@ -1393,13 +1348,17 @@ const Legend: FC = () => (
             </div>
           )
         )}
-        <div className={`graph-legend-row ${classNameOfHue(undefined)}`}>
+        <div className={`graph-legend-row ${classNameOfKind(undefined)}`}>
           <span className="graph-method-dot" aria-hidden="true" />
           <span>
             <em>unknown</em>
           </span>
         </div>
-        <div className={`graph-legend-row ${classNameOfHue("agent")}`}>
+        <div
+          className={`graph-legend-row ${classNameOfKind(
+            "workflow"
+          )} graph-tool`}
+        >
           <span className="graph-method-dot" aria-hidden="true" />
           <span>an agent's tool</span>
         </div>

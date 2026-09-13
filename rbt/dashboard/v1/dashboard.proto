@@ -571,50 +571,25 @@ message Servicer {
 // runtime requires to be unique.
 message Agent {
   // One run of an agent, made by a servicer method's implementation
-  // or by another agent's tool.
+  // or by another agent's tool, through any of `Agent`'s entry points:
+  // `run`, `iter`, `run_stream` or `run_stream_events`. Which one says
+  // nothing about what the application does, so it is not recorded;
+  // a message rather than the name alone, so that something a run
+  // does say can be added later without changing what reads it.
   message Run {
-    // Represents which of `Agent`'s entry points the run is made
-    // through.
-    enum How {
-      UNKNOWN = 0;
-      // `await agent.run(context, ...)`.
-      RUN = 1;
-      // `async with agent.iter(context, ...) as run:`.
-      ITER = 2;
-      // `async with agent.run_stream(context, ...) as result:`.
-      RUN_STREAM = 3;
-      // `async for event in agent.run_stream_events(context, ...)`.
-      RUN_STREAM_EVENTS = 4;
-    }
-
     // Represents the agent run, spelled as `Agent.name` spells it.
     string agent = 1;
-
-    How how = 2;
   }
 
   // One tool an agent may call, and what analyzing its
   // implementation found.
   message Tool {
-    // Represents how the agent was given the tool.
-    enum How {
-      UNKNOWN = 0;
-      // Decorated with `@agent.tool` or `@agent.tool_plain`.
-      DECORATED = 1;
-      // Passed to the agent's construction, as `tools=[...]` or
-      // inside a `toolsets=[...]`.
-      CONSTRUCTED = 2;
-      // Passed at a run site, as `toolsets=[...]`, so the agent has
-      // it for that run alone.
-      RUN = 3;
-    }
-
     // Represents the tool's name as the model is told it: the
     // `name` given where it was registered, and the function's own
-    // name otherwise.
+    // name otherwise. Where the agent was given it -- decorated,
+    // passed to its construction, or passed at a run -- is not
+    // recorded: the agent can reach it all the same.
     string name = 1;
-
-    How how = 2;
 
     // Represents what the model is told the tool does: the
     // `description` given where it was registered, and the

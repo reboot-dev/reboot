@@ -104,10 +104,7 @@ import {
   rowOfChange,
   timeAgo,
 } from "./changelog";
-import {
-  Agent_Tool_How as ToolHow,
-  DashboardGetResponse_NeedsGenerateReason as NeedsGenerateReason,
-} from "../../../../rbt/dashboard/v1/dashboard_pb";
+import { DashboardGetResponse_NeedsGenerateReason as NeedsGenerateReason } from "../../../../rbt/dashboard/v1/dashboard_pb";
 import type * as feature_pb from "../../../../rbt/v1alpha1/bdd/feature_pb";
 import type * as grammar_pb from "../../../../rbt/v1alpha1/bdd/grammar_pb";
 import {
@@ -956,14 +953,6 @@ const DataType: FC<{
   );
 };
 
-// How the agent was given a tool, said where the tool is listed.
-const LABEL_OF_TOOL_HOW: Record<ToolHow, string> = {
-  [ToolHow.UNKNOWN]: "tool",
-  [ToolHow.DECORATED]: "decorated",
-  [ToolHow.CONSTRUCTED]: "constructed with",
-  [ToolHow.RUN]: "passed at a run",
-};
-
 // One agent, on the pane the way a state type is: what it is told to
 // be, and what it may call back with. The prompt is what the agent
 // is, so it is shown whole, in the shape it was written in.
@@ -1014,7 +1003,6 @@ const AgentPane: FC<{ agent: GraphAgent }> = ({ agent }) => (
           <div className="agent-tool" key={tool.name}>
             <div className="agent-tool-head">
               <code className="agent-tool-name">{tool.name}</code>
-              <span className="eyebrow">{LABEL_OF_TOOL_HOW[tool.how]}</span>
             </div>
             {tool.description !== undefined && (
               <Description

@@ -1362,12 +1362,6 @@ header h1 {
   --kind: 211 25% 60%;
 }
 
-/* An agent is no kind of method, so its card and its tools' rows
-   wear a hue of their own, the one `graph.tsx` gives their edges. */
-.graph-kind-agent {
-  --kind: 291 45% 48%;
-}
-
 .graph-method-dot {
   flex: none;
   width: 7px;
@@ -1377,8 +1371,12 @@ header h1 {
 }
 
 /* An unknown method's dot is a ring: nothing declares it, only a
-   call names it, so there is nothing to paint it in with. */
-.graph-kind-unknown .graph-method-dot {
+   call names it, so there is nothing to paint it in with. An agent's
+   tool is a ring too, for the same reason -- no API declares it --
+   in the workflow colour, since it runs in the workflow that runs
+   the agent, called by the agent rather than by the application. */
+.graph-kind-unknown .graph-method-dot,
+.graph-tool .graph-method-dot {
   background: transparent;
   border: 1.5px solid hsl(var(--kind));
 }
@@ -1398,13 +1396,14 @@ header h1 {
   text-decoration: underline;
 }
 
-/* An agent: a card like a state type's, marked out by the hue of its
-   head, with a row per tool. Never in a package's box, so it carries
-   its own tint rather than sitting in one. */
+/* An agent: a card like a state type's, with a row per tool, its
+   head tinted in the workflow colour, since an agent only ever runs
+   inside a workflow. Never in a package's box, so it carries its own
+   tint rather than sitting in one. */
 .graph-agent {
   width: 100%;
   background: hsl(var(--card));
-  border: 1px solid hsl(291 45% 48% / 0.4);
+  border: 1px solid hsl(36 85% 42% / 0.4);
   border-radius: var(--radius);
   box-shadow: 0 1px 3px hsl(240 10% 40% / 0.1);
   overflow: hidden;
@@ -1420,8 +1419,8 @@ header h1 {
   justify-content: center;
   height: 40px;
   padding: 0 12px;
-  background: hsl(291 45% 48% / 0.08);
-  border-bottom: 1px solid hsl(291 45% 48% / 0.25);
+  background: hsl(36 85% 42% / 0.08);
+  border-bottom: 1px solid hsl(36 85% 42% / 0.25);
   color: hsl(var(--foreground));
 }
 

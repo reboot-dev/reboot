@@ -109,16 +109,11 @@ Tool = Agent.Tool
 # whichever way the agent was come by.
 AGENT_MODULE = ('reboot', 'agents', 'pydantic_ai', '_agent.py')
 
-# How a run made through each of `Agent`'s entry points is recorded,
-# keyed by the method the call's definition lands on. `run_sync` and
-# `run_stream_sync` are not here: a Reboot `Agent` raises on both,
-# since a workflow is always async.
-HOWS_BY_RUN_NAME = {
-    'run': Run.How.RUN,
-    'iter': Run.How.ITER,
-    'run_stream': Run.How.RUN_STREAM,
-    'run_stream_events': Run.How.RUN_STREAM_EVENTS,
-}
+# The methods of `Agent` a run is made through, which is what a
+# run's own definition lands on. `run_sync` and `run_stream_sync` are
+# not here: a Reboot `Agent` raises on both, since a workflow is
+# always async.
+RUN_NAMES = ('run', 'iter', 'run_stream', 'run_stream_events')
 
 # The methods a `@agent.tool` or `@agent.tool_plain` decorator
 # registers a tool with, which is what a decorator's own definition
@@ -1188,11 +1183,9 @@ async def _analyze_function(
             entry_point, analysis = await analysis.helper_definition_at(
                 location
             )
-            how_run = (
-                None if entry_point is None else
-                HOWS_BY_RUN_NAME.get(entry_point.syntax.name)
-            )
-            if how_run is None:
+            if (
+                entry_point is None or entry_point.syntax.name not in RUN_NAMES
+            ):
                 # Reboot's own machinery around a run: the `tool`
                 # a decorator registers a tool with, which the walk
                 # over the file's own functions finds where it is
@@ -1211,7 +1204,7 @@ async def _analyze_function(
                 ambiguous.append(ast.unparse(callee))
                 continue
 
-            runs.append(Run(agent=constructed.name, how=how_run))
+            runs.append(Run(agent=constructed.name))
 
             agent, analysis = await _agent_record(
                 constructed,
@@ -1223,7 +1216,6 @@ async def _analyze_function(
             analysis = await _add_tools(
                 agent,
                 _tool_expressions(node),
-                how=Tool.How.RUN,
                 filename=filename,
                 text=text,
                 analysis=analysis,
@@ -1354,7 +1346,6 @@ async def _agent_record(
     analysis = await _add_tools(
         agent,
         definition.tools,
-        how=Tool.How.CONSTRUCTED,
         filename=definition.filename,
         text=definition.text,
         analysis=analysis,
@@ -1368,7 +1359,6 @@ async def _add_tools(
     agent: Agent,
     expressions: Sequence[ToolExpression],
     *,
-    how: 'Tool.How.ValueType',
     filename: Path,
     text: str,
     analysis: Analysis,
@@ -1409,7 +1399,9 @@ async def _add_tools(
             continue
 
         name = expression.name or function.syntax.name
-        if any(tool.name == name and tool.how == how for tool in agent.tools):
+        # Once per name, which is what the model calls it by: a tool
+        # the agent is given in two places is one tool.
+        if any(tool.name == name for tool in agent.tools):
             continue
 
         implementation, analysis = await _analyze_function(
@@ -1424,7 +1416,6 @@ async def _add_tools(
         agent.tools.append(
             Tool(
                 name=name,
-                how=how,
                 description=(
                     expression.description or
                     ast.get_docstring(function.syntax) or None
@@ -1519,10 +1510,7 @@ async def _analyze_decorated_tools(
                 None if given is None else
                 _try_constant_string(_keyword(given, 'name'))
             ) or node.name
-            if any(
-                tool.name == name and tool.how == Tool.How.DECORATED
-                for tool in agent.tools
-            ):
+            if any(tool.name == name for tool in agent.tools):
                 continue
 
             implementation, analysis = await _analyze_function(
@@ -1537,7 +1525,6 @@ async def _analyze_decorated_tools(
             agent.tools.append(
                 Tool(
                     name=name,
-                    how=Tool.How.DECORATED,
                     description=(
                         (
                             None if given is None else _try_constant_string(

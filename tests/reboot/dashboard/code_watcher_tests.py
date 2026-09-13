@@ -13,7 +13,7 @@ from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import Change, Generated
 from rbt.dashboard.v1.dashboard_pb2 import \
     Dashboard as DashboardState
-from rbt.dashboard.v1.dashboard_pb2 import Agent, Servicer
+from rbt.dashboard.v1.dashboard_pb2 import Servicer
 from rbt.dashboard.v1.dashboard_rbt import Dashboard
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from reboot.aio.tests import Reboot
@@ -1392,8 +1392,8 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         [found_servicer] = found[servicer].servicers
         [method] = found_servicer.methods
         self.assertEqual(
-            [(run.agent, run.how) for run in method.runs],
-            [('librarian', Agent.Run.How.RUN)],
+            [run.agent for run in method.runs],
+            ['librarian'],
         )
         self.assertEqual(list(method.ambiguous), [])
 
@@ -1407,7 +1407,6 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
         [tool] = agent.tools
         self.assertEqual(tool.name, 'look_up')
-        self.assertEqual(tool.how, Agent.Tool.How.DECORATED)
         self.assertEqual(tool.description, 'Reads the depot.')
         self.assertEqual(
             [(call.state_type, call.method, call.how) for call in tool.calls],
@@ -1415,8 +1414,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_every_way_of_running_an_agent(self) -> None:
-        """Each of `Agent`'s four entry points is a run, and says
-        which it was reached through."""
+        """Each of `Agent`'s four entry points is a run."""
         servicer = self._write(
             'shop_servicer.py',
             source=(
@@ -1447,15 +1445,10 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
         [found_servicer] = found[servicer].servicers
         [method] = found_servicer.methods
-        How = Agent.Run.How
-        # Sorted because `ast.walk` reaches the four calls at the
-        # depths their statements put them at, not in the order they
-        # are written.
         self.assertEqual(
-            sorted(run.how for run in method.runs),
-            sorted([How.RUN, How.ITER, How.RUN_STREAM, How.RUN_STREAM_EVENTS]),
+            [run.agent for run in method.runs],
+            ['librarian'] * 4,
         )
-        self.assertEqual({run.agent for run in method.runs}, {'librarian'})
 
     async def test_the_tools_a_construction_and_a_run_give_an_agent(
         self,
@@ -1513,14 +1506,11 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         found = await self._analyze(application)
 
         [agent] = found[servicer].agents
-        How = Agent.Tool.How
+        # The construction's first, in the order written, then the run
+        # site's.
         self.assertEqual(
-            [(tool.name, tool.how) for tool in agent.tools],
-            [
-                ('restock', How.CONSTRUCTED),
-                ('checker', How.CONSTRUCTED),
-                ('count', How.RUN),
-            ],
+            [tool.name for tool in agent.tools],
+            ['restock', 'checker', 'count'],
         )
         restock, checker, _ = agent.tools
         self.assertEqual(restock.description, 'Fills the depot.')
@@ -1574,8 +1564,8 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(constructing.filename, str(agents))
         self.assertEqual(constructing.constructed_in, str(agents))
         self.assertEqual(
-            [(tool.name, tool.how) for tool in constructing.tools],
-            [('lookup', Agent.Tool.How.DECORATED)],
+            [tool.name for tool in constructing.tools],
+            ['lookup'],
         )
 
         [running] = found[servicer].agents
@@ -1634,17 +1624,11 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
         [writes] = agents['librarian'].tools
         self.assertEqual(writes.name, 'write_it_down')
-        self.assertEqual(
-            [(run.agent, run.how) for run in writes.runs],
-            [('scribe', Agent.Run.How.RUN)],
-        )
+        self.assertEqual([run.agent for run in writes.runs], ['scribe'])
 
         [looks] = agents['scribe'].tools
         self.assertEqual(looks.name, 'look_it_up')
-        self.assertEqual(
-            [(run.agent, run.how) for run in looks.runs],
-            [('librarian', Agent.Run.How.RUN)],
-        )
+        self.assertEqual([run.agent for run in looks.runs], ['librarian'])
 
     async def test_an_agent_that_cannot_be_named_is_ambiguous(self) -> None:
         """A run made on an agent the analysis cannot resolve to a

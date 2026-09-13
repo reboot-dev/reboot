@@ -5,8 +5,6 @@
 import type {
   Agent,
   Agent_Run,
-  Agent_Run_How,
-  Agent_Tool_How,
   Servicer,
   Servicer_Method,
   Servicer_Method_Call,
@@ -39,7 +37,6 @@ export interface GraphRun {
   // The agent's name, which is what a run names and what the records
   // of one agent are joined on.
   agentName: string;
-  how: Agent_Run_How;
   count: number;
 }
 
@@ -72,9 +69,6 @@ export interface GraphPackage {
 // reaches the application through.
 export interface GraphTool {
   name: string;
-  // How the agent was given it, which is all that tells two tools of
-  // the same name apart.
-  how: Agent_Tool_How;
   // What the model is told it does: the description it was
   // registered with, or the function's docstring.
   description?: string;
@@ -154,10 +148,9 @@ const countCalls = (calls: Servicer_Method_Call[] | undefined): GraphCall[] => {
 const countRuns = (runs: Agent_Run[] | undefined): GraphRun[] => {
   const counted = new Map<string, GraphRun>();
   for (const run of runs ?? []) {
-    const key = `${run.agent}|${run.how}`;
-    const already = counted.get(key);
+    const already = counted.get(run.agent);
     if (already === undefined) {
-      counted.set(key, { agentName: run.agent, how: run.how, count: 1 });
+      counted.set(run.agent, { agentName: run.agent, count: 1 });
     } else {
       already.count += 1;
     }
@@ -194,7 +187,6 @@ export const joinAgents = (agents: Agent[]): GraphAgent[] => {
       }
       joinedAgent.tools.push({
         name: tool.name,
-        how: tool.how,
         description: tool.description,
         calls: countCalls(tool.calls),
         runs: countRuns(tool.runs),
