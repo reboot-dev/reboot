@@ -73,6 +73,7 @@ class DashboardServicer(Dashboard.Servicer):
             apis=self.state.apis,
             api_digests=self.state.api_digests,
             servicers=self.state.servicers,
+            agents=self.state.agents,
             generated=self.state.generated,
             needs_generate_reason=needs_generate_reason(self.state),
             features=self.state.features,
@@ -150,6 +151,8 @@ class DashboardServicer(Dashboard.Servicer):
         changed, newest last."""
         del self.state.servicers[:]
         self.state.servicers.extend(request.servicers)
+        del self.state.agents[:]
+        self.state.agents.extend(request.agents)
         self.state.code_files.clear()
         self.state.code_files.MergeFrom(request.code_files)
         self.state.generated.clear()

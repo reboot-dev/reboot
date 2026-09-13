@@ -49,6 +49,10 @@ message Dashboard {
   // whoever reads this to make of what they will.
   repeated Servicer servicers = 6;
 
+  // Every agent found in the developer's application, sorted. One
+  // agent has a record per file whose analysis found it; see `Agent`.
+  repeated Agent agents = 16;
+
   // Represents every file the walk of the application analyzed,
   // keyed by its path, relative to the working directory for a file
   // under it and absolute otherwise, as of the last write. A
@@ -119,6 +123,7 @@ message DashboardGetResponse {
   map<string, rbt.v1alpha1.api.API> apis = 4;
   map<string, string> api_digests = 5;
   repeated Servicer servicers = 6;
+  repeated Agent agents = 16;
   map<string, Generated> generated = 7;
 
   // The worst reason over all the API files, and absent when
@@ -157,6 +162,7 @@ message DashboardUpdateApiResponse {}
 
 message DashboardUpdateCodeRequest {
   repeated Servicer servicers = 1;
+  repeated Agent agents = 6;
   map<string, File> code_files = 2;
   map<string, Generated> generated = 3;
 
@@ -524,6 +530,12 @@ message Servicer {
     // possibly nothing of Reboot's. Spelled the way `ast.unparse`
     // writes the callee, e.g. "self._transfer".
     repeated string ambiguous = 4;
+
+    // Represents every agent the method's implementation runs,
+    // itself or through the functions it calls. What the agent is,
+    // and what its tools do, is in `Agent`, which each of these
+    // names.
+    repeated Agent.Run runs = 5;
   }
 
   // The state type it services, spelled as the runtime names one,
@@ -543,6 +555,110 @@ message Servicer {
   // Represents every method it defines, in the order they are
   // written, which is the order somebody reading the file meets them.
   repeated Method methods = 3;
+}
+
+// One agent the developer's application uses, as one file's analysis
+// found it: a Reboot `Agent` some method runs, or some function is
+// decorated as a tool of.
+//
+// A record per file, because the analysis keys everything by the
+// file it read, and an agent is met in more files than the one
+// constructing it: a workflow runs it in one file, a tool is
+// decorated on it in another. Every record says the same thing about
+// the agent itself, since each is built from the construction the
+// analysis resolved; what differs is the tools each file
+// contributed. Whoever reads these joins them on `name`, which the
+// runtime requires to be unique.
+message Agent {
+  // One run of an agent, made by a servicer method's implementation
+  // or by another agent's tool, through any of `Agent`'s entry points:
+  // `run`, `iter`, `run_stream` or `run_stream_events`. Which one says
+  // nothing about what the application does, so it is not recorded.
+  message Run {
+    // Represents the agent run, spelled as `Agent.name` spells it.
+    string agent = 1;
+
+    // Represents, one sentence apiece, why the run may give the agent
+    // tools the analysis has not seen: a `toolsets=` passed to the
+    // run, which is not followed, e.g. "Agent 'librarian' is called
+    // via `run` and passed `toolsets` that are not analyzed". Empty
+    // when the run gives the agent nothing beyond what it has.
+    repeated string tool_caveats = 2;
+  }
+
+  // One tool an agent may call, and what analyzing its
+  // implementation found.
+  message Tool {
+    // Represents the tool's name as the model is told it: the
+    // `name` given where it was registered, and the function's own
+    // name otherwise. Where the agent was given it -- decorated,
+    // passed to its construction, or passed at a run -- is not
+    // recorded: the agent can reach it all the same.
+    string name = 1;
+
+    // Represents what the model is told the tool does: the
+    // `description` given where it was registered, and the
+    // function's docstring otherwise. Absent when it has neither.
+    optional string description = 3;
+
+    // Represents every Reboot call, agent run, and unresolved call
+    // the tool's implementation makes, found exactly the way a
+    // servicer method's are.
+    repeated Servicer.Method.Call calls = 4;
+    repeated Run runs = 5;
+    repeated string ambiguous = 6;
+  }
+
+  // Represents the agent's `name`, which the runtime requires and
+  // which is unique in an application, so it is what a run names and
+  // what records of one agent join on. The name the variable holding
+  // the agent is spelled with when the `name` is not a literal the
+  // analysis can read.
+  string name = 1;
+
+  // The file whose analysis found this record, spelled the way the
+  // developer would open it, e.g. "backend/src/librarian.py". What
+  // the records are keyed by, and not necessarily where the agent is
+  // constructed.
+  string filename = 2;
+
+  // Where the agent is constructed: the file, spelled the same way,
+  // the line counting from one, and the column counting from zero.
+  string constructed_in = 3;
+  uint32 line = 4;
+  uint32 character = 5;
+
+  // Represents the model the agent is constructed with, e.g.
+  // "anthropic:claude-sonnet-4-6". Absent when it is not a literal
+  // the analysis can read.
+  optional string model = 6;
+
+  // Represents what the agent tells the model about itself: every
+  // literal string its `system_prompt` and its `instructions` are
+  // constructed with, in that order. A prompt computed rather than
+  // written down contributes nothing.
+  repeated string system_prompt = 7;
+
+  // Represents the agent's `description`, which is what another
+  // agent handing work to this one is told it does. Absent when it
+  // has none the analysis can read.
+  optional string description = 8;
+
+  // Represents every tool this file's analysis found the agent has,
+  // in the order it met them: each function decorated as one with
+  // `@agent.tool` or `@agent.tool_plain`, the one way of giving an
+  // agent a tool that can always be followed.
+  repeated Tool tools = 9;
+
+  // Represents, one sentence apiece, every way this file's analysis
+  // found the agent is given tools that are not followed, and so may
+  // not be in `tools`: a `tools=` or a `toolsets=` passed to its
+  // construction, an agent built elsewhere adopted with `Agent.wrap`,
+  // and `tools=` passed to `override`. E.g. "Agent 'librarian' is
+  // called via `override` and passed `tools` that are not analyzed".
+  // The tools a run is given are said on the run; see
+  // `Run.tool_caveats`. Empty when `tools` is everything.
+  repeated string tool_caveats = 10;
 }
 
 // What analyzing one of the developer's files used: the digest

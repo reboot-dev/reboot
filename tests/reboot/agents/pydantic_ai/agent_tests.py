@@ -1230,6 +1230,44 @@ class OverrideTestCase(WorkflowAgentRunTestCase):
         self.assertIn("Overriding `toolsets`", str(raised.exception))
         self.assertIn("not currently supported", str(raised.exception))
 
+    async def test_override_tools_reach_the_run_and_are_memoized(
+        self,
+    ) -> None:
+        """A tool given with `agent.override(tools=[...])` reaches a run
+        made inside the override, and is memoized like any other tool:
+        a retried workflow does not call it again.
+
+        Unlike `toolsets=`, which `override` rejects, this works because
+        each entry point builds its wrapped toolsets while the caller's
+        override is still in effect, before installing its own
+        `tools=[]`; this pins that ordering down.
+        """
+        invocations = 0
+
+        async def tool(run: RunContext[None], query: str) -> str:
+            nonlocal invocations
+            invocations += 1
+            return "Unimportant"
+
+        model = ToolCallingModel([[("tool", {"query": "hello"})]])
+        agent = Agent(model, name="Agent")
+
+        attempts = 0
+
+        async def workflow(context: WorkflowContext) -> None:
+            nonlocal attempts
+            attempts += 1
+            with agent.override(tools=[tool]):
+                await agent.run(context, "Some prompt")
+            if attempts == 1:
+                raise RuntimeError("Trigger retry")
+
+        await self.call(workflow)
+
+        self.assertEqual(attempts, 2)
+        # Tool SHOULD NOT be re-invoked on the retry!
+        self.assertEqual(invocations, 1)
+
     async def test_override_model_uses_inner(self) -> None:
         """Inside `agent.override(model=inner)`, an `agent.run()`
         dispatches to the override, not to the agent's default
