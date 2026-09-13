@@ -1711,9 +1711,12 @@ class Lock:
       promoted to `exclusive`. A caller can upgrade and skip other
       `exclusive` waiters, preserving the upgrading transaction's
       shared-consistent view of state. However, at most one upgrade
-      may be pending per lock; a second `upgrade(...)` raises
-      `SystemAborted(Unavailable())` immediately to avoid the deadlock
-      where two shared holders both want to upgrade.
+      may be pending per lock; a second `upgrade(...)` aborts
+      immediately, since two shared holders that both want to upgrade
+      are each waiting for the other's shared hold to go, which is a
+      deadlock by construction: with `SystemAborted(TransactionShouldRetry)`
+      carrying the transaction's age when the upgrader passed its
+      participant, and `SystemAborted(Unavailable())` otherwise.
 
     - `downgrade()` is the inverse: a caller that holds `exclusive` is
       demoted to `shared`, granting any queued `shared` waiters that
@@ -2088,15 +2091,38 @@ class Lock:
         if upgrade:
             # If we've already got a upgrader that is waiting we fail
             # fast because otherwise each upgrader would sit on their
-            # shared hold and we'd deadlock.
+            # shared hold and we'd deadlock. A transaction is asked to
+            # retry the way a presumed deadlock asks it, carrying its
+            # age, so that its retry skips the backoff and is not the
+            # youngest again; a caller without a participant is asked
+            # to retry as `Unavailable`.
             if self._upgrader is not None:
+                if transaction is None:
+                    raise SystemAborted(
+                        Unavailable(),
+                        message=(
+                            "Cannot upgrade shared lock to exclusive: "
+                            "another transaction is already upgrading "
+                            "the same state; retry the transaction."
+                        ),
+                    )
+                pending = self._upgrader.transaction
+                message = (
+                    f"Transaction {transaction.root_id} cannot upgrade its "
+                    "shared hold to exclusive: " + (
+                        f"transaction {pending.root_id} (age {pending.age})"
+                        if pending is not None else "another transaction"
+                    ) + " is already upgrading the same state, and each "
+                    "would wait for the other's shared hold to go; "
+                    "aborting so that it proceeds. Retry required."
+                )
+                logger.warning(message)
                 raise SystemAborted(
-                    Unavailable(),
-                    message=(
-                        "Cannot upgrade shared lock to exclusive: "
-                        "another transaction is already upgrading "
-                        "the same state; retry the transaction."
+                    TransactionShouldRetry(
+                        reason=TransactionShouldRetry.PRESUMED_DEADLOCK,
+                        retry_age=str(transaction.age),
                     ),
+                    message=message,
                 )
             self._upgrader = waiter
         else:
@@ -4332,7 +4358,9 @@ class SidecarStateManager(
         `(state_type, state_ref)` to exclusive, aborting `transaction`
         with `TransactionShouldRetry` (presumed deadlock) instead if it
         has waited longer than the grace period on a shared holder that
-        is older.
+        is older, or at once if another transaction's upgrade is
+        already pending, since the two would each wait for the other's
+        shared hold to go.
         """
         assert transaction.mode == Lock.Mode.SHARED
 
