@@ -712,8 +712,21 @@ class StateManager(ABC):
             transaction_ids = context.transaction_ids
             assert transaction_ids is not None
 
+            # Presume a deadlock only with an owner that has owned this
+            # state for a whole grace period while we waited; an owner
+            # that changed in between is a sign the state is moving
+            # between nested transactions, and we keep waiting.
+            previous_owner_ids = list(self.owner_ids)
+
             def on_grace() -> None:
-                self._abort_if_presumed_sibling_deadlock(transaction_ids)
+                nonlocal previous_owner_ids
+                current_owner_ids = list(self.owner_ids)
+                if current_owner_ids == previous_owner_ids:
+                    self._abort_if_presumed_sibling_deadlock(
+                        transaction_ids,
+                        current_owner_ids,
+                    )
+                previous_owner_ids = current_owner_ids
 
             await self.wait_ownership(
                 lambda: self.is_claimable_by(transaction_ids),
@@ -742,25 +755,28 @@ class StateManager(ABC):
         def _abort_if_presumed_sibling_deadlock(
             self,
             transaction_ids: list[uuid.UUID],
+            owner_ids: list[uuid.UUID],
         ) -> None:
             """Raises `SystemAborted(NestedTransactionShouldRetry(...))`
-            when the nested transaction owning this state is an older
-            sibling of a nested transaction among `transaction_ids`, so
-            that the younger sibling rolls back, ownership of what it
-            claimed returns to the transaction that started it, and the
-            older sibling proceeds: the younger of two siblings waiting
-            on each other's states is always the one to go. A state
-            owned by a younger sibling, or by a descendant of the
-            caller, keeps the caller waiting.
+            when `owner_ids`, the nested transactions that have owned
+            this state for a whole grace period while a call of
+            `transaction_ids` waited, end in an older sibling of a
+            nested transaction among `transaction_ids`, so that the
+            younger sibling rolls back, ownership of what it claimed
+            returns to the transaction that started it, and the older
+            sibling proceeds: the younger of two siblings waiting on
+            each other's states is always the one to go. A state owned
+            by a younger sibling, or by a descendant of the caller,
+            keeps the caller waiting.
             """
             nested_transaction_id = presumed_deadlocked_nested_transaction(
                 transaction_ids,
-                self.owner_ids,
+                owner_ids,
             )
             if nested_transaction_id is None:
                 return
             level = transaction_ids.index(nested_transaction_id)
-            owner_id = self.owner_ids[level]
+            owner_id = owner_ids[level]
             grace_ms = TRANSACTION_DEADLOCK_GRACE // timedelta(milliseconds=1)
             message = (
                 f"Nested transaction {nested_transaction_id} waited longer "
@@ -2850,23 +2866,67 @@ class SidecarStateManager(
     def latest_timestamp_ms(self) -> Optional[int]:
         return self._latest_timestamp_ms
 
+    def _presume_deadlock_on_grace(
+        self,
+        state_type: StateTypeName,
+        state_ref: StateRef,
+        transaction: StateManager.Transaction,
+    ) -> Callable[[], None]:
+        """The `on_grace` hook for `transaction` waiting on the lock of
+        `(state_type, state_ref)`: each time a grace period elapses it
+        presumes a deadlock with, and aborts `transaction` for, an
+        older holder that has held the lock since the previous grace
+        period elapsed, or since the wait began. A holder that arrived
+        in between is not a deadlock but the lock changing hands, and
+        `transaction`, queued behind it, keeps waiting.
+
+        TODO: when every state in a cycle lives on this server, the
+        deadlock can be proven rather than presumed, and at once: record
+        on each participant the state it is waiting on (here and in
+        `claim_ownership`), and when a wait begins walk from the lock's
+        holders through what they wait on, and so on, looking for a
+        path back to `transaction`. A cycle found that way aborts its
+        youngest transaction immediately, with no grace period and no
+        false positive; a wait that leaves this server ends the walk
+        and falls back to the grace check. Most cycles in tests and in
+        small deployments are local, so this would resolve them in
+        microseconds instead of a grace period.
+        """
+        lock = self._locks[state_type][state_ref]
+        previous_holders = set(lock.holders)
+
+        def on_grace() -> None:
+            nonlocal previous_holders
+            current_holders = set(lock.holders)
+            self._abort_if_presumed_deadlock(
+                state_type,
+                state_ref,
+                transaction,
+                current_holders & previous_holders,
+            )
+            previous_holders = current_holders
+
+        return on_grace
+
     def _abort_if_presumed_deadlock(
         self,
         state_type: StateTypeName,
         state_ref: StateRef,
         transaction: StateManager.Transaction,
+        holders: set[StateManager.Transaction],
     ) -> None:
         """Raises `SystemAborted(TransactionShouldRetry(...))`, with
-        reason `PRESUMED_DEADLOCK`, when the lock on `(state_type,
-        state_ref)` is held by a transaction older than `transaction`,
-        so that `transaction` aborts and the older one proceeds: the
-        younger of two transactions waiting on each other's states is
-        always the one to go. A lock held only by younger transactions,
-        or by a plain reader or writer outside any transaction (which
-        never waits on anything and so does not identify itself to the
-        lock), keeps `transaction` waiting.
+        reason `PRESUMED_DEADLOCK`, when `holders`, the transactions
+        that have held the lock on `(state_type, state_ref)` for a
+        whole grace period while `transaction` waited, include one
+        older than `transaction`, so that `transaction` aborts and the
+        older one proceeds: the younger of two transactions waiting on
+        each other's states is always the one to go. A lock held only
+        by younger transactions, or by a plain reader or writer outside
+        any transaction (which never waits on anything and so does not
+        identify itself to the lock), keeps `transaction` waiting.
         """
-        for holder in self._locks[state_type][state_ref].holders:
+        for holder in holders:
             # An upgrader is itself among the holders through the
             # shared hold it upgrades from.
             if holder is transaction:
@@ -4276,18 +4336,15 @@ class SidecarStateManager(
         """
         assert transaction.mode == Lock.Mode.SHARED
 
-        def on_grace() -> None:
-            self._abort_if_presumed_deadlock(
-                state_type,
-                state_ref,
-                transaction,
-            )
-
         await self._locks[state_type][state_ref].upgrade(
             deadline=LOCK_ACQUIRE_DEADLINE_DEFAULT,
             transaction=transaction,
             grace=TRANSACTION_DEADLOCK_GRACE,
-            on_grace=on_grace,
+            on_grace=self._presume_deadlock_on_grace(
+                state_type,
+                state_ref,
+                transaction,
+            ),
         )
         transaction.mode = Lock.Mode.EXCLUSIVE
 
@@ -5441,12 +5498,11 @@ class SidecarStateManager(
         # success / failure we resolve `transaction.acquired_lock`
         # so concurrent callers on the same transaction can
         # proceed (or propagate our failure).
-        def on_grace() -> None:
-            self._abort_if_presumed_deadlock(
-                state_type,
-                state_ref,
-                transaction,
-            )
+        on_grace = self._presume_deadlock_on_grace(
+            state_type,
+            state_ref,
+            transaction,
+        )
 
         try:
             if transaction.mode == Lock.Mode.SHARED:
