@@ -56,5 +56,15 @@ In the example above, `ChatRoom` has just one `reader` and one `writer`
 method, but it can have any number of `reader`, `writer`,
 `transaction`, and `workflow` methods.
 
+Every `transaction` also says how it holds the lock on its own state
+while it runs, with `mode: exclusive()` or `mode: shared()`, both
+imported from `@reboot-dev/reboot-api`. `exclusive()` queues
+concurrent callers of the state and is the choice for a transaction
+that writes its own state, which is most of them; `shared()` lets
+callers proceed concurrently while none of them writes it and is the
+choice for a transaction that mostly reads its own state while
+writing others. See
+[Exclusive or shared](/implement/transactions#exclusive-or-shared).
+
 To learn more about how you implement each data type's methods see
 [Implement your API](/implement/servicers).
