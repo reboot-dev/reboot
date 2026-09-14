@@ -17,6 +17,13 @@ message ReaderMethodOptions {
     STREAMING = 2;
   }
   State state = 3;
+
+  // Whether the server warns, in its log, every time a client of a
+  // reactive read of this method falls behind and has updates skipped
+  // for it. Unset means yes. A method whose readers only ever want
+  // its latest state, so that skipping the states in between is the
+  // point, sets this to `false`.
+  optional bool warn_on_flow_control = 4;
 }
 
 message WriterMethodOptions {

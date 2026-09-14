@@ -583,6 +583,8 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
                 yield response
             return
 
+        warn_on_flow_control = middleware.warns_on_flow_control(request.method)
+
         # We'll run two loops concurrently:
         # 1. Consume responses from the stream, and merge them into a single
         #    "next response".
@@ -677,21 +679,18 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
 
                 # Warn every time updates are skipped, until we have
                 # enough experience with flow control to know which
-                # skips a developer needs to hear about; a client for
-                # which skipping is the point asks us not to.
-                if (
-                    skipped_updates > 0 and
-                    not request.suppress_flow_control_warning
-                ):
+                # skips a developer needs to hear about; a method for
+                # which skipping is the point has opted out.
+                if skipped_updates > 0 and warn_on_flow_control:
                     logger.warning(
                         f"A client of a reactive query to `{request.method}` "
                         f"skipped {skipped_updates} updates because it fell "
                         f"{stall_milliseconds}ms behind. If skipping updates "
                         "is not what you expect of this reactive read, make "
                         "that client fast enough to process every response; "
-                        "if it is, pass `{ warnOnFlowControl: false }` in "
-                        "the options of the client's reader to silence this "
-                        "warning."
+                        "if it is, set `warn_on_flow_control: false` in the "
+                        f"`reader` options of `{request.method}` to silence "
+                        "this warning."
                     )
 
                 # Send the response we'd accumulated.

@@ -1883,7 +1883,6 @@ class GreeterInstance {
             method,
             request: serializedRequest,
             clientContinuesQuery: true,
-            suppressFlowControlWarning: !warnOnFlowControl,
             ...(bearerToken !== undefined && { bearerToken } || {}),
         });
         let expecteds = [];
@@ -1938,6 +1937,7 @@ class GreeterInstance {
                         endpoint: `${this.url}/__/reboot/rpc/${this.stateRef}`,
                         request: queryRequest,
                         signal: reader.abortController.signal,
+                        warnOnFlowControl,
                     });
                     for await (const queryResponse of queryResponses) {
                         if (!loaded) {

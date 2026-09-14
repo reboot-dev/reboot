@@ -386,7 +386,6 @@ export function reactively<
           method,
           request: request.toBinary(),
           clientContinuesQuery: true,
-          suppressFlowControlWarning: !warnOnFlowControl,
           ...((bearerToken !== undefined && {
             bearerToken: await bearerToken(),
           }) ||
@@ -400,6 +399,7 @@ export function reactively<
           request: queryRequest,
           signal: responsesAbortController.signal,
           websockets,
+          warnOnFlowControl,
         });
 
         for await (const queryResponse of queryResponses) {
@@ -429,15 +429,16 @@ export function reactively<
 // render is still the latest one; what was lost is the updates on the
 // way there. Warns every time that happens, until we have enough
 // experience with flow control to know which skips a developer needs
-// to hear about; a reader for which skipping is the point asks us not
-// to, in the `request`.
+// to hear about; a reader for which skipping is the point is created
+// with `warnOnFlowControl: false`.
 function logStall(
-  request: react_pb.QueryRequest,
+  method: string,
+  warnOnFlowControl: boolean,
   response: react_pb.QueryResponse
 ) {
-  if (response.skippedUpdates > 0 && !request.suppressFlowControlWarning) {
+  if (warnOnFlowControl && response.skippedUpdates > 0) {
     console.warn(
-      `[Reboot] A reactive query to \`${request.method}\` skipped ` +
+      `[Reboot] A reactive query to \`${method}\` skipped ` +
         `${response.skippedUpdates} updates because this client fell ` +
         `${response.stallMilliseconds}ms behind. If skipping updates is ` +
         `not what you expect of this reactive read, make this client ` +
@@ -512,11 +513,15 @@ export async function* reactiveReader({
   request,
   signal,
   websockets = false,
+  warnOnFlowControl = true,
 }: {
   endpoint: string;
   request: react_pb.QueryRequest;
   signal: AbortSignal;
   websockets: boolean;
+  // Whether to warn in the console when this reader falls behind and
+  // the backend skips updates for it; see `logStall`.
+  warnOnFlowControl?: boolean;
 }): AsyncGenerator<react_pb.QueryResponse, void, unknown> {
   const url = new URL(`${endpoint}/rbt.v1alpha1.React/Query`);
 
@@ -545,7 +550,7 @@ export async function* reactiveReader({
     let settled = true;
 
     for await (const response of responses) {
-      logStall(request, response);
+      logStall(request.method, warnOnFlowControl, response);
 
       yield response;
 
@@ -617,7 +622,7 @@ export async function* reactiveReader({
         throw Status.fromJsonString(response.responseOrStatus.value);
       }
 
-      logStall(request, response);
+      logStall(request.method, warnOnFlowControl, response);
 
       yield response;
     }

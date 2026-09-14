@@ -777,7 +777,6 @@ class {{ client.proto.state_name | to_camel }}Instance {
       method,
       request: serializedRequest,
       clientContinuesQuery: true,
-      suppressFlowControlWarning: !warnOnFlowControl,
       ...(bearerToken !== undefined && { bearerToken } || {}),
     });
 
@@ -862,6 +861,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
             endpoint: `${this.url}/__/reboot/rpc/${this.stateRef}`,
             request: queryRequest,
             signal: reader.abortController.signal,
+            warnOnFlowControl,
           });
 
           for await (const queryResponse of queryResponses) {

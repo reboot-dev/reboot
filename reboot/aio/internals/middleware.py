@@ -6,6 +6,7 @@ import reboot.aio.tracing
 import uuid
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
+from google.protobuf import descriptor_pool
 from google.protobuf.message import Message
 from logging import Logger
 from reboot.aio.auth.authorizers import Authorizer
@@ -37,6 +38,7 @@ from reboot.aio.types import (
     StateRef,
     StateTypeName,
 )
+from reboot.options import get_method_options
 from reboot.settings import DOCS_BASE_URL
 from reboot.time import DateTimeWithTimeZone
 from typing import (
@@ -134,6 +136,33 @@ class Middleware(ABC):
     @property
     def service_names(self) -> list[ServiceName]:
         return self._service_names
+
+    def warns_on_flow_control(self, method: str) -> bool:
+        """Whether the server warns every time a client of a reactive
+        read of `method` falls behind and has updates skipped for it,
+        which is what the method's `warn_on_flow_control` reader
+        option decides; a method that has not set it warns."""
+        pool = descriptor_pool.Default()
+
+        for service_name in self._service_names:
+            try:
+                service = pool.FindServiceByName(service_name)
+            except KeyError:
+                continue
+
+            descriptor = service.methods_by_name.get(method)
+
+            if descriptor is None:
+                continue
+
+            reader = get_method_options(descriptor).reader
+
+            if reader.HasField('warn_on_flow_control'):
+                return reader.warn_on_flow_control
+
+            return True
+
+        return True
 
     def create_context(
         self,

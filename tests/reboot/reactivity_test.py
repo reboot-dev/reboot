@@ -11,7 +11,7 @@ from reboot.aio.tests import Reboot
 from tests.reboot import greeter_rbt
 from tests.reboot.greeter_rbt import Greeter
 from tests.reboot.greeter_servicers import MyGreeterServicer
-from typing import Any, Iterator, Optional
+from typing import Any, AsyncIterator, Iterator, Optional
 from unittest.mock import patch
 
 # `title` that marks a `Greeter` as one whose `Greet` reads another
@@ -41,34 +41,6 @@ class QueryRequestWithoutContinuations:
     def __new__(cls, **kwargs: Any) -> react_pb2.QueryRequest:
         kwargs.pop('client_continues_query', None)
         return QUERY_REQUEST(**kwargs)
-
-
-class QueryRequestSuppressingFlowControlWarnings:
-    """Constructs a `QueryRequest` the way a client that passed
-    `warnOnFlowControl: false` does, i.e. with
-    `suppress_flow_control_warning` set.
-
-    Keeps `SerializeToString` and `FromString` reachable for the same
-    reason `QueryRequestWithoutContinuations` does.
-    """
-
-    SerializeToString = QUERY_REQUEST.SerializeToString
-    FromString = QUERY_REQUEST.FromString
-
-    def __new__(cls, **kwargs: Any) -> react_pb2.QueryRequest:
-        return QUERY_REQUEST(suppress_flow_control_warning=True, **kwargs)
-
-
-@contextlib.contextmanager
-def query_requests_suppressing_flow_control_warnings() -> Iterator[None]:
-    """Makes every reactive reader send a `QueryRequest` the way a
-    client that asked not to be warned about skipped updates does."""
-    with patch.object(
-        react_pb2,
-        'QueryRequest',
-        QueryRequestSuppressingFlowControlWarnings,
-    ):
-        yield
 
 
 @contextlib.contextmanager
@@ -147,13 +119,32 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
         await self.rbt.stop()
 
     async def start_accumulating_adjectives(
-        self, greeter: Greeter.WeakReference, context: ExternalContext
-    ):
+        self,
+        greeter: Greeter.WeakReference,
+        context: ExternalContext,
+        *,
+        through: str = 'GetWholeState',
+    ) -> None:
+        """Reads `greeter` reactively through `through`, which is
+        `GetWholeState` or `Greet`, accumulating the adjective that
+        each response carries."""
 
-        async def _do():
-            async for greeter_state in greeter.reactively(
-            ).GetWholeState(context):
-                self._accumulated_adjectives.append(greeter_state.adjective)
+        async def adjectives() -> AsyncIterator[str]:
+            if through == 'GetWholeState':
+                async for greeter_state in greeter.reactively(
+                ).GetWholeState(context):
+                    yield greeter_state.adjective
+            else:
+                assert through == 'Greet'
+                async for greeting in greeter.reactively().Greet(
+                    context, name='Jonathan'
+                ):
+                    # A greeting ends in "the <adjective>".
+                    yield greeting.message.rsplit(' the ', 1)[-1]
+
+        async def _do() -> None:
+            async for adjective in adjectives():
+                self._accumulated_adjectives.append(adjective)
                 self._accumulated_adjective.set()
                 # Hold up the reactive reader until the test says we
                 # may consume a next response.
@@ -320,10 +311,11 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
             logs.output,
         )
 
-    async def test_client_that_asked_not_to_be_warned(self) -> None:
+    async def test_method_that_opted_out_of_warning(self) -> None:
         """
-        Tests that a backend which skipped updates for a client that
-        asked not to be warned about that stays quiet.
+        Tests that a backend which skipped updates for a client of a
+        method whose `warn_on_flow_control` option is `false` stays
+        quiet about it.
         """
         await self.rbt.up(Application(servicers=[MyGreeterServicer]))
         context = self.rbt.create_external_context(name=f"test-{self.id()}")
@@ -335,15 +327,17 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
             adjective="reactive",
         )
 
-        with query_requests_suppressing_flow_control_warnings():
-            await self.start_accumulating_adjectives(greeter, context)
-            self.assertEqual(["reactive"], await self.get_adjectives(1))
+        # `Greet` is the reader that opted out; see `greeter.proto`.
+        await self.start_accumulating_adjectives(
+            greeter, context, through='Greet'
+        )
+        self.assertEqual(["reactive"], await self.get_adjectives(1))
 
-            with self.assertNoLogs(
-                'respect.reboot.aio.react',
-                level='WARNING',
-            ):
-                await self.make_the_client_fall_behind(greeter, context)
+        with self.assertNoLogs(
+            'respect.reboot.aio.react',
+            level='WARNING',
+        ):
+            await self.make_the_client_fall_behind(greeter, context)
 
     async def test_transitive_skip_to_latest(self) -> None:
         """

@@ -113,8 +113,11 @@ service GreeterMethods {
     };
   }
 
+  // Reading this reactively never warns about skipped updates, so
+  // that tests can read through a method that opted out of that.
   rpc Greet(GreetRequest) returns (GreetResponse) {
     option (rbt.v1alpha1.method).reader = {
+      warn_on_flow_control: false,
     };
   }
 

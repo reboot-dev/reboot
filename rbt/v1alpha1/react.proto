@@ -37,13 +37,6 @@ message QueryRequest {
   // `QueryRequest`, which is why presence matters here: sequence
   // number zero is a real response.
   optional uint64 continue_query_sequence_number = 5;
-
-  // Whether this client has asked not to be warned when it falls
-  // behind and updates are skipped on its behalf. By default both the
-  // client and the server log a warning every time that happens, so
-  // that a client that expected to see every update learns that it
-  // did not; a client for which skipping is the point sets this.
-  bool suppress_flow_control_warning = 6;
 }
 
 message QueryResponse {
