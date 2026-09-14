@@ -144,15 +144,23 @@ incompatible with deterministic replay.
 
 ## Dependency
 
-Add the Pydantic AI package with the provider extra to the
-project's `pyproject.toml` (see `lifecycle-project-setup.md`):
+Add the `anthropic` extra to the project's `reboot` requirement in
+`pyproject.toml`, keeping the version pin (see
+`lifecycle-project-setup.md`):
 
 ```toml
 dependencies = [
-    "pydantic-ai-slim[anthropic]==1.87.0",
+    "reboot[anthropic]==1.5.0",
     # ...
 ]
 ```
+
+`reboot` already pins `pydantic-ai-slim`; the extra adds the
+Anthropic SDK at the version that works with it. Do **not** add
+`pydantic-ai-slim[anthropic]` or `anthropic` yourself: a fresh
+resolve of either picks an SDK built on `httpx2`, which rejects the
+`httpx` client Pydantic AI hands it, and every model call fails with
+"Invalid `http_client` argument".
 
 ## Related
 
