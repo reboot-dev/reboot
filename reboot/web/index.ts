@@ -544,7 +544,7 @@ export async function* reactiveReader({
       // Only now that our consumer has processed the response do we
       // continue past it, so that we can't fall behind a backend that
       // produces responses faster than we consume them.
-      if (response.queryId === "") {
+      if (response.queryId === undefined) {
         // An older backend doesn't send a query ID and doesn't expect
         // to be told.
         continue;
@@ -597,7 +597,7 @@ export async function* reactiveReader({
       // as we have processed it, rather than past the newest of
       // several.
       continueRequest: (response: react_pb.QueryResponse) =>
-        response.queryId !== ""
+        response.queryId !== undefined
           ? new react_pb.QueryRequest({
               continueQuerySequenceNumber: response.sequenceNumber,
             })

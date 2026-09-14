@@ -63,9 +63,9 @@ message QueryResponse {
   // Unique ID of the query this response belongs to, which a client
   // names when it continues that query. The same for every response
   // of one `Query`. Only set when the client set
-  // `client_continues_query` on its `QueryRequest`; an empty ID means
-  // the client is not expected to continue anything.
-  string query_id = 4;
+  // `client_continues_query` on its `QueryRequest`; when unset, the
+  // client is not expected to continue anything.
+  optional string query_id = 4;
 
   // Position of this response within its query, counting from zero.
   // A client names the last one it has fully processed to continue

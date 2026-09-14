@@ -360,7 +360,7 @@ class QueryContinuations:
     ) -> None:
         self._stub = stub
         self._metadata = metadata
-        self._continuation: Optional[asyncio.Future] = None
+        self._continuation: Optional[asyncio.Task] = None
 
     async def continue_past(
         self,
@@ -369,7 +369,7 @@ class QueryContinuations:
         """Continues the query past `query_response`, if there is no
         call already in flight. Raises whatever a previous call raised,
         so that a failure to continue surfaces on the read."""
-        if query_response.query_id == '':
+        if not query_response.HasField('query_id'):
             # An older backend doesn't send a query ID and doesn't
             # expect to be told.
             return
@@ -392,13 +392,8 @@ class QueryContinuations:
             )
 
     async def stop(self) -> None:
-        if self._continuation is not None:
-            self._continuation.cancel()
-            try:
-                await self._continuation
-            except BaseException:
-                pass
-            self._continuation = None
+        await wait_for_tasks([self._continuation], cancel=True)
+        self._continuation = None
 
 
 class React:

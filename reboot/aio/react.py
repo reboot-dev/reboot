@@ -696,11 +696,7 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
                 yield response
 
         finally:
-            accumulator.cancel()
-            try:
-                await accumulator
-            except CancelledError:
-                pass
+            await wait_for_tasks([accumulator], cancel=True)
 
     async def Query(
         self,
