@@ -1096,15 +1096,21 @@ header h1 {
   text-wrap: pretty;
 }
 
-/* What a method takes and gives back, on one line: the keys it
-   carries and, for a key holding one of the developer's own types,
-   that type's name rather than its keys. Set in the mono face
-   because it is read as a signature rather than as prose. */
+/* What a method takes and gives back: the keys it carries and, for
+   a key holding one of the developer's own types, that type's name
+   rather than its keys. Set in the mono face because it is read as
+   a signature rather than as prose. */
 .method-signature {
   display: inline;
   color: hsl(var(--muted-foreground));
   /* A long signature wraps rather than widening the card. */
   overflow-wrap: anywhere;
+}
+
+/* One key with its type: a signature too long for its line breaks
+   between these, never inside one, unless one alone is too long. */
+.method-signature .argument {
+  display: inline-block;
 }
 
 .method-signature .errors {
