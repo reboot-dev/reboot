@@ -103,8 +103,8 @@ from typing import Optional
 logger = log.log.get_logger(__name__)
 
 # How long to keep retrying `Configuration` while the data plane
-# comes up, before `pre_run` gives up. The data plane is normally
-# already running (spawned by `rbt` or a ready facilitator), so this is
+# comes up, before `pre_run` gives up. The data plane named by
+# `REBOOT_BLOB_DATA_PLANE_URL` is normally already running, so this is
 # only a startup-race cushion.
 _CONFIGURATION_RETRY_SECONDS = 30
 _CONFIGURATION_MAX_BACKOFF_SECONDS = 2

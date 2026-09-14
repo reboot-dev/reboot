@@ -21,9 +21,9 @@ proto_library(
 )
 
 # The blob data-plane interface: a plain gRPC service (no Reboot state
-# options). Built with `py_reboot_library` — which, besides the plain
-# `_pb2`/`_pb2_grpc` modules the filesystem server uses directly, emits
-# the `_rbt` module that lets the Cloud facilitator register it via
+# options). Built with `py_reboot_library` so that, besides the plain
+# `_pb2`/`_pb2_grpc` modules, it emits the `_rbt` module that lets a
+# Reboot application host an implementation via
 # `legacy_grpc_servicers`. Python-only: the JS SDK talks to the `Blob`
 # control plane, never the data plane directly.
 proto_library(
