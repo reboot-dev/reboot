@@ -659,6 +659,41 @@ message Preferences {
   // For the features page, when the features last changed, the
   // same way.
   optional google.protobuf.Timestamp features_seen_at = 7;
+
+  optional CallGraphLayout call_graph_layout = 8;
+}
+
+// How the call graph's boxes and cards differ from the default
+// layout. The default layout is computed again whenever a box opens
+// or closes or the API changes, and these differences are applied on
+// top.
+message CallGraphLayout {
+  // Canvas pixels, which React Flow measures in doubles.
+  message Offset {
+    double x = 1;
+    double y = 2;
+  }
+
+  message Size {
+    double width = 1;
+    double height = 2;
+  }
+
+  // The packages whose boxes are collapsed.
+  repeated string collapsed_packages = 1;
+
+  // How far each dragged package's box sits from its place in the
+  // default layout, keyed by the package's name.
+  map<string, Offset> moved_package_boxes = 2;
+
+  // How far each dragged state type's card sits from its place in
+  // the default layout, keyed by the state type's id.
+  map<string, Offset> moved_state_type_cards = 3;
+
+  // The size each resized package's box was given, keyed by the
+  // package's name. A box the default layout makes bigger than this
+  // gets the default layout's size.
+  map<string, Size> resized_package_boxes = 4;
 }
 
 message PreferencesGetRequest {}
@@ -671,6 +706,7 @@ message PreferencesGetResponse {
   optional string changelog_seen_key = 5;
   optional google.protobuf.Timestamp models_seen_at = 6;
   optional google.protobuf.Timestamp features_seen_at = 7;
+  optional CallGraphLayout call_graph_layout = 8;
 }
 
 message PreferencesSetSuppressOpenOnRestartRequest {
@@ -715,6 +751,13 @@ message PreferencesSetSeenRequest {
 }
 
 message PreferencesSetSeenResponse {}
+
+message PreferencesSetCallGraphLayoutRequest {
+  // The whole layout, which replaces the stored one.
+  CallGraphLayout call_graph_layout = 1;
+}
+
+message PreferencesSetCallGraphLayoutResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -827,6 +870,14 @@ service PreferencesMethods {
   // Records what a page showed the last time it was open, which is
   // what the sidebar tells new from seen by.
   rpc SetSeen(PreferencesSetSeenRequest) returns (PreferencesSetSeenResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Records the call graph's layout after every drag, resize, or
+  // box opened or closed.
+  rpc SetCallGraphLayout(PreferencesSetCallGraphLayoutRequest)
+      returns (PreferencesSetCallGraphLayoutResponse) {
     option (rbt.v1alpha1.method).writer = {
     };
   }

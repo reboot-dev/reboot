@@ -14,6 +14,8 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     DashboardUpdateFeaturesResponse,
     PreferencesGetRequest,
     PreferencesGetResponse,
+    PreferencesSetCallGraphLayoutRequest,
+    PreferencesSetCallGraphLayoutResponse,
     PreferencesSetMethodsExpandedRequest,
     PreferencesSetMethodsExpandedResponse,
     PreferencesSetNavWidthRequest,
@@ -298,6 +300,10 @@ class PreferencesServicer(Preferences.Servicer):
                 self.state.features_seen_at
                 if self.state.HasField('features_seen_at') else None
             ),
+            call_graph_layout=(
+                self.state.call_graph_layout
+                if self.state.HasField('call_graph_layout') else None
+            ),
         )
 
     async def SetSuppressOpenOnRestart(
@@ -358,3 +364,22 @@ class PreferencesServicer(Preferences.Servicer):
         if request.HasField('features_seen_at'):
             self.state.features_seen_at.CopyFrom(request.features_seen_at)
         return PreferencesSetSeenResponse()
+
+    async def SetCallGraphLayout(
+        self,
+        context: WriterContext,
+        request: PreferencesSetCallGraphLayoutRequest,
+    ) -> PreferencesSetCallGraphLayoutResponse:
+        """Replaces the call graph's layout. The default layout, nothing
+        collapsed, dragged or resized, is stored as no layout at all."""
+        layout = request.call_graph_layout
+        if (
+            not layout.collapsed_packages and
+            not layout.moved_package_boxes and
+            not layout.moved_state_type_cards and
+            not layout.resized_package_boxes
+        ):
+            self.state.ClearField('call_graph_layout')
+        else:
+            self.state.call_graph_layout.CopyFrom(layout)
+        return PreferencesSetCallGraphLayoutResponse()

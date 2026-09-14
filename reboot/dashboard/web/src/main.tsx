@@ -113,7 +113,7 @@ import {
   graphStateTypeNamed,
   undescribedMethods,
 } from "./features";
-import { drawnCallCount, GraphPage } from "./graph";
+import { drawnCallCount, GraphPage, type CallGraphLayout } from "./graph";
 
 // One subscriber per tab, for as long as the tab is open.
 const SUBSCRIBER_ID = uuidv4();
@@ -421,6 +421,22 @@ interface Seen {
   modelsAt?: Timestamp;
   featuresAt?: Timestamp;
 }
+
+// The call graph's layout as the preferences keep it, read into the
+// sets and maps the graph works with. Absent means the default
+// layout.
+const callGraphLayoutOfPreferences = (
+  layout: dashboard_pb.CallGraphLayout | undefined
+): CallGraphLayout => ({
+  collapsedPackages: new Set(layout?.collapsedPackages),
+  movedPackageBoxes: new Map(Object.entries(layout?.movedPackageBoxes ?? {})),
+  movedStateTypeCards: new Map(
+    Object.entries(layout?.movedStateTypeCards ?? {})
+  ),
+  resizedPackageBoxes: new Map(
+    Object.entries(layout?.resizedPackageBoxes ?? {})
+  ),
+});
 
 // Whether something changed at `changedAt` that a page last open at
 // `seenAt` has not shown: nothing has changed means nothing is new,
@@ -2468,6 +2484,8 @@ const Overview: FC<{
   // record what the open page shows now.
   seen: Seen;
   onSeen: (seen: Seen) => void;
+  callGraphLayout: CallGraphLayout;
+  onCallGraphLayoutChange: (layout: CallGraphLayout) => void;
 }> = ({
   page,
   navWidth,
@@ -2479,6 +2497,8 @@ const Overview: FC<{
   preferencesLoaded,
   seen,
   onSeen,
+  callGraphLayout,
+  onCallGraphLayoutChange,
 }) => {
   // `Panel` reads `defaultSize` once, when it mounts, and the stored
   // width arrives from the application later. The effect below resizes
@@ -2989,6 +3009,8 @@ const Overview: FC<{
                   selectedMethodId={target ?? null}
                   onSelectMethod={onSelectMethod}
                   onOpenStateType={onOpenStateType}
+                  savedLayout={callGraphLayout}
+                  onLayoutChange={onCallGraphLayoutChange}
                 />
               </>
             ) : featureEntries.length === 0 ? (
@@ -3091,6 +3113,7 @@ const App: FC = () => {
     setNavWidth,
     setPaneWidth,
     setSeen,
+    setCallGraphLayout,
   } = usePreferences({
     id: PREFERENCES_ID,
   });
@@ -3105,6 +3128,25 @@ const App: FC = () => {
       });
     },
     [setSeen]
+  );
+
+  const callGraphLayout = useMemo(
+    () => callGraphLayoutOfPreferences(response?.callGraphLayout),
+    [response?.callGraphLayout]
+  );
+
+  const onCallGraphLayoutChange = useCallback(
+    (layout: CallGraphLayout): void => {
+      setCallGraphLayout({
+        callGraphLayout: {
+          collapsedPackages: [...layout.collapsedPackages],
+          movedPackageBoxes: Object.fromEntries(layout.movedPackageBoxes),
+          movedStateTypeCards: Object.fromEntries(layout.movedStateTypeCards),
+          resizedPackageBoxes: Object.fromEntries(layout.resizedPackageBoxes),
+        },
+      });
+    },
+    [setCallGraphLayout]
   );
 
   const [openedNotice, setOpenedNotice] = useState(openedAutomatically);
@@ -3166,6 +3208,8 @@ const App: FC = () => {
                     featuresAt: response?.featuresSeenAt,
                   }}
                   onSeen={onSeen}
+                  callGraphLayout={callGraphLayout}
+                  onCallGraphLayoutChange={onCallGraphLayoutChange}
                 />
               }
               key={page}
