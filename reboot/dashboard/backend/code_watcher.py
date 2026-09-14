@@ -874,8 +874,6 @@ async def _analyze_class(
         servicer = Servicer(
             state_type=definition.state_type,
             filename=str(filename),
-            line=class_definition.lineno,
-            character=class_definition.col_offset,
         )
 
         for statement in class_definition.body:
