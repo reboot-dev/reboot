@@ -8,6 +8,7 @@ own process, with its own state store, alongside the application
 being developed.
 """
 import asyncio
+import os
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import Dashboard, Preferences
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
@@ -17,9 +18,11 @@ from reboot.aio.auth.authorizers import allow, allow_if, is_app_internal
 from reboot.aio.external import InitializeContext
 from reboot.bdd import recordings
 from reboot.dashboard.backend.constants import (
+    APPLICATION_PATH,
     CHANGELOG_ID,
     DASHBOARD_ID,
     DASHBOARD_PATH,
+    ENVVAR_RBT_APPLICATION_URL,
     PREFERENCES_ID,
     PRESENCE_ID,
 )
@@ -32,7 +35,7 @@ from reboot.std.collections.ordered_map.v1.ordered_map import (
 )
 from reboot.std.presence.v1 import presence
 from starlette.exceptions import HTTPException
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 
 # The built page, beside this module, which is the same arrangement
@@ -102,6 +105,12 @@ def application() -> Application:
         """A scenario's video or a step's screenshot, from beside the
         feature file under the working directory."""
         return FileResponse(_recording(Path.cwd(), relative))
+
+    @application.http.get(APPLICATION_PATH)
+    async def application_url() -> JSONResponse:
+        """Where the developer's application serves, for the page to
+        read its states and tasks from."""
+        return JSONResponse({'url': os.environ[ENVVAR_RBT_APPLICATION_URL]})
 
     application.http.mount(
         DASHBOARD_PATH,

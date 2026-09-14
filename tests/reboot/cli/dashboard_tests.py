@@ -66,10 +66,37 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 port=DEFAULT_DASHBOARD_PORT,
                 api_directory=dashboard._api_directory(parser),
                 application=dashboard._application(parser),
+                application_url=dashboard._application_url(parser),
                 generated_directory=dashboard._generated_directory(parser),
             )
 
             self.assertEqual(env['RBT_APPLICATION'], 'backend/src/main.py')
+
+    async def test_the_application_url_comes_from_dev_run(self) -> None:
+        """The port `rbt dev run` serves on, named once, where `rbt dev
+        run` already needs it; a config's own line does not count."""
+        with tempfile.TemporaryDirectory() as state_directory:
+            _, parser = self._parse(
+                state_directory,
+                rbtrc=(
+                    'generate api/\n'
+                    'dev run --port=8000\n'
+                    'dev run:other --port=8001'
+                ),
+            )
+
+            self.assertEqual(
+                dashboard._application_url(parser), 'http://localhost:8000'
+            )
+
+    async def test_an_rbtrc_that_names_no_port(self) -> None:
+        """Serves where `rbt dev run` serves by default."""
+        with tempfile.TemporaryDirectory() as state_directory:
+            _, parser = self._parse(state_directory, rbtrc='generate api/')
+
+            self.assertEqual(
+                dashboard._application_url(parser), 'http://localhost:9991'
+            )
 
     async def test_an_rbtrc_that_names_no_application(self) -> None:
         """Somebody who names none gets a dashboard that looks for no
@@ -83,6 +110,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 port=DEFAULT_DASHBOARD_PORT,
                 api_directory=dashboard._api_directory(parser),
                 application=dashboard._application(parser),
+                application_url=dashboard._application_url(parser),
                 generated_directory=dashboard._generated_directory(parser),
             )
 
@@ -123,6 +151,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                     port=DEFAULT_DASHBOARD_PORT,
                     api_directory=dashboard._api_directory(parser),
                     application=dashboard._application(parser),
+                    application_url=dashboard._application_url(parser),
                     generated_directory=dashboard._generated_directory(parser),
                 )
 
@@ -167,6 +196,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                     port=DEFAULT_DASHBOARD_PORT,
                     api_directory=dashboard._api_directory(parser),
                     application=dashboard._application(parser),
+                    application_url=dashboard._application_url(parser),
                     generated_directory=dashboard._generated_directory(parser),
                 )
 
@@ -180,6 +210,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 port=DEFAULT_DASHBOARD_PORT,
                 api_directory=dashboard._api_directory(parser),
                 application=dashboard._application(parser),
+                application_url=dashboard._application_url(parser),
                 generated_directory=dashboard._generated_directory(parser),
             )
             self.assertEqual(
@@ -197,6 +228,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 port=DEFAULT_DASHBOARD_PORT,
                 api_directory=dashboard._api_directory(parser),
                 application=dashboard._application(parser),
+                application_url=dashboard._application_url(parser),
                 generated_directory=dashboard._generated_directory(parser),
             )
 

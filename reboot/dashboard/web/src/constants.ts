@@ -4,3 +4,4 @@ export const PRESENCE_ID = "dashboard";
 export const DASHBOARD_ID = "dashboard";
 export const PREFERENCES_ID = "preferences";
 export const CHANGELOG_ID = "changelog";
+export const APPLICATION_PATH = "/application";
