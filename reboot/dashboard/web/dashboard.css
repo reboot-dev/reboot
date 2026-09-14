@@ -2585,15 +2585,17 @@ header .state-type-description {
   font-size: 22px;
 }
 
-/* The method a followed link named gets a green border, then the
-   border fades. An outline, so nothing shifts when it appears. */
-.method.is-flash {
+/* The method the pane is on, outlined for as long as it shows. An
+   outline, so nothing shifts around it. */
+.method.is-chosen {
   border-radius: 6px;
-  animation: method-flash 1.5s ease-out;
+  outline: 2px solid var(--flash, hsl(142 60% 40%));
+  outline-offset: 3px;
 }
 
-/* The flash is in the color of the method's kind, the one its pill
-   wears, so the outline says what the pill says. */
+/* The outline is in the color of the method's kind, the one its pill
+   wears, so it says what the pill says; a flashed property borrows
+   the same colours. */
 .method-reader {
   --flash: hsl(166 55% 38%);
 }
@@ -2673,10 +2675,41 @@ header .state-type-description {
 
 /* A property nobody described yet: set apart from a description, so
    it reads as the page asking rather than the developer writing. */
-.property-description.is-missing {
+.property-description.is-missing,
+.method-description.is-missing {
   color: hsl(var(--muted-foreground));
   font-style: italic;
   opacity: 0.85;
+}
+
+/* The pane on a method, in call order: the callers, then its own
+   card set a little apart, then what it calls. Each group is one
+   level of calls away from it, so the sequence reads down the pane. */
+.method-pane-card {
+  margin-top: 14px;
+}
+
+.method-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.method-group + .method-group {
+  margin-top: 14px;
+}
+
+/* The state type before a method's name where methods of several
+   types are listed together: quieter than the name, and a link to
+   the type. */
+.method-state-type {
+  font-weight: 500;
+  color: hsl(var(--muted-foreground));
+  text-decoration: none;
+}
+
+.method-state-type:hover {
+  text-decoration: underline;
 }
 
 .property-description code {
