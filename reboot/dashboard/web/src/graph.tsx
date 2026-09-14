@@ -1606,6 +1606,7 @@ const GraphCanvas: FC<{
       zIndexMode="manual"
       fitView
       minZoom={0.2}
+      proOptions={{ hideAttribution: true }}
     >
       <Background gap={22} size={1.2} />
       <Controls showInteractive={false} />
