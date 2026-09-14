@@ -55,25 +55,21 @@ import { Topic } from "@reboot-dev/reboot-std/pubsub/v1";
   </TabItem>
 </Tabs>
 
-Also make sure to include the pub/sub library and the dependent
-[`Queue`](./queue) and [`SortedMap`](./sorted_map) libraries when starting up
-your `Application`. (Note: this import is different from above.)
+Also make sure to include the pub/sub library when starting up your
+`Application`. In Python, listing `pubsub_library()` brings along the
+[`Queue`](./queue) and [`SortedMap`](./sorted_map) libraries it depends
+on; in TypeScript, list all three. (Note: this import is different from
+above.)
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 ```py
-from reboot.std.collections.queue.v1.queue import queue_library
-from reboot.std.collections.v1.sorted_map import sorted_map_library
 from reboot.std.pubsub.v1.pubsub import pubsub_library
 
 async def main():
     application = Application(
         servicers=[MyServicer],
-        libraries=[
-            pubsub_library(),
-            queue_library(),
-            sorted_map_library(),
-        ],
+        libraries=[pubsub_library()],
     )
     await application.run()
 ```

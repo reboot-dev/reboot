@@ -41,26 +41,24 @@ available). A `try_dequeue` exists for one-shot non-blocking pulls from
 
 ### Register the Library
 
-`Queue` is backed by an internal stdlib sorted-map actor — its
-servicers list pulls those in, and the matching library factory
-must be registered. Use the `queue.servicers()` helper:
+`Queue` is backed by an internal stdlib sorted-map actor. Registering
+`queue_library()` mounts the queue's servicers and the sorted-map
+library it depends on:
 
 ```python
-from reboot.std.collections.queue.v1 import queue
-from reboot.std.collections.v1.sorted_map import sorted_map_library
+from reboot.std.collections.queue.v1.queue import queue_library
 
 
 async def main():
     await Application(
-        servicers=[MyServicer] + queue.servicers(),
-        libraries=[sorted_map_library()],
+        servicers=[MyServicer],
+        libraries=[queue_library()],
     ).run()
 ```
 
-The `sorted_map_library()` registration is the only place you
-mention the backing sorted-map actor — you should not reach for
-its types directly in application code. For a user-facing sorted
-key/value collection, use `OrderedMap` (see `stdlib-ordered-map.md`).
+You should not reach for the backing sorted-map actor's types
+directly in application code. For a user-facing sorted key/value
+collection, use `OrderedMap` (see `stdlib-ordered-map.md`).
 
 ### Producer Pattern
 

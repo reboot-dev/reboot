@@ -57,6 +57,11 @@ new Application({
   </TabItem>
 </Tabs>
 
+In Python, a library's own requirements come along automatically:
+listing `queue_library()` also mounts the `SortedMap` library it builds
+on. List a required library yourself only to customize it, for example
+with an authorizer.
+
 ## Future libraries and integrations
 
 [Reach out to us](https://discord.gg/cRbdcS94Nr) if there are any integrations or standard library features you want us to prioritize. Or we can help you build them, if that's more your speed!
