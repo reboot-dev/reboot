@@ -2039,17 +2039,19 @@ class ShopServicer(Local.Servicer):
             [method.name for method in found[0].methods], ['look']
         )
 
-    async def test_where_the_servicer_is_written(self) -> None:
-        """The line and column of the class, for a reader to be taken
-        to it."""
-        servicer_file = self._write('shop_servicer.py', source=SHOP)
+    async def test_a_servicer_moved_down_records_the_same(self) -> None:
+        """Where in its file a servicer is written is not recorded, so
+        moving it records nothing different."""
+        self._write('shop_servicer.py', source=SHOP)
         application = self._write('main.py', source=APPLICATION)
 
-        found = extract_and_sort_servicers(await self._analyze(application))
+        before = extract_and_sort_servicers(await self._analyze(application))
 
-        lines = servicer_file.read_text().splitlines()
-        line = lines.index('class ShopServicer(Shop.Servicer):') + 1
-        self.assertEqual((found[0].line, found[0].character), (line, 0))
+        self._write('shop_servicer.py', source='\n\n# Moved.\n\n' + SHOP)
+
+        after = extract_and_sort_servicers(await self._analyze(application))
+
+        self.assertEqual(after, before)
 
     async def test_a_method_reformatted_digests_the_same(self) -> None:
         """The digest is over what the method says, so laying it out

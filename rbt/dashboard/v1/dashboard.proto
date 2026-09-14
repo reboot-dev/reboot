@@ -542,12 +542,6 @@ message Servicer {
   // open it, e.g. "backend/src/account_servicer.py".
   string filename = 2;
 
-  // Represents the line its class is written on, counting from one.
-  uint32 line = 4;
-
-  // Represents the column its class starts at, counting from zero.
-  uint32 character = 5;
-
   // Represents every method it defines, in the order they are
   // written, which is the order somebody reading the file meets them.
   repeated Method methods = 3;
