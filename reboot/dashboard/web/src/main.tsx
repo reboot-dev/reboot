@@ -104,7 +104,7 @@ import {
   rowOfChange,
   timeAgo,
 } from "./changelog";
-import { DashboardGetResponse_NeedsGenerateReason as NeedsGenerateReason } from "../../../../rbt/dashboard/v1/dashboard_pb";
+import { DashboardGetResponse_NeedsGenerateReason } from "../../../../rbt/dashboard/v1/dashboard_pb";
 import type * as feature_pb from "../../../../rbt/v1alpha1/bdd/feature_pb";
 import type * as grammar_pb from "../../../../rbt/v1alpha1/bdd/grammar_pb";
 import {
@@ -347,28 +347,28 @@ const typeIdOfTarget = (target: PaneTarget): string =>
   target.dataTypeId ?? target.stateTypeId;
 
 const paneTargetOf = (
-  raw: string | null,
+  typeParameter: string | null,
   isStateTypeId: (id: string) => boolean,
   isDataTypeId: (id: string) => boolean
 ): PaneTarget | undefined => {
-  if (raw === null) {
+  if (typeParameter === null) {
     return undefined;
   }
-  if (isDataTypeId(raw)) {
-    return { dataTypeId: raw };
+  if (isDataTypeId(typeParameter)) {
+    return { dataTypeId: typeParameter };
   }
-  const separator = raw.lastIndexOf(".");
+  const separator = typeParameter.lastIndexOf(".");
   if (
-    !isStateTypeId(raw) &&
+    !isStateTypeId(typeParameter) &&
     separator !== -1 &&
-    isStateTypeId(raw.slice(0, separator))
+    isStateTypeId(typeParameter.slice(0, separator))
   ) {
     return {
-      stateTypeId: raw.slice(0, separator),
-      method: raw.slice(separator + 1),
+      stateTypeId: typeParameter.slice(0, separator),
+      method: typeParameter.slice(separator + 1),
     };
   }
-  return { stateTypeId: raw };
+  return { stateTypeId: typeParameter };
 };
 
 // The search string a link to a type produces. The path is left
@@ -1204,7 +1204,7 @@ const TypesPane: FC<{
   const typeId = typeIdOfTarget(target);
   const title =
     target.method === undefined ? typeId : `${typeId}.${target.method}`;
-  const found =
+  const stateTypeDeclaration =
     target.stateTypeId === undefined
       ? undefined
       : sortedAPIs(apis)
@@ -1257,15 +1257,15 @@ const TypesPane: FC<{
             methodName={target.method}
             conesOfInfluence={conesOfInfluence}
           />
-        ) : found === undefined ? (
+        ) : stateTypeDeclaration === undefined ? (
           <div className="empty">
             <code>{shortNameOfTypeName(typeId)}</code> is not declared in your
             API, just used by your code.
           </div>
         ) : (
           <StateType
-            api={found.api}
-            stateType={found.stateType}
+            api={stateTypeDeclaration.api}
+            stateType={stateTypeDeclaration.stateType}
             flashProperty={flashProperty}
           />
         )}
@@ -2862,20 +2862,20 @@ const Overview: FC<{
   // Whether an id names a state type; anything else the API knows
   // by id is a data type.
   const isStateTypeId = useMemo(() => {
-    const states = new Set(
+    const stateTypeIds = new Set(
       Object.values(apis).flatMap((api) =>
         api.stateTypes.map((stateType) => qualifiedName({ api, stateType }))
       )
     );
-    return (id: string): boolean => states.has(id);
+    return (id: string): boolean => stateTypeIds.has(id);
   }, [apis]);
 
   // Whether an id names a data type the API declares.
   const isDataTypeId = useMemo(() => {
-    const ids = new Set(
+    const dataTypeIds = new Set(
       linkedDataTypes.map((linkedDataType) => linkedDataType.id)
     );
-    return (id: string): boolean => ids.has(id);
+    return (id: string): boolean => dataTypeIds.has(id);
   }, [linkedDataTypes]);
 
   const paneTarget = useMemo(
@@ -3274,13 +3274,15 @@ const Overview: FC<{
               />
             ) : page === "models" ? (
               <>
-                {needsGenerateReason === NeedsGenerateReason.MISSING ? (
+                {needsGenerateReason ===
+                DashboardGetResponse_NeedsGenerateReason.MISSING ? (
                   <p className="graph-note muted">
                     Your application imports generated code that does not exist
                     yet, so the static call graph anaysis cannot be done. Run{" "}
                     <code>rbt generate</code>.
                   </p>
-                ) : needsGenerateReason === NeedsGenerateReason.CHANGED ? (
+                ) : needsGenerateReason ===
+                  DashboardGetResponse_NeedsGenerateReason.CHANGED ? (
                   <p className="graph-note muted">
                     Your API files changed since the generated code was written,
                     so the static call graph analysis may be out of date. Run{" "}
@@ -3288,7 +3290,8 @@ const Overview: FC<{
                   </p>
                 ) : null}
                 {/* With a module `missing`, no servicer resolves. */}
-                {needsGenerateReason !== NeedsGenerateReason.MISSING &&
+                {needsGenerateReason !==
+                  DashboardGetResponse_NeedsGenerateReason.MISSING &&
                 response !== undefined &&
                 servicers.length === 0 ? (
                   <p className="graph-note muted">
