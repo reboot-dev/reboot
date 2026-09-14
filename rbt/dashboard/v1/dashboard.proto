@@ -49,6 +49,13 @@ message Dashboard {
   // whoever reads this to make of what they will.
   repeated Servicer servicers = 6;
 
+  // Represents the version of the analysis that recorded `servicers`
+  // and `code_files`. A dashboard whose analysis records something
+  // new analyzes every file again rather than carrying forward what
+  // an earlier one recorded, which would never say it; see
+  // `CODE_ANALYSIS_VERSION`.
+  uint32 code_analysis_version = 16;
+
   // Represents every file the walk of the application analyzed,
   // keyed by its path, relative to the working directory for a file
   // under it and absolute otherwise, as of the last write. A
@@ -157,6 +164,7 @@ message DashboardUpdateApiResponse {}
 
 message DashboardUpdateCodeRequest {
   repeated Servicer servicers = 1;
+  uint32 code_analysis_version = 6;
   map<string, File> code_files = 2;
   map<string, Generated> generated = 3;
 

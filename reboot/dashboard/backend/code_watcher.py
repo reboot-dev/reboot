@@ -84,6 +84,13 @@ from typing import Mapping, Optional, Sequence
 # reads are one message.
 Call = Servicer.Method.Call
 
+# The version of what the analysis records, which the dashboard's
+# state records beside it. Counted up whenever the analysis starts
+# recording something it did not, or records something differently:
+# a file that has not changed is otherwise carried forward as an
+# earlier analysis recorded it, which never says the new thing.
+CODE_ANALYSIS_VERSION = 1
+
 
 @dataclass(frozen=True, kw_only=True)
 class AnalyzedFile:
@@ -994,6 +1001,23 @@ def _reconstitute_known(
     }
 
 
+def _known_from(state: DashboardState) -> dict[Path, AnalyzedFile]:
+    """Returns what a restarted watch starts from: the analyzed files
+    the state records, joined back together by `_reconstitute_known`.
+
+    Recorded by an analysis of another version, which may not record
+    what this one does, each is kept -- so that what changes is still
+    told apart from what was there all along -- but without the digest
+    that says it need not be analyzed again, so every file is.
+    """
+    known = _reconstitute_known(state)
+    if state.code_analysis_version == CODE_ANALYSIS_VERSION:
+        return known
+    return {
+        filename: replace(file, digest=b'') for filename, file in known.items()
+    }
+
+
 async def _analyze(
     *,
     parsed: Mapping[Path, ParsedFile],
@@ -1212,7 +1236,7 @@ async def watch(
     # analyzed again, and an iteration that reproduces exactly what
     # the state already records writes nothing.
     state = await Dashboard.ref().always().read(context)
-    known: Mapping[Path, AnalyzedFile] = _reconstitute_known(state)
+    known: Mapping[Path, AnalyzedFile] = _known_from(state)
     generated: Mapping[str, Generated] = state.generated
 
     # Whether this process has yet to wait for a save: a restart
@@ -1294,6 +1318,7 @@ async def watch(
                     await Dashboard.ref().per_iteration('Update').UpdateCode(
                         context,
                         servicers=servicers,
+                        code_analysis_version=CODE_ANALYSIS_VERSION,
                         code_files=files,
                         generated=dict(generated_now),
                         changes=changes,

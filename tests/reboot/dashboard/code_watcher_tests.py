@@ -25,10 +25,12 @@ from reboot.dashboard.backend.constants import (
     ENVVAR_RBT_GENERATED_DIRECTORY,
 )
 from reboot.dashboard.backend.code_watcher import (
+    CODE_ANALYSIS_VERSION,
     AnalyzedFile,
     MethodDefinition,
     _analyze,
     _generated_definitions,
+    _known_from,
     _list_generated,
     _try_extract_api_digest,
     _modified_at,
@@ -1468,6 +1470,32 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [servicer.state_type for servicer in analyzed.servicers],
             ['shop.v1.Shop'],
+        )
+
+    async def test_a_state_from_another_analysis_is_analyzed_again(
+        self,
+    ) -> None:
+        """What an analysis of another version recorded is kept, so what
+        changes is still told apart from what was there all along, but
+        every file is analyzed again, since that analysis may not have
+        recorded what this one does."""
+        state = DashboardState()
+        state.code_files['backend/x.py'].digest = b'digest'
+        servicer = state.servicers.add()
+        servicer.state_type = 'shop.v1.Shop'
+        servicer.filename = 'backend/x.py'
+
+        known = _known_from(state)[Path('backend/x.py')]
+        self.assertEqual(known.digest, b'')
+        self.assertEqual(
+            [servicer.state_type for servicer in known.servicers],
+            ['shop.v1.Shop'],
+        )
+
+        state.code_analysis_version = CODE_ANALYSIS_VERSION
+        self.assertEqual(
+            _known_from(state)[Path('backend/x.py')].digest,
+            b'digest',
         )
 
     def _state_types_and_files(

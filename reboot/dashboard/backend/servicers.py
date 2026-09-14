@@ -152,6 +152,7 @@ class DashboardServicer(Dashboard.Servicer):
         changed, newest last."""
         del self.state.servicers[:]
         self.state.servicers.extend(request.servicers)
+        self.state.code_analysis_version = request.code_analysis_version
         self.state.code_files.clear()
         self.state.code_files.MergeFrom(request.code_files)
         self.state.generated.clear()
