@@ -2487,8 +2487,26 @@ header .state-type-description {
   }
 }
 
+/* The open drawer: the same handle down its left edge, which shuts
+   it, and the pane beside it. */
+.types-drawer {
+  display: flex;
+  height: 100%;
+}
+
+.types-drawer .types-handle {
+  flex: none;
+  width: 14px;
+}
+
+.types-drawer .types-pane {
+  flex: 1;
+  min-width: 0;
+}
+
 /* What remains when the drawer is dragged shut: a handle that
-   brings it back. */
+   brings it back. Open, the same handle stands at the pane's edge
+   and shuts it. */
 .types-handle {
   width: 100%;
   height: 100%;
