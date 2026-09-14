@@ -5,9 +5,9 @@
 // control plane never touches bytes: it calls this service to
 // provision uploads, finalize them, mint download URLs, and delete
 // objects, and the bytes themselves travel directly between the client
-// and wherever the data plane keeps them (a presigned-URL store like
-// S3, or — for a data plane whose `Configuration` asks for forwarded
-// paths — the application's own HTTP routes proxying to it).
+// and wherever the data plane keeps them, over the URLs it mints: a
+// presigned-URL store like S3, or the HTTP routes of an application
+// that hosts the filesystem data plane itself.
 //
 // This is a plain gRPC service, deliberately free of any Reboot
 // framework options, so that it can be implemented by anything and
@@ -29,8 +29,7 @@ package rbt.std.blob.v1;
 
 service BlobDataPlane {
   // Reports what the control plane needs to know to talk to this data
-  // plane: the client part size, and which paths (if any) the
-  // application must forward to it. Read once at application startup.
+  // plane: the client part size. Read once at application startup.
   rpc Configuration(ConfigurationRequest) returns (ConfigurationResponse);
 
   // Provisions an upload session for a blob and returns its data-plane
@@ -42,8 +41,8 @@ service BlobDataPlane {
 
   // Mints URLs to which the client `PUT`s each requested part's bytes
   // directly. A URL is either absolute (e.g. a presigned S3 URL,
-  // directly reachable by the client) or application-relative, under a
-  // path the data plane's `Configuration` asked to have forwarded.
+  // directly reachable by the client) or application-relative, for a
+  // data plane the application serves itself.
   rpc GetPartUploadInstructions(DataPlaneGetPartUploadInstructionsRequest)
       returns (DataPlaneGetPartUploadInstructionsResponse);
 
@@ -60,8 +59,7 @@ service BlobDataPlane {
 
   // Mints a URL from which the committed object's bytes can be
   // downloaded: absolute (e.g. a presigned S3/CloudFront URL) or
-  // application-relative under a forwarded path, like
-  // `GetPartUploadInstructions` URLs.
+  // application-relative, like `GetPartUploadInstructions` URLs.
   rpc GetDownloadUrl(DataPlaneGetDownloadUrlRequest)
       returns (DataPlaneGetDownloadUrlResponse);
 
@@ -72,41 +70,10 @@ service BlobDataPlane {
 
 message ConfigurationRequest {}
 
-// The HTTP method of a forwarded path.
-enum HttpMethod {
-  HTTP_METHOD_UNSPECIFIED = 0;
-  HTTP_METHOD_GET = 1;
-  HTTP_METHOD_PUT = 2;
-}
-
-// One path namespace the application must forward to the data plane:
-// requests with the given method whose path starts with `path_prefix`
-// are reverse-proxied to the data plane's HTTP endpoint verbatim
-// (path and query). `path_prefix` must itself start with
-// `/__/reboot/blob/` — the application refuses anything else, so a
-// data plane can never claim application routes.
-message ForwardedPath {
-  HttpMethod method = 1;
-  string path_prefix = 2;
-}
-
 message ConfigurationResponse {
   // The part size clients must use; every part but the last must be
   // exactly this size.
   uint64 part_size = 1;
-
-  // Paths the application must forward to this data plane. Empty when
-  // the data plane's URLs are directly reachable by clients (e.g.
-  // presigned S3 or CloudFront URLs) and no forwarding is needed.
-  repeated ForwardedPath forwarded_paths = 2;
-
-  // The port of this data plane's HTTP byte endpoint, to which
-  // forwarded requests are proxied. The host is the one the
-  // application already reaches this gRPC service on (so the data
-  // plane need not know how it is addressed externally), and the
-  // scheme follows that connection's transport security. Only
-  // meaningful when `forwarded_paths` is non-empty.
-  uint32 http_port = 3;
 }
 
 ////////////////////////////////////////////////////////////////////////

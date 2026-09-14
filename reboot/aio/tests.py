@@ -3,7 +3,11 @@ import os
 import reboot.aio.reboot
 import secrets
 import unittest
-from reboot.aio.applications import Application, NodeApplication
+from reboot.aio.applications import (
+    Application,
+    NodeAdaptorLibrary,
+    NodeApplication,
+)
 from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import (
     ExchangeResult,
@@ -437,9 +441,11 @@ class Reboot(reboot.aio.reboot.Reboot):
         # Do any pre-run library set up, just like `Application.run()`
         # does; e.g. a library may register HTTP routes. Libraries must
         # tolerate being `pre_run` more than once, since a test may
-        # `up` the same `Application` after a `down`.
-        if not in_nodejs():
-            for library in application.libraries:
+        # `up` the same `Application` after a `down`. A Node.js
+        # library gets its pre-run in TypeScript, so, as in
+        # `NodeApplication.run()`, only the others are run here.
+        for library in application.libraries:
+            if not isinstance(library, NodeAdaptorLibrary):
                 await library.pre_run(application)
 
         # Check if application.http has methods or mounts (note this
