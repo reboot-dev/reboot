@@ -1388,7 +1388,7 @@ header h1 {
 }
 
 /* A factory: the method that brings the state into existence, which
-   is what a `constructs` edge lands on. */
+   is what a constructing call's edge lands on. */
 .graph-method-factory {
   flex: none;
   padding: 0 5px;
