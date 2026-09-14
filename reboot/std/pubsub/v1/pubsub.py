@@ -72,9 +72,12 @@ class TopicServicer(Topic.Servicer):
         context: WriterContext,
         request: SubscribeRequest,
     ) -> SubscribeResponse:
-        # Add subscriber to topic.
-        #
-        self.state.queue_ids.append(request.queue_id)
+        # Add subscriber to topic. Subscribing a queue that already
+        # subscribes to this topic is a no-op: a repeated queue id
+        # would make `Broker` call `Enqueue` on that queue twice using
+        # a single `context`, which Reboot refuses.
+        if request.queue_id not in self.state.queue_ids:
+            self.state.queue_ids.append(request.queue_id)
 
         # If this is a new topic, we'll need to schedule the broker.
         if not self.state.broker_started:
@@ -111,9 +114,14 @@ class TopicServicer(Topic.Servicer):
                 have_items,
             )
 
+            # In an earlier implementation there was a bug where a topic
+            # could be subscribed to by the same queue id more than
+            # once. That bug has been fixed, but to handle any `Queue`
+            # instances that have a repeated queue id already persisted
+            # we also deduplicate here via `dict.fromkeys`.
             await concurrently(
                 Queue.ref(queue_id).Enqueue(context, items=items)
-                for queue_id in queue_ids
+                for queue_id in dict.fromkeys(queue_ids)
             )
 
         return BrokerResponse()
