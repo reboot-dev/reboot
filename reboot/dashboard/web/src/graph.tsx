@@ -16,14 +16,17 @@ import {
   EdgeLabelRenderer,
   Handle,
   MarkerType,
+  NodeResizer,
   Panel,
   Position,
   ReactFlow,
   ReactFlowProvider,
+  applyNodeChanges,
   getBezierPath,
   type Edge,
   type EdgeProps,
   type Node,
+  type NodeChange,
   type NodeProps,
   useReactFlow,
 } from "@xyflow/react";
@@ -127,7 +130,15 @@ const heightOfStateType = (stateType: GraphStateType): number =>
 
 // A package's node id, kept apart from state type ids, which are
 // fully qualified names and could equal a package's.
-const packageNodeId = (name: string): string => `pkg:${name}`;
+const PACKAGE_NODE_ID_PREFIX = "pkg:";
+const packageNodeId = (name: string): string =>
+  `${PACKAGE_NODE_ID_PREFIX}${name}`;
+
+// The package a box's node id names; a card's names none.
+const packageNameOfNodeId = (id: string): string | undefined =>
+  id.startsWith(PACKAGE_NODE_ID_PREFIX)
+    ? id.slice(PACKAGE_NODE_ID_PREFIX.length)
+    : undefined;
 
 // `bank.v1.Account` for `bank.v1.Account.deposit`.
 const stateTypeNameOfMethodId = (id: string): string =>
@@ -147,7 +158,71 @@ interface PackageData extends Record<string, unknown> {
 interface ExpandedPackageData extends Record<string, unknown> {
   name: string;
   onCollapse?: (name: string) => void;
+  // The smallest the resizer lets the box get: its size in the
+  // default layout or what its cards need, whichever is bigger, so
+  // its cards always fit.
+  minWidth?: number;
+  minHeight?: number;
+  onResize?: (name: string, box: NodePosition & BoxSize) => void;
 }
+
+type CardNode = Node<StateTypeData, "stateType">;
+
+const isCard = (node: GraphNode): node is CardNode => node.type === "stateType";
+
+// The smallest box that holds its cards where they are now, with
+// the box's padding past them. A card's height is what React Flow
+// measured, or, before the card is first drawn, the estimate the
+// default layout used.
+const sizeNeededByCards = (cards: CardNode[]): BoxSize => {
+  let right = 0;
+  let bottom = 0;
+  for (const card of cards) {
+    right = Math.max(right, card.position.x + CARD_WIDTH);
+    bottom = Math.max(
+      bottom,
+      card.position.y +
+        (card.measured?.height ?? heightOfStateType(card.data.stateType))
+    );
+  }
+  return {
+    width: right + EXPANDED_PACKAGE_PAD,
+    height: bottom + EXPANDED_PACKAGE_PAD,
+  };
+};
+
+// Keeps every card below its box's head and right of its left
+// padding, and grows the box right and down to hold its cards where
+// they now are. Only the resizer shrinks a box.
+const fitBoxesAroundCards = (nodes: GraphNode[]): GraphNode[] => {
+  const cardsByBox = new Map<string, CardNode[]>();
+  const fitted = nodes.map((node): GraphNode => {
+    if (!isCard(node) || node.parentId === undefined) {
+      return node;
+    }
+    const x = Math.max(node.position.x, EXPANDED_PACKAGE_PAD);
+    const y = Math.max(node.position.y, EXPANDED_PACKAGE_HEAD_HEIGHT);
+    const card: CardNode =
+      x === node.position.x && y === node.position.y
+        ? node
+        : { ...node, position: { x, y } };
+    const cards = cardsByBox.get(node.parentId) ?? [];
+    cards.push(card);
+    cardsByBox.set(node.parentId, cards);
+    return card;
+  });
+  return fitted.map((node) => {
+    if (node.type !== "expanded") {
+      return node;
+    }
+    const needed = sizeNeededByCards(cardsByBox.get(node.id) ?? []);
+    const width = Math.max(node.width ?? 0, needed.width);
+    const height = Math.max(node.height ?? 0, needed.height);
+    return width === node.width && height === node.height
+      ? node
+      : { ...node, width, height };
+  });
+};
 
 // Which cones of the chosen method the graph lights: what it calls
 // (downstream), who calls it (upstream), or both.
@@ -197,10 +272,84 @@ type GraphNode =
   | Node<ExpandedPackageData, "expanded">
   | Node<StateTypeData, "stateType">;
 
-interface Point {
+// A node's position on the canvas, in canvas pixels; a card's is
+// relative to its box.
+interface NodePosition {
   x: number;
   y: number;
 }
+
+// How far a dragged node sits from its position in the default
+// layout.
+interface NodeOffset {
+  x: number;
+  y: number;
+}
+
+interface BoxSize {
+  width: number;
+  height: number;
+}
+
+// How the call graph's boxes and cards differ from the default
+// layout: which boxes are collapsed, how far each dragged node sits
+// from its place in the default layout, and the size each resized
+// box was given. The preferences keep it.
+export interface CallGraphLayout {
+  collapsedPackages: ReadonlySet<string>;
+  movedPackageBoxes: ReadonlyMap<string, NodeOffset>;
+  movedStateTypeCards: ReadonlyMap<string, NodeOffset>;
+  resizedPackageBoxes: ReadonlyMap<string, BoxSize>;
+}
+
+// The canvas keys boxes and cards by node id in one map, since React
+// Flow draws one list of nodes; `CallGraphLayout` keys boxes by
+// package name and cards by state type id. These convert between the
+// two.
+const nodeMapsOfCallGraphLayout = (
+  layout: CallGraphLayout
+): { moved: Map<string, NodeOffset>; resized: Map<string, BoxSize> } => ({
+  moved: new Map([
+    ...[...layout.movedPackageBoxes].map(
+      ([name, offset]): [string, NodeOffset] => [packageNodeId(name), offset]
+    ),
+    ...layout.movedStateTypeCards,
+  ]),
+  resized: new Map(
+    [...layout.resizedPackageBoxes].map(([name, size]): [string, BoxSize] => [
+      packageNodeId(name),
+      size,
+    ])
+  ),
+});
+
+const callGraphLayoutOfNodeMaps = (
+  collapsedPackages: ReadonlySet<string>,
+  moved: ReadonlyMap<string, NodeOffset>,
+  resized: ReadonlyMap<string, BoxSize>
+): CallGraphLayout => {
+  const movedPackageBoxes = new Map<string, NodeOffset>();
+  const movedStateTypeCards = new Map<string, NodeOffset>();
+  for (const [id, offset] of moved) {
+    const name = packageNameOfNodeId(id);
+    if (name === undefined) {
+      movedStateTypeCards.set(id, offset);
+    } else {
+      movedPackageBoxes.set(name, offset);
+    }
+  }
+  return {
+    collapsedPackages,
+    movedPackageBoxes,
+    movedStateTypeCards,
+    resizedPackageBoxes: new Map(
+      [...resized].map(([id, size]): [string, BoxSize] => [
+        packageNameOfNodeId(id) ?? id,
+        size,
+      ])
+    ),
+  };
+};
 
 const ELK_LAYERED_OPTIONS = {
   "elk.algorithm": "layered",
@@ -223,7 +372,7 @@ const layoutPackages = async (
 ): Promise<GraphNode[]> => {
   const cardLayoutsByPackage = new Map<
     string,
-    { cardPositions: Map<string, Point>; width: number; height: number }
+    { cardPositions: Map<string, NodePosition>; width: number; height: number }
   >();
 
   for (const pkg of packages) {
@@ -265,7 +414,7 @@ const layoutPackages = async (
       }),
     });
 
-    const cardPositions = new Map<string, Point>();
+    const cardPositions = new Map<string, NodePosition>();
     let cardsWidth = 0;
     let cardsHeight = 0;
     for (const elkCard of elkCardLayout.children ?? []) {
@@ -325,7 +474,7 @@ const layoutPackages = async (
     }),
   });
 
-  const packagePositions = new Map<string, Point>(
+  const packagePositions = new Map<string, NodePosition>(
     (elkPackageLayout.children ?? []).map((elkPackage) => [
       elkPackage.id,
       { x: elkPackage.x ?? 0, y: elkPackage.y ?? 0 },
@@ -582,11 +731,17 @@ const PackageNode: FC<NodeProps<Node<PackageData, "package">>> = ({ data }) => (
   </div>
 );
 
-// An expanded package: a box around its cards.
+// An expanded package: a box around its cards, resized by its
+// corners and sides to give the cards room.
 const ExpandedPackageNode: FC<
   NodeProps<Node<ExpandedPackageData, "expanded">>
 > = ({ data }) => (
   <div className="graph-expanded-package">
+    <NodeResizer
+      minWidth={data.minWidth}
+      minHeight={data.minHeight}
+      onResizeEnd={(_event, box) => data.onResize?.(data.name, box)}
+    />
     <div className="graph-expanded-package-head">
       <span className="graph-expanded-package-name">{data.name}</span>
       <button
@@ -1066,17 +1221,10 @@ const edgeTypes = { call: CallEdge };
 // ---------------------------------------------------------------
 // The page.
 
-// The canvas's view for each history entry: its viewport, chosen
-// method and collapsed boxes, restored when a back or forward
-// returns to the graph. At module level because the page unmounts
-// whenever another page shows.
-const graphViews = new Map<
-  string,
-  {
-    viewport: Viewport;
-    collapsed: ReadonlySet<string>;
-  }
->();
+// The canvas's viewport for each history entry, restored when a
+// back or forward returns to the graph. At module level because the
+// page unmounts whenever another page shows.
+const graphViewports = new Map<string, Viewport>();
 
 const GraphCanvas: FC<{
   packages: GraphPackage[];
@@ -1085,31 +1233,67 @@ const GraphCanvas: FC<{
   selectedMethodId: string | null;
   onSelectMethod: (id: string | null, replace?: boolean) => void;
   onOpenStateType: (id: string) => void;
-}> = ({ packages, selectedMethodId, onSelectMethod, onOpenStateType }) => {
+  // The layout as the preferences keep it, read once when the page
+  // mounts; from then on the page's own copy is the newer one, and
+  // every change to it is reported.
+  savedLayout: CallGraphLayout;
+  onLayoutChange: (layout: CallGraphLayout) => void;
+}> = ({
+  packages,
+  selectedMethodId,
+  onSelectMethod,
+  onOpenStateType,
+  savedLayout,
+  onLayoutChange,
+}) => {
   const location = useLocation();
   const saved =
-    useNavigationType() === "POP" ? graphViews.get(location.key) : undefined;
+    useNavigationType() === "POP"
+      ? graphViewports.get(location.key)
+      : undefined;
 
   // Which boxes are collapsed, rather than which are expanded, so a
   // package that appears later starts expanded like the rest.
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
-    saved?.collapsed ?? new Set()
+    savedLayout.collapsedPackages
   );
   const [nodes, setNodes] = useState<GraphNode[]>([]);
-  const { fitView, getViewport, setViewport } = useReactFlow();
+  const { fitView, getNode, getViewport, setViewport } = useReactFlow();
 
-  // What the cleanup below remembers: the cleanup closes over the
-  // first render's state, so it reads these instead.
-  const view = useRef({ collapsed });
-  view.current = { collapsed };
+  // How far each dragged node sits from its place in the default
+  // layout, by node id, and the size each resized box was given.
+  // Applied again on top of every default layout computed after
+  // them. Refs, since a change to them must not compute the default
+  // layout again; the count is state, for the button that undoes
+  // them.
+  const [savedNodeMaps] = useState(() =>
+    nodeMapsOfCallGraphLayout(savedLayout)
+  );
+  const moved = useRef(savedNodeMaps.moved);
+  const resized = useRef(savedNodeMaps.resized);
+  const [adjustedCount, setAdjustedCount] = useState(
+    moved.current.size + resized.current.size
+  );
+
+  // Reports the layout after a change to it. Takes the
+  // collapsed set because the change to that one is not yet in
+  // state when it is reported.
+  const publishLayout = useCallback(
+    (collapsed: ReadonlySet<string>) => {
+      onLayoutChange(
+        callGraphLayoutOfNodeMaps(collapsed, moved.current, resized.current)
+      );
+    },
+    [onLayoutChange]
+  );
 
   useEffect(() => {
     if (saved !== undefined) {
-      setViewport(saved.viewport);
+      setViewport(saved);
     }
     const key = location.key;
     return () => {
-      graphViews.set(key, { viewport: getViewport(), ...view.current });
+      graphViewports.set(key, getViewport());
     };
     // Runs once per mount: `saved` and `location.key` are fixed for
     // the page's life.
@@ -1123,8 +1307,14 @@ const GraphCanvas: FC<{
 
   // The nextCollapsed layout is shifted so the clicked box stays put: it grows
   // or shrinks in place, under the reader's eye.
-  const boxPositionsAfterLastLayout = useRef(new Map<string, Point>());
+  const boxPositionsAfterLastLayout = useRef(new Map<string, NodePosition>());
   const clickedBoxId = useRef<string | null>(null);
+
+  // Every node's place and every box's size in the last default
+  // layout, before the drags and resizes were applied: what those
+  // are measured from, and what undoing them returns to.
+  const layoutPositions = useRef(new Map<string, NodePosition>());
+  const layoutSizes = useRef(new Map<string, BoxSize>());
 
   // Set when the nextCollapsed layout should be framed whole: the first, and
   // one that opened or closed every box at once, which changes the
@@ -1169,8 +1359,37 @@ const GraphCanvas: FC<{
           .filter((node) => node.parentId === undefined)
           .map((node) => [node.id, node.position])
       );
+      layoutPositions.current = new Map(
+        nodes.map((node) => [node.id, node.position])
+      );
+      layoutSizes.current = new Map(
+        nodes
+          .filter((node) => node.type === "expanded")
+          .map((node) => [
+            node.id,
+            { width: node.width ?? 0, height: node.height ?? 0 },
+          ])
+      );
 
-      setNodes(nodes);
+      // The drags and resizes, on top of the default layout. A node
+      // the default layout no longer has, a card of a box now closed,
+      // keeps its drag for when it is back.
+      for (const node of nodes) {
+        const offset = moved.current.get(node.id);
+        if (offset !== undefined) {
+          node.position = {
+            x: node.position.x + offset.x,
+            y: node.position.y + offset.y,
+          };
+        }
+        const size = resized.current.get(node.id);
+        if (size !== undefined && node.type === "expanded") {
+          node.width = Math.max(node.width ?? 0, size.width);
+          node.height = Math.max(node.height ?? 0, size.height);
+        }
+      }
+
+      setNodes(fitBoxesAroundCards(nodes));
 
       // Framed once React has drawn it and React Flow has measured
       // it: one frame renders, the nextCollapsed has the measurements. Other
@@ -1195,15 +1414,14 @@ const GraphCanvas: FC<{
   const togglePackage = useCallback(
     (name: string) => {
       clickedBoxId.current = packageNodeId(name);
-      setCollapsed((collapsed) => {
-        const nextCollapsed = new Set(collapsed);
-        if (nextCollapsed.has(name)) {
-          nextCollapsed.delete(name);
-        } else {
-          nextCollapsed.add(name);
-        }
-        return nextCollapsed;
-      });
+      const nextCollapsed = new Set(collapsed);
+      if (nextCollapsed.has(name)) {
+        nextCollapsed.delete(name);
+      } else {
+        nextCollapsed.add(name);
+      }
+      setCollapsed(nextCollapsed);
+      publishLayout(nextCollapsed);
       // Closing the chosen method's own box lets it go, since its
       // row is gone; replaced rather than pushed, since the reader
       // clicked the box, not the choice.
@@ -1216,21 +1434,101 @@ const GraphCanvas: FC<{
         onSelectMethod(null, true);
       }
     },
-    [collapsed, selectedMethodId, onSelectMethod]
+    [collapsed, selectedMethodId, onSelectMethod, publishLayout]
   );
+
+  // Records where a node was dropped, measured from its place in the
+  // default layout.
+  const recordMove = useCallback((id: string, position: NodePosition) => {
+    const base = layoutPositions.current.get(id);
+    if (base === undefined) {
+      return;
+    }
+    moved.current.set(id, {
+      x: position.x - base.x,
+      y: position.y - base.y,
+    });
+  }, []);
+
+  // Records a box's size when it is bigger than its size in the
+  // default layout, and forgets it otherwise.
+  const recordSize = useCallback((id: string, size: BoxSize) => {
+    const base = layoutSizes.current.get(id);
+    if (base === undefined) {
+      return;
+    }
+    if (size.width > base.width || size.height > base.height) {
+      resized.current.set(id, size);
+    } else {
+      resized.current.delete(id);
+    }
+  }, []);
+
+  const recordChanges = useCallback(() => {
+    setAdjustedCount(moved.current.size + resized.current.size);
+    publishLayout(collapsed);
+  }, [collapsed, publishLayout]);
+
+  // A node dropped, and the box it is in, which its drag may have
+  // grown.
+  const onNodeDragStop = useCallback(
+    (node: GraphNode) => {
+      recordMove(node.id, node.position);
+      const box =
+        node.parentId === undefined ? undefined : getNode(node.parentId);
+      if (box !== undefined) {
+        recordSize(box.id, {
+          width: box.width ?? box.measured?.width ?? 0,
+          height: box.height ?? box.measured?.height ?? 0,
+        });
+      }
+      recordChanges();
+    },
+    [recordMove, recordSize, recordChanges, getNode]
+  );
+
+  // The size a box was resized to, and where, since a resize from
+  // the top or left moves it too.
+  const onBoxResize = useCallback(
+    (name: string, box: NodePosition & BoxSize) => {
+      const id = packageNodeId(name);
+      recordSize(id, { width: box.width, height: box.height });
+      recordMove(id, box);
+      recordChanges();
+    },
+    [recordMove, recordSize, recordChanges]
+  );
+
+  // Puts every dragged node and resized box back as the default
+  // layout has them.
+  const resetLayout = useCallback(() => {
+    moved.current = new Map();
+    resized.current = new Map();
+    setAdjustedCount(0);
+    setNodes((nodes) =>
+      nodes.map((node) => ({
+        ...node,
+        position: layoutPositions.current.get(node.id) ?? node.position,
+        ...layoutSizes.current.get(node.id),
+      }))
+    );
+    publishLayout(collapsed);
+  }, [collapsed, publishLayout]);
 
   const setAllCollapsed = useCallback(
     (allCollapsed: boolean) => {
       clickedBoxId.current = null;
       fitViewAfterLayout.current = true;
-      setCollapsed(
-        new Set(allCollapsed ? packages.map((pkg) => pkg.name) : [])
+      const nextCollapsed = new Set(
+        allCollapsed ? packages.map((pkg) => pkg.name) : []
       );
+      setCollapsed(nextCollapsed);
+      publishLayout(nextCollapsed);
       if (allCollapsed && selectedMethodId !== null) {
         onSelectMethod(null, true);
       }
     },
-    [packages, selectedMethodId, onSelectMethod]
+    [packages, selectedMethodId, onSelectMethod, publishLayout]
   );
 
   // Which cones of the chosen method the graph lights: what the
@@ -1351,12 +1649,26 @@ const GraphCanvas: FC<{
           !unfaded.nodeIds.has(node.id);
         const className = faded ? "graph-faded" : undefined;
         switch (node.type) {
-          case "expanded":
+          case "expanded": {
+            const layoutSize = layoutSizes.current.get(node.id);
+            const needed = sizeNeededByCards(
+              nodes.filter(
+                (card): card is CardNode =>
+                  isCard(card) && card.parentId === node.id
+              )
+            );
             return {
               ...node,
               className,
-              data: { ...node.data, onCollapse: togglePackage },
+              data: {
+                ...node.data,
+                onCollapse: togglePackage,
+                onResize: onBoxResize,
+                minWidth: Math.max(layoutSize?.width ?? 0, needed.width),
+                minHeight: Math.max(layoutSize?.height ?? 0, needed.height),
+              },
             };
+          }
           case "stateType":
             return {
               ...node,
@@ -1419,11 +1731,16 @@ const GraphCanvas: FC<{
           onSelectMethod(null);
         }
       }}
-      // ELK places the nodes, so they don't move one by one. Left
-      // draggable, a node would swallow the mouse and a drag on it
-      // would do nothing; this way it falls through and pans the
-      // graph.
-      nodesDraggable={false}
+      // Fitted on every change so a box grows while a card is dragged
+      // past its edge, each frame of the drag.
+      onNodesChange={(changes) =>
+        setNodes((nodes) =>
+          fitBoxesAroundCards(
+            applyNodeChanges(changes as NodeChange<GraphNode>[], nodes)
+          )
+        )
+      }
+      onNodeDragStop={(_event, node) => onNodeDragStop(node as GraphNode)}
       elementsSelectable={false}
       nodesConnectable={false}
       deleteKeyCode={null}
@@ -1451,6 +1768,14 @@ const GraphCanvas: FC<{
         >
           collapse all
         </button>
+        <button
+          className="expand-button"
+          onClick={resetLayout}
+          disabled={adjustedCount === 0}
+          title="Put every dragged or resized box and card back as the default layout has it"
+        >
+          reset layout
+        </button>
       </Panel>
       <Legend />
     </ReactFlow>
@@ -1475,7 +1800,16 @@ export const GraphPage: FC<{
   selectedMethodId: string | null;
   onSelectMethod: (id: string | null, replace?: boolean) => void;
   onOpenStateType: (id: string) => void;
-}> = ({ stateTypes, selectedMethodId, onSelectMethod, onOpenStateType }) => {
+  savedLayout: CallGraphLayout;
+  onLayoutChange: (layout: CallGraphLayout) => void;
+}> = ({
+  stateTypes,
+  selectedMethodId,
+  onSelectMethod,
+  onOpenStateType,
+  savedLayout,
+  onLayoutChange,
+}) => {
   const packages = useMemo(
     () => groupStateTypesByPackage(stateTypes),
     [stateTypes]
@@ -1489,6 +1823,8 @@ export const GraphPage: FC<{
           selectedMethodId={selectedMethodId}
           onSelectMethod={onSelectMethod}
           onOpenStateType={onOpenStateType}
+          savedLayout={savedLayout}
+          onLayoutChange={onLayoutChange}
         />
       </ReactFlowProvider>
     </div>
