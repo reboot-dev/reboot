@@ -114,11 +114,11 @@ class TopicServicer(Topic.Servicer):
                 have_items,
             )
 
-            # A topic subscribed to before `Subscribe` deduplicated may
-            # have a repeated queue id persisted. `until` memoizes the
-            # sliced list and `slice_items` has already taken those
-            # items out of state, so the duplicate replays on every
-            # retry; deduplicating here is what lets such a topic drain.
+            # In an earlier implementation there was a bug where a topic
+            # could be subscribed to by the same queue id more than
+            # once. That bug has been fixed, but to handle any `Queue`
+            # instances that have a repeated queue id already persisted
+            # we also deduplicate here via `dict.fromkeys`.
             await concurrently(
                 Queue.ref(queue_id).Enqueue(context, items=items)
                 for queue_id in dict.fromkeys(queue_ids)
