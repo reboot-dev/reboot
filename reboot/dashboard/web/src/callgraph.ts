@@ -229,7 +229,7 @@ export const joinStateTypes = (
         }
         if (
           !calledStateType.methods.some(
-            (known) => known.name === call.methodName
+            (knownMethod) => knownMethod.name === call.methodName
           )
         ) {
           calledStateType.methods.push({

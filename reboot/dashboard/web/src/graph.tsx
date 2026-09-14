@@ -8,7 +8,7 @@
 //
 // React Flow draws; ELK places. React Flow deliberately has no layout
 // of its own.
-import { Servicer_Method_Call_How as How } from "../../../../rbt/dashboard/v1/dashboard_pb";
+import { Servicer_Method_Call_How } from "../../../../rbt/dashboard/v1/dashboard_pb";
 import {
   Background,
   BaseEdge,
@@ -90,17 +90,17 @@ const classNameOfKind = (kind: Kind | undefined): string =>
 // says nothing: it is the ordinary case, and labelling every edge
 // "calls" would be noise. Neither does a construct: the factory pill
 // on the row it lands on already says so.
-const HOW_LABEL: Partial<Record<How, string>> = {
-  [How.SCHEDULE]: "schedules",
-  [How.SPAWN]: "spawns",
-  [How.FORALL]: "for all",
+const HOW_LABEL: Partial<Record<Servicer_Method_Call_How, string>> = {
+  [Servicer_Method_Call_How.SCHEDULE]: "schedules",
+  [Servicer_Method_Call_How.SPAWN]: "spawns",
+  [Servicer_Method_Call_How.FORALL]: "for all",
 };
 
 // A call reached later (scheduled, spawned) is dashed: it is not the
 // arrow of control passing right now.
-const HOW_DASH: Partial<Record<How, string>> = {
-  [How.SCHEDULE]: "7 5",
-  [How.SPAWN]: "7 5",
+const HOW_DASH: Partial<Record<Servicer_Method_Call_How, string>> = {
+  [Servicer_Method_Call_How.SCHEDULE]: "7 5",
+  [Servicer_Method_Call_How.SPAWN]: "7 5",
 };
 
 // A workflow's calls are dashed too: it runs past the call that
@@ -530,7 +530,7 @@ const layoutPackages = async (
 
 interface CallEdgeData extends Record<string, unknown> {
   // Absent on a folded edge, which carries calls reached every way.
-  how?: How;
+  how?: Servicer_Method_Call_How;
   // The calling method's kind, which is the edge's colour. Absent
   // for a method the API does not declare, and on a folded edge.
   kind?: Kind;
@@ -587,16 +587,16 @@ const edgesOfPackages = (
             ? `${source}|${sourceHandle}>${target}|${targetHandle}:${call.how}`
             : `${source}>${target}|${targetHandle}`;
 
-          const caller = methodId(stateType.id, method.name);
-          const callee = methodId(call.stateTypeName, call.methodName);
+          const callerId = methodId(stateType.id, method.name);
+          const calleeId = methodId(call.stateTypeName, call.methodName);
           const edgeFoldedInto = edgesById.get(id);
           if (edgeFoldedInto !== undefined) {
             edgeFoldedInto.data!.count += call.count;
-            if (!edgeFoldedInto.data!.sourceMethodIds.includes(caller)) {
-              edgeFoldedInto.data!.sourceMethodIds.push(caller);
+            if (!edgeFoldedInto.data!.sourceMethodIds.includes(callerId)) {
+              edgeFoldedInto.data!.sourceMethodIds.push(callerId);
             }
-            if (!edgeFoldedInto.data!.targetMethodIds.includes(callee)) {
-              edgeFoldedInto.data!.targetMethodIds.push(callee);
+            if (!edgeFoldedInto.data!.targetMethodIds.includes(calleeId)) {
+              edgeFoldedInto.data!.targetMethodIds.push(calleeId);
             }
             continue;
           }
@@ -612,8 +612,8 @@ const edgesOfPackages = (
               how: sourceExpanded ? call.how : undefined,
               kind,
               count: call.count,
-              sourceMethodIds: [caller],
-              targetMethodIds: [callee],
+              sourceMethodIds: [callerId],
+              targetMethodIds: [calleeId],
             },
             markerEnd: {
               type: MarkerType.ArrowClosed,
@@ -990,7 +990,9 @@ const Legend: FC = () => (
           <span>calls</span>
         </div>
         <div className="graph-legend-row">
-          <LegendLine dashPattern={HOW_DASH[How.SCHEDULE]} />
+          <LegendLine
+            dashPattern={HOW_DASH[Servicer_Method_Call_How.SCHEDULE]}
+          />
           <span>schedules · spawns</span>
         </div>
         <div className="graph-legend-row">
