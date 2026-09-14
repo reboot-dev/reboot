@@ -34,7 +34,7 @@ import type { Viewport } from "@xyflow/react";
 import { useLocation, useNavigationType } from "react-router";
 import ELK from "elkjs/lib/elk.bundled.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FC, MouseEvent } from "react";
+import type { FC } from "react";
 import type {
   GraphCall,
   GraphMethod,
@@ -226,45 +226,30 @@ const fitBoxesAroundCards = (nodes: GraphNode[]): GraphNode[] => {
 
 // Which cones of the chosen method the graph lights: what it calls
 // (downstream), who calls it (upstream), or both.
-interface Cones {
+interface ConesOfInfluence {
   downstream: boolean;
   upstream: boolean;
 }
 
-const DEFAULT_CONES: Cones = { downstream: true, upstream: false };
-
-const sameCones = (a: Cones, b: Cones): boolean =>
-  a.downstream === b.downstream && a.upstream === b.upstream;
-
-// Which third of a method's row the pointer is over, which is what a
-// click there asks for: the left third, who calls the method; the
-// middle, both; the right third, what it calls.
-type RowThird = "upstream" | "both" | "downstream";
-
-const thirdOfPointer = (event: MouseEvent<HTMLElement>): RowThird => {
-  const rect = event.currentTarget.getBoundingClientRect();
-  const across = (event.clientX - rect.left) / rect.width;
-  return across < 1 / 3 ? "upstream" : across < 2 / 3 ? "both" : "downstream";
-};
-
-const CONES_OF_THIRD: Record<RowThird, Cones> = {
-  upstream: { upstream: true, downstream: false },
-  both: { upstream: true, downstream: true },
-  downstream: { upstream: false, downstream: true },
+// Choosing a method lights both; the buttons beside its row put
+// either out.
+const DEFAULT_CONES_OF_INFLUENCE: ConesOfInfluence = {
+  downstream: true,
+  upstream: true,
 };
 
 interface StateTypeData extends Record<string, unknown> {
   stateType: GraphStateType;
   // The chosen method's id, when one is chosen.
   selectedMethod?: string | null;
-  onSelectMethod?: (id: string, cones: Cones) => void;
+  onSelectMethod?: (id: string) => void;
   onOpenStateType?: (id: string) => void;
-  cones?: Cones;
-  onToggleCone?: (cone: keyof Cones) => void;
+  conesOfInfluence?: ConesOfInfluence;
+  onToggleConeOfInfluence?: (coneOfInfluence: keyof ConesOfInfluence) => void;
   // The methods some drawn call lands on, and the methods that make
   // one; a button with nothing to light is never shown.
-  withCallers?: Set<string>;
-  withCalls?: Set<string>;
+  calledMethodIds?: Set<string>;
+  callingMethodIds?: Set<string>;
   // The methods in the chosen method's lit cones, itself included.
   litMethods?: Set<string>;
 }
@@ -760,12 +745,9 @@ const ExpandedPackageNode: FC<
 );
 
 // an edge landing on its left or leaving on its right. The handles
-// are invisible: the edge just needs somewhere to land. Hovering the
-// row shows, beside the card, the cones a click there lights: the
-// left third of the row, the arrow in, who calls the method; the
-// right third, the arrow out, what it calls; the middle, both. A
-// click chooses the method with those cones, which also opens it in
-// the types pane, and a click asking for what is already lit lets it
+// are invisible: the edge just needs somewhere to land. A click
+// chooses the method, which lights who calls it and what it calls
+// and opens it in the types pane; a click on the chosen one lets it
 // go.
 const MethodRow: FC<{
   id: string;
@@ -773,18 +755,15 @@ const MethodRow: FC<{
   selected: boolean;
   // In the chosen method's lit cones: called by it or calling it.
   lit: boolean;
-  onHover: (third: RowThird | null) => void;
-  onSelect: (id: string, cones: Cones) => void;
-}> = ({ id, method, selected, lit, onHover, onSelect }) => (
+  onSelect: (id: string) => void;
+}> = ({ id, method, selected, lit, onSelect }) => (
   <div
     className={`graph-method ${classNameOfKind(method.kind)}${
       selected ? " selected" : lit ? " lit" : ""
     }`}
-    onMouseMove={(event) => onHover(thirdOfPointer(event))}
-    onMouseLeave={() => onHover(null)}
     onClick={(event) => {
       event.stopPropagation();
-      onSelect(id, CONES_OF_THIRD[thirdOfPointer(event)]);
+      onSelect(id);
     }}
     title={
       method.kind === undefined
@@ -813,31 +792,22 @@ const MethodRow: FC<{
 // A button beside the card, level with a row, for one of the row's
 // cones: lit in the method's kind colour while that cone is shown,
 // and unlit again under the pointer, since a click then puts it out.
-const ConeButton: FC<{
-  cone: keyof Cones;
+const ConeOfInfluenceButton: FC<{
+  coneOfInfluence: keyof ConesOfInfluence;
   top: number;
   lit: boolean;
   color: string;
   title: string;
   onClick: () => void;
-  onMouseEnter: () => void;
-  onMouseLeave: () => void;
-}> = ({
-  cone,
-  top,
-  lit,
-  color,
-  title,
-  onClick,
-  onMouseEnter,
-  onMouseLeave,
-}) => {
+}> = ({ coneOfInfluence, top, lit, color, title, onClick }) => {
   const [hovered, setHovered] = useState(false);
   const shownLit = lit && !hovered;
   return (
     <button
       type="button"
-      className={`graph-cone graph-cone-${cone}${shownLit ? " is-active" : ""}`}
+      className={`graph-cone graph-cone-${coneOfInfluence}${
+        shownLit ? " is-active" : ""
+      }`}
       style={
         shownLit ? { top, background: color, borderColor: color } : { top }
       }
@@ -847,14 +817,8 @@ const ConeButton: FC<{
         event.stopPropagation();
         onClick();
       }}
-      onMouseEnter={() => {
-        setHovered(true);
-        onMouseEnter();
-      }}
-      onMouseLeave={() => {
-        setHovered(false);
-        onMouseLeave();
-      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
         <path
@@ -870,16 +834,11 @@ const ConeButton: FC<{
   );
 };
 
-// How long the buttons a hovered row showed stay once the pointer
-// leaves the row, which is what lets it reach them: they sit beside
-// the card, past the row's edge.
-const HOVER_LINGER_MS = 250;
-
 const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
   data,
 }) => {
-  // The chosen row's place in the card, for the cone buttons that
-  // flank it. The card clips its contents, so the buttons are
+  // The chosen row's place in the card, for the cone nonEmptyConesOfInfluence that
+  // flank it. The card clips its contents, so the nonEmptyConesOfInfluence are
   // siblings of it, placed by the layout's own row arithmetic.
   const selectedIndex =
     data.selectedMethod == null
@@ -891,88 +850,15 @@ const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
   const topOfRow = (index: number): number =>
     1 + HEAD_HEIGHT + index * ROW_HEIGHT + ROW_HEIGHT / 2;
 
-  // The row the pointer is over and which third of it, with the
-  // hide put off a moment when the pointer leaves, so it can reach
-  // the buttons the hover showed.
-  const [hovered, setHovered] = useState<{
-    index: number;
-    third: RowThird;
-  } | null>(null);
-  const hideTimer = useRef<number | null>(null);
-  const keepShown = useCallback((): void => {
-    if (hideTimer.current !== null) {
-      window.clearTimeout(hideTimer.current);
-      hideTimer.current = null;
-    }
-  }, []);
-  const hideSoon = useCallback((): void => {
-    keepShown();
-    hideTimer.current = window.setTimeout(
-      () => setHovered(null),
-      HOVER_LINGER_MS
-    );
-  }, [keepShown]);
-  useEffect(() => keepShown, [keepShown]);
-
-  // The cones a method has anything to light in.
-  const availableCones = (id: string): Cones => ({
-    upstream: data.withCallers?.has(id) ?? false,
-    downstream: data.withCalls?.has(id) ?? false,
-  });
-
-  // Chooses a method with the cones asked for, of those it has; a
-  // click asking only for a cone it lacks lights what it has.
-  const select = (id: string, asked: Cones): void => {
-    const available = availableCones(id);
-    const wanted: Cones = {
-      upstream: asked.upstream && available.upstream,
-      downstream: asked.downstream && available.downstream,
-    };
-    data.onSelectMethod?.(
-      id,
-      wanted.upstream || wanted.downstream ? wanted : available
-    );
-  };
-
-  // Which buttons stand beside which row. The chosen row keeps a
-  // button for each cone it has lit; hovering it in a third that
-  // asks for a cone it has not lit shows that cone's button too,
-  // which lights it. Any other hovered row shows the buttons for the
-  // cones its third asks for, of those it has, and clicking one
-  // chooses the method with that cone alone.
-  const asked = hovered === null ? undefined : CONES_OF_THIRD[hovered.third];
-  const buttonsOf = (
-    index: number
-  ): { id: string; method: GraphMethod; show: Cones } | undefined => {
-    if (index === -1) {
-      return undefined;
-    }
-    const method = data.stateType.methods[index];
-    const id = methodId(data.stateType.id, method.name);
-    const available = availableCones(id);
-    const lit =
-      index === selectedIndex
-        ? data.cones ?? DEFAULT_CONES
-        : { upstream: false, downstream: false };
-    const hoveredHere = hovered?.index === index && asked !== undefined;
-    return {
-      id,
-      method,
-      show: {
-        upstream:
-          available.upstream &&
-          (lit.upstream || (hoveredHere && asked.upstream)),
-        downstream:
-          available.downstream &&
-          (lit.downstream || (hoveredHere && asked.downstream)),
-      },
-    };
-  };
-  const selectedButtons = buttonsOf(selectedIndex);
-  const hoveredButtons =
-    hovered !== null && hovered.index !== selectedIndex
-      ? buttonsOf(hovered.index)
-      : undefined;
+  // The chosen row's nonEmptyConesOfInfluence, one for each cone it has anything to
+  // light in. Each puts its cone out, or lights it again.
+  const nonEmptyConesOfInfluence: ConesOfInfluence | undefined =
+    data.selectedMethod == null || selectedIndex === -1
+      ? undefined
+      : {
+          upstream: data.calledMethodIds?.has(data.selectedMethod) ?? false,
+          downstream: data.callingMethodIds?.has(data.selectedMethod) ?? false,
+        };
 
   return (
     <>
@@ -996,69 +882,32 @@ const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
               method={method}
               selected={data.selectedMethod === id}
               lit={data.litMethods?.has(id) ?? false}
-              onHover={(third) => {
-                if (third === null) {
-                  hideSoon();
-                } else {
-                  keepShown();
-                  setHovered({ index, third });
-                }
-              }}
-              onSelect={select}
+              onSelect={(id) => data.onSelectMethod?.(id)}
               key={method.name}
             />
           );
         })}
       </div>
-      {selectedButtons !== undefined &&
+      {nonEmptyConesOfInfluence !== undefined &&
         (["upstream", "downstream"] as const).map(
-          (cone) =>
-            selectedButtons.show[cone] && (
-              <ConeButton
-                cone={cone}
+          (coneOfInfluence) =>
+            nonEmptyConesOfInfluence[coneOfInfluence] && (
+              <ConeOfInfluenceButton
+                coneOfInfluence={coneOfInfluence}
                 top={topOfRow(selectedIndex)}
-                lit={data.cones?.[cone] ?? false}
-                color={colorOfKind(selectedButtons.method.kind)}
+                lit={data.conesOfInfluence?.[coneOfInfluence] ?? false}
+                color={colorOfKind(data.stateType.methods[selectedIndex].kind)}
                 title={
-                  data.cones?.[cone]
-                    ? cone === "upstream"
+                  data.conesOfInfluence?.[coneOfInfluence]
+                    ? coneOfInfluence === "upstream"
                       ? "Hide who calls this method"
                       : "Hide what this method calls"
-                    : cone === "upstream"
+                    : coneOfInfluence === "upstream"
                     ? "Show who calls this method"
                     : "Show what this method calls"
                 }
-                onClick={() => data.onToggleCone?.(cone)}
-                onMouseEnter={keepShown}
-                onMouseLeave={hideSoon}
-                key={cone}
-              />
-            )
-        )}
-      {hoveredButtons !== undefined &&
-        hovered !== null &&
-        (["upstream", "downstream"] as const).map(
-          (cone) =>
-            hoveredButtons.show[cone] && (
-              <ConeButton
-                cone={cone}
-                top={topOfRow(hovered.index)}
-                lit={false}
-                color={colorOfKind(hoveredButtons.method.kind)}
-                title={
-                  cone === "upstream"
-                    ? "Show who calls this method"
-                    : "Show what this method calls"
-                }
-                onClick={() =>
-                  select(hoveredButtons.id, {
-                    upstream: cone === "upstream",
-                    downstream: cone === "downstream",
-                  })
-                }
-                onMouseEnter={keepShown}
-                onMouseLeave={hideSoon}
-                key={cone}
+                onClick={() => data.onToggleConeOfInfluence?.(coneOfInfluence)}
+                key={coneOfInfluence}
               />
             )
         )}
@@ -1536,71 +1385,64 @@ const GraphCanvas: FC<{
     [packages, selectedMethodId, onSelectMethod, publishLayout]
   );
 
-  // Which cones of the chosen method the graph lights: what the
-  // click that chose it asked for, by the third of the row it landed
-  // in, until the buttons flanking the chosen row say otherwise. A
-  // choice made elsewhere, by a link naming the method, lights what
-  // it calls.
-  const [cones, setCones] = useState<Cones>(DEFAULT_CONES);
-
-  // The cones a click asked for, kept until the choice it made
-  // arrives, since the choice is the URL's.
-  const askedCones = useRef<Cones | null>(null);
+  // Which cones of the chosen method the graph lights: both, until
+  // the buttons flanking the chosen row say otherwise.
+  const [conesOfInfluence, setConesOfInfluence] = useState<ConesOfInfluence>(
+    DEFAULT_CONES_OF_INFLUENCE
+  );
 
   useEffect(() => {
-    setCones(askedCones.current ?? DEFAULT_CONES);
-    askedCones.current = null;
+    setConesOfInfluence(DEFAULT_CONES_OF_INFLUENCE);
   }, [selectedMethodId]);
 
   const toggleMethodSelection = useCallback(
-    (id: string, asked: Cones) => {
-      if (selectedMethodId !== id) {
-        askedCones.current = asked;
-        onSelectMethod(id);
-      } else if (sameCones(cones, asked)) {
-        onSelectMethod(null);
-      } else {
-        setCones(asked);
-      }
+    (id: string) => {
+      onSelectMethod(selectedMethodId === id ? null : id);
     },
-    [selectedMethodId, cones, onSelectMethod]
+    [selectedMethodId, onSelectMethod]
   );
 
-  const toggleCone = useCallback((cone: keyof Cones): void => {
-    setCones((current) => ({ ...current, [cone]: !current[cone] }));
-  }, []);
+  const toggleConeOfInfluence = useCallback(
+    (coneOfInfluence: keyof ConesOfInfluence): void => {
+      setConesOfInfluence((current) => ({
+        ...current,
+        [coneOfInfluence]: !current[coneOfInfluence],
+      }));
+    },
+    []
+  );
 
   // The methods some drawn call lands on, self-calls included, and
   // the methods that make one: what a cone button needs to have
   // anything to light.
-  const withCallers = useMemo(() => {
-    const ids = new Set<string>();
+  const calledMethodIds = useMemo(() => {
+    const methodIds = new Set<string>();
     for (const pkg of packages) {
       for (const stateType of pkg.stateTypes) {
         for (const method of stateType.methods) {
           for (const call of method.calls) {
             if (isDrawn(call)) {
-              ids.add(methodId(call.stateTypeName, call.methodName));
+              methodIds.add(methodId(call.stateTypeName, call.methodName));
             }
           }
         }
       }
     }
-    return ids;
+    return methodIds;
   }, [packages]);
 
-  const withCalls = useMemo(() => {
-    const ids = new Set<string>();
+  const callingMethodIds = useMemo(() => {
+    const methodIds = new Set<string>();
     for (const pkg of packages) {
       for (const stateType of pkg.stateTypes) {
         for (const method of stateType.methods) {
           if (method.calls.some(isDrawn)) {
-            ids.add(methodId(stateType.id, method.name));
+            methodIds.add(methodId(stateType.id, method.name));
           }
         }
       }
     }
-    return ids;
+    return methodIds;
   }, [packages]);
 
   // With a method chosen, its lit cones: downstream, the methods it
@@ -1625,7 +1467,7 @@ const GraphCanvas: FC<{
       nodeIds.add(edge.source);
       nodeIds.add(edge.target);
     };
-    if (cones.downstream) {
+    if (conesOfInfluence.downstream) {
       const reached = reachableMethodIds(selectedMethodId, packages);
       for (const id of reached) {
         methodIds.add(id);
@@ -1636,7 +1478,7 @@ const GraphCanvas: FC<{
         }
       }
     }
-    if (cones.upstream) {
+    if (conesOfInfluence.upstream) {
       const reaching = reachingMethodIds(selectedMethodId, packages);
       for (const id of reaching) {
         methodIds.add(id);
@@ -1651,7 +1493,7 @@ const GraphCanvas: FC<{
       }
     }
     return { nodeIds, edgeIds, methodIds };
-  }, [selectedMethodId, cones, packages, edges]);
+  }, [selectedMethodId, conesOfInfluence, packages, edges]);
 
   const shownNodes = useMemo(
     () =>
@@ -1691,10 +1533,10 @@ const GraphCanvas: FC<{
                 selectedMethod: selectedMethodId,
                 onSelectMethod: toggleMethodSelection,
                 onOpenStateType,
-                cones,
-                onToggleCone: toggleCone,
-                withCallers,
-                withCalls,
+                conesOfInfluence,
+                onToggleConeOfInfluence: toggleConeOfInfluence,
+                calledMethodIds,
+                callingMethodIds,
                 litMethods: unfaded?.methodIds,
               },
             };
@@ -1709,10 +1551,10 @@ const GraphCanvas: FC<{
       toggleMethodSelection,
       togglePackage,
       onOpenStateType,
-      cones,
-      toggleCone,
-      withCallers,
-      withCalls,
+      conesOfInfluence,
+      toggleConeOfInfluence,
+      calledMethodIds,
+      callingMethodIds,
     ]
   );
 
