@@ -3104,19 +3104,30 @@ const Overview: FC<{
                   ‹
                 </button>
               ) : (
-                <TypesPane
-                  apis={apis}
-                  linkedDataTypes={linkedDataTypes}
-                  target={paneTarget}
-                  propertyName={paneProperty}
-                  flashKey={returning ? undefined : location.key}
-                  bodyRef={typesBody}
-                  onScroll={(scrollTop) =>
-                    typesScrollTops.set(location.key, scrollTop)
-                  }
-                  onClose={onClosePane}
-                  key={typeIdOfTarget(paneTarget)}
-                />
+                <div className="types-drawer">
+                  <button
+                    type="button"
+                    className="types-handle"
+                    onClick={() => typesPanel.current?.collapse()}
+                    title="Hide the types pane"
+                    aria-label="Hide the types pane"
+                  >
+                    ›
+                  </button>
+                  <TypesPane
+                    apis={apis}
+                    linkedDataTypes={linkedDataTypes}
+                    target={paneTarget}
+                    propertyName={paneProperty}
+                    flashKey={returning ? undefined : location.key}
+                    bodyRef={typesBody}
+                    onScroll={(scrollTop) =>
+                      typesScrollTops.set(location.key, scrollTop)
+                    }
+                    onClose={onClosePane}
+                    key={typeIdOfTarget(paneTarget)}
+                  />
+                </div>
               )}
             </Panel>
           </>
