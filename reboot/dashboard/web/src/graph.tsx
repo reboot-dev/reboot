@@ -86,9 +86,9 @@ const classNameOfKind = (kind: Kind | undefined): string =>
 
 // How a call is reached, said in one word on the edge. A plain call
 // says nothing: it is the ordinary case, and labelling every edge
-// "calls" would be noise.
+// "calls" would be noise. Neither does a construct: the factory pill
+// on the row it lands on already says so.
 const HOW_LABEL: Partial<Record<How, string>> = {
-  [How.CONSTRUCT]: "constructs",
   [How.SCHEDULE]: "schedules",
   [How.SPAWN]: "spawns",
   [How.FORALL]: "for all",
