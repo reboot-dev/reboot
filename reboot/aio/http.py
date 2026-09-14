@@ -66,6 +66,11 @@ class PythonWebFramework(WebFramework):
         path: str
         kwargs: dict
         endpoint: Callable[..., Any]
+        # Whether the endpoint is handed an *app-internal*
+        # `ExternalContext` (one carrying the application's
+        # `caller_id`) instead of the external one. See the DANGER note
+        # in `HTTP._api_route`.
+        app_internal: bool = False
 
     @dataclass(kw_only=True, frozen=True)
     class Mount:
@@ -88,11 +93,6 @@ class PythonWebFramework(WebFramework):
         def __init__(self):
             self._api_routes: list[PythonWebFramework.APIRoute] = []
             self._mounts: list[PythonWebFramework.Mount] = []
-            # Exact request paths whose handlers receive an *app-internal*
-            # context (one that can call app-internal-only servicers)
-            # instead of the usual external one, because they opted in via
-            # `app_internal=True`. See the DANGER note in `_api_route`.
-            self._app_internal_paths: set[str] = set()
 
         def _api_route(self, path: str, **kwargs):
             # `app_internal` is our own kwarg, not one of FastAPI's, so we
@@ -100,6 +100,10 @@ class PythonWebFramework(WebFramework):
             # handler is given an *app-internal* `ExternalContext` (one
             # carrying the application's `caller_id`, able to call
             # app-internal-only servicers) instead of the external one.
+            # The grant is bound to the endpoint: it reaches exactly the
+            # requests that Starlette dispatches to this handler, however
+            # its path is spelled (a template such as `/things/{id}`
+            # included).
             #
             # DANGER: an app-internal context bypasses authorizers, so a
             # route that gets one can make trusted in-app calls on behalf
@@ -109,8 +113,7 @@ class PythonWebFramework(WebFramework):
             # only after the authorization code has been exchanged and
             # validated. Never set it on a route that acts on unvalidated
             # request input.
-            if kwargs.pop("app_internal", False):
-                self._app_internal_paths.add(path)
+            app_internal: bool = kwargs.pop("app_internal", False)
 
             # TODO: add type annotations for `endpoint` so that what
             # we take in is exactly what we return.
@@ -127,6 +130,7 @@ class PythonWebFramework(WebFramework):
                         path=path,
                         endpoint=endpoint,
                         kwargs=kwargs,
+                        app_internal=app_internal,
                     )
                 )
                 return endpoint
@@ -271,26 +275,34 @@ class PythonWebFramework(WebFramework):
                 caller_id=CallerID(application_id=application_id),
             )
 
+        def app_internal_external_context_dependency(request: Request):
+            # A route-level dependency that hands its endpoint an
+            # app-internal context. FastAPI resolves it after Starlette
+            # has dispatched the request to that endpoint and before the
+            # endpoint runs, so the grant reaches exactly the requests
+            # the endpoint handles.
+            request.state.reboot_external_context = (
+                app_internal_external_context_from_request(request)
+            )
+
         fastapi = FastAPI()
 
         @fastapi.middleware("http")
         async def external_context_middleware(request: Request, call_next):
-            # Most routes get an *external* context (no `caller_id`): an
-            # HTTP handler serves untrusted external traffic, so handing it
-            # a caller that bypasses authorizers would let external
-            # requests escalate to trusted in-app calls. Those routes must
-            # do their own end-user auth. Only routes that opted in via
-            # `app_internal=True` get an *app-internal* context instead —
-            # see the DANGER note on `HTTP._api_route`. We namespace this
-            # on `request.state` so other middleware doesn't clash.
-            if request.url.path in self._http._app_internal_paths:
-                request.state.reboot_external_context = (
-                    app_internal_external_context_from_request(request)
-                )
-            else:
-                request.state.reboot_external_context = (
-                    external_context_from_request(request)
-                )
+            # Every request gets an *external* context (no `caller_id`):
+            # an HTTP handler serves untrusted external traffic, so
+            # handing it a caller that bypasses authorizers would let
+            # external requests escalate to trusted in-app calls. Routes
+            # must do their own end-user auth. Only routes that opted in
+            # via `app_internal=True` get an *app-internal* context
+            # instead, which `app_internal_external_context_dependency`
+            # puts in place once the request has been routed to such an
+            # endpoint — see the DANGER note on `HTTP._api_route`. We
+            # namespace this on `request.state` so other middleware
+            # doesn't clash.
+            request.state.reboot_external_context = (
+                external_context_from_request(request)
+            )
 
             return await call_next(request)
 
@@ -304,10 +316,18 @@ class PythonWebFramework(WebFramework):
             )
 
         for api_route in self._http._api_routes:
+            kwargs = dict(api_route.kwargs)
+            if api_route.app_internal:
+                # Ahead of any dependencies the route declared itself,
+                # so those already see the app-internal context.
+                kwargs["dependencies"] = [
+                    Depends(app_internal_external_context_dependency),
+                    *(kwargs.get("dependencies") or []),
+                ]
             fastapi.add_api_route(
                 api_route.path,
                 api_route.endpoint,
-                **api_route.kwargs,
+                **kwargs,
             )
 
         config = uvicorn.Config(
