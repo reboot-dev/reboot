@@ -133,6 +133,15 @@ enum class TestOnlyLongRunningRPCHookSite {
   // `RecoverIdempotentMutations`: immediately after entering, so that
   // we know the server has started processing the RPC.
   RECOVER_IDEMPOTENT_MUTATIONS_ENTERED,
+  // `RecoverTransactions`: immediately after `NewIterator()` captures
+  // the implicit snapshot, before the iteration loop begins, so that
+  // a test can commit or abort a participant transaction that the
+  // snapshot still lists.
+  RECOVER_TRANSACTIONS_RIGHT_AFTER_IMPLICIT_SNAPSHOT,
+  // `DeleteTransaction`: immediately after entering, while the
+  // committed or rolled back transaction is still in memory, so that
+  // a test can observe it there.
+  DELETE_TRANSACTION_ENTERED,
 };
 
 void SetTestOnlyHookForLongRunningRPC(

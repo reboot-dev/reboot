@@ -466,6 +466,79 @@ class TwoShardDatabaseTest : public DatabaseTest {
     }
   }
 
+  // Stores an actor for `state_ref` within a transaction and prepares
+  // the resulting participant transaction, leaving it for the
+  // coordinator to commit or abort. Returns the stored actor.
+  v1alpha1::Actor store_and_prepare_participant(
+      const std::string& state_type,
+      const std::string& state_ref) {
+    v1alpha1::Actor actor;
+    actor.set_state_type(state_type);
+    actor.set_state_ref(state_ref);
+    actor.set_state("hello world");
+
+    v1alpha1::Transaction transaction;
+    transaction.set_state_type(state_type);
+    transaction.set_state_ref(state_ref);
+    transaction.add_transaction_ids(UUID::random().toBytes());
+    transaction.set_coordinator_state_type("some.Coordinator");
+    transaction.set_coordinator_state_ref(make_state_ref("some_actor_1"));
+
+    store({actor}, {}, std::move(transaction));
+
+    transaction_participant_prepare(
+        stout::copy(state_type),
+        stout::copy(state_ref));
+
+    return actor;
+  }
+
+  // Recovers all shards while `complete`, which commits or aborts a
+  // participant transaction, runs concurrently, in the following
+  // interleaving: the recovering thread captures its snapshot of the
+  // database, then `complete` runs up to `DeleteTransaction`, where
+  // it parks with the transaction committed or rolled back but still
+  // in memory, then the recovering thread examines the transaction
+  // and finishes, and only then does `complete` finish.
+  v1alpha1::RecoverResponse recover_all_shards_while_completing(
+      std::function<void()> complete) {
+    std::promise<void> snapshot_taken;
+    std::promise<void> completed;
+    std::promise<void> recovered;
+    SetTestOnlyHookForLongRunningRPC(
+        server->TestOnly_GetService(),
+        [&](TestOnlyLongRunningRPCHookSite site) {
+          switch (site) {
+            case TestOnlyLongRunningRPCHookSite::
+                RECOVER_TRANSACTIONS_RIGHT_AFTER_IMPLICIT_SNAPSHOT:
+              snapshot_taken.set_value();
+              completed.get_future().wait();
+              break;
+            case TestOnlyLongRunningRPCHookSite::DELETE_TRANSACTION_ENTERED:
+              completed.set_value();
+              recovered.get_future().wait();
+              break;
+            default: break;
+          }
+        });
+
+    v1alpha1::RecoverResponse response;
+    std::thread recover_thread([&]() { response = recover_all_shards(); });
+
+    snapshot_taken.get_future().wait();
+
+    std::thread complete_thread(std::move(complete));
+
+    recover_thread.join();
+
+    recovered.set_value();
+    complete_thread.join();
+
+    SetTestOnlyHookForLongRunningRPC(server->TestOnly_GetService(), nullptr);
+
+    return response;
+  }
+
   inline void transaction_coordinator_prepared(
       const std::string& transaction_id,
       const std::string& coordinator_state_ref,
@@ -2564,6 +2637,119 @@ TEST_F(TwoShardDatabaseTest, RecoverMultipleCallsWithAbortedTransaction) {
 
 ////////////////////////////////////////////////////////////////////////
 
+TEST_F(
+    TwoShardDatabaseTest,
+    RecoverTransactionsSkipsParticipantCommittedAfterSnapshot) {
+  // Several servers recover concurrently through the same database,
+  // so a participant transaction may be committed while a `Recover`
+  // is iterating a snapshot of the database that still lists its
+  // record. The committed transaction is still in memory until
+  // `DeleteTransaction` removes it; recovery must skip it rather
+  // than abort the process.
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("test_1234");
+
+  store_and_prepare_participant(state_type, state_ref);
+
+  v1alpha1::RecoverResponse response =
+      recover_all_shards_while_completing([&]() {
+        transaction_participant_commit(
+            stout::copy(state_type),
+            stout::copy(state_ref));
+      });
+
+  EXPECT_EQ(response.participant_transactions_size(), 0);
+
+  std::optional<std::string> data = load(state_type, state_ref);
+  ASSERT_TRUE(data.has_value());
+  EXPECT_EQ("hello world", data.value());
+
+  EXPECT_EQ(recover_all_shards().participant_transactions_size(), 0);
+}
+
+TEST_F(
+    TwoShardDatabaseTest,
+    RecoverTransactionsSkipsParticipantAbortedAfterSnapshot) {
+  // Like `RecoverTransactionsSkipsParticipantCommittedAfterSnapshot`,
+  // but the transaction is aborted instead, so recovery finds it
+  // rolled back in memory.
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("test_1234");
+
+  store_and_prepare_participant(state_type, state_ref);
+
+  v1alpha1::RecoverResponse response =
+      recover_all_shards_while_completing([&]() {
+        transaction_participant_abort(
+            stout::copy(state_type),
+            stout::copy(state_ref));
+      });
+
+  EXPECT_EQ(response.participant_transactions_size(), 0);
+
+  EXPECT_FALSE(load(state_type, state_ref).has_value());
+
+  EXPECT_EQ(recover_all_shards().participant_transactions_size(), 0);
+}
+
+TEST_F(
+    TwoShardDatabaseTest,
+    RecoverTransactionsSkipsParticipantDeletedAfterSnapshot) {
+  // Like `RecoverTransactionsSkipsParticipantCommittedAfterSnapshot`,
+  // but the commit completes, deleting the transaction from memory
+  // as well, before recovery reaches the record that its snapshot
+  // still lists. Recovery must not begin a new transaction for that
+  // record.
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("test_1234");
+
+  v1alpha1::Actor actor = store_and_prepare_participant(state_type, state_ref);
+
+  std::promise<void> snapshot_taken;
+  std::promise<void> committed;
+  SetTestOnlyHookForLongRunningRPC(
+      server->TestOnly_GetService(),
+      [&](TestOnlyLongRunningRPCHookSite site) {
+        if (site
+            != TestOnlyLongRunningRPCHookSite::
+                RECOVER_TRANSACTIONS_RIGHT_AFTER_IMPLICIT_SNAPSHOT) {
+          return;
+        }
+        snapshot_taken.set_value();
+        committed.get_future().wait();
+      });
+
+  v1alpha1::RecoverResponse response;
+  std::thread recover_thread([&]() { response = recover_all_shards(); });
+
+  snapshot_taken.get_future().wait();
+
+  transaction_participant_commit(
+      stout::copy(state_type),
+      stout::copy(state_ref));
+
+  committed.set_value();
+  recover_thread.join();
+
+  SetTestOnlyHookForLongRunningRPC(server->TestOnly_GetService(), nullptr);
+
+  EXPECT_EQ(response.participant_transactions_size(), 0);
+
+  // A store outside of a transaction is refused while a transaction
+  // for the state is ongoing, so this store succeeding shows that
+  // recovery did not begin one.
+  actor.set_state("hello again");
+  EXPECT_NO_THROW(store({actor}, {}));
+
+  std::optional<std::string> data = load(state_type, state_ref);
+  ASSERT_TRUE(data.has_value());
+  EXPECT_EQ("hello again", data.value());
+
+  EXPECT_EQ(recover_all_shards().participant_transactions_size(), 0);
+}
+
+////////////////////////////////////////////////////////////////////////
+
 TEST_F(TwoShardDatabaseTest, RecoverWithShardFiltering) {
   // This test verifies that when a shard is specified in RecoverRequest,
   // only data belonging to that shard is returned.
@@ -3036,7 +3222,11 @@ TEST_F(TwoShardDatabaseTest, RecoverCancelled) {
   SetTestOnlyHookForLongRunningRPC(
       server->TestOnly_GetService(),
       [&](TestOnlyLongRunningRPCHookSite site) {
-        ASSERT_EQ(site, TestOnlyLongRunningRPCHookSite::RECOVER_ENTERED);
+        // The cancelled `Recover` still runs to completion on the
+        // server and fires the later hook sites on its way.
+        if (site != TestOnlyLongRunningRPCHookSite::RECOVER_ENTERED) {
+          return;
+        }
         mutex_acquired.set_value();
         cancelled.get_future().wait();
       });

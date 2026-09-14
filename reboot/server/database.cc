@@ -1388,6 +1388,11 @@ DatabaseService::LookupOrBeginTransaction(
 
 void DatabaseService::DeleteTransaction(
     expected<stout::borrowed_ref<LockableTransaction>>&& txn) {
+  if (test_only_hook_for_long_running_rpc_) {
+    test_only_hook_for_long_running_rpc_(
+        TestOnlyLongRunningRPCHookSite::DELETE_TRANSACTION_ENTERED);
+  }
+
   std::lock_guard lock(txns_mutex_);
 
   auto iterator = [&]() {
@@ -3678,6 +3683,12 @@ expected<void, grpc::Status> DatabaseService::RecoverTransactions(
   std::unique_ptr<rocksdb::Iterator> iterator(
       CHECK_NOTNULL(db_->NewIterator(NonPrefixIteratorReadOptions())));
 
+  if (test_only_hook_for_long_running_rpc_) {
+    test_only_hook_for_long_running_rpc_(
+        TestOnlyLongRunningRPCHookSite::
+            RECOVER_TRANSACTIONS_RIGHT_AFTER_IMPLICIT_SNAPSHOT);
+  }
+
   // TODO: investigate using "prefix seek" for better performance, see:
   // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
   iterator->Seek(rocksdb::Slice(TRANSACTION_PARTICIPANT_KEY_PREFIX));
@@ -3711,14 +3722,70 @@ expected<void, grpc::Status> DatabaseService::RecoverTransactions(
     // we need to begin a transaction that will later be aborted
     // because any recovered transactions that are not prepared get
     // aborted.
+    //
+    // But `iterator` reads a snapshot of the database, and while we
+    // iterate it another server may commit or abort this very
+    // transaction through us. Doing either deletes the participant
+    // record from the database and then, via `DeleteTransaction()`,
+    // the transaction from memory, so a record that `iterator` still
+    // yields may belong to a transaction that is committed or rolled
+    // back in memory, or that is gone from memory altogether. Hence
+    // we only begin a transaction for a record that the database
+    // itself, not just the snapshot, still holds. We check that only
+    // after looking in memory: since the record is always deleted
+    // first, a transaction that is gone from memory has taken its
+    // record with it, and a record that is still there belongs to a
+    // transaction we never had in memory.
     expected<stout::borrowed_ref<LockableTransaction>> txn =
-        LookupOrBeginTransaction(transaction, /* store_participant = */ false);
+        LookupTransaction(transaction.state_type(), transaction.state_ref());
 
-    CHECK(txn.has_value());
+    if (!txn.has_value()) {
+      std::string value;
+      rocksdb::Status status =
+          db_->Get(rocksdb::ReadOptions(), iterator->key(), &value);
+
+      if (status.IsNotFound()) {
+        iterator->Next();
+        continue;
+      }
+
+      CHECK(status.ok()) << "Failed to look up transaction participant '"
+                         << iterator->key().ToStringView()
+                         << "': " << status.ToString();
+
+      txn = LookupOrBeginTransaction(
+          transaction,
+          /* store_participant = */ false);
+
+      CHECK(txn.has_value()) << txn.error();
+    }
 
     std::lock_guard lock(**txn);
 
-    if ((**txn)->GetState() == rocksdb::Transaction::PREPARED) {
+    // The transaction in memory for this actor must be the one that
+    // the participant record describes, as `LookupOrBeginTransaction()`
+    // also enforces for the transaction it looks up or begins.
+    expected<std::string> transaction_id =
+        TransactionIdFromBytes(transaction.transaction_ids(0));
+
+    CHECK(transaction_id.has_value()) << transaction_id.error();
+
+    CHECK_EQ(
+        (**txn)->GetName(),
+        MakeTransactionName(transaction.state_ref(), *transaction_id));
+
+    const rocksdb::Transaction::TransactionState state = (**txn)->GetState();
+
+    if (state == rocksdb::Transaction::COMMITTED
+        || state == rocksdb::Transaction::ROLLEDBACK) {
+      // The transaction has already been committed or rolled back and
+      // our borrow of it is all that is holding off its
+      // `DeleteTransaction()`. There is nothing left to recover.
+      iterator->Next();
+      continue;
+    }
+
+    if (state == rocksdb::Transaction::PREPARED) {
       transaction.set_prepared(true);
 
       // Now recover any tasks for our actor that we'll need to dispatch if
@@ -3740,8 +3807,9 @@ expected<void, grpc::Status> DatabaseService::RecoverTransactions(
       }
     } else {
       // Transaction just started when we called
-      // `LookupOrBeginTransaction()`!
-      CHECK_EQ((**txn)->GetState(), rocksdb::Transaction::STARTED);
+      // `LookupOrBeginTransaction()`, or was started by a `Store` and
+      // is still awaiting its `Prepare`!
+      CHECK_EQ(state, rocksdb::Transaction::STARTED);
     }
 
     size_t estimated_transaction_bytes = EstimateTransactionSize(transaction);
