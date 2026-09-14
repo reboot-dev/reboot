@@ -1539,13 +1539,18 @@ header h1 {
   opacity: 1;
 }
 
-/* 38px tall, which `graph.tsx` lays out by. */
+/* 38px tall, which `graph.tsx` lays out by. Placed over the box's
+   top by `graph.tsx`, in a layer above the edges, and takes the
+   pointer back: the layer it sits in passes the pointer through. */
 .graph-expanded-package-head {
+  position: absolute;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  height: 38px;
   padding: 8px 14px;
+  pointer-events: auto;
 }
 
 .graph-expanded-package-name {
