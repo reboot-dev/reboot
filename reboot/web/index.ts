@@ -418,6 +418,87 @@ export function reactively<
   return [responses(), setRequest];
 }
 
+// Merges `next`, which arrived after `previous`, into one response that
+// stands for both. The payload is the latest one either carries,
+// since a response without a payload only reports that the state
+// changed without changing the payload, and the idempotency keys are
+// those of both, so that every mutation either reported stays
+// reported.
+export function mergeQueryResponses(
+  previous: react_pb.QueryResponse,
+  next: react_pb.QueryResponse
+): react_pb.QueryResponse {
+  return new react_pb.QueryResponse({
+    responseOrStatus:
+      next.responseOrStatus.case !== undefined
+        ? next.responseOrStatus
+        : previous.responseOrStatus,
+    idempotencyKeys: [...previous.idempotencyKeys, ...next.idempotencyKeys],
+  });
+}
+
+// Yields the responses of `responses`, merging (see
+// `mergeQueryResponses()`) all of those that arrive while the
+// consumer is still busy with an earlier one into the single response
+// it pulls next. Pulls each response as soon as it arrives, so that a
+// consumer that has fallen behind, e.g., because it renders between
+// responses, catches up to the latest state in one step instead of
+// working through every intermediate response it missed, and would
+// fall further behind for each one.
+export async function* coalesceQueryResponses(
+  responses: AsyncGenerator<react_pb.QueryResponse, void, unknown>
+): AsyncGenerator<react_pb.QueryResponse, void, unknown> {
+  // Everything that has arrived since the consumer last pulled.
+  let pending: react_pb.QueryResponse | undefined;
+  let done = false;
+  let failure: { error: unknown } | undefined;
+
+  // Resolver of the promise the loop below awaits once nothing is
+  // pending; invoked to wake that loop back up.
+  let wake: (() => void) | undefined = undefined;
+
+  async function pull() {
+    try {
+      for await (const response of responses) {
+        pending =
+          pending === undefined
+            ? response
+            : mergeQueryResponses(pending, response);
+        if (wake !== undefined) {
+          wake();
+        }
+      }
+    } catch (error) {
+      failure = { error };
+    } finally {
+      done = true;
+      if (wake !== undefined) {
+        wake();
+      }
+    }
+  }
+
+  pull();
+
+  while (true) {
+    if (pending !== undefined) {
+      const response = pending;
+      pending = undefined;
+      yield response;
+    } else if (failure !== undefined) {
+      throw failure.error;
+    } else if (done) {
+      return;
+    } else {
+      // Wait for a response, the end of `responses`, or a failure.
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
+      wake = undefined;
+    }
+  }
+}
+
 export async function* reactiveReader({
   endpoint,
   request,
@@ -430,42 +511,67 @@ export async function* reactiveReader({
   websockets: boolean;
 }): AsyncGenerator<react_pb.QueryResponse, void, unknown> {
   const url = new URL(`${endpoint}/rbt.v1alpha1.React/Query`);
-  if (url.protocol === "https:" && !websockets) {
-    const headers = new Headers();
 
-    if (request.bearerToken !== undefined) {
-      headers.set("Authorization", `Bearer ${request.bearerToken}`);
-    }
-
-    yield* grpcServerStream({
-      endpoint: url.toString(),
-      method: "POST",
-      headers,
-      request,
-      responseType: react_pb.QueryResponse,
-      signal,
-    });
+  // `coalesceQueryResponses()` keeps pulling from the server on its
+  // own, so when our consumer stops pulling from us before `signal`
+  // aborts we abort the transport ourselves, or it would outlive us.
+  const transportAbortController = new AbortController();
+  const abortTransport = () => transportAbortController.abort();
+  if (signal.aborted) {
+    abortTransport();
   } else {
-    // TODO: while technically we could `await
-    // grpcWebsocketServerStream(...)` doing so will leak websockets
-    // because it is possible that `signal` will be set to a different
-    // reference and not get triggered. We should fix this by making
-    // sure that `signal` is immutable.
-    const responses = grpcWebsocketServerStream({
-      url,
-      request,
-      // We use an "empty" QueryRequest as a heartbeat on the channel.
-      heartbeatRequest: new react_pb.QueryRequest(),
-      responseType: react_pb.QueryResponse,
-      signal,
-    });
-    for await (const response of responses) {
-      if (response.responseOrStatus.case == "status") {
-        responses.return();
-        throw Status.fromJsonString(response.responseOrStatus.value);
+    signal.addEventListener("abort", abortTransport);
+  }
+
+  async function* serverResponses(): AsyncGenerator<
+    react_pb.QueryResponse,
+    void,
+    unknown
+  > {
+    if (url.protocol === "https:" && !websockets) {
+      const headers = new Headers();
+
+      if (request.bearerToken !== undefined) {
+        headers.set("Authorization", `Bearer ${request.bearerToken}`);
       }
-      yield response;
+
+      yield* grpcServerStream({
+        endpoint: url.toString(),
+        method: "POST",
+        headers,
+        request,
+        responseType: react_pb.QueryResponse,
+        signal: transportAbortController.signal,
+      });
+    } else {
+      // TODO: while technically we could `await
+      // grpcWebsocketServerStream(...)` doing so will leak websockets
+      // because it is possible that `signal` will be set to a different
+      // reference and not get triggered. We should fix this by making
+      // sure that `signal` is immutable.
+      const responses = grpcWebsocketServerStream({
+        url,
+        request,
+        // We use an "empty" QueryRequest as a heartbeat on the channel.
+        heartbeatRequest: new react_pb.QueryRequest(),
+        responseType: react_pb.QueryResponse,
+        signal: transportAbortController.signal,
+      });
+      for await (const response of responses) {
+        if (response.responseOrStatus.case == "status") {
+          responses.return();
+          throw Status.fromJsonString(response.responseOrStatus.value);
+        }
+        yield response;
+      }
     }
+  }
+
+  try {
+    yield* coalesceQueryResponses(serverResponses());
+  } finally {
+    signal.removeEventListener("abort", abortTransport);
+    abortTransport();
   }
 }
 
@@ -762,6 +868,12 @@ export async function* grpcWebsocketServerStream<
   responseType: MessageType<ResponseType>;
   signal: AbortSignal;
 }): AsyncGenerator<ResponseType, void, unknown> {
+  // An abort that came before us is one we would never hear about
+  // through the listener below, so honor it here.
+  if (signal.aborted) {
+    return;
+  }
+
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
 
   const websocket = websockets.create(url);
