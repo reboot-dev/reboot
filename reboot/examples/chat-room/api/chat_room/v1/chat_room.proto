@@ -43,7 +43,7 @@ service ChatRoomMethods {
   // the returned blob IDs.
   rpc Send(SendRequest) returns (SendResponse) {
     option (rbt.v1alpha1.method) = {
-      transaction: {},
+      transaction: { exclusive: {} },
       errors: [ "AttachmentTooLarge" ],
     };
   }
