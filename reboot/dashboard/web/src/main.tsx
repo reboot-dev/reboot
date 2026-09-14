@@ -457,12 +457,13 @@ const later = (
 
 // Pixels, which is how `Panel` reads plain numbers. The minimum is the
 // narrowest width at which a package row stays readable; the maximum
-// leaves the document half of a small laptop screen.
-const NAV_WIDTH = { default: 250, min: 170, max: 520 };
+// leaves the document half of a small laptop screen. Dragged below
+// its minimum, the sidebar collapses to the handle, which is what
+// brings it back.
+const NAV_WIDTH = { default: 250, min: 170, max: 520, handle: 14 };
 
-// The types pane's widths, pixels the same way. Dragged below its
-// minimum, the pane collapses to the handle, which is what brings
-// it back.
+// The types pane's widths, pixels the same way, collapsing the same
+// way.
 const PANE_WIDTH = { default: 380, min: 260, max: 720, handle: 14 };
 
 // The sidebar is the first panel of the shell so that the border
@@ -2511,10 +2512,18 @@ const Overview: FC<{
   const navPanel = usePanelRef();
 
   useEffect(() => {
-    navPanel.current?.resize(navWidth);
+    // Never resizes a sidebar dragged shut: another tab's stored
+    // width must not pop it open.
+    if (navPanel.current?.isCollapsed() !== true) {
+      navPanel.current?.resize(navWidth);
+    }
     // Runs only when the stored width changes, not while the developer
     // drags: the drag already moves the panel.
   }, [navWidth, navPanel]);
+
+  // Whether the sidebar is dragged shut, from its width, so the
+  // handle renders in its place.
+  const [navCollapsed, setNavCollapsed] = useState(false);
 
   const typesPanel = usePanelRef();
 
@@ -2923,20 +2932,44 @@ const Overview: FC<{
           defaultSize={navWidth}
           minSize={NAV_WIDTH.min}
           maxSize={NAV_WIDTH.max}
-          onResize={({ inPixels }) => onNavResizing(Math.round(inPixels))}
+          collapsible
+          collapsedSize={NAV_WIDTH.handle}
+          onResize={({ inPixels }) => {
+            const width = Math.round(inPixels);
+            setNavCollapsed(width < NAV_WIDTH.min);
+            // A collapsed width is never remembered: the sidebar
+            // reopens at the width it was dragged shut from.
+            if (width >= NAV_WIDTH.min) {
+              onNavResizing(width);
+            }
+          }}
         >
-          <nav>
-            <RebootBrand live={live} />
-            <PageSelector isNew={isNew} search={carriedSearch} />
-            {page === "features" && (
-              <NavLinks
-                heading="features"
-                links={featureLinks}
-                page="features"
-              />
-            )}
-          </nav>
-          <Checks response={response} />
+          {navCollapsed ? (
+            <button
+              type="button"
+              className="nav-handle"
+              onClick={() => navPanel.current?.expand()}
+              title="Show the sidebar"
+              aria-label="Show the sidebar"
+            >
+              ›
+            </button>
+          ) : (
+            <>
+              <nav>
+                <RebootBrand live={live} />
+                <PageSelector isNew={isNew} search={carriedSearch} />
+                {page === "features" && (
+                  <NavLinks
+                    heading="features"
+                    links={featureLinks}
+                    page="features"
+                  />
+                )}
+              </nav>
+              <Checks response={response} />
+            </>
+          )}
         </Panel>
         <Separator className="nav-resizer" />
         <Panel className="pane-panel">
