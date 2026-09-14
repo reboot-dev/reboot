@@ -1,0 +1,9 @@
+# Requirements of the `reboot[anthropic]` extra: the Anthropic SDK at
+# the version that works with the `pydantic-ai-slim` release that
+# `reboot` pins. Pydantic AI 1.x hands the SDK an `httpx` client;
+# Anthropic SDK releases from 1.0 on are built on `httpx2` and reject
+# it, so the extra keeps an application's resolve on the working line.
+# Every line must also be in `requirements.in`, which stays the
+# complete list that the Bazel lock compiles; the wheel build strips
+# these from the package's dependencies and ships them as the extra.
+anthropic==0.125.0 # The last release built on `httpx`.

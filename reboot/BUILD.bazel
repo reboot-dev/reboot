@@ -10,6 +10,7 @@ exports_files([
     "LICENSE.txt",
     "versions.bzl",
     "requirements.in",
+    "requirements-anthropic.in",
     "requirements-dev.in",
 ])
 
@@ -579,6 +580,7 @@ pip_package(
         "pytest11": ["reboot-bdd = reboot.bdd_plugin"],
     },
     extras = {
+        "//reboot:requirements-anthropic.in": "anthropic",
         "//reboot:requirements-dev.in": "dev",
     },
     license = "Apache-2.0",
