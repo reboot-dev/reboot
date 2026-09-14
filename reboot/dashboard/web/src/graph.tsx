@@ -21,6 +21,7 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  ViewportPortal,
   applyNodeChanges,
   getBezierPath,
   type Edge,
@@ -154,7 +155,6 @@ interface PackageData extends Record<string, unknown> {
 
 interface ExpandedPackageData extends Record<string, unknown> {
   name: string;
-  onCollapse?: (name: string) => void;
   // The smallest the resizer lets the box get: its size in the
   // default layout or what its cards need, whichever is bigger, so
   // its cards always fit.
@@ -497,6 +497,11 @@ const layoutPackages = async (
       position,
       width: cardLayout.width,
       height: cardLayout.height,
+      // Under the edges, not over them: the box's fill is translucent,
+      // and an edge seen through it would change colour where it
+      // enters the box. The dotted background is a layer of its own,
+      // so the box still sits above that.
+      zIndex: -1,
       data: { name: graphPackage.name },
     });
     for (const stateType of graphPackage.stateTypes) {
@@ -643,7 +648,9 @@ const PackageNode: FC<NodeProps<Node<PackageData, "package">>> = ({ data }) => (
 );
 
 // An expanded package: a box around its cards, resized by its
-// corners and sides to give the cards room.
+// corners and sides to give the cards room. The box sits under the
+// edges, so its head is drawn apart from it, above them, by
+// `ExpandedPackageHead`.
 const ExpandedPackageNode: FC<
   NodeProps<Node<ExpandedPackageData, "expanded">>
 > = ({ data }) => (
@@ -653,18 +660,32 @@ const ExpandedPackageNode: FC<
       minHeight={data.minHeight}
       onResizeEnd={(_event, box) => data.onResize?.(data.name, box)}
     />
-    <div className="graph-expanded-package-head">
-      <span className="graph-expanded-package-name">{data.name}</span>
-      <button
-        className="graph-expanded-package-collapse"
-        onClick={(event) => {
-          event.stopPropagation();
-          data.onCollapse?.(data.name);
-        }}
-      >
-        collapse
-      </button>
-    </div>
+  </div>
+);
+
+// An expanded box's head: its name and the way to collapse it, laid
+// over the box's top in the viewport's own layer, which is above the
+// edges, at the box's position and width as they are now.
+const ExpandedPackageHead: FC<{
+  name: string;
+  position: NodePosition;
+  width: number;
+  onCollapse: (name: string) => void;
+}> = ({ name, position, width, onCollapse }) => (
+  <div
+    className="graph-expanded-package-head"
+    style={{ left: position.x, top: position.y, width }}
+  >
+    <span className="graph-expanded-package-name">{name}</span>
+    <button
+      className="graph-expanded-package-collapse"
+      onClick={(event) => {
+        event.stopPropagation();
+        onCollapse(name);
+      }}
+    >
+      collapse
+    </button>
   </div>
 );
 
@@ -1440,7 +1461,6 @@ const GraphCanvas: FC<{
               className,
               data: {
                 ...node.data,
-                onCollapse: togglePackage,
                 onResize: onBoxResize,
                 minWidth: Math.max(layoutSize?.width ?? 0, needed.width),
                 minHeight: Math.max(layoutSize?.height ?? 0, needed.height),
@@ -1533,6 +1553,19 @@ const GraphCanvas: FC<{
     >
       <Background gap={22} size={1.2} />
       <Controls showInteractive={false} />
+      <ViewportPortal>
+        {nodes.map((node) =>
+          node.type === "expanded" ? (
+            <ExpandedPackageHead
+              name={(node.data as ExpandedPackageData).name}
+              position={node.position}
+              width={node.width ?? node.measured?.width ?? 0}
+              onCollapse={togglePackage}
+              key={node.id}
+            />
+          ) : null
+        )}
+      </ViewportPortal>
       <Panel position="top-left" className="graph-actions">
         <button
           className="expand-button"
