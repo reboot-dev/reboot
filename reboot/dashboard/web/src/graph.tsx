@@ -265,6 +265,8 @@ interface StateTypeData extends Record<string, unknown> {
   // one; a button with nothing to light is never shown.
   withCallers?: Set<string>;
   withCalls?: Set<string>;
+  // The methods in the chosen method's lit cones, itself included.
+  litMethods?: Set<string>;
 }
 
 type GraphNode =
@@ -769,12 +771,14 @@ const MethodRow: FC<{
   id: string;
   method: GraphMethod;
   selected: boolean;
+  // In the chosen method's lit cones: called by it or calling it.
+  lit: boolean;
   onHover: (third: RowThird | null) => void;
   onSelect: (id: string, cones: Cones) => void;
-}> = ({ id, method, selected, onHover, onSelect }) => (
+}> = ({ id, method, selected, lit, onHover, onSelect }) => (
   <div
     className={`graph-method ${classNameOfKind(method.kind)}${
-      selected ? " selected" : ""
+      selected ? " selected" : lit ? " lit" : ""
     }`}
     onMouseMove={(event) => onHover(thirdOfPointer(event))}
     onMouseLeave={() => onHover(null)}
@@ -991,6 +995,7 @@ const StateTypeNode: FC<NodeProps<Node<StateTypeData, "stateType">>> = ({
               id={id}
               method={method}
               selected={data.selectedMethod === id}
+              lit={data.litMethods?.has(id) ?? false}
               onHover={(third) => {
                 if (third === null) {
                   hideSoon();
@@ -1602,9 +1607,10 @@ const GraphCanvas: FC<{
   // calls transitively and the arrows carrying those calls;
   // upstream, the methods that call it transitively, whose arrows
   // must both leave from and land on callers. The cards and boxes a
-  // lit arrow touches stay lit, and nothing else does. An arrow is
-  // in a cone when any method folded into it is. An expanded box
-  // never fades: it is the room its cards are in.
+  // lit arrow touches stay lit, and nothing else does, while the
+  // rows of the methods in a cone are marked within their cards. An
+  // arrow is in a cone when any method folded into it is. An
+  // expanded box never fades: it is the room its cards are in.
   const unfaded = useMemo(() => {
     if (selectedMethodId === null) {
       return null;
@@ -1613,6 +1619,7 @@ const GraphCanvas: FC<{
       stateTypeNameOfMethodId(selectedMethodId),
     ]);
     const edgeIds = new Set<string>();
+    const methodIds = new Set<string>([selectedMethodId]);
     const light = (edge: Edge<CallEdgeData>): void => {
       edgeIds.add(edge.id);
       nodeIds.add(edge.source);
@@ -1620,6 +1627,9 @@ const GraphCanvas: FC<{
     };
     if (cones.downstream) {
       const reached = reachableMethodIds(selectedMethodId, packages);
+      for (const id of reached) {
+        methodIds.add(id);
+      }
       for (const edge of edges) {
         if (edge.data!.sourceMethodIds.some((id) => reached.has(id))) {
           light(edge);
@@ -1628,6 +1638,9 @@ const GraphCanvas: FC<{
     }
     if (cones.upstream) {
       const reaching = reachingMethodIds(selectedMethodId, packages);
+      for (const id of reaching) {
+        methodIds.add(id);
+      }
       for (const edge of edges) {
         if (
           edge.data!.sourceMethodIds.some((id) => reaching.has(id)) &&
@@ -1637,7 +1650,7 @@ const GraphCanvas: FC<{
         }
       }
     }
-    return { nodeIds, edgeIds };
+    return { nodeIds, edgeIds, methodIds };
   }, [selectedMethodId, cones, packages, edges]);
 
   const shownNodes = useMemo(
@@ -1682,6 +1695,7 @@ const GraphCanvas: FC<{
                 onToggleCone: toggleCone,
                 withCallers,
                 withCalls,
+                litMethods: unfaded?.methodIds,
               },
             };
           default:

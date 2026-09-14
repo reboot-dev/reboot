@@ -1290,6 +1290,17 @@ header h1 {
   background: hsl(var(--kind) / 0.08);
 }
 
+/* A method in the chosen one's lit cones: the row wears a wash of
+   its kind's colour, so a card in a cone shows which of its methods
+   the calls pass through. */
+.graph-method.lit {
+  background: hsl(var(--kind) / 0.1);
+}
+
+.graph-method.lit:hover {
+  background: hsl(var(--kind) / 0.14);
+}
+
 .graph-method.selected {
   background: hsl(var(--kind) / 0.16);
   font-weight: 650;
