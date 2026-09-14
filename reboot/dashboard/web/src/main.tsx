@@ -610,17 +610,22 @@ const TypeName: FC<{ type: string; link?: string }> = ({ type, link }) =>
 
 // The keys of a request or response, one level deep: a key whose type
 // is one of the developer's types names and links to that type, so a
-// signature stays one line no matter how deeply the types nest.
+// signature stays short no matter how deeply the types nest. Each
+// key with its type is one unit, which is where a signature too long
+// for its line breaks.
 const Keys: FC<{ properties: Property[] }> = ({ properties }) => (
   <>
     {"{ "}
     {properties.map((property, index) => (
       <Fragment key={property.name}>
-        {index > 0 && ", "}
-        <span className="key">{property.name}</span>
-        {": "}
-        <TypeName type={property.type} link={property.link} />
-        {property.optional && <span className="optional">?</span>}
+        {index > 0 && " "}
+        <span className="argument">
+          <span className="key">{property.name}</span>
+          {": "}
+          <TypeName type={property.type} link={property.link} />
+          {property.optional && <span className="optional">?</span>}
+          {index < properties.length - 1 && ","}
+        </span>
       </Fragment>
     ))}
     {" }"}
