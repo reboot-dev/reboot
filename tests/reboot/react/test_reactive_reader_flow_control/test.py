@@ -117,8 +117,8 @@ async def test(context: ExternalContext, uri: str) -> None:
         assert len(rendered) <= QUERY_RESPONSE_WINDOW + 1, rendered
         assert rendered[0] == message('tasty'), rendered
 
-        # The browser tells its developer that it fell behind, since
-        # it did so for long enough that a user would have seen it.
+        # The browser warns its developer that it fell behind and
+        # updates were skipped for it.
         console = await asyncio.to_thread(driver.get_log, 'browser')
 
         stalls = [

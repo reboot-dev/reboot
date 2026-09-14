@@ -45,13 +45,6 @@ logger = get_logger(__name__)
 #       fixing it for everyone.
 QUERY_RESPONSE_WINDOW = 10
 
-# How long a response must wait for room before we say so, in the
-# server's log and in the response itself. 100ms is about where a
-# person stops experiencing an update as immediate and starts
-# perceiving lag, so a client that waits longer than this is one whose
-# user can see it waiting.
-REPORTABLE_STALL_MILLISECONDS = 100
-
 
 class _QueryWindow:
     """
@@ -681,11 +674,24 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
                 stall_milliseconds = round(
                     (time.monotonic() - stall_start) * 1000
                 )
-                if stall_milliseconds > REPORTABLE_STALL_MILLISECONDS:
-                    logger.info(
+
+                # Warn every time updates are skipped, until we have
+                # enough experience with flow control to know which
+                # skips a developer needs to hear about; a client for
+                # which skipping is the point asks us not to.
+                if (
+                    skipped_updates > 0 and
+                    not request.suppress_flow_control_warning
+                ):
+                    logger.warning(
                         f"A client of a reactive query to `{request.method}` "
                         f"skipped {skipped_updates} updates because it fell "
-                        f"{stall_milliseconds}ms behind"
+                        f"{stall_milliseconds}ms behind. If skipping updates "
+                        "is not what you expect of this reactive read, make "
+                        "that client fast enough to process every response; "
+                        "if it is, pass `{ warnOnFlowControl: false }` in "
+                        "the options of the client's reader to silence this "
+                        "warning."
                     )
 
                 # Send the response we'd accumulated.

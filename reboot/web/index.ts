@@ -294,6 +294,7 @@ export function reactively<
   signal,
   bearerToken,
   websockets = false,
+  warnOnFlowControl = true,
 }: {
   url: string;
   state: string;
@@ -305,6 +306,9 @@ export function reactively<
   signal?: AbortSignal;
   bearerToken?: () => Promise<string | undefined>;
   websockets: boolean;
+  // Whether to warn in the console when this reader falls behind and
+  // the backend skips updates for it; see `logStall`.
+  warnOnFlowControl?: boolean;
 }): [
   AsyncGenerator<ResponseType, void, unknown>,
   (newRequest: PartialMessage<RequestType>) => void
@@ -382,6 +386,7 @@ export function reactively<
           method,
           request: request.toBinary(),
           clientContinuesQuery: true,
+          suppressFlowControlWarning: !warnOnFlowControl,
           ...((bearerToken !== undefined && {
             bearerToken: await bearerToken(),
           }) ||
@@ -419,23 +424,26 @@ export function reactively<
   return [responses(), setRequest];
 }
 
-// How long a response must have waited for us before we say so in
-// the console. 100ms is about where a person stops experiencing an
-// update as immediate and starts perceiving lag, so a response that
-// waited longer than this is one whose delay our user could see; the
-// backend uses the same threshold for its own log.
-const LOGGED_STALL_MILLISECONDS = 100;
-
-// Tells the developer that this client fell far enough behind its
-// backend that the backend merged updates it would otherwise have
-// sent. The state we go on to render is still the latest one; what
-// was lost is the updates on the way there.
-function logStall(method: string, response: react_pb.QueryResponse) {
-  if (response.stallMilliseconds > LOGGED_STALL_MILLISECONDS) {
-    console.info(
-      `[Reboot] A reactive query to \`${method}\` skipped ` +
+// Tells the developer that this client fell behind its backend, which
+// merged updates it would otherwise have sent. The state we go on to
+// render is still the latest one; what was lost is the updates on the
+// way there. Warns every time that happens, until we have enough
+// experience with flow control to know which skips a developer needs
+// to hear about; a reader for which skipping is the point asks us not
+// to, in the `request`.
+function logStall(
+  request: react_pb.QueryRequest,
+  response: react_pb.QueryResponse
+) {
+  if (response.skippedUpdates > 0 && !request.suppressFlowControlWarning) {
+    console.warn(
+      `[Reboot] A reactive query to \`${request.method}\` skipped ` +
         `${response.skippedUpdates} updates because this client fell ` +
-        `${response.stallMilliseconds}ms behind`
+        `${response.stallMilliseconds}ms behind. If skipping updates is ` +
+        `not what you expect of this reactive read, make this client ` +
+        `fast enough to process every response; if it is, pass ` +
+        `\`{ warnOnFlowControl: false }\` in the options of the reader ` +
+        `to silence this warning.`
     );
   }
 }
@@ -537,7 +545,7 @@ export async function* reactiveReader({
     let settled = true;
 
     for await (const response of responses) {
-      logStall(request.method, response);
+      logStall(request, response);
 
       yield response;
 
@@ -609,7 +617,7 @@ export async function* reactiveReader({
         throw Status.fromJsonString(response.responseOrStatus.value);
       }
 
-      logStall(request.method, response);
+      logStall(request, response);
 
       yield response;
     }

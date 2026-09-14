@@ -541,7 +541,7 @@ export interface Use{{ client.proto.state_name }}Api {
   };
   use{{ method.proto.name | to_camel }}(
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    options?: { suspense: true }
+    options?: { suspense: true; warnOnFlowControl?: boolean }
   ): {
     response: {{ client.proto.state_name }}.{{ method.proto.name }}Response;
     isLoading: boolean;
@@ -553,7 +553,7 @@ export interface Use{{ client.proto.state_name }}Api {
   };
   use{{ method.proto.name | to_camel }}(
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    options?: { suspense: false }
+    options?: { suspense?: false; warnOnFlowControl?: boolean }
   ): {
     response: {{ client.proto.state_name }}.{{ method.proto.name }}Response | undefined;
     isLoading: boolean;
@@ -769,6 +769,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
     method: string,
     serializedRequest: Uint8Array,
     bearerToken: string | undefined,
+    warnOnFlowControl: boolean,
     responseType: protobuf_es.MessageType<ResponseType>,
     reader: reboot_react.Reader<ResponseType>
   ) {
@@ -776,6 +777,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
       method,
       request: serializedRequest,
       clientContinuesQuery: true,
+      suppressFlowControlWarning: !warnOnFlowControl,
       ...(bearerToken !== undefined && { bearerToken } || {}),
     });
 
@@ -1170,6 +1172,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
     requestBearerTokenHash: string,
     serializedRequest: Uint8Array,
     bearerToken: string | undefined,
+    warnOnFlowControl: boolean,
     offlineCacheEnabled: boolean,
     cacheKey: string | null
   ) {
@@ -1278,6 +1281,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
         "{{ method.proto.name }}",
         serializedRequest,
         bearerToken,
+        warnOnFlowControl,
         {{ method.output_type }},
         reader
       );
@@ -1316,6 +1320,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
     requestBearerTokenHash: string,
     serializedRequest: Uint8Array,
     bearerToken: string | undefined,
+    warnOnFlowControl: boolean,
     offlineCacheEnabled: boolean,
     cacheKey: string | null,
     setResponse: (response: {{ method.output_type }}) => void,
@@ -1330,6 +1335,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
       requestBearerTokenHash,
       serializedRequest,
       bearerToken,
+      warnOnFlowControl,
       offlineCacheEnabled,
       cacheKey
     );
@@ -1634,7 +1640,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
   function use{{ method.proto.name | to_camel }}(
     partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name}}Request = {},
-    options: { suspense: boolean } = { suspense: false }
+    options: { suspense?: boolean; warnOnFlowControl?: boolean } = {}
   ) {
     const newRequest = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
 
@@ -1695,10 +1701,16 @@ export const use{{ client.proto.state_name | to_camel }} = (
     // we need to use the `reader.response` or `reader.status` during
     // render where one of them will be defined, i.e., after we've
     // waited for `reader.promise` via `React.use()`.
+    // Readers are shared between every component that reads the same
+    // request, so the first of them decides whether the console warns
+    // when the read falls behind.
+    const warnOnFlowControl = options.warnOnFlowControl ?? true;
+
     const reader = instance.start{{ method.proto.name | to_camel }}(
       requestBearerTokenHash,
       serializedRequest,
       bearerToken,
+      warnOnFlowControl,
       offlineCacheEnabled,
       cacheKey
     );
@@ -1732,6 +1744,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
         requestBearerTokenHash,
         serializedRequest,
         bearerToken,
+        warnOnFlowControl,
         offlineCacheEnabled,
         cacheKey,
         (response: {{ method.output_type }}) => {

@@ -1878,11 +1878,12 @@ class GreeterInstance {
             }
         });
     }
-    async read(method, serializedRequest, bearerToken, responseType, reader) {
+    async read(method, serializedRequest, bearerToken, warnOnFlowControl, responseType, reader) {
         const queryRequest = new reboot_api.react_pb.QueryRequest({
             method,
             request: serializedRequest,
             clientContinuesQuery: true,
+            suppressFlowControlWarning: !warnOnFlowControl,
             ...(bearerToken !== undefined && { bearerToken } || {}),
         });
         let expecteds = [];
@@ -2157,7 +2158,7 @@ class GreeterInstance {
     unuseCreate(id) {
         delete this.useCreateSetPendings[id];
     }
-    startGreet(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+    startGreet(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey) {
         var _a;
         let reader = this.useGreetReaders[requestBearerTokenHash];
         if (reader === undefined) {
@@ -2236,7 +2237,7 @@ class GreeterInstance {
             });
             this.useGreetReaders[requestBearerTokenHash] = reader;
             // Start fetching from the server.
-            this.read("Greet", serializedRequest, bearerToken, greeter_pb.GreetResponse, reader);
+            this.read("Greet", serializedRequest, bearerToken, warnOnFlowControl, greeter_pb.GreetResponse, reader);
             // Check if there is a cached result if applicable.
             if (offlineCacheEnabled) {
                 reboot_api.assert(cacheKey !== null);
@@ -2258,12 +2259,12 @@ class GreeterInstance {
         reboot_api.assert(reader !== undefined);
         return reader;
     }
-    useGreet(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
+    useGreet(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
         // We need to call start here because with strict mode the
         // `useEffect` that calls this method will also call "unuse"
         // which will mean the next time the `useEffect` calls here
         // we'll create a new reader in start.
-        const reader = this.startGreet(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        const reader = this.startGreet(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         reboot_api.assert(reader !== undefined);
         // Indicate that the reader has properly been used so that we don't
         // clean it up prematurely.
@@ -2499,7 +2500,7 @@ class GreeterInstance {
     unuseTransactionSetAdjective(id) {
         delete this.useTransactionSetAdjectiveSetPendings[id];
     }
-    startTryToConstructContext(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+    startTryToConstructContext(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey) {
         var _a;
         let reader = this.useTryToConstructContextReaders[requestBearerTokenHash];
         if (reader === undefined) {
@@ -2578,7 +2579,7 @@ class GreeterInstance {
             });
             this.useTryToConstructContextReaders[requestBearerTokenHash] = reader;
             // Start fetching from the server.
-            this.read("TryToConstructContext", serializedRequest, bearerToken, Empty, reader);
+            this.read("TryToConstructContext", serializedRequest, bearerToken, warnOnFlowControl, Empty, reader);
             // Check if there is a cached result if applicable.
             if (offlineCacheEnabled) {
                 reboot_api.assert(cacheKey !== null);
@@ -2600,12 +2601,12 @@ class GreeterInstance {
         reboot_api.assert(reader !== undefined);
         return reader;
     }
-    useTryToConstructContext(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
+    useTryToConstructContext(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
         // We need to call start here because with strict mode the
         // `useEffect` that calls this method will also call "unuse"
         // which will mean the next time the `useEffect` calls here
         // we'll create a new reader in start.
-        const reader = this.startTryToConstructContext(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        const reader = this.startTryToConstructContext(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         reboot_api.assert(reader !== undefined);
         // Indicate that the reader has properly been used so that we don't
         // clean it up prematurely.
@@ -2645,7 +2646,7 @@ class GreeterInstance {
             }, 3000);
         }
     }
-    startTryToConstructExternalContext(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+    startTryToConstructExternalContext(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey) {
         var _a;
         let reader = this.useTryToConstructExternalContextReaders[requestBearerTokenHash];
         if (reader === undefined) {
@@ -2724,7 +2725,7 @@ class GreeterInstance {
             });
             this.useTryToConstructExternalContextReaders[requestBearerTokenHash] = reader;
             // Start fetching from the server.
-            this.read("TryToConstructExternalContext", serializedRequest, bearerToken, Empty, reader);
+            this.read("TryToConstructExternalContext", serializedRequest, bearerToken, warnOnFlowControl, Empty, reader);
             // Check if there is a cached result if applicable.
             if (offlineCacheEnabled) {
                 reboot_api.assert(cacheKey !== null);
@@ -2746,12 +2747,12 @@ class GreeterInstance {
         reboot_api.assert(reader !== undefined);
         return reader;
     }
-    useTryToConstructExternalContext(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
+    useTryToConstructExternalContext(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
         // We need to call start here because with strict mode the
         // `useEffect` that calls this method will also call "unuse"
         // which will mean the next time the `useEffect` calls here
         // we'll create a new reader in start.
-        const reader = this.startTryToConstructExternalContext(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        const reader = this.startTryToConstructExternalContext(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         reboot_api.assert(reader !== undefined);
         // Indicate that the reader has properly been used so that we don't
         // clean it up prematurely.
@@ -2791,7 +2792,7 @@ class GreeterInstance {
             }, 3000);
         }
     }
-    startTestLongRunningFetch(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+    startTestLongRunningFetch(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey) {
         var _a;
         let reader = this.useTestLongRunningFetchReaders[requestBearerTokenHash];
         if (reader === undefined) {
@@ -2870,7 +2871,7 @@ class GreeterInstance {
             });
             this.useTestLongRunningFetchReaders[requestBearerTokenHash] = reader;
             // Start fetching from the server.
-            this.read("TestLongRunningFetch", serializedRequest, bearerToken, Empty, reader);
+            this.read("TestLongRunningFetch", serializedRequest, bearerToken, warnOnFlowControl, Empty, reader);
             // Check if there is a cached result if applicable.
             if (offlineCacheEnabled) {
                 reboot_api.assert(cacheKey !== null);
@@ -2892,12 +2893,12 @@ class GreeterInstance {
         reboot_api.assert(reader !== undefined);
         return reader;
     }
-    useTestLongRunningFetch(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
+    useTestLongRunningFetch(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
         // We need to call start here because with strict mode the
         // `useEffect` that calls this method will also call "unuse"
         // which will mean the next time the `useEffect` calls here
         // we'll create a new reader in start.
-        const reader = this.startTestLongRunningFetch(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        const reader = this.startTestLongRunningFetch(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         reboot_api.assert(reader !== undefined);
         // Indicate that the reader has properly been used so that we don't
         // clean it up prematurely.
@@ -3035,7 +3036,7 @@ class GreeterInstance {
     unuseTestLongRunningWriter(id) {
         delete this.useTestLongRunningWriterSetPendings[id];
     }
-    startGetWholeState(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+    startGetWholeState(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey) {
         var _a;
         let reader = this.useGetWholeStateReaders[requestBearerTokenHash];
         if (reader === undefined) {
@@ -3114,7 +3115,7 @@ class GreeterInstance {
             });
             this.useGetWholeStateReaders[requestBearerTokenHash] = reader;
             // Start fetching from the server.
-            this.read("GetWholeState", serializedRequest, bearerToken, GreeterProto, reader);
+            this.read("GetWholeState", serializedRequest, bearerToken, warnOnFlowControl, GreeterProto, reader);
             // Check if there is a cached result if applicable.
             if (offlineCacheEnabled) {
                 reboot_api.assert(cacheKey !== null);
@@ -3136,12 +3137,12 @@ class GreeterInstance {
         reboot_api.assert(reader !== undefined);
         return reader;
     }
-    useGetWholeState(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
+    useGetWholeState(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
         // We need to call start here because with strict mode the
         // `useEffect` that calls this method will also call "unuse"
         // which will mean the next time the `useEffect` calls here
         // we'll create a new reader in start.
-        const reader = this.startGetWholeState(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        const reader = this.startGetWholeState(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         reboot_api.assert(reader !== undefined);
         // Indicate that the reader has properly been used so that we don't
         // clean it up prematurely.
@@ -3181,7 +3182,7 @@ class GreeterInstance {
             }, 3000);
         }
     }
-    startFailWithException(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+    startFailWithException(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey) {
         var _a;
         let reader = this.useFailWithExceptionReaders[requestBearerTokenHash];
         if (reader === undefined) {
@@ -3260,7 +3261,7 @@ class GreeterInstance {
             });
             this.useFailWithExceptionReaders[requestBearerTokenHash] = reader;
             // Start fetching from the server.
-            this.read("FailWithException", serializedRequest, bearerToken, Empty, reader);
+            this.read("FailWithException", serializedRequest, bearerToken, warnOnFlowControl, Empty, reader);
             // Check if there is a cached result if applicable.
             if (offlineCacheEnabled) {
                 reboot_api.assert(cacheKey !== null);
@@ -3282,12 +3283,12 @@ class GreeterInstance {
         reboot_api.assert(reader !== undefined);
         return reader;
     }
-    useFailWithException(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
+    useFailWithException(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
         // We need to call start here because with strict mode the
         // `useEffect` that calls this method will also call "unuse"
         // which will mean the next time the `useEffect` calls here
         // we'll create a new reader in start.
-        const reader = this.startFailWithException(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        const reader = this.startFailWithException(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         reboot_api.assert(reader !== undefined);
         // Indicate that the reader has properly been used so that we don't
         // clean it up prematurely.
@@ -3327,7 +3328,7 @@ class GreeterInstance {
             }, 3000);
         }
     }
-    startFailWithAborted(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+    startFailWithAborted(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey) {
         var _a;
         let reader = this.useFailWithAbortedReaders[requestBearerTokenHash];
         if (reader === undefined) {
@@ -3406,7 +3407,7 @@ class GreeterInstance {
             });
             this.useFailWithAbortedReaders[requestBearerTokenHash] = reader;
             // Start fetching from the server.
-            this.read("FailWithAborted", serializedRequest, bearerToken, Empty, reader);
+            this.read("FailWithAborted", serializedRequest, bearerToken, warnOnFlowControl, Empty, reader);
             // Check if there is a cached result if applicable.
             if (offlineCacheEnabled) {
                 reboot_api.assert(cacheKey !== null);
@@ -3428,12 +3429,12 @@ class GreeterInstance {
         reboot_api.assert(reader !== undefined);
         return reader;
     }
-    useFailWithAborted(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
+    useFailWithAborted(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
         // We need to call start here because with strict mode the
         // `useEffect` that calls this method will also call "unuse"
         // which will mean the next time the `useEffect` calls here
         // we'll create a new reader in start.
-        const reader = this.startFailWithAborted(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        const reader = this.startFailWithAborted(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         reboot_api.assert(reader !== undefined);
         // Indicate that the reader has properly been used so that we don't
         // clean it up prematurely.
@@ -3669,7 +3670,7 @@ class GreeterInstance {
     unuseStoreRecursiveMessage(id) {
         delete this.useStoreRecursiveMessageSetPendings[id];
     }
-    startReadRecursiveMessage(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+    startReadRecursiveMessage(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey) {
         var _a;
         let reader = this.useReadRecursiveMessageReaders[requestBearerTokenHash];
         if (reader === undefined) {
@@ -3748,7 +3749,7 @@ class GreeterInstance {
             });
             this.useReadRecursiveMessageReaders[requestBearerTokenHash] = reader;
             // Start fetching from the server.
-            this.read("ReadRecursiveMessage", serializedRequest, bearerToken, greeter_pb.ReadRecursiveMessageResponse, reader);
+            this.read("ReadRecursiveMessage", serializedRequest, bearerToken, warnOnFlowControl, greeter_pb.ReadRecursiveMessageResponse, reader);
             // Check if there is a cached result if applicable.
             if (offlineCacheEnabled) {
                 reboot_api.assert(cacheKey !== null);
@@ -3770,12 +3771,12 @@ class GreeterInstance {
         reboot_api.assert(reader !== undefined);
         return reader;
     }
-    useReadRecursiveMessage(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
+    useReadRecursiveMessage(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, setResponse, setIsLoading, setStatus) {
         // We need to call start here because with strict mode the
         // `useEffect` that calls this method will also call "unuse"
         // which will mean the next time the `useEffect` calls here
         // we'll create a new reader in start.
-        const reader = this.startReadRecursiveMessage(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        const reader = this.startReadRecursiveMessage(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         reboot_api.assert(reader !== undefined);
         // Indicate that the reader has properly been used so that we don't
         // clean it up prematurely.
@@ -4029,7 +4030,8 @@ export function useGreeter({ id: providedId } = {}) {
         return create;
     }
     const create = useCreate();
-    function useGreet(partialRequest = {}, options = { suspense: false }) {
+    function useGreet(partialRequest = {}, options = {}) {
+        var _a;
         const newRequest = GreeterGreetRequestToProtobuf(partialRequest);
         const [request, setRequest] = useState(newRequest);
         const [isLoading, setIsLoading] = useState(true);
@@ -4070,7 +4072,11 @@ export function useGreeter({ id: providedId } = {}) {
         // we need to use the `reader.response` or `reader.status` during
         // render where one of them will be defined, i.e., after we've
         // waited for `reader.promise` via `React.use()`.
-        const reader = instance.startGreet(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        // Readers are shared between every component that reads the same
+        // request, so the first of them decides whether the console warns
+        // when the read falls behind.
+        const warnOnFlowControl = (_a = options.warnOnFlowControl) !== null && _a !== void 0 ? _a : true;
+        const reader = instance.startGreet(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterGreetResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterGreetAborted.fromStatus(reader.status));
         // Track which state ID the current `response` and `aborted` belong
@@ -4087,7 +4093,7 @@ export function useGreeter({ id: providedId } = {}) {
         }
         useEffect(() => {
             const id = uuidv4();
-            instance.useGreet(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
+            instance.useGreet(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, (response) => {
                 setAborted(undefined);
                 setResponse(GreeterGreetResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
@@ -4406,7 +4412,8 @@ export function useGreeter({ id: providedId } = {}) {
         return transactionSetAdjective;
     }
     const transactionSetAdjective = useTransactionSetAdjective();
-    function useTryToConstructContext(partialRequest = {}, options = { suspense: false }) {
+    function useTryToConstructContext(partialRequest = {}, options = {}) {
+        var _a;
         const newRequest = GreeterTryToConstructContextRequestToProtobuf(partialRequest);
         const [request, setRequest] = useState(newRequest);
         const [isLoading, setIsLoading] = useState(true);
@@ -4447,7 +4454,11 @@ export function useGreeter({ id: providedId } = {}) {
         // we need to use the `reader.response` or `reader.status` during
         // render where one of them will be defined, i.e., after we've
         // waited for `reader.promise` via `React.use()`.
-        const reader = instance.startTryToConstructContext(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        // Readers are shared between every component that reads the same
+        // request, so the first of them decides whether the console warns
+        // when the read falls behind.
+        const warnOnFlowControl = (_a = options.warnOnFlowControl) !== null && _a !== void 0 ? _a : true;
+        const reader = instance.startTryToConstructContext(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterTryToConstructContextResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterTryToConstructContextAborted.fromStatus(reader.status));
         // Track which state ID the current `response` and `aborted` belong
@@ -4464,7 +4475,7 @@ export function useGreeter({ id: providedId } = {}) {
         }
         useEffect(() => {
             const id = uuidv4();
-            instance.useTryToConstructContext(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
+            instance.useTryToConstructContext(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, (response) => {
                 setAborted(undefined);
                 setResponse(GreeterTryToConstructContextResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
@@ -4693,7 +4704,8 @@ export function useGreeter({ id: providedId } = {}) {
             };
         }
     }
-    function useTryToConstructExternalContext(partialRequest = {}, options = { suspense: false }) {
+    function useTryToConstructExternalContext(partialRequest = {}, options = {}) {
+        var _a;
         const newRequest = GreeterTryToConstructExternalContextRequestToProtobuf(partialRequest);
         const [request, setRequest] = useState(newRequest);
         const [isLoading, setIsLoading] = useState(true);
@@ -4734,7 +4746,11 @@ export function useGreeter({ id: providedId } = {}) {
         // we need to use the `reader.response` or `reader.status` during
         // render where one of them will be defined, i.e., after we've
         // waited for `reader.promise` via `React.use()`.
-        const reader = instance.startTryToConstructExternalContext(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        // Readers are shared between every component that reads the same
+        // request, so the first of them decides whether the console warns
+        // when the read falls behind.
+        const warnOnFlowControl = (_a = options.warnOnFlowControl) !== null && _a !== void 0 ? _a : true;
+        const reader = instance.startTryToConstructExternalContext(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterTryToConstructExternalContextResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterTryToConstructExternalContextAborted.fromStatus(reader.status));
         // Track which state ID the current `response` and `aborted` belong
@@ -4751,7 +4767,7 @@ export function useGreeter({ id: providedId } = {}) {
         }
         useEffect(() => {
             const id = uuidv4();
-            instance.useTryToConstructExternalContext(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
+            instance.useTryToConstructExternalContext(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, (response) => {
                 setAborted(undefined);
                 setResponse(GreeterTryToConstructExternalContextResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
@@ -4980,7 +4996,8 @@ export function useGreeter({ id: providedId } = {}) {
             };
         }
     }
-    function useTestLongRunningFetch(partialRequest = {}, options = { suspense: false }) {
+    function useTestLongRunningFetch(partialRequest = {}, options = {}) {
+        var _a;
         const newRequest = GreeterTestLongRunningFetchRequestToProtobuf(partialRequest);
         const [request, setRequest] = useState(newRequest);
         const [isLoading, setIsLoading] = useState(true);
@@ -5021,7 +5038,11 @@ export function useGreeter({ id: providedId } = {}) {
         // we need to use the `reader.response` or `reader.status` during
         // render where one of them will be defined, i.e., after we've
         // waited for `reader.promise` via `React.use()`.
-        const reader = instance.startTestLongRunningFetch(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        // Readers are shared between every component that reads the same
+        // request, so the first of them decides whether the console warns
+        // when the read falls behind.
+        const warnOnFlowControl = (_a = options.warnOnFlowControl) !== null && _a !== void 0 ? _a : true;
+        const reader = instance.startTestLongRunningFetch(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterTestLongRunningFetchResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterTestLongRunningFetchAborted.fromStatus(reader.status));
         // Track which state ID the current `response` and `aborted` belong
@@ -5038,7 +5059,7 @@ export function useGreeter({ id: providedId } = {}) {
         }
         useEffect(() => {
             const id = uuidv4();
-            instance.useTestLongRunningFetch(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
+            instance.useTestLongRunningFetch(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, (response) => {
                 setAborted(undefined);
                 setResponse(GreeterTestLongRunningFetchResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
@@ -5312,7 +5333,8 @@ export function useGreeter({ id: providedId } = {}) {
         return testLongRunningWriter;
     }
     const testLongRunningWriter = useTestLongRunningWriter();
-    function useGetWholeState(partialRequest = {}, options = { suspense: false }) {
+    function useGetWholeState(partialRequest = {}, options = {}) {
+        var _a;
         const newRequest = GreeterGetWholeStateRequestToProtobuf(partialRequest);
         const [request, setRequest] = useState(newRequest);
         const [isLoading, setIsLoading] = useState(true);
@@ -5353,7 +5375,11 @@ export function useGreeter({ id: providedId } = {}) {
         // we need to use the `reader.response` or `reader.status` during
         // render where one of them will be defined, i.e., after we've
         // waited for `reader.promise` via `React.use()`.
-        const reader = instance.startGetWholeState(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        // Readers are shared between every component that reads the same
+        // request, so the first of them decides whether the console warns
+        // when the read falls behind.
+        const warnOnFlowControl = (_a = options.warnOnFlowControl) !== null && _a !== void 0 ? _a : true;
+        const reader = instance.startGetWholeState(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterGetWholeStateResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterGetWholeStateAborted.fromStatus(reader.status));
         // Track which state ID the current `response` and `aborted` belong
@@ -5370,7 +5396,7 @@ export function useGreeter({ id: providedId } = {}) {
         }
         useEffect(() => {
             const id = uuidv4();
-            instance.useGetWholeState(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
+            instance.useGetWholeState(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, (response) => {
                 setAborted(undefined);
                 setResponse(GreeterGetWholeStateResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
@@ -5599,7 +5625,8 @@ export function useGreeter({ id: providedId } = {}) {
             };
         }
     }
-    function useFailWithException(partialRequest = {}, options = { suspense: false }) {
+    function useFailWithException(partialRequest = {}, options = {}) {
+        var _a;
         const newRequest = GreeterFailWithExceptionRequestToProtobuf(partialRequest);
         const [request, setRequest] = useState(newRequest);
         const [isLoading, setIsLoading] = useState(true);
@@ -5640,7 +5667,11 @@ export function useGreeter({ id: providedId } = {}) {
         // we need to use the `reader.response` or `reader.status` during
         // render where one of them will be defined, i.e., after we've
         // waited for `reader.promise` via `React.use()`.
-        const reader = instance.startFailWithException(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        // Readers are shared between every component that reads the same
+        // request, so the first of them decides whether the console warns
+        // when the read falls behind.
+        const warnOnFlowControl = (_a = options.warnOnFlowControl) !== null && _a !== void 0 ? _a : true;
+        const reader = instance.startFailWithException(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterFailWithExceptionResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterFailWithExceptionAborted.fromStatus(reader.status));
         // Track which state ID the current `response` and `aborted` belong
@@ -5657,7 +5688,7 @@ export function useGreeter({ id: providedId } = {}) {
         }
         useEffect(() => {
             const id = uuidv4();
-            instance.useFailWithException(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
+            instance.useFailWithException(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, (response) => {
                 setAborted(undefined);
                 setResponse(GreeterFailWithExceptionResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
@@ -5886,7 +5917,8 @@ export function useGreeter({ id: providedId } = {}) {
             };
         }
     }
-    function useFailWithAborted(partialRequest = {}, options = { suspense: false }) {
+    function useFailWithAborted(partialRequest = {}, options = {}) {
+        var _a;
         const newRequest = GreeterFailWithAbortedRequestToProtobuf(partialRequest);
         const [request, setRequest] = useState(newRequest);
         const [isLoading, setIsLoading] = useState(true);
@@ -5927,7 +5959,11 @@ export function useGreeter({ id: providedId } = {}) {
         // we need to use the `reader.response` or `reader.status` during
         // render where one of them will be defined, i.e., after we've
         // waited for `reader.promise` via `React.use()`.
-        const reader = instance.startFailWithAborted(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        // Readers are shared between every component that reads the same
+        // request, so the first of them decides whether the console warns
+        // when the read falls behind.
+        const warnOnFlowControl = (_a = options.warnOnFlowControl) !== null && _a !== void 0 ? _a : true;
+        const reader = instance.startFailWithAborted(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterFailWithAbortedResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterFailWithAbortedAborted.fromStatus(reader.status));
         // Track which state ID the current `response` and `aborted` belong
@@ -5944,7 +5980,7 @@ export function useGreeter({ id: providedId } = {}) {
         }
         useEffect(() => {
             const id = uuidv4();
-            instance.useFailWithAborted(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
+            instance.useFailWithAborted(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, (response) => {
                 setAborted(undefined);
                 setResponse(GreeterFailWithAbortedResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
@@ -6263,7 +6299,8 @@ export function useGreeter({ id: providedId } = {}) {
         return storeRecursiveMessage;
     }
     const storeRecursiveMessage = useStoreRecursiveMessage();
-    function useReadRecursiveMessage(partialRequest = {}, options = { suspense: false }) {
+    function useReadRecursiveMessage(partialRequest = {}, options = {}) {
+        var _a;
         const newRequest = GreeterReadRecursiveMessageRequestToProtobuf(partialRequest);
         const [request, setRequest] = useState(newRequest);
         const [isLoading, setIsLoading] = useState(true);
@@ -6304,7 +6341,11 @@ export function useGreeter({ id: providedId } = {}) {
         // we need to use the `reader.response` or `reader.status` during
         // render where one of them will be defined, i.e., after we've
         // waited for `reader.promise` via `React.use()`.
-        const reader = instance.startReadRecursiveMessage(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
+        // Readers are shared between every component that reads the same
+        // request, so the first of them decides whether the console warns
+        // when the read falls behind.
+        const warnOnFlowControl = (_a = options.warnOnFlowControl) !== null && _a !== void 0 ? _a : true;
+        const reader = instance.startReadRecursiveMessage(requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterReadRecursiveMessageResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterReadRecursiveMessageAborted.fromStatus(reader.status));
         // Track which state ID the current `response` and `aborted` belong
@@ -6321,7 +6362,7 @@ export function useGreeter({ id: providedId } = {}) {
         }
         useEffect(() => {
             const id = uuidv4();
-            instance.useReadRecursiveMessage(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
+            instance.useReadRecursiveMessage(id, requestBearerTokenHash, serializedRequest, bearerToken, warnOnFlowControl, offlineCacheEnabled, cacheKey, (response) => {
                 setAborted(undefined);
                 setResponse(GreeterReadRecursiveMessageResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {

@@ -6,10 +6,7 @@ from rbt.v1alpha1 import react_pb2, react_pb2_grpc
 from reboot.aio.applications import Application
 from reboot.aio.contexts import ReaderContext
 from reboot.aio.external import ExternalContext
-from reboot.aio.react import (
-    QUERY_RESPONSE_WINDOW,
-    REPORTABLE_STALL_MILLISECONDS,
-)
+from reboot.aio.react import QUERY_RESPONSE_WINDOW
 from reboot.aio.tests import Reboot
 from tests.reboot import greeter_rbt
 from tests.reboot.greeter_rbt import Greeter
@@ -44,6 +41,34 @@ class QueryRequestWithoutContinuations:
     def __new__(cls, **kwargs: Any) -> react_pb2.QueryRequest:
         kwargs.pop('client_continues_query', None)
         return QUERY_REQUEST(**kwargs)
+
+
+class QueryRequestSuppressingFlowControlWarnings:
+    """Constructs a `QueryRequest` the way a client that passed
+    `warnOnFlowControl: false` does, i.e. with
+    `suppress_flow_control_warning` set.
+
+    Keeps `SerializeToString` and `FromString` reachable for the same
+    reason `QueryRequestWithoutContinuations` does.
+    """
+
+    SerializeToString = QUERY_REQUEST.SerializeToString
+    FromString = QUERY_REQUEST.FromString
+
+    def __new__(cls, **kwargs: Any) -> react_pb2.QueryRequest:
+        return QUERY_REQUEST(suppress_flow_control_warning=True, **kwargs)
+
+
+@contextlib.contextmanager
+def query_requests_suppressing_flow_control_warnings() -> Iterator[None]:
+    """Makes every reactive reader send a `QueryRequest` the way a
+    client that asked not to be warned about skipped updates does."""
+    with patch.object(
+        react_pb2,
+        'QueryRequest',
+        QueryRequestSuppressingFlowControlWarnings,
+    ):
+        yield
 
 
 @contextlib.contextmanager
@@ -158,6 +183,24 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
 
         return self._accumulated_adjectives
 
+    async def make_the_client_fall_behind(
+        self, greeter: Greeter.WeakReference, context: ExternalContext
+    ) -> None:
+        """Makes more changes than the window has room for while the
+        reactive reader started by `start_accumulating_adjectives()`
+        is still holding its first response, so that the backend ends
+        up holding one it cannot send, then lets the reader catch up,
+        which is when the backend skips the updates it merged."""
+        adjectives = [
+            f"adjective-{index}" for index in range(2 * QUERY_RESPONSE_WINDOW)
+        ]
+
+        for adjective in adjectives:
+            await greeter.SetAdjective(context, adjective=adjective)
+
+        self._can_accumulate_next_adjective.set()
+        await self.accumulate_until_adjective(adjectives[-1])
+
     async def test_reactive_get_all_state(self) -> None:
         """
         Regression test for https://github.com/reboot-dev/mono/issues/3135
@@ -241,11 +284,10 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
             accumulated,
         )
 
-    async def test_reports_a_stalled_client(self) -> None:
+    async def test_warns_about_a_client_that_fell_behind(self) -> None:
         """
-        Tests that a backend holding a response for a client too slow
-        to take it says so, once it has held it for long enough that
-        the client's user could see the delay.
+        Tests that a backend which skipped updates for a client too
+        slow to take them warns that it did.
         """
         await self.rbt.up(Application(servicers=[MyGreeterServicer]))
         context = self.rbt.create_external_context(name=f"test-{self.id()}")
@@ -264,24 +306,9 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
 
         with self.assertLogs(
             'respect.reboot.aio.react',
-            level='INFO',
+            level='WARNING',
         ) as logs:
-            # More changes than the window has room for, so that the
-            # backend ends up holding one it cannot send.
-            adjectives = [
-                f"adjective-{index}"
-                for index in range(2 * QUERY_RESPONSE_WINDOW)
-            ]
-
-            for adjective in adjectives:
-                await greeter.SetAdjective(context, adjective=adjective)
-
-            # Hold it there for longer than a user would fail to
-            # notice.
-            await asyncio.sleep(2 * REPORTABLE_STALL_MILLISECONDS / 1000)
-
-            self._can_accumulate_next_adjective.set()
-            await self.accumulate_until_adjective(adjectives[-1])
+            await self.make_the_client_fall_behind(greeter, context)
 
         reported = "A client of a reactive query to `GetWholeState` skipped "
 
@@ -292,6 +319,31 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
             ),
             logs.output,
         )
+
+    async def test_client_that_asked_not_to_be_warned(self) -> None:
+        """
+        Tests that a backend which skipped updates for a client that
+        asked not to be warned about that stays quiet.
+        """
+        await self.rbt.up(Application(servicers=[MyGreeterServicer]))
+        context = self.rbt.create_external_context(name=f"test-{self.id()}")
+        greeter, _ = await Greeter.Create(
+            context,
+            "my-greeter",
+            title="Mr.",
+            name="Robot",
+            adjective="reactive",
+        )
+
+        with query_requests_suppressing_flow_control_warnings():
+            await self.start_accumulating_adjectives(greeter, context)
+            self.assertEqual(["reactive"], await self.get_adjectives(1))
+
+            with self.assertNoLogs(
+                'respect.reboot.aio.react',
+                level='WARNING',
+            ):
+                await self.make_the_client_fall_behind(greeter, context)
 
     async def test_transitive_skip_to_latest(self) -> None:
         """

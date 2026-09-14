@@ -433,7 +433,7 @@ class _Reactively {
   async {{ method.proto.name | to_lower_camel }}(
     context: reboot_web.WebContext,
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; warnOnFlowControl?: boolean },
   ): Promise<[
       AsyncGenerator<{{ client.proto.state_name }}.{{ method.proto.name }}Response, void, unknown>,
       (newRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request) => void
@@ -452,6 +452,7 @@ class _Reactively {
         signal: options?.signal,
         bearerToken: context.bearerToken,
         websockets: context.websockets,
+        warnOnFlowControl: options?.warnOnFlowControl,
       }
     );
 

@@ -1668,6 +1668,7 @@ class _Reactively {
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
             websockets: context.websockets,
+            warnOnFlowControl: options === null || options === void 0 ? void 0 : options.warnOnFlowControl,
         });
         const setTypedRequest = (newRequest) => {
             const typedRequest = GreeterGreetRequestToProtobuf(newRequest);
@@ -1695,6 +1696,7 @@ class _Reactively {
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
             websockets: context.websockets,
+            warnOnFlowControl: options === null || options === void 0 ? void 0 : options.warnOnFlowControl,
         });
         const setTypedRequest = (newRequest) => {
             const typedRequest = GreeterTryToConstructContextRequestToProtobuf(newRequest);
@@ -1722,6 +1724,7 @@ class _Reactively {
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
             websockets: context.websockets,
+            warnOnFlowControl: options === null || options === void 0 ? void 0 : options.warnOnFlowControl,
         });
         const setTypedRequest = (newRequest) => {
             const typedRequest = GreeterTryToConstructExternalContextRequestToProtobuf(newRequest);
@@ -1749,6 +1752,7 @@ class _Reactively {
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
             websockets: context.websockets,
+            warnOnFlowControl: options === null || options === void 0 ? void 0 : options.warnOnFlowControl,
         });
         const setTypedRequest = (newRequest) => {
             const typedRequest = GreeterTestLongRunningFetchRequestToProtobuf(newRequest);
@@ -1776,6 +1780,7 @@ class _Reactively {
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
             websockets: context.websockets,
+            warnOnFlowControl: options === null || options === void 0 ? void 0 : options.warnOnFlowControl,
         });
         const setTypedRequest = (newRequest) => {
             const typedRequest = GreeterGetWholeStateRequestToProtobuf(newRequest);
@@ -1803,6 +1808,7 @@ class _Reactively {
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
             websockets: context.websockets,
+            warnOnFlowControl: options === null || options === void 0 ? void 0 : options.warnOnFlowControl,
         });
         const setTypedRequest = (newRequest) => {
             const typedRequest = GreeterFailWithExceptionRequestToProtobuf(newRequest);
@@ -1830,6 +1836,7 @@ class _Reactively {
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
             websockets: context.websockets,
+            warnOnFlowControl: options === null || options === void 0 ? void 0 : options.warnOnFlowControl,
         });
         const setTypedRequest = (newRequest) => {
             const typedRequest = GreeterFailWithAbortedRequestToProtobuf(newRequest);
@@ -1857,6 +1864,7 @@ class _Reactively {
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
             websockets: context.websockets,
+            warnOnFlowControl: options === null || options === void 0 ? void 0 : options.warnOnFlowControl,
         });
         const setTypedRequest = (newRequest) => {
             const typedRequest = GreeterReadRecursiveMessageRequestToProtobuf(newRequest);
