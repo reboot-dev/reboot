@@ -35,13 +35,14 @@ import { useLocation, useNavigationType } from "react-router";
 import ELK from "elkjs/lib/elk.bundled.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FC } from "react";
-import type {
-  GraphCall,
-  GraphMethod,
-  GraphPackage,
-  GraphStateType,
+import type { GraphMethod, GraphPackage, GraphStateType } from "./callgraph";
+import {
+  groupStateTypesByPackage,
+  calleeDistancesFrom,
+  callerDistancesTo,
+  isDrawn,
+  methodId,
 } from "./callgraph";
-import { groupStateTypesByPackage, methodId } from "./callgraph";
 import type { Kind } from "./link_properties_to_data_types";
 import {
   labelOfKind,
@@ -105,10 +106,6 @@ const HOW_DASH: Partial<Record<How, string>> = {
 // started it.
 const WORKFLOW_DASH = "4 4";
 
-// An `until` is a wait on another state's reader, not a call the
-// developer made to it, so it is not drawn.
-const isDrawn = (call: GraphCall): boolean => call.how !== How.UNTIL;
-
 // The measurements layout works from: a card's height is arithmetic
 // on its method count, so ELK can place the cards before they are
 // rendered. `ROW_HEIGHT` and `HEAD_HEIGHT` are what `.graph-method`
@@ -130,7 +127,7 @@ const heightOfStateType = (stateType: GraphStateType): number =>
 
 // A package's node id, kept apart from state type ids, which are
 // fully qualified names and could equal a package's.
-const PACKAGE_NODE_ID_PREFIX = "pkg:";
+const PACKAGE_NODE_ID_PREFIX = "graphPackage:";
 const packageNodeId = (name: string): string =>
   `${PACKAGE_NODE_ID_PREFIX}${name}`;
 
@@ -225,15 +222,16 @@ const fitBoxesAroundCards = (nodes: GraphNode[]): GraphNode[] => {
 };
 
 // Which cones of the chosen method the graph lights: what it calls
-// (downstream), who calls it (upstream), or both.
-interface ConesOfInfluence {
+// (downstream), who calls it (upstream), or both. The types pane
+// follows the same choice.
+export interface ConesOfInfluence {
   downstream: boolean;
   upstream: boolean;
 }
 
 // Choosing a method lights both; the buttons beside its row put
 // either out.
-const DEFAULT_CONES_OF_INFLUENCE: ConesOfInfluence = {
+export const DEFAULT_CONES_OF_INFLUENCE: ConesOfInfluence = {
   downstream: true,
   upstream: true,
 };
@@ -362,15 +360,15 @@ const layoutPackages = async (
     { cardPositions: Map<string, NodePosition>; width: number; height: number }
   >();
 
-  for (const pkg of packages) {
-    if (collapsed.has(pkg.name)) {
+  for (const graphPackage of packages) {
+    if (collapsed.has(graphPackage.name)) {
       continue;
     }
     const stateTypeIdsInPackage = new Set(
-      pkg.stateTypes.map((stateType) => stateType.id)
+      graphPackage.stateTypes.map((stateType) => stateType.id)
     );
     const callPairsBetweenCards = new Set<string>();
-    for (const stateType of pkg.stateTypes) {
+    for (const stateType of graphPackage.stateTypes) {
       for (const method of stateType.methods) {
         for (const call of method.calls) {
           if (
@@ -384,13 +382,13 @@ const layoutPackages = async (
       }
     }
     const elkCardLayout = await elk.layout({
-      id: pkg.name,
+      id: graphPackage.name,
       layoutOptions: {
         ...ELK_LAYERED_OPTIONS,
         "elk.spacing.nodeNode": "36",
         "elk.layered.spacing.nodeNodeBetweenLayers": "90",
       },
-      children: pkg.stateTypes.map((stateType) => ({
+      children: graphPackage.stateTypes.map((stateType) => ({
         id: stateType.id,
         width: CARD_WIDTH,
         height: heightOfStateType(stateType),
@@ -415,7 +413,7 @@ const layoutPackages = async (
         (elkCard.y ?? 0) + (elkCard.height ?? 0)
       );
     }
-    cardLayoutsByPackage.set(pkg.name, {
+    cardLayoutsByPackage.set(graphPackage.name, {
       cardPositions,
       width: cardsWidth + 2 * EXPANDED_PACKAGE_PAD,
       height: cardsHeight + EXPANDED_PACKAGE_HEAD_HEIGHT + EXPANDED_PACKAGE_PAD,
@@ -423,13 +421,13 @@ const layoutPackages = async (
   }
 
   const callPairsBetweenPackages = new Set<string>();
-  for (const pkg of packages) {
-    for (const stateType of pkg.stateTypes) {
+  for (const graphPackage of packages) {
+    for (const stateType of graphPackage.stateTypes) {
       for (const method of stateType.methods) {
         for (const call of method.calls) {
           const target = packageOfStateTypeName(call.stateTypeName);
-          if (isDrawn(call) && target !== pkg.name) {
-            callPairsBetweenPackages.add(`${pkg.name}>${target}`);
+          if (isDrawn(call) && target !== graphPackage.name) {
+            callPairsBetweenPackages.add(`${graphPackage.name}>${target}`);
           }
         }
       }
@@ -443,10 +441,10 @@ const layoutPackages = async (
       "elk.spacing.nodeNode": "60",
       "elk.layered.spacing.nodeNodeBetweenLayers": "140",
     },
-    children: packages.map((pkg) => {
-      const cardLayout = cardLayoutsByPackage.get(pkg.name);
+    children: packages.map((graphPackage) => {
+      const cardLayout = cardLayoutsByPackage.get(graphPackage.name);
       return {
-        id: packageNodeId(pkg.name),
+        id: packageNodeId(graphPackage.name),
         width: cardLayout?.width ?? COLLAPSED_PACKAGE_WIDTH,
         height: cardLayout?.height ?? COLLAPSED_PACKAGE_HEIGHT,
       };
@@ -471,10 +469,10 @@ const layoutPackages = async (
   // A parent precedes its children: React Flow resolves a elkCard's
   // position, relative to its parent, in array order.
   const nodes: GraphNode[] = [];
-  for (const pkg of packages) {
-    const boxId = packageNodeId(pkg.name);
+  for (const graphPackage of packages) {
+    const boxId = packageNodeId(graphPackage.name);
     const position = packagePositions.get(boxId) ?? { x: 0, y: 0 };
-    const cardLayout = cardLayoutsByPackage.get(pkg.name);
+    const cardLayout = cardLayoutsByPackage.get(graphPackage.name);
     if (cardLayout === undefined) {
       nodes.push({
         id: boxId,
@@ -483,9 +481,9 @@ const layoutPackages = async (
         width: COLLAPSED_PACKAGE_WIDTH,
         height: COLLAPSED_PACKAGE_HEIGHT,
         data: {
-          name: pkg.name,
-          stateTypes: pkg.stateTypes.length,
-          methods: pkg.stateTypes.reduce(
+          name: graphPackage.name,
+          stateTypes: graphPackage.stateTypes.length,
+          methods: graphPackage.stateTypes.reduce(
             (count, stateType) => count + stateType.methods.length,
             0
           ),
@@ -499,9 +497,9 @@ const layoutPackages = async (
       position,
       width: cardLayout.width,
       height: cardLayout.height,
-      data: { name: pkg.name },
+      data: { name: graphPackage.name },
     });
-    for (const stateType of pkg.stateTypes) {
+    for (const stateType of graphPackage.stateTypes) {
       const cardPosition = cardLayout.cardPositions.get(stateType.id) ?? {
         x: 0,
         y: 0,
@@ -545,80 +543,6 @@ interface CallEdgeData extends Record<string, unknown> {
   faded?: boolean;
 }
 
-// Every method the chosen one calls, transitively, itself included:
-// the downstream closure over the drawn calls. Collapse-blind, so
-// the path continues through a collapsed box.
-const reachableMethodIds = (
-  from: string,
-  packages: GraphPackage[]
-): Set<string> => {
-  const callsByMethodId = new Map(
-    packages.flatMap((pkg) =>
-      pkg.stateTypes.flatMap((stateType) =>
-        stateType.methods.map(
-          (method) =>
-            [methodId(stateType.id, method.name), method.calls] as const
-        )
-      )
-    )
-  );
-  const reached = new Set([from]);
-  const frontier = [from];
-  while (frontier.length > 0) {
-    for (const call of callsByMethodId.get(frontier.pop()!) ?? []) {
-      if (!isDrawn(call)) {
-        continue;
-      }
-      const callee = methodId(call.stateTypeName, call.methodName);
-      if (!reached.has(callee)) {
-        reached.add(callee);
-        frontier.push(callee);
-      }
-    }
-  }
-  return reached;
-};
-
-// Every method that calls the chosen one, transitively, itself
-// included: the upstream closure over the same drawn calls,
-// collapse-blind the same way.
-const reachingMethodIds = (
-  to: string,
-  packages: GraphPackage[]
-): Set<string> => {
-  const callersByMethodId = new Map<string, string[]>();
-  for (const pkg of packages) {
-    for (const stateType of pkg.stateTypes) {
-      for (const method of stateType.methods) {
-        const caller = methodId(stateType.id, method.name);
-        for (const call of method.calls) {
-          if (!isDrawn(call)) {
-            continue;
-          }
-          const callee = methodId(call.stateTypeName, call.methodName);
-          const callers = callersByMethodId.get(callee);
-          if (callers === undefined) {
-            callersByMethodId.set(callee, [caller]);
-          } else {
-            callers.push(caller);
-          }
-        }
-      }
-    }
-  }
-  const reached = new Set([to]);
-  const frontier = [to];
-  while (frontier.length > 0) {
-    for (const caller of callersByMethodId.get(frontier.pop()!) ?? []) {
-      if (!reached.has(caller)) {
-        reached.add(caller);
-        frontier.push(caller);
-      }
-    }
-  }
-  return reached;
-};
-
 // The edges as the boxes show them. A call whose box is expanded
 // leaves from its own method row; otherwise it leaves from the box,
 // and every call the box hides folds into one counted edge per node
@@ -628,9 +552,9 @@ const edgesOfPackages = (
   collapsed: ReadonlySet<string>
 ): Edge<CallEdgeData>[] => {
   const edgesById = new Map<string, Edge<CallEdgeData>>();
-  for (const pkg of packages) {
-    const sourceExpanded = !collapsed.has(pkg.name);
-    for (const stateType of pkg.stateTypes) {
+  for (const graphPackage of packages) {
+    const sourceExpanded = !collapsed.has(graphPackage.name);
+    for (const stateType of graphPackage.stateTypes) {
       for (const method of stateType.methods) {
         for (const call of method.calls) {
           if (!isDrawn(call)) {
@@ -640,13 +564,13 @@ const edgesOfPackages = (
           const targetExpanded = !collapsed.has(targetPackage);
 
           // A call inside a collapsed box is that box's business.
-          if (!sourceExpanded && targetPackage === pkg.name) {
+          if (!sourceExpanded && targetPackage === graphPackage.name) {
             continue;
           }
 
           const source = sourceExpanded
             ? stateType.id
-            : packageNodeId(pkg.name);
+            : packageNodeId(graphPackage.name);
           const sourceHandle = sourceExpanded ? `s:${method.name}` : undefined;
           const target = targetExpanded
             ? call.stateTypeName
@@ -1092,6 +1016,10 @@ const GraphCanvas: FC<{
   // every change to it is reported.
   savedLayout: CallGraphLayout;
   onLayoutChange: (layout: CallGraphLayout) => void;
+  // Which cones of the chosen method are lit, kept by the page so
+  // the types pane can follow them.
+  conesOfInfluence: ConesOfInfluence;
+  onToggleConeOfInfluence: (coneOfInfluence: keyof ConesOfInfluence) => void;
 }> = ({
   packages,
   selectedMethodId,
@@ -1099,6 +1027,8 @@ const GraphCanvas: FC<{
   onOpenStateType,
   savedLayout,
   onLayoutChange,
+  conesOfInfluence,
+  onToggleConeOfInfluence: toggleConeOfInfluence,
 }) => {
   const location = useLocation();
   const saved =
@@ -1374,7 +1304,7 @@ const GraphCanvas: FC<{
       clickedBoxId.current = null;
       fitViewAfterLayout.current = true;
       const nextCollapsed = new Set(
-        allCollapsed ? packages.map((pkg) => pkg.name) : []
+        allCollapsed ? packages.map((graphPackage) => graphPackage.name) : []
       );
       setCollapsed(nextCollapsed);
       publishLayout(nextCollapsed);
@@ -1385,16 +1315,6 @@ const GraphCanvas: FC<{
     [packages, selectedMethodId, onSelectMethod, publishLayout]
   );
 
-  // Which cones of the chosen method the graph lights: both, until
-  // the buttons flanking the chosen row say otherwise.
-  const [conesOfInfluence, setConesOfInfluence] = useState<ConesOfInfluence>(
-    DEFAULT_CONES_OF_INFLUENCE
-  );
-
-  useEffect(() => {
-    setConesOfInfluence(DEFAULT_CONES_OF_INFLUENCE);
-  }, [selectedMethodId]);
-
   const toggleMethodSelection = useCallback(
     (id: string) => {
       onSelectMethod(selectedMethodId === id ? null : id);
@@ -1402,23 +1322,13 @@ const GraphCanvas: FC<{
     [selectedMethodId, onSelectMethod]
   );
 
-  const toggleConeOfInfluence = useCallback(
-    (coneOfInfluence: keyof ConesOfInfluence): void => {
-      setConesOfInfluence((current) => ({
-        ...current,
-        [coneOfInfluence]: !current[coneOfInfluence],
-      }));
-    },
-    []
-  );
-
   // The methods some drawn call lands on, self-calls included, and
   // the methods that make one: what a cone button needs to have
   // anything to light.
   const calledMethodIds = useMemo(() => {
     const methodIds = new Set<string>();
-    for (const pkg of packages) {
-      for (const stateType of pkg.stateTypes) {
+    for (const graphPackage of packages) {
+      for (const stateType of graphPackage.stateTypes) {
         for (const method of stateType.methods) {
           for (const call of method.calls) {
             if (isDrawn(call)) {
@@ -1433,8 +1343,8 @@ const GraphCanvas: FC<{
 
   const callingMethodIds = useMemo(() => {
     const methodIds = new Set<string>();
-    for (const pkg of packages) {
-      for (const stateType of pkg.stateTypes) {
+    for (const graphPackage of packages) {
+      for (const stateType of graphPackage.stateTypes) {
         for (const method of stateType.methods) {
           if (method.calls.some(isDrawn)) {
             methodIds.add(methodId(stateType.id, method.name));
@@ -1444,6 +1354,11 @@ const GraphCanvas: FC<{
     }
     return methodIds;
   }, [packages]);
+
+  const stateTypes = useMemo(
+    () => packages.flatMap((graphPackage) => graphPackage.stateTypes),
+    [packages]
+  );
 
   // With a method chosen, its lit cones: downstream, the methods it
   // calls transitively and the arrows carrying those calls;
@@ -1468,32 +1383,40 @@ const GraphCanvas: FC<{
       nodeIds.add(edge.target);
     };
     if (conesOfInfluence.downstream) {
-      const reached = reachableMethodIds(selectedMethodId, packages);
-      for (const id of reached) {
+      const distanceByCalleeId = calleeDistancesFrom(
+        selectedMethodId,
+        stateTypes
+      );
+      for (const id of distanceByCalleeId.keys()) {
         methodIds.add(id);
       }
       for (const edge of edges) {
-        if (edge.data!.sourceMethodIds.some((id) => reached.has(id))) {
+        if (
+          edge.data!.sourceMethodIds.some((id) => distanceByCalleeId.has(id))
+        ) {
           light(edge);
         }
       }
     }
     if (conesOfInfluence.upstream) {
-      const reaching = reachingMethodIds(selectedMethodId, packages);
-      for (const id of reaching) {
+      const distanceByCallerId = callerDistancesTo(
+        selectedMethodId,
+        stateTypes
+      );
+      for (const id of distanceByCallerId.keys()) {
         methodIds.add(id);
       }
       for (const edge of edges) {
         if (
-          edge.data!.sourceMethodIds.some((id) => reaching.has(id)) &&
-          edge.data!.targetMethodIds.some((id) => reaching.has(id))
+          edge.data!.sourceMethodIds.some((id) => distanceByCallerId.has(id)) &&
+          edge.data!.targetMethodIds.some((id) => distanceByCallerId.has(id))
         ) {
           light(edge);
         }
       }
     }
     return { nodeIds, edgeIds, methodIds };
-  }, [selectedMethodId, conesOfInfluence, packages, edges]);
+  }, [selectedMethodId, conesOfInfluence, stateTypes, edges]);
 
   const shownNodes = useMemo(
     () =>
@@ -1659,6 +1582,8 @@ export const GraphPage: FC<{
   onOpenStateType: (id: string) => void;
   savedLayout: CallGraphLayout;
   onLayoutChange: (layout: CallGraphLayout) => void;
+  conesOfInfluence: ConesOfInfluence;
+  onToggleConeOfInfluence: (coneOfInfluence: keyof ConesOfInfluence) => void;
 }> = ({
   stateTypes,
   selectedMethodId,
@@ -1666,6 +1591,8 @@ export const GraphPage: FC<{
   onOpenStateType,
   savedLayout,
   onLayoutChange,
+  conesOfInfluence,
+  onToggleConeOfInfluence,
 }) => {
   const packages = useMemo(
     () => groupStateTypesByPackage(stateTypes),
@@ -1682,6 +1609,8 @@ export const GraphPage: FC<{
           onOpenStateType={onOpenStateType}
           savedLayout={savedLayout}
           onLayoutChange={onLayoutChange}
+          conesOfInfluence={conesOfInfluence}
+          onToggleConeOfInfluence={onToggleConeOfInfluence}
         />
       </ReactFlowProvider>
     </div>

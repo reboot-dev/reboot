@@ -4,8 +4,8 @@
 import type {
   Servicer,
   Servicer_Method,
-  Servicer_Method_Call_How,
 } from "../../../../rbt/dashboard/v1/dashboard_pb";
+import { Servicer_Method_Call_How } from "../../../../rbt/dashboard/v1/dashboard_pb";
 import type { APIs, Kind } from "./link_properties_to_data_types";
 import {
   kindOfMethod,
@@ -71,6 +71,82 @@ export const groupStateTypesByPackage = (
 // A key unique to one method: `bank.v1.account.Account.deposit`.
 export const methodId = (stateTypeName: string, methodName: string): string =>
   `${stateTypeName}.${methodName}`;
+
+// An `until` is a wait on another state's reader, not a call the
+// developer made to it, so it is not drawn.
+export const isDrawn = (call: GraphCall): boolean =>
+  call.how !== Servicer_Method_Call_How.UNTIL;
+
+// Every method the given one calls, transitively, with how many
+// calls away it is: the downstream closure over the drawn calls,
+// the given method itself at zero.
+export const calleeDistancesFrom = (
+  from: string,
+  stateTypes: GraphStateType[]
+): Map<string, number> => {
+  const callsByMethodId = new Map(
+    stateTypes.flatMap((stateType) =>
+      stateType.methods.map(
+        (method) => [methodId(stateType.id, method.name), method.calls] as const
+      )
+    )
+  );
+  const distanceByCalleeId = new Map([[from, 0]]);
+  const calleeIdsToExpand = [from];
+  while (calleeIdsToExpand.length > 0) {
+    const callerId = calleeIdsToExpand.shift()!;
+    for (const call of callsByMethodId.get(callerId) ?? []) {
+      if (!isDrawn(call)) {
+        continue;
+      }
+      const calleeId = methodId(call.stateTypeName, call.methodName);
+      if (!distanceByCalleeId.has(calleeId)) {
+        distanceByCalleeId.set(calleeId, distanceByCalleeId.get(callerId)! + 1);
+        calleeIdsToExpand.push(calleeId);
+      }
+    }
+  }
+  return distanceByCalleeId;
+};
+
+// Every method that calls the given one, transitively, with how many
+// calls away it is: the upstream closure over the same drawn calls,
+// the given method itself at zero.
+export const callerDistancesTo = (
+  to: string,
+  stateTypes: GraphStateType[]
+): Map<string, number> => {
+  const callerIdsByCalleeId = new Map<string, string[]>();
+  for (const stateType of stateTypes) {
+    for (const method of stateType.methods) {
+      const callerId = methodId(stateType.id, method.name);
+      for (const call of method.calls) {
+        if (!isDrawn(call)) {
+          continue;
+        }
+        const calleeId = methodId(call.stateTypeName, call.methodName);
+        const callerIds = callerIdsByCalleeId.get(calleeId);
+        if (callerIds === undefined) {
+          callerIdsByCalleeId.set(calleeId, [callerId]);
+        } else {
+          callerIds.push(callerId);
+        }
+      }
+    }
+  }
+  const distanceByCallerId = new Map([[to, 0]]);
+  const callerIdsToExpand = [to];
+  while (callerIdsToExpand.length > 0) {
+    const calleeId = callerIdsToExpand.shift()!;
+    for (const callerId of callerIdsByCalleeId.get(calleeId) ?? []) {
+      if (!distanceByCallerId.has(callerId)) {
+        distanceByCallerId.set(callerId, distanceByCallerId.get(calleeId)! + 1);
+        callerIdsToExpand.push(callerId);
+      }
+    }
+  }
+  return distanceByCallerId;
+};
 
 // Folds the calls the analysis lists into one per distinct call,
 // counted.
