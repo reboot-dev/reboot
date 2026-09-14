@@ -193,6 +193,20 @@ adb wait-for-device
 until [ "$(adb shell getprop sys.boot_completed 2> /dev/null | tr -d '\r')" = "1" ]; do
   sleep 1
 done
+# `sys.boot_completed` flips when the system sends `BOOT_COMPLETED`,
+# not when its receivers are done with it. On this `google_apis` image
+# that broadcast fans out to Play Services and dozens of other manifest
+# receivers, which keeps the broadcast queues busy for another ~30s,
+# and package events for anything installed meanwhile queue up behind
+# it. Opening the project inside that window has had Android relaunch
+# Expo Go's activity mid-flow, as the delayed package events for its
+# own fresh install landed: the app re-ran, the onboarding sheet the
+# flow had just dismissed re-opened, and the flow's next tap hit the
+# sheet instead of the app. So wait for the queues to drain before
+# opening the project. The wait is bounded so that a device that never
+# goes quiet degrades to a fixed delay, which still outlasts the boot
+# storm, rather than eating the whole test budget.
+timeout 120 adb shell am wait-for-broadcast-idle > /dev/null || true
 
 # Skip Chrome's first-run screen. Signing in hands the OAuth
 # authorization URL to an in-app browser tab, which Chrome serves; on
