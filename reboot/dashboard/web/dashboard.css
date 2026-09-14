@@ -766,7 +766,7 @@ header h1 {
 .state-type-description {
   max-width: 62ch;
   margin: 12px 0 0;
-  font-size: 14px;
+  font-size: 12.5px;
   line-height: 1.55;
   color: hsl(var(--prose));
   text-wrap: pretty;
@@ -907,34 +907,30 @@ header h1 {
   background: hsl(var(--surface-sunken));
 }
 
+/* The name at the left and the pills at the right of one line; a
+   name too long for the pills to fit beside pushes them under it. */
 .method-head {
-  padding: 10px 14px;
-}
-
-/* The method's name and its signature on one line, set the way a
-   property's name and type are. */
-.method-title {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
   flex-wrap: wrap;
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 12px;
+  padding: 10px 14px 6px;
 }
 
 .method-name {
-  color: hsl(var(--foreground));
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 13px;
   font-weight: 600;
+  color: hsl(var(--foreground));
 }
 
-/* The pills, on their own line under the title, where each keeps
-   its color and none pushes the signature aside. */
 .method-tags {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
-  margin-top: 8px;
+  margin-left: auto;
 }
 
 /* Whatever tags a method has, side by side. Taken out of the
@@ -961,17 +957,10 @@ header h1 {
    The neutral base below is what a `saga`, or a method whose kind
    is unset, gets, since only the four kinds that exist today have a
    colour. */
-/* Both pills are one width with the label centred in it, so a
-   column of them reads as a column rather than as ragged text.
-   `min-width` rather than `width`: a label longer than any we
-   have today widens its own pill instead of being clipped. 80px
-   fits the longest, `transaction`. */
 .kind,
 .tag {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-width: 80px;
 }
 
 .kind {
@@ -1091,6 +1080,16 @@ header h1 {
   transform: none;
 }
 
+/* A method's pills stand at its card's right edge, so their
+   definitions open leftward from that edge. Rightward, they would
+   leave the pane, and a hidden definition still widens what the
+   pane scrolls. */
+.method-tags .definition {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
 /* The section eyebrow sits at the pane's left edge, and the pane
    clips whatever leaves it, so a centred tooltip loses its left
    half. Open rightward from the label instead. */
@@ -1107,7 +1106,7 @@ header h1 {
 
 .method-description {
   max-width: 62ch;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
   color: hsl(var(--prose));
   margin: 0;
@@ -1115,29 +1114,40 @@ header h1 {
   text-wrap: pretty;
 }
 
-/* What a method takes and gives back: the keys it carries and, for
-   a key holding one of the developer's own types, that type's name
-   rather than its keys. Set in the mono face because it is read as
-   a signature rather than as prose. */
+/* What a method takes, returns and raises, under a hairline at the
+   foot of the card: a label column and, beside each, the keys it
+   carries or, for a key holding one of the developer's own types,
+   that type's name rather than its keys. Set in the mono face
+   because it is read as a signature rather than as prose. */
 .method-signature {
-  display: inline;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 14px;
+  margin: 0;
+  padding: 8px 14px 10px;
+  border-top: 1px solid hsl(var(--border-soft));
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
   color: hsl(var(--muted-foreground));
-  /* A long signature wraps rather than widening the card. */
+}
+
+.method-signature dt {
+  font-weight: 600;
+  color: hsl(240 3.8% 60%);
+}
+
+.method-signature dd {
+  margin: 0;
+  min-width: 0;
+  /* A long row wraps rather than widening the card. */
   overflow-wrap: anywhere;
 }
 
-/* One key with its type: a signature too long for its line breaks
-   between these, never inside one, unless one alone is too long. */
+/* One key with its type: a row too long for its line breaks between
+   these, never inside one, unless one alone is too long. */
 .method-signature .argument {
   display: inline-block;
-}
-
-.method-signature .errors {
-  margin-left: 8px;
-}
-
-.arrow {
-  color: hsl(240 3.8% 65%);
 }
 
 /* A method that returns nothing says so in words, so the eye does
@@ -2655,7 +2665,7 @@ header .state-type-description {
 .property-description {
   max-width: 62ch;
   margin: 6px 0 0;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
   color: hsl(var(--prose));
   text-wrap: pretty;

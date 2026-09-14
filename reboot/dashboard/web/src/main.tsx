@@ -633,6 +633,8 @@ const Keys: FC<{ properties: Property[] }> = ({ properties }) => (
   </>
 );
 
+// What a method takes, returns and raises, one labelled row each, so
+// the three read apart and each wraps on its own line.
 const Signature: FC<{
   api: api_pb.API;
   method: api_pb.Method;
@@ -645,35 +647,31 @@ const Signature: FC<{
     method.response === undefined
       ? []
       : propertiesOfDataType({ api, name: method.response.name });
+  const nothing = <span className="nothing">nothing</span>;
 
   return (
-    <span className="method-signature">
-      <span>
-        {"("}
-        {takes.length > 0 && <Keys properties={takes} />}
-        {") "}
-        <span className="arrow">→</span>{" "}
-        {returns.length > 0 ? (
-          <Keys properties={returns} />
-        ) : (
-          <span className="nothing">nothing</span>
-        )}
-      </span>
+    <dl className="method-signature">
+      <dt>takes</dt>
+      <dd>{takes.length > 0 ? <Keys properties={takes} /> : nothing}</dd>
+      <dt>returns</dt>
+      <dd>{returns.length > 0 ? <Keys properties={returns} /> : nothing}</dd>
       {method.errors.length > 0 && (
-        <span className="errors">
-          {"raises "}
-          {method.errors.map(({ name }, index) => (
-            <Fragment key={name}>
-              {index > 0 && ", "}
-              <TypeName
-                type={shortNameOfTypeName(name)}
-                link={dataTypeIdOfName({ api, name })}
-              />
-            </Fragment>
-          ))}
-        </span>
+        <>
+          <dt>raises</dt>
+          <dd className="errors">
+            {method.errors.map(({ name }, index) => (
+              <Fragment key={name}>
+                {index > 0 && ", "}
+                <TypeName
+                  type={shortNameOfTypeName(name)}
+                  link={dataTypeIdOfName({ api, name })}
+                />
+              </Fragment>
+            ))}
+          </dd>
+        </>
       )}
-    </span>
+    </dl>
   );
 };
 
@@ -702,46 +700,35 @@ const Method: FC<{
       id={id}
       key={flashKey}
     >
-      <>
-        <div className="method-head">
-          <div className="method-title">
-            <span className="method-name">{method.name}</span>
-            <Signature api={api} method={method} />
-          </div>
-          <div className="method-tags">
-            {/* The kind comes before the tags because every method
-                has one, so it sits in the same column in every row.
-                The tags are optional. */}
-            <Kind kind={kindOfMethod(method)} />
-            <span className="tags">
-              {method.factory && (
-                <Pill
-                  className="tag tag-factory"
-                  label="factory"
-                  meaning={DEFINITIONS.factory}
-                />
-              )}
-              {method.mcp !== undefined && (
-                <Pill
-                  className="tag tag-mcp"
-                  label="MCP"
-                  meaning={DEFINITIONS.mcp}
-                />
-              )}
-            </span>
-          </div>
-        </div>
-        <div className="method-detail">
-          <div className="method-detail-inner">
-            {method.description !== undefined && (
-              <Description
-                className="method-description"
-                text={method.description}
+      <div className="method-head">
+        <span className="method-name">{method.name}</span>
+        <div className="method-tags">
+          {/* The kind comes before the tags because every method has
+              one, so it sits in the same place on every card. The
+              tags are optional. */}
+          <Kind kind={kindOfMethod(method)} />
+          <span className="tags">
+            {method.factory && (
+              <Pill
+                className="tag tag-factory"
+                label="factory"
+                meaning={DEFINITIONS.factory}
               />
             )}
-          </div>
+            {method.mcp !== undefined && (
+              <Pill
+                className="tag tag-mcp"
+                label="MCP"
+                meaning={DEFINITIONS.mcp}
+              />
+            )}
+          </span>
         </div>
-      </>
+      </div>
+      {method.description !== undefined && (
+        <Description className="method-description" text={method.description} />
+      )}
+      <Signature api={api} method={method} />
     </div>
   );
 };
