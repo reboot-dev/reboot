@@ -107,13 +107,25 @@ import {
 import { DashboardGetResponse_NeedsGenerateReason as NeedsGenerateReason } from "../../../../rbt/dashboard/v1/dashboard_pb";
 import type * as feature_pb from "../../../../rbt/v1alpha1/bdd/feature_pb";
 import type * as grammar_pb from "../../../../rbt/v1alpha1/bdd/grammar_pb";
-import { joinStateTypes, type GraphStateType } from "./callgraph";
+import {
+  calleeDistancesFrom,
+  callerDistancesTo,
+  joinStateTypes,
+  methodId,
+  type GraphStateType,
+} from "./callgraph";
 import {
   exercisedMethods,
   graphStateTypeNamed,
   undescribedMethods,
 } from "./features";
-import { drawnCallCount, GraphPage, type CallGraphLayout } from "./graph";
+import {
+  DEFAULT_CONES_OF_INFLUENCE,
+  drawnCallCount,
+  GraphPage,
+  type CallGraphLayout,
+  type ConesOfInfluence,
+} from "./graph";
 
 // One subscriber per tab, for as long as the tab is open.
 const SUBSCRIBER_ID = uuidv4();
@@ -675,17 +687,33 @@ const Signature: FC<{
   );
 };
 
+// The state type declaring a method, named before the method where
+// methods of several types are listed together, as a link to it.
+interface DeclaringStateType {
+  id: string;
+  name: string;
+}
+
+const DeclaringStateTypeLink: FC<{
+  declaringStateType: DeclaringStateType;
+}> = ({ declaringStateType }) => (
+  <>
+    <TypeLink className="method-state-type" id={declaringStateType.id}>
+      {declaringStateType.name}
+    </TypeLink>
+    .
+  </>
+);
+
 const Method: FC<{
   api: api_pb.API;
   method: api_pb.Method;
-  // The method's id in the pane, `/type/bank.v1.Account.deposit`,
-  // which is what a link from the graph names.
-  id: string;
-  // Set for the method a followed link named, with the history entry
-  // that named it, so a second click flashes it again.
-  flashKey?: string;
-}> = ({ api, method, id, flashKey }) => {
-  // The kind names the card too, so a flash takes the kind's color.
+  declaringStateType?: DeclaringStateType;
+  // The method the pane is on, outlined for as long as it shows.
+  chosen?: boolean;
+}> = ({ api, method, declaringStateType, chosen }) => {
+  // The kind names the card too, so the outline takes the kind's
+  // colour.
   const kind = kindOfMethod(method);
   const kindLabel = kind === undefined ? "unspecified" : labelOfKind(kind);
   return (
@@ -693,15 +721,18 @@ const Method: FC<{
       className={[
         "method",
         `method-${kindLabel}`,
-        flashKey === undefined ? "" : "is-flash",
+        chosen === true ? "is-chosen" : "",
       ]
         .filter(Boolean)
         .join(" ")}
-      id={id}
-      key={flashKey}
     >
       <div className="method-head">
-        <span className="method-name">{method.name}</span>
+        <span className="method-name">
+          {declaringStateType !== undefined && (
+            <DeclaringStateTypeLink declaringStateType={declaringStateType} />
+          )}
+          {method.name}
+        </span>
         <div className="method-tags">
           {/* The kind comes before the tags because every method has
               one, so it sits in the same place on every card. The
@@ -747,13 +778,10 @@ const countWithNoun = (n: number, noun: string): string =>
 const StateType: FC<{
   api: api_pb.API;
   stateType: api_pb.StateType;
-  // The method a followed link flashes, with the history entry that
-  // named it.
-  flash?: { method: string; key: string };
   // The property a followed link named, with the history entry that
   // named it.
   flashProperty?: { id: string; key: string };
-}> = ({ api, stateType, flash, flashProperty }) => {
+}> = ({ api, stateType, flashProperty }) => {
   const name = qualifiedName({ api, stateType });
   const rows: PaneRows = useMemo(
     () => ({ typeId: name, flash: flashProperty }),
@@ -801,17 +829,218 @@ const StateType: FC<{
         <div className="eyebrow section">methods</div>
         <div className="methods">
           {stateType.methods.map((method) => (
-            <Method
-              api={api}
-              method={method}
-              id={idOfTypeInPane(`${name}.${method.name}`)}
-              flashKey={flash?.method === method.name ? flash.key : undefined}
-              key={method.name}
-            />
+            <Method api={api} method={method} key={method.name} />
           ))}
         </div>
       </section>
     </PaneRowsContext.Provider>
+  );
+};
+
+// A state type as the API declares it, with the API declaring it.
+interface StateTypeDeclaration {
+  api: api_pb.API;
+  stateType: api_pb.StateType;
+}
+
+// The API's state types by the id the graph and the pane share.
+const stateTypeDeclarationsById = (
+  apis: APIs
+): Map<string, StateTypeDeclaration> =>
+  new Map(
+    sortedAPIs(apis).flatMap((api) =>
+      api.stateTypes.map(
+        (stateType) =>
+          [qualifiedName({ api, stateType }), { api, stateType }] as const
+      )
+    )
+  );
+
+// A method the graph knows only from a call to it: nothing declares
+// it, so there is no card to draw.
+const UndeclaredMethod: FC<{
+  name: string;
+  declaringStateType?: DeclaringStateType;
+}> = ({ name, declaringStateType }) => (
+  <div className="method method-unspecified">
+    <div className="method-head">
+      <span className="method-name">
+        {declaringStateType !== undefined && (
+          <DeclaringStateTypeLink declaringStateType={declaringStateType} />
+        )}
+        {name}
+      </span>
+    </div>
+    <p className="method-description is-missing">
+      Not declared in your API, just called by your code.
+    </p>
+  </div>
+);
+
+// One method's card in the method pane, named with its state type,
+// drawn from the API's declaration when there is one.
+const MethodCard: FC<{
+  declarations: Map<string, StateTypeDeclaration>;
+  stateType: GraphStateType;
+  name: string;
+  chosen?: boolean;
+}> = ({ declarations, stateType, name, chosen }) => {
+  const declaringStateType = { id: stateType.id, name: stateType.name };
+  const declaration = declarations.get(stateType.id);
+  const method = declaration?.stateType.methods.find(
+    (declaredMethod) => declaredMethod.name === name
+  );
+  return declaration !== undefined && method !== undefined ? (
+    <Method
+      api={declaration.api}
+      method={method}
+      declaringStateType={declaringStateType}
+      chosen={chosen}
+    />
+  ) : (
+    <UndeclaredMethod name={name} declaringStateType={declaringStateType} />
+  );
+};
+
+// A method as the graph knows it: by the state type it belongs to
+// and its name.
+interface MethodInGraph {
+  stateType: GraphStateType;
+  name: string;
+}
+
+// The methods at each distance from the chosen one, nearest first,
+// the chosen one itself left out. At one distance, the graph's order.
+const methodsAtEachDistance = (
+  distances: Map<string, number>,
+  graph: GraphStateType[]
+): MethodInGraph[][] => {
+  const methodsByDistance: MethodInGraph[][] = [];
+  for (const stateType of graph) {
+    for (const method of stateType.methods) {
+      const distance = distances.get(methodId(stateType.id, method.name));
+      if (distance === undefined || distance === 0) {
+        continue;
+      }
+      (methodsByDistance[distance] ??= []).push({
+        stateType,
+        name: method.name,
+      });
+    }
+  }
+  return methodsByDistance.filter(
+    (methodsAtDistance) => methodsAtDistance !== undefined
+  );
+};
+
+// The methods at each distance, one group per distance, in the
+// order given.
+const MethodsByDistance: FC<{
+  declarations: Map<string, StateTypeDeclaration>;
+  methodsByDistance: MethodInGraph[][];
+}> = ({ declarations, methodsByDistance }) => (
+  <>
+    {methodsByDistance.map((methodsAtDistance, index) => (
+      <div className="method-group" key={index}>
+        {methodsAtDistance.map(({ stateType, name }) => (
+          <MethodCard
+            declarations={declarations}
+            stateType={stateType}
+            name={name}
+            key={methodId(stateType.id, name)}
+          />
+        ))}
+      </div>
+    ))}
+  </>
+);
+
+// The pane on one method, laid out in call order: the methods that
+// call it, farthest first, down to those calling it directly; its
+// own card, outlined; then the methods it calls, directly first,
+// out to the farthest. Each side shows only while the graph lights
+// that direction. The state type's name links to the type itself,
+// with all its methods.
+const MethodPane: FC<{
+  apis: APIs;
+  graph: GraphStateType[];
+  stateTypeId: string;
+  methodName: string;
+  conesOfInfluence: ConesOfInfluence;
+}> = ({ apis, graph, stateTypeId, methodName, conesOfInfluence }) => {
+  const declarations = useMemo(() => stateTypeDeclarationsById(apis), [apis]);
+  const id = methodId(stateTypeId, methodName);
+  const distanceByCallerId = useMemo(
+    () => callerDistancesTo(id, graph),
+    [id, graph]
+  );
+  const distanceByCalleeId = useMemo(
+    () => calleeDistancesFrom(id, graph),
+    [id, graph]
+  );
+  const callersByDistance = useMemo(
+    () => methodsAtEachDistance(distanceByCallerId, graph).reverse(),
+    [distanceByCallerId, graph]
+  );
+  const calleesByDistance = useMemo(
+    () => methodsAtEachDistance(distanceByCalleeId, graph),
+    [distanceByCalleeId, graph]
+  );
+  const stateType = graph.find(
+    (graphStateType) => graphStateType.id === stateTypeId
+  );
+  const declaration = declarations.get(stateTypeId);
+
+  return (
+    <section className="state-type" id={idOfTypeInPane(id)}>
+      <div className="eyebrow">method</div>
+      <div className="state-type-head">
+        <div className="state-type-heading">
+          <h2>{methodName}</h2>
+          <PaneAnchor id={id} />
+          <span className="summary-line">
+            <TypeLink className="type-link" id={stateTypeId}>
+              {shortNameOfTypeName(stateTypeId)}
+            </TypeLink>{" "}
+            · {countWithNoun(distanceByCallerId.size - 1, "caller")} ·{" "}
+            {countWithNoun(distanceByCalleeId.size - 1, "call")}
+          </span>
+        </div>
+      </div>
+      {declaration !== undefined && (
+        <div className="file">{declaration.api.filename}</div>
+      )}
+      {conesOfInfluence.upstream && callersByDistance.length > 0 && (
+        <>
+          <div className="eyebrow section">called by</div>
+          <MethodsByDistance
+            declarations={declarations}
+            methodsByDistance={callersByDistance}
+          />
+        </>
+      )}
+      <div className="methods method-pane-card">
+        {stateType !== undefined ? (
+          <MethodCard
+            declarations={declarations}
+            stateType={stateType}
+            name={methodName}
+            chosen
+          />
+        ) : (
+          <UndeclaredMethod name={methodName} />
+        )}
+      </div>
+      {conesOfInfluence.downstream && calleesByDistance.length > 0 && (
+        <>
+          <div className="eyebrow section">calls</div>
+          <MethodsByDistance
+            declarations={declarations}
+            methodsByDistance={calleesByDistance}
+          />
+        </>
+      )}
+    </section>
   );
 };
 
@@ -941,15 +1170,19 @@ const DataType: FC<{
 
 // The types pane: one type, state or data, slid open by a link to it
 // from the graph or a page, every method expanded; the X closes it.
-// A link naming a method flashes the method.
+// A link naming a method shows that method with what calls it and
+// what it calls instead.
 const TypesPane: FC<{
   apis: APIs;
   linkedDataTypes: LinkedDataType[];
+  graph: GraphStateType[];
+  // Which directions a method's pane follows, as the graph lights them.
+  conesOfInfluence: ConesOfInfluence;
   target: PaneTarget;
   // The property a followed link named, if any.
   propertyName?: string;
   // The history entry that named the target, so a repeated link
-  // flashes its method again; absent on a back or forward, which
+  // flashes its property again; absent on a back or forward, which
   // returns to what the reader had already seen flash.
   flashKey?: string;
   // The pane's scrolling body, for whoever restores its scroll.
@@ -959,6 +1192,8 @@ const TypesPane: FC<{
 }> = ({
   apis,
   linkedDataTypes,
+  graph,
+  conesOfInfluence,
   target,
   propertyName,
   flashKey,
@@ -967,6 +1202,8 @@ const TypesPane: FC<{
   onClose,
 }) => {
   const typeId = typeIdOfTarget(target);
+  const title =
+    target.method === undefined ? typeId : `${typeId}.${target.method}`;
   const found =
     target.stateTypeId === undefined
       ? undefined
@@ -991,7 +1228,7 @@ const TypesPane: FC<{
   return (
     <div className="types-pane">
       <div className="types-pane-header">
-        <span className="types-pane-title">{typeId}</span>
+        <span className="types-pane-title">{title}</span>
         <button
           type="button"
           className="types-hide"
@@ -1012,6 +1249,14 @@ const TypesPane: FC<{
             linkedDataType={foundDataType}
             flashProperty={flashProperty}
           />
+        ) : target.method !== undefined ? (
+          <MethodPane
+            apis={apis}
+            graph={graph}
+            stateTypeId={target.stateTypeId}
+            methodName={target.method}
+            conesOfInfluence={conesOfInfluence}
+          />
         ) : found === undefined ? (
           <div className="empty">
             <code>{shortNameOfTypeName(typeId)}</code> is not declared in your
@@ -1021,11 +1266,6 @@ const TypesPane: FC<{
           <StateType
             api={found.api}
             stateType={found.stateType}
-            flash={
-              target.method === undefined || flashKey === undefined
-                ? undefined
-                : { method: target.method, key: flashKey }
-            }
             flashProperty={flashProperty}
           />
         )}
@@ -2643,6 +2883,14 @@ const Overview: FC<{
     [searchParams, isStateTypeId, isDataTypeId]
   );
 
+  // The method the graph lights: the one the pane is on, so the two
+  // never disagree about what is chosen. With the pane on a state
+  // type, or closed, nothing is.
+  const chosenMethodId =
+    paneTarget?.method === undefined
+      ? null
+      : methodId(paneTarget.stateTypeId, paneTarget.method);
+
   // What the page links carry of the pane: the type it shows, but
   // not the method it last flashed.
   const carriedSearch =
@@ -2776,19 +3024,40 @@ const Overview: FC<{
 
   const navigate = useNavigate();
 
-  // Opens one state type in the types pane, named by the URL.
+  // Which cones of the chosen method the graph lights and the pane
+  // follows: both, on every choice, until the buttons flanking the
+  // chosen row say otherwise.
+  const [conesOfInfluence, setConesOfInfluence] = useState<ConesOfInfluence>(
+    DEFAULT_CONES_OF_INFLUENCE
+  );
+
+  useEffect(() => {
+    setConesOfInfluence(DEFAULT_CONES_OF_INFLUENCE);
+  }, [chosenMethodId]);
+
+  const toggleConeOfInfluence = useCallback(
+    (coneOfInfluence: keyof ConesOfInfluence): void => {
+      setConesOfInfluence((current) => ({
+        ...current,
+        [coneOfInfluence]: !current[coneOfInfluence],
+      }));
+    },
+    []
+  );
+
+  // Opens one state type in the types pane, named by the URL, which
+  // lets go of any chosen method.
   const onOpenStateType = useCallback(
     (id: string): void => {
-      setSearchParams({ type: id });
+      navigate({ pathname: "/models", search: searchOfType(id) });
     },
-    [setSearchParams]
+    [navigate]
   );
 
   // Choosing a method in the graph also opens it in the types pane:
   // one navigation naming it as both the chosen method and the
-  // pane's target, which flashes it, as any link to a method does.
-  // `id` is a `methodId`, `bank.v1.Account.deposit`. Letting the
-  // method go keeps the pane as it is, without its flash target.
+  // pane's target. `id` is a `methodId`, `bank.v1.Account.deposit`.
+  // Letting the method go leaves the pane on its state type.
   const onSelectMethod = useCallback(
     (id: string | null, replace?: boolean): void => {
       if (id === null) {
@@ -3031,11 +3300,13 @@ const Overview: FC<{
                 ) : null}
                 <GraphPage
                   stateTypes={graphStateTypes}
-                  selectedMethodId={target ?? null}
+                  selectedMethodId={chosenMethodId}
                   onSelectMethod={onSelectMethod}
                   onOpenStateType={onOpenStateType}
                   savedLayout={callGraphLayout}
                   onLayoutChange={onCallGraphLayoutChange}
+                  conesOfInfluence={conesOfInfluence}
+                  onToggleConeOfInfluence={toggleConeOfInfluence}
                 />
               </>
             ) : featureEntries.length === 0 ? (
@@ -3104,6 +3375,8 @@ const Overview: FC<{
                   <TypesPane
                     apis={apis}
                     linkedDataTypes={linkedDataTypes}
+                    graph={graphStateTypes}
+                    conesOfInfluence={conesOfInfluence}
                     target={paneTarget}
                     propertyName={paneProperty}
                     flashKey={returning ? undefined : location.key}
