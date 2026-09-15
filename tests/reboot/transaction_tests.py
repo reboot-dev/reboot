@@ -2161,6 +2161,542 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         # observed).
         self.assertEqual([], unexpected)
 
+    async def test_read_only_participant_answers_re_sent_prepare(
+        self,
+    ) -> None:
+        """A read-only participant whose `Prepare` response was lost
+        answers the coordinator's re-sent `Prepare` "prepared", so the
+        transaction commits.
+
+        A read-only participant elides its prepare and commit on its
+        first `Prepare`: it marks the transaction prepared and
+        committed in memory, drops its participant entry and releases
+        its shared lock. The coordinator retries `Prepare` on any
+        RPC-level error, because such an error says nothing about
+        whether the participant prepared. So a `Prepare` whose
+        response was lost is re-sent to a participant that has
+        forgotten the transaction precisely because it succeeded, and
+        an "abort" from it would turn a transaction that did prepare
+        into an abort.
+
+        Simulates the lost response by letting `alice` handle her
+        first `Prepare` of the `Transferrable` transaction in full and
+        then failing the RPC; the re-sent `Prepare` reaches her
+        unmodified.
+        """
+        prepare = SidecarStateManager.Prepare
+
+        alice_ref = StateRef.from_id(Account.__state_type_name__, 'alice')
+        bob_ref = StateRef.from_id(Account.__state_type_name__, 'bob')
+
+        # The responses `alice` gave to each `Prepare` of the
+        # `Transferrable` transaction, in order. Only tracked once the
+        # setup transactions have drained (see below), so the first
+        # one is her first `Prepare` of that transaction.
+        alice_responses: list[transactions_pb2.PrepareResponse] = []
+        track = False
+
+        async def mock_prepare(state_manager, request, grpc_context):
+            state_ref = Headers.from_grpc_context(grpc_context).state_ref
+            response = await prepare(state_manager, request, grpc_context)
+            if track and state_ref == alice_ref:
+                alice_responses.append(response)
+                if len(alice_responses) == 1:
+                    # The participant handled the `Prepare` in full;
+                    # only its response goes missing.
+                    raise RuntimeError('Simulating a lost Prepare response')
+            return response
+
+        with mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager.Prepare',
+            mock_prepare,
+        ):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer]),
+            )
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            await bank.SignUp(
+                context, account_id=alice_ref.id, initial_deposit=100
+            )
+            await bank.SignUp(
+                context, account_id=bob_ref.id, initial_deposit=200
+            )
+
+            # Reading a state waits for any prepared-but-not-yet-
+            # committed transaction on it to complete, and
+            # `AssetsUnderManagement` reads the Bank and every
+            # account, so once it returns the setup transactions'
+            # commit phases have fully drained and no further
+            # `Prepare` RPCs are coming from them.
+            await bank.AssetsUnderManagement(
+                context,
+                wait_for_amount_at_least=0,
+            )
+
+            track = True
+
+            response = await bank.Transferrable(
+                context,
+                from_account_id=alice_ref.id,
+                to_account_id=bob_ref.id,
+                amount=50,
+            )
+            self.assertTrue(response.transferrable)
+
+            # `alice` elided on her first `Prepare` and answered the
+            # re-sent one "prepared" too.
+            self.assertEqual(
+                [False, False],
+                [response.abort for response in alice_responses],
+            )
+
+            # Her elision released her shared lock, so an exclusive
+            # write on her goes through.
+            alice = Account.ref(alice_ref.id)
+            await alice.Deposit(context, amount=1)
+            balance = await alice.Balance(context)
+            self.assertEqual(balance.amount, 101)
+
+    async def test_re_sent_prepare_from_old_coordinator_still_aborts(
+        self,
+    ) -> None:
+        """A coordinator that does not say it recorded a participant
+        as read-only gets the definitive abort it expects when it
+        re-sends a `Prepare` to a participant that has forgotten the
+        transaction.
+
+        An old coordinator has no `read_only` field in its
+        `PrepareRequest`, and its participant record may not even
+        distinguish read-only participants, so "no pending
+        transaction" has to keep meaning abort for it, as it did
+        before the field existed. The participant still elided on the
+        first `Prepare`, so the coordinator's `Abort` finds nothing to
+        abort and the account is left usable.
+
+        Simulates the old coordinator by clearing `read_only` from
+        every `Prepare` of the `Transferrable` transaction, with the
+        same lost first response as
+        `test_read_only_participant_answers_re_sent_prepare`.
+        """
+        prepare = SidecarStateManager.Prepare
+
+        alice_ref = StateRef.from_id(Account.__state_type_name__, 'alice')
+        bob_ref = StateRef.from_id(Account.__state_type_name__, 'bob')
+
+        alice_responses: list[transactions_pb2.PrepareResponse] = []
+        track = False
+
+        async def mock_prepare(state_manager, request, grpc_context):
+            state_ref = Headers.from_grpc_context(grpc_context).state_ref
+            if track:
+                request.read_only = False
+            response = await prepare(state_manager, request, grpc_context)
+            if track and state_ref == alice_ref:
+                alice_responses.append(response)
+                if len(alice_responses) == 1:
+                    raise RuntimeError('Simulating a lost Prepare response')
+            return response
+
+        with mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager.Prepare',
+            mock_prepare,
+        ):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer]),
+            )
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            await bank.SignUp(
+                context, account_id=alice_ref.id, initial_deposit=100
+            )
+            await bank.SignUp(
+                context, account_id=bob_ref.id, initial_deposit=200
+            )
+
+            # See `test_read_only_participant_answers_re_sent_prepare`
+            # for why this drains the setup transactions.
+            await bank.AssetsUnderManagement(
+                context,
+                wait_for_amount_at_least=0,
+            )
+
+            track = True
+
+            with self.assertRaises(Bank.TransferrableAborted) as aborted:
+                await bank.Transferrable(
+                    context,
+                    from_account_id=alice_ref.id,
+                    to_account_id=bob_ref.id,
+                    amount=50,
+                )
+            self.assertEqual(
+                type(aborted.exception.error),
+                errors_pb2.TransactionParticipantFailedToPrepare,
+            )
+
+            # Need to acknowledge idempotency uncertainty so that we
+            # can continue running the test!
+            context.acknowledge_idempotency_uncertainty()
+
+            # `alice` elided on her first `Prepare`; the re-sent one
+            # was answered with a definitive abort, so the coordinator
+            # asked no further.
+            self.assertEqual(
+                [False, True],
+                [response.abort for response in alice_responses],
+            )
+
+            # Her elision released her shared lock and the abort left
+            # that alone, so an exclusive write on her goes through.
+            alice = Account.ref(alice_ref.id)
+            await alice.Deposit(context, amount=1)
+            balance = await alice.Balance(context)
+            self.assertEqual(balance.amount, 101)
+
+    async def test_restarted_read_only_participant_reports_restart(
+        self,
+    ) -> None:
+        """A read-only participant that restarted between eliding and
+        the re-sent `Prepare` reports the restart rather than claiming
+        it prepared, and the transaction is retried from scratch.
+
+        Restarting is the one way a participant can have lost a
+        transaction rather than completed it, so restart detection
+        takes precedence over answering a re-sent `Prepare`
+        "prepared". The coordinator turns the reported restart into
+        `Unavailable`, the client retries with the same idempotency
+        key, and the retried transaction commits.
+
+        The account's first `Prepare` of the first `Transferrable`
+        transaction is handled in full and then its response is lost;
+        the account's server is restarted before the re-sent
+        `Prepare` is allowed to reach the real handler.
+        """
+        prepare = SidecarStateManager.Prepare
+
+        account_ref = StateRef.from_id(
+            Account.__state_type_name__, 'jonathan-2345'
+        )
+
+        # The responses the account gave to each `Prepare` of the
+        # first `Transferrable` transaction, in order; tracked once
+        # the setup transactions have drained.
+        lost_transaction_id: Optional[bytes] = None
+        account_responses: list[transactions_pb2.PrepareResponse] = []
+        account_elided = asyncio.Event()
+        account_restarted = asyncio.Event()
+        track = False
+
+        async def mock_prepare(state_manager, request, grpc_context):
+            nonlocal lost_transaction_id
+            state_ref = Headers.from_grpc_context(grpc_context).state_ref
+            if track and state_ref == account_ref:
+                if lost_transaction_id is None:
+                    lost_transaction_id = request.transaction_id
+                if request.transaction_id == lost_transaction_id:
+                    if len(account_responses) > 0:
+                        # A re-sent `Prepare`. Hold it until the
+                        # account's server has restarted; one held on
+                        # the old server is cancelled along with that
+                        # server, and the coordinator re-sends it.
+                        await account_restarted.wait()
+                    response = await prepare(
+                        state_manager, request, grpc_context
+                    )
+                    account_responses.append(response)
+                    if len(account_responses) == 1:
+                        account_elided.set()
+                        raise RuntimeError(
+                            'Simulating a lost Prepare response'
+                        )
+                    return response
+            return await prepare(state_manager, request, grpc_context)
+
+        # Records that the client retried on `Unavailable`, proving
+        # the participant's reported restart made it all the way to
+        # the client.
+        should_retry = UnaryRetriedCall._should_retry
+        retried_unavailable = asyncio.Event()
+
+        def mock_should_retry(unary_retried_call, error):
+            if error.code() == grpc.StatusCode.UNAVAILABLE:
+                retried_unavailable.set()
+            return should_retry(unary_retried_call, error)
+
+        with mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager.Prepare',
+            mock_prepare,
+        ), mock.patch(
+            'reboot.aio.stubs.UnaryRetriedCall._should_retry',
+            mock_should_retry,
+        ):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer]),
+                local_envoy=True,
+                servers=2,
+            )
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+            # Bank and account on different servers, so that only the
+            # participant restarts.
+            _, account_server_id = await self.rbt.unique_servers(
+                bank._state_ref,
+                account_ref,
+            )
+
+            await bank.SignUp(context, account_id=account_ref.id)
+
+            # See `test_read_only_participant_answers_re_sent_prepare`
+            # for why this drains the setup transactions.
+            await bank.AssetsUnderManagement(
+                context,
+                wait_for_amount_at_least=0,
+            )
+
+            track = True
+
+            async def Transferrable():
+                return await bank.Transferrable(
+                    context,
+                    from_account_id=account_ref.id,
+                    to_account_id=account_ref.id,
+                    amount=0,
+                )
+
+            transferrable_task = asyncio.create_task(Transferrable())
+
+            await account_elided.wait()
+
+            account_server = await self.rbt.server_stop(account_server_id)
+            await self.rbt.server_start(account_server)
+            account_restarted.set()
+
+            response = await transferrable_task
+            self.assertTrue(response.transferrable)
+
+            self.assertTrue(retried_unavailable.is_set())
+
+            # The account elided on its first `Prepare` and reported
+            # its restart on the re-sent one, after which the
+            # coordinator asked no further about that transaction.
+            self.assertEqual(
+                [(False, False), (True, True)],
+                [
+                    (response.abort, response.restart_detected)
+                    for response in account_responses
+                ],
+            )
+
+    async def test_unprepared_read_only_participant_aborts_after_crash(
+        self,
+    ) -> None:
+        """A read-only participant whose `Prepare` was never handled
+        before its coordinator crashed aborts, releasing its shared
+        lock, when the recovered coordinator reports the transaction
+        committed.
+
+        A coordinator writes its participant list to disk and fans
+        `Prepare` out concurrently, so it can crash with the list
+        durably recorded and a read-only participant's `Prepare`
+        unhandled. That participant stays joined, unprepared, holding
+        its shared lock. The recovered coordinator re-prepares with
+        `skip_read_only=True`, because read-only participants may have
+        elided and forgotten the transaction, and then answers this
+        participant's `Watch` with "committed". The database refuses
+        to commit a participant transaction it never prepared, so
+        committing can never succeed; aborting is the terminal outcome
+        the participant can still reach, and it is safe because a
+        read-only participant has nothing to apply.
+
+        The account's `Prepare` of the `Transferrable` transaction is
+        held, never reaching the real handler, until the Bank's server
+        is stopped; the dying coordinator's cleanup fails so its
+        record of its participants survives until recovery. Bounds
+        the wait for the account's lock so that a participant that
+        never reaches a terminal outcome fails this test rather than
+        hanging it.
+        """
+        prepare = SidecarStateManager.Prepare
+        transaction_coordinator_prepare = (
+            DatabaseClient.transaction_coordinator_prepare
+        )
+        transaction_coordinator_cleanup = (
+            DatabaseClient.transaction_coordinator_cleanup
+        )
+
+        bank_ref = StateRef.from_id(
+            Bank.__state_type_name__, SINGLETON_BANK_ID
+        )
+        account_ref = StateRef.from_id(
+            Account.__state_type_name__, 'jonathan-2345'
+        )
+
+        # All tracked only once the setup transactions have drained.
+        stranded_transaction_id: Optional[bytes] = None
+        account_prepare_held = asyncio.Event()
+        bank_prepared = asyncio.Event()
+        transaction_coordinator_prepare_written = asyncio.Event()
+        track = False
+
+        # Whether `transaction_coordinator_cleanup` fails, simulating
+        # a coordinator that crashes while stopping rather than
+        # cleanly aborting: its record of its participants stays in
+        # the database and no participant is told to abort. Set from
+        # just before the coordinator is stopped until the account's
+        # outcome is observed, because the dying coordinator's cleanup
+        # can still run after `server_stop` returns.
+        fail_transaction_coordinator_cleanup = False
+
+        async def mock_prepare(state_manager, request, grpc_context):
+            nonlocal stranded_transaction_id
+            state_ref = Headers.from_grpc_context(grpc_context).state_ref
+            if track and state_ref == account_ref:
+                if stranded_transaction_id is None:
+                    stranded_transaction_id = request.transaction_id
+                if request.transaction_id == stranded_transaction_id:
+                    # Never handled: held until the coordinator's
+                    # server stops, which cancels the RPC.
+                    account_prepare_held.set()
+                    await asyncio.Event().wait()
+            response = await prepare(state_manager, request, grpc_context)
+            if track and state_ref == bank_ref:
+                bank_prepared.set()
+            return response
+
+        async def mock_transaction_coordinator_prepare(
+            database_client,
+            **kwargs,
+        ):
+            result = await transaction_coordinator_prepare(
+                database_client, **kwargs
+            )
+            if track:
+                transaction_coordinator_prepare_written.set()
+            return result
+
+        async def mock_transaction_coordinator_cleanup(
+            database_client,
+            **kwargs,
+        ):
+            if fail_transaction_coordinator_cleanup:
+                raise RuntimeError('Simulating a coordinator crash')
+            return await transaction_coordinator_cleanup(
+                database_client, **kwargs
+            )
+
+        # Whether the client may retry. Off while the bank server is
+        # stopped, so that its going down surfaces as `Unavailable`
+        # rather than an endless retry; on again once it is back,
+        # since the exclusive write below may wait on the account's
+        # lock past the lock deadline and then be asked to retry.
+        retries_enabled = True
+        should_retry = UnaryRetriedCall._should_retry
+
+        def mock_should_retry(unary_retried_call, error):
+            return retries_enabled and should_retry(unary_retried_call, error)
+
+        with mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager.Prepare',
+            mock_prepare,
+        ), mock.patch(
+            'reboot.server.database.DatabaseClient.'
+            'transaction_coordinator_prepare',
+            mock_transaction_coordinator_prepare,
+        ), mock.patch(
+            'reboot.server.database.DatabaseClient.'
+            'transaction_coordinator_cleanup',
+            mock_transaction_coordinator_cleanup,
+        ), mock.patch(
+            'reboot.aio.stubs.UnaryRetriedCall._should_retry',
+            mock_should_retry,
+        ):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer]),
+                local_envoy=True,
+                servers=2,
+            )
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+            # Bank and account on different servers, so that stopping
+            # the coordinator's server leaves the participant running.
+            bank_server_id, _ = await self.rbt.unique_servers(
+                bank._state_ref,
+                account_ref,
+            )
+
+            await bank.SignUp(context, account_id=account_ref.id)
+
+            # See `test_read_only_participant_answers_re_sent_prepare`
+            # for why this drains the setup transactions.
+            await bank.AssetsUnderManagement(
+                context,
+                wait_for_amount_at_least=0,
+            )
+
+            track = True
+
+            async def Transferrable():
+                return await bank.Transferrable(
+                    context,
+                    from_account_id=account_ref.id,
+                    to_account_id=account_ref.id,
+                    amount=0,
+                )
+
+            transferrable_task = asyncio.create_task(Transferrable())
+
+            # The coordinator's record of its participants persisted
+            # and the Bank durably prepared, while the account's
+            # `Prepare` is being held.
+            await account_prepare_held.wait()
+            await bank_prepared.wait()
+            await transaction_coordinator_prepare_written.wait()
+
+            fail_transaction_coordinator_cleanup = True
+
+            retries_enabled = False
+            bank_server = await self.rbt.server_stop(bank_server_id)
+
+            with self.assertRaises(Bank.TransferrableAborted) as aborted:
+                await transferrable_task
+
+            self.assertEqual(
+                type(aborted.exception.error), errors_pb2.Unavailable
+            )
+
+            # Need to acknowledge idempotency uncertainty so that we
+            # can continue running the test!
+            context.acknowledge_idempotency_uncertainty()
+
+            await self.rbt.server_start(bank_server)
+            retries_enabled = True
+
+            # The recovered coordinator re-prepares only the Bank,
+            # which is durably prepared, and then reports the
+            # transaction committed to the account's `Watch`. The
+            # account, unprepared, aborts its part of the transaction
+            # and releases its shared lock, which is what lets an
+            # exclusive write on it go through.
+            account = Account.ref(account_ref.id)
+            await asyncio.wait_for(
+                account.Deposit(context, amount=1),
+                timeout=90,
+            )
+            balance = await account.Balance(context)
+            self.assertEqual(balance.amount, 1)
+
+            # The recovered coordinator's commit control loop retries
+            # its cleanup until it succeeds, so it may now delete the
+            # record.
+            fail_transaction_coordinator_cleanup = False
+
     async def test_transaction_recovery_after_coordinator_preparing(
         self,
     ) -> None:
