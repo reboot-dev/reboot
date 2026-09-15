@@ -1,5 +1,5 @@
 // The call graph's questions about one method: who calls it directly,
-// and what it calls, transitively.
+// whether it calls itself, and what it calls, transitively.
 import { describe, expect, it } from "vitest";
 import { Servicer_Method_Call_How } from "../../../rbt/dashboard/v1/dashboard_pb";
 import type {
@@ -9,6 +9,7 @@ import type {
 } from "../../../reboot/dashboard/web/src/callgraph";
 import {
   calleeDistancesFrom,
+  callsItself,
   directCallers,
   methodId,
 } from "../../../reboot/dashboard/web/src/callgraph";
@@ -66,6 +67,18 @@ describe("a method's direct callers", () => {
   it("are none for a method nothing calls", () => {
     expect(directCallers(A_a, graph)).toEqual([]);
     expect(directCallers(C_d, graph)).toEqual([]);
+  });
+});
+
+describe("whether a method calls itself", () => {
+  it("is told by its own calls", () => {
+    expect(callsItself(C_c, graph)).toBe(true);
+    expect(callsItself(B_b, graph)).toBe(false);
+    expect(callsItself(C_d, graph)).toBe(false);
+  });
+
+  it("is not told by the distances, which put it at zero from itself", () => {
+    expect(calleeDistancesFrom(C_c, graph)).toEqual(new Map([[C_c, 0]]));
   });
 });
 
