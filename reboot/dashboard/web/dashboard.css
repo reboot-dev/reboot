@@ -724,6 +724,7 @@ a.change-name:hover {
 .pane {
   height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
   background: hsl(var(--background));
 }
 
@@ -2849,9 +2850,13 @@ header .state-type-description {
   color: hsl(var(--foreground));
 }
 
+/* Scrolls up and down only: a closed definition, hidden but laid
+   out, can reach past the pane's side, and must not make it scroll
+   sideways. */
 .types-pane-body {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* The pane's card is the state type's card, set in a narrower
