@@ -578,7 +578,8 @@ const later = (
 const NAV_WIDTH = { default: 250, min: 170, max: 520, handle: 14 };
 
 // The types pane's widths, pixels the same way, collapsing the same
-// way.
+// way. The minimum is a floor: the pane asks for more when the heading
+// it shows needs more to stay on one line.
 const PANE_WIDTH = { default: 380, min: 260, max: 720, handle: 14 };
 
 // The sidebar is the first panel of the shell so that the border
@@ -1238,7 +1239,8 @@ const MethodPane: FC<{
             <TypeLink className="method-state-type" id={stateTypeId}>
               {shortNameOfTypeName(stateTypeId)}
             </TypeLink>
-            .{methodName}
+            .<wbr />
+            {methodName}
           </h2>
           <PaneAnchor id={id} />
           {declaredMethod !== undefined && (
@@ -1613,7 +1615,8 @@ const ToolPane: FC<{
               <span aria-hidden="true">🤖 </span>
               {agent.name}
             </TypeLink>
-            .{toolName}
+            .<wbr />
+            {toolName}
           </h2>
           <PaneAnchor id={id} />
         </div>
@@ -1709,6 +1712,10 @@ const TypesPane: FC<{
   // The pane's scrolling body, for whoever restores its scroll.
   bodyRef: RefObject<HTMLDivElement>;
   onScroll: (scrollTop: number) => void;
+  // Told the narrowest width of the panel at which the heading shown
+  // stays on one line, whenever the pane shows a heading; zero when
+  // it shows none.
+  onMinWidth: (width: number) => void;
   onClose: () => void;
 }> = ({
   apis,
@@ -1724,9 +1731,33 @@ const TypesPane: FC<{
   flashKey,
   bodyRef,
   onScroll,
+  onMinWidth,
   onClose,
 }) => {
   const typeId = typeIdOfTarget(target);
+
+  // The heading laid out on one line, as wide as its contents want
+  // and shrunk by nothing, plus everything the panel has around it,
+  // from its own edge to the heading's box. Laid out that way just to
+  // be measured, before the browser paints.
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    const heading = body?.querySelector(".state-type-heading");
+    const panel = body?.closest(".types-panel");
+    if (!(heading instanceof HTMLElement) || panel == null) {
+      onMinWidth(0);
+      return;
+    }
+    heading.style.width = "max-content";
+    heading.style.flex = "none";
+    const oneLine = heading.getBoundingClientRect().width;
+    heading.style.removeProperty("width");
+    heading.style.removeProperty("flex");
+    const around =
+      panel.getBoundingClientRect().width -
+      heading.parentElement!.getBoundingClientRect().width;
+    onMinWidth(Math.ceil(oneLine + around));
+  }, [apis, graph, agents, target, bodyRef, onMinWidth]);
   const foundAgent =
     target.agentId === undefined
       ? undefined
@@ -3308,9 +3339,33 @@ const Overview: FC<{
     }
   }, [paneWidth, typesPanel]);
 
+  // The narrowest the pane may be dragged: the floor, or what the
+  // heading it shows needs to stay on one line when that is more,
+  // as the pane reports it; never past the widest it may be dragged.
+  const [paneMinWidth, setPaneMinWidth] = useState(PANE_WIDTH.min);
+
+  const onPaneMinWidth = useCallback((width: number): void => {
+    setPaneMinWidth(Math.min(Math.max(width, PANE_WIDTH.min), PANE_WIDTH.max));
+  }, []);
+
   // Whether the drawer is dragged shut, from its width, so the
   // handle renders in its place.
   const [paneCollapsed, setPaneCollapsed] = useState(false);
+
+  // A pane narrower than the heading it shows needs grows to fit it:
+  // when the heading changes, and when the drawer reopens at the
+  // width it was dragged shut from.
+  useEffect(() => {
+    const panel = typesPanel.current;
+    if (
+      !paneCollapsed &&
+      panel != null &&
+      !panel.isCollapsed() &&
+      panel.getSize().inPixels < paneMinWidth
+    ) {
+      panel.resize(paneMinWidth);
+    }
+  }, [paneMinWidth, paneCollapsed, typesPanel]);
 
   // The features page names its sections by file path, whose
   // slashes a `:id` segment cannot hold, so its route matches the
@@ -3918,17 +3973,18 @@ const Overview: FC<{
               className="types-panel"
               panelRef={typesPanel}
               defaultSize={paneWidth}
-              minSize={PANE_WIDTH.min}
+              minSize={paneMinWidth}
               maxSize={PANE_WIDTH.max}
               collapsible
               collapsedSize={PANE_WIDTH.handle}
               groupResizeBehavior="preserve-pixel-size"
               onResize={({ inPixels }) => {
                 const width = Math.round(inPixels);
-                setPaneCollapsed(width < PANE_WIDTH.min);
+                const collapsed = width <= PANE_WIDTH.handle;
+                setPaneCollapsed(collapsed);
                 // A collapsed width is never remembered: the drawer
                 // reopens at the width it was dragged shut from.
-                if (width >= PANE_WIDTH.min) {
+                if (!collapsed) {
                   onPaneResizing(width);
                 }
               }}
@@ -3970,6 +4026,7 @@ const Overview: FC<{
                     onScroll={(scrollTop) =>
                       typesScrollTops.set(location.key, scrollTop)
                     }
+                    onMinWidth={onPaneMinWidth}
                     onClose={onClosePane}
                     key={typeIdOfTarget(paneTarget)}
                   />

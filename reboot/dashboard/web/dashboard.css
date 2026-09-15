@@ -1277,6 +1277,22 @@ header h1 {
   right: auto;
 }
 
+/* In the pane the pills keep to the name's line however narrow the
+   pane is dragged: a name too long for the room breaks after its
+   state type's dot, where the heading offers a break, and the pills
+   stand beside it. */
+.types-pane-body .state-type-heading {
+  flex-wrap: nowrap;
+}
+
+.types-pane-body .state-type-heading h2 {
+  min-width: 0;
+}
+
+.types-pane-body .state-type-heading .method-tags {
+  flex: none;
+}
+
 /* The section eyebrow sits at the pane's left edge, and the pane
    clips whatever leaves it, so a centred tooltip loses its left
    half. Open rightward from the label instead. */
