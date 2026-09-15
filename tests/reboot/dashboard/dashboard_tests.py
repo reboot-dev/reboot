@@ -493,7 +493,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         # methods that call it directly, then the methods it calls.
         # Each listed name is a link that chooses that method, in the
         # graph and in the pane, as a click on its row in the graph
-        # does.
+        # does. The graph is the models page, with no heading over it.
         def body(driver):
             driver.get(
                 f'{self.url}{DASHBOARD_PATH}/#/models/shop.v1.Shop.look'
@@ -520,6 +520,10 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 (link.text, link.get_attribute('href')) for link in driver.
                 find_elements(By.CSS_SELECTOR, '.method-group .method-link')
             ]
+            headings_over_the_graph = driver.find_elements(
+                By.CSS_SELECTOR, '.pane > header'
+            )
+
             # Following a listed name chooses that method.
             driver.find_element(
                 By.XPATH,
@@ -540,6 +544,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 'signature': signature,
                 'sections': sections,
                 'links': links,
+                'headings_over_the_graph': len(headings_over_the_graph),
                 'chosen_rows': chosen_rows,
                 'url_after_click': driver.current_url,
             }
@@ -589,6 +594,8 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 ('look', link_to('look')),
             ],
         )
+
+        self.assertEqual(seen['headings_over_the_graph'], 0)
 
         # The click on `stock` took the graph and the pane to it.
         self.assertEqual(seen['url_after_click'], link_to('stock'))

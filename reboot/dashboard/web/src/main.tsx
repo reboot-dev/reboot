@@ -131,7 +131,6 @@ import {
 } from "./features";
 import {
   DEFAULT_CONES_OF_INFLUENCE,
-  drawnCallCount,
   GraphPage,
   type CallGraphLayout,
   type ConesOfInfluence,
@@ -3017,28 +3016,18 @@ const Overview: FC<{
     onSeen,
   ]);
 
-  const calls = useMemo(
-    () => drawnCallCount(graphStateTypes),
-    [graphStateTypes]
-  );
-
+  // The heading over a page. The models page has none: the graph
+  // is the page, and a heading only takes room from it.
   const eyebrow =
     page === "changelog"
       ? "history"
-      : page === "features"
-      ? chosenFeature === undefined
-        ? "application features"
-        : "feature"
-      : "application model";
+      : chosenFeature === undefined
+      ? "application features"
+      : "feature";
 
   const heading =
     page === "changelog"
       ? "Changelog"
-      : page === "models"
-      ? `${countWithNoun(calls, "call")} between ${countWithNoun(
-          graphStateTypes.length,
-          "state type"
-        )}`
       : chosenFeature === undefined
       ? countWithNoun(featureEntries.length, "feature")
       : chosenFeature.feature.name ?? chosenFeature.filename;
@@ -3281,36 +3270,38 @@ const Overview: FC<{
             className={page === "models" ? "pane graph-pane" : "pane"}
             ref={pane}
           >
-            <header>
-              <div className="eyebrow">{eyebrow}</div>
-              <h1>{heading}</h1>
-              {/* A feature's page names the feature up here, so its
+            {page !== "models" && (
+              <header>
+                <div className="eyebrow">{eyebrow}</div>
+                <h1>{heading}</h1>
+                {/* A feature's page names the feature up here, so its
                 file, counts, and description belong here too. */}
-              {page === "features" && chosenFeature !== undefined && (
-                <>
-                  <div className="feature-file-line">
-                    <div className="file">{chosenFeature.filename}</div>
-                    <span className="summary-line">
-                      {countWithNoun(
-                        scenariosOfFeature(chosenFeature.feature).length,
-                        "scenario"
-                      )}
-                      {chosenFeature.feature.rules.length > 0 &&
-                        ` · ${countWithNoun(
-                          chosenFeature.feature.rules.length,
-                          "rule"
-                        )}`}
-                    </span>
-                  </div>
-                  {chosenFeature.feature.description !== undefined && (
-                    <Description
-                      className="state-type-description"
-                      text={chosenFeature.feature.description}
-                    />
-                  )}
-                </>
-              )}
-            </header>
+                {page === "features" && chosenFeature !== undefined && (
+                  <>
+                    <div className="feature-file-line">
+                      <div className="file">{chosenFeature.filename}</div>
+                      <span className="summary-line">
+                        {countWithNoun(
+                          scenariosOfFeature(chosenFeature.feature).length,
+                          "scenario"
+                        )}
+                        {chosenFeature.feature.rules.length > 0 &&
+                          ` · ${countWithNoun(
+                            chosenFeature.feature.rules.length,
+                            "rule"
+                          )}`}
+                      </span>
+                    </div>
+                    {chosenFeature.feature.description !== undefined && (
+                      <Description
+                        className="state-type-description"
+                        text={chosenFeature.feature.description}
+                      />
+                    )}
+                  </>
+                )}
+              </header>
+            )}
             {error && <div className="error">{error}</div>}
             {page === "changelog" ? (
               <ChangelogPage
