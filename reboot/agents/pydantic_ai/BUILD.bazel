@@ -17,6 +17,7 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        requirement("anyio"),
         requirement("pydantic-ai-slim"),
         "//reboot/aio:contexts_py",
         "//reboot/aio:idempotency_py",
