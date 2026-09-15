@@ -58,7 +58,12 @@ class BlobStore(Protocol):
 
     Methods that may need to reach Reboot state for their metadata
     take a `context` to do so with; a store whose metadata lives in an
-    object store ignores it."""
+    object store ignores it.
+
+    A store retries nothing: it raises for what may pass on a later
+    attempt, which the servicer surfaces as a gRPC error for the
+    caller to retry (see `data_plane.proto`), and raises
+    `BlobStoreError` only for what never will."""
 
     @property
     def part_size(self) -> int:
@@ -205,10 +210,10 @@ class BlobDataPlaneServicer(data_plane_pb2_grpc.BlobDataPlaneServicer):
             )
             return DataPlaneCompleteUploadResponse(etag=etag)
         except BlobStoreError as error:
-            # A permanent failure: report it so the control plane can
-            # surface it and let the client re-upload. Transient
-            # failures raise other exceptions, which the control
-            # plane's workflow retries.
+            # A permanent failure: reported in the response, since
+            # retrying the call would only repeat it. Transient failures
+            # raise other exceptions, which become the gRPC error the
+            # caller retries.
             return DataPlaneCompleteUploadResponse(error=str(error))
 
     async def GetDownloadUrl(

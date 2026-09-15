@@ -318,11 +318,16 @@ export class BlobUploader {
  *     ...
  *     const { etag, error } = await upload(blobId, file);
  *
- * A resolved `error` is the data plane's verdict on the commit. A
- * rejection is a part that could not be uploaded even after retries;
- * the parts that did upload are kept, so calling `upload` again for
- * the same blob resumes rather than restarts. A blob that is never
- * committed is removed by the backend after a day.
+ * A resolved `error` is the data plane's verdict on the commit: what
+ * was uploaded can never commit as reported. The blob is back to
+ * uploading, but `upload` cannot repair it, since it skips every
+ * part the blob already has and the verdict does not say which part
+ * is at fault; upload again into a new blob, or replace parts through
+ * `BlobUploader.putPart` and `commit` again. A rejection is a part
+ * that could not be uploaded even after retries; the parts that did
+ * upload are kept, so calling `upload` again for the same blob
+ * resumes rather than restarts. A blob that is never committed is
+ * removed by the backend after a day.
  */
 export function useBlobUpload(): {
   upload: (
