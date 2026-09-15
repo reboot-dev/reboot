@@ -109,10 +109,11 @@ import type * as feature_pb from "../../../../rbt/v1alpha1/bdd/feature_pb";
 import type * as grammar_pb from "../../../../rbt/v1alpha1/bdd/grammar_pb";
 import {
   calleeDistancesFrom,
-  callerDistancesTo,
+  directCallers,
   joinStateTypes,
   methodId,
   type GraphStateType,
+  type MethodInGraph,
 } from "./callgraph";
 import {
   chosenMethodIdOf,
@@ -880,13 +881,6 @@ const MethodCard: FC<{
   );
 };
 
-// A method as the graph knows it: by the state type it belongs to
-// and its name.
-interface MethodInGraph {
-  stateType: GraphStateType;
-  name: string;
-}
-
 // The methods at each distance from the chosen one, nearest first,
 // the chosen one itself left out. At one distance, the graph's order.
 const methodsAtEachDistance = (
@@ -934,11 +928,11 @@ const MethodsByDistance: FC<{
 );
 
 // The pane on one method: its head names it with its state type and
-// carries what the API declares of it, then the methods that call
-// it, farthest first, down to those calling it directly, then the
-// methods it calls, directly first, out to the farthest. Each list
-// shows only while the graph lights that direction. The state type's
-// name links to the type itself, with all its methods.
+// carries what the API declares of it, then the methods that call it
+// directly, then the methods it calls, directly first, out to the
+// farthest. Each list shows only while the graph lights that
+// direction. The state type's name links to the type itself, with
+// all its methods.
 const MethodPane: FC<{
   apis: APIs;
   graph: GraphStateType[];
@@ -948,17 +942,10 @@ const MethodPane: FC<{
 }> = ({ apis, graph, stateTypeId, methodName, conesOfInfluence }) => {
   const declarations = useMemo(() => stateTypeDeclarationsById(apis), [apis]);
   const id = methodId(stateTypeId, methodName);
-  const distanceByCallerId = useMemo(
-    () => callerDistancesTo(id, graph),
-    [id, graph]
-  );
+  const callers = useMemo(() => directCallers(id, graph), [id, graph]);
   const distanceByCalleeId = useMemo(
     () => calleeDistancesFrom(id, graph),
     [id, graph]
-  );
-  const callersByDistance = useMemo(
-    () => methodsAtEachDistance(distanceByCallerId, graph).reverse(),
-    [distanceByCallerId, graph]
   );
   const calleesByDistance = useMemo(
     () => methodsAtEachDistance(distanceByCalleeId, graph),
@@ -1029,12 +1016,12 @@ const MethodPane: FC<{
           />
         </>
       )}
-      {conesOfInfluence.upstream && callersByDistance.length > 0 && (
+      {conesOfInfluence.upstream && callers.length > 0 && (
         <>
           <div className="eyebrow section">called by</div>
           <MethodsByDistance
             declarations={declarations}
-            methodsByDistance={callersByDistance}
+            methodsByDistance={[callers]}
           />
         </>
       )}

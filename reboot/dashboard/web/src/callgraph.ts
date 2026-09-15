@@ -77,6 +77,32 @@ export const methodId = (stateTypeName: string, methodName: string): string =>
 export const isDrawn = (call: GraphCall): boolean =>
   call.how !== Servicer_Method_Call_How.UNTIL;
 
+// A method as the graph knows it: by the state type it belongs to
+// and its name.
+export interface MethodInGraph {
+  stateType: GraphStateType;
+  name: string;
+}
+
+// Whether a method's drawn calls include one to the given method.
+const callsMethod = (method: GraphMethod, id: string): boolean =>
+  method.calls.some(
+    (call) =>
+      isDrawn(call) && methodId(call.stateTypeName, call.methodName) === id
+  );
+
+// The methods that call the given one directly, in the graph's
+// order. A method that calls itself is one of them.
+export const directCallers = (
+  id: string,
+  stateTypes: GraphStateType[]
+): MethodInGraph[] =>
+  stateTypes.flatMap((stateType) =>
+    stateType.methods
+      .filter((method) => callsMethod(method, id))
+      .map((method) => ({ stateType, name: method.name }))
+  );
+
 // Every method the given one calls, transitively, with how many
 // calls away it is: the downstream closure over the drawn calls,
 // the given method itself at zero.
