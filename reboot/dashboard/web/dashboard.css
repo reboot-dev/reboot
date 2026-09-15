@@ -1094,6 +1094,20 @@ header h1 {
   transform: none;
 }
 
+/* In a pane's heading the pills stand beside the name, near the
+   pane's left edge, so their definitions open rightward instead:
+   leftward they would leave the pane and be clipped. Centred on the
+   line rather than on the heading's baseline, which would drop
+   them below it. */
+.state-type-heading .method-tags {
+  align-self: center;
+}
+
+.state-type-heading .method-tags .definition {
+  left: 0;
+  right: auto;
+}
+
 /* The section eyebrow sits at the pane's left edge, and the pane
    clips whatever leaves it, so a centred tooltip loses its left
    half. Open rightward from the label instead. */
@@ -2697,13 +2711,18 @@ header .state-type-description {
   opacity: 0.85;
 }
 
-/* The pane on a method, in call order: the callers, then its own
-   card set a little apart, then what it calls. Each group is one
-   level of calls away from it, so the sequence reads down the pane. */
-.method-pane-card {
-  margin-top: 14px;
+/* The signature in a method pane's head, under the description
+   rather than at the foot of a card: no hairline and no card
+   padding, so it lines up with the prose above it. */
+.method-pane-signature {
+  margin-top: 12px;
+  padding: 0;
+  border-top: none;
 }
 
+/* The pane on a method lists the methods that call it, then what it
+   calls, one group per level of calls away from it, so the sequence
+   reads down the pane. */
 .method-group {
   display: flex;
   flex-direction: column;

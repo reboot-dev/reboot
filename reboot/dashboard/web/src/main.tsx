@@ -617,7 +617,8 @@ const Keys: FC<{ properties: Property[] }> = ({ properties }) => (
 const Signature: FC<{
   api: api_pb.API;
   method: api_pb.Method;
-}> = ({ api, method }) => {
+  className?: string;
+}> = ({ api, method, className }) => {
   const takes =
     method.request === undefined
       ? []
@@ -629,7 +630,7 @@ const Signature: FC<{
   const nothing = <span className="nothing">nothing</span>;
 
   return (
-    <dl className="method-signature">
+    <dl className={["method-signature", className].filter(Boolean).join(" ")}>
       <dt>takes</dt>
       <dd>{takes.length > 0 ? <Keys properties={takes} /> : nothing}</dd>
       <dt>returns</dt>
@@ -862,8 +863,7 @@ const MethodCard: FC<{
   declarations: Map<string, StateTypeDeclaration>;
   stateType: GraphStateType;
   name: string;
-  chosen?: boolean;
-}> = ({ declarations, stateType, name, chosen }) => {
+}> = ({ declarations, stateType, name }) => {
   const declaringStateType = { id: stateType.id, name: stateType.name };
   const declaration = declarations.get(stateType.id);
   const method = declaration?.stateType.methods.find(
@@ -874,7 +874,6 @@ const MethodCard: FC<{
       api={declaration.api}
       method={method}
       declaringStateType={declaringStateType}
-      chosen={chosen}
     />
   ) : (
     <UndeclaredMethod name={name} declaringStateType={declaringStateType} />
@@ -934,12 +933,12 @@ const MethodsByDistance: FC<{
   </>
 );
 
-// The pane on one method, laid out in call order: the methods that
-// call it, farthest first, down to those calling it directly; its
-// own card, outlined; then the methods it calls, directly first,
-// out to the farthest. Each side shows only while the graph lights
-// that direction. The state type's name links to the type itself,
-// with all its methods.
+// The pane on one method: its head names it with its state type and
+// carries what the API declares of it, then the methods that call
+// it, farthest first, down to those calling it directly, then the
+// methods it calls, directly first, out to the farthest. Each list
+// shows only while the graph lights that direction. The state type's
+// name links to the type itself, with all its methods.
 const MethodPane: FC<{
   apis: APIs;
   graph: GraphStateType[];
@@ -969,25 +968,66 @@ const MethodPane: FC<{
     (graphStateType) => graphStateType.id === stateTypeId
   );
   const declaration = declarations.get(stateTypeId);
+  const declaredMethod = declaration?.stateType.methods.find(
+    (apiMethod) => apiMethod.name === methodName
+  );
 
   return (
     <section className="state-type" id={idOfTypeInPane(id)}>
       <div className="eyebrow">method</div>
       <div className="state-type-head">
         <div className="state-type-heading">
-          <h2>{methodName}</h2>
-          <PaneAnchor id={id} />
-          <span className="summary-line">
-            <TypeLink className="type-link" id={stateTypeId}>
+          <h2>
+            <TypeLink className="method-state-type" id={stateTypeId}>
               {shortNameOfTypeName(stateTypeId)}
-            </TypeLink>{" "}
-            · {countWithNoun(distanceByCallerId.size - 1, "caller")} ·{" "}
-            {countWithNoun(distanceByCalleeId.size - 1, "call")}
-          </span>
+            </TypeLink>
+            .{methodName}
+          </h2>
+          <PaneAnchor id={id} />
+          {declaredMethod !== undefined && (
+            <div className="method-tags">
+              <Kind kind={kindOfMethod(declaredMethod)} />
+              <span className="tags">
+                {declaredMethod.factory && (
+                  <Pill
+                    className="tag tag-factory"
+                    label="factory"
+                    meaning={DEFINITIONS.factory}
+                  />
+                )}
+                {declaredMethod.mcp !== undefined && (
+                  <Pill
+                    className="tag tag-mcp"
+                    label="MCP"
+                    meaning={DEFINITIONS.mcp}
+                  />
+                )}
+              </span>
+            </div>
+          )}
         </div>
       </div>
       {declaration !== undefined && (
         <div className="file">{declaration.api.filename}</div>
+      )}
+      {declaration === undefined || declaredMethod === undefined ? (
+        <div className="empty">
+          Not declared in your API, just called by your code.
+        </div>
+      ) : (
+        <>
+          {declaredMethod.description !== undefined && (
+            <Description
+              className="state-type-description"
+              text={declaredMethod.description}
+            />
+          )}
+          <Signature
+            api={declaration.api}
+            method={declaredMethod}
+            className="method-pane-signature"
+          />
+        </>
       )}
       {conesOfInfluence.upstream && callersByDistance.length > 0 && (
         <>
@@ -998,18 +1038,6 @@ const MethodPane: FC<{
           />
         </>
       )}
-      <div className="methods method-pane-card">
-        {stateType !== undefined ? (
-          <MethodCard
-            declarations={declarations}
-            stateType={stateType}
-            name={methodName}
-            chosen
-          />
-        ) : (
-          <UndeclaredMethod name={methodName} />
-        )}
-      </div>
       {conesOfInfluence.downstream && calleesByDistance.length > 0 && (
         <>
           <div className="eyebrow section">calls</div>
