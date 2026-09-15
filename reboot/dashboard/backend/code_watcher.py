@@ -98,12 +98,6 @@ from reboot.dashboard.backend.walk import (
 from types import MappingProxyType
 from typing import Mapping, Optional, Sequence
 
-# One Reboot call a method's implementation makes: which state type,
-# which method, and how the call is reached. Aliased from where it
-# is defined so that what an analysis records and what a reader
-# reads are one message.
-Call = Servicer.Method.Call
-
 # Where Reboot's `Agent` is written, as the last parts of the path
 # pyright answers with, so that the module is recognized wherever
 # `reboot` is installed. What tells a run of an agent from any other
@@ -298,7 +292,7 @@ class MethodDefinition:
     # is written: e.g. `CONSTRUCT` for one on the state type's own
     # class, and `SCHEDULE` for one inside its
     # `WeakReference._Schedule`.
-    how: 'Call.How.ValueType'
+    how: 'Servicer.Method.Call.How.ValueType'
 
 
 GeneratedDefinition = (
@@ -312,14 +306,14 @@ GeneratedDefinition = (
 # `.forall(ids)`; for `.idempotently(...)`, a plain call or a
 # construction made idempotent.
 HOWS_BY_CLASS_NAME = {
-    '_ConstructIdempotently': Call.How.CONSTRUCT,
-    '_Forall': Call.How.FORALL,
-    '_Idempotently': Call.How.CALL,
-    '_Schedule': Call.How.SCHEDULE,
-    '_SelfIdempotently': Call.How.CALL,
-    '_SelfSchedule': Call.How.SCHEDULE,
-    '_Spawn': Call.How.SPAWN,
-    '_Until': Call.How.UNTIL,
+    '_ConstructIdempotently': Servicer.Method.Call.How.CONSTRUCT,
+    '_Forall': Servicer.Method.Call.How.FORALL,
+    '_Idempotently': Servicer.Method.Call.How.CALL,
+    '_Schedule': Servicer.Method.Call.How.SCHEDULE,
+    '_SelfIdempotently': Servicer.Method.Call.How.CALL,
+    '_SelfSchedule': Servicer.Method.Call.How.SCHEDULE,
+    '_Spawn': Servicer.Method.Call.How.SPAWN,
+    '_Until': Servicer.Method.Call.How.UNTIL,
 }
 
 
@@ -339,7 +333,7 @@ def _method_definitions_in(
     body: Sequence[ast.stmt],
     *,
     state_type: str,
-    how: Call.How.ValueType,
+    how: Servicer.Method.Call.How.ValueType,
 ) -> dict[int, MethodDefinition]:
     """Returns the method stubs a class body defines, by line: each
     def taking `__context__` second, and each alias the generator
@@ -443,7 +437,7 @@ def _generated_definitions(
                     _method_definitions_in(
                         statement.body,
                         state_type=state_type,
-                        how=Call.How.CONSTRUCT,
+                        how=Servicer.Method.Call.How.CONSTRUCT,
                     )
                 )
                 for inner in statement.body:
@@ -463,7 +457,7 @@ def _generated_definitions(
                                 _method_definitions_in(
                                     inner.body,
                                     state_type=state_type,
-                                    how=Call.How.CALL,
+                                    how=Servicer.Method.Call.How.CALL,
                                 )
                             )
                             for node in inner.body:
@@ -1084,7 +1078,7 @@ class Findings:
     servicer method and an agent's tool each record of what they
     do."""
 
-    calls: tuple[Call, ...]
+    calls: tuple[Servicer.Method.Call, ...]
     runs: tuple[Agent.Run, ...]
     hazards: tuple[Servicer.Method.Hazard, ...]
 
@@ -1159,7 +1153,7 @@ async def _analyze_function(
     machinery, such as the `ref` or `schedule` inside a chain, or the
     standard library's, is neither.
     """
-    calls: list[Call] = []
+    calls: list[Servicer.Method.Call] = []
     runs: list[Agent.Run] = []
     hazards: list[Servicer.Method.Hazard] = []
     agents: list[Agent] = []
@@ -1226,7 +1220,9 @@ async def _analyze_function(
                     how=how,
                 ):
                     calls.append(
-                        Call(state_type=state_type, method=name, how=how)
+                        Servicer.Method.Call(
+                            state_type=state_type, method=name, how=how
+                        )
                     )
             continue
 
