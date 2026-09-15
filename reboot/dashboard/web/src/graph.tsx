@@ -123,6 +123,33 @@ const COLLAPSED_PACKAGE_HEIGHT = 78;
 const EXPANDED_PACKAGE_HEAD_HEIGHT = 38;
 const EXPANDED_PACKAGE_PAD = 20;
 
+// What a package's name takes across, arithmetic on its length the
+// way a card's height is on its method count, so a box can be sized
+// before its head is drawn: the mono face comes out near 7px a
+// character at the expanded head's 11.5px and near 8px at the
+// collapsed box's 13px. The slack past the name is the collapse
+// link, the gap before it and the head's padding, or the collapsed
+// box's padding.
+const EXPANDED_PACKAGE_NAME_CHARACTER_WIDTH = 7;
+const EXPANDED_PACKAGE_HEAD_SLACK = 90;
+const COLLAPSED_PACKAGE_NAME_CHARACTER_WIDTH = 8;
+const COLLAPSED_PACKAGE_SLACK = 32;
+
+// The narrowest an expanded box can be and still hold its head: its
+// name on one line with the collapse link beside it.
+export const widthOfExpandedPackageHead = (name: string): number =>
+  name.length * EXPANDED_PACKAGE_NAME_CHARACTER_WIDTH +
+  EXPANDED_PACKAGE_HEAD_SLACK;
+
+// A collapsed box's width: the default, or wider for a name the
+// default would wrap.
+export const widthOfCollapsedPackage = (name: string): number =>
+  Math.max(
+    COLLAPSED_PACKAGE_WIDTH,
+    name.length * COLLAPSED_PACKAGE_NAME_CHARACTER_WIDTH +
+      COLLAPSED_PACKAGE_SLACK
+  );
+
 const heightOfStateType = (stateType: GraphStateType): number =>
   HEAD_HEIGHT + stateType.methods.length * ROW_HEIGHT + CARD_SLACK;
 
@@ -167,11 +194,15 @@ type CardNode = Node<StateTypeData, "stateType">;
 
 const isCard = (node: GraphNode): node is CardNode => node.type === "stateType";
 
+type BoxNode = Node<ExpandedPackageData, "expanded">;
+
+const isBox = (node: GraphNode): node is BoxNode => node.type === "expanded";
+
 // The smallest box that holds its cards where they are now, with
-// the box's padding past them. A card's height is what React Flow
-// measured, or, before the card is first drawn, the estimate the
-// default layout used.
-const sizeNeededByCards = (cards: CardNode[]): BoxSize => {
+// the box's padding past them, and its head across the top. A
+// card's height is what React Flow measured, or, before the card is
+// first drawn, the estimate the default layout used.
+const sizeNeededByCards = (name: string, cards: CardNode[]): BoxSize => {
   let right = 0;
   let bottom = 0;
   for (const card of cards) {
@@ -183,7 +214,10 @@ const sizeNeededByCards = (cards: CardNode[]): BoxSize => {
     );
   }
   return {
-    width: right + EXPANDED_PACKAGE_PAD,
+    width: Math.max(
+      right + EXPANDED_PACKAGE_PAD,
+      widthOfExpandedPackageHead(name)
+    ),
     height: bottom + EXPANDED_PACKAGE_PAD,
   };
 };
@@ -209,10 +243,13 @@ const fitBoxesAroundCards = (nodes: GraphNode[]): GraphNode[] => {
     return card;
   });
   return fitted.map((node) => {
-    if (node.type !== "expanded") {
+    if (!isBox(node)) {
       return node;
     }
-    const needed = sizeNeededByCards(cardsByBox.get(node.id) ?? []);
+    const needed = sizeNeededByCards(
+      node.data.name,
+      cardsByBox.get(node.id) ?? []
+    );
     const width = Math.max(node.width ?? 0, needed.width);
     const height = Math.max(node.height ?? 0, needed.height);
     return width === node.width && height === node.height
@@ -415,7 +452,10 @@ const layoutPackages = async (
     }
     cardLayoutsByPackage.set(graphPackage.name, {
       cardPositions,
-      width: cardsWidth + 2 * EXPANDED_PACKAGE_PAD,
+      width: Math.max(
+        cardsWidth + 2 * EXPANDED_PACKAGE_PAD,
+        widthOfExpandedPackageHead(graphPackage.name)
+      ),
       height: cardsHeight + EXPANDED_PACKAGE_HEAD_HEIGHT + EXPANDED_PACKAGE_PAD,
     });
   }
@@ -445,7 +485,7 @@ const layoutPackages = async (
       const cardLayout = cardLayoutsByPackage.get(graphPackage.name);
       return {
         id: packageNodeId(graphPackage.name),
-        width: cardLayout?.width ?? COLLAPSED_PACKAGE_WIDTH,
+        width: cardLayout?.width ?? widthOfCollapsedPackage(graphPackage.name),
         height: cardLayout?.height ?? COLLAPSED_PACKAGE_HEIGHT,
       };
     }),
@@ -478,7 +518,7 @@ const layoutPackages = async (
         id: boxId,
         type: "package",
         position,
-        width: COLLAPSED_PACKAGE_WIDTH,
+        width: widthOfCollapsedPackage(graphPackage.name),
         height: COLLAPSED_PACKAGE_HEIGHT,
         data: {
           name: graphPackage.name,
@@ -1453,6 +1493,7 @@ const GraphCanvas: FC<{
           case "expanded": {
             const layoutSize = layoutSizes.current.get(node.id);
             const needed = sizeNeededByCards(
+              node.data.name,
               nodes.filter(
                 (card): card is CardNode =>
                   isCard(card) && card.parentId === node.id
