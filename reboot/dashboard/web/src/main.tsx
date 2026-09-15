@@ -109,6 +109,7 @@ import type * as feature_pb from "../../../../rbt/v1alpha1/bdd/feature_pb";
 import type * as grammar_pb from "../../../../rbt/v1alpha1/bdd/grammar_pb";
 import {
   calleeDistancesFrom,
+  callsItself,
   directCallers,
   joinStateTypes,
   methodId,
@@ -942,18 +943,26 @@ const MethodPane: FC<{
 }> = ({ apis, graph, stateTypeId, methodName, conesOfInfluence }) => {
   const declarations = useMemo(() => stateTypeDeclarationsById(apis), [apis]);
   const id = methodId(stateTypeId, methodName);
+  const stateType = graph.find(
+    (graphStateType) => graphStateType.id === stateTypeId
+  );
+  const selfCalling = callsItself(id, graph);
   const callers = useMemo(() => directCallers(id, graph), [id, graph]);
   const distanceByCalleeId = useMemo(
     () => calleeDistancesFrom(id, graph),
     [id, graph]
   );
-  const calleesByDistance = useMemo(
-    () => methodsAtEachDistance(distanceByCalleeId, graph),
-    [distanceByCalleeId, graph]
-  );
-  const stateType = graph.find(
-    (graphStateType) => graphStateType.id === stateTypeId
-  );
+  // A method that calls itself leads the methods it calls directly.
+  const calleesByDistance = useMemo(() => {
+    const byDistance = methodsAtEachDistance(distanceByCalleeId, graph);
+    if (!selfCalling || stateType === undefined) {
+      return byDistance;
+    }
+    return [
+      [{ stateType, name: methodName }, ...(byDistance[0] ?? [])],
+      ...byDistance.slice(1),
+    ];
+  }, [distanceByCalleeId, graph, selfCalling, stateType, methodName]);
   const declaration = declarations.get(stateTypeId);
   const declaredMethod = declaration?.stateType.methods.find(
     (apiMethod) => apiMethod.name === methodName

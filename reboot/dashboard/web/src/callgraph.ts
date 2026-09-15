@@ -103,6 +103,20 @@ export const directCallers = (
       .map((method) => ({ stateType, name: method.name }))
   );
 
+// Whether the given method calls itself. The distances cannot say:
+// they put a method at zero from itself, so a call back to it is
+// never a step.
+export const callsItself = (
+  id: string,
+  stateTypes: GraphStateType[]
+): boolean =>
+  stateTypes.some((stateType) =>
+    stateType.methods.some(
+      (method) =>
+        methodId(stateType.id, method.name) === id && callsMethod(method, id)
+    )
+  );
+
 // Every method the given one calls, transitively, with how many
 // calls away it is: the downstream closure over the drawn calls,
 // the given method itself at zero.
