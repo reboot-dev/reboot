@@ -1034,16 +1034,18 @@ const ToolCard: FC<ToolInGraph> = ({ agent, tool }) => (
 );
 
 // The methods at each distance from the chosen one, nearest first,
-// the chosen one itself left out. At one distance, the graph's order.
+// out to `maxDistance`, the chosen one itself left out. At one
+// distance, the graph's order.
 const methodsAtEachDistance = (
   distances: Map<string, number>,
-  graph: GraphStateType[]
+  graph: GraphStateType[],
+  maxDistance = Infinity
 ): MethodInGraph[][] => {
   const methodsByDistance: MethodInGraph[][] = [];
   for (const stateType of graph) {
     for (const method of stateType.methods) {
       const distance = distances.get(methodId(stateType.id, method.name));
-      if (distance === undefined || distance === 0) {
+      if (distance === undefined || distance === 0 || distance > maxDistance) {
         continue;
       }
       (methodsByDistance[distance] ??= []).push({
@@ -1079,13 +1081,66 @@ const MethodsByDistance: FC<{
   </>
 );
 
+// The switch at the head of a "calls" list, between every method
+// reached through the calls, a distance at a time, and only the
+// methods called directly. The graph's downstream cone follows it.
+const TransitiveCallsSwitch: FC<{
+  transitiveCalls: boolean;
+  onToggle: () => void;
+}> = ({ transitiveCalls, onToggle }) => (
+  <label
+    className="transitive-calls-switch"
+    title={
+      transitiveCalls
+        ? "Showing every method these calls reach; switch off to show " +
+          "only direct calls"
+        : "Showing only direct calls; switch on to show every method " +
+          "they reach"
+    }
+  >
+    <input
+      type="checkbox"
+      role="switch"
+      checked={transitiveCalls}
+      onChange={onToggle}
+    />
+    transitive
+  </label>
+);
+
+// Whether calls reach beyond the methods called directly: any method
+// of the graph two or more leads away.
+const reachesBeyondDirect = (
+  distances: Map<string, number>,
+  graph: GraphStateType[]
+): boolean => methodsAtEachDistance(distances, graph).length > 1;
+
+// The head of a "calls" list: the eyebrow, and, when the calls reach
+// beyond the direct ones, the switch between listing every method
+// they reach and only those.
+const CallsHead: FC<{
+  reachesBeyondDirect: boolean;
+  transitiveCalls: boolean;
+  onToggleTransitiveCalls: () => void;
+}> = ({ reachesBeyondDirect, transitiveCalls, onToggleTransitiveCalls }) => (
+  <div className="eyebrow section calls-head">
+    calls
+    {reachesBeyondDirect && (
+      <TransitiveCallsSwitch
+        transitiveCalls={transitiveCalls}
+        onToggle={onToggleTransitiveCalls}
+      />
+    )}
+  </div>
+);
+
 // The pane on one method: its head names it with its state type and
 // carries what the API declares of it, then the methods that call it
 // directly, and the agents' tools that do, then the methods it calls,
-// directly first, out to the
-// farthest. Each list shows only while the graph lights that
-// direction. The state type's name links to the type itself, with
-// all its methods.
+// directly first, out to the farthest, or the direct ones alone while
+// the switch at that list's head says so. Each list shows only while
+// the graph lights that direction. The state type's name links to
+// the type itself, with all its methods.
 const MethodPane: FC<{
   apis: APIs;
   graph: GraphStateType[];
@@ -1093,7 +1148,18 @@ const MethodPane: FC<{
   stateTypeId: string;
   methodName: string;
   conesOfInfluence: ConesOfInfluence;
-}> = ({ apis, graph, agents, stateTypeId, methodName, conesOfInfluence }) => {
+  transitiveCalls: boolean;
+  onToggleTransitiveCalls: () => void;
+}> = ({
+  apis,
+  graph,
+  agents,
+  stateTypeId,
+  methodName,
+  conesOfInfluence,
+  transitiveCalls,
+  onToggleTransitiveCalls,
+}) => {
   const declarations = useMemo(() => stateTypeDeclarationsById(apis), [apis]);
   const id = methodId(stateTypeId, methodName);
   const stateType = graph.find(
@@ -1111,7 +1177,11 @@ const MethodPane: FC<{
   );
   // A method that calls itself leads the methods it calls directly.
   const calleesByDistance = useMemo(() => {
-    const byDistance = methodsAtEachDistance(distanceByCalleeId, graph);
+    const byDistance = methodsAtEachDistance(
+      distanceByCalleeId,
+      graph,
+      transitiveCalls ? Infinity : 1
+    );
     if (!selfCalling || stateType === undefined) {
       return byDistance;
     }
@@ -1119,7 +1189,14 @@ const MethodPane: FC<{
       [{ stateType, name: methodName }, ...(byDistance[0] ?? [])],
       ...byDistance.slice(1),
     ];
-  }, [distanceByCalleeId, graph, selfCalling, stateType, methodName]);
+  }, [
+    distanceByCalleeId,
+    graph,
+    transitiveCalls,
+    selfCalling,
+    stateType,
+    methodName,
+  ]);
   const declaration = declarations.get(stateTypeId);
   const declaredMethod = declaration?.stateType.methods.find(
     (apiMethod) => apiMethod.name === methodName
@@ -1206,7 +1283,11 @@ const MethodPane: FC<{
       )}
       {conesOfInfluence.downstream && calleesByDistance.length > 0 && (
         <>
-          <div className="eyebrow section">calls</div>
+          <CallsHead
+            reachesBeyondDirect={reachesBeyondDirect(distanceByCalleeId, graph)}
+            transitiveCalls={transitiveCalls}
+            onToggleTransitiveCalls={onToggleTransitiveCalls}
+          />
           <MethodsByDistance
             declarations={declarations}
             methodsByDistance={calleesByDistance}
@@ -1464,16 +1545,35 @@ const ToolPane: FC<{
   agent: GraphAgent;
   toolName: string;
   conesOfInfluence: ConesOfInfluence;
-}> = ({ apis, graph, agent, toolName, conesOfInfluence }) => {
+  transitiveCalls: boolean;
+  onToggleTransitiveCalls: () => void;
+}> = ({
+  apis,
+  graph,
+  agent,
+  toolName,
+  conesOfInfluence,
+  transitiveCalls,
+  onToggleTransitiveCalls,
+}) => {
   const declarations = useMemo(() => stateTypeDeclarationsById(apis), [apis]);
   const id = toolId(agent.id, toolName);
   const tool = agent.tools.find((agentTool) => agentTool.name === toolName);
-  const calleesByDistance = useMemo(
+  const distanceByCalleeId = useMemo(
     () =>
       tool === undefined
-        ? []
-        : methodsAtEachDistance(toolCalleeDistances(tool, graph), graph),
+        ? new Map<string, number>()
+        : toolCalleeDistances(tool, graph),
     [tool, graph]
+  );
+  const calleesByDistance = useMemo(
+    () =>
+      methodsAtEachDistance(
+        distanceByCalleeId,
+        graph,
+        transitiveCalls ? Infinity : 1
+      ),
+    [distanceByCalleeId, graph, transitiveCalls]
   );
 
   return (
@@ -1516,7 +1616,14 @@ const ToolPane: FC<{
           )}
           {conesOfInfluence.downstream && calleesByDistance.length > 0 && (
             <>
-              <div className="eyebrow section">calls</div>
+              <CallsHead
+                reachesBeyondDirect={reachesBeyondDirect(
+                  distanceByCalleeId,
+                  graph
+                )}
+                transitiveCalls={transitiveCalls}
+                onToggleTransitiveCalls={onToggleTransitiveCalls}
+              />
               <MethodsByDistance
                 declarations={declarations}
                 methodsByDistance={calleesByDistance}
@@ -1561,6 +1668,10 @@ const TypesPane: FC<{
   methodWithCalls: boolean;
   // Which directions a method's pane follows, as the graph lights them.
   conesOfInfluence: ConesOfInfluence;
+  // Whether a method's or a tool's list of calls reaches out
+  // transitively, or stops at the direct ones.
+  transitiveCalls: boolean;
+  onToggleTransitiveCalls: () => void;
   target: PaneTarget;
   // The property a followed link named, if any.
   propertyName?: string;
@@ -1579,6 +1690,8 @@ const TypesPane: FC<{
   agents,
   methodWithCalls,
   conesOfInfluence,
+  transitiveCalls,
+  onToggleTransitiveCalls,
   target,
   propertyName,
   flashKey,
@@ -1646,6 +1759,8 @@ const TypesPane: FC<{
             agent={foundAgent}
             toolName={target.tool}
             conesOfInfluence={conesOfInfluence}
+            transitiveCalls={transitiveCalls}
+            onToggleTransitiveCalls={onToggleTransitiveCalls}
           />
         ) : foundAgent !== undefined ? (
           <AgentPane agent={foundAgent} />
@@ -1667,6 +1782,8 @@ const TypesPane: FC<{
             stateTypeId={target.stateTypeId}
             methodName={target.method}
             conesOfInfluence={conesOfInfluence}
+            transitiveCalls={transitiveCalls}
+            onToggleTransitiveCalls={onToggleTransitiveCalls}
           />
         ) : stateTypeDeclaration === undefined ? (
           <div className="empty">
@@ -3462,6 +3579,16 @@ const Overview: FC<{
     []
   );
 
+  // Whether the chosen method's downstream cone, and the pane's list
+  // of what it calls, reach out transitively or stop at its direct
+  // calls: a preference the reader keeps from one chosen method to
+  // the next, unlike the cones.
+  const [transitiveCalls, setTransitiveCalls] = useState(true);
+
+  const toggleTransitiveCalls = useCallback((): void => {
+    setTransitiveCalls((current) => !current);
+  }, []);
+
   // Opens one state type in the types pane, named by the URL, which
   // lets go of any chosen method.
   const onOpenStateType = useCallback(
@@ -3733,6 +3860,7 @@ const Overview: FC<{
                   onLayoutChange={onCallGraphLayoutChange}
                   conesOfInfluence={conesOfInfluence}
                   onToggleConeOfInfluence={toggleConeOfInfluence}
+                  transitiveCalls={transitiveCalls}
                 />
               </>
             ) : featureEntries.length === 0 ? (
@@ -3806,6 +3934,8 @@ const Overview: FC<{
                     agents={graphAgents}
                     methodWithCalls={page === "models"}
                     conesOfInfluence={conesOfInfluence}
+                    transitiveCalls={transitiveCalls}
+                    onToggleTransitiveCalls={toggleTransitiveCalls}
                     target={paneTarget}
                     propertyName={paneProperty}
                     flashKey={returning ? undefined : location.key}

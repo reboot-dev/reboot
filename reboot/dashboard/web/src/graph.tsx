@@ -930,22 +930,29 @@ const rowGraphOf = (
   return { callees, callers };
 };
 
-// Every row reached from one, itself included, following `leads`.
+// Every row reached from one, itself included, following `leads`
+// for at most `maxDistance` steps.
 const reachedFrom = (
   from: string,
-  leads: Map<string, string[]>
+  leads: Map<string, string[]>,
+  maxDistance = Infinity
 ): Set<string> => {
-  const reached = new Set([from]);
+  const distanceByRowId = new Map([[from, 0]]);
   const toExpand = [from];
   while (toExpand.length > 0) {
-    for (const next of leads.get(toExpand.pop()!) ?? []) {
-      if (!reached.has(next)) {
-        reached.add(next);
+    const rowId = toExpand.shift()!;
+    const distance = distanceByRowId.get(rowId)! + 1;
+    if (distance > maxDistance) {
+      continue;
+    }
+    for (const next of leads.get(rowId) ?? []) {
+      if (!distanceByRowId.has(next)) {
+        distanceByRowId.set(next, distance);
         toExpand.push(next);
       }
     }
   }
-  return reached;
+  return new Set(distanceByRowId.keys());
 };
 
 // ---------------------------------------------------------------
@@ -1536,6 +1543,9 @@ const GraphCanvas: FC<{
   // the types pane can follow them.
   conesOfInfluence: ConesOfInfluence;
   onToggleConeOfInfluence: (coneOfInfluence: keyof ConesOfInfluence) => void;
+  // Whether the downstream cone reaches out transitively, or stops
+  // at the rows the chosen one calls or runs itself.
+  transitiveCalls: boolean;
 }> = ({
   packages,
   agents,
@@ -1546,6 +1556,7 @@ const GraphCanvas: FC<{
   onLayoutChange,
   conesOfInfluence,
   onToggleConeOfInfluence: toggleConeOfInfluence,
+  transitiveCalls,
 }) => {
   const location = useLocation();
   const saved =
@@ -1858,9 +1869,10 @@ const GraphCanvas: FC<{
   );
 
   // With a row chosen, its lit cones: downstream, the rows it reaches
-  // transitively and the arrows carrying what it calls and runs;
-  // upstream, the rows that reach it transitively, whose arrows must
-  // both leave from and land on those. The cards and boxes a lit arrow
+  // transitively, or only the rows it calls or runs itself while
+  // transitive calls are off; upstream, the rows that reach it
+  // transitively. Either way an arrow is lit when it both leaves from
+  // and lands on a row in the cone. The cards and boxes a lit arrow
   // touches stay lit, and nothing else does, while the rows in a cone
   // are marked within their cards. An arrow is in a cone when any row
   // folded into it is. An expanded box never fades: it is the room its
@@ -1880,12 +1892,19 @@ const GraphCanvas: FC<{
       nodeIds.add(edge.target);
     };
     if (conesOfInfluence.downstream) {
-      const reached = reachedFrom(selectedMethodId, rowGraph.callees);
+      const reached = reachedFrom(
+        selectedMethodId,
+        rowGraph.callees,
+        transitiveCalls ? Infinity : 1
+      );
       for (const id of reached) {
         methodIds.add(id);
       }
       for (const edge of edges) {
-        if (edge.data!.sourceMethodIds.some((id) => reached.has(id))) {
+        if (
+          edge.data!.sourceMethodIds.some((id) => reached.has(id)) &&
+          edge.data!.targetMethodIds.some((id) => reached.has(id))
+        ) {
           light(edge);
         }
       }
@@ -1905,7 +1924,7 @@ const GraphCanvas: FC<{
       }
     }
     return { nodeIds, edgeIds, methodIds };
-  }, [selectedMethodId, conesOfInfluence, rowGraph, edges]);
+  }, [selectedMethodId, conesOfInfluence, transitiveCalls, rowGraph, edges]);
 
   const shownNodes = useMemo(
     () =>
@@ -2103,6 +2122,7 @@ export const GraphPage: FC<{
   onLayoutChange: (layout: CallGraphLayout) => void;
   conesOfInfluence: ConesOfInfluence;
   onToggleConeOfInfluence: (coneOfInfluence: keyof ConesOfInfluence) => void;
+  transitiveCalls: boolean;
 }> = ({
   stateTypes,
   agents,
@@ -2113,6 +2133,7 @@ export const GraphPage: FC<{
   onLayoutChange,
   conesOfInfluence,
   onToggleConeOfInfluence,
+  transitiveCalls,
 }) => {
   const packages = useMemo(
     () => groupStateTypesByPackage(stateTypes),
@@ -2132,6 +2153,7 @@ export const GraphPage: FC<{
           onLayoutChange={onLayoutChange}
           conesOfInfluence={conesOfInfluence}
           onToggleConeOfInfluence={onToggleConeOfInfluence}
+          transitiveCalls={transitiveCalls}
         />
       </ReactFlowProvider>
     </div>
