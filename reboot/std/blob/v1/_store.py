@@ -13,7 +13,7 @@ nothing but the directory -- `StoredBlob` is where their writes are
 ordered against each other.
 
 This store drives that state machine itself, so that it offers the
-same surface an object store does (`begin_upload`, `complete`,
+same surface an object store does (`create`, `commit`,
 `delete`, ...) and whoever serves it -- the `BlobDataPlane` servicer,
 the byte routes -- only authorizes and delegates. Its methods take
 the context they reach `StoredBlob` with; a store backed by an object
@@ -157,15 +157,15 @@ def composite_etag(etags: Sequence[str]) -> str:
     return hashlib.md5(digests).hexdigest() + f"-{len(etags)}"
 
 
-def _begin_upload_key(blob_id: str) -> UUID:
-    """The idempotency key for beginning one blob's upload.
+def _create_key(blob_id: str) -> UUID:
+    """The idempotency key for creating one blob.
 
     Derived from the blob ID rather than taken from the caller,
     because the control plane both retries this inside a workflow and
-    re-runs it to validate that workflow's effects. "Begin the upload
-    for this blob" is one operation however many times it is asked
-    for, so the blob names it."""
-    return uuid5(NAMESPACE_URL, f"reboot.std.blob.v1/begin-upload/{blob_id}")
+    re-runs it to validate that workflow's effects. "Create this blob"
+    is one operation however many times it is asked for, so the blob
+    names it."""
+    return uuid5(NAMESPACE_URL, f"reboot.std.blob.v1/create/{blob_id}")
 
 
 class FilesystemBlobStore:
@@ -196,7 +196,7 @@ class FilesystemBlobStore:
         self._part_size = part_size
 
     @classmethod
-    async def create(
+    async def open(
         cls,
         directory: str,
         part_size: int = DEFAULT_PART_SIZE_BYTES,
@@ -238,7 +238,7 @@ class FilesystemBlobStore:
         return hmac.new(self._signing_key(), message,
                         hashlib.sha256).hexdigest()
 
-    def signature_for_put(
+    def signature_for_part_upload(
         self,
         encoded_blob_id: str,
         upload_id: str,
@@ -250,7 +250,7 @@ class FilesystemBlobStore:
             str(expiration)
         )
 
-    def signature_for_get(
+    def signature_for_download(
         self,
         encoded_blob_id: str,
         expiration: int,
@@ -283,17 +283,18 @@ class FilesystemBlobStore:
             f"part.{part_number:08d}.{storage_id}",
         )
 
-    async def begin_upload(
+    async def create(
         self,
         context: ExternalContext,
         blob_id: str,
         content_type: str,
     ) -> str:
-        """Establishes the session a blob's parts are written under and
-        returns it: the one already established, if there is one."""
+        """Creates the blob: establishes the session its parts are
+        written under and returns it, the one already established if
+        there is one."""
         _, response = await StoredBlob.idempotently(
-            key=_begin_upload_key(blob_id),
-        ).BeginUpload(
+            key=_create_key(blob_id),
+        ).Create(
             context,
             blob_id,
             content_type=content_type,
@@ -321,7 +322,7 @@ class FilesystemBlobStore:
         await _fsync_directory(self._directory)
         await _fsync_directory(self.blob_directory(encoded))
 
-    def part_put_url(
+    def part_upload_url(
         self,
         blob_id: str,
         upload_id: str,
@@ -329,7 +330,7 @@ class FilesystemBlobStore:
     ) -> str:
         encoded = _encode_blob_id(blob_id)
         expiration = int(time.time()) + DEFAULT_URL_TTL_SECONDS
-        signature = self.signature_for_put(
+        signature = self.signature_for_part_upload(
             encoded, upload_id, part_number, expiration
         )
         return (
@@ -350,7 +351,7 @@ class FilesystemBlobStore:
             _MAX_URL_TTL_SECONDS,
         )
         expiration = int(time.time()) + ttl
-        signature = self.signature_for_get(encoded, expiration)
+        signature = self.signature_for_download(encoded, expiration)
         url = (f"{BLOB_PATH}?blob={encoded}&exp={expiration}&sig={signature}")
         return url, ttl
 
@@ -434,7 +435,7 @@ class FilesystemBlobStore:
         Refused bytes are removed, which is safe because the file's
         name belongs to this write alone: no manifest can point at it
         unless this very claim succeeded. Anything that outlives an
-        interrupted request is reclaimed at completion, and with the
+        interrupted request is reclaimed at commit, and with the
         blob's directory on `delete`."""
         published = await StoredBlob.ref(blob_id).always().publish_part(
             context,
@@ -452,7 +453,7 @@ class FilesystemBlobStore:
         if published.HasField("superseded_storage_id"):
             # This part had been uploaded before. Nothing is made of
             # the earlier bytes now, and the manifest that could still
-            # name them is refused at completion, so they are removed
+            # name them is refused at commit, so they are removed
             # rather than left to accumulate a file per attempt.
             await _unlink_if_present(
                 self.part_path(
@@ -510,8 +511,8 @@ class FilesystemBlobStore:
         blob_id: str,
     ) -> Optional[StoredObject]:
         """The committed object stored for a blob, or `None` when there
-        is none: a blob whose upload never began, or is not finished,
-        has no bytes to serve.
+        is none: a blob that was never created, or whose upload is not
+        finished, has no bytes to serve.
 
         The bytes are the object's parts in part order, each the write
         the manifest recorded and no later write of that part."""
@@ -570,7 +571,7 @@ class FilesystemBlobStore:
     ) -> Optional[filesystem_pb2.StoredBlob]:
         """The metadata stored for a blob, or `None` when none is.
 
-        A blob whose upload never began has no state at all, which the
+        A blob that was never created has no state at all, which the
         framework reports by refusing the read rather than by
         answering with an absent one."""
         try:
@@ -584,7 +585,7 @@ class FilesystemBlobStore:
             raise
         return metadata.blob if metadata.HasField("blob") else None
 
-    async def complete(
+    async def commit(
         self,
         context: ExternalContext,
         blob_id: str,
@@ -596,13 +597,13 @@ class FilesystemBlobStore:
         """Finishes the object from the parts the client reports,
         checking each against what was actually written, and returns
         its ETag. Raises `BlobStoreError` for what can never succeed;
-        completing an already-completed blob returns its ETag."""
+        committing an already-committed blob returns its ETag."""
         stored = await self._stored(context, blob_id)
         if stored is None:
-            raise BlobStoreError("no upload was ever begun for this blob")
+            raise BlobStoreError("this blob was never created")
         if stored.committed:
-            # A retried completion. The object is finished and its
-            # ETag is what it was -- but reclaiming may not have run,
+            # A retried commit. The object is finished and its ETag is
+            # what it was -- but reclaiming may not have run,
             # or not finished, so it runs again from what was
             # committed.
             await self._reclaim(
@@ -613,10 +614,10 @@ class FilesystemBlobStore:
             return stored.etag
         if stored.upload_id != upload_id:
             # The parts that would be committed were written under a
-            # different session than the one being completed, so they
+            # different session than the one being committed, so they
             # are not the parts this verified.
             raise BlobStoreError(
-                "the upload session being completed is not the one this "
+                "the upload session being committed is not the one this "
                 "blob's parts were written under"
             )
 
@@ -714,19 +715,20 @@ class FilesystemBlobStore:
 
         A part lives inside the blob's own directory, so removing the
         directory removes any unfinished upload with it, whatever
-        `upload_ids` says. Forgotten before the bytes go, so that
-        nothing reads a manifest naming bytes that are already gone:
+        `upload_ids` says. Removed from `StoredBlob` before the bytes
+        go, so that nothing reads a manifest naming bytes that are
+        already gone:
         between the two a download would answer `200` and then run out
         of file."""
         try:
-            await StoredBlob.ref(blob_id).always().forget(context)
-        except StoredBlob.ForgetAborted as aborted:
+            await StoredBlob.ref(blob_id).always().remove(context)
+        except StoredBlob.RemoveAborted as aborted:
             if isinstance(
                 aborted.error,
                 rbt.v1alpha1.errors_pb2.StateNotConstructed,
             ):
                 # Nothing was ever stored for this blob, so there is
-                # nothing to forget and deleting it has succeeded.
+                # nothing to remove and deleting it has succeeded.
                 pass
             else:
                 raise
@@ -736,7 +738,7 @@ class FilesystemBlobStore:
         """Removes every byte this store holds for a blob."""
         encoded = _encode_blob_id(blob_id)
         # Only a blob that is already gone is ignored: any other failure
-        # must reach the caller, or `PerformRemove` would report bytes
+        # must reach the caller, or `RemoveWorkflow` would report bytes
         # deleted that are still on disk. In a thread because
         # `aiofiles` has no `rmtree`.
         try:

@@ -59,7 +59,7 @@ message StoredBlob {
   string content_type = 2;
 
   // The upload session the parts belong to. Absent before the first
-  // `BeginUpload`.
+  // `Create`.
   optional string upload_id = 3;
 
   // The object's ETag, derived from its parts' own. Absent until
@@ -76,12 +76,12 @@ message StoredBlob {
 
 ////////////////////////////////////////////////////////////////////////
 
-message StoredBlobBeginUploadRequest {
+message StoredBlobCreateRequest {
   // MIME type to serve the bytes with.
   string content_type = 1;
 }
 
-message StoredBlobBeginUploadResponse {
+message StoredBlobCreateResponse {
   // The session to write parts under, whether freshly minted or the
   // one an earlier call already established.
   string upload_id = 1;
@@ -146,20 +146,20 @@ message StoredBlobMetadataResponse {
   optional StoredBlob blob = 1;
 }
 
-message StoredBlobForgetRequest {}
+message StoredBlobRemoveRequest {}
 
-message StoredBlobForgetResponse {}
+message StoredBlobRemoveResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
 service StoredBlobMethods {
-  // Establishes the upload session parts are written under, and
-  // returns it. The control plane retries this inside a workflow, so
+  // Creates the object's metadata and the upload session its parts
+  // are written under, and returns the session. The control plane
+  // retries this inside a workflow, so
   // the caller asks for it once per workflow: a retry replays the
   // session that was already established rather than minting a
   // second one and orphaning the parts written under the first.
-  rpc BeginUpload(StoredBlobBeginUploadRequest)
-      returns (StoredBlobBeginUploadResponse) {
+  rpc Create(StoredBlobCreateRequest) returns (StoredBlobCreateResponse) {
     option (rbt.v1alpha1.method) = {
       writer: { constructor: {} },
     };
@@ -186,16 +186,17 @@ service StoredBlobMethods {
   }
 
   // The metadata, reporting absence rather than raising, since a blob
-  // that was never begun and one that is merely uncommitted lead to
-  // different answers.
+  // that was never created and one that is merely uncommitted lead
+  // to different answers.
   rpc Metadata(StoredBlobMetadataRequest) returns (StoredBlobMetadataResponse) {
     option (rbt.v1alpha1.method) = {
       reader: {},
     };
   }
 
-  // Forgets the object, for a blob whose bytes are being deleted.
-  rpc Forget(StoredBlobForgetRequest) returns (StoredBlobForgetResponse) {
+  // Removes the object's metadata, for a blob whose bytes are being
+  // removed; the metadata half of `Blob.Remove`.
+  rpc Remove(StoredBlobRemoveRequest) returns (StoredBlobRemoveResponse) {
     option (rbt.v1alpha1.method) = {
       writer: {},
     };

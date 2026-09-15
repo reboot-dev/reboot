@@ -81,13 +81,13 @@ export class BlobUploader {
    * Fetches upload instructions for the given part numbers, waiting
    * for the blob's upload session to be provisioned.
    */
-  async instructions(
+  async partUploadInstructions(
     partNumbers: number[],
     options?: { signal?: AbortSignal }
   ): Promise<{ partSize: number; urls: Map<number, string> }> {
-    // `ready` is false until the `BeginUpload` workflow has
-    // provisioned the data-plane upload session, so watch until it
-    // flips rather than asking again on a timer.
+    // `ready` is false until `CreateWorkflow` has provisioned the
+    // data-plane upload session, so watch until it flips rather than
+    // asking again on a timer.
     options?.signal?.throwIfAborted();
     const controller = new AbortController();
     options?.signal?.addEventListener("abort", () => controller.abort(), {
@@ -134,7 +134,7 @@ export class BlobUploader {
     bytes: globalThis.Blob | Uint8Array,
     options?: { signal?: AbortSignal }
   ): Promise<void> {
-    const { urls } = await this.instructions([partNumber], options);
+    const { urls } = await this.partUploadInstructions([partNumber], options);
     const url = urls.get(partNumber);
     if (url === undefined) {
       throw new Error(`No upload URL for part ${partNumber}`);
@@ -162,7 +162,10 @@ export class BlobUploader {
       url,
       bytes,
       async () => {
-        const { urls } = await this.instructions([partNumber], options);
+        const { urls } = await this.partUploadInstructions(
+          [partNumber],
+          options
+        );
         const fresh = urls.get(partNumber);
         if (fresh === undefined) {
           throw new Error(`No upload URL for part ${partNumber}`);
@@ -244,7 +247,7 @@ export class BlobUploader {
       info.parts.map((part) => [part.number, Number(part.size)])
     );
 
-    const { partSize } = await this.instructions([], options);
+    const { partSize } = await this.partUploadInstructions([], options);
     const totalBytes = data instanceof Uint8Array ? data.byteLength : data.size;
     const partCount = Math.max(1, Math.ceil(totalBytes / partSize));
 
@@ -272,13 +275,13 @@ export class BlobUploader {
       }
     }
 
-    // One `instructions` call per window rather than one per part, and
-    // no more URLs minted ahead of use than a window's worth: the URLs
-    // are short-lived, so fetching them all up front would see the
-    // later ones expire before their turn.
+    // One `partUploadInstructions` call per window rather than one per
+    // part, and no more URLs minted ahead of use than a window's worth:
+    // the URLs are short-lived, so fetching them all up front would see
+    // the later ones expire before their turn.
     for (let index = 0; index < pending.length; index += UPLOAD_CONCURRENCY) {
       const window = pending.slice(index, index + UPLOAD_CONCURRENCY);
-      const { urls } = await this.instructions(window, options);
+      const { urls } = await this.partUploadInstructions(window, options);
       await Promise.all(
         window.map(async (partNumber) => {
           const offset = (partNumber - 1) * partSize;

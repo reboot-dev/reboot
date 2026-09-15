@@ -14,23 +14,22 @@
 // addressed by a bare URL (`REBOOT_BLOB_DATA_PLANE_URL`).
 //
 // Errors, and who retries them: a data plane retries nothing itself.
-// The one failure a method declares is `CompleteUpload`'s `error`,
-// for a completion that can never succeed. Every other failure -- a
-// store that cannot be reached, a response that never arrived, a
-// throttle, a 5xx -- is an undeclared gRPC error, and the contract is
-// that the caller retries it until the call succeeds. The control
-// plane does so from workflows, with backoff, for `BeginUpload`,
-// `CompleteUpload` and `Delete`; a client of the presigning methods
-// retries through the control plane's own client. Keeping every retry
-// in the caller keeps it in one place, and lets a data plane stay
-// stateless.
+// The one failure a method declares is `Commit`'s `error`, for a
+// commit that can never succeed. Every other failure -- a store that
+// cannot be reached, a response that never arrived, a throttle, a 5xx
+// -- is an undeclared gRPC error, and the contract is that the caller
+// retries it until the call succeeds. The control plane does so from
+// workflows, with backoff, for `Create`, `Commit` and `Delete`; a
+// client of the presigning methods retries through the control plane's
+// own client. Keeping every retry in the caller keeps it in one place,
+// and lets a data plane stay stateless.
 //
 // That contract is what makes idempotency a requirement: every method
 // must be *safe* to call more than once for the same `blob_id`, since
 // a retry may repeat a call whose effect took but whose response was
-// lost. `CompleteUpload` and `Delete` are naturally idempotent (a
-// completed blob returns its ETag; deleting an absent blob succeeds).
-// `BeginUpload` should reuse an existing uncommitted session where it
+// lost. `Commit` and `Delete` are naturally idempotent (a committed
+// blob returns its ETag; deleting an absent blob succeeds).
+// `Create` should reuse an existing uncommitted session where it
 // can; a backend that can only mint fresh upload IDs is still
 // acceptable — a lost response then orphans a session, which is
 // reclaimed when the blob expires uncommitted or is deleted.
@@ -44,12 +43,12 @@ service BlobDataPlane {
   // plane: the client part size. Read once at application startup.
   rpc Configuration(ConfigurationRequest) returns (ConfigurationResponse);
 
-  // Provisions an upload session for a blob and returns its data-plane
+  // Creates the blob in the data plane: provisions the upload session
+  // its parts are written under and returns the session's data-plane
   // upload ID (e.g. an S3 multipart upload ID). Should reuse an
   // existing uncommitted session for the same blob where possible; a
   // fresh session is acceptable (see the idempotency note above).
-  rpc BeginUpload(DataPlaneBeginUploadRequest)
-      returns (DataPlaneBeginUploadResponse);
+  rpc Create(DataPlaneCreateRequest) returns (DataPlaneCreateResponse);
 
   // Mints URLs to which the client `PUT`s each requested part's bytes
   // directly. A URL is either absolute (e.g. a presigned S3 URL,
@@ -64,10 +63,9 @@ service BlobDataPlane {
   // a permanent-failure `error` (ETag mismatch, over `max_size`, ...)
   // that the control plane surfaces so the client can re-upload. A
   // *transient* failure is a gRPC error instead, so the control-plane
-  // workflow retries. Idempotent: completing an already-completed blob
-  // returns its ETag.
-  rpc CompleteUpload(DataPlaneCompleteUploadRequest)
-      returns (DataPlaneCompleteUploadResponse);
+  // workflow retries. Idempotent: committing an already-committed
+  // blob returns its ETag.
+  rpc Commit(DataPlaneCommitRequest) returns (DataPlaneCommitResponse);
 
   // Mints a URL from which the committed object's bytes can be
   // downloaded: absolute (e.g. a presigned S3/CloudFront URL) or
@@ -90,12 +88,12 @@ message ConfigurationResponse {
 
 ////////////////////////////////////////////////////////////////////////
 
-message DataPlaneBeginUploadRequest {
+message DataPlaneCreateRequest {
   string blob_id = 1;
   string content_type = 2;
 }
 
-message DataPlaneBeginUploadResponse {
+message DataPlaneCreateResponse {
   string upload_id = 1;
 }
 
@@ -124,7 +122,7 @@ message DataPlaneUploadedPart {
   uint64 size = 3;
 }
 
-message DataPlaneCompleteUploadRequest {
+message DataPlaneCommitRequest {
   string blob_id = 1;
   string upload_id = 2;
   string content_type = 3;
@@ -132,15 +130,15 @@ message DataPlaneCompleteUploadRequest {
   optional uint64 max_size = 5;
 }
 
-message DataPlaneCompleteUploadResponse {
-  // Completion either finished the object or did not; there is no
-  // answer that is both.
+message DataPlaneCommitResponse {
+  // A commit either finished the object or did not; there is no answer
+  // that is both.
   oneof outcome {
     // The committed object's composite ETag.
     string etag = 1;
 
     // A permanent-failure reason: what the data plane holds can never
-    // complete as reported (a part's bytes or size differ from what
+    // commit as reported (a part's bytes or size differ from what
     // was reported, a middle part is short, the total exceeds
     // `max_size`, the session is gone). The control plane reverts the
     // blob to UPLOADING with this message; retrying the call would

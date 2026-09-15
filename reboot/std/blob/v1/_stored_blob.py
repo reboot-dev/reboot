@@ -10,16 +10,16 @@ somewhere all of them agree, which is here.
 
 from rbt.std.blob.v1.filesystem_rbt import (
     StoredBlob,
-    StoredBlobBeginUploadRequest,
-    StoredBlobBeginUploadResponse,
     StoredBlobCommitRequest,
     StoredBlobCommitResponse,
-    StoredBlobForgetRequest,
-    StoredBlobForgetResponse,
+    StoredBlobCreateRequest,
+    StoredBlobCreateResponse,
     StoredBlobMetadataRequest,
     StoredBlobMetadataResponse,
     StoredBlobPublishPartRequest,
     StoredBlobPublishPartResponse,
+    StoredBlobRemoveRequest,
+    StoredBlobRemoveResponse,
 )
 from reboot.aio.auth.authorizers import allow_if, is_app_internal
 from reboot.aio.contexts import ReaderContext, WriterContext
@@ -35,24 +35,24 @@ class StoredBlobServicer(StoredBlob.Servicer):
         # both are inside this application; a client's capability is
         # the signed URL it was given, not access to this state.
         return StoredBlob.Authorizer(
-            begin_upload=allow_if(any=[is_app_internal]),
+            create=allow_if(any=[is_app_internal]),
             publish_part=allow_if(any=[is_app_internal]),
             commit=allow_if(any=[is_app_internal]),
             metadata=allow_if(any=[is_app_internal]),
-            forget=allow_if(any=[is_app_internal]),
+            remove=allow_if(any=[is_app_internal]),
         )
 
-    async def begin_upload(
+    async def create(
         self,
         context: WriterContext,
-        request: StoredBlobBeginUploadRequest,
-    ) -> StoredBlobBeginUploadResponse:
+        request: StoredBlobCreateRequest,
+    ) -> StoredBlobCreateResponse:
         self.state.committed = False
         self.state.content_type = request.content_type
         self.state.upload_id = uuid4().hex
         self.state.ClearField("etag")
         del self.state.parts[:]
-        return StoredBlobBeginUploadResponse(upload_id=self.state.upload_id)
+        return StoredBlobCreateResponse(upload_id=self.state.upload_id)
 
     async def publish_part(
         self,
@@ -93,8 +93,8 @@ class StoredBlobServicer(StoredBlob.Servicer):
         request: StoredBlobCommitRequest,
     ) -> StoredBlobCommitResponse:
         if self.state.committed:
-            # `CompleteUpload` is retried by a workflow, so arriving at
-            # an object that is already finished is success, not a
+            # `CommitWorkflow` is a workflow, and retries, so arriving
+            # at an object that is already finished is success, not a
             # conflict.
             return StoredBlobCommitResponse(committed=True)
 
@@ -128,17 +128,17 @@ class StoredBlobServicer(StoredBlob.Servicer):
     ) -> StoredBlobMetadataResponse:
         return StoredBlobMetadataResponse(blob=self.state)
 
-    async def forget(
+    async def remove(
         self,
         context: WriterContext,
-        request: StoredBlobForgetRequest,
-    ) -> StoredBlobForgetResponse:
+        request: StoredBlobRemoveRequest,
+    ) -> StoredBlobRemoveResponse:
         self.state.committed = False
         self.state.content_type = ""
         self.state.ClearField("upload_id")
         self.state.ClearField("etag")
         del self.state.parts[:]
-        return StoredBlobForgetResponse()
+        return StoredBlobRemoveResponse()
 
 
 def servicers() -> list[type[StoredBlob.Servicer]]:

@@ -47,8 +47,8 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
         await self.rbt.stop()
 
     async def _instructions(self, blob, part_numbers: list[int]):
-        """Fetches upload instructions, waiting for the `BeginUpload`
-        workflow to have provisioned the upload session."""
+        """Fetches upload instructions, waiting for `CreateWorkflow` to
+        have provisioned the upload session."""
         async for response in blob.reactively().get_part_upload_instructions(
             self.context,
             part_numbers=part_numbers,
