@@ -9,7 +9,7 @@
 // plane mints (the application's own data plane for the `filesystem`
 // store, presigned S3 URLs for the `s3` store — the uploader neither
 // knows nor cares which). Those `PUT`s are not Reboot RPCs, so they
-// stay a plain `fetch`.
+// are a plain `fetch`, with retries of their own below.
 
 import { useRebootClient } from "@reboot-dev/reboot-react";
 import { Blob_Status } from "@reboot-dev/reboot-std-api/blob/v1/blob_pb.js";
@@ -27,6 +27,43 @@ export { useBlob };
 // independent, and uploading them one at a time leaves most of the
 // available bandwidth unused on any connection with real latency.
 const UPLOAD_CONCURRENCY = 4;
+
+// How many times one part's `PUT` is attempted before the upload
+// fails, and how the attempts are spaced: the delay doubles from the
+// first one and is capped, so that a blip is ridden out in seconds
+// while an outage is reported rather than waited out. Each delay is
+// jittered, so that the parts of one window, which fail together, do
+// not retry together.
+const PUT_ATTEMPTS = 4;
+const PUT_FIRST_RETRY_DELAY_MS = 500;
+const PUT_MAX_RETRY_DELAY_MS = 5000;
+
+/**
+ * Resolves after `ms`, or rejects at once if `signal` aborts first.
+ */
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    signal?.throwIfAborted();
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * How one attempt to `PUT` a part ended: with the part's ETag, or with
+ * a failure that says whether another attempt is worth making, and
+ * whether it needs a freshly minted URL first.
+ */
+type PutAttempt =
+  | { ok: true; etag: string }
+  | { ok: false; retry: boolean; remint: boolean; reason: string };
 
 // How long `useBlobDownloadUrl` asks its URL to stay valid for. The
 // store caps what it grants; the granted value comes back on the
@@ -143,7 +180,11 @@ export class BlobUploader {
 
   /**
    * `PUT`s one part's bytes to an already-minted URL and reports it to
-   * the control plane.
+   * the control plane, retrying the `PUT` the way the control-plane
+   * calls are retried by their client. A failure that no attempt can
+   * fix, or that outlasts the attempts, is thrown; the part is then
+   * still pending, and a later `upload()` of the same blob picks it up
+   * again.
    */
   private async putPartToUrl(
     partNumber: number,
@@ -151,24 +192,36 @@ export class BlobUploader {
     bytes: globalThis.Blob | Uint8Array,
     options?: { signal?: AbortSignal }
   ): Promise<void> {
-    const response = await fetch(url, {
-      method: "PUT",
-      body: bytes,
-      signal: options?.signal,
-    });
-    if (!response.ok) {
-      throw new Error(
-        `Part ${partNumber} upload failed (${response.status}): ` +
-          `${await response.text()}`
-      );
-    }
-    const etag = (response.headers.get("ETag") ?? "").replace(/"/g, "");
-    if (etag === "") {
-      throw new Error(
-        `Part ${partNumber} upload returned no ETag; if this ` +
-          "application uses an S3-compatible store, its bucket CORS " +
-          "configuration must expose the `ETag` header"
-      );
+    let etag: string;
+    for (let attempt = 1; ; attempt++) {
+      const outcome = await this.tryPutPart(url, bytes, options?.signal);
+      // Compared rather than negated: this package compiles without
+      // `strict`, and only an equality check narrows a discriminant
+      // then.
+      if (outcome.ok === false) {
+        if (!outcome.retry || attempt >= PUT_ATTEMPTS) {
+          throw new Error(
+            `Part ${partNumber} upload failed after ${attempt} ` +
+              `attempt${attempt === 1 ? "" : "s"}: ${outcome.reason}`
+          );
+        }
+        if (outcome.remint) {
+          const { urls } = await this.instructions([partNumber], options);
+          const fresh = urls.get(partNumber);
+          if (fresh === undefined) {
+            throw new Error(`No upload URL for part ${partNumber}`);
+          }
+          url = fresh;
+        }
+        const backoff = Math.min(
+          PUT_MAX_RETRY_DELAY_MS,
+          PUT_FIRST_RETRY_DELAY_MS * 2 ** (attempt - 1)
+        );
+        await delay(backoff * (0.5 + Math.random() / 2), options?.signal);
+        continue;
+      }
+      etag = outcome.etag;
+      break;
     }
     const size = bytes instanceof Uint8Array ? bytes.byteLength : bytes.size;
     await this.blob.partUploaded(this.context, {
@@ -177,6 +230,59 @@ export class BlobUploader {
       size: BigInt(size),
     });
     this.confirmed.set(partNumber, size);
+  }
+
+  /**
+   * One attempt to `PUT` a part. Retried: a request that never got an
+   * answer, and the answers a store gives while it is momentarily
+   * unable rather than unwilling (408, 429, 5xx). Retried with a fresh
+   * URL: 403, which on either store is what an expired URL earns, and
+   * an upload that started late in a slow session can outlive the
+   * minutes its URLs are minted for. Everything else is refused for
+   * good: the request itself is wrong (400), the session is gone
+   * (404), the blob is already committed (409), or the part is too
+   * large (413).
+   */
+  private async tryPutPart(
+    url: string,
+    bytes: globalThis.Blob | Uint8Array,
+    signal?: AbortSignal
+  ): Promise<PutAttempt> {
+    let response: Response;
+    try {
+      response = await fetch(url, { method: "PUT", body: bytes, signal });
+    } catch (error) {
+      // Aborting is the caller's doing, not the network's.
+      signal?.throwIfAborted();
+      return { ok: false, retry: true, remint: false, reason: `${error}` };
+    }
+    if (response.ok) {
+      const etag = (response.headers.get("ETag") ?? "").replace(/"/g, "");
+      if (etag === "") {
+        return {
+          ok: false,
+          retry: false,
+          remint: false,
+          reason:
+            "the upload returned no ETag; if this application uses an " +
+            "S3-compatible store, its bucket CORS configuration must " +
+            "expose the `ETag` header",
+        };
+      }
+      return { ok: true, etag };
+    }
+    const reason = `${response.status}: ${await response.text()}`;
+    if (response.status === 403) {
+      return { ok: false, retry: true, remint: true, reason };
+    }
+    if (
+      response.status === 408 ||
+      response.status === 429 ||
+      response.status >= 500
+    ) {
+      return { ok: false, retry: true, remint: false, reason };
+    }
+    return { ok: false, retry: false, remint: false, reason };
   }
 
   /**
@@ -297,6 +403,12 @@ export class BlobUploader {
  *     const { upload } = useBlobUpload();
  *     ...
  *     const { etag, error } = await upload(blobId, file);
+ *
+ * A resolved `error` is the data plane's verdict on the commit. A
+ * rejection is a part that could not be uploaded even after retries;
+ * the parts that did upload are kept, so calling `upload` again for
+ * the same blob resumes rather than restarts. A blob that is never
+ * committed is removed by the backend after a day.
  */
 export function useBlobUpload(): {
   upload: (
