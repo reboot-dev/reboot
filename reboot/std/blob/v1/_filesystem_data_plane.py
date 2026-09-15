@@ -21,50 +21,33 @@ that survives was put there by something entitled to.
 
 Everything else is the store's: `FilesystemBlobStore` keeps the
 bytes and drives `StoredBlob`, the state machine that keeps the
-metadata, so each call here is authorized and then handed over.
-Nothing here holds state of its own, so any of a replica's servers
-can serve any call.
+metadata, and `BlobDataPlaneServicer` hands it every call once
+authorized. Nothing here holds state of its own, so any of a
+replica's servers can serve any call.
 """
 
 import grpc
-from rbt.std.blob.v1.data_plane_pb2 import (
-    ConfigurationRequest,
-    ConfigurationResponse,
-    DataPlaneBeginUploadRequest,
-    DataPlaneBeginUploadResponse,
-    DataPlaneCompleteUploadRequest,
-    DataPlaneCompleteUploadResponse,
-    DataPlaneDeleteRequest,
-    DataPlaneDeleteResponse,
-    DataPlaneGetDownloadUrlRequest,
-    DataPlaneGetDownloadUrlResponse,
-    DataPlaneGetPartUploadInstructionsRequest,
-    DataPlaneGetPartUploadInstructionsResponse,
-    DataPlanePartUploadInstruction,
-)
-from rbt.std.blob.v1.data_plane_pb2_grpc import BlobDataPlaneServicer
 from reboot.aio.caller_id import CallerID
-from reboot.aio.external import ExternalContext
 from reboot.aio.headers import CALLER_ID_HEADER
 from reboot.aio.interceptors import LegacyGrpcContext
 from reboot.aio.internals.contextvars import get_application_id
-from reboot.std.blob.v1._store import (
-    BlobStoreError,
-    FilesystemBlobStore,
-    UploadedPart,
-)
+from reboot.std.blob.v1._data_plane_servicer import BlobDataPlaneServicer
+from reboot.std.blob.v1._store import FilesystemBlobStore
 
 
 class FilesystemDataPlaneServicer(BlobDataPlaneServicer):
     """Serves `BlobDataPlane` from the application whose blobs it
-    holds: each call is authorized, then handed to the store.
+    holds.
 
     The store is set by `BlobLibrary` once it knows where this
     application keeps them."""
 
     _store: FilesystemBlobStore
 
-    async def _authorize_caller(self, context: LegacyGrpcContext) -> None:
+    def _blob_store(self) -> FilesystemBlobStore:
+        return self._store
+
+    async def _authorize(self, context: LegacyGrpcContext) -> None:
         """Refuses anyone but this application's own code.
 
         This is the check `is_app_internal` makes, made by hand
@@ -99,109 +82,6 @@ class FilesystemDataPlaneServicer(BlobDataPlaneServicer):
                 "belongs to",
             )
             raise RuntimeError("This is unreachable")
-
-    def _context(self, grpc_context: LegacyGrpcContext) -> ExternalContext:
-        """The context the store reaches `StoredBlob` with, on behalf
-        of a call `_authorize_caller` has admitted."""
-        return grpc_context.external_context(name="blob data plane")
-
-    async def Configuration(
-        self,
-        request: ConfigurationRequest,
-        grpc_context: LegacyGrpcContext,
-    ) -> ConfigurationResponse:
-        await self._authorize_caller(grpc_context)
-        return ConfigurationResponse(part_size=self._store.part_size)
-
-    async def BeginUpload(
-        self,
-        request: DataPlaneBeginUploadRequest,
-        grpc_context: LegacyGrpcContext,
-    ) -> DataPlaneBeginUploadResponse:
-        await self._authorize_caller(grpc_context)
-        upload_id = await self._store.begin_upload(
-            self._context(grpc_context),
-            request.blob_id,
-            request.content_type,
-        )
-        return DataPlaneBeginUploadResponse(upload_id=upload_id)
-
-    async def GetPartUploadInstructions(
-        self,
-        request: DataPlaneGetPartUploadInstructionsRequest,
-        grpc_context: LegacyGrpcContext,
-    ) -> DataPlaneGetPartUploadInstructionsResponse:
-        await self._authorize_caller(grpc_context)
-        instructions = [
-            DataPlanePartUploadInstruction(
-                part_number=part_number,
-                url=self._store.part_put_url(
-                    request.blob_id,
-                    request.upload_id,
-                    part_number,
-                ),
-            ) for part_number in request.part_numbers
-        ]
-        return DataPlaneGetPartUploadInstructionsResponse(
-            instructions=instructions
-        )
-
-    async def CompleteUpload(
-        self,
-        request: DataPlaneCompleteUploadRequest,
-        grpc_context: LegacyGrpcContext,
-    ) -> DataPlaneCompleteUploadResponse:
-        await self._authorize_caller(grpc_context)
-        try:
-            etag = await self._store.complete(
-                self._context(grpc_context),
-                request.blob_id,
-                request.upload_id,
-                request.content_type,
-                [
-                    UploadedPart(
-                        number=part.number, etag=part.etag, size=part.size
-                    ) for part in request.parts
-                ],
-                max_size=(
-                    request.max_size if request.HasField("max_size") else None
-                ),
-            )
-            return DataPlaneCompleteUploadResponse(etag=etag)
-        except BlobStoreError as error:
-            # A permanent failure: report it so the control plane can
-            # surface it and let the client re-upload. Transient
-            # failures raise other exceptions, which the control
-            # plane's workflow retries.
-            return DataPlaneCompleteUploadResponse(error=str(error))
-
-    async def GetDownloadUrl(
-        self,
-        request: DataPlaneGetDownloadUrlRequest,
-        grpc_context: LegacyGrpcContext,
-    ) -> DataPlaneGetDownloadUrlResponse:
-        await self._authorize_caller(grpc_context)
-        url, ttl_seconds = self._store.download_url(
-            request.blob_id,
-            request.ttl_seconds if request.HasField("ttl_seconds") else None,
-        )
-        return DataPlaneGetDownloadUrlResponse(
-            url=url,
-            ttl_seconds=ttl_seconds,
-        )
-
-    async def Delete(
-        self,
-        request: DataPlaneDeleteRequest,
-        grpc_context: LegacyGrpcContext,
-    ) -> DataPlaneDeleteResponse:
-        await self._authorize_caller(grpc_context)
-        await self._store.delete(
-            self._context(grpc_context),
-            request.blob_id,
-            upload_ids=list(request.upload_ids),
-        )
-        return DataPlaneDeleteResponse()
 
 
 def legacy_grpc_servicers() -> list[type]:
