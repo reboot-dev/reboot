@@ -26,7 +26,9 @@ from reboot.aio.contexts import WriterContext
 from reboot.bdd import scenarios
 from reboot.bdd.frontend import Frontend
 from reboot.bdd.vite import vite
-from reboot.std.collections.v1.sorted_map import sorted_map_library
+from reboot.std.collections.ordered_map.v1.ordered_map import (
+    ordered_map_library,
+)
 from typing import Iterator
 from user_servicer import UserServicer
 
@@ -59,7 +61,7 @@ def application(frontend: Frontend) -> Application:
             CustomerServicer,
             UserServicer,
         ],
-        libraries=[sorted_map_library()],
+        libraries=[ordered_map_library()],
         # Signing in constructs the user's `User`, which signs them up
         # with the bank `initialize` creates.
         initialize=initialize,

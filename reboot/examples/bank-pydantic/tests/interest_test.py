@@ -8,14 +8,16 @@ from bank_servicer import BankServicer
 from customer_servicer import CustomerServicer
 from reboot.aio.applications import Application
 from reboot.bdd import scenarios
-from reboot.std.collections.v1.sorted_map import sorted_map_library
+from reboot.std.collections.ordered_map.v1.ordered_map import (
+    ordered_map_library,
+)
 
 
 @pytest.fixture
 def application() -> Application:
     return Application(
         servicers=[AccountServicer, BankServicer, CustomerServicer],
-        libraries=[sorted_map_library()],
+        libraries=[ordered_map_library()],
     )
 
 

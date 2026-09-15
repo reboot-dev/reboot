@@ -12,7 +12,9 @@ from reboot.aio.auth.oauth_providers import (
     OAuthProviderByEnvironment,
 )
 from reboot.aio.external import InitializeContext
-from reboot.std.collections.v1.sorted_map import sorted_map_library
+from reboot.std.collections.ordered_map.v1.ordered_map import (
+    ordered_map_library,
+)
 from user_servicer import UserServicer
 
 
@@ -51,8 +53,8 @@ async def main():
                 "bankpydanticmobile://redirect",
             ],
         ),
-        # Include `SortedMap` library.
-        libraries=[sorted_map_library()],
+        # Include `OrderedMap` library.
+        libraries=[ordered_map_library()],
         initialize=initialize,
         example_prompts=example_prompts,
     ).run()
