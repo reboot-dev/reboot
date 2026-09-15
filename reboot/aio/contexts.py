@@ -382,12 +382,15 @@ class React:
         _calls: dict[asyncio.Task, grpc.aio.Call]
 
         # The latest response or error received from calling
-        # `React.Query`, set by our `asyncio.Task`s.
+        # `React.Query`, set by our `asyncio.Task`s. Each task keeps
+        # reading responses as fast as they arrive and only ever
+        # keeps the latest, so that responses never pile up in the
+        # stream between us and the server (which, with a proxy in
+        # between, can buffer many megabytes) while the caller is
+        # busy: the caller only ever needs the latest response, and
+        # would otherwise have to work through every stale one it
+        # missed before getting to it.
         _responses: dict[asyncio.Task, asyncio.Future[ResponseT]]
-
-        # An event indicating that a response has been used and thus
-        # the next response can be retrieved.
-        _used_response: dict[asyncio.Task, asyncio.Event]
 
         # The subset of `_tasks` that's been used since the last call
         # to `cancel_*()`.  Any tasks not in this `set` are considered
@@ -417,7 +420,6 @@ class React:
             self._tasks = dict()
             self._calls = dict()
             self._responses = dict()
-            self._used_response = dict()
             self._used_tasks = set()
             self.invalidated = False
 
@@ -436,8 +438,6 @@ class React:
 
             if task is not None:
                 self._used_tasks.add(task)
-
-                self._used_response[task].set()
 
                 assert task in self._calls
                 assert task in self._responses
@@ -504,8 +504,6 @@ class React:
                             response = self._response_type()
                             response.ParseFromString(query_response.response)
 
-                            self._used_response[task].clear()
-
                             self._calls[task] = call
 
                             self._responses[task] = asyncio.Future()
@@ -515,8 +513,6 @@ class React:
                                 have_first_response.set()
                             else:
                                 self._event.set()
-
-                            await self._used_response[task].wait()
 
                         raise RuntimeError('React.Query should be infinite')
 
@@ -533,8 +529,6 @@ class React:
                         if is_grpc_retryable_exception(exception):
                             continue
 
-                        self._used_response[task].clear()
-
                         self._calls[task] = call
 
                         self._responses[task] = asyncio.Future()
@@ -545,15 +539,12 @@ class React:
                         else:
                             self._event.set()
 
-                        await self._used_response[task].wait()
-
                         # Let's retry after a backoff!
                         await backoff()
 
             task = asyncio.create_task(query(), name=f'query() in {__name__}')
 
             self._tasks[serialized_request] = task
-            self._used_response[task] = asyncio.Event()
             self._used_tasks.add(task)
 
             await have_first_response.wait()
@@ -590,11 +581,10 @@ class React:
                     # garbage-collected. Using `pop` instead of `del`,
                     # since it could be a case when the task is
                     # cancelled before it makes a gRPC call and thus
-                    # doesn't have an entry in `self._calls`,
-                    # `self._responses` and `self._used_response`.
+                    # doesn't have an entry in `self._calls` and
+                    # `self._responses`.
                     self._calls.pop(task, None)
                     self._responses.pop(task, None)
-                    self._used_response.pop(task, None)
                 unused_tasks.clear()
 
     _channel_manager: _ChannelManager
