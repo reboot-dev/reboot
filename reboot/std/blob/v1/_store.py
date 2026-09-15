@@ -106,6 +106,16 @@ class WrittenPart:
 
 
 @dataclass(frozen=True)
+class StoredObject:
+    """A committed object, as a download serves it: what to say about
+    the bytes, and the bytes themselves, in order."""
+    content_type: str
+    etag: str
+    size: int
+    chunks: AsyncIterator[bytes]
+
+
+@dataclass(frozen=True)
 class StagedPart:
     """A part whose bytes are on disk under their final name but not
     yet claimed by the object.
@@ -511,7 +521,38 @@ class FilesystemBlobStore:
                 continue
             await _unlink_if_present(os.path.join(directory, name))
 
-    async def read_part(
+    async def read(
+        self,
+        context: ExternalContext,
+        blob_id: str,
+    ) -> Optional[StoredObject]:
+        """The committed object stored for a blob, or `None` when there
+        is none: a blob whose upload never began, or is not finished,
+        has no bytes to serve.
+
+        The bytes are the object's parts in part order, each the write
+        the manifest recorded and no later write of that part."""
+        stored = await self._stored(context, blob_id)
+        if stored is None or not stored.committed:
+            return None
+        encoded = _encode_blob_id(blob_id)
+        parts = sorted(stored.parts, key=lambda part: part.number)
+
+        async def chunks() -> AsyncIterator[bytes]:
+            for part in parts:
+                async for chunk in self._read_part(
+                    encoded, stored.upload_id, part.number, part.storage_id
+                ):
+                    yield chunk
+
+        return StoredObject(
+            content_type=stored.content_type,
+            etag=stored.etag,
+            size=sum(part.size for part in parts),
+            chunks=chunks(),
+        )
+
+    async def _read_part(
         self,
         encoded_blob_id: str,
         upload_id: str,
@@ -539,7 +580,7 @@ class FilesystemBlobStore:
             os.path.join(self.blob_directory(encoded_blob_id), upload_id)
         )
 
-    async def stored(
+    async def _stored(
         self,
         context: ExternalContext,
         blob_id: str,
@@ -573,7 +614,7 @@ class FilesystemBlobStore:
         checking each against what was actually written, and returns
         its ETag. Raises `BlobStoreError` for what can never succeed;
         completing an already-completed blob returns its ETag."""
-        stored = await self.stored(context, blob_id)
+        stored = await self._stored(context, blob_id)
         if stored is None:
             raise BlobStoreError("no upload was ever begun for this blob")
         if stored.committed:

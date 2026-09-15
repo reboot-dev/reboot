@@ -31,7 +31,7 @@ from reboot.std.blob.v1._store import (
 )
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
-from typing import AsyncIterator, Callable, Coroutine, Optional
+from typing import Callable, Coroutine, Optional
 
 # Path parameters are also filesystem path components; restrict them
 # to the alphabets the store actually produces (URL-safe base64 blob
@@ -176,30 +176,19 @@ def _make_get_blob(
 
         # As in `put_part`: an app-internal context, taken only below a
         # verified signature.
-        stored = await store.stored(
+        stored = await store.read(
             request.state.reboot_app_internal_context(request),
             _blob_id(blob),
         )
-        if stored is None or not stored.committed:
+        if stored is None:
             return Response(status_code=404, content="No such blob")
-
-        upload_id = stored.upload_id
-        parts = sorted(stored.parts, key=lambda part: part.number)
-        total_size = sum(part.size for part in parts)
-
-        async def stream() -> AsyncIterator[bytes]:
-            for part in parts:
-                async for chunk in store.read_part(
-                    blob, upload_id, part.number, part.storage_id
-                ):
-                    yield chunk
 
         media_type, safety_headers = download_headers(stored.content_type)
         return StreamingResponse(
-            stream(),
+            stored.chunks,
             media_type=media_type,
             headers={
-                "Content-Length": str(total_size),
+                "Content-Length": str(stored.size),
                 "ETag": f'"{stored.etag}"',
                 "Accept-Ranges": "none",
                 **safety_headers,
