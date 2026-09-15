@@ -159,6 +159,7 @@ async def _run_server_process(
     placement_planner_address: RoutableAddress,
     envoy_trusted_address: Optional[str],
     token_verifier: Optional[TokenVerifier],
+    root: Optional[str],
     fifo: Path,
     effect_validation: EffectValidation,
 ):
@@ -199,6 +200,7 @@ async def _run_server_process(
             web_framework=web_framework,
             listen_address=address,
             token_verifier=token_verifier,
+            root=root,
             state_manager=state_manager,
             placement_client=placement_client,
             actor_resolver=resolver,
@@ -292,6 +294,7 @@ async def run_nodejs_server_process(
     serviceables: list[Serviceable],
     web_framework: WebFramework,
     token_verifier: Optional[TokenVerifier],
+    root: Optional[str],
 ):
     """Entry point for a nodejs based server subprocess.
 
@@ -325,6 +328,7 @@ async def run_nodejs_server_process(
         serviceables=serviceables,
         web_framework=web_framework,
         token_verifier=token_verifier,
+        root=root,
         **args,
     )
 
@@ -334,6 +338,7 @@ async def run_python_server_process(
     serviceables: list[Serviceable],
     web_framework: WebFramework,
     token_verifier: Optional[TokenVerifier],
+    root: Optional[str],
 ):
     """Entry point for a Python based server subprocess.
 
@@ -361,6 +366,7 @@ async def run_python_server_process(
         serviceables=serviceables,
         web_framework=web_framework,
         token_verifier=token_verifier,
+        root=root,
         **args,
     )
 
@@ -420,6 +426,8 @@ class RegisteredRevision:
     # and the access JWT surfaced by `/__/oauth/whoami`.
     allowed_origins: Optional[list[str]]
     token_verifier: Optional[TokenVerifier]
+    # The path the root page forwards to, if the application gave one.
+    root: Optional[str]
     effect_validation: Optional[EffectValidation]
 
 
@@ -624,6 +632,7 @@ class LocalServerManager(ServerManager):
         serviceables: list[Serviceable],
         web_framework: WebFramework,
         token_verifier: Optional[TokenVerifier],
+        root: Optional[str],
         in_process: bool,
         local_envoy: bool,
         local_envoy_port: int,
@@ -642,6 +651,7 @@ class LocalServerManager(ServerManager):
             local_envoy_use_tls=local_envoy_use_tls,
             allowed_origins=allowed_origins,
             token_verifier=token_verifier,
+            root=root,
             effect_validation=effect_validation,
         )
 
@@ -802,6 +812,7 @@ class LocalServerManager(ServerManager):
                     self._revision.serviceables,
                     self._revision.web_framework,
                     self._revision.token_verifier,
+                    self._revision.root,
                     effect_validation,
                 )
 
@@ -845,6 +856,7 @@ class LocalServerManager(ServerManager):
         serviceables: list[Serviceable],
         web_framework: WebFramework,
         token_verifier: Optional[TokenVerifier],
+        root: Optional[str],
         effect_validation: EffectValidation,
     ) -> LaunchedServer:
         assert self._placement_planner_address is not None
@@ -874,6 +886,7 @@ class LocalServerManager(ServerManager):
             web_framework=web_framework,
             listen_address=f'{host}:0',
             token_verifier=token_verifier,
+            root=root,
             state_manager=state_manager,
             placement_client=placement_client,
             actor_resolver=resolver,

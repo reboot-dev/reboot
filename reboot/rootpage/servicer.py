@@ -1,4 +1,6 @@
 import grpc
+import html
+import json
 import os
 import reboot.application
 from google.api.httpbody_pb2 import HttpBody
@@ -11,6 +13,7 @@ from rbt.v1alpha1.rootpage.rootpage_pb2 import (
     RootPageRequest,
 )
 from reboot.templates.tools import render_template_path
+from typing import Optional
 
 logger = get_logger(__name__)
 
@@ -41,6 +44,10 @@ KNOWN_ABSENT_FILENAMES = [
 
 class RootPageServicer(rootpage_pb2_grpc.RootPageServicer):
 
+    def __init__(self, *, root: Optional[str]):
+        # The path `/` forwards to, when the application gave one.
+        self._root = root
+
     def add_to_server(self, server: grpc.aio.Server) -> None:
         rootpage_pb2_grpc.add_RootPageServicer_to_server(self, server)
 
@@ -62,6 +69,31 @@ class RootPageServicer(rootpage_pb2_grpc.RootPageServicer):
         # `GET /` arrives with `file=""`; everything served under
         # `/__/rootpage/{file=**}` arrives with `file` set to the
         # subpath.
+        if not request.file and self._root is not None:
+            # Served through the gRPC-JSON transcoder, which can only
+            # turn a gRPC status into an error, never a redirect, so
+            # the browser is forwarded by the page instead, which is
+            # left blank so nothing flashes. `location.replace` keeps
+            # the fragment, e.g. `/#/models`, and leaves `/` out of
+            # the history; the meta refresh is for a browser without
+            # JavaScript.
+            root = html.escape(self._root, quote=True)
+            # Escaped so the path cannot close the `<script>`.
+            script_root = json.dumps(self._root).replace('<', '\\u003c')
+            return HttpBody(
+                content_type="text/html; charset=utf-8",
+                data=(
+                    '<!DOCTYPE html>'
+                    '<html><head><meta charset="utf-8">'
+                    f'<script>location.replace({script_root} + '
+                    'location.search + location.hash);</script>'
+                    '<noscript>'
+                    f'<meta http-equiv="refresh" content="0; url={root}">'
+                    '</noscript>'
+                    '</head><body></body></html>'
+                ).encode(),
+            )
+
         if not request.file:
             # Render the Jinja template in `index.html.j2` so we can
             # inject the singleton `Application` state ID.

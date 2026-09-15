@@ -95,6 +95,9 @@ def application() -> Application:
             ),
         ],
         initialize=initialize,
+        # The dashboard is the only page this application has, so `/`
+        # forwards to it rather than showing Reboot's root page.
+        root=DASHBOARD_PATH + '/',
     )
 
     @application.http.get(RECORDINGS_PATH + '/{relative:path}')

@@ -407,6 +407,7 @@ class ServiceServer(Server):
         websocket_port: Optional[int] = None,
         http_port: Optional[int] = None,
         token_verifier: Optional[TokenVerifier],
+        root: Optional[str],
         state_manager: StateManager,
         placement_client: PlacementClient,
         actor_resolver: ActorResolver,
@@ -520,7 +521,7 @@ class ServiceServer(Server):
         self._inspect_servicer.add_to_server(self._grpc_server)
 
         # Construct 'RootPage' system service.
-        self._rootpage_servicer = RootPageServicer()
+        self._rootpage_servicer = RootPageServicer(root=root)
         self._rootpage_servicer.add_to_server(self._grpc_server)
 
         # Construct 'ExportImport' system service for the Reboot servicers.

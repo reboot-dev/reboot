@@ -251,6 +251,7 @@ class Application:
         title: Optional[str] = None,
         description: Optional[str] = None,
         example_prompts: Optional[list[ExamplePrompt]] = None,
+        root: Optional[str] = None,
     ):
         """
         :param servicers: the types of Reboot-powered servicers that
@@ -297,6 +298,9 @@ class Application:
             application.
         :param example_prompts: a list of `ExamplePrompt` instances
             for using this application in a chat client.
+        :param root: a path on this application, e.g. `/dashboard/`,
+            that the root page `/` forwards a browser to instead of
+            showing Reboot's own page.
 
         TODO(benh): update the initialize function to be run in a
         transaction and ensure that the transaction has finished before
@@ -467,6 +471,15 @@ class Application:
         self._description = description
         self._example_prompts = example_prompts or []
 
+        if root is not None and (
+            not root.startswith('/') or root.startswith('//')
+        ):
+            raise ValueError(
+                f"`root` must be a path on this application, starting "
+                f"with a single '/', not '{root}'"
+            )
+        self._root = root
+
         # Validate MCP configuration eagerly at construction time so
         # errors are raised consistently regardless of run environment.
         seen_tools: dict[str, str] = {}
@@ -570,6 +583,10 @@ class Application:
     @property
     def token_verifier(self):
         return self._token_verifier
+
+    @property
+    def root(self) -> Optional[str]:
+        return self._root
 
     @property
     def initialize(
@@ -1042,6 +1059,7 @@ class Application:
             legacy_grpc_servicers=self.legacy_grpc_servicers,
             web_framework=self.web_framework,
             token_verifier=self.token_verifier,
+            root=self.root,
             initialize=initialize,
             initialize_bearer_token=self._initialize_bearer_token,
             local_envoy=local_envoy,
@@ -1120,6 +1138,7 @@ class Application:
                     serviceables=self._get_serviceables(),
                     web_framework=self._web_framework,
                     token_verifier=self._token_verifier,
+                    root=self._root,
                 )
             except Exception as e:
                 logger.error(f"Unexpected error while starting: {e}")
@@ -1313,6 +1332,7 @@ class NodeApplication(Application):
                 serviceables=self._get_serviceables(),
                 web_framework=self._web_framework,
                 token_verifier=self._token_verifier,
+                root=self._root,
             )
         except Exception as e:
             logger.error(f"Unexpected error while starting: {e}")
