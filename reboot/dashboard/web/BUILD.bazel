@@ -17,6 +17,7 @@ ts_project(
         "src/graph.tsx",
         "src/link_properties_to_data_types.ts",
         "src/main.tsx",
+        "src/pane_target.ts",
     ],
     declaration = True,
     tsconfig = ":tsconfig",
