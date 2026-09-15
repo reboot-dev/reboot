@@ -404,10 +404,14 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         # whether to open a dashboard, which `open_dashboard_tests`
         # covers. Closing the notice writes nothing, so the test
         # closes first, then suppresses, and the preference must only
-        # change on the second. The CLI opens the root, which forwards
-        # to the page keeping the query, so the test does too.
+        # change on the second.
+        #
+        # The page's own path, not the root, as `rbt dev run` opens it:
+        # the root is served through Envoy's gRPC-JSON transcoder, which
+        # fails a request carrying a query parameter its method has no
+        # field for, so `/?opened=automatically` never reaches the page.
         def close(driver):
-            driver.get(f'{self.url}/?opened=automatically')
+            driver.get(f'{self.url}{DASHBOARD_PATH}/?opened=automatically')
             self._dismiss_the_notice(driver, self._CLOSE)
 
         await asyncio.to_thread(self._run_in_browser, close)
@@ -415,7 +419,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         await self._wait_for_suppress_open_on_restart(False)
 
         def suppress(driver):
-            driver.get(f'{self.url}/?opened=automatically')
+            driver.get(f'{self.url}{DASHBOARD_PATH}/?opened=automatically')
             self._dismiss_the_notice(driver, self._SUPPRESS)
 
         await asyncio.to_thread(self._run_in_browser, suppress)

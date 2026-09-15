@@ -18,7 +18,10 @@ from rbt.std.presence.subscriber.v1.subscriber_rbt import Subscriber
 from rbt.std.presence.v1.presence_rbt import Presence
 from rbt.v1alpha1.errors_pb2 import NotFound
 from reboot.aio.tests import Reboot
-from reboot.cli.commands.dev import _open_dashboard_once
+from reboot.cli.commands.dev import (
+    _open_dashboard_once,
+    automatically_opened_url,
+)
 from reboot.dashboard.backend.constants import PREFERENCES_ID, PRESENCE_ID
 from reboot.dashboard.backend.main import application
 from unittest.mock import patch
@@ -35,9 +38,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         self.dashboard_url = f'{self.url}/'
         # An open the developer did not ask for tells the page so, which
         # is what lets the page offer not to be opened again.
-        self.automatically_opened_url = (
-            f'{self.dashboard_url}?opened=automatically'
-        )
+        self.automatically_opened_url = automatically_opened_url(self.url)
         self._connections: list[asyncio.Task] = []
 
     async def asyncTearDown(self) -> None:

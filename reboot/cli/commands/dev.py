@@ -58,6 +58,7 @@ from reboot.cli.common.transpile import (
 from reboot.cli.common.watch import FileWatcher, file_watcher
 from reboot.controller.plan_makers import validate_num_servers
 from reboot.dashboard.backend.constants import (
+    DASHBOARD_PATH,
     DEFAULT_DASHBOARD_PORT,
     PREFERENCES_ID,
     PRESENCE_ID,
@@ -534,12 +535,30 @@ async def _open_dashboard_once(
     # raising when there is no browser to open. An unforced open
     # tells the page it was automatic, so it can offer not to be.
     page_url = f'{dashboard_url}/'
-    opened_url = page_url if forced else f'{page_url}?opened=automatically'
+    opened_url = (
+        page_url if forced else automatically_opened_url(dashboard_url)
+    )
 
     if not await asyncio.to_thread(webbrowser.open, opened_url):
         terminal.warn(
             f"Could not open a browser; your dashboard is at {page_url}"
         )
+
+
+def automatically_opened_url(dashboard_url: str) -> str:
+    """The URL a dashboard is opened at when nobody asked for it, which
+    tells the page so, letting it offer not to be opened again.
+
+    Everything else sends people to the root, which forwards to the
+    page wherever it is served, but this passes the page's whole path:
+    the root is served by the `RootPage` servicer through Envoy's
+    gRPC-JSON transcoder, which fails a request carrying a query
+    parameter the method has no field for (with `grpc-status: 2`, "Bad
+    method header", and an empty body), so `/?opened=automatically`
+    would never reach the page. The query only ever comes from here, so
+    nobody is told to type it.
+    """
+    return f'{dashboard_url}{DASHBOARD_PATH}/?opened=automatically'
 
 
 async def _dashboard_reachable(port: int) -> bool:
