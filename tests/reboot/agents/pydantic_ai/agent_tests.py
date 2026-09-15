@@ -1,7 +1,9 @@
+import anyio
 import asyncio
 import pydantic_ai
 import unittest
 import uuid
+from contextlib import asynccontextmanager
 from pydantic_ai import AgentRunResult, RunContext
 from pydantic_ai._run_context import get_current_run_context
 from pydantic_ai.exceptions import UserError
@@ -33,7 +35,7 @@ from reboot.aio.contexts import (
 from reboot.aio.tests import Reboot
 from tests.reboot.general_rbt import General, GeneralRequest, GeneralResponse
 from tests.reboot.general_servicer import GeneralServicer
-from typing import Any, Awaitable, Callable, ClassVar, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, ClassVar, Optional
 from unittest import mock
 
 
@@ -1563,6 +1565,83 @@ class AlternateRunEntryPointTestCase(WorkflowAgentRunTestCase):
 
         self.assertGreater(captured_events_seen, 0)
         self.assertEqual(model.request_stream_count, 1)
+
+
+class CancellationTestCase(WorkflowAgentRunTestCase):
+
+    async def test_cancellation_hidden_as_closed_resource_error_is_raised(
+        self,
+    ) -> None:
+        """Cancelling an agent run can surface as
+        `anyio.ClosedResourceError`, when one of pydantic_graph's tasks
+        sends its result into the stream the cancelled run has closed.
+        The run raises `asyncio.CancelledError` instead, so a workflow
+        catching everything but cancellation still stops.
+        """
+        agent = Agent(NOOP_MODEL, name="Agent")
+
+        @asynccontextmanager
+        async def iter_raising_closed_resource_error_when_cancelled(
+            *args: Any,
+            **kwargs: Any,
+        ) -> AsyncIterator[Any]:
+            # Stands in for pydantic_ai's own `iter`, whose run the
+            # race cannot be made to lose on demand: cancelled, it
+            # raises `anyio.ClosedResourceError` instead.
+            try:
+                yield None
+            except asyncio.CancelledError:
+                raise anyio.ClosedResourceError()
+
+        raised: BaseException | None = None
+
+        async def workflow(context: WorkflowContext) -> None:
+            nonlocal raised
+            running = asyncio.Event()
+
+            async def run() -> None:
+                async with agent.iter(context, "Some prompt"):
+                    running.set()
+                    await asyncio.Event().wait()
+
+            task = asyncio.create_task(run())
+            await running.wait()
+            task.cancel()
+            try:
+                await task
+            except BaseException as exception:
+                raised = exception
+
+        with mock.patch.object(
+            agent.wrapped,
+            "iter",
+            iter_raising_closed_resource_error_when_cancelled,
+        ):
+            await self.call(workflow)
+
+        self.assertIsInstance(raised, asyncio.CancelledError)
+
+    async def test_closed_resource_error_without_cancellation_is_raised(
+        self,
+    ) -> None:
+        """An `anyio.ClosedResourceError` raised when nothing is being
+        cancelled is a real error, and is raised as it is.
+        """
+        agent = Agent(NOOP_MODEL, name="Agent")
+
+        raised: BaseException | None = None
+
+        async def workflow(context: WorkflowContext) -> None:
+            nonlocal raised
+            try:
+                async with agent.iter(context, "Some prompt"):
+                    raise anyio.ClosedResourceError()
+            except BaseException as exception:
+                raised = exception
+
+        await self.call(workflow)
+
+        self.assertIsInstance(raised, anyio.ClosedResourceError)
 
 
 if __name__ == "__main__":
