@@ -1574,7 +1574,13 @@ header h1 {
   pointer-events: auto;
 }
 
+/* On one line, cut short with an ellipsis in a box dragged narrower
+   than the name, so the collapse link beside it stays in the box. */
 .graph-expanded-package-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-family: ui-monospace, Menlo, monospace;
   font-size: 11.5px;
   font-weight: 650;
@@ -1582,6 +1588,7 @@ header h1 {
 }
 
 .graph-expanded-package-collapse {
+  flex: none;
   padding: 0;
   border: none;
   background: none;
