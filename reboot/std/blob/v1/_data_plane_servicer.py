@@ -213,8 +213,11 @@ class BlobDataPlaneServicer(data_plane_pb2_grpc.BlobDataPlaneServicer):
             # A permanent failure: reported in the response, since
             # retrying the call would only repeat it. Transient failures
             # raise other exceptions, which become the gRPC error the
-            # caller retries.
-            return DataPlaneCommitResponse(error=str(error))
+            # caller retries. The verdict is never empty, so that
+            # whatever reads it off the blob can tell it from none.
+            return DataPlaneCommitResponse(
+                error=str(error) or "the store refused the commit"
+            )
 
     async def GetDownloadUrl(
         self,

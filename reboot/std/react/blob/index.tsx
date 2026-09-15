@@ -213,8 +213,12 @@ export class BlobUploader {
         if (info.status === Blob_Status.COMMITTED) {
           return { etag: info.etag };
         }
-        if (info.commitError !== undefined && info.commitError !== "") {
-          return { error: info.commitError };
+        if (info.status === Blob_Status.UPLOADING) {
+          // The verdict is the status reverting; the message only
+          // explains it.
+          return {
+            error: info.commitError || "the data plane refused the commit",
+          };
         }
         if (
           info.status === Blob_Status.REMOVING ||
