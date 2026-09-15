@@ -60,7 +60,7 @@ name = "my-app"
 version = "0.1.0"
 requires-python = ">= 3.10"
 dependencies = [
-    "reboot==1.5.0",
+    "reboot==1.6.0",
 ]
 
 [dependency-groups]
