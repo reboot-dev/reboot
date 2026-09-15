@@ -532,6 +532,36 @@ message Servicer {
     // possibly nothing of Reboot's. Spelled the way `ast.unparse`
     // writes the callee, e.g. "self._transfer".
     repeated string ambiguous = 4;
+
+    // One thing the method's implementation does, itself or through
+    // the functions it calls, that the analysis did not follow,
+    // recorded rather than guessed at or dropped, so the dashboard
+    // can show where what it draws may be incomplete.
+    message Hazard {
+      // A run of an agent the analysis did not resolve: the call's own
+      // definition proves an agent is run, through any of `Agent`'s
+      // entry points, `run`, `iter`, `run_stream` or
+      // `run_stream_events`, but which agent is not known. Nothing
+      // about the run is recorded, what it is given included.
+      message RunOnUnresolvedAgent {
+        // Represents what is called, spelled the way `ast.unparse`
+        // writes it: the receiver and the method, without the call's
+        // arguments, e.g. `make_agent().run`.
+        string callee = 1;
+      }
+
+      // Represents the file the hazard is written in, spelled the way
+      // the developer would open it.
+      string filename = 1;
+
+      oneof hazard {
+        RunOnUnresolvedAgent run_on_unresolved_agent = 2;
+      }
+    }
+
+    // Represents everything the method's implementation does that the
+    // analysis did not follow, in the order it met them.
+    repeated Hazard hazards = 6;
   }
 
   // The state type it services, spelled as the runtime names one,

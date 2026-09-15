@@ -259,6 +259,60 @@ async def main():
     await Application(servicers=[ShopServicer]).run()
 '''
 
+# The shape of Reboot's own `Agent`, as far as the analysis needs:
+# the entry points a run is made through, and the construction whose
+# arguments say what the agent is. Written where an installed `reboot` would be, since the
+# analysis recognizes the module by its path.
+AGENTS_MODULE = '''
+class Agent:
+
+    def __init__(
+        self,
+        model=None,
+        *,
+        name=None,
+        system_prompt=(),
+        instructions=None,
+        description=None,
+        **kwargs,
+    ):
+        pass
+
+    async def run(self, context=None, user_prompt=None, **kwargs):
+        pass
+
+    def iter(self, context=None, user_prompt=None, **kwargs):
+        pass
+
+    def run_stream(self, context=None, user_prompt=None, **kwargs):
+        pass
+
+    async def run_stream_events(
+        self,
+        context=None,
+        user_prompt=None,
+        **kwargs,
+    ):
+        pass
+
+    def run_sync(self, context=None, user_prompt=None, **kwargs):
+        pass
+
+    def override(self, **kwargs):
+        pass
+'''
+
+
+def _write_agents_module(directory: Path) -> None:
+    """Writes an installed `reboot` holding the agents module the
+    analysis recognizes."""
+    package = directory / 'reboot' / 'agents' / 'pydantic_ai'
+    package.mkdir(parents=True, exist_ok=True)
+    (directory / 'reboot' / '__init__.py').write_text('')
+    (directory / 'reboot' / 'agents' / '__init__.py').write_text('')
+    (package / '_agent.py').write_text(AGENTS_MODULE)
+    (package / '__init__.py').write_text('from ._agent import Agent\n')
+
 
 class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
 
@@ -836,6 +890,10 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         installed.parent.mkdir(parents=True)
         installed.write_text(GENERATED.format(state='Ext'))
 
+        # Reboot's own agents module, installed the way it is in an
+        # application that uses agents.
+        _write_agents_module(self.installed)
+
         # The generator's actual output, checked in as a golden and
         # rewritten with the templates by `make goldens`, so that
         # resolving is tested against the real templates and not
@@ -1266,6 +1324,173 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                     ).digest(),
             },
         )
+
+    async def test_every_way_of_running_an_agent(self) -> None:
+        """Each of `Agent`'s four entry points is a run, which is a
+        hazard of the method while which agent is run is not resolved.
+        Anything else of `Agent`'s that is called, such as `run_sync` or
+        `override`,
+        which a Reboot `Agent` raises on, or its construction, is not
+        followed, and is ambiguous."""
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'from reboot.agents.pydantic_ai import Agent\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                "librarian = Agent('test', name='librarian')\n"
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                "        Agent('test', name='built')\n"
+                "        librarian.run_sync(context, 'e')\n"
+                "        with librarian.override(model='other'):\n"
+                '            pass\n'
+                "        await librarian.run(context, 'a')\n"
+                "        async with librarian.iter(context, 'b'):\n"
+                '            pass\n'
+                "        async with librarian.run_stream(context, 'c'):\n"
+                '            pass\n'
+                '        async for _ in librarian.run_stream_events(\n'
+                "            context, 'd'\n"
+                '        ):\n'
+                '            pass\n'
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        [found_servicer] = found[servicer].servicers
+        [method] = found_servicer.methods
+        self.assertEqual(
+            sorted(
+                hazard.run_on_unresolved_agent.callee
+                for hazard in method.hazards
+            ),
+            [
+                'librarian.iter',
+                'librarian.run',
+                'librarian.run_stream',
+                'librarian.run_stream_events',
+            ],
+        )
+        self.assertEqual(
+            sorted(method.ambiguous),
+            ['Agent', 'librarian.override', 'librarian.run_sync'],
+        )
+
+    def _hazards(self, hazards) -> list[tuple[str, dict[str, str]]]:
+        """Returns hazards as the name of each one's case and the fields
+        it sets, which is what reads well in a failed assertion."""
+        return [
+            (
+                case,
+                {
+                    field.name: value
+                    for field, value in getattr(hazard, case).ListFields()
+                },
+            )
+            for hazard in hazards
+            if (case := hazard.WhichOneof('hazard')) is not None
+        ]
+
+    async def test_a_run_whose_agent_cannot_be_resolved(self) -> None:
+        """A run whose own definition proves an agent is run -- made on
+        an agent a factory returns, an alias, a parameter, an element of
+        a collection -- is recorded as a hazard of the method, with
+        nothing about the run, rather than as a guess at which agent it
+        is. A run on something pyright cannot type at all is not known
+        to be a run, and stays an ambiguous call."""
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'from reboot.agents.pydantic_ai import Agent\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                'def make_agent():\n'
+                "    return Agent('test', name='made')\n"
+                '\n'
+                '\n'
+                "librarian = Agent('test', name='librarian')\n"
+                'agents = [librarian]\n'
+                'research = None\n'
+                '\n'
+                '\n'
+                'async def ask(agent: Agent, context):\n'
+                "    await agent.run(context, 'Tidy up')\n"
+                '\n'
+                '\n'
+                'async def ask_untyped(agent, context):\n'
+                "    await agent.run(context, 'Tidy up')\n"
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def factory(self, context, request):\n'
+                '        await make_agent().run(\n'
+                "            context, 'Tidy up', toolsets=[research]\n"
+                '        )\n'
+                '\n'
+                '    async def alias(self, context, request):\n'
+                '        helper = librarian\n'
+                "        await helper.run(context, 'Tidy up')\n"
+                '\n'
+                '    async def parameter(self, context, request):\n'
+                '        await ask(librarian, context)\n'
+                '\n'
+                '    async def element(self, context, request):\n'
+                "        await agents[0].run(context, 'Tidy up')\n"
+                '\n'
+                '    async def untyped(self, context, request):\n'
+                '        await ask_untyped(librarian, context)\n'
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        [found_servicer] = found[servicer].servicers
+        methods = {method.name: method for method in found_servicer.methods}
+        self.assertEqual(
+            {
+                name: self._hazards(method.hazards)
+                for name, method in methods.items()
+            },
+            {
+                'factory':
+                    [
+                        (
+                            'run_on_unresolved_agent',
+                            {
+                                'callee': 'make_agent().run'
+                            },
+                        ),
+                    ],
+                'alias':
+                    [('run_on_unresolved_agent', {
+                        'callee': 'helper.run'
+                    })],
+                'parameter':
+                    [('run_on_unresolved_agent', {
+                        'callee': 'agent.run'
+                    })],
+                'element':
+                    [('run_on_unresolved_agent', {
+                        'callee': 'agents[0].run'
+                    })],
+                'untyped': [],
+            },
+        )
+        self.assertEqual(
+            [hazard.filename for hazard in methods['factory'].hazards],
+            [str(servicer)],
+        )
+        self.assertEqual(list(methods['untyped'].ambiguous), ['agent.run'])
 
     async def test_a_base_from_a_function_return_type_is_resolved(
         self,
