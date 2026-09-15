@@ -708,10 +708,13 @@ const DeclaringStateTypeLink: FC<{
 const Method: FC<{
   api: api_pb.API;
   method: api_pb.Method;
+  // The card's id in the pane, `/type/bank.v1.Account.deposit`,
+  // which is what a link to the method scrolls to.
+  id?: string;
   declaringStateType?: DeclaringStateType;
   // The method the pane is on, outlined for as long as it shows.
   chosen?: boolean;
-}> = ({ api, method, declaringStateType, chosen }) => {
+}> = ({ api, method, id, declaringStateType, chosen }) => {
   // The kind names the card too, so the outline takes the kind's
   // colour.
   const kind = kindOfMethod(method);
@@ -725,6 +728,7 @@ const Method: FC<{
       ]
         .filter(Boolean)
         .join(" ")}
+      id={id}
     >
       <div className="method-head">
         <span className="method-name">
@@ -778,10 +782,12 @@ const countWithNoun = (n: number, noun: string): string =>
 const StateType: FC<{
   api: api_pb.API;
   stateType: api_pb.StateType;
+  // The method a link named, outlined among the others.
+  chosenMethod?: string;
   // The property a followed link named, with the history entry that
   // named it.
   flashProperty?: { id: string; key: string };
-}> = ({ api, stateType, flashProperty }) => {
+}> = ({ api, stateType, chosenMethod, flashProperty }) => {
   const name = qualifiedName({ api, stateType });
   const rows: PaneRows = useMemo(
     () => ({ typeId: name, flash: flashProperty }),
@@ -829,7 +835,13 @@ const StateType: FC<{
         <div className="eyebrow section">methods</div>
         <div className="methods">
           {stateType.methods.map((method) => (
-            <Method api={api} method={method} key={method.name} />
+            <Method
+              api={api}
+              method={method}
+              id={idOfTypeInPane(`${name}.${method.name}`)}
+              chosen={method.name === chosenMethod}
+              key={method.name}
+            />
           ))}
         </div>
       </section>
@@ -1170,12 +1182,16 @@ const DataType: FC<{
 
 // The types pane: one type, state or data, slid open by a link to it
 // from the graph or a page, every method expanded; the X closes it.
-// A link naming a method shows that method with what calls it and
+// A link naming a method outlines that method among its state type's
+// others, or, beside the call graph, shows it with what calls it and
 // what it calls instead.
 const TypesPane: FC<{
   apis: APIs;
   linkedDataTypes: LinkedDataType[];
   graph: GraphStateType[];
+  // Whether a method is shown with its calls, which is the call
+  // graph's way of reading it, or within its state type.
+  methodWithCalls: boolean;
   // Which directions a method's pane follows, as the graph lights them.
   conesOfInfluence: ConesOfInfluence;
   target: PaneTarget;
@@ -1193,6 +1209,7 @@ const TypesPane: FC<{
   apis,
   linkedDataTypes,
   graph,
+  methodWithCalls,
   conesOfInfluence,
   target,
   propertyName,
@@ -1249,7 +1266,7 @@ const TypesPane: FC<{
             linkedDataType={foundDataType}
             flashProperty={flashProperty}
           />
-        ) : target.method !== undefined ? (
+        ) : target.method !== undefined && methodWithCalls ? (
           <MethodPane
             apis={apis}
             graph={graph}
@@ -1266,6 +1283,7 @@ const TypesPane: FC<{
           <StateType
             api={stateTypeDeclaration.api}
             stateType={stateTypeDeclaration.stateType}
+            chosenMethod={target.method}
             flashProperty={flashProperty}
           />
         )}
@@ -3390,6 +3408,7 @@ const Overview: FC<{
                     apis={apis}
                     linkedDataTypes={linkedDataTypes}
                     graph={graphStateTypes}
+                    methodWithCalls={page === "models"}
                     conesOfInfluence={conesOfInfluence}
                     target={paneTarget}
                     propertyName={paneProperty}
