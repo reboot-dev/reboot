@@ -1207,7 +1207,10 @@ header h1 {
   left: 50%;
   transform: translateX(-50%);
   width: max-content;
-  max-width: 260px;
+  /* Never wider than the room its pane has for it, which `Pill`
+     measures on hover and sets here, so that in a narrow pane it
+     wraps rather than leaves the pane. */
+  max-width: min(260px, var(--definition-room, 260px));
   padding: 8px 10px;
   border-radius: 6px;
   background: hsl(var(--primary));

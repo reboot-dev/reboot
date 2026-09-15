@@ -198,12 +198,19 @@ const DEFINITIONS: Record<string, string> = {
 // that `.definition` in dashboard.css offsets the definition by.
 const DEFINITION_GAP = 8;
 
+// How near a pane's side edge a definition may come, at either side.
+const DEFINITION_INSET = 8;
+
 // A pill that shows its definition on hover, when it has one.
 //
 // The definition opens above the pill so it does not cover the row
-// the reader is on. The scroll pane holding the pill clips content
-// outside it, so when it is scrolled and there is no room above,
-// the definition opens below the pill instead.
+// the reader is on, and sideways where the stylesheet puts it for
+// the place the pill stands. The scroll pane holding the pill clips
+// content outside it, so when the pane is scrolled to leave no room
+// above, the definition opens below the pill instead, and when it
+// would leave the pane at a side, it is shifted sideways just far
+// enough to stay within: a pane can be too narrow for it to fit at
+// either side of a pill in the middle.
 const Pill: FC<{
   className: string;
   label: string;
@@ -213,18 +220,38 @@ const Pill: FC<{
   const [below, setBelow] = useState(false);
 
   // The CSS hides the closed definition with `visibility`, so its
-  // height is readable before it opens. The pill's position does not
-  // depend on `below`, so measure the room from the pill.
+  // size is readable before it opens. The pill's position does not
+  // depend on where the definition opens, so measure the room from
+  // the pill. The sideways shift is written to the element rather
+  // than rendered: it is measured from where the stylesheet puts the
+  // definition, so it is taken off before measuring and put back
+  // after, and React has no say in it either way.
   const place = useCallback(() => {
     const pane = pill.current?.closest(".pane, .types-pane-body");
-    const definition = pill.current?.querySelector(".definition");
+    const definition = pill.current?.querySelector<HTMLElement>(".definition");
     if (pane == null || definition == null) {
       return;
     }
-    const room =
-      pill.current!.getBoundingClientRect().top -
-      pane.getBoundingClientRect().top;
-    setBelow(room < definition.getBoundingClientRect().height + DEFINITION_GAP);
+    definition.style.removeProperty("translate");
+    const paneBox = pane.getBoundingClientRect();
+    // The pane's width within its scrollbar is all the room the
+    // definition has from side to side; the definition is kept
+    // narrower than that, so that it wraps rather than leaves.
+    const paneRight = paneBox.left + pane.clientWidth;
+    definition.style.setProperty(
+      "--definition-room",
+      `${pane.clientWidth - 2 * DEFINITION_INSET}px`
+    );
+    const pillBox = pill.current!.getBoundingClientRect();
+    const definitionBox = definition.getBoundingClientRect();
+    setBelow(pillBox.top - paneBox.top < definitionBox.height + DEFINITION_GAP);
+    const pastRight = definitionBox.right - (paneRight - DEFINITION_INSET);
+    const pastLeft = paneBox.left + DEFINITION_INSET - definitionBox.left;
+    if (pastRight > 0) {
+      definition.style.translate = `${-pastRight}px`;
+    } else if (pastLeft > 0) {
+      definition.style.translate = `${pastLeft}px`;
+    }
   }, []);
 
   if (meaning === undefined) {
