@@ -7,9 +7,12 @@ models page, whose types pane shows a state type named in the URL's
 `type` parameter and a data type named in its `data` parameter.
 """
 import asyncio
+import copy
 import socket
 import unittest
 from google.protobuf.json_format import ParseDict
+from google.protobuf.timestamp_pb2 import Timestamp
+from rbt.dashboard.v1.dashboard_pb2 import Check, Servicer
 from rbt.dashboard.v1.dashboard_rbt import Dashboard, Preferences
 from rbt.v1alpha1.api import api_pb2
 from reboot.aio.tests import Reboot
@@ -174,6 +177,57 @@ _API = {
             f'{_MODULE}.{name}': schema for name, schema in _SCHEMAS.items()
         },
 }
+
+# The API with two writers past `look`, and what analyzing their code
+# found: `restock` calls `stock`, `stock` calls `look`, and `look`
+# schedules itself, so `look` has a direct caller, a caller one call
+# further away, and a call to itself.
+_STATE_TYPE = 'shop.v1.Shop'
+
+_API_WITH_CALLS = copy.deepcopy(_API)
+_API_WITH_CALLS['stateTypes'][0]['methods'].extend(
+    [
+        {
+            'name': 'stock',
+            'writer': {},
+            'factory': False,
+            'errors': [],
+            'description': 'Add stock of an item.',
+        },
+        {
+            'name': 'restock',
+            'writer': {},
+            'factory': False,
+            'errors': [],
+        },
+    ]
+)
+
+
+def _call(
+    method: str, how: 'Servicer.Method.Call.How'
+) -> Servicer.Method.Call:
+    return Servicer.Method.Call(state_type=_STATE_TYPE, method=method, how=how)
+
+
+_SERVICER = Servicer(
+    state_type=_STATE_TYPE,
+    filename='backend/src/shop_servicer.py',
+    methods=[
+        Servicer.Method(
+            name='restock',
+            calls=[_call('stock', Servicer.Method.Call.CALL)],
+        ),
+        Servicer.Method(
+            name='stock',
+            calls=[_call('look', Servicer.Method.Call.CALL)],
+        ),
+        Servicer.Method(
+            name='look',
+            calls=[_call('look', Servicer.Method.Call.SCHEDULE)],
+        ),
+    ],
+)
 
 
 class DashboardTest(unittest.IsolatedAsyncioTestCase):
@@ -432,6 +486,114 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         page = await asyncio.to_thread(self._run_in_browser, body)
 
         self.assertIn('aisle', page)
+
+    async def test_a_method_pane_lists_its_callers_and_calls(self) -> None:
+        # The pane on a method: its head names it with its state type
+        # and carries what the API declares of it; under that, the
+        # methods that call it directly, then the methods it calls.
+        # Each listed name is a link that chooses that method, in the
+        # graph and in the pane, as a click on its row in the graph
+        # does.
+        def body(driver):
+            driver.get(
+                f'{self.url}{DASHBOARD_PATH}/#/models/shop.v1.Shop.look'
+                '?type=shop.v1.Shop.look'
+            )
+            WebDriverWait(driver, 60).until(
+                expected_conditions.presence_of_element_located(
+                    (By.CSS_SELECTOR, '.method-group .method-link')
+                )
+            )
+            pane = driver.find_element(
+                By.CSS_SELECTOR, '[id="/type/shop.v1.Shop.look"]'
+            )
+            heading = pane.find_element(By.TAG_NAME, 'h2').text
+            signature = pane.find_element(
+                By.CLASS_NAME, 'method-pane-signature'
+            ).text
+            sections = [
+                section.text.lower() for section in driver.find_elements(
+                    By.CSS_SELECTOR, '.types-pane-body .eyebrow.section'
+                )
+            ]
+            links = [
+                (link.text, link.get_attribute('href')) for link in driver.
+                find_elements(By.CSS_SELECTOR, '.method-group .method-link')
+            ]
+            # Following a listed name chooses that method.
+            driver.find_element(
+                By.XPATH,
+                '//*[contains(@class, "method-group")]'
+                '//a[contains(@class, "method-link") and text()="stock"]',
+            ).click()
+            WebDriverWait(driver, 60).until(
+                expected_conditions.presence_of_element_located(
+                    (By.CSS_SELECTOR, '[id="/type/shop.v1.Shop.stock"]')
+                )
+            )
+            chosen_rows = [
+                row.text for row in driver.
+                find_elements(By.CSS_SELECTOR, '.graph-method.selected')
+            ]
+            return {
+                'heading': heading,
+                'signature': signature,
+                'sections': sections,
+                'links': links,
+                'chosen_rows': chosen_rows,
+                'url_after_click': driver.current_url,
+            }
+
+        context = self.rbt.create_external_context(name=self.id())
+        await Dashboard.ref(DASHBOARD_ID).UpdateApi(
+            context,
+            api_directory='api',
+            api_files={},
+            apis={_FILENAME: ParseDict(_API_WITH_CALLS, api_pb2.API())},
+        )
+        at = Timestamp()
+        at.GetCurrentTime()
+        await Dashboard.ref(DASHBOARD_ID).UpdateCode(
+            context,
+            servicers=[_SERVICER],
+            code_files={},
+            generated={},
+            changes=[],
+            check=Check(at=at),
+        )
+
+        seen = await asyncio.to_thread(self._run_in_browser, body)
+
+        # The head: the state type and the method's name, and the
+        # signature the API declares.
+        self.assertEqual(seen['heading'], 'Shop.look')
+        self.assertIn('item', seen['signature'])
+        self.assertIn('found', seen['signature'])
+
+        # The callers are `stock` and `look` itself, in the graph's
+        # order; `restock`, which calls `stock`, is not among them. The
+        # only call is `look`'s own.
+        self.assertEqual(seen['sections'], ['called by', 'calls'])
+
+        def link_to(method: str) -> str:
+            return (
+                f'{self.url}{DASHBOARD_PATH}/#/models/shop.v1.Shop.{method}'
+                f'?type=shop.v1.Shop.{method}'
+            )
+
+        self.assertEqual(
+            seen['links'],
+            [
+                ('look', link_to('look')),
+                ('stock', link_to('stock')),
+                ('look', link_to('look')),
+            ],
+        )
+
+        # The click on `stock` took the graph and the pane to it.
+        self.assertEqual(seen['url_after_click'], link_to('stock'))
+        self.assertEqual(len(seen['chosen_rows']), 1)
+        self.assertTrue(seen['chosen_rows'][0].startswith('stock'))
 
     async def test_the_page_holds_presence(self) -> None:
         # `rbt dev run` opens a dashboard only when `Presence` lists no
