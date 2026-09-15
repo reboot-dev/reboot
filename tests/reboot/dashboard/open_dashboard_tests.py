@@ -19,11 +19,7 @@ from rbt.std.presence.v1.presence_rbt import Presence
 from rbt.v1alpha1.errors_pb2 import NotFound
 from reboot.aio.tests import Reboot
 from reboot.cli.commands.dev import _open_dashboard_once
-from reboot.dashboard.backend.constants import (
-    DASHBOARD_PATH,
-    PREFERENCES_ID,
-    PRESENCE_ID,
-)
+from reboot.dashboard.backend.constants import PREFERENCES_ID, PRESENCE_ID
 from reboot.dashboard.backend.main import application
 from unittest.mock import patch
 
@@ -35,7 +31,8 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.start()
         await self.rbt.up(application(), local_envoy=True)
         self.url = f'http://127.0.0.1:{self.rbt.envoy_port()}'
-        self.dashboard_url = f'{self.url}{DASHBOARD_PATH}/'
+        # The root, which forwards to the page wherever it is served.
+        self.dashboard_url = f'{self.url}/'
         # An open the developer did not ask for tells the page so, which
         # is what lets the page offer not to be opened again.
         self.automatically_opened_url = (

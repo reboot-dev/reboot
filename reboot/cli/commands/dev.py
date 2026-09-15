@@ -58,7 +58,6 @@ from reboot.cli.common.transpile import (
 from reboot.cli.common.watch import FileWatcher, file_watcher
 from reboot.controller.plan_makers import validate_num_servers
 from reboot.dashboard.backend.constants import (
-    DASHBOARD_PATH,
     DEFAULT_DASHBOARD_PORT,
     PREFERENCES_ID,
     PRESENCE_ID,
@@ -514,7 +513,7 @@ async def _open_dashboard_once(
             terminal.info(
                 'You asked for this dashboard not to be reopened; run '
                 'with `--open-dashboard` to see it anyway, or visit '
-                f'{dashboard_url}{DASHBOARD_PATH}/'
+                f'{dashboard_url}/'
             )
             return
 
@@ -526,7 +525,7 @@ async def _open_dashboard_once(
             terminal.info(
                 'A dashboard is already open for this application; run '
                 'with `--open-dashboard` for another, or visit '
-                f'{dashboard_url}{DASHBOARD_PATH}/'
+                f'{dashboard_url}/'
             )
             return
 
@@ -534,7 +533,7 @@ async def _open_dashboard_once(
     # Codespaces and devcontainers, and returns `False` rather than
     # raising when there is no browser to open. An unforced open
     # tells the page it was automatic, so it can offer not to be.
-    page_url = f'{dashboard_url}{DASHBOARD_PATH}/'
+    page_url = f'{dashboard_url}/'
     opened_url = page_url if forced else f'{page_url}?opened=automatically'
 
     if not await asyncio.to_thread(webbrowser.open, opened_url):
@@ -583,7 +582,7 @@ async def _open_dashboard(
         # reachable by hand.
         terminal.warn(
             f"Could not open a dashboard ({e}); it is at "
-            f"{dashboard_url}{DASHBOARD_PATH}/"
+            f"{dashboard_url}/"
         )
 
 
