@@ -29,6 +29,7 @@ download the blob: the `uploader_id` and listed `downloaders`, plus
 anyone who knows the ID whenever either side is left open.
 """
 
+import grpc
 import log.log
 import rbt.v1alpha1.errors_pb2
 import re
@@ -78,6 +79,7 @@ from rbt.std.blob.v1.data_plane_pb2 import (
     DataPlaneGetPartUploadInstructionsRequest,
     DataPlaneUploadedPart,
 )
+from reboot.aio.aborted import SystemAborted
 from reboot.aio.applications import Application, Library
 from reboot.aio.auth.authorizers import Authorizer, allow_if, is_app_internal
 from reboot.aio.backoff import Backoff
@@ -189,6 +191,38 @@ def _downloader_or_open(
     if context.auth.user_id in state.downloaders.user_ids:
         return rbt.v1alpha1.errors_pb2.Ok()
     return rbt.v1alpha1.errors_pb2.PermissionDenied()
+
+
+# What can pass on a later attempt when a presigning call fails: such
+# a call does nothing but reach the data plane and sign, so only
+# failing to reach it is transient. A refusal, or a data plane that
+# cannot sign, is final.
+_TRANSIENT_DATA_PLANE_CODES = frozenset(
+    (
+        grpc.StatusCode.UNAVAILABLE,
+        grpc.StatusCode.DEADLINE_EXCEEDED,
+        grpc.StatusCode.RESOURCE_EXHAUSTED,
+        grpc.StatusCode.CANCELLED,
+    )
+)
+
+
+def _is_transient(error: AioRpcError) -> bool:
+    return error.code() in _TRANSIENT_DATA_PLANE_CODES
+
+
+def _data_plane_unavailable(error: AioRpcError) -> SystemAborted:
+    """A transient data-plane failure in the form a client retries.
+
+    A reader that hands the data plane's answer straight to a client
+    -- a presigned URL -- has no workflow to retry the call from; the
+    data plane's contract leaves that retry to the client, and a
+    client retries `Unavailable` where `Unknown`, which any other
+    exception propagates as, is final to it."""
+    return SystemAborted(
+        rbt.v1alpha1.errors_pb2.Unavailable(),
+        message=f"data plane {error.code().name}: {error.details()}",
+    )
 
 
 class BlobServicer(Blob.Servicer):
@@ -348,14 +382,19 @@ class BlobServicer(Blob.Servicer):
             number for number in request.part_numbers
             if 1 <= number <= max_part_number
         ]
-        async with data_plane_stub(context) as data_plane:
-            response = await data_plane.GetPartUploadInstructions(
-                DataPlaneGetPartUploadInstructionsRequest(
-                    blob_id=context.state_id,
-                    upload_id=self.state.upload_id,
-                    part_numbers=part_numbers,
+        try:
+            async with data_plane_stub(context) as data_plane:
+                response = await data_plane.GetPartUploadInstructions(
+                    DataPlaneGetPartUploadInstructionsRequest(
+                        blob_id=context.state_id,
+                        upload_id=self.state.upload_id,
+                        part_numbers=part_numbers,
+                    )
                 )
-            )
+        except AioRpcError as error:
+            if not _is_transient(error):
+                raise
+            raise _data_plane_unavailable(error) from error
         instructions = [
             PartUploadInstruction(
                 part_number=instruction.part_number,
@@ -556,8 +595,13 @@ class BlobServicer(Blob.Servicer):
         )
         if request.HasField("ttl_seconds"):
             download_request.ttl_seconds = request.ttl_seconds
-        async with data_plane_stub(context) as data_plane:
-            response = await data_plane.GetDownloadUrl(download_request)
+        try:
+            async with data_plane_stub(context) as data_plane:
+                response = await data_plane.GetDownloadUrl(download_request)
+        except AioRpcError as error:
+            if not _is_transient(error):
+                raise
+            raise _data_plane_unavailable(error) from error
         return GetDownloadUrlResponse(
             url=response.url,
             ttl_seconds=response.ttl_seconds,
