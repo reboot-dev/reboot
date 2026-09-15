@@ -1236,27 +1236,22 @@ header h1 {
 
 /* --- Call graph --- */
 
-/* The graph owns the rest of the pane below the header, and the
-   pane stops scrolling: panning the canvas is the graph's own
-   gesture, and a scrollbar would fight it. */
+/* The graph owns the pane, and the pane stops scrolling: panning
+   the canvas is the graph's own gesture, and a scrollbar would
+   fight it. */
 .pane.graph-pane {
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-/* As a flex item the header would shrink to its words; at full width
-   it is the same column the other pages put their heading in. The
-   note under it, when
-   there is one, sits in the same column. */
-.pane.graph-pane > header,
+/* The note over the graph, when there is one, in the column the
+   other pages put their heading in: as a flex item it would
+   otherwise shrink to its words. */
 .graph-note {
   width: 100%;
-}
-
-.graph-note {
   max-width: 840px;
-  padding: 0 var(--pane-gutter) 24px;
+  padding: 24px var(--pane-gutter);
   font-size: 13px;
   line-height: 1.5;
 }
