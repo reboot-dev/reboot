@@ -9,11 +9,11 @@ ts_config(
 ts_project(
     name = "pinger_ts",
     srcs = [
-        "App.module.css",
         "App.tsx",
         "css-modules.d.ts",
         "main.tsx",
     ],
+    assets = ["App.module.css"],
     tsconfig = ":tsconfig",
     deps = [
         "//:node_modules/@bufbuild/protobuf",
