@@ -41,14 +41,13 @@ from dataclasses import dataclass
 from rbt.std.blob.v1.filesystem_rbt import StoredBlob, StoredPart
 from reboot.aio.external import ExternalContext
 from reboot.crypto import root_keys
+from reboot.std.blob.v1._data_plane_servicer import (
+    DEFAULT_PART_SIZE_BYTES,
+    BlobStoreError,
+    UploadedPart,
+)
 from typing import AsyncIterator, Optional, Sequence
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
-
-# The part size clients should use. Every part except the last must be
-# exactly this size. Must be at least 5 MiB (the S3 minimum part size,
-# mirrored here so that filesystem- and S3-backed data planes are
-# interchangeable).
-DEFAULT_PART_SIZE_BYTES = 8 * 1024 * 1024
 
 # The maximum number of parts in one blob, following S3.
 MAX_PARTS = 10000
@@ -76,24 +75,8 @@ _SIGNING_INFO = b"reboot.std.blob.url-signing"
 _STREAM_CHUNK_BYTES = 1024 * 1024
 
 
-class BlobStoreError(Exception):
-    """A permanent storage failure (e.g. a part missing at completion
-    time), reported to the control plane as a `CompleteUpload` `error`
-    so the client can re-upload. Transient failures (e.g. network
-    errors) are raised as their original exception types instead,
-    becoming gRPC errors that the control plane's workflow retries."""
-
-
 class PartTooLarge(Exception):
     """A part's bytes exceeded the store's part size."""
-
-
-@dataclass(frozen=True)
-class UploadedPart:
-    """One part of an upload, as reported by the client."""
-    number: int
-    etag: str
-    size: int
 
 
 @dataclass(frozen=True)

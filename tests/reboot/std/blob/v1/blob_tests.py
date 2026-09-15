@@ -11,7 +11,7 @@ from rbt.std.blob.v1.blob_rbt import (
 )
 from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
-from reboot.std.blob.v1._store import DEFAULT_PART_SIZE_BYTES
+from reboot.std.blob.v1._data_plane_servicer import DEFAULT_PART_SIZE_BYTES
 from reboot.std.blob.v1.blob import blob_library
 
 # How long the completion/`PUT` handshake waits before giving up,
