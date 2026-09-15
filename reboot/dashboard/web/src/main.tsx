@@ -108,14 +108,22 @@ import { DashboardGetResponse_NeedsGenerateReason } from "../../../../rbt/dashbo
 import type * as feature_pb from "../../../../rbt/v1alpha1/bdd/feature_pb";
 import type * as grammar_pb from "../../../../rbt/v1alpha1/bdd/grammar_pb";
 import {
+  agentId,
   calleeDistancesFrom,
   callsItself,
   directCallers,
+  directToolCallers,
+  joinAgents,
   joinStateTypes,
   methodId,
+  toolCalleeDistances,
+  toolId,
+  type GraphAgent,
   type GraphStateType,
   type MethodInGraph,
+  type ToolInGraph,
 } from "./callgraph";
+import { parseMarkdown, type Block, type Inline } from "./markdown";
 import {
   chosenMethodIdOf,
   isGraphStateTypeId,
@@ -159,6 +167,11 @@ const DEFINITIONS: Record<string, string> = {
     "Brings a state into existence: it is called with a new id " +
     "rather than on a state that already exists.",
   mcp: "Callable by AI agents as a tool, over the Model Context " + "Protocol.",
+  agent:
+    "A model the application hands work to, with tools it may call " +
+    "back with. Reboot runs one inside a workflow, so every model " +
+    "call and every tool call is durable: a restart replays what " +
+    "already happened rather than asking again.",
   "state type":
     "A durable data type. Each instance, named by an id, has properties " +
     "that Reboot persists for you. Methods are the way to read and " +
@@ -267,6 +280,85 @@ const Description: FC<{ className: string; text: string }> = ({
         return <span key={index}>{unclosed ? "`" + part : part}</span>;
       })}
     </p>
+  );
+};
+
+// Renders markdown, an agent's prompt, as the page's own elements.
+const MarkdownInlines: FC<{ inlines: Inline[] }> = ({ inlines }) => (
+  <>
+    {inlines.map((inline, index) => {
+      switch (inline.kind) {
+        case "text":
+          return <span key={index}>{inline.text}</span>;
+        case "code":
+          return <code key={index}>{inline.text}</code>;
+        case "strong":
+          return (
+            <strong key={index}>
+              <MarkdownInlines inlines={inline.children} />
+            </strong>
+          );
+        case "emphasis":
+          return (
+            <em key={index}>
+              <MarkdownInlines inlines={inline.children} />
+            </em>
+          );
+        case "link":
+          return (
+            <a key={index} href={inline.href} target="_blank" rel="noreferrer">
+              <MarkdownInlines inlines={inline.children} />
+            </a>
+          );
+      }
+    })}
+  </>
+);
+
+const MarkdownBlock: FC<{ block: Block }> = ({ block }) => {
+  switch (block.kind) {
+    case "heading": {
+      const Heading = `h${Math.min(block.level + 2, 6)}` as "h3";
+      return (
+        <Heading>
+          <MarkdownInlines inlines={block.content} />
+        </Heading>
+      );
+    }
+    case "paragraph":
+      return (
+        <p>
+          <MarkdownInlines inlines={block.content} />
+        </p>
+      );
+    case "list": {
+      const List = block.ordered ? "ol" : "ul";
+      return (
+        <List>
+          {block.items.map((item, index) => (
+            <li key={index}>
+              <MarkdownInlines inlines={item} />
+            </li>
+          ))}
+        </List>
+      );
+    }
+    case "code":
+      return <pre>{block.text}</pre>;
+  }
+};
+
+const Markdown: FC<{ className: string; text: string }> = ({
+  className,
+  text,
+}) => {
+  const blocks = useMemo(() => parseMarkdown(text), [text]);
+  return (
+    <div className={className}>
+      {blocks.map((block, index) => (
+        <MarkdownBlock block={block} key={index} />
+      ))}
+    </div>
   );
 };
 
@@ -919,6 +1011,28 @@ const MethodCard: FC<{
   );
 };
 
+// One of an agent's tools calling the method the pane is on, named
+// with its agent the way a method is with its state type, the agent
+// told apart by its robot.
+const ToolCard: FC<ToolInGraph> = ({ agent, tool }) => (
+  <div className="method method-workflow">
+    <div className="method-head">
+      <span className="method-name">
+        <TypeLink className="method-state-type" id={agent.id}>
+          🤖 {agent.name}
+        </TypeLink>
+        .
+        <MethodLink className="method-link" id={toolId(agent.id, tool.name)}>
+          {tool.name}
+        </MethodLink>
+      </span>
+    </div>
+    {tool.description !== undefined && (
+      <Description className="method-description" text={tool.description} />
+    )}
+  </div>
+);
+
 // The methods at each distance from the chosen one, nearest first,
 // the chosen one itself left out. At one distance, the graph's order.
 const methodsAtEachDistance = (
@@ -967,17 +1081,19 @@ const MethodsByDistance: FC<{
 
 // The pane on one method: its head names it with its state type and
 // carries what the API declares of it, then the methods that call it
-// directly, then the methods it calls, directly first, out to the
+// directly, and the agents' tools that do, then the methods it calls,
+// directly first, out to the
 // farthest. Each list shows only while the graph lights that
 // direction. The state type's name links to the type itself, with
 // all its methods.
 const MethodPane: FC<{
   apis: APIs;
   graph: GraphStateType[];
+  agents: GraphAgent[];
   stateTypeId: string;
   methodName: string;
   conesOfInfluence: ConesOfInfluence;
-}> = ({ apis, graph, stateTypeId, methodName, conesOfInfluence }) => {
+}> = ({ apis, graph, agents, stateTypeId, methodName, conesOfInfluence }) => {
   const declarations = useMemo(() => stateTypeDeclarationsById(apis), [apis]);
   const id = methodId(stateTypeId, methodName);
   const stateType = graph.find(
@@ -985,6 +1101,10 @@ const MethodPane: FC<{
   );
   const selfCalling = callsItself(id, graph);
   const callers = useMemo(() => directCallers(id, graph), [id, graph]);
+  const toolCallers = useMemo(
+    () => directToolCallers(id, agents),
+    [id, agents]
+  );
   const distanceByCalleeId = useMemo(
     () => calleeDistancesFrom(id, graph),
     [id, graph]
@@ -1062,13 +1182,26 @@ const MethodPane: FC<{
           />
         </>
       )}
-      {conesOfInfluence.upstream && callers.length > 0 && (
+      {conesOfInfluence.upstream && callers.length + toolCallers.length > 0 && (
         <>
           <div className="eyebrow section">called by</div>
-          <MethodsByDistance
-            declarations={declarations}
-            methodsByDistance={[callers]}
-          />
+          <div className="method-group">
+            {callers.map(({ stateType, name }) => (
+              <MethodCard
+                declarations={declarations}
+                stateType={stateType}
+                name={name}
+                key={methodId(stateType.id, name)}
+              />
+            ))}
+            {toolCallers.map(({ agent, tool }) => (
+              <ToolCard
+                agent={agent}
+                tool={tool}
+                key={toolId(agent.id, tool.name)}
+              />
+            ))}
+          </div>
         </>
       )}
       {conesOfInfluence.downstream && calleesByDistance.length > 0 && (
@@ -1208,15 +1341,221 @@ const DataType: FC<{
   );
 };
 
-// The types pane: one type, state or data, slid open by a link to it
-// from the graph or a page, every method expanded; the X closes it.
-// A link naming a method outlines that method among its state type's
-// others, or, beside the call graph, shows it with what calls it and
-// what it calls instead.
+// One agent, on the pane the way a state type is: what it is told to
+// be, and what it may call back with. The prompt is what the agent
+// is, so it is shown whole, rendered from the markdown it is written
+// in.
+const AgentPane: FC<{ agent: GraphAgent }> = ({ agent }) => (
+  <section className="state-type" id={idOfTypeInPane(agent.id)}>
+    <div>
+      <Pill className="eyebrow" label="agent" meaning={DEFINITIONS.agent} />
+    </div>
+    <div className="state-type-head">
+      <div className="state-type-heading">
+        <h2>
+          <span aria-hidden="true">🤖 </span>
+          {agent.name}
+        </h2>
+        <PaneAnchor id={agent.id} />
+        <span className="summary-line">
+          {countWithNoun(agent.tools.length, "tool")}
+        </span>
+      </div>
+    </div>
+    {agent.model !== undefined && <div className="file">{agent.model}</div>}
+    {agent.description !== undefined && (
+      <Description
+        className="state-type-description"
+        text={agent.description}
+      />
+    )}
+
+    <div className="eyebrow section">system prompt</div>
+    {agent.systemPrompt.length === 0 ? (
+      <div className="empty">
+        No prompt written down. One computed rather than written is not
+        something the dashboard can read.
+      </div>
+    ) : (
+      <Markdown
+        className="agent-prompt markdown"
+        text={agent.systemPrompt.join("\n\n")}
+      />
+    )}
+
+    <div className="eyebrow section">instructions</div>
+    {agent.instructions.length === 0 ? (
+      <div className="empty">
+        No instructions written down. Instructions computed rather than written
+        are not something the dashboard can read.
+      </div>
+    ) : (
+      <Markdown
+        className="agent-prompt markdown"
+        text={agent.instructions.join("\n\n")}
+      />
+    )}
+
+    <div className="eyebrow section">tools</div>
+    {agent.tools.length === 0 ? (
+      <div className="empty">
+        No tools. The agent answers out of the prompt alone, or out of tools the
+        dashboard cannot read, such as an MCP server's.
+      </div>
+    ) : (
+      <div className="methods">
+        {agent.tools.map((tool) => (
+          <div className="agent-tool" key={tool.name}>
+            <div className="agent-tool-head">
+              <TypeLink
+                className="agent-tool-name"
+                id={toolId(agent.id, tool.name)}
+              >
+                {tool.name}
+              </TypeLink>
+            </div>
+            {tool.description !== undefined && (
+              <Description
+                className="state-type-description"
+                text={tool.description}
+              />
+            )}
+            {tool.calls.length + tool.runs.length > 0 && (
+              <div className="agent-tool-calls">
+                {tool.calls.map((call) => (
+                  <TypeLink
+                    className="type-link"
+                    id={`${call.stateTypeName}.${call.methodName}`}
+                    key={`${call.stateTypeName}.${call.methodName}`}
+                  >
+                    <code>
+                      {shortNameOfTypeName(call.stateTypeName)}.
+                      {call.methodName}
+                    </code>
+                  </TypeLink>
+                ))}
+                {tool.runs.map((run) => (
+                  <TypeLink
+                    className="type-link"
+                    id={agentId(run.agentName)}
+                    key={run.agentName}
+                  >
+                    <code>🤖 {run.agentName}</code>
+                  </TypeLink>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    )}
+  </section>
+);
+
+// The pane on one of an agent's tools, the way a method's is: its head
+// names it with its agent, and carries its description, then the
+// agent that calls it, then the methods it calls, directly first, out
+// to the farthest, and the agents it runs. Each list shows only while
+// the graph lights that direction. The agent's name links to the
+// agent itself, with all its tools.
+const ToolPane: FC<{
+  apis: APIs;
+  graph: GraphStateType[];
+  agent: GraphAgent;
+  toolName: string;
+  conesOfInfluence: ConesOfInfluence;
+}> = ({ apis, graph, agent, toolName, conesOfInfluence }) => {
+  const declarations = useMemo(() => stateTypeDeclarationsById(apis), [apis]);
+  const id = toolId(agent.id, toolName);
+  const tool = agent.tools.find((agentTool) => agentTool.name === toolName);
+  const calleesByDistance = useMemo(
+    () =>
+      tool === undefined
+        ? []
+        : methodsAtEachDistance(toolCalleeDistances(tool, graph), graph),
+    [tool, graph]
+  );
+
+  return (
+    <section className="state-type" id={idOfTypeInPane(id)}>
+      <div className="eyebrow">tool</div>
+      <div className="state-type-head">
+        <div className="state-type-heading">
+          <h2>
+            <TypeLink className="method-state-type" id={agent.id}>
+              <span aria-hidden="true">🤖 </span>
+              {agent.name}
+            </TypeLink>
+            .{toolName}
+          </h2>
+          <PaneAnchor id={id} />
+        </div>
+      </div>
+      {tool === undefined ? (
+        <div className="empty">
+          <code>{toolName}</code> is no tool of <code>{agent.name}</code> any
+          more.
+        </div>
+      ) : (
+        <>
+          {tool.description !== undefined && (
+            <Description
+              className="state-type-description"
+              text={tool.description}
+            />
+          )}
+          {conesOfInfluence.upstream && (
+            <>
+              <div className="eyebrow section">called by</div>
+              <div className="agent-tool-calls">
+                <TypeLink className="type-link" id={agent.id}>
+                  <code>🤖 {agent.name}</code>
+                </TypeLink>
+              </div>
+            </>
+          )}
+          {conesOfInfluence.downstream && calleesByDistance.length > 0 && (
+            <>
+              <div className="eyebrow section">calls</div>
+              <MethodsByDistance
+                declarations={declarations}
+                methodsByDistance={calleesByDistance}
+              />
+            </>
+          )}
+          {conesOfInfluence.downstream && tool.runs.length > 0 && (
+            <>
+              <div className="eyebrow section">runs</div>
+              <div className="agent-tool-calls">
+                {tool.runs.map((run) => (
+                  <TypeLink
+                    className="type-link"
+                    id={agentId(run.agentName)}
+                    key={run.agentName}
+                  >
+                    <code>🤖 {run.agentName}</code>
+                  </TypeLink>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </section>
+  );
+};
+
+// The types pane: one type, state or data, or one agent, slid open by
+// a link to it from the graph or a page, every method expanded; the X
+// closes it. A link naming a method outlines that method among its
+// state type's others, or, beside the call graph, shows it with what
+// calls it and what it calls instead. A link naming a tool opens its
+// agent.
 const TypesPane: FC<{
   apis: APIs;
   linkedDataTypes: LinkedDataType[];
   graph: GraphStateType[];
+  agents: GraphAgent[];
   // Whether a method is shown with its calls, which is the call
   // graph's way of reading it, or within its state type.
   methodWithCalls: boolean;
@@ -1237,6 +1576,7 @@ const TypesPane: FC<{
   apis,
   linkedDataTypes,
   graph,
+  agents,
   methodWithCalls,
   conesOfInfluence,
   target,
@@ -1247,8 +1587,18 @@ const TypesPane: FC<{
   onClose,
 }) => {
   const typeId = typeIdOfTarget(target);
+  const foundAgent =
+    target.agentId === undefined
+      ? undefined
+      : agents.find((agent) => agent.id === target.agentId);
   const title =
-    target.method === undefined ? typeId : `${typeId}.${target.method}`;
+    foundAgent !== undefined
+      ? `🤖 ${foundAgent.name}${
+          target.tool === undefined ? "" : `.${target.tool}`
+        }`
+      : target.method === undefined
+      ? typeId
+      : `${typeId}.${target.method}`;
   const stateTypeDeclaration =
     target.stateTypeId === undefined
       ? undefined
@@ -1289,7 +1639,22 @@ const TypesPane: FC<{
         ref={bodyRef}
         onScroll={(event) => onScroll(event.currentTarget.scrollTop)}
       >
-        {foundDataType !== undefined ? (
+        {foundAgent !== undefined && target.tool !== undefined ? (
+          <ToolPane
+            apis={apis}
+            graph={graph}
+            agent={foundAgent}
+            toolName={target.tool}
+            conesOfInfluence={conesOfInfluence}
+          />
+        ) : foundAgent !== undefined ? (
+          <AgentPane agent={foundAgent} />
+        ) : target.agentId !== undefined ? (
+          <div className="empty">
+            <code>{target.agentId.slice("agent:".length)}</code> is no agent
+            your code runs any more.
+          </div>
+        ) : foundDataType !== undefined ? (
           <DataType
             linkedDataType={foundDataType}
             flashProperty={flashProperty}
@@ -1298,6 +1663,7 @@ const TypesPane: FC<{
           <MethodPane
             apis={apis}
             graph={graph}
+            agents={agents}
             stateTypeId={target.stateTypeId}
             methodName={target.method}
             conesOfInfluence={conesOfInfluence}
@@ -2857,9 +3223,14 @@ const Overview: FC<{
     [response?.servicers]
   );
 
+  const graphAgents = useMemo(
+    () => joinAgents(response?.agents ?? [], response?.tools ?? []),
+    [response?.agents, response?.tools]
+  );
+
   const graphStateTypes = useMemo(
-    () => joinStateTypes(apis, servicers),
-    [apis, servicers]
+    () => joinStateTypes(apis, servicers, graphAgents),
+    [apis, servicers, graphAgents]
   );
 
   // Why `rbt generate` has to run, derived by the backend from
@@ -2910,9 +3281,21 @@ const Overview: FC<{
     return (id: string): boolean => dataTypeIds.has(id);
   }, [linkedDataTypes]);
 
+  // Whether an id names an agent the code runs.
+  const isAgentId = useMemo(() => {
+    const agentIds = new Set(graphAgents.map((agent) => agent.id));
+    return (id: string): boolean => agentIds.has(id);
+  }, [graphAgents]);
+
   const paneTarget = useMemo(
-    () => paneTargetOf(searchParams.get("type"), isStateTypeId, isDataTypeId),
-    [searchParams, isStateTypeId, isDataTypeId]
+    () =>
+      paneTargetOf(
+        searchParams.get("type"),
+        isStateTypeId,
+        isDataTypeId,
+        isAgentId
+      ),
+    [searchParams, isStateTypeId, isDataTypeId, isAgentId]
   );
 
   // Whether the types pane is open. The group hands a pane that opens
@@ -3342,6 +3725,7 @@ const Overview: FC<{
                 ) : null}
                 <GraphPage
                   stateTypes={graphStateTypes}
+                  agents={graphAgents}
                   selectedMethodId={chosenMethodId}
                   onSelectMethod={onSelectMethod}
                   onOpenStateType={onOpenStateType}
@@ -3419,6 +3803,7 @@ const Overview: FC<{
                     apis={apis}
                     linkedDataTypes={linkedDataTypes}
                     graph={graphStateTypes}
+                    agents={graphAgents}
                     methodWithCalls={page === "models"}
                     conesOfInfluence={conesOfInfluence}
                     target={paneTarget}

@@ -12,8 +12,10 @@ import {
 } from "../../../rbt/dashboard/v1/dashboard_pb";
 import * as api_pb from "../../../rbt/v1alpha1/api/api_pb";
 import {
+  agentId,
   joinStateTypes,
   methodId,
+  toolId,
 } from "../../../reboot/dashboard/web/src/callgraph";
 import type { APIs } from "../../../reboot/dashboard/web/src/link_properties_to_data_types";
 import { linkDataTypes } from "../../../reboot/dashboard/web/src/link_properties_to_data_types";
@@ -104,6 +106,37 @@ describe("clicking a row", () => {
     const id = methodId(ORDERED_MAP, "Insert");
     expect(chosenAfterClicking(id)).toEqual({
       target: { stateTypeId: ORDERED_MAP, method: "Insert" },
+      chosenMethodId: id,
+    });
+  });
+});
+
+describe("an agent", () => {
+  // The application runs one agent, `librarian`, with one tool.
+  const LIBRARIAN = agentId("librarian");
+  const isAgentId = (id: string): boolean => id === LIBRARIAN;
+  const targetOf = (id: string) => {
+    const typeParameter = new URLSearchParams(searchOfType(id)).get("type");
+    const target = paneTargetOf(
+      typeParameter,
+      isStateTypeId,
+      isDataTypeId,
+      isAgentId
+    );
+    return { target, chosenMethodId: chosenMethodIdOf(target) };
+  };
+
+  it("opens on its card's head, choosing no row", () => {
+    expect(targetOf(LIBRARIAN)).toEqual({
+      target: { agentId: LIBRARIAN },
+      chosenMethodId: null,
+    });
+  });
+
+  it("chooses a tool's row", () => {
+    const id = toolId(LIBRARIAN, "look_up");
+    expect(targetOf(id)).toEqual({
+      target: { agentId: LIBRARIAN, tool: "look_up" },
       chosenMethodId: id,
     });
   });
