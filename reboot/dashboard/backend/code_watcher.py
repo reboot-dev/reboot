@@ -27,6 +27,12 @@ servicer waits unrecorded; the generated directory is listed beside
 the servicers, so that whoever reads both can tell a state type with
 nothing generated for it.
 
+The same walk finds where the application runs an agent: a call whose
+definition lands on one of Reboot's `Agent` entry points -- `run`,
+`iter`, `run_stream`, `run_stream_events`. Which agent is run is not
+resolved yet, so each run is recorded as a hazard, so that nothing
+the analysis could not see is silently missing.
+
 Where following stops is what makes this the developer's code rather
 than somebody else's. A module resolves to a file only if a root
 holds it, so an import of an installed package leads nowhere.
@@ -84,12 +90,33 @@ from typing import Mapping, Optional, Sequence
 # reads are one message.
 Call = Servicer.Method.Call
 
+# Where Reboot's `Agent` is written, as the last parts of the path
+# pyright answers with, so that the module is recognized wherever
+# `reboot` is installed. What tells a run of an agent from any other
+# call: the call's own definition is one of the methods below,
+# whichever way the agent was come by.
+AGENT_MODULE = ('reboot', 'agents', 'pydantic_ai', '_agent.py')
+
+# The methods of `Agent` a run is made through, which is what a
+# run's own definition lands on. `run_sync` and `run_stream_sync` are
+# not here: a Reboot `Agent` raises on both, since a workflow is
+# always async.
+RUN_NAMES = ('run', 'iter', 'run_stream', 'run_stream_events')
+
 # The version of what the analysis records, which the dashboard's
 # state records beside it. Counted up whenever the analysis starts
 # recording something it did not, or records something differently:
 # a file that has not changed is otherwise carried forward as an
 # earlier analysis recorded it, which never says the new thing.
 CODE_ANALYSIS_VERSION = 1
+
+
+def _is_agent_module(filename: Path) -> bool:
+    """Returns whether a file is the module Reboot's `Agent` is
+    written in, which is what makes a call to something defined
+    there a run of an agent rather than a call of the developer's
+    own."""
+    return filename.parts[-len(AGENT_MODULE):] == AGENT_MODULE
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -700,6 +727,16 @@ async def _generated_definition_at(
     return await analysis.generated_definition_at(location)
 
 
+@dataclass(frozen=True, kw_only=True)
+class Findings:
+    """What analyzing one function's body found, which is what a
+    servicer method records of what it does."""
+
+    calls: tuple[Call, ...]
+    hazards: tuple[Servicer.Method.Hazard, ...]
+    ambiguous: tuple[str, ...]
+
+
 async def _analyze_function(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
     *,
@@ -707,16 +744,22 @@ async def _analyze_function(
     text: str,
     analysis: Analysis,
     visited: frozenset[tuple[Path, int]],
-) -> tuple[list[Call], list[str], Analysis]:
-    """Returns the Reboot calls a function's body makes, itself or
-    through the functions it calls, and the calls it makes that are
-    ambiguous.
+) -> tuple[Findings, Analysis]:
+    """Returns what a function's body does, itself or through the
+    functions it calls: the Reboot calls it makes, what it does that
+    is not followed, and the calls it makes that are ambiguous.
 
     A Reboot call is one whose own definition pyright places at a
     method stub of a state type. However the reference was come by,
     taken with `ref`, held in a variable, or received from
     elsewhere, the called method's definition is the same, so one
     question decides.
+
+    A run of an agent is the same question answered by one of
+    `Agent`'s entry points, `run`, `iter`, `run_stream` or
+    `run_stream_events`, in the module Reboot writes them in. Which
+    agent is run is not resolved, so the run is recorded as a hazard
+    of the function; see `Servicer.Method.Hazard`.
 
     A call defined by a function the generator did not write, the
     developer's own or an installed package's, is followed: that
@@ -732,13 +775,15 @@ async def _analyze_function(
     function already walked on the way here, by file and line, so
     that functions calling each other are followed once.
 
-    An ambiguous call is one with no definition pyright can say, or
-    one whose definition is no function: a stub's, which has no body
-    to follow, or a class's. A call whose definition is the
-    generator's own machinery, such as the `ref` or `schedule`
-    inside a chain, or the standard library's, is neither.
+    An ambiguous call is one with no definition pyright can say, one
+    whose definition is no function: a stub's, which has no body to
+    follow, or a class's, and one into Reboot's agents module that is
+    not a run. A call whose definition is the generator's own
+    machinery, such as the `ref` or `schedule` inside a chain, or the
+    standard library's, is neither.
     """
     calls: list[Call] = []
+    hazards: list[Servicer.Method.Hazard] = []
     ambiguous: list[str] = []
 
     # The function itself is walked here, and everything defined
@@ -801,21 +846,45 @@ async def _analyze_function(
             ambiguous.append(ast.unparse(callee))
             continue
 
+        if _is_agent_module(location.filename):
+            # Anything in Reboot's agents module but a run is not
+            # followed, so it is ambiguous like any call that is not.
+            if helper.syntax.name not in RUN_NAMES:
+                ambiguous.append(ast.unparse(callee))
+                continue
+
+            hazards.append(
+                Servicer.Method.Hazard(
+                    filename=str(filename),
+                    run_on_unresolved_agent=(
+                        Servicer.Method.Hazard.RunOnUnresolvedAgent(
+                            callee=ast.unparse(callee),
+                        )
+                    ),
+                )
+            )
+            continue
+
         key = (helper.filename, helper.syntax.lineno)
         if key in visited:
             continue
 
-        helper_calls, helper_ambiguous, analysis = await _analyze_function(
+        helper_findings, analysis = await _analyze_function(
             helper.syntax,
             filename=helper.filename,
             text=helper.text,
             analysis=analysis,
             visited=visited | {key},
         )
-        calls.extend(helper_calls)
-        ambiguous.extend(helper_ambiguous)
+        calls.extend(helper_findings.calls)
+        hazards.extend(helper_findings.hazards)
+        ambiguous.extend(helper_findings.ambiguous)
 
-    return calls, ambiguous, analysis
+    return Findings(
+        calls=tuple(calls),
+        hazards=tuple(hazards),
+        ambiguous=tuple(ambiguous),
+    ), analysis
 
 
 async def _analyze_class(
@@ -882,7 +951,7 @@ async def _analyze_class(
                     ast.FunctionDef(name=str(name)) |
                     ast.AsyncFunctionDef(name=str(name))
                 ):
-                    calls, ambiguous, analysis = await _analyze_function(
+                    findings, analysis = await _analyze_function(
                         statement,
                         filename=filename,
                         text=analysis.parsed[filename].text,
@@ -893,8 +962,9 @@ async def _analyze_class(
                         Servicer.Method(
                             name=name,
                             digest=_digest(statement),
-                            calls=calls,
-                            ambiguous=ambiguous,
+                            calls=findings.calls,
+                            hazards=findings.hazards,
+                            ambiguous=findings.ambiguous,
                         )
                     )
 
