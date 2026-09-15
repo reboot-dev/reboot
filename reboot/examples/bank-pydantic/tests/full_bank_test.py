@@ -17,7 +17,9 @@ from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow, allow_if
 from reboot.aio.contexts import ReaderContext, WriterContext
 from reboot.bdd import scenarios
-from reboot.std.collections.v1.sorted_map import sorted_map_library
+from reboot.std.collections.ordered_map.v1.ordered_map import (
+    ordered_map_library,
+)
 from typing import Optional
 
 
@@ -135,7 +137,7 @@ def application() -> Application:
             AccountServicerWithNoInterestAndAuthorizer,
             CustomerServicer,
         ],
-        libraries=[sorted_map_library()],
+        libraries=[ordered_map_library()],
     )
 
 
