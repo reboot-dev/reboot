@@ -261,8 +261,9 @@ async def main():
 '''
 
 # The shape of Reboot's own `Agent`, as far as the analysis needs:
-# the entry points a run is made through, and the construction whose
-# arguments say what the agent is. Written where an installed `reboot` would be, since the
+# the entry points a run is made through, the decorators a tool is
+# registered with, and the construction whose arguments say what the
+# agent is. Written where an installed `reboot` would be, since the
 # analysis recognizes the module by its path.
 AGENTS_MODULE = '''
 class Agent:
@@ -275,9 +276,17 @@ class Agent:
         system_prompt=(),
         instructions=None,
         description=None,
+        tools=(),
+        toolsets=None,
         **kwargs,
     ):
         pass
+
+    def tool(self, function=None, /, **kwargs):
+        return function
+
+    def tool_plain(self, function=None, /, **kwargs):
+        return function
 
     @classmethod
     def wrap(cls, wrapped, **kwargs) -> 'Agent':
@@ -307,16 +316,27 @@ class Agent:
         pass
 '''
 
+# What an agent's tools may be wrapped in where they are given, which
+# the analysis reads without asking what either is.
+PYDANTIC_AI_MODULE = '''
+class FunctionToolset:
+
+    def __init__(self, tools=(), **kwargs):
+        pass
+'''
+
 
 def _write_agents_module(directory: Path) -> None:
     """Writes an installed `reboot` holding the agents module the
-    analysis recognizes."""
+    analysis recognizes, and the `pydantic_ai` an agent's tools are
+    given through."""
     package = directory / 'reboot' / 'agents' / 'pydantic_ai'
     package.mkdir(parents=True, exist_ok=True)
     (directory / 'reboot' / '__init__.py').write_text('')
     (directory / 'reboot' / 'agents' / '__init__.py').write_text('')
     (package / '_agent.py').write_text(AGENTS_MODULE)
     (package / '__init__.py').write_text('from ._agent import Agent\n')
+    (directory / 'pydantic_ai.py').write_text(PYDANTIC_AI_MODULE)
 
 
 class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
@@ -1333,11 +1353,14 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
     async def test_a_method_records_the_agent_it_runs(self) -> None:
         """A run of an agent is recorded on the method that makes it,
         naming the agent; the agent is recorded with what its
-        construction says it is."""
+        construction says it is, and each function decorated as its
+        tool is recorded, analyzed for the Reboot calls it makes the way
+        a servicer method is."""
         servicer = self._write(
             'shop_servicer.py',
             source=(
                 'from reboot.agents.pydantic_ai import Agent\n'
+                'from shop.v1.depot_rbt import Depot\n'
                 'from shop.v1.shop_rbt import Shop\n'
                 '\n'
                 '\n'
@@ -1348,6 +1371,12 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 "    system_prompt='You are the librarian.',\n"
                 "    instructions='Keep it tidy.',\n"
                 ')\n'
+                '\n'
+                '\n'
+                '@librarian.tool\n'
+                'async def look_up(context, run_context, item):\n'
+                '    """Reads the depot."""\n'
+                "    return await Depot.ref('d').look(context)\n"
                 '\n'
                 '\n'
                 'class ShopServicer(Shop.Servicer):\n'
@@ -1381,6 +1410,19 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(method.hazards), [])
         [run] = method.runs
         self.assertEqual(list(run.hazards), [])
+        self.assertEqual(list(agent.hazards), [])
+
+        [tool] = found[servicer].tools
+        self.assertEqual(
+            (tool.agent, tool.filename, tool.name, tool.description),
+            ('librarian', str(servicer), 'look_up', 'Reads the depot.'),
+        )
+        self.assertEqual(
+            [(call.state_type, call.method, call.how) for call in tool.calls],
+            [('shop.v1.Depot', 'look', Servicer.Method.Call.How.CALL)],
+        )
+        self.assertEqual(list(tool.ambiguous), [])
+        self.assertEqual(list(tool.hazards), [])
 
     async def test_every_way_of_running_an_agent(self) -> None:
         """Each of `Agent`'s four entry points is a run. Anything else of
@@ -1438,9 +1480,15 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             'agents.py',
             source=(
                 'from reboot.agents.pydantic_ai import Agent\n'
+                'from shop.v1.depot_rbt import Depot\n'
                 '\n'
                 '\n'
                 "librarian = Agent('test', name='librarian')\n"
+                '\n'
+                '\n'
+                '@librarian.tool_plain(name=\'lookup\')\n'
+                'async def look_up(context):\n'
+                "    await Depot.ref('d').look(context)\n"
             ),
         )
         servicer = self._write(
@@ -1459,6 +1507,14 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         application = self._write('main.py', source=APPLICATION)
 
         found = await self._analyze(application)
+
+        # The tool is recorded by the file registering it, and joins
+        # onto the agent by name.
+        self.assertEqual(
+            [(tool.agent, tool.name) for tool in found[agents].tools],
+            [('librarian', 'lookup')],
+        )
+        self.assertEqual(found[servicer].tools, ())
 
         [found_servicer] = found[servicer].servicers
         [method] = found_servicer.methods
@@ -1567,6 +1623,186 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             [('librarian', str(agents))],
         )
         self.assertEqual(found[agents].agents, ())
+
+    async def test_an_agent_whose_tool_runs_another_agent(self) -> None:
+        """A run made by a tool is the tool's, so an agent handing work
+        to another is an edge like any other, and the agent it hands
+        work to is recorded; two agents handing work to each other are
+        followed once."""
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'from reboot.agents.pydantic_ai import Agent\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                "librarian = Agent('test', name='librarian')\n"
+                "scribe = Agent('test', name='scribe')\n"
+                '\n'
+                '\n'
+                '@librarian.tool\n'
+                'async def write_it_down(context, run_context):\n'
+                "    await scribe.run(context, 'Write it down')\n"
+                '\n'
+                '\n'
+                '@scribe.tool\n'
+                'async def look_it_up(context, run_context):\n'
+                "    await librarian.run(context, 'Look it up')\n"
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                "        await librarian.run(context, 'Tidy up')\n"
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        self.assertEqual(
+            sorted(agent.name for agent in found[servicer].agents),
+            ['librarian', 'scribe'],
+        )
+        self.assertEqual(
+            sorted(
+                (tool.agent, tool.name, tuple(run.agent
+                                              for run in tool.runs))
+                for tool in found[servicer].tools
+            ),
+            [
+                ('librarian', 'write_it_down', ('scribe',)),
+                ('scribe', 'look_it_up', ('librarian',)),
+            ],
+        )
+
+    async def test_tools_given_or_hidden_are_said_not_followed(
+        self,
+    ) -> None:
+        """Tools given where an agent is constructed, `tools=` or
+        `toolsets=`, or given where it is run, `toolsets=`, and tools a
+        construction's `prepare_tools=` or a registration's `prepare=`
+        can hide, are not followed, but said: on the agent, the run and
+        the tool. A decorator that is not Reboot's `tool` registers
+        nothing, however it is spelled, and a tool registered on an
+        agent that cannot be resolved is said for the file."""
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'import functools\n'
+                'from pydantic_ai import FunctionToolset\n'
+                'from reboot.agents.pydantic_ai import Agent\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                'class Registry:\n'
+                '\n'
+                '    def tool(self, function):\n'
+                '        return function\n'
+                '\n'
+                '\n'
+                'registry = Registry()\n'
+                '\n'
+                '\n'
+                'async def restock(context):\n'
+                '    pass\n'
+                '\n'
+                '\n'
+                'def when_admin(context, tool):\n'
+                '    return tool\n'
+                '\n'
+                '\n'
+                'librarian = Agent(\n'
+                "    'test',\n"
+                "    name='librarian',\n"
+                '    tools=[restock],\n'
+                '    prepare_tools=when_admin,\n'
+                ')\n'
+                'agents = [librarian]\n'
+                '\n'
+                '\n'
+                '@librarian.tool(prepare=when_admin)\n'
+                'async def delete_page(context, run_context):\n'
+                "    await agents[0].run(context, 'Delete it')\n"
+                '\n'
+                '\n'
+                '@agents[0].tool\n'
+                'async def orphan(context, run_context):\n'
+                '    pass\n'
+                '\n'
+                '\n'
+                '@registry.tool\n'
+                '@functools.cache\n'
+                'def not_a_tool():\n'
+                '    pass\n'
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                '        await librarian.run(\n'
+                '            context,\n'
+                "            'Tidy up',\n"
+                '            toolsets=[FunctionToolset(tools=[restock])],\n'
+                '        )\n'
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        [agent] = found[servicer].agents
+        self.assertEqual(
+            self._hazards(agent.hazards),
+            [
+                (
+                    'constructor_arguments',
+                    {
+                        'call':
+                            "Agent('test', name='librarian', tools=[restock], "
+                            'prepare_tools=when_admin)',
+                    },
+                ),
+            ],
+        )
+
+        [found_servicer] = found[servicer].servicers
+        [method] = found_servicer.methods
+        [run] = method.runs
+        self.assertEqual(
+            [case for case, _ in self._hazards(run.hazards)],
+            ['run_arguments'],
+        )
+
+        [tool] = found[servicer].tools
+        self.assertEqual(tool.name, 'delete_page')
+        # How it is registered, then what its implementation does.
+        self.assertEqual(
+            [hazard.WhichOneof('hazard') for hazard in tool.hazards],
+            ['tool_arguments', 'method'],
+        )
+        self.assertEqual(
+            tool.hazards[0].tool_arguments.call,
+            'librarian.tool(prepare=when_admin)',
+        )
+        self.assertEqual(
+            tool.hazards[1].method.run_on_unresolved_agent.callee,
+            'agents[0].run',
+        )
+        # What the decorator calls is not what the tool does.
+        self.assertEqual(list(tool.ambiguous), [])
+
+        self.assertEqual(
+            self._hazards(found[servicer].hazards),
+            [
+                (
+                    'tool_on_unresolved_agent',
+                    {
+                        'registration': 'agents[0].tool'
+                    },
+                ),
+            ],
+        )
 
     def _hazards(self, hazards) -> list[tuple[str, dict[str, str]]]:
         """Returns hazards as the name of each one's case and the fields
@@ -2016,6 +2252,14 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         agent.filename = 'backend/librarian.py'
         unrun = state.agents.add()
         unrun.name = 'scribe'
+        tool = state.tools.add()
+        tool.agent = 'scribe'
+        tool.filename = 'backend/y.py'
+        tool.runs.add().agent = 'librarian'
+        hazard = state.hazards.add()
+        hazard.filename = 'backend/x.py'
+        hazard.tool_on_unresolved_agent.registration = 'agents[0].tool'
+        state.code_files['backend/y.py'].digest = b'digest'
 
         known = _reconstitute_known(state)
 
@@ -2032,6 +2276,22 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             [agent.name for agent in analyzed.agents],
+            ['librarian'],
+        )
+        self.assertEqual(
+            [
+                hazard.tool_on_unresolved_agent.registration
+                for hazard in analyzed.hazards
+            ],
+            ['agents[0].tool'],
+        )
+
+        # A file's tools come back with it, and so does every agent they
+        # run.
+        tools = known[Path('backend/y.py')]
+        self.assertEqual([tool.agent for tool in tools.tools], ['scribe'])
+        self.assertEqual(
+            [agent.name for agent in tools.agents],
             ['librarian'],
         )
 

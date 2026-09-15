@@ -38,6 +38,15 @@ run of any other agent, what a run is given on top of its agent -- is
 recorded as a hazard instead, so that nothing the analysis could not
 see is silently missing.
 
+An agent's tools are found in every file the walk analyzes: a
+function whose decorator pyright says is the `tool` or `tool_plain`
+of Reboot's `Agent`, registered on the agent the decorator's receiver
+resolves to the same way a run's does. Each tool's body is analyzed
+exactly as a servicer method's is, so what the model can reach
+through an agent is recorded beside what the application calls
+itself. A tool registered by calling `tool` rather than decorating
+is not found.
+
 Where following stops is what makes this the developer's code rather
 than somebody else's. A module resolves to a file only if a root
 holds it, so an import of an installed package leads nowhere.
@@ -65,7 +74,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import Agent, Change
 from rbt.dashboard.v1.dashboard_pb2 import Dashboard as DashboardState
-from rbt.dashboard.v1.dashboard_pb2 import File, Generated, Servicer
+from rbt.dashboard.v1.dashboard_pb2 import File, Generated, Hazard, Servicer
 from rbt.dashboard.v1.dashboard_rbt import Dashboard
 from reboot.aio.contexts import WorkflowContext
 from reboot.aio.cooperatively import cooperatively
@@ -113,6 +122,18 @@ RUN_NAMES = ('run', 'iter', 'run_stream', 'run_stream_events')
 # given any of them says so; see `Agent.Run.Hazard.RunArguments`.
 RUN_ARGUMENTS = ('toolsets', 'model', 'instructions')
 
+# The methods of `Agent` a tool is registered with, which is what a
+# decorator registering one lands on.
+TOOL_REGISTRATION_NAMES = ('tool', 'tool_plain')
+
+# The keyword arguments that, given where an agent is constructed or
+# where a tool is registered, give tools or hide them, which the
+# analysis does not follow, so that the agent or the tool says so; see
+# `Agent.Hazard.ConstructorArguments` and
+# `Agent.Tool.Hazard.ToolArguments`.
+CONSTRUCTOR_ARGUMENTS = ('tools', 'toolsets', 'prepare_tools')
+TOOL_ARGUMENTS = ('prepare',)
+
 # The version of what the analysis records, which the dashboard's
 # state records beside it. Counted up whenever the analysis starts
 # recording something it did not, or records something differently:
@@ -158,9 +179,16 @@ class AnalyzedFile:
     # services and the calls each method makes.
     servicers: tuple[Servicer, ...]
 
-    # Every agent the file's servicers run, one per name, wherever each
-    # is defined; see `Agent`.
+    # Every agent the file's servicers and tools run, one per name,
+    # wherever each is defined; see `Agent`.
     agents: tuple[Agent, ...]
+
+    # Every tool the file registers on an agent; see `Agent.Tool`.
+    tools: tuple[Agent.Tool, ...]
+
+    # Every top-level hazard the file's analysis recorded; see
+    # `Hazard`.
+    hazards: tuple[Hazard, ...]
 
 
 def _position_at_last_character(
@@ -593,6 +621,10 @@ class AgentDefinition:
     instructions: tuple[str, ...]
     description: Optional[str]
 
+    # Everything the construction gives the agent that the analysis
+    # does not follow; see `Agent.hazards`.
+    hazards: tuple[Agent.Hazard, ...]
+
 
 def _agent_definition(
     call: ast.Call,
@@ -602,7 +634,8 @@ def _agent_definition(
     external: bool,
 ) -> AgentDefinition:
     """Returns what a construction of Reboot's `Agent` says the agent
-    is: only literals are read."""
+    is: only literals are read. What it gives the agent that is not
+    followed, tools it passes or hides, is said instead."""
     # The model is the first argument, wherever it is passed:
     # `Agent('anthropic:claude-sonnet-4-6')` or `Agent(model=...)`.
     model = _keyword_argument_value(call, 'model')
@@ -622,6 +655,21 @@ def _agent_definition(
         ),
         description=_try_constant_string(
             _keyword_argument_value(call, 'description')
+        ),
+        hazards=(
+            (
+                Agent.Hazard(
+                    filename=filename,
+                    constructor_arguments=(
+                        Agent.Hazard.ConstructorArguments(
+                            call=ast.unparse(call),
+                        )
+                    ),
+                ),
+            ) if any(
+                keyword.arg in CONSTRUCTOR_ARGUMENTS
+                for keyword in call.keywords
+            ) else ()
         ),
     )
 
@@ -1033,7 +1081,8 @@ async def _generated_definition_at(
 @dataclass(frozen=True, kw_only=True)
 class Findings:
     """What analyzing one function's body found, which is what a
-    servicer method records of what it does."""
+    servicer method and an agent's tool each record of what they
+    do."""
 
     calls: tuple[Call, ...]
     runs: tuple[Agent.Run, ...]
@@ -1109,9 +1158,20 @@ async def _analyze_function(
     assert function.end_lineno is not None
     span = range(function.lineno, function.end_lineno + 1)
 
+    # The function's own decorators run where it is defined, not when
+    # it is called, so what they call is not what the function does:
+    # the `librarian.tool(prepare=...)` a tool is registered with, say.
+    decorators = {
+        id(node)
+        for decorator in function.decorator_list
+        for node in ast.walk(decorator)
+    }
+
     for node in ast.walk(function):
         match node:
-            case ast.Call(func=(ast.Attribute() | ast.Name()) as callee):
+            case ast.Call(
+                func=(ast.Attribute() | ast.Name()) as callee,
+            ) if id(node) not in decorators:
                 pass
             case _:
                 continue
@@ -1215,6 +1275,7 @@ async def _analyze_function(
                     system_prompt=agent_definition.system_prompt,
                     instructions=agent_definition.instructions,
                     description=agent_definition.description,
+                    hazards=agent_definition.hazards,
                 )
             )
             continue
@@ -1282,6 +1343,116 @@ async def _agent_definition_at(
         return None, analysis
 
     return await analysis.agent_definition_at(location)
+
+
+async def _analyze_tool(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    decorator: ast.expr,
+    *,
+    filename: Path,
+    text: str,
+    analysis: Analysis,
+) -> tuple[
+    Optional[Agent.Tool],
+    tuple[Agent, ...],
+    Optional[Hazard],
+    Analysis,
+]:
+    """Returns the tool a decorator registers a function as, with the
+    agents the tool runs, when the decorator is the `tool` or
+    `tool_plain` of Reboot's `Agent`; and `None` otherwise, or, for a
+    tool registered on an agent that cannot be resolved, the hazard
+    that says so.
+
+    Both forms are read, the bare `@librarian.tool` and the
+    parametrized `@librarian.tool(retries=2)`, whose literal `name=`
+    and `description=`, if it gives them, are what the model is told.
+    Whether it is a registration at all, pyright answers, from what
+    the decorator calls, however it is spelled.
+    """
+    match decorator:
+        case ast.Call(func=(ast.Name() | ast.Attribute()) as registration):
+            arguments: Optional[ast.Call] = decorator
+        case ast.Name() | ast.Attribute() as registration:
+            arguments = None
+        case _:
+            return None, (), None, analysis
+
+    line, character = _position_at_last_character(registration)
+    location = await analysis.pyright.definition_at(
+        filename=filename,
+        line=line,
+        character=character,
+        text=text,
+    )
+    if location is None or not _is_agent_module(location.filename):
+        return None, (), None, analysis
+
+    helper, analysis = await analysis.helper_definition_at(location)
+    if helper is None or helper.syntax.name not in TOOL_REGISTRATION_NAMES:
+        return None, (), None, analysis
+
+    agent_definition, analysis = await _agent_definition_at(
+        registration,
+        filename=filename,
+        text=text,
+        analysis=analysis,
+    )
+    if agent_definition is None:
+        return None, (), Hazard(
+            filename=str(filename),
+            tool_on_unresolved_agent=(
+                Hazard.ToolOnUnresolvedAgent(
+                    registration=ast.unparse(registration),
+                )
+            ),
+        ), analysis
+
+    findings, analysis = await _analyze_function(
+        function,
+        filename=filename,
+        text=text,
+        analysis=analysis,
+        visited=frozenset(),
+    )
+
+    return Agent.Tool(
+        agent=agent_definition.name,
+        filename=str(filename),
+        name=(
+            None if arguments is None else
+            _try_constant_string(_keyword_argument_value(arguments, 'name'))
+        ) or function.name,
+        description=(
+            (
+                None if arguments is None else _try_constant_string(
+                    _keyword_argument_value(arguments, 'description')
+                )
+            ) or ast.get_docstring(function) or None
+        ),
+        calls=findings.calls,
+        runs=findings.runs,
+        ambiguous=findings.ambiguous,
+        hazards=[
+            *(
+                [
+                    Agent.Tool.Hazard(
+                        filename=str(filename),
+                        tool_arguments=Agent.Tool.Hazard.ToolArguments(
+                            call=ast.unparse(arguments),
+                        ),
+                    ),
+                ] if arguments is not None and any(
+                    keyword.arg in TOOL_ARGUMENTS
+                    for keyword in arguments.keywords
+                ) else []
+            ),
+            *(
+                Agent.Tool.Hazard(filename=hazard.filename, method=hazard)
+                for hazard in findings.hazards
+            ),
+        ],
+    ), findings.agents, None, analysis
 
 
 async def _analyze_class(
@@ -1380,7 +1551,8 @@ async def _analyze_file(
     """Returns one parsed file analyzed: an `AnalyzedFile` built
     from its `ParsedFile` -- the dependencies the parse recorded --
     with the external files the analysis read, every servicer the
-    file defines, and every agent its servicers run."""
+    file defines, every tool it registers on an agent, and every agent
+    its servicers and tools run."""
     parsed = analysis.parsed[filename]
 
     # A generated file defines no servicer and runs no agent, the
@@ -1394,6 +1566,8 @@ async def _analyze_file(
             external=(),
             servicers=(),
             agents=(),
+            tools=(),
+            hazards=(),
         ), analysis
 
     # Emptied so that what gathers in `external` below is what
@@ -1402,8 +1576,11 @@ async def _analyze_file(
 
     servicers: list[Servicer] = []
 
-    # Every agent the file's servicers run, one per name.
+    # Every agent the file's servicers and tools run, one per name.
     agents: dict[str, Agent] = {}
+
+    tools: list[Agent.Tool] = []
+    hazards: list[Hazard] = []
 
     for node in ast.walk(parsed.syntax):
         match node:
@@ -1417,6 +1594,26 @@ async def _analyze_file(
                     servicers.append(servicer)
                 for class_agent in class_agents:
                     agents.setdefault(class_agent.name, class_agent)
+
+            # Every function, wherever it is written, may be registered
+            # as a tool by any of its decorators.
+            case ast.FunctionDef() | ast.AsyncFunctionDef():
+                for decorator in node.decorator_list:
+                    tool, tool_agents, hazard, analysis = (
+                        await _analyze_tool(
+                            node,
+                            decorator,
+                            filename=filename,
+                            text=parsed.text,
+                            analysis=analysis,
+                        )
+                    )
+                    if tool is not None:
+                        tools.append(tool)
+                    if hazard is not None:
+                        hazards.append(hazard)
+                    for tool_agent in tool_agents:
+                        agents.setdefault(tool_agent.name, tool_agent)
 
     # Discarded so that pyright holds only what analyzing one file
     # asked about, rather than accumulating every file asked about
@@ -1433,6 +1630,8 @@ async def _analyze_file(
         ),
         servicers=tuple(servicers),
         agents=tuple(agents.values()),
+        tools=tuple(tools),
+        hazards=tuple(hazards),
     ), analysis
 
 
@@ -1469,6 +1668,29 @@ def extract_and_sort_agents(
     return sorted(agents.values(), key=lambda agent: agent.name)
 
 
+def extract_and_sort_tools(
+    files: Mapping[Path, AnalyzedFile],
+) -> list[Agent.Tool]:
+    """Returns every tool found, sorted by the agent it is registered
+    on, its name and the file it is written in; see `Agent.Tool`."""
+    return sorted(
+        (tool for file in files.values() for tool in file.tools),
+        key=lambda tool: (tool.agent, tool.name, tool.filename),
+    )
+
+
+def extract_and_sort_hazards(
+    files: Mapping[Path, AnalyzedFile],
+) -> list[Hazard]:
+    """Returns every top-level hazard found, sorted by the file it is
+    written in, and within a file in the order the file's analysis met
+    them; see `Hazard`."""
+    return sorted(
+        (hazard for file in files.values() for hazard in file.hazards),
+        key=lambda hazard: hazard.filename,
+    )
+
+
 def _reconstitute_known(
     state: DashboardState,
 ) -> dict[Path, AnalyzedFile]:
@@ -1481,8 +1703,16 @@ def _reconstitute_known(
     for servicer in state.servicers:
         servicers.setdefault(servicer.filename, []).append(servicer)
 
+    tools: dict[str, list[Agent.Tool]] = {}
+    for tool in state.tools:
+        tools.setdefault(tool.filename, []).append(tool)
+
+    hazards: dict[str, list[Hazard]] = {}
+    for hazard in state.hazards:
+        hazards.setdefault(hazard.filename, []).append(hazard)
+
     # Each agent is recorded once, by name; a file's agents are the
-    # ones its servicers run.
+    # ones its servicers and its tools run.
     agents = {agent.name: agent for agent in state.agents}
 
     return {
@@ -1496,12 +1726,21 @@ def _reconstitute_known(
                 agents=tuple(
                     {
                         run.agent: agents[run.agent]
-                        for servicer in servicers.get(filename, [])
-                        for method in servicer.methods
-                        for run in method.runs
+                        for runs in [
+                            *(
+                                method.runs
+                                for servicer in servicers.get(filename, [])
+                                for method in servicer.methods
+                            ),
+                            *(tool.runs
+                              for tool in tools.get(filename, [])),
+                        ]
+                        for run in runs
                         if run.agent in agents
                     }.values()
                 ),
+                tools=tuple(tools.get(filename, [])),
+                hazards=tuple(hazards.get(filename, [])),
             ) for filename, file in state.code_files.items()
     }
 
@@ -1806,6 +2045,8 @@ async def watch(
                 if known_now is not None:
                     servicers = extract_and_sort_servicers(known_now)
                     agents = extract_and_sort_agents(known_now)
+                    tools = extract_and_sort_tools(known_now)
+                    hazards = (extract_and_sort_hazards(known_now))
 
                     # The file messages the write below records,
                     # built before the write so that the state is
@@ -1826,6 +2067,8 @@ async def watch(
                         context,
                         servicers=servicers,
                         agents=agents,
+                        tools=tools,
+                        hazards=hazards,
                         code_analysis_version=CODE_ANALYSIS_VERSION,
                         code_files=files,
                         generated=dict(generated_now),
