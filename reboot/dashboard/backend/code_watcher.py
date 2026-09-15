@@ -1087,10 +1087,24 @@ class Findings:
     calls: tuple[Call, ...]
     runs: tuple[Agent.Run, ...]
     hazards: tuple[Servicer.Method.Hazard, ...]
-    ambiguous: tuple[str, ...]
 
     # The agent each run in `runs` is made on.
     agents: tuple[Agent, ...]
+
+
+def _ambiguous_call(
+    callee: ast.expr,
+    *,
+    filename: Path,
+) -> Servicer.Method.Hazard:
+    """Returns the hazard a call the analysis could not resolve is; see
+    `Servicer.Method.Hazard.AmbiguousCall`."""
+    return Servicer.Method.Hazard(
+        filename=str(filename),
+        ambiguous_call=Servicer.Method.Hazard.AmbiguousCall(
+            callee=ast.unparse(callee),
+        ),
+    )
 
 
 async def _analyze_function(
@@ -1103,8 +1117,8 @@ async def _analyze_function(
 ) -> tuple[Findings, Analysis]:
     """Returns what a function's body does, itself or through the
     functions it calls: the Reboot calls it makes, the agents it
-    runs, what it does that is not followed, and the calls it makes
-    that are ambiguous.
+    runs, and what it does that is not followed, the calls it makes
+    that are ambiguous included.
 
     A Reboot call is one whose own definition pyright places at a
     method stub of a state type. However the reference was come by,
@@ -1137,7 +1151,8 @@ async def _analyze_function(
     function already walked on the way here, by file and line, so
     that functions calling each other are followed once.
 
-    An ambiguous call is one with no definition pyright can say, one
+    An ambiguous call, a hazard like any other, is one with no
+    definition pyright can say, one
     whose definition is no function: a stub's, which has no body to
     follow, or a class's, and one into Reboot's agents module that is
     not a run. A call whose definition is the generator's own
@@ -1147,7 +1162,6 @@ async def _analyze_function(
     calls: list[Call] = []
     runs: list[Agent.Run] = []
     hazards: list[Servicer.Method.Hazard] = []
-    ambiguous: list[str] = []
     agents: list[Agent] = []
 
     # The function itself is walked here, and everything defined
@@ -1185,7 +1199,7 @@ async def _analyze_function(
             text=text,
         )
         if location is None:
-            ambiguous.append(ast.unparse(callee))
+            hazards.append(_ambiguous_call(callee, filename=filename))
             continue
 
         # Nothing in the standard library takes a context, so a call
@@ -1218,14 +1232,14 @@ async def _analyze_function(
 
         helper, analysis = await analysis.helper_definition_at(location)
         if helper is None:
-            ambiguous.append(ast.unparse(callee))
+            hazards.append(_ambiguous_call(callee, filename=filename))
             continue
 
         if _is_agent_module(location.filename):
             # Anything in Reboot's agents module but a run is not
             # followed, so it is ambiguous like any call that is not.
             if helper.syntax.name not in RUN_NAMES:
-                ambiguous.append(ast.unparse(callee))
+                hazards.append(_ambiguous_call(callee, filename=filename))
                 continue
 
             agent_definition, analysis = await _agent_definition_at(
@@ -1294,14 +1308,12 @@ async def _analyze_function(
         calls.extend(helper_findings.calls)
         runs.extend(helper_findings.runs)
         hazards.extend(helper_findings.hazards)
-        ambiguous.extend(helper_findings.ambiguous)
         agents.extend(helper_findings.agents)
 
     return Findings(
         calls=tuple(calls),
         runs=tuple(runs),
         hazards=tuple(hazards),
-        ambiguous=tuple(ambiguous),
         agents=tuple(agents),
     ), analysis
 
@@ -1432,7 +1444,6 @@ async def _analyze_tool(
         ),
         calls=findings.calls,
         runs=findings.runs,
-        ambiguous=findings.ambiguous,
         hazards=[
             *(
                 [
@@ -1534,7 +1545,6 @@ async def _analyze_class(
                             calls=findings.calls,
                             runs=findings.runs,
                             hazards=findings.hazards,
-                            ambiguous=findings.ambiguous,
                         )
                     )
                     agents.extend(findings.agents)

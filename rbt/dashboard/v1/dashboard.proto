@@ -545,23 +545,29 @@ message Servicer {
     // makes.
     repeated Call calls = 3;
 
-    // Represents every call the analysis could not resolve to a
-    // Reboot definition: possibly a helper that itself makes
-    // Reboot calls, to be followed by a future analysis, and
-    // possibly nothing of Reboot's. Spelled the way `ast.unparse`
-    // writes the callee, e.g. "self._transfer".
-    repeated string ambiguous = 4;
-
     // Represents every agent the method's implementation runs,
     // itself or through the functions it calls. What each agent is,
     // is in `Agent`, which each of these names.
-    repeated Agent.Run runs = 5;
+    repeated Agent.Run runs = 4;
 
     // One thing the method's implementation does, itself or through
     // the functions it calls, that the analysis did not follow,
     // recorded rather than guessed at or dropped, so the dashboard
     // can show where what it draws may be incomplete.
     message Hazard {
+      // A call the analysis could not resolve: one with no definition
+      // pyright can say, one whose definition is no function, such as
+      // a stub's or a class's, or one into Reboot's agents module that
+      // is not a run. Possibly a helper that itself makes Reboot calls,
+      // to be followed by a future analysis, and possibly nothing of
+      // Reboot's.
+      message AmbiguousCall {
+        // Represents what is called, spelled the way `ast.unparse`
+        // writes it, without the call's arguments, e.g.
+        // `self._transfer`.
+        string callee = 1;
+      }
+
       // A run of an agent the analysis could not resolve: the call's
       // own definition proves an agent is run, but what it is run on
       // is not an `Agent(...)` with a string literal `name=`, bound to
@@ -584,12 +590,13 @@ message Servicer {
 
       oneof hazard {
         RunOnUnresolvedAgent run_on_unresolved_agent = 2;
+        AmbiguousCall ambiguous_call = 3;
       }
     }
 
     // Represents everything the method's implementation does that the
     // analysis did not follow, in the order it met them.
-    repeated Hazard hazards = 6;
+    repeated Hazard hazards = 5;
   }
 
   // The state type it services, spelled as the runtime names one,
@@ -723,17 +730,16 @@ message Agent {
     // docstring otherwise. Absent when it has neither.
     optional string description = 4;
 
-    // Represents every Reboot call, agent run and ambiguous call the
-    // tool's implementation makes, found exactly the way a servicer
-    // method's are.
+    // Represents every Reboot call and agent run the tool's
+    // implementation makes, found exactly the way a servicer method's
+    // are.
     repeated Servicer.Method.Call calls = 5;
     repeated Run runs = 6;
-    repeated string ambiguous = 7;
 
     // Represents everything about how the tool is registered, and
     // everything its implementation does, that the analysis did not
     // follow.
-    repeated Hazard hazards = 8;
+    repeated Hazard hazards = 7;
   }
 
   // Represents the agent's `name`, which the runtime requires and

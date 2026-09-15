@@ -339,6 +339,18 @@ def _write_agents_module(directory: Path) -> None:
     (directory / 'pydantic_ai.py').write_text(PYDANTIC_AI_MODULE)
 
 
+def _ambiguous(hazards) -> list[str]:
+    """Returns the callee of every ambiguous call among a method's or a
+    tool's hazards, in the order they were recorded."""
+    callees: list[str] = []
+    for hazard in hazards:
+        if hazard.WhichOneof('hazard') == 'method':
+            hazard = hazard.method
+        if hazard.WhichOneof('hazard') == 'ambiguous_call':
+            callees.append(hazard.ambiguous_call.callee)
+    return callees
+
+
 class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
@@ -1053,7 +1065,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 ('shop.v1.Depot', 'look', Call.How.UNTIL),
             ],
         )
-        self.assertEqual(list(method.ambiguous), ['undefined'])
+        self.assertEqual(_ambiguous(method.hazards), ['undefined'])
         self.assertEqual(
             [
                 (call.state_type, call.method, call.how)
@@ -1103,7 +1115,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             ],
             [('shop.v1.Depot', 'look', Call.How.CALL)],
         )
-        self.assertEqual(list(method.ambiguous), [])
+        self.assertEqual(_ambiguous(method.hazards), [])
         self.assertIn('helpers', found[servicer].dependencies)
         self.assertEqual(found[servicer].external, ())
         del helpers
@@ -1150,7 +1162,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 ('shop.v1.Depot', 'look', Call.How.CALL),
             ],
         )
-        self.assertEqual(list(method.ambiguous), [])
+        self.assertEqual(_ambiguous(method.hazards), [])
 
     async def test_a_call_into_an_installed_state_type(self) -> None:
         """A call to a state type an installed package brings, such as
@@ -1203,7 +1215,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 ),
             ],
         )
-        self.assertEqual(list(method.ambiguous), [])
+        self.assertEqual(_ambiguous(method.hazards), [])
 
     async def test_a_call_through_an_alias_of_a_stub(self) -> None:
         """The pydantic generator writes each stub an alias in the name
@@ -1288,7 +1300,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 ('shop.v1.Shop', 'look', Call.How.CALL),
             ],
         )
-        self.assertEqual(list(method.ambiguous), [])
+        self.assertEqual(_ambiguous(method.hazards), [])
 
     async def test_an_installed_helper_is_followed_and_recorded(
         self,
@@ -1333,7 +1345,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             ],
             [('shop.v1.Ext', 'look', Call.How.CALL)],
         )
-        self.assertEqual(list(method.ambiguous), [])
+        self.assertEqual(_ambiguous(method.hazards), [])
         self.assertEqual(
             {
                 dependency.filename: dependency.digest
@@ -1395,7 +1407,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             [run.agent for run in method.runs],
             ['librarian'],
         )
-        self.assertEqual(list(method.ambiguous), [])
+        self.assertEqual(_ambiguous(method.hazards), [])
 
         [agent] = found[servicer].agents
         self.assertEqual(agent.name, 'librarian')
@@ -1421,7 +1433,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             [(call.state_type, call.method, call.how) for call in tool.calls],
             [('shop.v1.Depot', 'look', Servicer.Method.Call.How.CALL)],
         )
-        self.assertEqual(list(tool.ambiguous), [])
+        self.assertEqual(_ambiguous(tool.hazards), [])
         self.assertEqual(list(tool.hazards), [])
 
     async def test_every_way_of_running_an_agent(self) -> None:
@@ -1468,7 +1480,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             ['librarian'] * 4,
         )
         self.assertEqual(
-            sorted(method.ambiguous),
+            sorted(_ambiguous(method.hazards)),
             ['Agent', 'librarian.override', 'librarian.run_sync'],
         )
 
@@ -1790,7 +1802,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             'agents[0].run',
         )
         # What the decorator calls is not what the tool does.
-        self.assertEqual(list(tool.ambiguous), [])
+        self.assertEqual(_ambiguous(tool.hazards), [])
 
         self.assertEqual(
             self._hazards(found[servicer].hazards),
@@ -1887,8 +1899,12 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             {
-                name: self._hazards(method.hazards)
-                for name, method in methods.items()
+                name:
+                    [
+                        hazard
+                        for hazard in self._hazards(method.hazards)
+                        if hazard[0] == 'run_on_unresolved_agent'
+                    ] for name, method in methods.items()
             },
             {
                 'factory':
@@ -1916,10 +1932,14 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(
-            [hazard.filename for hazard in methods['factory'].hazards],
+            [
+                hazard.filename
+                for hazard in methods['factory'].hazards
+                if hazard.WhichOneof('hazard') == 'run_on_unresolved_agent'
+            ],
             [str(servicer)],
         )
-        self.assertEqual(list(methods['untyped'].ambiguous), ['agent.run'])
+        self.assertEqual(_ambiguous(methods['untyped'].hazards), ['agent.run'])
         self.assertEqual(found[servicer].agents, ())
 
     async def test_what_changes_a_run_is_said(self) -> None:
@@ -2030,6 +2050,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             sorted(
                 hazard.run_on_unresolved_agent.callee
                 for hazard in method.hazards
+                if hazard.WhichOneof('hazard') == 'run_on_unresolved_agent'
             ),
             sorted(
                 [
@@ -2810,7 +2831,7 @@ class GreeterServicer(Greeter.Servicer):
                 ('tests.reboot.Greeter', 'Greet', Call.How.UNTIL),
             ],
         )
-        self.assertEqual(list(method.ambiguous), [])
+        self.assertEqual(_ambiguous(method.hazards), [])
 
     async def test_a_state_type_that_is_not_generated_yet(self) -> None:
         """A name pyright cannot resolve services nothing yet: its
