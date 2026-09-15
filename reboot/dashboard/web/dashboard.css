@@ -803,6 +803,69 @@ header h1 {
   margin: 26px 0 10px;
 }
 
+/* The head of a "calls" list: the eyebrow on the left, the switch
+   between transitive and direct calls pushed to the right edge. */
+.calls-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* The switch is its checkbox, drawn as a pill whose knob slides to
+   the right while it is on, with its label beside it. */
+.transitive-calls-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.transitive-calls-switch input {
+  appearance: none;
+  position: relative;
+  margin: 0;
+  width: 26px;
+  height: 14px;
+  border: 1px solid hsl(var(--border-strong));
+  border-radius: 999px;
+  background: hsl(var(--background));
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.transitive-calls-switch input::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: hsl(var(--muted-foreground));
+  transition: transform 0.15s, background 0.15s;
+}
+
+.transitive-calls-switch input:checked {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary));
+}
+
+.transitive-calls-switch input:checked::before {
+  transform: translateX(12px);
+  background: hsl(var(--primary-foreground));
+}
+
+.transitive-calls-switch:hover input {
+  border-color: hsl(var(--primary));
+}
+
+.transitive-calls-switch input:focus-visible {
+  outline: 2px solid hsl(var(--accent));
+  outline-offset: 2px;
+}
+
 /* --- Expanding a state type --- */
 
 /* The heading and its count on the left, the button pushed to
