@@ -11,7 +11,9 @@ import {
   calleeDistancesFrom,
   callsItself,
   directCallers,
+  directToolCallers,
   methodId,
+  toolCalleeDistances,
 } from "../../../reboot/dashboard/web/src/callgraph";
 
 const call = (
@@ -26,12 +28,16 @@ const graph: GraphStateType[] = [
   {
     id: "app.v1.A",
     name: "A",
-    methods: [{ name: "a", factory: false, calls: [call("app.v1.B", "b")] }],
+    methods: [
+      { name: "a", factory: false, calls: [call("app.v1.B", "b")], runs: [] },
+    ],
   },
   {
     id: "app.v1.B",
     name: "B",
-    methods: [{ name: "b", factory: false, calls: [call("app.v1.C", "c")] }],
+    methods: [
+      { name: "b", factory: false, calls: [call("app.v1.C", "c")], runs: [] },
+    ],
   },
   {
     id: "app.v1.C",
@@ -41,8 +47,9 @@ const graph: GraphStateType[] = [
         name: "c",
         factory: false,
         calls: [call("app.v1.C", "c", Servicer_Method_Call_How.SCHEDULE)],
+        runs: [],
       },
-      { name: "d", factory: false, calls: [] },
+      { name: "d", factory: false, calls: [], runs: [] },
     ],
   },
 ];
@@ -91,5 +98,48 @@ describe("the methods a method calls", () => {
         [C_c, 2],
       ])
     );
+  });
+});
+
+describe("the methods a tool calls", () => {
+  it("start at one call away and reach out the way a method's do", () => {
+    const tool = {
+      name: "look_up",
+      calls: [call("app.v1.B", "b"), call("app.v1.C", "c")],
+      runs: [],
+    };
+    expect(toolCalleeDistances(tool, graph)).toEqual(
+      new Map([
+        [B_b, 1],
+        [C_c, 1],
+      ])
+    );
+  });
+});
+
+describe("the tools that call a method", () => {
+  const agents = [
+    {
+      id: "agent:librarian",
+      name: "librarian",
+      systemPrompt: [],
+      instructions: [],
+      tools: [
+        { name: "look_up", calls: [call("app.v1.B", "b")], runs: [] },
+        { name: "idle", calls: [], runs: [] },
+      ],
+    },
+  ];
+
+  it("are the tools calling it directly, each with its agent", () => {
+    expect(
+      directToolCallers(B_b, agents).map(
+        ({ agent, tool }) => `${agent.name}.${tool.name}`
+      )
+    ).toEqual(["librarian.look_up"]);
+  });
+
+  it("are none for a method no tool calls", () => {
+    expect(directToolCallers(C_c, agents)).toEqual([]);
   });
 });
