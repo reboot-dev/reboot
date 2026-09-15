@@ -300,6 +300,7 @@ class Reboot(reboot.aio.reboot.Reboot):
         libraries: Sequence[AbstractLibrary] = [],
         web_framework: WebFramework,
         token_verifier: Optional[TokenVerifier] = None,
+        root: Optional[str] = None,
         initialize: Optional[Callable[[InitializeContext],
                                       Awaitable[None]]] = None,
         initialize_bearer_token: Optional[str] = None,
@@ -325,6 +326,7 @@ class Reboot(reboot.aio.reboot.Reboot):
         libraries: Sequence[AbstractLibrary] = [],
         web_framework: Optional[WebFramework] = None,
         token_verifier: Optional[TokenVerifier] = None,
+        root: Optional[str] = None,
         initialize: Optional[Callable[[InitializeContext],
                                       Awaitable[None]]] = None,
         initialize_bearer_token: Optional[str] = None,
@@ -356,6 +358,9 @@ class Reboot(reboot.aio.reboot.Reboot):
 
         if token_verifier is not None:
             raise ValueError("Not expecting 'token_verifier'")
+
+        if root is not None:
+            raise ValueError("Not expecting 'root'")
 
         if initialize is not None:
             raise ValueError("Not expecting 'initialize'")
@@ -432,6 +437,7 @@ class Reboot(reboot.aio.reboot.Reboot):
             libraries=application.libraries,
             web_framework=application.web_framework,
             token_verifier=application.token_verifier,
+            root=application.root,
             initialize=application.initialize,
             initialize_bearer_token=application._initialize_bearer_token,
             local_envoy=local_envoy,

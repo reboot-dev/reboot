@@ -923,3 +923,15 @@ py_test(
         "//reboot:versioning_py",
     ],
 )
+
+py_test(
+    name = "root_page_tests_py",
+    srcs = ["root_page_tests.py"],
+    main = "root_page_tests.py",
+    deps = [
+        ":greeter_servicers_py",
+        requirement("aiohttp"),
+        "//reboot/aio:applications_py",
+        "//reboot/aio:tests_py",
+    ],
+)
