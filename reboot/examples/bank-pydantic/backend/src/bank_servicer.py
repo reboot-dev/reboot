@@ -5,9 +5,10 @@ from bank.v1.bank import CustomerAccount, CustomerAccounts
 from bank.v1.bank_rbt import Bank
 from bank.v1.customer_rbt import Customer
 from google.protobuf.message import Message
-from rbt.std.collections.v1.sorted_map_rbt import SortedMap
+from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import ReaderContext, TransactionContext
+from reboot.std.item.v1.item import Item
 from uuid7 import create as uuid7
 
 
@@ -21,10 +22,7 @@ class BankServicer(Bank.Servicer):
         context: TransactionContext,
     ) -> None:
         self.state.customer_ids_map_id = str(uuid.uuid4())
-        await SortedMap.ref(self.state.customer_ids_map_id).insert(
-            context,
-            entries={},
-        )
+        await OrderedMap.ref(self.state.customer_ids_map_id).Create(context)
 
     async def sign_up(
         self,
@@ -33,23 +31,25 @@ class BankServicer(Bank.Servicer):
     ) -> None:
         await Customer.sign_up(context, request.customer_id)
 
-        await SortedMap.ref(self.state.customer_ids_map_id).insert(
+        await OrderedMap.ref(self.state.customer_ids_map_id).Insert(
             context,
-            entries={str(uuid7()): request.customer_id.encode()},
+            entries={
+                str(uuid7()): Item(bytes=request.customer_id.encode()),
+            },
         )
 
     async def all_customer_ids(
         self,
         context: ReaderContext,
     ) -> Bank.AllCustomerIdsResponse:
-        customer_ids_map = SortedMap.ref(self.state.customer_ids_map_id)
-        customer_ids = await customer_ids_map.range(context, limit=32)
+        customer_ids_map = OrderedMap.ref(self.state.customer_ids_map_id)
+        customer_ids = await customer_ids_map.Range(context, limit=32)
 
         assert isinstance(customer_ids, Message)
 
         return Bank.AllCustomerIdsResponse(
             customer_ids=[
-                entry.value.decode() for entry in customer_ids.entries
+                entry.bytes.decode() for entry in customer_ids.entries
             ]
         )
 
@@ -79,8 +79,8 @@ class BankServicer(Bank.Servicer):
         context: ReaderContext,
     ) -> Bank.AccountBalancesResponse:
         # Get the first "page" of customer IDs (32 entries).
-        customer_ids_map = SortedMap.ref(self.state.customer_ids_map_id)
-        customer_ids = await customer_ids_map.range(context, limit=32)
+        customer_ids_map = OrderedMap.ref(self.state.customer_ids_map_id)
+        customer_ids = await customer_ids_map.Range(context, limit=32)
 
         assert isinstance(customer_ids, Message)
 
@@ -100,7 +100,7 @@ class BankServicer(Bank.Servicer):
 
         all_customer_balances: list[CustomerAccounts] = await asyncio.gather(
             *[
-                customer_accounts(entry.value.decode())
+                customer_accounts(entry.bytes.decode())
                 for entry in customer_ids.entries
             ]
         )
