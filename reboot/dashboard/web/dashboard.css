@@ -24,6 +24,9 @@
   --surface-sunken: 240 4.8% 97%;
   --prose: 211 40% 30%;
   --errors: 0 62% 45%;
+  /* The document pane's left gutter: the heading and every page's
+     content start at it, so the two line up down the page. */
+  --pane-gutter: 32px;
 }
 
 * {
@@ -477,8 +480,7 @@ nav a .nav-name {
    appear. */
 .watching {
   max-width: 840px;
-  margin: 0 auto;
-  padding: 0 58px 10px;
+  padding: 0 calc(var(--pane-gutter) + 10px) 10px;
   font-family: ui-monospace, Menlo, monospace;
   font-size: 10.5px;
   color: hsl(var(--muted-foreground));
@@ -532,8 +534,7 @@ nav a .nav-name {
      cells' own padding. */
   gap: 1px 0;
   max-width: 840px;
-  margin: 0 auto;
-  padding: 0 48px 24px;
+  padding: 0 var(--pane-gutter) 24px;
 }
 
 /* `display: contents` so a row's cells are the grid's own items and
@@ -724,10 +725,12 @@ a.change-name:hover {
   background: hsl(var(--background));
 }
 
+/* Set against the pane's left gutter rather than centred: the pages
+   under it are widths of their own, and only a shared left edge
+   keeps a heading over what it heads. */
 header {
   max-width: 840px;
-  margin: 0 auto;
-  padding: 40px 48px 28px;
+  padding: 40px var(--pane-gutter) 28px;
 }
 
 header h1 {
@@ -737,10 +740,11 @@ header h1 {
   margin: 6px 0 0;
 }
 
+/* A feature's page, in the same column as the heading over it. The
+   types pane sets its own padding on the same class. */
 .state-type {
   max-width: 840px;
-  margin: 0 auto;
-  padding: 0 48px 48px;
+  padding: 0 var(--pane-gutter) 48px;
 }
 
 .state-type > .eyebrow:first-child {
@@ -1227,9 +1231,9 @@ header h1 {
   overflow: hidden;
 }
 
-/* As a flex item the header's auto margins would shrink it to its
-   words and centre those; at full width it is the same 840px column
-   the other pages put their heading in. The note under it, when
+/* As a flex item the header would shrink to its words; at full width
+   it is the same column the other pages put their heading in. The
+   note under it, when
    there is one, sits in the same column. */
 .pane.graph-pane > header,
 .graph-note {
@@ -1238,8 +1242,7 @@ header h1 {
 
 .graph-note {
   max-width: 840px;
-  margin: 0 auto;
-  padding: 0 48px 24px;
+  padding: 0 var(--pane-gutter) 24px;
   font-size: 13px;
   line-height: 1.5;
 }
@@ -1248,6 +1251,12 @@ header h1 {
   flex: 1;
   min-height: 0;
   border-top: 1px solid hsl(var(--border));
+}
+
+/* The canvas's own controls and legend keep the pane's gutter too,
+   so the buttons under the heading start where it does. */
+.graph-canvas .react-flow__panel {
+  margin: 16px var(--pane-gutter);
 }
 
 .react-flow {
@@ -2136,7 +2145,8 @@ header .state-type-description {
   flex-direction: column;
   gap: 10px;
   max-width: 840px;
-  margin: 0 auto 28px;
+  margin: 0 0 28px;
+  padding: 0 var(--pane-gutter);
 }
 
 .features-search-input {
@@ -2325,7 +2335,7 @@ header .state-type-description {
   grid-template-columns: 3fr 2fr;
   gap: 32px;
   max-width: 1000px;
-  margin: 0 auto;
+  padding: 0 var(--pane-gutter);
 }
 
 .feature-summaries {
@@ -2441,8 +2451,8 @@ header .state-type-description {
   flex-wrap: wrap;
   gap: 14px;
   max-width: 840px;
-  margin: 0 auto 24px;
-  padding: 0 48px;
+  margin: 0 0 24px;
+  padding: 0 var(--pane-gutter);
 }
 
 .feature-gallery-item {
@@ -2471,8 +2481,8 @@ header .state-type-description {
   flex-direction: column;
   gap: 8px;
   max-width: 840px;
-  margin: 0 auto 24px;
-  padding: 0 48px;
+  margin: 0 0 24px;
+  padding: 0 var(--pane-gutter);
 }
 
 /* --- The types pane --- */
