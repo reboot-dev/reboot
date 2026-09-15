@@ -146,9 +146,9 @@ message StoredBlobMetadataResponse {
   optional StoredBlob blob = 1;
 }
 
-message StoredBlobForgetRequest {}
+message StoredBlobRemoveRequest {}
 
-message StoredBlobForgetResponse {}
+message StoredBlobRemoveResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -194,8 +194,9 @@ service StoredBlobMethods {
     };
   }
 
-  // Forgets the object, for a blob whose bytes are being deleted.
-  rpc Forget(StoredBlobForgetRequest) returns (StoredBlobForgetResponse) {
+  // Removes the object's metadata, for a blob whose bytes are being
+  // removed; the metadata half of `Blob.Remove`.
+  rpc Remove(StoredBlobRemoveRequest) returns (StoredBlobRemoveResponse) {
     option (rbt.v1alpha1.method) = {
       writer: {},
     };

@@ -107,7 +107,7 @@ def _make_put_part(
         expiration = _unexpired_expiration(request)
         if expiration is None:
             return Response(status_code=403, content="URL expired")
-        expected = store.signature_for_put(
+        expected = store.signature_for_part_upload(
             blob, upload, part_number, expiration
         )
         if not _signature_matches(
@@ -168,7 +168,7 @@ def _make_get_blob(
         expiration = _unexpired_expiration(request)
         if expiration is None:
             return Response(status_code=403, content="URL expired")
-        expected = store.signature_for_get(blob, expiration)
+        expected = store.signature_for_download(blob, expiration)
         if not _signature_matches(
             expected, request.query_params.get("sig", "")
         ):

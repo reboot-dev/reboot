@@ -13,7 +13,7 @@ nothing but the directory -- `StoredBlob` is where their writes are
 ordered against each other.
 
 This store drives that state machine itself, so that it offers the
-same surface an object store does (`begin_upload`, `complete`,
+same surface an object store does (`begin_upload`, `commit`,
 `delete`, ...) and whoever serves it -- the `BlobDataPlane` servicer,
 the byte routes -- only authorizes and delegates. Its methods take
 the context they reach `StoredBlob` with; a store backed by an object
@@ -77,11 +77,11 @@ _STREAM_CHUNK_BYTES = 1024 * 1024
 
 
 class BlobStoreError(Exception):
-    """A permanent storage failure (e.g. a part missing at completion
-    time), reported to the control plane as a `CompleteUpload` `error`
-    so the client can re-upload. Transient failures (e.g. network
-    errors) are raised as their original exception types instead,
-    becoming gRPC errors that the control plane's workflow retries."""
+    """A permanent storage failure (e.g. a part missing at commit
+    time), reported to the control plane as a `Commit` `error` so the
+    client can re-upload. Transient failures (e.g. network errors) are
+    raised as their original exception types instead, becoming gRPC
+    errors that the control plane's workflow retries."""
 
 
 class PartTooLarge(Exception):
@@ -255,7 +255,7 @@ class FilesystemBlobStore:
         return hmac.new(self._signing_key(), message,
                         hashlib.sha256).hexdigest()
 
-    def signature_for_put(
+    def signature_for_part_upload(
         self,
         encoded_blob_id: str,
         upload_id: str,
@@ -267,7 +267,7 @@ class FilesystemBlobStore:
             str(expiration)
         )
 
-    def signature_for_get(
+    def signature_for_download(
         self,
         encoded_blob_id: str,
         expiration: int,
@@ -338,7 +338,7 @@ class FilesystemBlobStore:
         await _fsync_directory(self._directory)
         await _fsync_directory(self.blob_directory(encoded))
 
-    def part_put_url(
+    def part_upload_url(
         self,
         blob_id: str,
         upload_id: str,
@@ -346,7 +346,7 @@ class FilesystemBlobStore:
     ) -> str:
         encoded = _encode_blob_id(blob_id)
         expiration = int(time.time()) + DEFAULT_URL_TTL_SECONDS
-        signature = self.signature_for_put(
+        signature = self.signature_for_part_upload(
             encoded, upload_id, part_number, expiration
         )
         return (
@@ -367,7 +367,7 @@ class FilesystemBlobStore:
             _MAX_URL_TTL_SECONDS,
         )
         expiration = int(time.time()) + ttl
-        signature = self.signature_for_get(encoded, expiration)
+        signature = self.signature_for_download(encoded, expiration)
         url = (f"{BLOB_PATH}?blob={encoded}&exp={expiration}&sig={signature}")
         return url, ttl
 
@@ -601,7 +601,7 @@ class FilesystemBlobStore:
             raise
         return metadata.blob if metadata.HasField("blob") else None
 
-    async def complete(
+    async def commit(
         self,
         context: ExternalContext,
         blob_id: str,
@@ -613,7 +613,7 @@ class FilesystemBlobStore:
         """Finishes the object from the parts the client reports,
         checking each against what was actually written, and returns
         its ETag. Raises `BlobStoreError` for what can never succeed;
-        completing an already-completed blob returns its ETag."""
+        committing an already-committed blob returns its ETag."""
         stored = await self._stored(context, blob_id)
         if stored is None:
             raise BlobStoreError("no upload was ever begun for this blob")
@@ -730,8 +730,8 @@ class FilesystemBlobStore:
         between the two a download would answer `200` and then run out
         of file."""
         try:
-            await StoredBlob.ref(blob_id).always().forget(context)
-        except StoredBlob.ForgetAborted as aborted:
+            await StoredBlob.ref(blob_id).always().remove(context)
+        except StoredBlob.RemoveAborted as aborted:
             if isinstance(
                 aborted.error,
                 rbt.v1alpha1.errors_pb2.StateNotConstructed,

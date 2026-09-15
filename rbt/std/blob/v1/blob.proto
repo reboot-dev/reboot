@@ -69,7 +69,7 @@ message Blob {
     // Parts may be uploaded. The initial status.
     UPLOADING = 0;
 
-    // `Commit` was called; the `CompleteUpload` workflow is
+    // `Commit` was called; the `PerformCommit` workflow is
     // finalizing the object in the data plane.
     COMMITTING = 1;
 
@@ -130,7 +130,7 @@ message Blob {
   // different part boundaries can carry different ETags.
   optional string etag = 8;
 
-  // Why the most recent `CompleteUpload` attempt failed. Cleared on
+  // Why the most recent `PerformCommit` attempt failed. Cleared on
   // success; while set, `status` has reverted to `UPLOADING` so the
   // client can re-upload parts and `Commit` again. The message
   // describes the failure; it does not identify which parts, if any,
@@ -245,9 +245,9 @@ message CommitResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
-message CompleteUploadRequest {}
+message PerformCommitRequest {}
 
-message CompleteUploadResponse {}
+message PerformCommitResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -371,7 +371,7 @@ service BlobMethods {
     };
   }
 
-  // Validates the reported parts and schedules the `CompleteUpload`
+  // Validates the reported parts and schedules the `PerformCommit`
   // workflow that finalizes the object in the data plane.
   // Observe the outcome reactively via `Info`: `status` becomes
   // `COMMITTED`, or reverts to `UPLOADING` with `commit_error` set.
@@ -397,7 +397,7 @@ service BlobMethods {
 
   // Finalizes the object in the data plane (which validates the
   // reported part ETags). Scheduled by `Commit`; not for direct use.
-  rpc CompleteUpload(CompleteUploadRequest) returns (CompleteUploadResponse) {
+  rpc PerformCommit(PerformCommitRequest) returns (PerformCommitResponse) {
     option (rbt.v1alpha1.method) = {
       workflow: {},
     };

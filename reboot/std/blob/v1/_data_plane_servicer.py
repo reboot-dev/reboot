@@ -15,8 +15,8 @@ from rbt.std.blob.v1.data_plane_pb2 import (
     ConfigurationResponse,
     DataPlaneBeginUploadRequest,
     DataPlaneBeginUploadResponse,
-    DataPlaneCompleteUploadRequest,
-    DataPlaneCompleteUploadResponse,
+    DataPlaneCommitRequest,
+    DataPlaneCommitResponse,
     DataPlaneDeleteRequest,
     DataPlaneDeleteResponse,
     DataPlaneGetDownloadUrlRequest,
@@ -60,7 +60,7 @@ class BlobStore(Protocol):
         returns it, reusing an existing uncommitted one where it can."""
         ...
 
-    def part_put_url(
+    def part_upload_url(
         self,
         blob_id: str,
         upload_id: str,
@@ -69,7 +69,7 @@ class BlobStore(Protocol):
         """A URL to `PUT` one part's bytes to."""
         ...
 
-    async def complete(
+    async def commit(
         self,
         context: ExternalContext,
         blob_id: str,
@@ -81,7 +81,7 @@ class BlobStore(Protocol):
         """Finishes the object from the parts the client reports,
         checking each against what was actually stored, and returns
         its ETag. Raises `BlobStoreError` for what can never succeed;
-        completing an already-completed blob returns its ETag."""
+        committing an already-committed blob returns its ETag."""
         ...
 
     def download_url(
@@ -155,7 +155,7 @@ class BlobDataPlaneServicer(data_plane_pb2_grpc.BlobDataPlaneServicer):
         instructions = [
             DataPlanePartUploadInstruction(
                 part_number=part_number,
-                url=self._blob_store().part_put_url(
+                url=self._blob_store().part_upload_url(
                     request.blob_id,
                     request.upload_id,
                     part_number,
@@ -166,14 +166,14 @@ class BlobDataPlaneServicer(data_plane_pb2_grpc.BlobDataPlaneServicer):
             instructions=instructions
         )
 
-    async def CompleteUpload(
+    async def Commit(
         self,
-        request: DataPlaneCompleteUploadRequest,
+        request: DataPlaneCommitRequest,
         grpc_context: LegacyGrpcContext,
-    ) -> DataPlaneCompleteUploadResponse:
+    ) -> DataPlaneCommitResponse:
         await self._authorize(grpc_context)
         try:
-            etag = await self._blob_store().complete(
+            etag = await self._blob_store().commit(
                 self._context(grpc_context),
                 request.blob_id,
                 request.upload_id,
@@ -187,13 +187,13 @@ class BlobDataPlaneServicer(data_plane_pb2_grpc.BlobDataPlaneServicer):
                     request.max_size if request.HasField("max_size") else None
                 ),
             )
-            return DataPlaneCompleteUploadResponse(etag=etag)
+            return DataPlaneCommitResponse(etag=etag)
         except BlobStoreError as error:
             # A permanent failure: reported in the response, since
             # retrying the call would only repeat it. Transient failures
             # raise other exceptions, which become the gRPC error the
             # caller retries.
-            return DataPlaneCompleteUploadResponse(error=str(error))
+            return DataPlaneCommitResponse(error=str(error))
 
     async def GetDownloadUrl(
         self,

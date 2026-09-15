@@ -43,8 +43,6 @@ from rbt.std.blob.v1.blob_rbt import (
     BlobPart,
     CommitRequest,
     CommitResponse,
-    CompleteUploadRequest,
-    CompleteUploadResponse,
     CreateRequest,
     CreateResponse,
     ExpireIfNotCommittedRequest,
@@ -60,6 +58,8 @@ from rbt.std.blob.v1.blob_rbt import (
     PartUploadedRequest,
     PartUploadedResponse,
     PartUploadInstruction,
+    PerformCommitRequest,
+    PerformCommitResponse,
     PerformRemoveRequest,
     PerformRemoveResponse,
     RemoveRequest,
@@ -72,7 +72,7 @@ from rbt.std.blob.v1.data_plane_pb2 import (
     ConfigurationRequest,
     ConfigurationResponse,
     DataPlaneBeginUploadRequest,
-    DataPlaneCompleteUploadRequest,
+    DataPlaneCommitRequest,
     DataPlaneDeleteRequest,
     DataPlaneGetDownloadUrlRequest,
     DataPlaneGetPartUploadInstructionsRequest,
@@ -204,7 +204,7 @@ class BlobServicer(Blob.Servicer):
             create=allow_if(any=[is_app_internal]),
             set_downloaders=allow_if(any=[is_app_internal]),
             begin_upload=allow_if(any=[is_app_internal]),
-            complete_upload=allow_if(any=[is_app_internal]),
+            perform_commit=allow_if(any=[is_app_internal]),
             perform_remove=allow_if(any=[is_app_internal]),
             expire_if_not_committed=allow_if(any=[is_app_internal]),
             # Either side may watch a blob: the uploader to follow
@@ -287,7 +287,7 @@ class BlobServicer(Blob.Servicer):
         # serializes each of them but holds nothing across the whole
         # method. Recording an upload session on a removed blob would
         # strand the data plane's directory forever, so drop the
-        # session instead. Deletion always wins, as in `CompleteUpload`.
+        # session instead. Deletion always wins, as in `PerformCommit`.
         removed = False
 
         async def record(state: Blob.State) -> None:
@@ -416,7 +416,7 @@ class BlobServicer(Blob.Servicer):
         request: CommitRequest,
     ) -> CommitResponse:
         if self.state.status == Blob.State.COMMITTING:
-            # Idempotent: the `CompleteUpload` workflow is already
+            # Idempotent: the `PerformCommit` workflow is already
             # scheduled.
             return CommitResponse()
         if self.state.status != Blob.State.UPLOADING:
@@ -438,23 +438,23 @@ class BlobServicer(Blob.Servicer):
         # client watching `Info` doesn't observe the stale error while
         # this fresh attempt is in flight.
         self.state.ClearField("commit_error")
-        await self.ref().schedule().complete_upload(context)
+        await self.ref().schedule().perform_commit(context)
         return CommitResponse()
 
     @classmethod
-    async def complete_upload(
+    async def perform_commit(
         cls,
         context: WorkflowContext,
-        request: CompleteUploadRequest,
-    ) -> CompleteUploadResponse:
+        request: PerformCommitRequest,
+    ) -> PerformCommitResponse:
         state = await Blob.ref().read(context)
 
         # A concurrent `Remove` may have moved the blob out of
         # COMMITTING (deletion always wins); if so, don't finalize.
         if state.status != Blob.State.COMMITTING:
-            return CompleteUploadResponse()
+            return PerformCommitResponse()
 
-        complete_request = DataPlaneCompleteUploadRequest(
+        commit_request = DataPlaneCommitRequest(
             blob_id=context.state_id,
             upload_id=state.upload_id,
             content_type=state.content_type,
@@ -466,7 +466,7 @@ class BlobServicer(Blob.Servicer):
         )
         ceiling = _size_ceiling(state)
         if ceiling is not None:
-            complete_request.max_size = ceiling
+            commit_request.max_size = ceiling
 
         async def attempt() -> tuple:
             # A response `error` is a *permanent* failure (e.g. an ETag
@@ -474,13 +474,13 @@ class BlobServicer(Blob.Servicer):
             # re-upload and re-commit. A gRPC error is transient and
             # propagates, so the workflow retries.
             async with data_plane_stub(context) as data_plane:
-                response = await data_plane.CompleteUpload(complete_request)
+                response = await data_plane.Commit(commit_request)
             if response.HasField("error"):
                 return ("failed", response.error)
             return ("committed", response.etag)
 
         outcome, detail = await at_least_once_per_workflow(
-            "complete upload", context, attempt
+            "commit", context, attempt
         )
 
         # Only transition if the blob is still COMMITTING: a
@@ -517,7 +517,7 @@ class BlobServicer(Blob.Servicer):
                 "cleanup orphaned bytes", context, cleanup
             )
 
-        return CompleteUploadResponse()
+        return PerformCommitResponse()
 
     async def info(
         self,
