@@ -219,3 +219,34 @@ vitest_test(
     node_modules = "//:node_modules",
     visibility = ["//visibility:public"],
 )
+
+ts_project(
+    name = "callgraph_test_ts",
+    srcs = ["callgraph.test.ts"],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "esnext",
+            "moduleResolution": "bundler",
+            "skipLibCheck": True,
+            "target": "es2020",
+        },
+    },
+    deps = [
+        "//rbt/dashboard/v1:dashboard_js_proto",
+        "//reboot/dashboard/web:dashboard_ts",
+        "//reboot/std/vitest:vitest_ts",
+    ],
+)
+
+vitest_test(
+    name = "callgraph_test",
+    config = "vitest.config.mjs",
+    data = [
+        "package.json",
+        ":callgraph_test_ts",
+    ],
+    node_modules = "//:node_modules",
+    visibility = ["//visibility:public"],
+)
