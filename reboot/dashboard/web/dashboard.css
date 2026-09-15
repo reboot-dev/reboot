@@ -480,6 +480,7 @@ nav a .nav-name {
    appear. */
 .watching {
   max-width: 840px;
+  margin: 0 auto;
   padding: 0 calc(var(--pane-gutter) + 10px) 10px;
   font-family: ui-monospace, Menlo, monospace;
   font-size: 10.5px;
@@ -534,6 +535,7 @@ nav a .nav-name {
      cells' own padding. */
   gap: 1px 0;
   max-width: 840px;
+  margin: 0 auto;
   padding: 0 var(--pane-gutter) 24px;
 }
 
@@ -725,11 +727,11 @@ a.change-name:hover {
   background: hsl(var(--background));
 }
 
-/* Set against the pane's left gutter rather than centred: the pages
-   under it are widths of their own, and only a shared left edge
-   keeps a heading over what it heads. */
+/* Centred in the pane, in the same column as the page under it,
+   with the pane's gutter at either side of the column. */
 header {
   max-width: 840px;
+  margin: 0 auto;
   padding: 40px var(--pane-gutter) 28px;
 }
 
@@ -744,6 +746,7 @@ header h1 {
    types pane sets its own padding on the same class. */
 .state-type {
   max-width: 840px;
+  margin: 0 auto;
   padding: 0 var(--pane-gutter) 48px;
 }
 
@@ -2154,7 +2157,7 @@ header .state-type-description {
   flex-direction: column;
   gap: 10px;
   max-width: 840px;
-  margin: 0 0 28px;
+  margin: 0 auto 28px;
   padding: 0 var(--pane-gutter);
 }
 
@@ -2338,12 +2341,14 @@ header .state-type-description {
 }
 
 /* The features page: the cards at the left, what the features leave
-   undescribed at the right. */
+   undescribed at the right, in the column the heading and the search
+   over them share, so the cards' left edge is theirs. */
 .features-overview {
   display: grid;
   grid-template-columns: 3fr 2fr;
   gap: 32px;
-  max-width: 1000px;
+  max-width: 840px;
+  margin: 0 auto;
   padding: 0 var(--pane-gutter);
 }
 
@@ -2460,7 +2465,7 @@ header .state-type-description {
   flex-wrap: wrap;
   gap: 14px;
   max-width: 840px;
-  margin: 0 0 24px;
+  margin: 0 auto 24px;
   padding: 0 var(--pane-gutter);
 }
 
@@ -2490,7 +2495,7 @@ header .state-type-description {
   flex-direction: column;
   gap: 8px;
   max-width: 840px;
-  margin: 0 0 24px;
+  margin: 0 auto 24px;
   padding: 0 var(--pane-gutter);
 }
 
