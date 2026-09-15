@@ -1227,8 +1227,8 @@ const MethodPane: FC<{
     [id, agents]
   );
   const distanceByCalleeId = useMemo(
-    () => calleeDistancesFrom(id, graph),
-    [id, graph]
+    () => calleeDistancesFrom(id, graph, agents),
+    [id, graph, agents]
   );
   // A method that calls itself leads the methods it calls directly.
   const calleesByDistance = useMemo(() => {
@@ -1604,6 +1604,7 @@ const AgentPane: FC<{ agent: GraphAgent }> = ({ agent }) => (
 const ToolPane: FC<{
   apis: APIs;
   graph: GraphStateType[];
+  agents: GraphAgent[];
   agent: GraphAgent;
   toolName: string;
   conesOfInfluence: ConesOfInfluence;
@@ -1612,6 +1613,7 @@ const ToolPane: FC<{
 }> = ({
   apis,
   graph,
+  agents,
   agent,
   toolName,
   conesOfInfluence,
@@ -1625,8 +1627,8 @@ const ToolPane: FC<{
     () =>
       tool === undefined
         ? new Map<string, number>()
-        : toolCalleeDistances(tool, graph),
-    [tool, graph]
+        : toolCalleeDistances(agent, tool, graph, agents),
+    [agent, tool, graph, agents]
   );
   const calleesByDistance = useMemo(
     () =>
@@ -1837,6 +1839,7 @@ const TypesPane: FC<{
           <ToolPane
             apis={apis}
             graph={graph}
+            agents={agents}
             agent={foundAgent}
             toolName={target.tool}
             conesOfInfluence={conesOfInfluence}

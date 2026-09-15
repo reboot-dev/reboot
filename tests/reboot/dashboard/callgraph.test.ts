@@ -1,19 +1,23 @@
 // The call graph's questions about one method: who calls it directly,
-// whether it calls itself, and what it calls, transitively.
+// whether it calls itself, and what it calls, transitively, through
+// the agents it runs.
 import { describe, expect, it } from "vitest";
 import { Servicer_Method_Call_How } from "../../../rbt/dashboard/v1/dashboard_pb";
 import type {
+  GraphAgent,
   GraphCall,
   GraphStateType,
   MethodInGraph,
 } from "../../../reboot/dashboard/web/src/callgraph";
 import {
+  agentId,
   calleeDistancesFrom,
   callsItself,
   directCallers,
   directToolCallers,
   methodId,
   toolCalleeDistances,
+  toolId,
 } from "../../../reboot/dashboard/web/src/callgraph";
 
 const call = (
@@ -101,17 +105,52 @@ describe("the methods a method calls", () => {
   });
 });
 
+// An agent with one tool, calling `B.b` and `C.c`.
+const tool = {
+  name: "look_up",
+  calls: [call("app.v1.B", "b"), call("app.v1.C", "c")],
+  runs: [],
+};
+
+const librarian: GraphAgent = {
+  id: agentId("librarian"),
+  name: "librarian",
+  systemPrompt: [],
+  instructions: [],
+  tools: [tool],
+};
+
 describe("the methods a tool calls", () => {
   it("start at one call away and reach out the way a method's do", () => {
-    const tool = {
-      name: "look_up",
-      calls: [call("app.v1.B", "b"), call("app.v1.C", "c")],
-      runs: [],
-    };
-    expect(toolCalleeDistances(tool, graph)).toEqual(
+    const distances = toolCalleeDistances(librarian, tool, graph, [librarian]);
+    expect(distances.get(B_b)).toBe(1);
+    expect(distances.get(C_c)).toBe(1);
+    expect(distances.get(C_d)).toBeUndefined();
+  });
+});
+
+describe("the agents a method runs", () => {
+  it("lead on through their tools to the methods those call", () => {
+    // `C.d` runs the librarian, and calls nothing itself.
+    const running: GraphStateType[] = graph.map((stateType) =>
+      stateType.id !== "app.v1.C"
+        ? stateType
+        : {
+            ...stateType,
+            methods: stateType.methods.map((method) =>
+              method.name !== "d"
+                ? method
+                : { ...method, runs: [{ agentName: "librarian", count: 1 }] }
+            ),
+          }
+    );
+    expect(calleeDistancesFrom(C_d, running, [librarian])).toEqual(
       new Map([
-        [B_b, 1],
-        [C_c, 1],
+        [C_d, 0],
+        [librarian.id, 1],
+        [toolId(librarian.id, "look_up"), 2],
+        [B_b, 3],
+        [C_c, 3],
       ])
     );
   });

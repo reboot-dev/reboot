@@ -51,9 +51,11 @@ import type {
 } from "./callgraph";
 import {
   agentId,
+  distancesFrom,
   groupStateTypesByPackage,
   isDrawn,
   methodId,
+  rowGraphOf,
   toolId,
 } from "./callgraph";
 import type { Kind } from "./link_properties_to_data_types";
@@ -871,89 +873,13 @@ const edgesOfPackages = (
   return [...edgesById.values()];
 };
 
-// Who leads to whom, over every row the graph draws, which is what the
-// chosen row's cones follow: a method leads to the methods it calls
-// and the agents it runs, an agent to each of its tools, which running
-// it reaches, and a tool on the way a method does. Collapse-blind, so
-// a cone continues through a collapsed box.
-interface RowGraph {
-  callees: Map<string, string[]>;
-  callers: Map<string, string[]>;
-}
-
-const rowGraphOf = (
-  packages: GraphPackage[],
-  agents: GraphAgent[]
-): RowGraph => {
-  const callees = new Map<string, string[]>();
-  const callers = new Map<string, string[]>();
-  const agentIdsByName = new Map(agents.map((agent) => [agent.name, agent.id]));
-  const lead = (from: string, to: string): void => {
-    callees.set(from, [...(callees.get(from) ?? []), to]);
-    callers.set(to, [...(callers.get(to) ?? []), from]);
-  };
-  const leadFrom = (
-    rowId: string,
-    calls: GraphCall[],
-    runs: GraphRun[]
-  ): void => {
-    for (const call of calls) {
-      if (isDrawn(call)) {
-        lead(rowId, methodId(call.stateTypeName, call.methodName));
-      }
-    }
-    for (const run of runs) {
-      const agent = agentIdsByName.get(run.agentName);
-      if (agent !== undefined) {
-        lead(rowId, agent);
-      }
-    }
-  };
-  for (const graphPackage of packages) {
-    for (const stateType of graphPackage.stateTypes) {
-      for (const method of stateType.methods) {
-        leadFrom(
-          methodId(stateType.id, method.name),
-          method.calls,
-          method.runs
-        );
-      }
-    }
-  }
-  for (const agent of agents) {
-    for (const tool of agent.tools) {
-      const rowId = toolId(agent.id, tool.name);
-      lead(agent.id, rowId);
-      leadFrom(rowId, tool.calls, tool.runs);
-    }
-  }
-  return { callees, callers };
-};
-
 // Every row reached from one, itself included, following `leads`
 // for at most `maxDistance` steps.
 const reachedFrom = (
   from: string,
   leads: Map<string, string[]>,
   maxDistance = Infinity
-): Set<string> => {
-  const distanceByRowId = new Map([[from, 0]]);
-  const toExpand = [from];
-  while (toExpand.length > 0) {
-    const rowId = toExpand.shift()!;
-    const distance = distanceByRowId.get(rowId)! + 1;
-    if (distance > maxDistance) {
-      continue;
-    }
-    for (const next of leads.get(rowId) ?? []) {
-      if (!distanceByRowId.has(next)) {
-        distanceByRowId.set(next, distance);
-        toExpand.push(next);
-      }
-    }
-  }
-  return new Set(distanceByRowId.keys());
-};
+): Set<string> => new Set(distancesFrom(from, leads, maxDistance).keys());
 
 // ---------------------------------------------------------------
 // The pieces React Flow draws.
@@ -1850,8 +1776,14 @@ const GraphCanvas: FC<{
     [selectedMethodId, onSelectMethod]
   );
 
+  // What the chosen row's cones follow. Collapse-blind, so a cone
+  // continues through a collapsed box.
   const rowGraph = useMemo(
-    () => rowGraphOf(packages, agents),
+    () =>
+      rowGraphOf(
+        packages.flatMap((graphPackage) => graphPackage.stateTypes),
+        agents
+      ),
     [packages, agents]
   );
 

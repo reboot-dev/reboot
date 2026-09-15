@@ -176,96 +176,117 @@ export const callsItself = (
     )
   );
 
-// Every method the given one calls, transitively, with how many
-// calls away it is: the downstream closure over the drawn calls,
-// the given method itself at zero.
-export const calleeDistancesFrom = (
-  from: string,
-  stateTypes: GraphStateType[]
-): Map<string, number> => {
-  const callsByMethodId = new Map(
-    stateTypes.flatMap((stateType) =>
-      stateType.methods.map(
-        (method) => [methodId(stateType.id, method.name), method.calls] as const
-      )
-    )
-  );
-  const distanceByCalleeId = new Map([[from, 0]]);
-  const calleeIdsToExpand = [from];
-  while (calleeIdsToExpand.length > 0) {
-    const callerId = calleeIdsToExpand.shift()!;
-    for (const call of callsByMethodId.get(callerId) ?? []) {
-      if (!isDrawn(call)) {
-        continue;
-      }
-      const calleeId = methodId(call.stateTypeName, call.methodName);
-      if (!distanceByCalleeId.has(calleeId)) {
-        distanceByCalleeId.set(calleeId, distanceByCalleeId.get(callerId)! + 1);
-        calleeIdsToExpand.push(calleeId);
+// Who leads to whom, over every row the graph has, a method, an
+// agent or a tool: a method leads to the methods it calls and the
+// agents it runs, an agent to each of its tools, which running it
+// reaches, and a tool on the way a method does. Keyed by row id, a
+// method's, an agent's or a tool's, each way round.
+export interface RowGraph {
+  callees: Map<string, string[]>;
+  callers: Map<string, string[]>;
+}
+
+export const rowGraphOf = (
+  stateTypes: GraphStateType[],
+  agents: GraphAgent[]
+): RowGraph => {
+  const callees = new Map<string, string[]>();
+  const callers = new Map<string, string[]>();
+  const agentIdsByName = new Map(agents.map((agent) => [agent.name, agent.id]));
+  const lead = (from: string, to: string): void => {
+    callees.set(from, [...(callees.get(from) ?? []), to]);
+    callers.set(to, [...(callers.get(to) ?? []), from]);
+  };
+  const leadFrom = (
+    rowId: string,
+    calls: GraphCall[],
+    runs: GraphRun[]
+  ): void => {
+    for (const call of calls) {
+      if (isDrawn(call)) {
+        lead(rowId, methodId(call.stateTypeName, call.methodName));
       }
     }
-  }
-  return distanceByCalleeId;
-};
-
-// Every method a tool calls, transitively, with how many calls away
-// it is: the methods the tool calls itself at one, and on from there
-// the way a method's are.
-export const toolCalleeDistances = (
-  tool: GraphTool,
-  stateTypes: GraphStateType[]
-): Map<string, number> => {
-  const distanceByCalleeId = new Map<string, number>();
-  for (const call of tool.calls.filter(isDrawn)) {
-    const from = methodId(call.stateTypeName, call.methodName);
-    for (const [calleeId, distance] of calleeDistancesFrom(from, stateTypes)) {
-      const distanceFromTool = distance + 1;
-      if ((distanceByCalleeId.get(calleeId) ?? Infinity) > distanceFromTool) {
-        distanceByCalleeId.set(calleeId, distanceFromTool);
+    for (const run of runs) {
+      const agent = agentIdsByName.get(run.agentName);
+      if (agent !== undefined) {
+        lead(rowId, agent);
       }
     }
-  }
-  return distanceByCalleeId;
-};
-
-// Every method that calls the given one, transitively, with how many
-// calls away it is: the upstream closure over the same drawn calls,
-// the given method itself at zero.
-export const callerDistancesTo = (
-  to: string,
-  stateTypes: GraphStateType[]
-): Map<string, number> => {
-  const callerIdsByCalleeId = new Map<string, string[]>();
+  };
   for (const stateType of stateTypes) {
     for (const method of stateType.methods) {
-      const callerId = methodId(stateType.id, method.name);
-      for (const call of method.calls) {
-        if (!isDrawn(call)) {
-          continue;
-        }
-        const calleeId = methodId(call.stateTypeName, call.methodName);
-        const callerIds = callerIdsByCalleeId.get(calleeId);
-        if (callerIds === undefined) {
-          callerIdsByCalleeId.set(calleeId, [callerId]);
-        } else {
-          callerIds.push(callerId);
-        }
-      }
+      leadFrom(methodId(stateType.id, method.name), method.calls, method.runs);
     }
   }
-  const distanceByCallerId = new Map([[to, 0]]);
-  const callerIdsToExpand = [to];
-  while (callerIdsToExpand.length > 0) {
-    const calleeId = callerIdsToExpand.shift()!;
-    for (const callerId of callerIdsByCalleeId.get(calleeId) ?? []) {
-      if (!distanceByCallerId.has(callerId)) {
-        distanceByCallerId.set(callerId, distanceByCallerId.get(calleeId)! + 1);
-        callerIdsToExpand.push(callerId);
-      }
+  for (const agent of agents) {
+    for (const tool of agent.tools) {
+      const rowId = toolId(agent.id, tool.name);
+      lead(agent.id, rowId);
+      leadFrom(rowId, tool.calls, tool.runs);
     }
   }
-  return distanceByCallerId;
+  return { callees, callers };
 };
+
+// Every row reached from one following `leads`, with how many leads
+// away it is, the row itself at zero, out to `maxDistance`.
+export const distancesFrom = (
+  from: string,
+  leads: Map<string, string[]>,
+  maxDistance = Infinity
+): Map<string, number> => {
+  const distanceByRowId = new Map([[from, 0]]);
+  const rowIdsToExpand = [from];
+  while (rowIdsToExpand.length > 0) {
+    const rowId = rowIdsToExpand.shift()!;
+    const distance = distanceByRowId.get(rowId)! + 1;
+    if (distance > maxDistance) {
+      continue;
+    }
+    for (const next of leads.get(rowId) ?? []) {
+      if (!distanceByRowId.has(next)) {
+        distanceByRowId.set(next, distance);
+        rowIdsToExpand.push(next);
+      }
+    }
+  }
+  return distanceByRowId;
+};
+
+// Every row the given method reaches, transitively, with how many
+// leads away it is: the methods it calls, the agents it runs, on
+// through their tools to what those call, and so on; the method
+// itself at zero.
+export const calleeDistancesFrom = (
+  from: string,
+  stateTypes: GraphStateType[],
+  agents: GraphAgent[] = []
+): Map<string, number> =>
+  distancesFrom(from, rowGraphOf(stateTypes, agents).callees);
+
+// Every row one of an agent's tools reaches, the same way: the
+// methods the tool calls itself at one, and on from there.
+export const toolCalleeDistances = (
+  agent: GraphAgent,
+  tool: GraphTool,
+  stateTypes: GraphStateType[],
+  agents: GraphAgent[]
+): Map<string, number> =>
+  distancesFrom(
+    toolId(agent.id, tool.name),
+    rowGraphOf(stateTypes, agents).callees
+  );
+
+// Every row that reaches the given method, transitively, with how
+// many leads away it is: the upstream closure over the same leads,
+// the method itself at zero.
+export const callerDistancesTo = (
+  to: string,
+  stateTypes: GraphStateType[],
+  agents: GraphAgent[] = []
+): Map<string, number> =>
+  distancesFrom(to, rowGraphOf(stateTypes, agents).callers);
 
 // A key unique to one agent, in the same space as the state types',
 // which cannot hold a colon.
