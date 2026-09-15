@@ -20,7 +20,6 @@ import base64
 import hmac
 import re
 import time
-from rbt.std.blob.v1.filesystem_rbt import StoredBlob, StoredPart
 from reboot.aio.http import PythonWebFramework
 from reboot.std.blob.v1._content_type import download_headers
 from reboot.std.blob.v1._store import (
@@ -32,7 +31,7 @@ from reboot.std.blob.v1._store import (
 )
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
-from typing import AsyncIterator, Callable, Coroutine, Optional
+from typing import Callable, Coroutine, Optional
 
 # Path parameters are also filesystem path components; restrict them
 # to the alphabets the store actually produces (URL-safe base64 blob
@@ -137,39 +136,17 @@ def _make_put_part(
                 ),
             )
 
-        # The bytes are on disk under a name of their own; whether
-        # the object is made of them is this call's to decide, and it
-        # decides for every server that might be serving this blob.
-        # Refused bytes go, which is safe because the file's name
-        # belongs to this write alone: no manifest can point at it
-        # unless this very call's claim succeeded. Anything that
-        # outlives an interrupted request is reclaimed at commit, and
-        # with the blob's directory on `Delete`.
-        # An app-internal context, which is what reaches `StoredBlob`,
-        # taken only now that the signature has verified this request
-        # holds a URL this data plane minted.
-        published = await StoredBlob.ref(_blob_id(blob)).always().publish_part(
+        # An app-internal context, which is what the store reaches
+        # `StoredBlob` with, taken only now that the signature has
+        # verified this request holds a URL this data plane minted.
+        published = await store.publish_part(
             request.state.reboot_app_internal_context(request),
-            upload_id=upload,
-            part=StoredPart(
-                number=staged.part.number,
-                size=staged.part.size,
-                etag=staged.part.etag,
-                storage_id=staged.part.storage_id,
-            ),
+            _blob_id(blob),
+            upload,
+            staged,
         )
-        if not published.published:
-            await store.discard_part(staged)
+        if not published:
             return Response(status_code=409, content="Blob already committed")
-
-        if published.HasField("superseded_storage_id"):
-            # This part had been uploaded before. Nothing is made of
-            # the earlier bytes now, and the manifest that could still
-            # name them is refused at commit, so they are removed
-            # rather than left to accumulate a file per attempt.
-            await store.discard_storage_id(
-                blob, upload, part_number, published.superseded_storage_id
-            )
 
         # Match S3: the ETag response header is the part's MD5, quoted.
         return Response(
@@ -199,30 +176,19 @@ def _make_get_blob(
 
         # As in `put_part`: an app-internal context, taken only below a
         # verified signature.
-        metadata = await StoredBlob.ref(_blob_id(blob)).metadata(
-            request.state.reboot_app_internal_context(request)
+        stored = await store.read(
+            request.state.reboot_app_internal_context(request),
+            _blob_id(blob),
         )
-        stored = metadata.blob if metadata.HasField("blob") else None
-        if stored is None or not stored.committed:
+        if stored is None:
             return Response(status_code=404, content="No such blob")
-
-        upload_id = stored.upload_id
-        parts = sorted(stored.parts, key=lambda part: part.number)
-        total_size = sum(part.size for part in parts)
-
-        async def stream() -> AsyncIterator[bytes]:
-            for part in parts:
-                async for chunk in store.read_part(
-                    blob, upload_id, part.number, part.storage_id
-                ):
-                    yield chunk
 
         media_type, safety_headers = download_headers(stored.content_type)
         return StreamingResponse(
-            stream(),
+            stored.chunks,
             media_type=media_type,
             headers={
-                "Content-Length": str(total_size),
+                "Content-Length": str(stored.size),
                 "ETag": f'"{stored.etag}"',
                 "Accept-Ranges": "none",
                 **safety_headers,
@@ -240,8 +206,9 @@ def mount_byte_routes(
     own HTTP server.
 
     Registered like any other route, with no privilege of their own:
-    what reaches `StoredBlob` is a context each handler takes for
-    itself once a signature has verified, which is the only point at
-    which it has established anything about its caller."""
+    the context the store reaches `StoredBlob` with is one each
+    handler takes for itself once a signature has verified, which is
+    the only point at which it has established anything about its
+    caller."""
     http.put(PART_PATH)(_make_put_part(store))
     http.get(BLOB_PATH)(_make_get_blob(store))

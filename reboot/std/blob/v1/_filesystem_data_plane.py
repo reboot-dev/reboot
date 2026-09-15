@@ -19,14 +19,14 @@ rests on is Envoy: a listener whose caller IDs it does not trust has
 `trust_caller_id` in `reboot/routing/envoy_config.py`), so a caller ID
 that survives was put there by something entitled to.
 
-Metadata lives in `StoredBlob`; bytes live in `FilesystemBlobStore`.
-Neither holds state of its own, so any of a replica's servers can
-serve any call.
+Everything else is the store's: `FilesystemBlobStore` keeps the
+bytes and drives `StoredBlob`, the state machine that keeps the
+metadata, so each call here is authorized and then handed over.
+Nothing here holds state of its own, so any of a replica's servers
+can serve any call.
 """
 
 import grpc
-import rbt.std.blob.v1.filesystem_pb2 as filesystem_pb2
-import rbt.v1alpha1.errors_pb2
 from rbt.std.blob.v1.data_plane_pb2 import (
     ConfigurationRequest,
     ConfigurationResponse,
@@ -43,7 +43,6 @@ from rbt.std.blob.v1.data_plane_pb2 import (
     DataPlanePartUploadInstruction,
 )
 from rbt.std.blob.v1.data_plane_pb2_grpc import BlobDataPlaneServicer
-from rbt.std.blob.v1.filesystem_rbt import StoredBlob, StoredPart
 from reboot.aio.caller_id import CallerID
 from reboot.aio.external import ExternalContext
 from reboot.aio.headers import CALLER_ID_HEADER
@@ -52,27 +51,13 @@ from reboot.aio.internals.contextvars import get_application_id
 from reboot.std.blob.v1._store import (
     BlobStoreError,
     FilesystemBlobStore,
-    _encode_blob_id,
-    composite_etag,
+    UploadedPart,
 )
-from typing import Optional
-from uuid import NAMESPACE_URL, UUID, uuid5
-
-
-def _begin_upload_key(blob_id: str) -> UUID:
-    """The idempotency key for beginning one blob's upload.
-
-    Derived from the blob ID rather than taken from the caller,
-    because the control plane both retries this inside a workflow and
-    re-runs it to validate that workflow's effects. "Begin the upload
-    for this blob" is one operation however many times it is asked
-    for, so the blob names it."""
-    return uuid5(NAMESPACE_URL, f"reboot.std.blob.v1/begin-upload/{blob_id}")
 
 
 class FilesystemDataPlaneServicer(BlobDataPlaneServicer):
     """Serves `BlobDataPlane` from the application whose blobs it
-    holds.
+    holds: each call is authorized, then handed to the store.
 
     The store is set by `BlobLibrary` once it knows where this
     application keeps them."""
@@ -116,8 +101,8 @@ class FilesystemDataPlaneServicer(BlobDataPlaneServicer):
             raise RuntimeError("This is unreachable")
 
     def _context(self, grpc_context: LegacyGrpcContext) -> ExternalContext:
-        """A context for reaching `StoredBlob` on behalf of a call
-        `_authorize_caller` has admitted."""
+        """The context the store reaches `StoredBlob` with, on behalf
+        of a call `_authorize_caller` has admitted."""
         return grpc_context.external_context(name="blob data plane")
 
     async def Configuration(
@@ -134,21 +119,12 @@ class FilesystemDataPlaneServicer(BlobDataPlaneServicer):
         grpc_context: LegacyGrpcContext,
     ) -> DataPlaneBeginUploadResponse:
         await self._authorize_caller(grpc_context)
-        context = self._context(grpc_context)
-        _, response = await StoredBlob.idempotently(
-            key=_begin_upload_key(request.blob_id),
-        ).BeginUpload(
-            context,
+        upload_id = await self._store.begin_upload(
+            self._context(grpc_context),
             request.blob_id,
-            content_type=request.content_type,
+            request.content_type,
         )
-        # After the session exists in state, so a directory is never
-        # left behind for a session nothing knows about.
-        await self._store.make_upload_directory(
-            request.blob_id,
-            response.upload_id,
-        )
-        return DataPlaneBeginUploadResponse(upload_id=response.upload_id)
+        return DataPlaneBeginUploadResponse(upload_id=upload_id)
 
     async def GetPartUploadInstructions(
         self,
@@ -177,7 +153,20 @@ class FilesystemDataPlaneServicer(BlobDataPlaneServicer):
     ) -> DataPlaneCompleteUploadResponse:
         await self._authorize_caller(grpc_context)
         try:
-            etag = await self._complete(request, self._context(grpc_context))
+            etag = await self._store.complete(
+                self._context(grpc_context),
+                request.blob_id,
+                request.upload_id,
+                request.content_type,
+                [
+                    UploadedPart(
+                        number=part.number, etag=part.etag, size=part.size
+                    ) for part in request.parts
+                ],
+                max_size=(
+                    request.max_size if request.HasField("max_size") else None
+                ),
+            )
             return DataPlaneCompleteUploadResponse(etag=etag)
         except BlobStoreError as error:
             # A permanent failure: report it so the control plane can
@@ -185,138 +174,6 @@ class FilesystemDataPlaneServicer(BlobDataPlaneServicer):
             # failures raise other exceptions, which the control
             # plane's workflow retries.
             return DataPlaneCompleteUploadResponse(error=str(error))
-
-    async def _stored(
-        self,
-        blob_id: str,
-        context: ExternalContext,
-    ) -> Optional[filesystem_pb2.StoredBlob]:
-        """The metadata stored for a blob, or `None` when none is.
-
-        A blob whose upload never began has no state at all, which the
-        framework reports by refusing the read rather than by
-        answering with an absent one."""
-        try:
-            metadata = await StoredBlob.ref(blob_id).metadata(context)
-        except StoredBlob.MetadataAborted as aborted:
-            if isinstance(
-                aborted.error,
-                rbt.v1alpha1.errors_pb2.StateNotConstructed,
-            ):
-                return None
-            raise
-        return metadata.blob if metadata.HasField("blob") else None
-
-    async def _complete(
-        self,
-        request: DataPlaneCompleteUploadRequest,
-        context: ExternalContext,
-    ) -> str:
-        stored = await self._stored(request.blob_id, context)
-        if stored is None:
-            raise BlobStoreError("no upload was ever begun for this blob")
-        if stored.committed:
-            # A retried `CompleteUpload`. The object is finished and
-            # its ETag is what it was -- but reclaiming may not have
-            # run, or not finished, so it runs again from what was
-            # committed.
-            await self._store.reclaim(
-                _encode_blob_id(request.blob_id),
-                stored.upload_id,
-                [(part.number, part.storage_id) for part in stored.parts],
-            )
-            return stored.etag
-        if stored.upload_id != request.upload_id:
-            # The parts that would be committed were written under a
-            # different session than the one being completed, so they
-            # are not the parts this verified.
-            raise BlobStoreError(
-                "the upload session being completed is not the one this "
-                "blob's parts were written under"
-            )
-
-        published = {part.number: part for part in stored.parts}
-        reported = {part.number: part for part in request.parts}
-        if len(reported) == 0:
-            raise BlobStoreError("no parts were reported")
-
-        last_part_number = max(reported)
-        for number in sorted(reported):
-            part = published.get(number)
-            if part is None:
-                raise BlobStoreError(f"part {number} was never uploaded")
-            if part.etag != reported[number].etag.strip('"'):
-                raise BlobStoreError(
-                    f"part {number} ETag mismatch: the uploaded bytes do "
-                    "not match what was reported via `PartUploaded`"
-                )
-            if part.size != reported[number].size:
-                raise BlobStoreError(
-                    f"part {number} size mismatch: uploaded {part.size} "
-                    f"bytes but {reported[number].size} were reported via "
-                    "`PartUploaded`"
-                )
-            if (
-                number != last_part_number and
-                part.size != self._store.part_size
-            ):
-                # S3 rejects a short middle part with `EntityTooSmall`;
-                # reject it here too, so that an upload which cannot
-                # commit against the S3 store cannot commit against
-                # this one either.
-                raise BlobStoreError(
-                    f"part {number} is {part.size} bytes, but every part "
-                    f"except the last must be exactly "
-                    f"{self._store.part_size} bytes"
-                )
-
-        total_size = sum(published[number].size for number in reported)
-        max_size: Optional[int] = (
-            request.max_size if request.HasField("max_size") else None
-        )
-        # Checked against what the parts were found to hold, not
-        # against the sizes that were reported alongside them.
-        if max_size is not None and total_size > max_size:
-            raise BlobStoreError(
-                f"uploaded {total_size} bytes exceeds the maximum of "
-                f"{max_size}"
-            )
-
-        manifest = [
-            StoredPart(
-                number=number,
-                size=published[number].size,
-                etag=published[number].etag,
-                storage_id=published[number].storage_id,
-            ) for number in sorted(reported)
-        ]
-        etag = composite_etag([part.etag for part in manifest])
-        committed = await StoredBlob.ref(request.blob_id).always().commit(
-            context,
-            upload_id=request.upload_id,
-            content_type=request.content_type,
-            etag=etag,
-            parts=manifest,
-        )
-        if not committed.committed:
-            raise BlobStoreError(
-                "a part was uploaded again while this upload was being "
-                "completed; report the parts and commit again"
-            )
-        # The manifest is fixed, so anything else this session wrote
-        # -- a part uploaded and never reported, a version of a part
-        # that lost -- belongs to nothing and is safe to remove. Done
-        # after the commit, so a failure here leaves files behind
-        # rather than taking away bytes the object is made of; a retry
-        # reclaims them above.
-        # `commit` accepted this manifest, and refuses one whose parts
-        # have been superseded, so it is exactly what was recorded.
-        await self._store.reclaim(
-            _encode_blob_id(request.blob_id),
-            request.upload_id,
-            [(part.number, part.storage_id) for part in manifest],
-        )
-        return etag
 
     async def GetDownloadUrl(
         self,
@@ -339,26 +196,11 @@ class FilesystemDataPlaneServicer(BlobDataPlaneServicer):
         grpc_context: LegacyGrpcContext,
     ) -> DataPlaneDeleteResponse:
         await self._authorize_caller(grpc_context)
-        context = self._context(grpc_context)
-        # A part lives inside the blob's own directory, so removing the
-        # directory removes any unfinished upload with it, whatever
-        # `upload_ids` says.
-        # Forgotten before the bytes go, so that nothing reads a
-        # manifest naming bytes that are already gone: between the two
-        # a download would answer `200` and then run out of file.
-        try:
-            await StoredBlob.ref(request.blob_id).always().forget(context)
-        except StoredBlob.ForgetAborted as aborted:
-            if isinstance(
-                aborted.error,
-                rbt.v1alpha1.errors_pb2.StateNotConstructed,
-            ):
-                # Nothing was ever stored for this blob, so there is
-                # nothing to forget and deleting it has succeeded.
-                pass
-            else:
-                raise
-        await self._store.delete(request.blob_id)
+        await self._store.delete(
+            self._context(grpc_context),
+            request.blob_id,
+            upload_ids=list(request.upload_ids),
+        )
         return DataPlaneDeleteResponse()
 
 
