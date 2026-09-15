@@ -1,13 +1,23 @@
-"""The filesystem blob store: bytes storage for the open-source blob
-data plane.
+"""The filesystem blob store: the open-source blob data plane's
+storage, and the bookkeeping that makes it one.
 
-A blob's *bytes* live here; all its metadata lives in state machines.
-The `Blob` control plane (see `blob.proto`) holds what the application
-knows about a blob, and `StoredBlob` (see `filesystem.proto`) holds
-what this store knows about its parts. Nothing about an object is
-recorded on disk beside the bytes, so any of a replica's servers can
-serve an upload or a download for one blob while agreeing with the
-others on nothing but the directory.
+A blob's *bytes* live here as part files; its metadata lives in state
+machines. The `Blob` control plane (see `blob.proto`) holds what the
+application knows about a blob, and `StoredBlob` (see
+`filesystem.proto`) holds what this store knows about its parts:
+which session they were written under, which writes the object is
+made of, whether it is committed. Nothing about an object is recorded
+on disk beside the bytes, so any of a replica's servers can serve an
+upload or a download for one blob while agreeing with the others on
+nothing but the directory -- `StoredBlob` is where their writes are
+ordered against each other.
+
+This store drives that state machine itself, so that it offers the
+same surface an object store does (`begin_upload`, `complete`,
+`delete`, ...) and whoever serves it -- the `BlobDataPlane` servicer,
+the byte routes -- only authorizes and delegates. Its methods take
+the context they reach `StoredBlob` with; a store backed by an object
+store keeps its metadata there instead and needs none.
 
 The store mimics S3's multipart-upload semantics (numbered parts,
 per-part MD5 ETags, ETag-validating completion) so that clients drive
@@ -23,12 +33,16 @@ import base64
 import hashlib
 import hmac
 import os
+import rbt.std.blob.v1.filesystem_pb2 as filesystem_pb2
+import rbt.v1alpha1.errors_pb2
 import shutil
 import time
 from dataclasses import dataclass
+from rbt.std.blob.v1.filesystem_rbt import StoredBlob, StoredPart
+from reboot.aio.external import ExternalContext
 from reboot.crypto import root_keys
 from typing import AsyncIterator, Optional, Sequence
-from uuid import uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 # The part size clients should use. Every part except the last must be
 # exactly this size. Must be at least 5 MiB (the S3 minimum part size,
@@ -150,6 +164,17 @@ def composite_etag(etags: Sequence[str]) -> str:
     return hashlib.md5(digests).hexdigest() + f"-{len(etags)}"
 
 
+def _begin_upload_key(blob_id: str) -> UUID:
+    """The idempotency key for beginning one blob's upload.
+
+    Derived from the blob ID rather than taken from the caller,
+    because the control plane both retries this inside a workflow and
+    re-runs it to validate that workflow's effects. "Begin the upload
+    for this blob" is one operation however many times it is asked
+    for, so the blob names it."""
+    return uuid5(NAMESPACE_URL, f"reboot.std.blob.v1/begin-upload/{blob_id}")
+
+
 class FilesystemBlobStore:
     """Stores blob bytes as part files on the local filesystem, served
     over HTTP by the application (see `_http.py`).
@@ -265,7 +290,27 @@ class FilesystemBlobStore:
             f"part.{part_number:08d}.{storage_id}",
         )
 
-    async def make_upload_directory(
+    async def begin_upload(
+        self,
+        context: ExternalContext,
+        blob_id: str,
+        content_type: str,
+    ) -> str:
+        """Establishes the session a blob's parts are written under and
+        returns it: the one already established, if there is one."""
+        _, response = await StoredBlob.idempotently(
+            key=_begin_upload_key(blob_id),
+        ).BeginUpload(
+            context,
+            blob_id,
+            content_type=content_type,
+        )
+        # After the session exists in state, so a directory is never
+        # left behind for a session nothing knows about.
+        await self._make_upload_directory(blob_id, response.upload_id)
+        return response.upload_id
+
+    async def _make_upload_directory(
         self,
         blob_id: str,
         upload_id: str,
@@ -380,30 +425,53 @@ class FilesystemBlobStore:
             path=path,
         )
 
-    async def discard_storage_id(
+    async def publish_part(
         self,
-        encoded_blob_id: str,
+        context: ExternalContext,
+        blob_id: str,
         upload_id: str,
-        part_number: int,
-        storage_id: str,
-    ) -> None:
-        """Drops one write of a part by name."""
-        await _unlink_if_present(
-            self.part_path(
-                encoded_blob_id, upload_id, part_number, storage_id
+        staged: StagedPart,
+    ) -> bool:
+        """Makes a staged part's bytes part of the object, and says
+        whether it did.
+
+        The bytes are on disk under a name of their own; whether the
+        object is made of them is `StoredBlob`'s to decide, and it
+        decides for every server that might be serving this blob.
+        Refused bytes are removed, which is safe because the file's
+        name belongs to this write alone: no manifest can point at it
+        unless this very claim succeeded. Anything that outlives an
+        interrupted request is reclaimed at completion, and with the
+        blob's directory on `delete`."""
+        published = await StoredBlob.ref(blob_id).always().publish_part(
+            context,
+            upload_id=upload_id,
+            part=StoredPart(
+                number=staged.part.number,
+                size=staged.part.size,
+                etag=staged.part.etag,
+                storage_id=staged.part.storage_id,
             ),
         )
+        if not published.published:
+            await _unlink_if_present(staged.path)
+            return False
+        if published.HasField("superseded_storage_id"):
+            # This part had been uploaded before. Nothing is made of
+            # the earlier bytes now, and the manifest that could still
+            # name them is refused at completion, so they are removed
+            # rather than left to accumulate a file per attempt.
+            await _unlink_if_present(
+                self.part_path(
+                    _encode_blob_id(blob_id),
+                    upload_id,
+                    staged.part.number,
+                    published.superseded_storage_id,
+                ),
+            )
+        return True
 
-    async def discard_part(self, staged: StagedPart) -> None:
-        """Drops a part's bytes, for one the object turned out not to
-        be made of.
-
-        Safe because the name belongs to this write alone: no manifest
-        can be pointing at it unless this write's own `PublishPart`
-        succeeded."""
-        await _unlink_if_present(staged.path)
-
-    async def reclaim(
+    async def _reclaim(
         self,
         encoded_blob_id: str,
         upload_id: str,
@@ -471,7 +539,170 @@ class FilesystemBlobStore:
             os.path.join(self.blob_directory(encoded_blob_id), upload_id)
         )
 
-    async def delete(self, blob_id: str) -> None:
+    async def stored(
+        self,
+        context: ExternalContext,
+        blob_id: str,
+    ) -> Optional[filesystem_pb2.StoredBlob]:
+        """The metadata stored for a blob, or `None` when none is.
+
+        A blob whose upload never began has no state at all, which the
+        framework reports by refusing the read rather than by
+        answering with an absent one."""
+        try:
+            metadata = await StoredBlob.ref(blob_id).metadata(context)
+        except StoredBlob.MetadataAborted as aborted:
+            if isinstance(
+                aborted.error,
+                rbt.v1alpha1.errors_pb2.StateNotConstructed,
+            ):
+                return None
+            raise
+        return metadata.blob if metadata.HasField("blob") else None
+
+    async def complete(
+        self,
+        context: ExternalContext,
+        blob_id: str,
+        upload_id: str,
+        content_type: str,
+        parts: Sequence[UploadedPart],
+        max_size: Optional[int] = None,
+    ) -> str:
+        """Finishes the object from the parts the client reports,
+        checking each against what was actually written, and returns
+        its ETag. Raises `BlobStoreError` for what can never succeed;
+        completing an already-completed blob returns its ETag."""
+        stored = await self.stored(context, blob_id)
+        if stored is None:
+            raise BlobStoreError("no upload was ever begun for this blob")
+        if stored.committed:
+            # A retried completion. The object is finished and its
+            # ETag is what it was -- but reclaiming may not have run,
+            # or not finished, so it runs again from what was
+            # committed.
+            await self._reclaim(
+                _encode_blob_id(blob_id),
+                stored.upload_id,
+                [(part.number, part.storage_id) for part in stored.parts],
+            )
+            return stored.etag
+        if stored.upload_id != upload_id:
+            # The parts that would be committed were written under a
+            # different session than the one being completed, so they
+            # are not the parts this verified.
+            raise BlobStoreError(
+                "the upload session being completed is not the one this "
+                "blob's parts were written under"
+            )
+
+        published = {part.number: part for part in stored.parts}
+        reported = {part.number: part for part in parts}
+        if len(reported) == 0:
+            raise BlobStoreError("no parts were reported")
+
+        last_part_number = max(reported)
+        for number in sorted(reported):
+            part = published.get(number)
+            if part is None:
+                raise BlobStoreError(f"part {number} was never uploaded")
+            if part.etag != reported[number].etag.strip('"'):
+                raise BlobStoreError(
+                    f"part {number} ETag mismatch: the uploaded bytes do "
+                    "not match what was reported via `PartUploaded`"
+                )
+            if part.size != reported[number].size:
+                raise BlobStoreError(
+                    f"part {number} size mismatch: uploaded {part.size} "
+                    f"bytes but {reported[number].size} were reported via "
+                    "`PartUploaded`"
+                )
+            if number != last_part_number and part.size != self._part_size:
+                # S3 rejects a short middle part with `EntityTooSmall`;
+                # reject it here too, so that an upload which cannot
+                # commit against the S3 store cannot commit against
+                # this one either.
+                raise BlobStoreError(
+                    f"part {number} is {part.size} bytes, but every part "
+                    f"except the last must be exactly {self._part_size} "
+                    "bytes"
+                )
+
+        total_size = sum(published[number].size for number in reported)
+        # Checked against what the parts were found to hold, not
+        # against the sizes that were reported alongside them.
+        if max_size is not None and total_size > max_size:
+            raise BlobStoreError(
+                f"uploaded {total_size} bytes exceeds the maximum of "
+                f"{max_size}"
+            )
+
+        manifest = [
+            StoredPart(
+                number=number,
+                size=published[number].size,
+                etag=published[number].etag,
+                storage_id=published[number].storage_id,
+            ) for number in sorted(reported)
+        ]
+        etag = composite_etag([part.etag for part in manifest])
+        committed = await StoredBlob.ref(blob_id).always().commit(
+            context,
+            upload_id=upload_id,
+            content_type=content_type,
+            etag=etag,
+            parts=manifest,
+        )
+        if not committed.committed:
+            raise BlobStoreError(
+                "a part was uploaded again while this upload was being "
+                "completed; report the parts and commit again"
+            )
+        # The manifest is fixed, so anything else this session wrote
+        # -- a part uploaded and never reported, a version of a part
+        # that lost -- belongs to nothing and is safe to remove. Done
+        # after the commit, so a failure here leaves files behind
+        # rather than taking away bytes the object is made of; a retry
+        # reclaims them above. `commit` accepted this manifest, and
+        # refuses one whose parts have been superseded, so it is
+        # exactly what was recorded.
+        await self._reclaim(
+            _encode_blob_id(blob_id),
+            upload_id,
+            [(part.number, part.storage_id) for part in manifest],
+        )
+        return etag
+
+    async def delete(
+        self,
+        context: ExternalContext,
+        blob_id: str,
+        upload_ids: Sequence[str] = (),
+    ) -> None:
+        """Removes a blob's bytes and any unfinished upload of it.
+        Idempotent: deleting an absent blob succeeds.
+
+        A part lives inside the blob's own directory, so removing the
+        directory removes any unfinished upload with it, whatever
+        `upload_ids` says. Forgotten before the bytes go, so that
+        nothing reads a manifest naming bytes that are already gone:
+        between the two a download would answer `200` and then run out
+        of file."""
+        try:
+            await StoredBlob.ref(blob_id).always().forget(context)
+        except StoredBlob.ForgetAborted as aborted:
+            if isinstance(
+                aborted.error,
+                rbt.v1alpha1.errors_pb2.StateNotConstructed,
+            ):
+                # Nothing was ever stored for this blob, so there is
+                # nothing to forget and deleting it has succeeded.
+                pass
+            else:
+                raise
+        await self._remove_bytes(blob_id)
+
+    async def _remove_bytes(self, blob_id: str) -> None:
         """Removes every byte this store holds for a blob."""
         encoded = _encode_blob_id(blob_id)
         # Only a blob that is already gone is ignored: any other failure
