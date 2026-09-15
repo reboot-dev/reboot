@@ -77,6 +77,11 @@ dev = [
 start without it (`rbt dev run` warns). An application packaged for
 `rbt serve` installs plain `reboot` and carries none of it.
 
+An LLM provider SDK for `reboot.agents` also comes as an extra of
+`reboot` (`reboot[anthropic]==1.5.0` in `dependencies`), so it resolves
+at the version that works with the Pydantic AI release `reboot` pins;
+see `agent-pydantic-ai.md`.
+
 `name` and `version` are required — `uv` refuses to sync without them.
 There is **no `[build-system]` table**: that tells `uv` this is a
 virtual (non-package) project — it installs the dependencies into

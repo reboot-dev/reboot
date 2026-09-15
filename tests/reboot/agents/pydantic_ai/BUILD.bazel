@@ -15,3 +15,15 @@ py_test(
         "//tests/reboot:general_boilerplate_py_reboot",
     ],
 )
+
+py_test(
+    name = "providers_tests_py",
+    size = "small",
+    srcs = [":providers_tests.py"],
+    main = "providers_tests.py",
+    deps = [
+        requirement("anthropic"),
+        requirement("pydantic-ai-slim"),
+        "//reboot/agents/pydantic_ai:python",
+    ],
+)
