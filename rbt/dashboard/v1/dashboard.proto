@@ -50,15 +50,24 @@ message Dashboard {
   repeated Servicer servicers = 6;
 
   // Represents the version of the analysis that recorded
-  // `servicers`, `agents` and `code_files`. A dashboard whose analysis
-  // records something new analyzes every file again rather than
-  // carrying forward what an earlier one recorded, which would never
-  // say it; see `CODE_ANALYSIS_VERSION`.
+  // `servicers`, `agents`, `tools`, `hazards` and
+  // `code_files`. A dashboard whose analysis records something new
+  // analyzes every file again rather than carrying forward what an
+  // earlier one recorded, which would never say it; see
+  // `CODE_ANALYSIS_VERSION`.
   uint32 code_analysis_version = 16;
 
   // Every agent the developer's application runs, one per name,
   // sorted; see `Agent`.
   repeated Agent agents = 17;
+
+  // Every tool registered on an agent in the developer's application,
+  // sorted; see `Agent.Tool`.
+  repeated Agent.Tool tools = 18;
+
+  // Every top-level hazard the analysis of the developer's application
+  // recorded, sorted; see `Hazard`.
+  repeated Hazard hazards = 19;
 
   // Represents every file the walk of the application analyzed,
   // keyed by its path, relative to the working directory for a file
@@ -131,6 +140,8 @@ message DashboardGetResponse {
   map<string, string> api_digests = 5;
   repeated Servicer servicers = 6;
   repeated Agent agents = 16;
+  repeated Agent.Tool tools = 17;
+  repeated Hazard hazards = 18;
   map<string, Generated> generated = 7;
 
   // The worst reason over all the API files, and absent when
@@ -171,6 +182,8 @@ message DashboardUpdateCodeRequest {
   repeated Servicer servicers = 1;
   uint32 code_analysis_version = 6;
   repeated Agent agents = 7;
+  repeated Agent.Tool tools = 8;
+  repeated Hazard hazards = 9;
   map<string, File> code_files = 2;
   map<string, Generated> generated = 3;
 
@@ -598,10 +611,33 @@ message Servicer {
 // whoever reads both joins them on `name`, which the runtime requires
 // to be unique. An agent nothing runs is not recorded.
 message Agent {
-  // One run of an agent, made by a servicer method's implementation
-  // through any of `Agent`'s entry points: `run`, `iter`, `run_stream`
-  // or `run_stream_events`. Which one says nothing about what the
-  // application does, so it is not recorded.
+  // One thing about how an agent is constructed that the analysis did
+  // not follow, recorded rather than guessed at or dropped.
+  message Hazard {
+    // The agent is constructed with arguments that give it tools, or
+    // hide them, which are not followed: `tools=`, `toolsets=` or
+    // `prepare_tools=`, which can hide any of its tools when it runs.
+    message ConstructorArguments {
+      // Represents the construction, its arguments included, spelled
+      // the way `ast.unparse` writes it, e.g.
+      // `Agent('anthropic:claude-sonnet-4-6', name='librarian',
+      // tools=[lookup])`.
+      string call = 1;
+    }
+
+    // Represents the file the hazard is written in, spelled the way
+    // the developer would open it.
+    string filename = 1;
+
+    oneof hazard {
+      ConstructorArguments constructor_arguments = 2;
+    }
+  }
+
+  // One run of an agent, made by a servicer method's implementation,
+  // or by an agent's tool, through any of `Agent`'s entry points:
+  // `run`, `iter`, `run_stream` or `run_stream_events`. Which one says
+  // nothing about what the application does, so it is not recorded.
   message Run {
     // One thing a run is given on top of its agent that the analysis
     // did not follow, recorded rather than guessed at or dropped.
@@ -633,6 +669,71 @@ message Agent {
     // Represents everything the run is given on top of its agent that
     // the analysis did not follow.
     repeated Hazard hazards = 2;
+  }
+
+  // One tool registered on an agent: a function decorated with the
+  // `tool` or `tool_plain` of a Reboot `Agent`, the one way of giving
+  // an agent a tool that can always be followed, recorded by the
+  // analysis of the file it is written in. Whoever reads tools joins
+  // them onto agents on `agent`. A tool registered on an agent nothing
+  // runs is recorded all the same.
+  message Tool {
+    // One thing about how a tool is registered, or what its
+    // implementation does, that the analysis did not follow, recorded
+    // rather than guessed at or dropped.
+    message Hazard {
+      // The tool is registered with `prepare=`, which can hide it when
+      // the agent runs.
+      message ToolArguments {
+        // Represents the decorator, its arguments included, spelled
+        // the way `ast.unparse` writes it, e.g.
+        // `librarian.tool(prepare=when_admin)`.
+        string call = 1;
+      }
+
+      // Represents the file the hazard is written in, spelled the way
+      // the developer would open it.
+      string filename = 1;
+
+      oneof hazard {
+        ToolArguments tool_arguments = 2;
+
+        // Something the tool's implementation does that the analysis
+        // did not follow, found exactly the way a servicer method's
+        // is.
+        Servicer.Method.Hazard method = 3;
+      }
+    }
+
+    // Represents the agent the tool is registered on, spelled as
+    // `Agent.name` spells it.
+    string agent = 1;
+
+    // Represents the file the tool is written in, spelled the way the
+    // developer would open it.
+    string filename = 2;
+
+    // Represents the tool's name as the model is told it: the literal
+    // `name=` given where it is registered, and the function's own
+    // name otherwise.
+    string name = 3;
+
+    // Represents what the model is told the tool does: the literal
+    // `description=` given where it is registered, and the function's
+    // docstring otherwise. Absent when it has neither.
+    optional string description = 4;
+
+    // Represents every Reboot call, agent run and ambiguous call the
+    // tool's implementation makes, found exactly the way a servicer
+    // method's are.
+    repeated Servicer.Method.Call calls = 5;
+    repeated Run runs = 6;
+    repeated string ambiguous = 7;
+
+    // Represents everything about how the tool is registered, and
+    // everything its implementation does, that the analysis did not
+    // follow.
+    repeated Hazard hazards = 8;
   }
 
   // Represents the agent's `name`, which the runtime requires and
@@ -672,6 +773,33 @@ message Agent {
   // agent handing work to this one is told it does. Absent when it
   // has none the analysis can read.
   optional string description = 5;
+
+  // Represents everything about how the agent is constructed that the
+  // analysis did not follow. What a single run is given is on the run;
+  // see `Run.hazards`.
+  repeated Hazard hazards = 6;
+}
+
+// One top-level thing the analysis did not follow: one that belongs to
+// no servicer, agent, run or tool, recorded rather than dropped, for
+// the file it is written in. What does belong to one is that one's own
+// `Hazard`, e.g. `Agent.Hazard`.
+message Hazard {
+  // A tool is registered on an agent that cannot be resolved, e.g.
+  // `@agents[0].tool`, so there is no agent to join it onto.
+  message ToolOnUnresolvedAgent {
+    // Represents the decorator, without its arguments, spelled the way
+    // `ast.unparse` writes it, e.g. `agents[0].tool`.
+    string registration = 1;
+  }
+
+  // Represents the file the hazard is written in, spelled the way the
+  // developer would open it.
+  string filename = 1;
+
+  oneof hazard {
+    ToolOnUnresolvedAgent tool_on_unresolved_agent = 2;
+  }
 }
 
 // What analyzing one of the developer's files used: the digest
