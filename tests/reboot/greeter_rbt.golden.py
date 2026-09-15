@@ -32421,7 +32421,9 @@ class Greeter:
                 how=IMPORT_reboot_aio_idempotency.ALWAYS,
             )
 
-    factory = _Factory
+    @classmethod
+    def factory(cls) -> type[Greeter._Factory]:
+        return Greeter._Factory
 
     @IMPORT_dataclasses.dataclass(frozen=True)
     class _ConstructIdempotently:
@@ -32526,7 +32528,7 @@ class Greeter:
                     __this__._idempotency,
                 )
 
-            return await Greeter.factory.Create(
+            return await Greeter.factory().Create(
                 *__args__,
             )
 

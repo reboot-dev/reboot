@@ -42,7 +42,7 @@ await bank.idempotently('sign up jonathan').SignUp(
 <!-- The below code snippet is automatically added from ../../tests/reboot/nodejs/greeter_test/test.ts -->
 
 ```ts
-await Greeter.factory.idempotently("generated").create(context, {
+await Greeter.factory().idempotently("generated").create(context, {
   title: "Mr",
   name: "John",
   adjective: "Dangerous",

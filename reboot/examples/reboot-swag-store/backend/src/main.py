@@ -28,7 +28,7 @@ logging.basicConfig(
 async def initialize(context) -> None:
     """Ensure the coupon book exists (creates initial
     codes on first run)."""
-    await CouponBook.factory.create(context, COUPON_BOOK_ID)
+    await CouponBook.factory().create(context, COUPON_BOOK_ID)
 
 
 async def main() -> None:

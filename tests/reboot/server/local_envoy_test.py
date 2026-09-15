@@ -240,7 +240,7 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
             name='test_server_filter',
             url=f"https://{endpoint}",
         )
-        await General.factory.ConstructorWriter(context, 'foo')
+        await General.factory().ConstructorWriter(context, 'foo')
         seen_ids = set()
         for i in range(30):
             response = await General.ref('foo').Reader(context)
@@ -251,7 +251,7 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
         # across all servers.
         seen_ids = set()
         for state_id in string.ascii_lowercase:
-            _, response = await General.factory.ConstructorWriter(
+            _, response = await General.factory().ConstructorWriter(
                 context, state_id
             )
             server_id = response.content[SERVER_ID_HEADER]
@@ -295,7 +295,7 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
         # for such states must route to the same server both via gRPC
         # calls (which send tagged state refs) and via HTTP calls with
         # human-readable state refs.
-        _, response = await General.factory.ConstructorWriter(
+        _, response = await General.factory().ConstructorWriter(
             context, "foo:bar/baz"
         )
         id_server_pair = (
@@ -392,7 +392,7 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
             state_id = f"foo-{i}"
 
             general, construct_response = (
-                await General.factory.ConstructorWriter(
+                await General.factory().ConstructorWriter(
                     context,
                     state_id,
                 )
@@ -496,7 +496,7 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         # Create a state to test with.
-        await General.factory.ConstructorWriter(context, 'test_state')
+        await General.factory().ConstructorWriter(context, 'test_state')
 
         # Use h2 library to make a low-level HTTP/2 request
         # that can distinguish between headers and trailers.

@@ -3182,7 +3182,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             f"urn:dev.reboot:auto-construct:{{ state.proto.name }}:{state_id}",
         )
         try:
-            await {{ state.proto.name }}.factory.idempotently(
+            await {{ state.proto.name }}.factory().idempotently(
                 key=idempotency_key,
             ).{{ AUTO_CONSTRUCT_METHOD }}(context, state_id)
         except {{ state.proto.name }}.{{ AUTO_CONSTRUCT_PROTO_METHOD }}Aborted as aborted:
@@ -7487,7 +7487,9 @@ class {{ client.proto.state_name }}:
                 how=IMPORT_reboot_aio_idempotency.ALWAYS,
             )
 
-    factory = _Factory
+    @classmethod
+    def factory(cls) -> type[{{ client.proto.state_name }}._Factory]:
+        return {{ client.proto.state_name }}._Factory
 
     @IMPORT_dataclasses.dataclass(frozen=True)
     class _ConstructIdempotently:
@@ -7632,7 +7634,7 @@ class {{ client.proto.state_name }}:
                     __this__._idempotency,
                 )
 
-            return await {{ client.proto.state_name }}.factory.{{ method.proto.name }}(
+            return await {{ client.proto.state_name }}.factory().{{ method.proto.name }}(
                 *__args__,
             )
 

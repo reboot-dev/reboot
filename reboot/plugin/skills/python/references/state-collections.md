@@ -210,7 +210,7 @@ class UserServicer(User.Servicer):
         request: User.AddPersonRequest,
     ) -> User.AddPersonResponse:
         # `Person` is its own state Type with `factory=True` `create`.
-        person, _ = await Person.factory.create(
+        person, _ = await Person.factory().create(
             context,
             name=request.name,
             birthday=request.birthday,

@@ -109,7 +109,7 @@ Things to know:
 
   ```python
   async def _initialize(context) -> None:
-      await CouponBook.factory.create(context, COUPON_BOOK_ID)
+      await CouponBook.factory().create(context, COUPON_BOOK_ID)
 
   await self.rbt.up(
       Application(

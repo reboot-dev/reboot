@@ -29233,7 +29233,9 @@ class Echo:
                 how=IMPORT_reboot_aio_idempotency.ALWAYS,
             )
 
-    factory = _Factory
+    @classmethod
+    def factory(cls) -> type[Echo._Factory]:
+        return Echo._Factory
 
     @IMPORT_dataclasses.dataclass(frozen=True)
     class _ConstructIdempotently:

@@ -196,7 +196,7 @@ example:
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 ```python
-account, response = await Account.factory.open(
+account, response = await Account.factory().open(
     context,
     customer_name=request.customer_name,
 )
@@ -205,7 +205,7 @@ account, response = await Account.factory.open(
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 ```typescript
-const [account, response] = await Account.factory.open(context, {
+const [account, response] = await Account.factory().open(context, {
   customerName: request.customerName,
 });
 ```
@@ -235,7 +235,7 @@ an example of constructing an `Account` with an explicit ID using the
 <!-- The below code snippet is automatically added from ../../../reboot/examples/monorepo/bank/backend/src/bank_servicer.py -->
 
 ```python
-account, _ = await Account.factory.open(
+account, _ = await Account.factory().open(
     context,
     new_account_id,
     customer_name=request.customer_name,
@@ -249,7 +249,7 @@ account, _ = await Account.factory.open(
 <!-- The below code snippet is automatically added from ../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts -->
 
 ```typescript
-const [account, response] = await Account.factory.open(
+const [account, response] = await Account.factory().open(
   context,
   newAccountId,
   {
@@ -273,7 +273,7 @@ application (i.e., using an
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 ```python
-account, response = await Account.factory.idempotently().open(
+account, response = await Account.factory().idempotently().open(
     context,
     customer_name=request.customer_name,
 )
@@ -282,7 +282,7 @@ account, response = await Account.factory.idempotently().open(
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 ```typescript
-const [account, response] = await Account.factory.idempotently().open(context, {
+const [account, response] = await Account.factory().idempotently().open(context, {
   customerName: request.customerName,
 });
 ```

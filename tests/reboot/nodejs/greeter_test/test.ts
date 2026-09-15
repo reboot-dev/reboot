@@ -37,7 +37,7 @@ test("constructors and readers", async (t) => {
     });
 
     // Test creating with ID.
-    await Greeter.factory.create(context, "other greeter", {
+    await Greeter.factory().create(context, "other greeter", {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",
@@ -47,7 +47,7 @@ test("constructors and readers", async (t) => {
     //
     // Scoping here for snippet purposes.
     {
-      const [greeter, response] = await Greeter.factory.create(context, {
+      const [greeter, response] = await Greeter.factory().create(context, {
         title: "Dr",
         name: "Jonathan",
         adjective: "Best",
@@ -55,31 +55,33 @@ test("constructors and readers", async (t) => {
     }
 
     // Test creating with generated ID idempotently.
-    await Greeter.factory.idempotently().create(context, {
+    await Greeter.factory().idempotently().create(context, {
       title: "Mr",
       name: "John",
       adjective: "Dangerous",
     });
 
-    await Greeter.factory.idempotently("generated").create(context, {
+    await Greeter.factory().idempotently("generated").create(context, {
       title: "Mr",
       name: "John",
       adjective: "Dangerous",
     });
 
-    await Greeter.factory.idempotently("create").create(
-      context,
-      "greeter",
-      // Pass a whole object to test that we can take an object as a request.
-      new CreateRequest({
-        title: "Mr",
-        name: "John",
-        adjective: "Dangerous",
-      })
-    );
+    await Greeter.factory()
+      .idempotently("create")
+      .create(
+        context,
+        "greeter",
+        // Pass a whole object to test that we can take an object as a request.
+        new CreateRequest({
+          title: "Mr",
+          name: "John",
+          adjective: "Dangerous",
+        })
+      );
 
     // Call `idempotently()` with explicit alias to test "alias or options".
-    const [greeter] = await Greeter.factory
+    const [greeter] = await Greeter.factory()
       .idempotently({ alias: "create" })
       .create(context, "greeter", {
         title: "Mr",
@@ -189,7 +191,7 @@ test("constructors and readers", async (t) => {
       idempotencySeed: uuid.v4(),
     });
 
-    const [greeter] = await Greeter.factory.create(context, {
+    const [greeter] = await Greeter.factory().create(context, {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",
@@ -231,7 +233,7 @@ test("constructors and readers", async (t) => {
 
     const context = rbt.createExternalContext("test");
 
-    const [greeter] = await Greeter.factory.create(context, {
+    const [greeter] = await Greeter.factory().create(context, {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",
@@ -260,7 +262,7 @@ test("constructors and readers", async (t) => {
 
     const context = rbt.createExternalContext("test");
 
-    const [greeter] = await Greeter.factory.create(context, {
+    const [greeter] = await Greeter.factory().create(context, {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",
@@ -278,13 +280,13 @@ test("constructors and readers", async (t) => {
     const context = rbt.createExternalContext("test");
 
     // Creating some greeters.
-    await Greeter.factory.create(context, "greeter-1", {
+    await Greeter.factory().create(context, "greeter-1", {
       title: "Mr",
       name: "Heinz",
       adjective: "Erhardt",
     });
 
-    await Greeter.factory.create(context, "greeter-2", {
+    await Greeter.factory().create(context, "greeter-2", {
       title: "Mrs",
       name: "Heidi",
       adjective: "Kabel",
@@ -323,13 +325,13 @@ test("constructors and readers", async (t) => {
 
     const context = rbt.createExternalContext("test iterables");
 
-    await Greeter.factory.create(context, "greeter-iter-1", {
+    await Greeter.factory().create(context, "greeter-iter-1", {
       title: "Mr",
       name: "Heinz",
       adjective: "Erhardt",
     });
 
-    await Greeter.factory.create(context, "greeter-iter-2", {
+    await Greeter.factory().create(context, "greeter-iter-2", {
       title: "Mrs",
       name: "Heidi",
       adjective: "Kabel",

@@ -193,7 +193,7 @@ test("task", async (t) => {
   await t.test("create", async (t) => {
     const context = rbt.createExternalContext("test");
 
-    const [task] = await TestTask.factory
+    const [task] = await TestTask.factory()
       .idempotently()
       .create(context, "task");
 

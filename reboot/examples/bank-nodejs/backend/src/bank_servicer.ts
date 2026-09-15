@@ -36,7 +36,7 @@ export class BankServicer extends Bank.Servicer {
     this.state.accountIds.push(newAccountId);
 
     // Let's go create the account.
-    const [account, response] = await Account.factory.open(
+    const [account, response] = await Account.factory().open(
       context,
       newAccountId,
       {

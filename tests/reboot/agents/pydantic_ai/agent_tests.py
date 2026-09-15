@@ -569,7 +569,7 @@ class WorkflowAgentRunTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         self.context = self.rbt.create_external_context(name=self.id())
-        self.general, _ = await General.factory.constructor_writer(
+        self.general, _ = await General.factory().constructor_writer(
             self.context
         )
 

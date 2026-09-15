@@ -187,7 +187,7 @@ class IdempotencyKeyTestCase(unittest.TestCase):
     def test_idempotent_state_id_is_seed_scoped(self) -> None:
         # `generate_idempotent_state_id` derives a state ID from
         # `(seed, alias)`, used by constructors like
-        # `Counter.factory.idempotently("create").create(context)` to
+        # `Counter.factory().idempotently("create").create(context)` to
         # pick a deterministic ID for the new state. It must fold in the
         # active idempotency seeds for consistency with
         # `idempotently()`'s seed-aware idempotency key, otherwise the

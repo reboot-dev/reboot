@@ -656,7 +656,9 @@ export class {{ client.proto.state_name }} {
 
   static WeakReference = {{ client.proto.state_name }}WeakReference;
 
-  static factory = {{ client.proto.state_name }}Factory;
+  static factory() {
+    return {{ client.proto.state_name }}Factory;
+  }
 
   public static ref(
     id: string,

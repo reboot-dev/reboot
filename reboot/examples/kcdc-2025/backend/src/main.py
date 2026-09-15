@@ -13,9 +13,9 @@ from servicers.user import UserServicer, UsersServicer
 
 
 async def initialize(context):
-    await Channel.factory.create(context, "channel")
+    await Channel.factory().create(context, "channel")
 
-    await Chatbot.factory.create(
+    await Chatbot.factory().create(
         context,
         name="Fact Checker",
         channel_id="channel",

@@ -2330,9 +2330,11 @@ export class GreeterFactory {
     }
 }
 export class Greeter {
+    static factory() {
+        return GreeterFactory;
+    }
     static ref(id, options) {
         return new Greeter.WeakReference(id, options === null || options === void 0 ? void 0 : options.bearerToken);
     }
 }
 Greeter.WeakReference = GreeterWeakReference;
-Greeter.factory = GreeterFactory;

@@ -17811,7 +17811,7 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             f"urn:dev.reboot:auto-construct:User:{state_id}",
         )
         try:
-            await User.factory.idempotently(
+            await User.factory().idempotently(
                 key=idempotency_key,
             ).create(context, state_id)
         except User.CreateAborted as aborted:
@@ -23768,7 +23768,9 @@ class Ping:
                 how=IMPORT_reboot_aio_idempotency.ALWAYS,
             )
 
-    factory = _Factory
+    @classmethod
+    def factory(cls) -> type[Ping._Factory]:
+        return Ping._Factory
 
     @IMPORT_dataclasses.dataclass(frozen=True)
     class _ConstructIdempotently:
@@ -25671,7 +25673,9 @@ class Pong:
                 how=IMPORT_reboot_aio_idempotency.ALWAYS,
             )
 
-    factory = _Factory
+    @classmethod
+    def factory(cls) -> type[Pong._Factory]:
+        return Pong._Factory
 
     @IMPORT_dataclasses.dataclass(frozen=True)
     class _ConstructIdempotently:
@@ -29695,7 +29699,9 @@ class User:
                 how=IMPORT_reboot_aio_idempotency.ALWAYS,
             )
 
-    factory = _Factory
+    @classmethod
+    def factory(cls) -> type[User._Factory]:
+        return User._Factory
 
     @IMPORT_dataclasses.dataclass(frozen=True)
     class _ConstructIdempotently:
@@ -29729,7 +29735,7 @@ class User:
                     __this__._idempotency,
                 )
 
-            return await User.factory.Create(
+            return await User.factory().Create(
                 *__args__,
             )
 
@@ -32777,7 +32783,9 @@ class Counter:
                 how=IMPORT_reboot_aio_idempotency.ALWAYS,
             )
 
-    factory = _Factory
+    @classmethod
+    def factory(cls) -> type[Counter._Factory]:
+        return Counter._Factory
 
     @IMPORT_dataclasses.dataclass(frozen=True)
     class _ConstructIdempotently:
@@ -32877,7 +32885,7 @@ class Counter:
                     __this__._idempotency,
                 )
 
-            return await Counter.factory.Create(
+            return await Counter.factory().Create(
                 *__args__,
             )
 

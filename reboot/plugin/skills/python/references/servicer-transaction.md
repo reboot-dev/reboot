@@ -107,7 +107,7 @@ async def sign_up(
     self, context: TransactionContext, request: SignUpRequest,
 ) -> SignUpResponse:
     if mailgun_api_key := await self._mailgun_api_key():
-        await mailgun.Message.factory.send(
+        await mailgun.Message.factory().send(
             context, None, Options(bearer_token=mailgun_api_key),
             recipient=request.account_id,
             sender='team@reboot.dev',
@@ -117,12 +117,12 @@ async def sign_up(
             text=self._text_email,
         )
 
-    account, _ = await Account.factory.open(context, request.account_id)
+    account, _ = await Account.factory().open(context, request.account_id)
     await account.deposit(context, amount=request.initial_deposit)
     return SignUpResponse()
 ```
 
-`mailgun.Message.factory.send` is a `Writer` on an in-system mailgun
+`mailgun.Message.factory().send` is a `Writer` on an in-system mailgun
 actor — it does not hit the network itself; it **schedules a workflow**
 that makes the actual HTTP send. So the transaction only ever issues
 in-system RPCs, and the un-rollback-able external call lives safely in
@@ -176,7 +176,7 @@ orchestration calls where the caller only needs success/failure
 - `rpc-forall.md` — `Service.forall(ids).method(context, ...)` for
   fan-out across many actors.
 - `servicer-constructor.md` — when a transaction also constructs an
-  actor (e.g. `Account.factory.open(context, id)`).
+  actor (e.g. `Account.factory().open(context, id)`).
 - `api-errors.md` — typed errors that roll back the entire transaction.
 - `servicer-workflow.md` — when one-shot atomicity isn't enough and you
   need durable, long-running orchestration.
