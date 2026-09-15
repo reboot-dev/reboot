@@ -119,6 +119,7 @@ import {
   toolCalleeDistances,
   toolId,
   type GraphAgent,
+  type GraphRun,
   type GraphStateType,
   type MethodInGraph,
   type ToolInGraph,
@@ -1087,6 +1088,30 @@ const methodsAtEachDistance = (
   );
 };
 
+// An agent a method or a tool runs, as a card of a "runs" list: its
+// name, which links to the agent to inspect it. In the workflow's
+// colour, since that is what the agent runs in.
+const AgentCard: FC<{ name: string }> = ({ name }) => (
+  <div className="method method-workflow">
+    <div className="method-head">
+      <span className="method-name">
+        <TypeLink className="method-link" id={agentId(name)}>
+          🤖 {name}
+        </TypeLink>
+      </span>
+    </div>
+  </div>
+);
+
+// The agents run, one card each, in the order given.
+const AgentsRun: FC<{ runs: GraphRun[] }> = ({ runs }) => (
+  <div className="method-group">
+    {runs.map((run) => (
+      <AgentCard name={run.agentName} key={run.agentName} />
+    ))}
+  </div>
+);
+
 // The methods at each distance, one group per distance, in the
 // order given.
 const MethodsByDistance: FC<{
@@ -1166,9 +1191,9 @@ const CallsHead: FC<{
 // carries what the API declares of it, then the methods that call it
 // directly, and the agents' tools that do, then the methods it calls,
 // directly first, out to the farthest, or the direct ones alone while
-// the switch at that list's head says so. Each list shows only while
-// the graph lights that direction. The state type's name links to
-// the type itself, with all its methods.
+// the switch at that list's head says so, and the agents it runs.
+// Each list shows only while the graph lights that direction. The
+// state type's name links to the type itself, with all its methods.
 const MethodPane: FC<{
   apis: APIs;
   graph: GraphStateType[];
@@ -1194,6 +1219,8 @@ const MethodPane: FC<{
     (graphStateType) => graphStateType.id === stateTypeId
   );
   const selfCalling = callsItself(id, graph);
+  const runs =
+    stateType?.methods.find((method) => method.name === methodName)?.runs ?? [];
   const callers = useMemo(() => directCallers(id, graph), [id, graph]);
   const toolCallers = useMemo(
     () => directToolCallers(id, agents),
@@ -1321,6 +1348,12 @@ const MethodPane: FC<{
             declarations={declarations}
             methodsByDistance={calleesByDistance}
           />
+        </>
+      )}
+      {conesOfInfluence.downstream && runs.length > 0 && (
+        <>
+          <div className="eyebrow section">runs</div>
+          <AgentsRun runs={runs} />
         </>
       )}
     </section>
@@ -1663,17 +1696,7 @@ const ToolPane: FC<{
           {conesOfInfluence.downstream && tool.runs.length > 0 && (
             <>
               <div className="eyebrow section">runs</div>
-              <div className="agent-tool-calls">
-                {tool.runs.map((run) => (
-                  <TypeLink
-                    className="type-link"
-                    id={agentId(run.agentName)}
-                    key={run.agentName}
-                  >
-                    <code>🤖 {run.agentName}</code>
-                  </TypeLink>
-                ))}
-              </div>
+              <AgentsRun runs={tool.runs} />
             </>
           )}
         </>
