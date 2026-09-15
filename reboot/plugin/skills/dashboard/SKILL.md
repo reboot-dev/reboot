@@ -86,10 +86,11 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ## Step 3 — Is a dashboard already serving?
 
-The dashboard serves at `http://127.0.0.1:9871/dashboard/`. Probe it:
+The dashboard serves at `http://127.0.0.1:9871/`, which forwards to
+wherever its page is. Probe it:
 
 ```sh
-curl -sf -o /dev/null --max-time 2 http://127.0.0.1:9871/dashboard/
+curl -sf -o /dev/null --max-time 2 http://127.0.0.1:9871/
 ```
 
 If that succeeds, a dashboard is already up — do not start a second
@@ -112,7 +113,7 @@ It takes the API directory from the `generate <dir>` line in
 `.rbtrc` (Step 2), spelled relative to the project root — that is how
 file names are shown in the dashboard.
 
-It prints `Your dashboard is at http://127.0.0.1:9871/dashboard/`
+It prints `Your dashboard is at http://127.0.0.1:9871/`
 immediately and keeps running; wait until the probe from Step 3
 succeeds before calling it up. It stays running for the life of the
 session — leave it alone afterwards; it never needs a restart when
@@ -127,9 +128,9 @@ the user in one sentence and continue the build without it.
 Open the URL in the browser, best-effort, exactly once:
 
 ```sh
-"$BROWSER" http://127.0.0.1:9871/dashboard/ || \
-  xdg-open http://127.0.0.1:9871/dashboard/ || \
-  python3 -m webbrowser http://127.0.0.1:9871/dashboard/
+"$BROWSER" http://127.0.0.1:9871/ || \
+  xdg-open http://127.0.0.1:9871/ || \
+  python3 -m webbrowser http://127.0.0.1:9871/
 ```
 
 Once is enough for good: the page tracks its own viewers
@@ -139,4 +140,4 @@ re-open the page yourself on reloads or restarts.
 
 Then tell the user the dashboard is up and what it is for — e.g.
 "Developer dashboard (watch the API as I build it) at
-http://127.0.0.1:9871/dashboard/" — and get on with the build.
+http://127.0.0.1:9871/" — and get on with the build.

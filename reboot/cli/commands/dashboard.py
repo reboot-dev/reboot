@@ -25,7 +25,6 @@ from reboot.cli.common.directories import (
 from reboot.cli.common.rc import ArgumentParser
 from reboot.cli.common.subprocesses import Subprocesses
 from reboot.dashboard.backend.constants import (
-    DASHBOARD_PATH,
     DEFAULT_DASHBOARD_PORT,
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
@@ -292,7 +291,8 @@ async def _open_when_serving(*, port: int) -> None:
     automatically" in the notice an automatic open shows.
     """
     dashboard_url = f'http://127.0.0.1:{port}'
-    page_url = f'{dashboard_url}{DASHBOARD_PATH}/'
+    # The root, which forwards to the page wherever it is served.
+    page_url = f'{dashboard_url}/'
 
     try:
         backoff = Backoff()
@@ -369,10 +369,7 @@ async def dashboard(
             generated_directory=_generated_directory(parser),
         )
 
-        terminal.info(
-            'Your dashboard is at '
-            f'http://127.0.0.1:{port}{DASHBOARD_PATH}/\n'
-        )
+        terminal.info(f'Your dashboard is at http://127.0.0.1:{port}/\n')
 
         open_task = asyncio.create_task(
             _open_when_serving(port=port),
