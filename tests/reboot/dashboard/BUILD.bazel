@@ -184,3 +184,38 @@ vitest_test(
     node_modules = "//:node_modules",
     visibility = ["//visibility:public"],
 )
+
+ts_project(
+    name = "pane_target_test_ts",
+    srcs = ["pane_target.test.ts"],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "esnext",
+            "moduleResolution": "bundler",
+            "skipLibCheck": True,
+            "target": "es2020",
+        },
+    },
+    deps = [
+        "//rbt/dashboard/v1:dashboard_js_proto",
+        "//rbt/v1alpha1/api:api_js_proto",
+        "//rbt/v1alpha1/api:schema_js_proto",
+        "//reboot/dashboard/web:dashboard_ts",
+        "//reboot/std/vitest:vitest_ts",
+        # For `state_types`, which only one target may compile.
+        ":link_properties_to_data_types_test_ts",
+    ],
+)
+
+vitest_test(
+    name = "pane_target_test",
+    config = "vitest.config.mjs",
+    data = [
+        "package.json",
+        ":pane_target_test_ts",
+    ],
+    node_modules = "//:node_modules",
+    visibility = ["//visibility:public"],
+)

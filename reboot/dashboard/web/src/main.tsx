@@ -115,6 +115,14 @@ import {
   type GraphStateType,
 } from "./callgraph";
 import {
+  chosenMethodIdOf,
+  isGraphStateTypeId,
+  paneTargetOf,
+  searchOfType,
+  typeIdOfTarget,
+  type PaneTarget,
+} from "./pane_target";
+import {
   exercisedMethods,
   graphStateTypeNamed,
   undescribedMethods,
@@ -333,47 +341,6 @@ interface PaneRows {
 }
 
 const PaneRowsContext = createContext<PaneRows | undefined>(undefined);
-
-// What the `type` search parameter names: one state type or one of
-// its methods, `bank.v1.Account` or `bank.v1.Account.deposit`, or one
-// data type, `bank.v1.bank.CustomerAccount`. The pane exists only
-// while the parameter names something.
-type PaneTarget =
-  | { stateTypeId: string; method?: string; dataTypeId?: undefined }
-  | { dataTypeId: string; stateTypeId?: undefined; method?: undefined };
-
-// The id of the type a target shows, whichever kind it is.
-const typeIdOfTarget = (target: PaneTarget): string =>
-  target.dataTypeId ?? target.stateTypeId;
-
-const paneTargetOf = (
-  typeParameter: string | null,
-  isStateTypeId: (id: string) => boolean,
-  isDataTypeId: (id: string) => boolean
-): PaneTarget | undefined => {
-  if (typeParameter === null) {
-    return undefined;
-  }
-  if (isDataTypeId(typeParameter)) {
-    return { dataTypeId: typeParameter };
-  }
-  const separator = typeParameter.lastIndexOf(".");
-  if (
-    !isStateTypeId(typeParameter) &&
-    separator !== -1 &&
-    isStateTypeId(typeParameter.slice(0, separator))
-  ) {
-    return {
-      stateTypeId: typeParameter.slice(0, separator),
-      method: typeParameter.slice(separator + 1),
-    };
-  }
-  return { stateTypeId: typeParameter };
-};
-
-// The search string a link to a type produces. The path is left
-// alone, so following the link never leaves the page being read.
-const searchOfType = (id: string): string => `?type=${id}`;
 
 // A link that slides the types pane open on the type the id names,
 // state or data, from wherever the type is named; a method id
@@ -2867,16 +2834,12 @@ const Overview: FC<{
   // type the page does not have.
   const links = useMemo(() => stepLinks(apis), [apis]);
 
-  // Whether an id names a state type; anything else the API knows
-  // by id is a data type.
-  const isStateTypeId = useMemo(() => {
-    const stateTypeIds = new Set(
-      Object.values(apis).flatMap((api) =>
-        api.stateTypes.map((stateType) => qualifiedName({ api, stateType }))
-      )
-    );
-    return (id: string): boolean => stateTypeIds.has(id);
-  }, [apis]);
+  // Whether an id names a state type, declared or only called;
+  // anything else the API knows by id is a data type.
+  const isStateTypeId = useMemo(
+    () => isGraphStateTypeId(graphStateTypes),
+    [graphStateTypes]
+  );
 
   // Whether an id names a data type the API declares.
   const isDataTypeId = useMemo(() => {
@@ -2908,13 +2871,8 @@ const Overview: FC<{
     // the panel.
   }, [navWidth, navPanel, paneOpen]);
 
-  // The method the graph lights: the one the pane is on, so the two
-  // never disagree about what is chosen. With the pane on a state
-  // type, or closed, nothing is.
-  const chosenMethodId =
-    paneTarget?.method === undefined
-      ? null
-      : methodId(paneTarget.stateTypeId, paneTarget.method);
+  // The method the graph lights, from the pane's target.
+  const chosenMethodId = chosenMethodIdOf(paneTarget);
 
   // What the page links carry of the pane: the type it shows, but
   // not the method it last flashed.
