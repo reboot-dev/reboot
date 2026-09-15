@@ -5,6 +5,7 @@ ts_project(
     srcs = [
         "index.tsx",
         "package.json",
+        "put.ts",
     ],
     declaration = True,
     tsconfig = {
