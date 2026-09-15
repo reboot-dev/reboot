@@ -11,7 +11,10 @@ import {
   Servicer_Method_Call_How,
 } from "../../../rbt/dashboard/v1/dashboard_pb";
 import * as api_pb from "../../../rbt/v1alpha1/api/api_pb";
-import { joinStateTypes, methodId } from "../../../reboot/dashboard/web/src/callgraph";
+import {
+  joinStateTypes,
+  methodId,
+} from "../../../reboot/dashboard/web/src/callgraph";
 import type { APIs } from "../../../reboot/dashboard/web/src/link_properties_to_data_types";
 import { linkDataTypes } from "../../../reboot/dashboard/web/src/link_properties_to_data_types";
 import {

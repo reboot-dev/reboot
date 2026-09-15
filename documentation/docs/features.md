@@ -100,7 +100,7 @@ An application packaged for `rbt serve` installs plain `reboot`.
 Then, beside your feature files, a test module that says which
 application they run against:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/interest_test.py&lines=5-22) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/interest_test.py&lines=5-24) -->
 <!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/tests/interest_test.py -->
 
 ```py
@@ -110,14 +110,16 @@ from bank_servicer import BankServicer
 from customer_servicer import CustomerServicer
 from reboot.aio.applications import Application
 from reboot.bdd import scenarios
-from reboot.std.collections.v1.sorted_map import sorted_map_library
+from reboot.std.collections.ordered_map.v1.ordered_map import (
+    ordered_map_library,
+)
 
 
 @pytest.fixture
 def application() -> Application:
     return Application(
         servicers=[AccountServicer, BankServicer, CustomerServicer],
-        libraries=[sorted_map_library()],
+        libraries=[ordered_map_library()],
     )
 
 
@@ -377,7 +379,7 @@ To serve the app, add `playwright` and `pytest-playwright` to your
 dev dependencies, run `playwright install chromium` once, and give
 the test module a `frontend` fixture. For a Vite project:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/web_test.py&lines=34-37) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/web_test.py&lines=36-39) -->
 <!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/tests/web_test.py -->
 
 ```py
@@ -394,7 +396,7 @@ cross-origin, so the session cookie and CORS are exercised the way
 a deployment exercises them; the `application` fixture takes the
 `frontend` and allows its origin:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/web_test.py&lines=50-78) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/web_test.py&lines=52-80) -->
 <!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/tests/web_test.py -->
 
 ```py
@@ -410,7 +412,7 @@ def application(frontend: Frontend) -> Application:
             CustomerServicer,
             UserServicer,
         ],
-        libraries=[sorted_map_library()],
+        libraries=[ordered_map_library()],
         # Signing in constructs the user's `User`, which signs them up
         # with the bank `initialize` creates.
         initialize=initialize,
