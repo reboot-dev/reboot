@@ -2738,16 +2738,6 @@ const Overview: FC<{
   // the panel through its ref when that width arrives.
   const navPanel = usePanelRef();
 
-  useEffect(() => {
-    // Never resizes a sidebar dragged shut: another tab's stored
-    // width must not pop it open.
-    if (navPanel.current?.isCollapsed() !== true) {
-      navPanel.current?.resize(navWidth);
-    }
-    // Runs only when the stored width changes, not while the developer
-    // drags: the drag already moves the panel.
-  }, [navWidth, navPanel]);
-
   // Whether the sidebar is dragged shut, from its width, so the
   // handle renders in its place.
   const [navCollapsed, setNavCollapsed] = useState(false);
@@ -2882,6 +2872,23 @@ const Overview: FC<{
     () => paneTargetOf(searchParams.get("type"), isStateTypeId, isDataTypeId),
     [searchParams, isStateTypeId, isDataTypeId]
   );
+
+  // Whether the types pane is open. The group hands a pane that opens
+  // its width from every other panel, sidebar included, so the
+  // sidebar is put back to its width afterwards and the document
+  // alone gives way.
+  const paneOpen = paneTarget !== undefined;
+
+  useEffect(() => {
+    // Never resizes a sidebar dragged shut: another tab's stored
+    // width must not pop it open.
+    if (navPanel.current?.isCollapsed() !== true) {
+      navPanel.current?.resize(navWidth);
+    }
+    // Runs only when the stored width changes or the pane opens or
+    // closes, not while the developer drags: the drag already moves
+    // the panel.
+  }, [navWidth, navPanel, paneOpen]);
 
   // The method the graph lights: the one the pane is on, so the two
   // never disagree about what is chosen. With the pane on a state
@@ -3190,6 +3197,9 @@ const Overview: FC<{
           maxSize={NAV_WIDTH.max}
           collapsible
           collapsedSize={NAV_WIDTH.handle}
+          // The two sidebars keep their pixel widths when the window
+          // changes size; the document between them takes the difference.
+          groupResizeBehavior="preserve-pixel-size"
           onResize={({ inPixels }) => {
             const width = Math.round(inPixels);
             setNavCollapsed(width < NAV_WIDTH.min);
@@ -3344,6 +3354,7 @@ const Overview: FC<{
               maxSize={PANE_WIDTH.max}
               collapsible
               collapsedSize={PANE_WIDTH.handle}
+              groupResizeBehavior="preserve-pixel-size"
               onResize={({ inPixels }) => {
                 const width = Math.round(inPixels);
                 setPaneCollapsed(width < PANE_WIDTH.min);
