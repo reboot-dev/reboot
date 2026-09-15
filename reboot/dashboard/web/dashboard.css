@@ -2746,6 +2746,18 @@ header .state-type-description {
   text-decoration: underline;
 }
 
+/* The name after it, a link that chooses the method: in the name's
+   own weight and colour, underlined on hover to say it opens. */
+.method-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.method-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .property-description code {
   font-family: ui-monospace, Menlo, monospace;
   font-size: 0.9em;
