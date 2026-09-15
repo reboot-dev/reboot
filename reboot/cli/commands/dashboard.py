@@ -12,6 +12,7 @@ from reboot.cli.commands.dev import (
     _dashboard_reachable,
     _open_on_restart,
     _viewers,
+    automatically_opened_url,
     check_local_envoy_mode,
     try_and_become_child_subreaper_on_linux,
 )
@@ -318,9 +319,11 @@ async def _open_when_serving(*, port: int) -> None:
         # work in Codespaces and devcontainers, and returns `False`
         # rather than raising when there is no browser to open. The
         # page is told it was opened automatically, so it can offer
-        # not to be.
+        # not to be, at the page's whole path rather than the root,
+        # because Envoy's gRPC-JSON transcoder fails `/` with a query
+        # (see `automatically_opened_url`).
         if not await asyncio.to_thread(
-            webbrowser.open, f'{page_url}?opened=automatically'
+            webbrowser.open, automatically_opened_url(dashboard_url)
         ):
             terminal.warn(
                 f"Could not open a browser; your dashboard is at {page_url}"
