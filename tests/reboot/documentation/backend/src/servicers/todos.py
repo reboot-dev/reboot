@@ -46,7 +46,7 @@ class UserServicer(User.Servicer):
     ) -> None:
         """Runs once, when a person signs in for the first time: give
         them a list to start with."""
-        todo_list, _ = await TodoList.create(
+        todo_list, _ = await TodoList.factory().create(
             context,
             title="Getting started",
             owner_id=context.state_id,
@@ -78,7 +78,7 @@ class UserServicer(User.Servicer):
     ) -> CreateTodoListResponse:
         """Create a list owned by the signed-in person and remember it
         on their `User`."""
-        todo_list, _ = await TodoList.create(
+        todo_list, _ = await TodoList.factory().create(
             context,
             title=request.title,
             owner_id=context.state_id,

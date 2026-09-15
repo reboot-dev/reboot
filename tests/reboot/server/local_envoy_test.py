@@ -447,7 +447,7 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
             f"a{chr(code)}b" for code in range(0x20, 0x7f) if chr(code) != '\\'
         ]
         for state_id in special_state_ids:
-            await General.ConstructorWriter(context, state_id)
+            await General.factory().ConstructorWriter(context, state_id)
 
             status, body = await _post_exact_path(
                 url,

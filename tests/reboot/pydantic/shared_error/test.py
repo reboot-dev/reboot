@@ -28,9 +28,11 @@ class SharedErrorTest(unittest.IsolatedAsyncioTestCase):
     async def test_transfer_aborts_with_the_accounts_error(self) -> None:
         context = self.rbt.create_external_context(name=self.id())
 
-        payer, _ = await Account.open(context, 'payer', balance=100.0)
-        payee, _ = await Account.open(context, 'payee', balance=0.0)
-        bank, _ = await Bank.create(context, 'bank')
+        payer, _ = await Account.factory().open(
+            context, 'payer', balance=100.0
+        )
+        payee, _ = await Account.factory().open(context, 'payee', balance=0.0)
+        bank, _ = await Bank.factory().create(context, 'bank')
 
         with self.assertRaises(Bank.TransferAborted) as aborted:
             await bank.transfer(
@@ -50,9 +52,11 @@ class SharedErrorTest(unittest.IsolatedAsyncioTestCase):
     async def test_transfer_within_the_balance_moves_it(self) -> None:
         context = self.rbt.create_external_context(name=self.id())
 
-        payer, _ = await Account.open(context, 'payer', balance=100.0)
-        payee, _ = await Account.open(context, 'payee', balance=0.0)
-        bank, _ = await Bank.create(context, 'bank')
+        payer, _ = await Account.factory().open(
+            context, 'payer', balance=100.0
+        )
+        payee, _ = await Account.factory().open(context, 'payee', balance=0.0)
+        bank, _ = await Bank.factory().create(context, 'bank')
 
         await bank.transfer(
             context,

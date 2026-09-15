@@ -53,7 +53,7 @@ constructor — a method declared with `factory=True` — and call it
 without an ID; Reboot mints a fresh, unique one for you:
 
 ```python
-account, _ = await Account.open(context, customer_name="Ada")
+account, _ = await Account.factory().open(context, customer_name="Ada")
 
 account.state_id  # The generated ID — hold on to this.
 ```

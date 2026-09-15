@@ -235,8 +235,8 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
-            other_bank, _ = await Bank.Create(context, 'other-bank')
+            bank, _ = await Bank.factory().Create(context, SINGLETON_BANK_ID)
+            other_bank, _ = await Bank.factory().Create(context, 'other-bank')
 
             await bank.SignUp(context, account_id='ben', initial_deposit=100)
             await bank.SignUp(
@@ -392,8 +392,8 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
-            other_bank, _ = await Bank.Create(context, 'other-bank')
+            bank, _ = await Bank.factory().Create(context, SINGLETON_BANK_ID)
+            other_bank, _ = await Bank.factory().Create(context, 'other-bank')
 
             await bank.SignUp(context, account_id='ben', initial_deposit=100)
             await bank.SignUp(
@@ -606,12 +606,12 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            await General.ConstructorWriter(
+            await General.factory().ConstructorWriter(
                 context,
                 'ben',
                 content={"balance": "100"},
             )
-            await General.ConstructorWriter(
+            await General.factory().ConstructorWriter(
                 context,
                 'jonathan',
                 content={"balance": "100"},
@@ -619,7 +619,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             started = time.monotonic()
 
-            await General.ConstructorTransaction(
+            await General.factory().ConstructorTransaction(
                 context,
                 'transfers',
                 content={
@@ -725,15 +725,15 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         )
         context = self.rbt.create_external_context(name=self.id())
 
-        await General.ConstructorWriter(context, 'target')
+        await General.factory().ConstructorWriter(context, 'target')
 
         await asyncio.gather(
-            General.ConstructorTransaction(
+            General.factory().ConstructorTransaction(
                 context,
                 'root-1',
                 content={"target": "target"},
             ),
-            General.ConstructorTransaction(
+            General.factory().ConstructorTransaction(
                 context,
                 'root-2',
                 content={"target": "target"},
@@ -800,15 +800,15 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         )
         context = self.rbt.create_external_context(name=self.id())
 
-        await General.ConstructorWriter(context, 'target')
+        await General.factory().ConstructorWriter(context, 'target')
 
         await asyncio.gather(
-            General.ConstructorTransaction(
+            General.factory().ConstructorTransaction(
                 context,
                 'root-1',
                 content={"target": "target"},
             ),
-            General.ConstructorTransaction(
+            General.factory().ConstructorTransaction(
                 context,
                 'root-2',
                 content={"target": "target"},
@@ -1502,7 +1502,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             context = self.rbt.create_external_context(name=self.id())
 
-            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            bank, _ = await Bank.factory().Create(context, SINGLETON_BANK_ID)
 
             bank_server_id, account_server_id = await self.rbt.unique_servers(
                 bank._state_ref,

@@ -63,7 +63,7 @@ class NoFulfillOrderServicer(OrderServicer):
 
 
 async def _initialize(context) -> None:
-    await CouponBook.create(context, COUPON_BOOK_ID)
+    await CouponBook.factory().create(context, COUPON_BOOK_ID)
 
 
 # The admin authorizer reads its key from the environment; give it
