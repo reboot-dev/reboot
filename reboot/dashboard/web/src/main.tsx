@@ -1565,18 +1565,30 @@ const AgentPane: FC<{ agent: GraphAgent }> = ({ agent }) => (
             )}
             {tool.calls.length + tool.runs.length > 0 && (
               <div className="agent-tool-calls">
-                {tool.calls.map((call) => (
-                  <TypeLink
-                    className="type-link"
-                    id={`${call.stateTypeName}.${call.methodName}`}
-                    key={`${call.stateTypeName}.${call.methodName}`}
-                  >
-                    <code>
-                      {shortNameOfTypeName(call.stateTypeName)}.
-                      {call.methodName}
-                    </code>
-                  </TypeLink>
-                ))}
+                {/* A tool reaching a method more than one way, say
+                    calling it and scheduling it, has a call for each;
+                    the link is to the method, so it is listed once. */}
+                {tool.calls
+                  .filter(
+                    (call, index) =>
+                      tool.calls.findIndex(
+                        (earlier) =>
+                          earlier.stateTypeName === call.stateTypeName &&
+                          earlier.methodName === call.methodName
+                      ) === index
+                  )
+                  .map((call) => (
+                    <TypeLink
+                      className="type-link"
+                      id={methodId(call.stateTypeName, call.methodName)}
+                      key={methodId(call.stateTypeName, call.methodName)}
+                    >
+                      <code>
+                        {shortNameOfTypeName(call.stateTypeName)}.
+                        {call.methodName}
+                      </code>
+                    </TypeLink>
+                  ))}
                 {tool.runs.map((run) => (
                   <TypeLink
                     className="type-link"
