@@ -357,6 +357,22 @@ const TypeLink: FC<{
   </Link>
 );
 
+// A link that chooses a method, as a click on its row in the graph
+// does: the graph lights the method and the pane opens on it. The
+// path names the method too, so the URL is the one the row makes.
+const MethodLink: FC<{
+  id: string;
+  className?: string;
+  children: ReactNode;
+}> = ({ id, className, children }) => (
+  <Link
+    className={className}
+    to={{ pathname: `/models/${id}`, search: searchOfType(id) }}
+  >
+    {children}
+  </Link>
+);
+
 // The types pane's own `Anchor`: a link to the type it shows.
 const PaneAnchor: FC<{ id: string }> = ({ id }) => (
   <Link
@@ -675,6 +691,28 @@ const DeclaringStateTypeLink: FC<{
   </>
 );
 
+// A method's name where methods of several types are listed
+// together: its state type before it, and the name a link that
+// chooses the method. Alone, where the type's own methods are
+// listed, the name is plain.
+const QualifiedMethodName: FC<{
+  name: string;
+  declaringStateType?: DeclaringStateType;
+}> = ({ name, declaringStateType }) =>
+  declaringStateType === undefined ? (
+    <>{name}</>
+  ) : (
+    <>
+      <DeclaringStateTypeLink declaringStateType={declaringStateType} />
+      <MethodLink
+        className="method-link"
+        id={methodId(declaringStateType.id, name)}
+      >
+        {name}
+      </MethodLink>
+    </>
+  );
+
 const Method: FC<{
   api: api_pb.API;
   method: api_pb.Method;
@@ -702,10 +740,10 @@ const Method: FC<{
     >
       <div className="method-head">
         <span className="method-name">
-          {declaringStateType !== undefined && (
-            <DeclaringStateTypeLink declaringStateType={declaringStateType} />
-          )}
-          {method.name}
+          <QualifiedMethodName
+            name={method.name}
+            declaringStateType={declaringStateType}
+          />
         </span>
         <div className="method-tags">
           {/* The kind comes before the tags because every method has
@@ -847,10 +885,10 @@ const UndeclaredMethod: FC<{
   <div className="method method-unspecified">
     <div className="method-head">
       <span className="method-name">
-        {declaringStateType !== undefined && (
-          <DeclaringStateTypeLink declaringStateType={declaringStateType} />
-        )}
-        {name}
+        <QualifiedMethodName
+          name={name}
+          declaringStateType={declaringStateType}
+        />
       </span>
     </div>
     <p className="method-description is-missing">
