@@ -35,6 +35,7 @@ from reboot.dashboard.backend.code_watcher import (
     _try_extract_api_digest,
     _modified_at,
     _reconstitute_known,
+    extract_and_sort_agents,
     extract_and_sort_servicers,
 )
 from reboot.dashboard.backend.main import application
@@ -277,6 +278,10 @@ class Agent:
         **kwargs,
     ):
         pass
+
+    @classmethod
+    def wrap(cls, wrapped, **kwargs) -> 'Agent':
+        return wrapped
 
     async def run(self, context=None, user_prompt=None, **kwargs):
         pass
@@ -1325,13 +1330,63 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_a_method_records_the_agent_it_runs(self) -> None:
+        """A run of an agent is recorded on the method that makes it,
+        naming the agent; the agent is recorded with what its
+        construction says it is."""
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'from reboot.agents.pydantic_ai import Agent\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                'librarian = Agent(\n'
+                "    'anthropic:claude-sonnet-4-6',\n"
+                "    name='librarian',\n"
+                "    description='Keeps the shelves in order.',\n"
+                "    system_prompt='You are the librarian.',\n"
+                "    instructions='Keep it tidy.',\n"
+                ')\n'
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                "        await librarian.run(context, 'Tidy up')\n"
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        [found_servicer] = found[servicer].servicers
+        [method] = found_servicer.methods
+        self.assertEqual(
+            [run.agent for run in method.runs],
+            ['librarian'],
+        )
+        self.assertEqual(list(method.ambiguous), [])
+
+        [agent] = found[servicer].agents
+        self.assertEqual(agent.name, 'librarian')
+        self.assertEqual(agent.filename, str(servicer))
+        self.assertEqual(agent.model, 'anthropic:claude-sonnet-4-6')
+        self.assertEqual(list(agent.system_prompt), ['You are the librarian.'])
+        self.assertEqual(list(agent.instructions), ['Keep it tidy.'])
+        self.assertEqual(agent.description, 'Keeps the shelves in order.')
+
+        # Everything about the run is analyzed, so there is nothing to
+        # say about it.
+        self.assertEqual(list(method.hazards), [])
+        [run] = method.runs
+        self.assertEqual(list(run.hazards), [])
+
     async def test_every_way_of_running_an_agent(self) -> None:
-        """Each of `Agent`'s four entry points is a run, which is a
-        hazard of the method while which agent is run is not resolved.
-        Anything else of `Agent`'s that is called, such as `run_sync` or
-        `override`,
-        which a Reboot `Agent` raises on, or its construction, is not
-        followed, and is ambiguous."""
+        """Each of `Agent`'s four entry points is a run. Anything else of
+        `Agent`'s that is called, such as `run_sync`, which a Reboot
+        `Agent` raises on, or its construction, is not followed, and is
+        ambiguous."""
         servicer = self._write(
             'shop_servicer.py',
             source=(
@@ -1367,21 +1422,151 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         [found_servicer] = found[servicer].servicers
         [method] = found_servicer.methods
         self.assertEqual(
-            sorted(
-                hazard.run_on_unresolved_agent.callee
-                for hazard in method.hazards
-            ),
-            [
-                'librarian.iter',
-                'librarian.run',
-                'librarian.run_stream',
-                'librarian.run_stream_events',
-            ],
+            [run.agent for run in method.runs],
+            ['librarian'] * 4,
         )
         self.assertEqual(
             sorted(method.ambiguous),
             ['Agent', 'librarian.override', 'librarian.run_sync'],
         )
+
+    async def test_an_agent_constructed_in_another_file(self) -> None:
+        """An agent run in one file and defined in another is recorded
+        by the file running it, as defined where its construction is;
+        the file defining it records nothing, since it runs nothing."""
+        agents = self._write(
+            'agents.py',
+            source=(
+                'from reboot.agents.pydantic_ai import Agent\n'
+                '\n'
+                '\n'
+                "librarian = Agent('test', name='librarian')\n"
+            ),
+        )
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'from agents import librarian\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                "        await librarian.run(context, 'Tidy up')\n"
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        [found_servicer] = found[servicer].servicers
+        [method] = found_servicer.methods
+        self.assertEqual([run.agent for run in method.runs], ['librarian'])
+        self.assertEqual(
+            [(agent.name, agent.filename) for agent in found[servicer].agents],
+            [('librarian', str(agents))],
+        )
+        self.assertEqual(found[agents].agents, ())
+
+        self.assertEqual(
+            [
+                (agent.name, agent.filename)
+                for agent in extract_and_sort_agents(found)
+            ],
+            [('librarian', str(agents))],
+        )
+
+    async def test_an_agent_from_an_installed_package(self) -> None:
+        """An agent defined outside the application, in an installed
+        package, is recorded by the file running it like any other,
+        marked `external`, and only if it is run; upgrading the package
+        analyzes that file again."""
+        installed = self.installed / 'assistants.py'
+        installed.write_text(
+            'from reboot.agents.pydantic_ai import Agent\n'
+            '\n'
+            '\n'
+            "librarian = Agent('test', name='librarian')\n"
+            "scribe = Agent('test', name='scribe')\n"
+        )
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'from assistants import librarian\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                "        await librarian.run(context, 'Tidy up')\n"
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        [found_servicer] = found[servicer].servicers
+        [method] = found_servicer.methods
+        self.assertEqual([run.agent for run in method.runs], ['librarian'])
+        self.assertEqual(
+            [
+                (agent.name, agent.filename, agent.external, agent.model)
+                for agent in found[servicer].agents
+            ],
+            [('librarian', str(installed), True, 'test')],
+        )
+
+        installed.write_text(
+            installed.read_text().replace("'test'", "'upgraded'")
+        )
+
+        found = await self._analyze(application, known=found)
+
+        self.assertIn(servicer, self.parsed)
+        self.assertEqual(
+            [agent.model for agent in found[servicer].agents],
+            ['upgraded'],
+        )
+
+    async def test_an_agent_is_found_through_its_runs(self) -> None:
+        """An agent is found through a run of it, and its construction
+        is told apart by what pyright says it calls, not by how it is
+        spelled: an `Agent` imported under another name is found, and an
+        agent nothing runs is not recorded."""
+        agents = self._write(
+            'agents.py',
+            source=(
+                'from reboot.agents.pydantic_ai import Agent as A\n'
+                '\n'
+                '\n'
+                "librarian = A('test', name='librarian')\n"
+                "scribe = A('test', name='scribe')\n"
+            ),
+        )
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'from agents import librarian\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                "        await librarian.run(context, 'Tidy up')\n"
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        self.assertEqual(
+            [(agent.name, agent.filename) for agent in found[servicer].agents],
+            [('librarian', str(agents))],
+        )
+        self.assertEqual(found[agents].agents, ())
 
     def _hazards(self, hazards) -> list[tuple[str, dict[str, str]]]:
         """Returns hazards as the name of each one's case and the fields
@@ -1399,12 +1584,14 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         ]
 
     async def test_a_run_whose_agent_cannot_be_resolved(self) -> None:
-        """A run whose own definition proves an agent is run -- made on
-        an agent a factory returns, an alias, a parameter, an element of
-        a collection -- is recorded as a hazard of the method, with
-        nothing about the run, rather than as a guess at which agent it
-        is. A run on something pyright cannot type at all is not known
-        to be a run, and stays an ambiguous call."""
+        """A run whose own definition proves an agent is run, but made
+        on something that leads to no agent constructed at the top level
+        of a module -- an agent a factory returns, an alias, a
+        parameter, an element of a collection -- is recorded as a hazard
+        of the method, with nothing about the run, rather than as a
+        guess at which agent it is. A run on something pyright cannot
+        type at all is not known to be a run, and stays an ambiguous
+        call."""
         servicer = self._write(
             'shop_servicer.py',
             source=(
@@ -1458,6 +1645,12 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         methods = {method.name: method for method in found_servicer.methods}
         self.assertEqual(
             {
+                name: list(method.runs) for name, method in methods.items()
+            },
+            {name: [] for name in methods},
+        )
+        self.assertEqual(
+            {
                 name: self._hazards(method.hazards)
                 for name, method in methods.items()
             },
@@ -1491,6 +1684,141 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
             [str(servicer)],
         )
         self.assertEqual(list(methods['untyped'].ambiguous), ['agent.run'])
+        self.assertEqual(found[servicer].agents, ())
+
+    async def test_what_changes_a_run_is_said(self) -> None:
+        """A `model` or `instructions` passed to a run changes what the
+        run is from what its agent says, and is said on the run."""
+        servicer = self._write(
+            'shop_servicer.py',
+            source=(
+                'from reboot.agents.pydantic_ai import Agent\n'
+                'from shop.v1.shop_rbt import Shop\n'
+                '\n'
+                '\n'
+                "librarian = Agent('test', name='librarian')\n"
+                '\n'
+                '\n'
+                'class ShopServicer(Shop.Servicer):\n'
+                '\n'
+                '    async def look(self, context, request):\n'
+                '        await librarian.run(\n'
+                "            context, 'a', model='other',\n"
+                "            instructions='Be brief.',\n"
+                '        )\n'
+            ),
+        )
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        [found_servicer] = found[servicer].servicers
+        [method] = found_servicer.methods
+        self.assertEqual(
+            [self._hazards(run.hazards) for run in method.runs],
+            [
+                [
+                    (
+                        'run_arguments',
+                        {
+                            'call':
+                                "librarian.run(context, 'a', model='other', "
+                                "instructions='Be brief.')",
+                        },
+                    ),
+                ],
+            ],
+        )
+
+    async def test_only_a_named_agent_at_the_top_level_is_resolved(
+        self,
+    ) -> None:
+        """Only an `Agent(...)` with a string literal `name=`, bound to
+        a name at the top level of its module, is resolved. One whose
+        `name=` is computed or missing, one a factory builds or
+        `Agent.wrap` adopts, one held on `self`, bound inside a function
+        or constructed where it is run, and a name bound twice, which
+        could hold either agent, are not: each run of one is a hazard of
+        the method. Moving everything down records the same agents."""
+        source = (
+            'from reboot.agents.pydantic_ai import Agent\n'
+            'from shop.v1.shop_rbt import Shop\n'
+            '\n'
+            '\n'
+            'def make_agent():\n'
+            "    return Agent('test', name='made')\n"
+            '\n'
+            '\n'
+            "NAME = 'computed'\n"
+            "helper = Agent('test', name='first')\n"
+            "helper = Agent('test', name='second')\n"
+            "tutor = Agent('test', name='tutor')\n"
+            'computed = Agent(\'test\', name=NAME)\n'
+            "unnamed = Agent('test')\n"
+            "built = make_agent()\n"
+            "adopted = Agent.wrap(Agent('test', name='adopted'))\n"
+            '\n'
+            '\n'
+            'class ShopServicer(Shop.Servicer):\n'
+            '\n'
+            '    def __init__(self):\n'
+            "        self.agent = Agent('test', name='held')\n"
+            '\n'
+            '    async def look(self, context, request):\n'
+            "        local = Agent('test', name='local')\n"
+            "        await helper.run(context, 'Help')\n"
+            "        await tutor.run(context, 'Teach')\n"
+            "        await self.agent.run(context, 'Hold')\n"
+            "        await local.run(context, 'Stay')\n"
+            "        await computed.run(context, 'Count')\n"
+            "        await unnamed.run(context, 'Wander')\n"
+            "        await built.run(context, 'Build')\n"
+            "        await adopted.run(context, 'Adopt')\n"
+            "        await Agent('test', name='inline').run(context, 'Go')\n"
+        )
+        servicer = self._write('shop_servicer.py', source=source)
+        application = self._write('main.py', source=APPLICATION)
+
+        found = await self._analyze(application)
+
+        [found_servicer] = found[servicer].servicers
+        [method] = [
+            method for method in found_servicer.methods
+            if method.name == 'look'
+        ]
+        self.assertEqual(
+            [run.agent for run in method.runs],
+            ['tutor'],
+        )
+        self.assertEqual(
+            sorted(
+                hazard.run_on_unresolved_agent.callee
+                for hazard in method.hazards
+            ),
+            sorted(
+                [
+                    "Agent('test', name='inline').run",
+                    'adopted.run',
+                    'built.run',
+                    'computed.run',
+                    'helper.run',
+                    'local.run',
+                    'self.agent.run',
+                    'unnamed.run',
+                ]
+            ),
+        )
+        before = found[servicer].agents
+        self.assertEqual(
+            [agent.name for agent in before],
+            ['tutor'],
+        )
+
+        self._write('shop_servicer.py', source='\n\n# Moved.\n\n' + source)
+
+        found = await self._analyze(application)
+
+        self.assertEqual(found[servicer].agents, before)
 
     async def test_a_base_from_a_function_return_type_is_resolved(
         self,
@@ -1673,8 +2001,8 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_reconstituting_keeps_stored_spellings(self) -> None:
         """What a previous run recorded comes back keyed by the
-        stored spelling, with the servicers recorded for each file
-        joined back on."""
+        stored spelling, with the servicers recorded for each file, and
+        the agents their runs name, joined back on."""
         state = DashboardState()
         file = state.code_files['backend/x.py']
         file.digest = b'digest'
@@ -1682,6 +2010,12 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         servicer = state.servicers.add()
         servicer.state_type = 'shop.v1.Shop'
         servicer.filename = 'backend/x.py'
+        servicer.methods.add().runs.add().agent = 'librarian'
+        agent = state.agents.add()
+        agent.name = 'librarian'
+        agent.filename = 'backend/librarian.py'
+        unrun = state.agents.add()
+        unrun.name = 'scribe'
 
         known = _reconstitute_known(state)
 
@@ -1695,6 +2029,10 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [servicer.state_type for servicer in analyzed.servicers],
             ['shop.v1.Shop'],
+        )
+        self.assertEqual(
+            [agent.name for agent in analyzed.agents],
+            ['librarian'],
         )
 
     async def test_a_state_from_another_analysis_is_analyzed_again(

@@ -49,12 +49,16 @@ message Dashboard {
   // whoever reads this to make of what they will.
   repeated Servicer servicers = 6;
 
-  // Represents the version of the analysis that recorded `servicers`
-  // and `code_files`. A dashboard whose analysis records something
-  // new analyzes every file again rather than carrying forward what
-  // an earlier one recorded, which would never say it; see
-  // `CODE_ANALYSIS_VERSION`.
+  // Represents the version of the analysis that recorded
+  // `servicers`, `agents` and `code_files`. A dashboard whose analysis
+  // records something new analyzes every file again rather than
+  // carrying forward what an earlier one recorded, which would never
+  // say it; see `CODE_ANALYSIS_VERSION`.
   uint32 code_analysis_version = 16;
+
+  // Every agent the developer's application runs, one per name,
+  // sorted; see `Agent`.
+  repeated Agent agents = 17;
 
   // Represents every file the walk of the application analyzed,
   // keyed by its path, relative to the working directory for a file
@@ -126,6 +130,7 @@ message DashboardGetResponse {
   map<string, rbt.v1alpha1.api.API> apis = 4;
   map<string, string> api_digests = 5;
   repeated Servicer servicers = 6;
+  repeated Agent agents = 16;
   map<string, Generated> generated = 7;
 
   // The worst reason over all the API files, and absent when
@@ -165,6 +170,7 @@ message DashboardUpdateApiResponse {}
 message DashboardUpdateCodeRequest {
   repeated Servicer servicers = 1;
   uint32 code_analysis_version = 6;
+  repeated Agent agents = 7;
   map<string, File> code_files = 2;
   map<string, Generated> generated = 3;
 
@@ -533,16 +539,25 @@ message Servicer {
     // writes the callee, e.g. "self._transfer".
     repeated string ambiguous = 4;
 
+    // Represents every agent the method's implementation runs,
+    // itself or through the functions it calls. What each agent is,
+    // is in `Agent`, which each of these names.
+    repeated Agent.Run runs = 5;
+
     // One thing the method's implementation does, itself or through
     // the functions it calls, that the analysis did not follow,
     // recorded rather than guessed at or dropped, so the dashboard
     // can show where what it draws may be incomplete.
     message Hazard {
-      // A run of an agent the analysis did not resolve: the call's own
-      // definition proves an agent is run, through any of `Agent`'s
-      // entry points, `run`, `iter`, `run_stream` or
-      // `run_stream_events`, but which agent is not known. Nothing
-      // about the run is recorded, what it is given included.
+      // A run of an agent the analysis could not resolve: the call's
+      // own definition proves an agent is run, but what it is run on
+      // is not an `Agent(...)` with a string literal `name=`, bound to
+      // a name at the top level of a module. E.g. an agent whose
+      // `name=` is computed or missing, one a factory builds, an
+      // alias, a parameter, an element of a collection, one held on
+      // `self`, one constructed inside a function or where it is run,
+      // or a name bound to more than one thing. Nothing about the run
+      // is recorded, what it is given included.
       message RunOnUnresolvedAgent {
         // Represents what is called, spelled the way `ast.unparse`
         // writes it: the receiver and the method, without the call's
@@ -575,6 +590,88 @@ message Servicer {
   // Represents every method it defines, in the order they are
   // written, which is the order somebody reading the file meets them.
   repeated Method methods = 3;
+}
+
+// One agent the developer's application runs: a Reboot `Agent`
+// constructed with a string literal `name=` and bound to a name at the
+// top level of a module, found through a run of it. A run names it;
+// whoever reads both joins them on `name`, which the runtime requires
+// to be unique. An agent nothing runs is not recorded.
+message Agent {
+  // One run of an agent, made by a servicer method's implementation
+  // through any of `Agent`'s entry points: `run`, `iter`, `run_stream`
+  // or `run_stream_events`. Which one says nothing about what the
+  // application does, so it is not recorded.
+  message Run {
+    // One thing a run is given on top of its agent that the analysis
+    // did not follow, recorded rather than guessed at or dropped.
+    message Hazard {
+      // The run is given arguments that change what its agent is or
+      // can reach, which are not followed: `toolsets=`, which give it
+      // tools, `model=`, which it uses instead of `Agent.model`, or
+      // `instructions=`, which it is given on top of
+      // `Agent.instructions`.
+      message RunArguments {
+        // Represents the run, its arguments included, spelled the way
+        // `ast.unparse` writes it, e.g.
+        // `librarian.run(context, prompt, model='other')`.
+        string call = 1;
+      }
+
+      // Represents the file the hazard is written in, spelled the way
+      // the developer would open it.
+      string filename = 1;
+
+      oneof hazard {
+        RunArguments run_arguments = 2;
+      }
+    }
+
+    // Represents the agent run, spelled as `Agent.name` spells it.
+    string agent = 1;
+
+    // Represents everything the run is given on top of its agent that
+    // the analysis did not follow.
+    repeated Hazard hazards = 2;
+  }
+
+  // Represents the agent's `name`, which the runtime requires and
+  // which is unique in an application, so it is what a run names and
+  // what records of one agent join on.
+  string name = 1;
+
+  // The file the agent is defined in, the one holding
+  // `librarian = Agent(...)`, spelled the way the developer would open
+  // it, e.g. "backend/src/librarian.py".
+  string filename = 2;
+
+  // Represents whether the agent is defined outside the application,
+  // e.g. in an installed package, rather than in the application's own
+  // code.
+  bool external = 8;
+
+  // Represents the model the agent is constructed with, e.g.
+  // "anthropic:claude-sonnet-4-6". Absent when it is not a literal
+  // the analysis can read.
+  optional string model = 3;
+
+  // Represents every literal string the agent is constructed with as
+  // `system_prompt=`, in the order written, which the model is given at
+  // the start of the conversation and which is kept in its message
+  // history. A prompt computed rather than written down contributes
+  // nothing.
+  repeated string system_prompt = 4;
+
+  // Represents every literal string the agent is constructed with as
+  // `instructions=`, in the order written, which the model is given
+  // with every request and which is not kept in its message history.
+  // Instructions computed rather than written down contribute nothing.
+  repeated string instructions = 9;
+
+  // Represents the agent's `description`, which is what another
+  // agent handing work to this one is told it does. Absent when it
+  // has none the analysis can read.
+  optional string description = 5;
 }
 
 // What analyzing one of the developer's files used: the digest
