@@ -300,7 +300,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "reboot", specifier = "==1.5.0" }]
+requires-dist = [{ name = "reboot", specifier = "==1.6.0" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1968,7 +1968,7 @@ wheels = [
 
 [[package]]
 name = "reboot"
-version = "1.5.0"
+version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiofiles" },
@@ -2020,9 +2020,9 @@ dependencies = [
     { name = "websockets" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cb/c9/deadaea6b1ccc89536df04b48b7e2e01567092ef7a46bae4e9561c92a041/reboot-1.5.0-py3-none-macosx_14_0_arm64.whl", hash = "sha256:805edf950918cf1f97643cd004c2ac03abca9ab1887bc2c859631c8eb4359518", size = 21709840, upload-time = "2026-09-01T23:22:05.728Z" },
-    { url = "https://files.pythonhosted.org/packages/7b/78/f1b4c99d43957a078208cb57a128ff961083c9141d8dfd0d2b3f5128aed5/reboot-1.5.0-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:18ed834274c1442a38b7375d49a0de2c2a8343f09e727827217ed926bc4ced46", size = 25395084, upload-time = "2026-09-01T23:05:32.205Z" },
-    { url = "https://files.pythonhosted.org/packages/ff/fe/cba921f1ab9c91d03ec71e338a4bc3faa672b0768641641ee6186e4f26ba/reboot-1.5.0-py3-none-manylinux_2_34_x86_64.whl", hash = "sha256:ac47a95c8f88b6b69a5983bfac5f118d031f102ec707ff9e48aea43e8cf73138", size = 25523127, upload-time = "2026-09-01T23:04:00.691Z" },
+    { url = "https://files.pythonhosted.org/packages/61/53/f879431323eeb89fd1cd1f3e234f0701b8fbc4610955c995e69ba5c455c6/reboot-1.6.0-py3-none-macosx_14_0_arm64.whl", hash = "sha256:96ceaace42f82a23a7a6d116667406aa2661b7f3e41a530b42f5e8e573c21086", size = 21983662, upload-time = "2026-09-16T11:02:28.184Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/00/67cd65203fd0479b299143345ab7d06c9d70ef924ed8738e34d7f224089f/reboot-1.6.0-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:455128ee678386745843c41dae0f7e2774489d7ea9461cc8b44462bb58c2b14d", size = 25655454, upload-time = "2026-09-16T10:50:00.927Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/f7/6d56b46c00980bb94e577edeb6f2a5813d5fe466fa54b49a8323dcc69b92/reboot-1.6.0-py3-none-manylinux_2_34_x86_64.whl", hash = "sha256:c658556cfed4c53f413c9f675a8dda259e0076311f74dc8d04c480b55e9aa069", size = 25780286, upload-time = "2026-09-16T10:47:53.447Z" },
 ]
 
 [[package]]
