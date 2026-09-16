@@ -54,13 +54,14 @@ export interface PutPartDependencies {
  * One attempt to `PUT` a part. Retried: a request that never got an
  * answer, and the answers a store gives while it is momentarily unable
  * rather than unwilling (408, 429, 5xx). Retried with a fresh URL:
- * 403, which on either store is what an expired URL earns, and an
- * upload that started late in a slow session can outlive the minutes
- * its URLs are minted for. Everything else is refused for good: the
- * request itself is wrong (400), the session is gone (404), the blob
- * is already committed (409), or the part is too large (413). The
- * one 400 that is retried is S3's `RequestTimeout`, its answer to an
- * upload whose socket stalled, which AWS documents as retryable.
+ * 403, what a store answers to a URL whose signature has expired, and
+ * an upload that started late in a slow session can outlive the
+ * minutes its URLs are minted for. Everything else is refused for
+ * good: the request itself is wrong (400), the session is gone (404),
+ * the blob is already committed (409), or the part is too large
+ * (413). The one 400 that is retried is S3's `RequestTimeout`, its
+ * answer to an upload whose socket stalled, which AWS documents as
+ * retryable.
  */
 export async function tryPutPart(
   url: string,
