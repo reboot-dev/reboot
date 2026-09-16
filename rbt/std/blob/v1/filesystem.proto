@@ -132,8 +132,8 @@ message StoredBlobCommitRequest {
 message StoredBlobCommitResponse {
   // Whether the object was finished. False when a part was uploaded
   // again between this manifest being read and being committed: the
-  // bytes it names are gone. Nothing about that is final; the caller
-  // reads the manifest as it is now and commits again.
+  // bytes it names are gone. Nothing about that is final: the
+  // manifest as it is now can be committed.
   bool committed = 1;
 }
 
