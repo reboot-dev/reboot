@@ -59,10 +59,9 @@ class BlobStore(Protocol):
     take a `context` to do so with; a store whose metadata lives in an
     object store ignores it.
 
-    A store retries nothing: it raises for what may pass on a later
-    attempt, which the servicer surfaces as a gRPC error for the
-    caller to retry (see `data_plane.proto`), and raises
-    `BlobStoreError` only for what never will."""
+    A store retries nothing: it lets what may pass on a later attempt
+    raise as it is, and raises `BlobStoreError` only for what never
+    will."""
 
     @property
     def part_size(self) -> int:
