@@ -210,9 +210,9 @@ class BlobDataPlaneServicer(data_plane_pb2_grpc.BlobDataPlaneServicer):
         except BlobStoreError as error:
             # A permanent failure: reported in the response, since
             # retrying the call would only repeat it. Transient failures
-            # raise other exceptions, which become the gRPC error the
-            # caller retries. The verdict is never empty, so that
-            # whatever reads it off the blob can tell it from none.
+            # raise other exceptions, which become a gRPC error for the
+            # caller to retry. The verdict is never empty: an empty one
+            # could not be told from none.
             return DataPlaneCommitResponse(
                 error=str(error) or "the store refused the commit"
             )
