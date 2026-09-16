@@ -154,11 +154,10 @@ message StoredBlobRemoveResponse {}
 
 service StoredBlobMethods {
   // Creates the object's metadata and the upload session its parts
-  // are written under, and returns the session. The control plane
-  // retries this inside a workflow, so
-  // the caller asks for it once per workflow: a retry replays the
-  // session that was already established rather than minting a
-  // second one and orphaning the parts written under the first.
+  // are written under, and returns the session. Idempotent under the
+  // caller's key: a repeated call replays the session already
+  // established rather than minting a second one and orphaning the
+  // parts written under the first.
   rpc Create(StoredBlobCreateRequest) returns (StoredBlobCreateResponse) {
     option (rbt.v1alpha1.method) = {
       writer: { constructor: {} },

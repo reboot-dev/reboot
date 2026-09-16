@@ -36,8 +36,8 @@ syntax = "proto3";
 package rbt.std.blob.v1;
 
 service BlobDataPlane {
-  // Reports what the control plane needs to know to talk to this data
-  // plane: the client part size. Read once at application startup.
+  // Reports what a caller needs to know to use this data plane: the
+  // part size clients must upload in.
   rpc Configuration(ConfigurationRequest) returns (ConfigurationResponse);
 
   // Creates the blob in the data plane: provisions the upload session
@@ -58,10 +58,9 @@ service BlobDataPlane {
   // reported ETags/sizes against the real bytes and enforcing
   // `max_size` against the real total. Returns the composite ETag, or
   // a permanent-failure `error` (ETag mismatch, over `max_size`, ...)
-  // that the control plane surfaces so the client can re-upload. A
-  // *transient* failure is a gRPC error instead, so the control-plane
-  // workflow retries. Idempotent: committing an already-committed
-  // blob returns its ETag.
+  // for a commit that can never succeed as reported. A *transient*
+  // failure is a gRPC error instead, for the caller to retry.
+  // Idempotent: committing an already-committed blob returns its ETag.
   rpc Commit(DataPlaneCommitRequest) returns (DataPlaneCommitResponse);
 
   // Mints a URL from which the committed object's bytes can be
@@ -137,9 +136,8 @@ message DataPlaneCommitResponse {
     // A permanent-failure reason: what the data plane holds can never
     // commit as reported (a part's bytes or size differ from what
     // was reported, a middle part is short, the total exceeds
-    // `max_size`, the session is gone). The control plane reverts the
-    // blob to UPLOADING with this message; retrying the call would
-    // only repeat it, so the caller does not.
+    // `max_size`, the session is gone). Retrying the call would only
+    // repeat it.
     string error = 2;
   }
 }
@@ -164,8 +162,8 @@ message DataPlaneGetDownloadUrlResponse {
 message DataPlaneDeleteRequest {
   string blob_id = 1;
 
-  // Upload sessions the control plane knows are outstanding for this
-  // blob. Deleting the object does not reach the bytes an unfinished
+  // Upload sessions the caller knows are outstanding for this blob.
+  // Deleting the object does not reach the bytes an unfinished
   // upload has already parked, and the data plane cannot discover
   // those sessions itself without permission to enumerate every
   // application's uploads, so the IDs come from the side that

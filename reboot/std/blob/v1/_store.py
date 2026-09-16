@@ -13,11 +13,10 @@ nothing but the directory -- `StoredBlob` is where their writes are
 ordered against each other.
 
 This store drives that state machine itself, so that it offers the
-same surface an object store does (`create`, `commit`,
-`delete`, ...) and whoever serves it -- the `BlobDataPlane` servicer,
-the byte routes -- only authorizes and delegates. Its methods take
-the context they reach `StoredBlob` with; a store backed by an object
-store keeps its metadata there instead and needs none.
+same surface an object store does (`create`, `commit`, `delete`, ...)
+and whatever serves it need only authorize and delegate. Its methods
+take the context they reach `StoredBlob` with; a store backed by an
+object store keeps its metadata there instead and needs none.
 
 The store mimics S3's multipart-upload semantics (numbered parts,
 per-part MD5 ETags, ETag-validating completion) so that clients drive
@@ -160,11 +159,10 @@ def composite_etag(etags: Sequence[str]) -> str:
 def _create_key(blob_id: str) -> UUID:
     """The idempotency key for creating one blob.
 
-    Derived from the blob ID rather than taken from the caller,
-    because the control plane both retries this inside a workflow and
-    re-runs it to validate that workflow's effects. "Create this blob"
-    is one operation however many times it is asked for, so the blob
-    names it."""
+    Derived from the blob ID rather than taken from the caller:
+    "create this blob" is one operation however many times it is asked
+    for -- again after a lost answer, or again to check what an
+    earlier run did -- so the blob names it."""
     return uuid5(NAMESPACE_URL, f"reboot.std.blob.v1/create/{blob_id}")
 
 
@@ -717,9 +715,8 @@ class FilesystemBlobStore:
         directory removes any unfinished upload with it, whatever
         `upload_ids` says. Removed from `StoredBlob` before the bytes
         go, so that nothing reads a manifest naming bytes that are
-        already gone:
-        between the two a download would answer `200` and then run out
-        of file."""
+        already gone: between the two a download would answer `200`
+        and then run out of file."""
         try:
             await StoredBlob.ref(blob_id).always().remove(context)
         except StoredBlob.RemoveAborted as aborted:
@@ -738,9 +735,9 @@ class FilesystemBlobStore:
         """Removes every byte this store holds for a blob."""
         encoded = _encode_blob_id(blob_id)
         # Only a blob that is already gone is ignored: any other failure
-        # must reach the caller, or `RemoveWorkflow` would report bytes
-        # deleted that are still on disk. In a thread because
-        # `aiofiles` has no `rmtree`.
+        # must reach the caller, which would otherwise take bytes still
+        # on disk for deleted. In a thread because `aiofiles` has no
+        # `rmtree`.
         try:
             await asyncio.to_thread(
                 shutil.rmtree, self.blob_directory(encoded)

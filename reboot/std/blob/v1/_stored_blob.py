@@ -93,8 +93,9 @@ class StoredBlobServicer(StoredBlob.Servicer):
         request: StoredBlobCommitRequest,
     ) -> StoredBlobCommitResponse:
         if self.state.committed:
-            # `CommitWorkflow` is a workflow, and retries, so arriving
-            # at an object that is already finished is success, not a
+            # A commit may be asked for again after it succeeded (its
+            # answer lost, its caller retrying), so arriving at an
+            # object that is already finished is success, not a
             # conflict.
             return StoredBlobCommitResponse(committed=True)
 

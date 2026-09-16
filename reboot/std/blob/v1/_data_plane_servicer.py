@@ -37,11 +37,10 @@ DEFAULT_PART_SIZE_BYTES = 8 * 1024 * 1024
 
 
 class BlobStoreError(Exception):
-    """A permanent storage failure (e.g. a part missing at commit
-    time), reported to the control plane as a `Commit` `error` so the
-    client can re-upload. Transient failures (e.g. network errors) are
-    raised as their original exception types instead, becoming gRPC
-    errors that the control plane's workflow retries."""
+    """A storage failure no retry can fix (e.g. a part missing at
+    commit time), as opposed to a transient one (e.g. a network
+    error), which a store raises as its original exception type
+    instead."""
 
 
 @dataclass(frozen=True)
