@@ -60,12 +60,12 @@ name = "my-app"
 version = "0.1.0"
 requires-python = ">= 3.10"
 dependencies = [
-    "reboot==1.5.0",
+    "reboot==1.6.0",
 ]
 
 [dependency-groups]
 dev = [
-    "reboot[dev]==1.5.0",
+    "reboot[dev]==1.6.0",
     "mypy==1.18.1",
     "pytest>=7.4.2",
     "types-protobuf>=4.24.0.20240129",
@@ -78,7 +78,7 @@ start without it (`rbt dev run` warns). An application packaged for
 `rbt serve` installs plain `reboot` and carries none of it.
 
 An LLM provider SDK for `reboot.agents` also comes as an extra of
-`reboot` (`reboot[anthropic]==1.5.0` in `dependencies`), so it resolves
+`reboot` (`reboot[anthropic]==1.6.0` in `dependencies`), so it resolves
 at the version that works with the Pydantic AI release `reboot` pins;
 see `agent-pydantic-ai.md`.
 
