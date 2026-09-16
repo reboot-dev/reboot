@@ -17,14 +17,9 @@
 // The one failure a method declares is `Commit`'s `error`, for a
 // commit that can never succeed. Every other failure -- a store that
 // cannot be reached, a response that never arrived, a throttle, a 5xx
-// -- is an undeclared gRPC error, and the contract is that the caller
-// retries it until the call succeeds. The control plane does so from
-// workflows, with backoff, for `Create`, `Commit` and `Delete`. A
-// client of the presigning methods retries through the control plane's
-// own client, which is handed only what can pass on a later attempt:
-// those methods do nothing but sign, so failing to reach the data
-// plane is retried and a refusal is final. Keeping every retry in the
-// caller keeps it in one place, and lets a data plane stay stateless.
+// -- is an undeclared gRPC error, which the caller may retry until
+// the call succeeds. Keeping every retry in the caller keeps it in
+// one place, and lets a data plane stay stateless.
 //
 // That contract is what makes idempotency a requirement: every method
 // must be *safe* to call more than once for the same `blob_id`, since
