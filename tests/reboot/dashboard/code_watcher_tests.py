@@ -105,8 +105,9 @@ DEPOT = SINGLETON.format(state='Depot', module='depot')
 # The shape of a generated module, as far as the analysis needs:
 # the state type's class and its servicer bases carrying the state
 # type's name as `__state_type_name__`, the `Servicer` aliases a
-# servicer's base leads through, and the `WeakReference` defining
-# the methods a reference is called with.
+# servicer's base leads through, the `WeakReference` defining the
+# methods a reference is called with, and the `_Factory` defining
+# the constructors.
 GENERATED = '''
 from typing import TypeAlias
 
@@ -204,15 +205,28 @@ class {state}:
     def ref(cls, state_id) -> '{state}.WeakReference':
         return {state}.WeakReference()
 
-    @classmethod
-    async def make(
-        __cls__,
-        __context__,
-        state_id=None,
-    ):
-        pass
+    class _Factory:
 
-    build = make
+        @classmethod
+        async def make(
+            __cls__,
+            __context__,
+            state_id=None,
+        ):
+            pass
+
+        build = make
+
+        @classmethod
+        def idempotently(
+            cls,
+            alias=None,
+        ) -> '{state}._ConstructIdempotently':
+            return {state}._ConstructIdempotently()
+
+    @classmethod
+    def factory(cls) -> 'type[{state}._Factory]':
+        return {state}._Factory
 
     class _ConstructIdempotently:
 
@@ -222,10 +236,6 @@ class {state}:
             state_id=None,
         ):
             pass
-
-    @classmethod
-    def idempotently(cls, alias=None) -> '{state}._ConstructIdempotently':
-        return {state}._ConstructIdempotently()
 
     class _Forall:
 
@@ -1017,11 +1027,11 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 "        depot = Depot.ref('d')\n"
                 '        await depot.look(context)\n'
                 "        await Shop.ref('s').look(context)\n"
-                "        await Depot.make(context, 'd')\n"
+                "        await Depot.factory().make(context, 'd')\n"
                 '        await depot.schedule().look(context)\n'
                 '        await depot.spawn().look(context)\n'
                 "        await depot.idempotently('i').look(context)\n"
-                "        await Depot.idempotently('i').make(context)\n"
+                "        await Depot.factory().idempotently('i').make(context)\n"
                 "        await Depot.forall(['a']).look(context)\n"
                 "        await depot.until('u').look(context)\n"
                 '        helper(context)\n'
@@ -1232,7 +1242,7 @@ class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):
                 '\n'
                 '    async def look(self, context, request):\n'
                 "        await Depot.ref('d').peek(context)\n"
-                "        await Depot.build(context, 'd')\n"
+                "        await Depot.factory().build(context, 'd')\n"
             ),
         )
         application = self._write('main.py', source=APPLICATION)
@@ -2784,14 +2794,14 @@ class GreeterServicer(Greeter.Servicer):
         await Greeter.ref('g').SetAdjective(context)
         await me.SetAdjective(context)
         await self.ref().Greet(context)
-        await Greeter.Create(context)
+        await Greeter.factory().Create(context)
         await greeter.schedule().SetAdjective(context)
         await me.schedule().Greet(context)
         await me.spawn().SetAdjective(context)
         await me.idempotently('i').Greet(context)
-        await Greeter.idempotently('i').Create(context)
+        await Greeter.factory().idempotently('i').Create(context)
         await me.per_workflow().Greet(context)
-        await Greeter.per_workflow().Create(context)
+        await Greeter.factory().per_workflow().Create(context)
         await Greeter.forall(['g']).SetAdjective(context)
         await me.until('u').Greet(context)
 '''

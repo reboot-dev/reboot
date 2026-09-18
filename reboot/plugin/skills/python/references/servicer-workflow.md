@@ -162,7 +162,7 @@ class GreeterServicer(Greeter.Servicer):
         await Greeter.ref().write(context, set_greeting)
 ```
 
-Caller-side: `await Greeter.Hello(ctx, "alice", name="alice")` both
+Caller-side: `await Greeter.factory().Hello(ctx, "alice", name="alice")` both
 creates the actor and (by virtue of the schedule call) kicks off
 `run_hello`.
 
