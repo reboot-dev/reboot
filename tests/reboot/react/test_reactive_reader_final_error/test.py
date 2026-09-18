@@ -25,7 +25,9 @@ async def test(context: ExternalContext, uri: str):
     constructs the state through the frontend, after which the reader
     raises a declared error, `NoMessageYet`, that surfaces as `aborted`
     and is not retried. Finally a writer called through the frontend
-    sets the message and the reader shows it.
+    sets the message and the reader shows it; that writer is made while
+    another reader is still loading, which queues it, so the settled
+    reader has to wait for it to complete before reading again.
     """
 
     state_id = 'actor-test'
@@ -82,12 +84,35 @@ async def test(context: ExternalContext, uri: str):
                 )
             )
 
+            # The reader settling on its error releases the mutation,
+            # so the mutation's promise resolves.
+            wait.until(
+                expected_conditions.text_to_be_present_in_element(
+                    (By.ID, 'completed'),
+                    '1',
+                )
+            )
+
             # A declared error is final: the reader does not retry it.
             # Not retrying can only be observed by the absence of
             # attempts over a window of time, hence the sleep.
             attempts_after_declared_error = attempts()
             time.sleep(NO_RETRY_WINDOW_SECONDS)
             assert attempts() == attempts_after_declared_error
+
+            # A mutation made while another reader on the state is
+            # loading is queued until that reader has loaded, so the
+            # settled reader must wait for the mutation to complete
+            # before reading again, rather than read the state before
+            # it and settle on the same error.
+            driver.find_element_by_id('slow').click()
+
+            wait.until(
+                expected_conditions.text_to_be_present_in_element(
+                    (By.ID, 'slow-mounted'),
+                    'slow mounted',
+                )
+            )
 
             # A writer called through the frontend wakes the reader
             # again, and this time it succeeds.
@@ -107,6 +132,14 @@ async def test(context: ExternalContext, uri: str):
             )
             assert driver.find_element_by_id('error').text == ''
             assert attempts() > attempts_after_declared_error
+
+            # The reader observing the mutation resolves its promise.
+            wait.until(
+                expected_conditions.text_to_be_present_in_element(
+                    (By.ID, 'completed'),
+                    '2',
+                )
+            )
 
     # We execute the Selenium test in a separate thread to not block the
     # event loop.

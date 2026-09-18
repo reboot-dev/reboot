@@ -1664,6 +1664,9 @@ class GreeterInstance {
         this.runningMutates = [];
         this.queuedMutates = [];
         this.flushMutates = undefined;
+        // Set, and replaced, each time a mutation completes, so that anyone
+        // waiting on it is woken by the next completion.
+        this.mutationCompleted = new reboot_api.Event();
         this.websocket = undefined;
         this.backoff = new reboot_api.Backoff();
         this.useCreateMutations = [];
@@ -1771,6 +1774,12 @@ class GreeterInstance {
     hasRunningMutations() {
         return this.runningMutates.length > 0;
     }
+    // Whether a mutation made through this instance has yet to
+    // complete, whether it is in flight or still queued behind a
+    // loading reader.
+    hasPendingMutations() {
+        return this.queuedMutates.length > 0 || this.hasRunningMutations();
+    }
     async flushMutations() {
         if (this.flushMutates === undefined) {
             this.flushMutates = new reboot_api.Event();
@@ -1848,6 +1857,9 @@ class GreeterInstance {
                 this.runningMutates.shift();
                 const response = reboot_api.react_pb.MutateResponse.fromBinary(new Uint8Array(event.data));
                 resolve(response);
+                const mutationCompleted = this.mutationCompleted;
+                this.mutationCompleted = new reboot_api.Event();
+                mutationCompleted.set();
                 if (this.flushMutates !== undefined &&
                     this.runningMutates.length === 0) {
                     this.flushMutates.set();
@@ -1913,14 +1925,30 @@ class GreeterInstance {
                 orphans = orphans.filter(orphan => orphan.idempotencyKey !== idempotencyKey);
             }
         };
-        // Wake a reader that settled on an error so that it notices the
+        // Releases every mutation waiting to be observed by this reader,
+        // for when it stops reading: nothing would observe them otherwise
+        // and their callers would be stuck.
+        const release = () => {
+            for (const { aborted } of [...orphans, ...expecteds]) {
+                aborted();
+            }
+            orphans = [];
+            expecteds = [];
+        };
+        // Wake a reader waiting on a mutation so that it notices the
         // abort and finishes.
+        const abortedEvent = new reboot_api.Event();
         reader.abortController.signal.addEventListener("abort", () => {
+            abortedEvent.set();
             nextMutation === null || nextMutation === void 0 ? void 0 : nextMutation.set();
         });
         const backoff = new reboot_api.Backoff();
         try {
             while (true) {
+                if (reader.abortController.signal.aborted) {
+                    release();
+                    return;
+                }
                 let loaded = false;
                 mutated = false;
                 this.loadingReaders += 1;
@@ -2028,36 +2056,41 @@ class GreeterInstance {
                     }
                     loaded = false;
                     if (reader.abortController.signal.aborted) {
-                        for (const { aborted } of [...orphans, ...expecteds]) {
-                            aborted();
-                        }
+                        release();
                         return;
                     }
                     if (e instanceof reboot_api.Status &&
                         !reboot_api.isRetryableStatusCode(e.code)) {
                         // The server answered, and its answer is an error, e.g.,
                         // a declared error raised by the reader or a denied
-                        // authorization. Reading again would only reproduce it
-                        // until the state changes, so surface it and wait for a
-                        // mutation on this state rather than retry.
+                        // authorization. Reading again would get the same answer
+                        // until the state changes, so surface it and read again
+                        // only once a mutation made through this instance has
+                        // completed, rather than retry.
                         reader.setStatus(e);
                         reader.setIsLoading(false);
-                        if (!mutated) {
-                            // Nothing will observe these mutations while we are
-                            // not reading; release them so their callers are not
-                            // stuck.
-                            for (const { aborted } of [...orphans, ...expecteds]) {
-                                aborted();
-                            }
-                            orphans = [];
-                            expecteds = [];
+                        if (!mutated && !this.hasPendingMutations()) {
+                            release();
                             nextMutation = new reboot_api.Event();
                             if (!reader.abortController.signal.aborted) {
                                 await nextMutation.wait();
                             }
                             nextMutation = undefined;
                         }
+                        // A mutation stays queued while any reader on this state
+                        // is loading, so wait for the pending ones to complete
+                        // before counting as loading again; reading before they
+                        // complete would get the same answer, and holding them
+                        // back would leave them queued.
+                        while (!reader.abortController.signal.aborted &&
+                            this.hasPendingMutations()) {
+                            await Promise.race([
+                                this.mutationCompleted.wait(),
+                                abortedEvent.wait(),
+                            ]);
+                        }
                         if (reader.abortController.signal.aborted) {
+                            release();
                             return;
                         }
                         backoff.reset();
@@ -2269,9 +2302,9 @@ class GreeterInstance {
                 reboot_web.offlineCache().get(cacheKey).then((cachedResponse) => {
                     if (cachedResponse !== null) {
                         // We only want to set the response if we haven't already
-                        // gotten a response from the server as it is the authority
-                        // and should take precedence.
-                        if (reader.response === undefined) {
+                        // gotten a response, or an error, from the server as it
+                        // is the authority and should take precedence.
+                        if (reader.response === undefined && reader.status === undefined) {
                             reader.setResponse(greeter_pb.GreetResponse.fromJsonString(cachedResponse), { cache: false } // Don't re-cache the value!
                             );
                         }
@@ -2613,9 +2646,9 @@ class GreeterInstance {
                 reboot_web.offlineCache().get(cacheKey).then((cachedResponse) => {
                     if (cachedResponse !== null) {
                         // We only want to set the response if we haven't already
-                        // gotten a response from the server as it is the authority
-                        // and should take precedence.
-                        if (reader.response === undefined) {
+                        // gotten a response, or an error, from the server as it
+                        // is the authority and should take precedence.
+                        if (reader.response === undefined && reader.status === undefined) {
                             reader.setResponse(Empty.fromJsonString(cachedResponse), { cache: false } // Don't re-cache the value!
                             );
                         }
@@ -2761,9 +2794,9 @@ class GreeterInstance {
                 reboot_web.offlineCache().get(cacheKey).then((cachedResponse) => {
                     if (cachedResponse !== null) {
                         // We only want to set the response if we haven't already
-                        // gotten a response from the server as it is the authority
-                        // and should take precedence.
-                        if (reader.response === undefined) {
+                        // gotten a response, or an error, from the server as it
+                        // is the authority and should take precedence.
+                        if (reader.response === undefined && reader.status === undefined) {
                             reader.setResponse(Empty.fromJsonString(cachedResponse), { cache: false } // Don't re-cache the value!
                             );
                         }
@@ -2909,9 +2942,9 @@ class GreeterInstance {
                 reboot_web.offlineCache().get(cacheKey).then((cachedResponse) => {
                     if (cachedResponse !== null) {
                         // We only want to set the response if we haven't already
-                        // gotten a response from the server as it is the authority
-                        // and should take precedence.
-                        if (reader.response === undefined) {
+                        // gotten a response, or an error, from the server as it
+                        // is the authority and should take precedence.
+                        if (reader.response === undefined && reader.status === undefined) {
                             reader.setResponse(Empty.fromJsonString(cachedResponse), { cache: false } // Don't re-cache the value!
                             );
                         }
@@ -3155,9 +3188,9 @@ class GreeterInstance {
                 reboot_web.offlineCache().get(cacheKey).then((cachedResponse) => {
                     if (cachedResponse !== null) {
                         // We only want to set the response if we haven't already
-                        // gotten a response from the server as it is the authority
-                        // and should take precedence.
-                        if (reader.response === undefined) {
+                        // gotten a response, or an error, from the server as it
+                        // is the authority and should take precedence.
+                        if (reader.response === undefined && reader.status === undefined) {
                             reader.setResponse(GreeterProto.fromJsonString(cachedResponse), { cache: false } // Don't re-cache the value!
                             );
                         }
@@ -3303,9 +3336,9 @@ class GreeterInstance {
                 reboot_web.offlineCache().get(cacheKey).then((cachedResponse) => {
                     if (cachedResponse !== null) {
                         // We only want to set the response if we haven't already
-                        // gotten a response from the server as it is the authority
-                        // and should take precedence.
-                        if (reader.response === undefined) {
+                        // gotten a response, or an error, from the server as it
+                        // is the authority and should take precedence.
+                        if (reader.response === undefined && reader.status === undefined) {
                             reader.setResponse(Empty.fromJsonString(cachedResponse), { cache: false } // Don't re-cache the value!
                             );
                         }
@@ -3451,9 +3484,9 @@ class GreeterInstance {
                 reboot_web.offlineCache().get(cacheKey).then((cachedResponse) => {
                     if (cachedResponse !== null) {
                         // We only want to set the response if we haven't already
-                        // gotten a response from the server as it is the authority
-                        // and should take precedence.
-                        if (reader.response === undefined) {
+                        // gotten a response, or an error, from the server as it
+                        // is the authority and should take precedence.
+                        if (reader.response === undefined && reader.status === undefined) {
                             reader.setResponse(Empty.fromJsonString(cachedResponse), { cache: false } // Don't re-cache the value!
                             );
                         }
@@ -3795,9 +3828,9 @@ class GreeterInstance {
                 reboot_web.offlineCache().get(cacheKey).then((cachedResponse) => {
                     if (cachedResponse !== null) {
                         // We only want to set the response if we haven't already
-                        // gotten a response from the server as it is the authority
-                        // and should take precedence.
-                        if (reader.response === undefined) {
+                        // gotten a response, or an error, from the server as it
+                        // is the authority and should take precedence.
+                        if (reader.response === undefined && reader.status === undefined) {
                             reader.setResponse(greeter_pb.ReadRecursiveMessageResponse.fromJsonString(cachedResponse), { cache: false } // Don't re-cache the value!
                             );
                         }

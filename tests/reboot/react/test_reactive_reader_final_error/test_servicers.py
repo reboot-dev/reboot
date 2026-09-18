@@ -1,3 +1,4 @@
+import asyncio
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import ReaderContext, WriterContext
 from tests.reboot.react.test_reactive_reader_final_error import test_rbt
@@ -51,3 +52,16 @@ class TestServicer(Test.singleton.Servicer):
         request: test_rbt.AttemptsRequest,
     ) -> test_rbt.AttemptsResponse:
         return test_rbt.AttemptsResponse(attempts=self._get_attempts)
+
+    async def Slow(
+        self,
+        context: ReaderContext,
+        state: Test.State,
+        request: test_rbt.SlowRequest,
+    ) -> test_rbt.SlowResponse:
+        # Long enough for a test to make a mutation while a reactive
+        # read of this method is still loading, and short enough for
+        # the read to observe that mutation soon after, given that
+        # effect validation runs this twice per evaluation.
+        await asyncio.sleep(1)
+        return test_rbt.SlowResponse()

@@ -425,12 +425,13 @@ The `aborted` returned is not an exception and the generated React code does not
 
 A reactive reader hook returns an `aborted` too, next to `response`
 and `isLoading`. An error the backend answers the read with, such as a
-declared error raised by the reader, a denied authorizer, or
-`StateNotConstructed`, is final: it surfaces as `aborted` with
-`isLoading` `false`, and the reader does not retry it. The reader
-reads again once a mutation on the same state is made through this
-client, e.g., a constructor after `StateNotConstructed`, or when the
-component renders with a different `id`, request, or bearer token.
+declared error raised by the reader, a denied authorizer,
+`StateNotConstructed`, or an unexpected exception in the reader, is
+final: it surfaces as `aborted` with `isLoading` `false`, and the
+reader does not retry it. The reader reads again once a mutation on
+the same state made through this client has completed, e.g., a
+constructor after `StateNotConstructed`, or when the component
+renders with a different `id`, request, or bearer token.
 Transport failures, such as a disconnect while the backend restarts,
 are retried with backoff and never surface as `aborted`. A reader
 whose error is expected to clear because of _other_ clients' writes
