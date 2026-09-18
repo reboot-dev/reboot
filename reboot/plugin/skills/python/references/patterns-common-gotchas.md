@@ -233,7 +233,7 @@ async def fn(state):
 await Service.ref().write(context, fn)
 ```
 
-### 19. Schema Evolution Is Additive-Only Once State Persists
+### 20. Schema Evolution Is Additive-Only Once State Persists
 
 Changing the API of an application that has persisted state or has
 been deployed can make it fail to boot ("Updated state or method
@@ -241,7 +241,7 @@ definitions are not backwards compatible") and get its deploy
 rejected. Read `api-schema-evolution.md` for the rules you must
 follow before changing such an API.
 
-### 20. A `ref()` Belongs to One Context — `MixedContextsError`
+### 21. A `ref()` Belongs to One Context — `MixedContextsError`
 
 **Reusing a ref for many calls on the same context is fine** — hold
 it in a local and call it as often as you like:
@@ -275,7 +275,7 @@ await TaskList.ref(list_id).get(alice2)
 The error names the fix directly: "Instead create a new
 `WeakReference` for every `Context`."
 
-### 21. The State Type Named `User` Is Auto-Constructed
+### 22. The State Type Named `User` Is Auto-Constructed
 
 A state type literally named `User` is special: when
 `Application(oauth=...)` is configured, Reboot auto-constructs one
