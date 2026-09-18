@@ -144,12 +144,17 @@ Recommended sequence:
    existing user's state. Only reach for
    [mcp-ui/references/auth-oauth-providers.md](../mcp-ui/references/auth-oauth-providers.md)
    if you need to write a custom provider or debug a specific
-   provider's flow. In unit tests, keep
-   `token_verifier=<your IdP verifier>` exactly as in production —
-   the test harness's OAuth server verifies the impersonation token
-   minted by `await rbt.create_external_context_as(name, user_id)`,
-   and a custom bearer a test constructs by hand still hits your IdP
-   verifier; the authorizer rules run for real either way.
+   provider's flow.
+
+   Tests build their own `Application(...)` rather than running
+   `main.py`'s, whose `prod=None` arm and missing `allowed_origins`
+   refuse to start anywhere but `rbt dev run`. List the same
+   servicers, with the same authorizers, and wire identity per
+   `python/references/testing-harness.md` ("Identity Wiring in
+   Tests"): omit `oauth=` for backend scenarios, and for scenarios
+   that open the web app use `Development()` for both arms plus
+   `allowed_origins=[frontend.origin]`, as
+   `python/references/testing-web-app.md` shows.
 
 3. **Public, unauthenticated endpoints** (health checks, public
    sign-up, public catalog reads): mark these explicitly with

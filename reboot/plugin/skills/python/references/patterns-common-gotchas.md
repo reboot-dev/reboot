@@ -286,5 +286,6 @@ browser, and do not construct it in tests — impersonating a user
 with `await rbt.create_external_context_as(name, user_id)` is enough
 for `User.ref(user_id)` to resolve. The auto-construction happens
 only under `oauth=`; an app with a `User` type and no `oauth=` fails
-to start. Other state types are constructed explicitly, by their
+to start, except under the test harness, which supplies a test OAuth
+provider when `oauth=` is omitted (`testing-harness.md`). Other state types are constructed explicitly, by their
 factory `create`.
