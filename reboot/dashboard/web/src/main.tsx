@@ -413,6 +413,18 @@ const CHANGES_PER_PAGE = 100;
 // it lands on, so the two can never disagree.
 const pathOfTypeOnPage = (page: Page, id: string): string => `/${page}/${id}`;
 
+// What the URL names on its page, a type or a section of one, or
+// `undefined` for the page as a whole. The features page names its
+// sections by file path, whose slashes a `:id` segment cannot hold,
+// so its route matches the rest of the URL as a splat instead.
+const useTarget = (): string | undefined => {
+  const params = useParams();
+  return (
+    params.id ??
+    (params["*"] === "" || params["*"] === undefined ? undefined : params["*"])
+  );
+};
+
 // What the page's links carry of the types pane: the search naming
 // the type it shows, so following a link to a feature or a rule
 // leaves the pane open on what it was showing.
@@ -2230,7 +2242,14 @@ const CopyScenarioName: FC<{ name: string }> = ({ name }) => {
   );
 };
 
+// Whether any of an element's own transitions is still running.
+const isAnimating = (element: Element): boolean =>
+  element.getAnimations().length > 0;
+
 const ScenarioRow: FC<{
+  // The row's id on the features page, a `scenarioId`; absent for a
+  // background, which no URL names.
+  id?: string;
   keyword: string;
   // Absent for a bare heading naming nothing.
   name?: string;
@@ -2251,6 +2270,7 @@ const ScenarioRow: FC<{
   // scenario.
   recordingsStale?: boolean;
 }> = ({
+  id,
   keyword,
   name,
   description,
@@ -2263,7 +2283,11 @@ const ScenarioRow: FC<{
   videos,
   recordingsStale,
 }) => {
-  const [expanded, setExpanded] = useState(false);
+  // A scenario the URL names opens; one it names as the page loads
+  // starts out open, since it has nothing to be opened from.
+  const target = useTarget();
+  const targeted = id !== undefined && target === id;
+  const [expanded, setExpanded] = useState(targeted);
   const [relatedKey, setRelatedKey] = useState<string | null>(null);
   const hues = useMemo(
     () =>
@@ -2285,12 +2309,19 @@ const ScenarioRow: FC<{
   // it fits the pane, else with its top at the pane's top, so as
   // much of it shows as can.
   const row = useRef<HTMLDivElement>(null);
+  const detail = useRef<HTMLDivElement>(null);
   const scrollIntoViewOnceOpen = useRef(false);
   const onDetailOpened = (): void => {
-    if (!scrollIntoViewOnceOpen.current || row.current === null) {
+    if (!scrollIntoViewOnceOpen.current) {
       return;
     }
     scrollIntoViewOnceOpen.current = false;
+    scrollIntoView();
+  };
+  const scrollIntoView = (): void => {
+    if (row.current === null) {
+      return;
+    }
     const pane = row.current.closest(".pane");
     if (pane === null) {
       return;
@@ -2303,6 +2334,40 @@ const ScenarioRow: FC<{
     });
   };
 
+  // A scenario the URL names is brought into view the way one opened
+  // by a click is, once it is open. Keyed by the history entry, so
+  // following a link to it again brings it back into view, opening it
+  // again if it was closed.
+  const location = useLocation();
+  const expandedNow = useRef(expanded);
+  expandedNow.current = expanded;
+  useEffect(() => {
+    if (!targeted) {
+      return;
+    }
+    if (expandedNow.current) {
+      scrollIntoView();
+      return;
+    }
+    scrollIntoViewOnceOpen.current = true;
+    setExpanded(true);
+  }, [targeted, location.key]);
+
+  // A browser that can't animate the opening, or one asked for less
+  // motion, opens the detail at once and sends no `transitionend`,
+  // so a row still waiting to be brought into view is brought now.
+  useEffect(() => {
+    if (!expanded || !scrollIntoViewOnceOpen.current) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      if (detail.current !== null && !isAnimating(detail.current)) {
+        onDetailOpened();
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [expanded]);
+
   return (
     <div
       className={[
@@ -2312,6 +2377,7 @@ const ScenarioRow: FC<{
       ]
         .filter(Boolean)
         .join(" ")}
+      id={id === undefined ? undefined : pathOfTypeOnPage("features", id)}
       ref={row}
     >
       <div
@@ -2331,6 +2397,12 @@ const ScenarioRow: FC<{
         />
         <span className="scenario-name">{name}</span>
         {name !== undefined && <CopyScenarioName name={name} />}
+        {id !== undefined && (
+          // A click here links to the scenario, not toggles it.
+          <span onClick={(event) => event.stopPropagation()}>
+            <Anchor page="features" id={id} />
+          </span>
+        )}
         {videos.map((video) => (
           <a
             className="scenario-video"
@@ -2392,12 +2464,17 @@ const ScenarioRow: FC<{
           transition on this element, not a mount. */}
       <div
         className="scenario-detail"
-        // The rows' transition ends last; the opacity's ends first
-        // and is not the one to measure by.
+        ref={detail}
+        // While closed, its links can't be seen or clicked, so they
+        // stay out of the accessibility tree and the tab order.
+        inert={!expanded}
+        // Measured once the last of its transitions has ended: the
+        // rows', where the browser can animate them, which ends after
+        // the opacity's.
         onTransitionEnd={(event) => {
           if (
             event.target === event.currentTarget &&
-            event.propertyName === "grid-template-rows"
+            !isAnimating(event.currentTarget)
           ) {
             onDetailOpened();
           }
@@ -2467,17 +2544,19 @@ const BackgroundRow: FC<{
 // dimmed, into each of its scenarios along with any background
 // inherited from the feature.
 const ScenarioRows: FC<{
+  filename: string;
   inherited: feature_pb.Background[];
   background?: feature_pb.Background;
   scenarios: feature_pb.Scenario[];
   links: StepLinks;
-}> = ({ inherited, background, scenarios, links }) => (
+}> = ({ filename, inherited, background, scenarios, links }) => (
   <div className="scenarios">
     {background !== undefined && (
       <BackgroundRow background={background} links={links} />
     )}
     {scenarios.map((scenario) => (
       <ScenarioRow
+        id={scenarioId(filename, scenario.line)}
         // Always "Scenario", whether the file says "Scenario", its
         // synonym "Example", or "Scenario Outline": an outline shows
         // itself by the examples table under it.
@@ -2506,13 +2585,20 @@ const ScenarioRows: FC<{
 const ruleId = (filename: string, index: number): string =>
   `${filename}/rules/${index + 1}`;
 
+// Both the route a link to a scenario goes to and the `id` of its
+// row: the feature's file, then the line the scenario is declared
+// on, which no other scenario of the file shares.
+const scenarioId = (filename: string, line: number): string =>
+  `${filename}/scenarios/${line}`;
+
 const RuleSection: FC<{
+  filename: string;
   rule: feature_pb.Rule;
   // The rule's id on the page, a `ruleId`.
   id: string;
   inherited: feature_pb.Background[];
   links: StepLinks;
-}> = ({ rule, id, inherited, links }) => (
+}> = ({ filename, rule, id, inherited, links }) => (
   <div className="rule" id={pathOfTypeOnPage("features", id)}>
     <div className="rule-heading">
       <Pill
@@ -2533,6 +2619,7 @@ const RuleSection: FC<{
       <Description className="rule-description" text={rule.description} />
     )}
     <ScenarioRows
+      filename={filename}
       inherited={inherited}
       background={rule.background}
       scenarios={rule.scenarios}
@@ -2556,6 +2643,7 @@ const FeatureCard: FC<{
       <>
         {(feature.background !== undefined || feature.scenarios.length > 0) && (
           <ScenarioRows
+            filename={filename}
             inherited={[]}
             background={feature.background}
             scenarios={feature.scenarios}
@@ -2564,6 +2652,7 @@ const FeatureCard: FC<{
         )}
         {feature.rules.map((rule, index) => (
           <RuleSection
+            filename={filename}
             rule={rule}
             id={ruleId(filename, index)}
             inherited={
@@ -3169,7 +3258,8 @@ const FeaturesOverview: FC<{
 };
 
 // The first screenshot of each scenario that has one, as a gallery
-// of how the feature looks in the browser.
+// of how the feature looks in the browser. Each links to its
+// scenario, which opens with its steps' screenshots and videos.
 const FeatureGallery: FC<{ filename: string; feature: feature_pb.Feature }> = ({
   filename,
   feature,
@@ -3188,7 +3278,7 @@ const FeatureGallery: FC<{ filename: string; feature: feature_pb.Feature }> = ({
       {shots.map(({ scenario, screenshot }) => (
         <PageLink
           className="feature-gallery-item"
-          to={pathOfTypeOnPage("features", filename)}
+          to={pathOfTypeOnPage("features", scenarioId(filename, scenario.line))}
           key={scenario.line}
         >
           <img src={recordingUrl(screenshot)} alt="" />
@@ -3405,13 +3495,7 @@ const Overview: FC<{
     }
   }, [paneMinWidth, paneCollapsed, typesPanel]);
 
-  // The features page names its sections by file path, whose
-  // slashes a `:id` segment cannot hold, so its route matches the
-  // rest of the URL as a splat instead.
-  const params = useParams();
-  const target =
-    params.id ??
-    (params["*"] === "" || params["*"] === undefined ? undefined : params["*"]);
+  const target = useTarget();
 
   // What the types pane shows, from the URL, so a link to a type is
   // shareable and back and forward retrace it.
@@ -3485,7 +3569,8 @@ const Overview: FC<{
   const featureEntries = useMemo(() => sortedFeatures(features), [features]);
 
   // The feature the URL names, by its file or by one of its rules
-  // (`ruleId`); `undefined` for the page with no feature chosen,
+  // (`ruleId`) or scenarios (`scenarioId`); `undefined` for the page
+  // with no feature chosen,
   // which lists them all.
   const chosenFeature = useMemo(
     () =>
@@ -3493,7 +3578,7 @@ const Overview: FC<{
         ? undefined
         : featureEntries.find(
             ({ filename }) =>
-              target === filename || target.startsWith(`${filename}/rules/`)
+              target === filename || target.startsWith(`${filename}/`)
           ),
     [featureEntries, target]
   );
@@ -3661,20 +3746,56 @@ const Overview: FC<{
   // restored below instead, and snapping to the target would land
   // somewhere else. A fresh page load also reports `POP`, and there
   // the target is the intent, which `scrolledToTarget` says.
+  //
+  // A feature's own page opens at its top, where its name, gallery,
+  // and methods are: its card starts below them, and scrolling the
+  // card into view would scroll them away. Once per history entry,
+  // since the page re-renders as the files it shows are read again,
+  // and following the same link again makes a new entry.
+  const pane = useRef<HTMLDivElement>(null);
+  const location = useLocation();
   const navigationType = useNavigationType();
+  const scrolledForKey = useRef<string | null>(null);
   useEffect(() => {
-    if (target === undefined) {
+    if (target === undefined || scrolledForKey.current === location.key) {
       return;
     }
     if (navigationType === "POP" && scrolledToTarget) {
       return;
     }
+    if (page === "features" && target === chosenFeature?.filename) {
+      pane.current?.scrollTo(0, 0);
+      scrolledForKey.current = location.key;
+      scrolledToTarget = true;
+      return;
+    }
+    // A scenario brings itself into view, smoothly, once it has
+    // opened; jumping to it first would leave it nothing to show.
+    if (
+      page === "features" &&
+      chosenFeature !== undefined &&
+      target.startsWith(`${chosenFeature.filename}/scenarios/`)
+    ) {
+      scrolledForKey.current = location.key;
+      scrolledToTarget = true;
+      return;
+    }
     const element = document.getElementById(pathOfTypeOnPage(page, target));
     if (element !== null) {
       element.scrollIntoView();
+      scrolledForKey.current = location.key;
       scrolledToTarget = true;
     }
-  }, [navigationType, page, target, apis, linkedDataTypes, featureEntries]);
+  }, [
+    location.key,
+    navigationType,
+    page,
+    target,
+    chosenFeature,
+    apis,
+    linkedDataTypes,
+    featureEntries,
+  ]);
 
   const navigate = useNavigate();
 
@@ -3736,8 +3857,6 @@ const Overview: FC<{
     [navigate, carriedSearch]
   );
 
-  const pane = useRef<HTMLDivElement>(null);
-  const location = useLocation();
   const loaded = !(isLoading && stateTypeCount === 0) && preferencesLoaded;
 
   const typesBody = useRef<HTMLDivElement>(null);
