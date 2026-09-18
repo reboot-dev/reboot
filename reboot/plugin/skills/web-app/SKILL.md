@@ -105,20 +105,20 @@ Recommended sequence:
    `Development()` is a built-in fake account picker that lets
    you sign in as any identity at `/__/oauth/start`; `prod=None`
    fails fast at startup if you accidentally `rbt serve` without
-   choosing a real provider. **Omit `authorizer()`** on
-   Servicers; `rbt dev` allows the calls and logs a 60-second
-   warning naming every unauthorized method — that warning is
-   your TODO list. Do **not** paper this over with `allow()`;
-   `allow()` means "public, unauthenticated internet endpoint"
-   and survives into production.
+   choosing a real provider. Because every caller already has a
+   verified `context.auth.user_id` under `Development()`, **write
+   `authorizer()` on every Servicer from day one**, with
+   `allow_if(...)` rules that run in dev exactly as in production
+   (see `python/references/servicer-authorizer.md`,
+   `python/references/auth-allow-if.md`, and
+   `python/references/auth-built-in-predicates.md`). Do **not**
+   paper over a missing rule with `allow()`; `allow()` means
+   "public, unauthenticated internet endpoint" and survives into
+   production.
 2. **Before `rbt serve` / Reboot Cloud:** set `prod=Google(...)`
    (or `GitHub(...)`, `Auth0(...)`, your own `OAuthProvider`
-   subclass), then add `allow_if(...)` rules to every Servicer
-   that should be externally reachable. See
-   `python/references/servicer-authorizer.md`,
-   `python/references/auth-allow-if.md`, and
-   `python/references/auth-built-in-predicates.md`. The
-   The providers and what each needs:
+   subclass). The authorizers need no second pass. The providers
+   and what each needs:
 
    All arguments are keyword-only.
 
@@ -261,9 +261,9 @@ exactly one of them — the step that needs it.
 above for the dev-vs-prod sequence):
 
 - `python/references/servicer-authorizer.md` — **start here**.
-  Explains `oauth=` (the default) vs. `token_verifier=` (the
-  escape hatch for custom IdPs) and when to defer writing
-  `authorizer()` vs. write rules from day one.
+  Explains `oauth=` (the default, with rules from day one) vs.
+  `token_verifier=` (the escape hatch for custom IdPs, where rules
+  may wait until the verifier is wired).
 - `python/references/auth-allow-if.md`,
   `python/references/auth-built-in-predicates.md`,
   `python/references/auth-custom-predicates.md` — the predicate
