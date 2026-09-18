@@ -173,6 +173,12 @@ ignore_missing_imports = True
 [mypy-grpc_status.*]
 ignore_missing_imports = True
 
+# `from uuid7 import create as uuid7` (time-ordered keys) comes from
+# the `uuid7-standard` package, which `reboot` depends on; it ships
+# no type information.
+[mypy-uuid7]
+ignore_missing_imports = True
+
 # The generated `*_rbt.py` for your API package is not hand-written;
 # don't type-check it (you never edit it anyway). Repeat per package.
 # Name the generated module specifically — a blanket `<pkg>.v1.*`
