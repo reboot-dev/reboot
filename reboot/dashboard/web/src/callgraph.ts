@@ -49,7 +49,24 @@ export interface GraphMethod {
   factory: boolean;
   calls: GraphCall[];
   runs: GraphRun[];
+  // Whether the method is the `set_claims` Reboot adds to an
+  // auto-constructed `User` and calls itself as a user signs in, to
+  // store the claims the sign-in verified. The user does not need to
+  // test it, so the features page leaves it out of the methods no
+  // feature describes; the call graph still shows it.
+  userSetClaims?: boolean;
 }
+
+// The method Reboot adds to an auto-constructed `User` to store a
+// user's verified claims, which the user does not need to test. The
+// `create` Reboot also adds is the user's to test: a servicer
+// overrides it to give a new user its state, and a feature can
+// describe what that does.
+const USER_SET_CLAIMS_METHOD = "set_claims";
+
+// The state type Reboot auto-constructs, one per signed-in user, and
+// the only one it adds `set_claims` to.
+const USER_STATE_TYPE = "User";
 
 export interface GraphStateType {
   // The fully qualified name, `bank.v1.account.Account`, which is
@@ -451,6 +468,11 @@ export const joinStateTypes = (
                 factory: method.factory,
                 calls: countCalls(analyzed?.calls),
                 runs: countRuns(analyzed?.runs),
+                ...(stateType.autoConstruct &&
+                  stateType.name === USER_STATE_TYPE &&
+                  method.name === USER_SET_CLAIMS_METHOD && {
+                    userSetClaims: true,
+                  }),
               };
             }),
           },
