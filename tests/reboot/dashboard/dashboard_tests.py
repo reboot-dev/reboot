@@ -924,6 +924,51 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             [],
         )
 
+    async def test_a_call_edge_names_its_methods(self) -> None:
+        # The graph draws one edge per call, and more than one may
+        # join the same two boxes, so each says which methods it
+        # joins, not only which boxes, to a screen reader.
+        def body(driver):
+            driver.get(f'{self.url}{DASHBOARD_PATH}/#/models')
+            WebDriverWait(driver, 60).until(
+                expected_conditions.presence_of_element_located(
+                    (By.CSS_SELECTOR, '.react-flow__edge')
+                )
+            )
+            return sorted(
+                edge.get_attribute('aria-label') for edge in
+                driver.find_elements(By.CSS_SELECTOR, '.react-flow__edge')
+            )
+
+        context = self.rbt.create_external_context(name=self.id())
+        await Dashboard.ref(DASHBOARD_ID).UpdateApi(
+            context,
+            api_directory='api',
+            api_files={},
+            apis={_FILENAME: ParseDict(_API_WITH_CALLS, api_pb2.API())},
+        )
+        at = Timestamp()
+        at.GetCurrentTime()
+        await Dashboard.ref(DASHBOARD_ID).UpdateCode(
+            context,
+            servicers=[_SERVICER],
+            code_files={},
+            generated={},
+            changes=[],
+            check=Check(at=at),
+        )
+
+        labels = await asyncio.to_thread(self._run_in_browser, body)
+
+        self.assertEqual(
+            labels,
+            [
+                'shop.v1.Shop.look calls shop.v1.Shop.look',
+                'shop.v1.Shop.restock calls shop.v1.Shop.stock',
+                'shop.v1.Shop.stock calls shop.v1.Shop.look',
+            ],
+        )
+
     async def test_the_page_holds_presence(self) -> None:
         # `rbt dev run` opens a dashboard only when `Presence` lists no
         # viewer, so the page must subscribe while it is open and be
