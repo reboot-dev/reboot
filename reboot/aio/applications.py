@@ -425,8 +425,9 @@ class Application:
                 raise InputError(
                     reason=(
                         "`OAuth` requires `allowed_origins=[...]` to "
-                        "be set explicitly in production. List the "
-                        "SPA's origin (e.g. "
+                        "be set explicitly outside `rbt dev run`: in "
+                        "production, and in a test that passes its own "
+                        "`oauth=`. List the SPA's origin (e.g. "
                         "`OAuth(..., allowed_origins=["
                         "'https://app.example.com'])`), or pass an "
                         "empty list `allowed_origins=[]` to opt into "
