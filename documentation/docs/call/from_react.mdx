@@ -616,4 +616,11 @@ outage. These retries are _idempotent_, so this is perfectly safe to do.
 An error is considered unretryable if it originates from the application. All
 other errors are retried with an exponential backoff.
 
+This holds for reactive reads as well. A React reader hook surfaces an
+unretryable error as `aborted` (see [Errors](#errors)), and a
+`reactively()` read from `@reboot-dev/reboot-web` throws the method's
+`Aborted` from its generator, ending the iteration, just as the unary
+call throws it; both reconnect with backoff after a transport failure
+instead.
+
 <!-- See the section on [errors](#errors) for more details. -->

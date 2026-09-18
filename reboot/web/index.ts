@@ -4,11 +4,13 @@ import {
   Backoff,
   Event,
   Status,
+  StatusCode,
   TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF,
   assert,
   check_bufbuild_protobuf_library,
   errorFromGoogleRpcStatusDetails,
   errors_pb,
+  isRetryableStatusCode,
   react_pb,
   retryForever,
   stateIdToRef,
@@ -324,9 +326,18 @@ export async function httpCall<
   }
 }
 
+// Reads `method` reactively: the returned generator yields a response
+// for each change to the state, for as long as the caller iterates
+// it, and reconnects with backoff after a transport failure. It
+// throws an `abortedType` once the server answers the read with an
+// error, e.g., a declared error raised by the reader or a denied
+// authorization, the same way a unary call does; the generator is
+// then done, and reading again is up to the caller.
 export function reactively<
   RequestType extends Message<RequestType>,
-  ResponseType extends Message<ResponseType>
+  ResponseType extends Message<ResponseType>,
+  A extends Aborted,
+  AT extends AbortedType<A>
 >({
   url,
   state,
@@ -334,9 +345,11 @@ export function reactively<
   id,
   requestType,
   responseType,
+  abortedType,
   request,
   signal,
   bearerToken,
+  onUnauthenticated,
   websockets = false,
 }: {
   url: string;
@@ -345,9 +358,11 @@ export function reactively<
   id: string;
   requestType: MessageType<RequestType>;
   responseType: MessageType<ResponseType>;
+  abortedType: AT;
   request?: RequestType;
   signal?: AbortSignal;
   bearerToken?: () => Promise<string | undefined>;
+  onUnauthenticated?: OnUnauthenticated;
   websockets: boolean;
 }): [
   AsyncGenerator<ResponseType, void, unknown>,
@@ -411,6 +426,13 @@ export function reactively<
 
     const backoff = new Backoff();
 
+    // Whether `onUnauthenticated` has been asked to renew the session
+    // since the stream last connected. A renewal is followed by one
+    // more attempt, at most, so that a session it does not fix is
+    // surfaced rather than renewed forever, while a session that goes
+    // stale again later in the life of the read is renewed again.
+    let didRefresh = false;
+
     assert(request !== undefined);
 
     while (signal === undefined || !signal.aborted) {
@@ -442,6 +464,7 @@ export function reactively<
 
         for await (const queryResponse of queryResponses) {
           backoff.reset({ log: `[Reboot] Call to \`${method}\` succeeded` });
+          didRefresh = false;
           if (queryResponse.responseOrStatus.case === "response") {
             const response = responseType.fromBinary(
               queryResponse.responseOrStatus.value
@@ -450,11 +473,45 @@ export function reactively<
           }
         }
       } catch (e) {
-        if (signal === undefined || !signal.aborted) {
-          await backoff.wait({
-            log: `[Reboot] Retrying call to \`${method}\` with backoff ...`,
-          });
+        if (signal !== undefined && signal.aborted) {
+          return;
         }
+
+        if (e instanceof Status && !isRetryableStatusCode(e.code)) {
+          // The server answered, and its answer is an error, so
+          // reading again would get the same answer. A stale session
+          // is the one such answer a renewal may change, so ask for
+          // one before surfacing it, as a unary call does.
+          if (
+            e.code === StatusCode.UNAUTHENTICATED &&
+            onUnauthenticated !== undefined &&
+            !didRefresh
+          ) {
+            didRefresh = true;
+            let refreshed = false;
+            try {
+              refreshed = await onUnauthenticated();
+            } catch {
+              // Ignore refresh failures; surface the original error.
+            }
+            if (refreshed) {
+              continue;
+            }
+          }
+
+          throw abortedType.fromStatus(e);
+        }
+
+        // A transport failure, e.g., a disconnect or a server that is
+        // restarting: reconnect with backoff.
+        const message =
+          e instanceof Status || e instanceof Error
+            ? e.message
+            : JSON.stringify(e);
+
+        await backoff.wait({
+          log: `[Reboot] Reactive call to \`${method}\` failed with ${message}; retrying with backoff ...`,
+        });
       }
     }
   }

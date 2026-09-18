@@ -22,3 +22,21 @@ rewrite them to return the condition in their response (e.g. a
 `winner` field that is empty until there is one) instead of raising
 it; a reader that returns a response gets updated on every state
 change, since the stream stays open.
+
+## `reactively()` reads from `@reboot-dev/reboot-web` throw final errors
+
+The non-React web client's `Type.ref(id).reactively().<reader>(context)`
+generator used to retry every failure silently, so a declared error,
+a denied `authorizer()`, or `StateNotConstructed` left the
+`for await` loop waiting forever with nothing to catch. Now only
+transport failures (`Unavailable`, `Cancelled`, a dropped connection)
+are retried; any other error ends the generator by throwing the
+method's `<Type><Method>Aborted`, the same error the unary call
+throws.
+
+Look for `for await` loops over such a generator that are not inside
+a `try`, in particular ones run without `await` (a fire-and-forget
+`bind(...)` call): they now reject with the `Aborted` instead of
+staying silent. Wrap the loop in `try { ... } catch (e) { ... }` and
+handle the error, e.g. show it and subscribe again once the state has
+been constructed.

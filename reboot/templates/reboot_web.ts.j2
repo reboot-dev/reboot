@@ -458,9 +458,11 @@ class _Reactively {
         id: this.#id,
         requestType: {{ method.input_type }},
         responseType: {{ method.output_type }},
+        abortedType: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted,
         request: request,
         signal: options?.signal,
         bearerToken: context.bearerToken,
+        onUnauthenticated: context.onUnauthenticated,
         websockets: context.websockets,
       }
     );
