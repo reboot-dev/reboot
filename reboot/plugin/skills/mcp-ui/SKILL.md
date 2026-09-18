@@ -72,7 +72,7 @@ groups below are in build order, and each reference appears in
 exactly one of them — the step that needs it.
 
 > **Never read `web-app/references/*` for an MCP UI.** They cover
-> the standalone browser SPA — a top-level `web/` Vite shell, the
+> the standalone browser SPA — the `frontend/web/` SPA, the
 > `VITE_REBOOT_URL` backend URL, `<RebootClientProvider>`,
 > browser sign-in buttons — none of which apply to the nested
 > `frontend/mcp/<name>/` bundles an MCP host loads. The MCP UI

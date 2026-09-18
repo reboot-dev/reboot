@@ -9,14 +9,43 @@ tags: web-app, react, vite, hooks, errors, RebootClientProvider
 
 Everything the standalone browser frontend needs. This is the
 web-app equivalent of the `mcp-ui` skill's scaffolding references —
-**do not read those**: their Vite config, nested
-`frontend/mcp/<name>/index.html` output, and `UI()` machinery are
-MCP-host-specific and do not apply to a web app.
+**do not read those**: their `vite.config.ts` and `build.mjs` serve
+MCP UIs through Envoy and build one-file `mcp/<name>/index.html`
+bundles, which a web app has no use for.
 
-## The `web/` Shell
+## The `frontend/` Shell
 
-Stock Vite React-TS scaffolding (`npm create vite@latest web -- --template react-ts`), plus the two Reboot packages. Pin them to
-the same version as the backend's `reboot` dependency:
+A stock Vite React-TS project
+(`npm create vite@latest frontend -- --template react-ts`) with the
+SPA's `index.html`, `src/`, and `public/` moved under `web/`, so
+that the generated client at `frontend/api/` and, should the app
+ever add MCP UIs, `frontend/mcp/` sit beside it:
+
+```
+frontend/
+├── package.json
+├── tsconfig.json
+├── tsconfig.app.json    # `include: ["web/src"]`, the `@api/*` path
+├── tsconfig.node.json
+├── vite.config.ts       # Below
+├── api/                 # `rbt generate --react=frontend/api`
+└── web/
+    ├── .env.development # `VITE_REBOOT_URL`, below
+    ├── .env.production  # Written at deploy time (the `deploy` skill)
+    ├── index.html       # `<div id="root">` + `<script type="module" src="/src/main.tsx">`
+    ├── public/          # Static files, copied into the build as they are
+    └── src/
+        ├── main.tsx     # The provider, below
+        ├── vite-env.d.ts
+        ├── App.tsx
+        └── pages/
+```
+
+Keep the `react`, `react-dom`, and `devDependencies` (Vite, its
+React plugin, TypeScript, the `@types/*`) at the versions the
+scaffold writes; they are made to work together, and pinning them
+here would only go stale. Add the two Reboot packages, pinned to the
+same version as the backend's `reboot` dependency, and `zod`:
 
 ```json
 {
@@ -30,23 +59,43 @@ the same version as the backend's `reboot` dependency:
   "dependencies": {
     "@reboot-dev/reboot-api": "<same version as `reboot` in pyproject.toml>",
     "@reboot-dev/reboot-react": "<same version>",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "react": "<as the scaffold wrote it>",
+    "react-dom": "<as the scaffold wrote it>",
     "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "<as the scaffold wrote them>": ""
   }
 }
 ```
 
-`vite.config.ts` is the stock config with two additions, both
-load-bearing:
+`vite.config.ts` is the stock config rooted at `web/`, with a few
+additions, each load-bearing:
 
 ```ts
+import react from "@vitejs/plugin-react";
+import path from "path";
+import { defineConfig } from "vite";
+
 export default defineConfig({
   plugins: [react()],
-  // Two copies of `react` or `zod` — one from the app, one pulled
-  // through the Reboot packages — break hooks and schema identity
-  // checks at runtime.
-  resolve: { dedupe: ["react", "react-dom", "zod"] },
+  // The SPA's sources, `index.html`, `public/` and `.env*` live
+  // under `web/`.
+  root: "web",
+  build: {
+    // Beside `web/`, where the backend or a static host serves it
+    // at `/`; the default `base: "/"` stays.
+    outDir: "../dist/web",
+    emptyOutDir: true,
+  },
+  resolve: {
+    // The generated client, imported as `@api/<pkg>/v1/<name>_rbt_react`.
+    alias: { "@api": path.resolve(__dirname, "api") },
+    // Two copies of `react` or `zod` — one from the app, one pulled
+    // through the Reboot packages — break hooks and schema identity
+    // checks at runtime.
+    dedupe: ["react", "react-dom", "zod"],
+  },
   server: {
     // Listen on every interface. Vite's default is `localhost`,
     // which on modern Node resolves to IPv6 `[::1]` only; a
@@ -55,6 +104,7 @@ export default defineConfig({
     // refused, so the page is unreachable from the browser even
     // though the dev server is healthy and logs no error.
     host: true,
+    // Settable per machine, for one where 5173 is taken.
     port: parseInt(process.env.PORT || "5173", 10),
   },
 });
@@ -63,6 +113,28 @@ export default defineConfig({
 Leaving `server.host` out is the single most common reason a
 freshly built app "starts fine" and then won't open: `npm run dev`
 prints a URL, the process is up, and the browser cannot reach it.
+
+The config imports `path` and reads `process.env`, so `tsc -b` needs
+Node's types:
+`@types/node` and `"types": ["node"]` in `tsconfig.node.json`'s
+`compilerOptions`, both of which the scaffold writes. In
+`tsconfig.app.json`, point `include` at `web/src` instead of the
+scaffold's `src`, and add the alias's `paths`:
+
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@api/*": ["./api/*"] }
+  },
+  "include": ["web/src"]
+}
+```
+
+`npm run dev` serves the SPA at its own origin,
+`http://localhost:5173/` by default; `npm run build` writes
+`frontend/dist/web/`, a plain SPA build that any host serves at
+`/`.
 
 ## The Backend URL — Set It Explicitly in Dev
 
@@ -74,25 +146,27 @@ resolves to the **wrong** origin — and when even that is
 unavailable the client throws
 `Could not detect Reboot server URL. Ensure the page is served from the Reboot server.`
 
-Pass it explicitly, from an env file:
+Pass it explicitly, from an env file, which Vite reads from its
+`root`:
 
 ```
-# web/.env.development
+# frontend/web/.env.development
 VITE_REBOOT_URL=http://localhost:9991
 ```
 
 `import.meta.env` needs Vite's ambient types or `npm run build`
 fails with `Property 'env' does not exist on type 'ImportMeta'`.
-Stock `create vite` scaffolding includes the file; if you assembled
-`web/` by hand, write it:
+The scaffold writes them as `src/vite-env.d.ts`, which moves to
+`frontend/web/src/vite-env.d.ts` with the rest of `src/`; if you
+assembled the tree by hand, write it:
 
 ```ts
-// web/src/vite-env.d.ts
+// frontend/web/src/vite-env.d.ts
 /// <reference types="vite/client" />
 ```
 
 ```tsx
-// web/src/main.tsx
+// frontend/web/src/main.tsx
 const REBOOT_URL =
   (import.meta.env.VITE_REBOOT_URL as string | undefined) ??
   window.location.origin;
@@ -116,7 +190,7 @@ Read it before writing components — it has the `useFoo` overloads,
 `UseFooApi`, the three-field reader return, `ResponseOrAborted`, the
 `<Type><Method>Aborted` error classes, the snake→camel naming rules,
 and why a hook id must be real on every render. Do **not** open
-`web/src/api/**/*_rbt_react.ts` to rediscover them.
+`frontend/api/**/*_rbt_react.ts` to rediscover them.
 
 What is web-app-specific: the client is created by the
 `<RebootClientProvider url={...}>` above, and the signed-in user's
@@ -132,7 +206,7 @@ single translator keeps the switch in one place; every story with
 a "shows a visible error" requirement routes through it:
 
 ```ts
-// web/src/errors.ts
+// frontend/web/src/errors.ts
 export function friendlyError(aborted: {
   error: { type: string } & Record<string, unknown>;
   message: string;
@@ -218,7 +292,7 @@ import {
   useSignIn,
   useSignOut,
 } from "@reboot-dev/reboot-react";
-import { UseUserApi, useUser } from "./api/<pkg>/v1/<name>_rbt_react";
+import { UseUserApi, useUser } from "@api/<pkg>/v1/<name>_rbt_react";
 
 function App() {
   const { user, isLoading } = useUser();

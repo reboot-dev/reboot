@@ -27,7 +27,7 @@ my-app/
     api.py
 ```
 
-**Correct (canonical layout, matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example):**
+**Correct (canonical layout, the one the `web-app` and `mcp-ui` skills build on):**
 
 ```
 my-app/
@@ -41,9 +41,15 @@ my-app/
     api/                 # rbt generate --python output
     src/
       main.py            # application entry
-      <name>_servicer.py # one Servicer per state machine
-    tests/
-      <name>_servicer_test.py
+      servicers/
+        <name>.py        # one Servicer per state machine
+  tests/                 # see `testing-project-setup.md`
+    <capability>.feature
+    <name>_test.py
+  frontend/              # see the `web-app` and `mcp-ui` skills
+    api/                 # rbt generate --react output
+    web/                 # the browser SPA, if the app has one
+    mcp/<ui-name>/       # the MCP UIs, if the app has any
 ```
 
 ## `pyproject.toml`
@@ -130,7 +136,7 @@ node_modules/
 frontend/dist/
 ```
 
-Because the generated `backend/api/` (and `frontend/api/`) is
+Because the generated `backend/api/` (and the React client) is
 git-ignored, a fresh clone must run `rbt generate` before anything
 imports or type-checks. `rbt dev run` regenerates automatically; CI
 must run `rbt generate` explicitly.
