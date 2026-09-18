@@ -870,8 +870,23 @@ const edgesOfPackages = (
       });
     }
   }
-  return [...edgesById.values()];
+  return [...edgesById.values()].map((edge) => ({
+    ...edge,
+    ariaLabel: ariaLabelOfEdge(edge.data!),
+  }));
 };
+
+// What an edge says to a screen reader: the rows it joins, not just
+// their boxes, which is all React Flow's own label names, so that
+// the calls one box makes to another read apart.
+const ariaLabelOfEdge = ({
+  run,
+  sourceMethodIds,
+  targetMethodIds,
+}: CallEdgeData): string =>
+  `${sourceMethodIds.join(", ")} ${
+    run ? "runs" : "calls"
+  } ${targetMethodIds.join(", ")}`;
 
 // Every row reached from one, itself included, following `leads`
 // for at most `maxDistance` steps.
