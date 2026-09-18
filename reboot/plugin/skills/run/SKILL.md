@@ -43,15 +43,15 @@ strongest first.
   method type). `mcp=None` says nothing: every method of every app
   requires the `mcp=` argument, so a Web App has `mcp=None` on all
   of them.
+- There is a `frontend/mcp/<name>/index.html`.
 - `.rbtrc` has a `dev run --default-config=hmr` line together with
-  a `dev run:hmr --frontend-host=...` line.
-- The frontend uses the nested `frontend/mcp/<name>/index.html` layout.
+  a `dev run:hmr --frontend-host=...` line: Envoy proxying the
+  frontend, which only MCP UIs need.
 
 **Web App** — all of:
 
 - No `mcp=Tool(` / `UI(` anywhere under `api/`.
-- A single SPA entry at `web/index.html` (top of `web/`, not under
-  `frontend/mcp/`).
+- The SPA entry `frontend/web/index.html`, and no `frontend/mcp/`.
 
 If the signals genuinely conflict, or none match, ask the user
 ("Is this an MCP UI or a standalone Web App?"). Do not guess —
@@ -68,9 +68,8 @@ From the project root:
   `../python/references/lifecycle-project-setup.md`) and `uv sync`
   again; the extra is what the tests and the dashboard's Features
   page run on.
-- Frontend: if the frontend's `node_modules/` is missing, run
-  `npm install` in the frontend directory — `frontend/` for an MCP
-  MCP UI, `web/` for a standalone Web App.
+- Frontend: if `frontend/node_modules/` is missing, run
+  `npm install` in `frontend/`.
 
 ## Step 4 — Secrets: the git-ignored env file
 
@@ -150,11 +149,10 @@ confusing to a developer who cannot see the backend terminal.
 
 ### Frontend — both app types
 
-Run the Vite dev server from the frontend directory: `frontend/` for
-an MCP UI, `web/` for a standalone Web App.
+Run the Vite dev server from `frontend/`.
 
 ```sh
-cd frontend && npm run dev   # or `cd web` for a standalone Web App
+cd frontend && npm run dev
 ```
 
 ### Setup wizard — MCP UIs only
@@ -231,8 +229,8 @@ Confirm every process is up from its logs, then give the user:
   me"). Don't hand over an MCPJam URL — MCPJam isn't running, and
   only starts if the user picks it in the wizard (see the on-demand
   step above);
-- for a Web App — the frontend dev-server URL and a first page to
-  open.
+- for a Web App — the URL the Vite dev server printed
+  (`http://localhost:5173/` by default) and a first page to open.
 
 > **Always start every process the app needs.** An MCP UI needs
 > backend and frontend; a Web App needs the same. (MCPJam is not in

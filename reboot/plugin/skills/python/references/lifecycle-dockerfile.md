@@ -150,8 +150,8 @@ __pycache__/
 # Generated code — regenerated inside the image by `rbt generate`.
 backend/api/
 
-# No web frontend in this image.
-web/
+# The frontend, hosted outside this image.
+frontend/
 
 # VCS.
 .git/

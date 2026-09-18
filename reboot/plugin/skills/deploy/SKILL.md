@@ -114,23 +114,13 @@ After adding it, redeploy: `rbt cloud up`.
 
 ## Step 4 — Build the frontend for production
 
-First detect the frontend layout, the same way the
-[run skill](../run/SKILL.md) does:
+The SPA is `frontend/web/`, which `frontend/vite.config.ts` builds
+into `frontend/dist/web/` at `base: "/"`: a plain SPA build, served
+at the root of any host.
 
-- **Standalone Web App layout** — a single SPA with a stock Vite
-  config (entry `index.html` at the top of the SPA directory,
-  e.g. `web/`). Assets are built with Vite's default `base: "/"`.
-- **Dual-frontend layout** — a `frontend/` directory whose
-  `vite.config.ts` builds `RBT_BUILD_TARGET=mcp:<name>` targets
-  and an `RBT_BUILD_TARGET=web` target into `dist/`. The web
-  build there uses `base: "/__/frontend/web/"` (asset URLs carry
-  that prefix).
-
-Then:
-
-1. **Bake in the backend URL.** Next to the SPA's existing `.env`
-   (the file that sets `VITE_REBOOT_URL` for dev), write
-   `.env.production`:
+1. **Bake in the backend URL.** Next to
+   `frontend/web/.env.development` (the file that sets
+   `VITE_REBOOT_URL` for dev), write `frontend/web/.env.production`:
 
    ```sh
    VITE_REBOOT_URL=https://<application-id>.<cell>.rbt.cloud:9991
@@ -139,38 +129,26 @@ Then:
    Vite's production build reads it automatically; the dev `.env`
    stays untouched.
 
-2. **Add the static host's routing file.** Put a `_redirects`
-   file in the SPA's `public/` directory (Vite copies it into the
-   build output). For the standalone layout:
+2. **Build.** `cd frontend && npm run build`. The publish directory
+   is `frontend/dist/web/`, the directory containing the built
+   `index.html`. Pages serves `index.html` for any path it has no
+   file for when the build has no top-level `404.html`, so an app
+   with URL-path routes needs no routing file of its own.
 
-   ```
-   /* /index.html 200
-   ```
-
-   (the standard SPA fallback, so a hard load of `/some/route`
-   serves the app instead of a 404). For the dual-frontend layout,
-   one extra line **first**, mapping the `/__/frontend/web/`
-   asset prefix baked into that layout's build back onto the
-   published files:
+   An app that also has MCP UIs builds with the `mcp-ui` skill's
+   `vite.config.ts`, whose web build carries the
+   `/__/frontend/web/` prefix the backend serves it under. For that
+   app, put a `_redirects` file in `frontend/web/public/` (Vite
+   copies it into the build output) mapping the prefix back onto
+   the published files, and keep any URL-path router's basename at
+   `"/"` — never `basename={import.meta.env.BASE_URL}`, which bakes
+   the prefix into route matching in the browser, where no host
+   rewrite can fix it:
 
    ```
    /__/frontend/web/* /:splat 200
    /* /index.html 200
    ```
-
-3. **Check the router's basename.** If the app uses a URL-path
-   router (e.g. React Router), its basename must be `"/"` (or
-   unset). Never `basename={import.meta.env.BASE_URL}` — on the
-   dual-frontend layout that bakes `/__/frontend/web/` into route
-   matching, which runs in the browser where no host rewrite can
-   fix it, and every route silently renders nothing on the custom
-   domain.
-
-4. **Build.** Run the project's frontend build (`npm run build`
-   in the frontend directory). The publish directory is the built
-   SPA: the directory containing the built `index.html` — e.g.
-   `web/dist/` for the standalone layout, `frontend/dist/web/`
-   for the dual-frontend layout.
 
 ## Step 5 — Publish to Cloudflare Pages and attach the domain
 

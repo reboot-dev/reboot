@@ -186,7 +186,7 @@ The list below is what's specific to the MCP UI layer:
 
 21. **Don't add `generate --react-extensions` to `.rbtrc`.** This is
     a Python-backend app that generates the React client on its own
-    into `web/api/`. Vite — plus `tsc` under the
+    into `frontend/api/`. Vite — plus `tsc` under the
     `moduleResolution: "bundler"` the scaffolded tsconfigs use —
     resolves the generated client's relative imports without explicit
     `.js` extensions, so the flag buys nothing here. The two cases

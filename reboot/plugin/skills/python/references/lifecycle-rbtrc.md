@@ -19,7 +19,7 @@ tags: rbtrc, config, generate, dev, expunge, application-name
 # DON'T — .rbtrc is not YAML.
 generate:
   python: backend/api/
-  react: web/src/api
+  react: frontend/api
 dev:
   run:
     application: backend/src/main.py
@@ -34,8 +34,7 @@ generate api/
 
 # Tell `rbt` where to output its generated files.
 generate --python=backend/api/
-generate --react=web/src/api
-generate --web=web/src/api
+generate --react=frontend/api
 
 # Watch source files during `rbt dev run`.
 dev run --watch=backend/api/**/*.py
