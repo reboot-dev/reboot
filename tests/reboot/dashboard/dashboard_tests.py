@@ -894,6 +894,36 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_the_sidebar_is_links(self) -> None:
+        # The sidebar lists the pages and, on the features page, the
+        # features, each a link that keyboard focus reaches, so a
+        # keyboard or a screen reader can follow it, not only a mouse.
+        await self._record_feature()
+
+        def body(driver):
+            self._open_feature(driver)
+            return driver.execute_script(
+                'return [...document.querySelectorAll("nav a")].map('
+                '  (link) => {'
+                '    link.focus();'
+                '    const focused = document.activeElement === link;'
+                '    link.blur();'
+                # The name, without a "new" beside it.
+                '    return [link.innerText.split("\\n")[0], focused];'
+                '  });'
+            )
+
+        links = await asyncio.to_thread(self._run_in_browser, body)
+
+        names = [name for name, _ in links]
+        self.assertIn('MODELS', names)
+        self.assertIn('FEATURES', names)
+        self.assertIn('People can go shopping', names)
+        self.assertEqual(
+            [name for name, focused in links if not focused],
+            [],
+        )
+
     async def test_the_page_holds_presence(self) -> None:
         # `rbt dev run` opens a dashboard only when `Presence` lists no
         # viewer, so the page must subscribe while it is open and be
