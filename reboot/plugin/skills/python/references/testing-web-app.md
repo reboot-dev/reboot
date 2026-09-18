@@ -261,6 +261,18 @@ tests/opening_accounts.recordings/
   result stays on screen, default 1000); `0` for either turns that
   pacing off. Only the browser is paced; the page and the backend
   run at full speed.
+- **The browser is in light mode**, whatever the developer's OS
+  theme: Playwright emulates `prefers-color-scheme: light` unless
+  told otherwise, so an app that follows the OS theme is recorded
+  (and asserted on) in its light theme only. To run a test module's
+  scenarios in dark mode, override pytest-playwright's
+  `browser_context_args` fixture in it:
+
+  ```python
+  @pytest.fixture
+  def browser_context_args(browser_context_args: dict) -> dict:
+      return {**browser_context_args, 'color_scheme': 'dark'}
+  ```
 
 ## Running
 
