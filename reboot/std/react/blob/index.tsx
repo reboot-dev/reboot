@@ -80,7 +80,8 @@ export class BlobUploader {
 
   /**
    * Fetches upload instructions for the given part numbers, waiting
-   * for the blob's upload session to be provisioned.
+   * for the blob's upload session to be provisioned. Rejects for a
+   * blob that is no longer uploading.
    */
   async partUploadInstructions(
     partNumbers: number[],
@@ -211,7 +212,9 @@ export class BlobUploader {
           info.status === Blob_Status.REMOVING ||
           info.status === Blob_Status.REMOVED
         ) {
-          return { error: "The blob was removed before it committed" };
+          // Removal is not a verdict on the commit: there is no blob
+          // left to repair or to commit again.
+          throw new Error(`Blob ${this.options.blobId} has been removed`);
         }
       }
       // The watch ends without a verdict only when it was aborted: by
@@ -310,10 +313,16 @@ export class BlobUploader {
  * uploading, but `upload` cannot repair it, since it skips every
  * part the blob already has and the verdict does not say which part
  * is at fault; upload again into a new blob, or replace parts through
- * `BlobUploader.putPart` and `commit` again. A rejection is a part
- * that could not be uploaded even after retries; the parts that did
- * upload are kept, so calling `upload` again for the same blob
- * resumes rather than restarts. A blob that is never committed is
+ * `BlobUploader.putPart` and `commit` again. A rejection is either a
+ * refusal that another `upload` would only repeat -- bytes that do
+ * not add up to the `size` the blob was created with, or a blob
+ * that is no longer uploading because it was removed or its commit
+ * has begun -- or an interruption: a part that could not be uploaded
+ * even after retries, or the caller's own abort. After an
+ * interruption the parts that did upload are kept, so calling
+ * `upload` again for the same blob resumes rather than restarts.
+ * Once a blob's commit has begun, its outcome is read from `useBlob`
+ * rather than from `upload`. A blob that is never committed is
  * removed by the backend after a day.
  */
 export function useBlobUpload(): {
