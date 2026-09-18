@@ -136,6 +136,7 @@ the app in one scenario.
 | `"alice" opens the web app`                                                   | Opens the app's origin in alice's browser (`at "/path"` for another page) |
 | `"alice" clicks the "Open Account" button in the web app`                     | Clicks the element of that role and accessible name                       |
 | `"alice" fills "Amount ($)" in the web app with `250``                        | Fills the field with that label                                           |
+| `"alice" fills "New todo" in the web app with `"Buy milk"``                   | The value is JSON, so text is a quoted string                             |
 | `"alice" selects "<first account id>" in "From Account" in the web app`       | Picks an option in the select with that label                             |
 | `"alice" checks "Remember me" in the web app` / `unchecks`                    | Sets the checkbox with that label                                         |
 | `"alice" presses "Enter" in the web app`                                      | Presses a key in the focused element                                      |
