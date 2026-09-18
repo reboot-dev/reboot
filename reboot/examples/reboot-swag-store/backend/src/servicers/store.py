@@ -1,7 +1,6 @@
 import os
 import rbt.v1alpha1.errors_pb2
 import secrets
-import uuid7
 from constants import COUPON_BOOK_ID
 from datetime import datetime, timezone
 from printful import create_order, fetch_products
@@ -13,6 +12,7 @@ from reboot.aio.contexts import (
     WriterContext,
 )
 from reboot.aio.workflows import at_least_once
+from reboot.uuidv7 import uuid7
 from reboot_swag_store.v1.store import (
     CartEmpty,
     CartItem,
@@ -257,7 +257,7 @@ class CartServicer(Cart.Servicer):
         # Coupon makes the order free.
         total_cents = 0
 
-        order_id = str(uuid7.create())
+        order_id = str(uuid7())
 
         order_items = [
             OrderItem(

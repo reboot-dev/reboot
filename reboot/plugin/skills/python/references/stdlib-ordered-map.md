@@ -117,7 +117,9 @@ Single-key inserts take `key=` plus one of `value=` / `bytes=` /
 ```python
 from reboot.std.collections.ordered_map.v1.ordered_map import OrderedMap
 from uuid import uuid4
-from uuid7 import create as uuid7
+# Reboot's own UUIDv7: monotonic within a millisecond, so keys minted
+# together iterate in the order they were minted.
+from reboot.uuidv7 import uuid7
 
 
 class BankServicer(Bank.Servicer):
