@@ -1893,19 +1893,36 @@ class GreeterInstance {
         // we will still have observed their effects and can
         // call `observed()` on them.
         let orphans = [];
+        // Whether a mutation has been made on this state since the
+        // current attempt to read started, and the event set by the next
+        // mutation on this state, which a reader that settled on an error
+        // waits on. A mutation may change the state such that the reader
+        // now succeeds, e.g., a constructor after `StateNotConstructed`,
+        // so it is what makes reading again worthwhile.
+        let mutated = false;
+        let nextMutation = undefined;
         const id = `${uuidv4()}`;
         this.observers[id] = {
             observe: (idempotencyKey, observed, aborted) => {
                 expecteds = expecteds.concat({ idempotencyKey, observed, aborted });
+                mutated = true;
+                nextMutation === null || nextMutation === void 0 ? void 0 : nextMutation.set();
             },
             unobserve: (idempotencyKey) => {
                 expecteds = expecteds.filter(expected => expected.idempotencyKey !== idempotencyKey);
                 orphans = orphans.filter(orphan => orphan.idempotencyKey !== idempotencyKey);
             }
         };
+        // Wake a reader that settled on an error so that it notices the
+        // abort and finishes.
+        reader.abortController.signal.addEventListener("abort", () => {
+            nextMutation === null || nextMutation === void 0 ? void 0 : nextMutation.set();
+        });
+        const backoff = new reboot_api.Backoff();
         try {
-            await reboot_api.retryForever(async () => {
+            while (true) {
                 let loaded = false;
+                mutated = false;
                 this.loadingReaders += 1;
                 // Any mutations started after we've incremented
                 // `this.loadingReaders` will be queued until after
@@ -1943,6 +1960,9 @@ class GreeterInstance {
                                 this.readersLoadedOrFailed();
                             }
                             loaded = true;
+                            backoff.reset({
+                                log: `[Reboot] Reactive reader 'Greeter.${method}' connected`
+                            });
                         }
                         reader.setIsLoading(false);
                         const response = queryResponse.responseOrStatus.case === "response"
@@ -2013,23 +2033,51 @@ class GreeterInstance {
                         }
                         return;
                     }
-                    // Intentionally leave `isLoading: true` here. The outer
-                    // `retryForever(...)` will run another attempt and call
-                    // `reader.setIsLoading(true)` again at the top of the
-                    // try block, but if we cleared it to `false` here first
-                    // consumers would observe a brief `false → true → false
-                    // → true ...` flip-flop on every retry while we're
-                    // actually still trying to (re)connect. Once a response
-                    // finally arrives the success path sets it to `false`.
-                    if (e instanceof reboot_api.Status) {
+                    if (e instanceof reboot_api.Status &&
+                        !reboot_api.isRetryableStatusCode(e.code)) {
+                        // The server answered, and its answer is an error, e.g.,
+                        // a declared error raised by the reader or a denied
+                        // authorization. Reading again would only reproduce it
+                        // until the state changes, so surface it and wait for a
+                        // mutation on this state rather than retry.
                         reader.setStatus(e);
+                        reader.setIsLoading(false);
+                        if (!mutated) {
+                            // Nothing will observe these mutations while we are
+                            // not reading; release them so their callers are not
+                            // stuck.
+                            for (const { aborted } of [...orphans, ...expecteds]) {
+                                aborted();
+                            }
+                            orphans = [];
+                            expecteds = [];
+                            nextMutation = new reboot_api.Event();
+                            if (!reader.abortController.signal.aborted) {
+                                await nextMutation.wait();
+                            }
+                            nextMutation = undefined;
+                        }
+                        if (reader.abortController.signal.aborted) {
+                            return;
+                        }
+                        backoff.reset();
+                        continue;
                     }
-                    else {
-                        console.warn(`[Reboot] Caught unknown exception: ${e instanceof Error ? e.message : JSON.stringify(e)}`);
-                    }
-                    throw e; // This just retries!
+                    // A transport failure, e.g., a disconnect or a server that
+                    // is restarting: reconnect with backoff. We intentionally
+                    // leave `isLoading: true` here since we are still trying to
+                    // (re)connect; clearing it first would make consumers
+                    // observe a brief `false → true → false → true ...`
+                    // flip-flop on every retry. Once a response finally
+                    // arrives the success path sets it to `false`.
+                    const message = e instanceof reboot_api.Status || e instanceof Error
+                        ? e.message
+                        : JSON.stringify(e);
+                    await backoff.wait({
+                        log: `[Reboot] Reactive reader 'Greeter.${method}' failed with ${message}; retrying with backoff...`
+                    });
                 }
-            });
+            }
         }
         finally {
             delete this.observers[id];
@@ -2142,6 +2190,7 @@ class GreeterInstance {
             reader = {
                 abortController: new AbortController(),
                 event,
+                isLoading: true,
                 promise,
                 used: false,
                 scheduledUnusedTimeoutsCount: 0,
@@ -2170,6 +2219,7 @@ class GreeterInstance {
                     }
                 },
                 setIsLoading(isLoading) {
+                    this.isLoading = isLoading;
                     for (const setIsLoading of Object.values(this.setIsLoadings)) {
                         setIsLoading(isLoading);
                     }
@@ -2250,11 +2300,11 @@ class GreeterInstance {
         // If we already have a `response` or `status` need to set it.
         if (reader.response) {
             setResponse(reader.response);
-            setIsLoading(false);
         }
         else if (reader.status) {
             setStatus(reader.status);
         }
+        setIsLoading(reader.isLoading);
     }
     unuseGreet(id, requestBearerTokenHash) {
         const reader = this.useGreetReaders[requestBearerTokenHash];
@@ -2484,6 +2534,7 @@ class GreeterInstance {
             reader = {
                 abortController: new AbortController(),
                 event,
+                isLoading: true,
                 promise,
                 used: false,
                 scheduledUnusedTimeoutsCount: 0,
@@ -2512,6 +2563,7 @@ class GreeterInstance {
                     }
                 },
                 setIsLoading(isLoading) {
+                    this.isLoading = isLoading;
                     for (const setIsLoading of Object.values(this.setIsLoadings)) {
                         setIsLoading(isLoading);
                     }
@@ -2592,11 +2644,11 @@ class GreeterInstance {
         // If we already have a `response` or `status` need to set it.
         if (reader.response) {
             setResponse(reader.response);
-            setIsLoading(false);
         }
         else if (reader.status) {
             setStatus(reader.status);
         }
+        setIsLoading(reader.isLoading);
     }
     unuseTryToConstructContext(id, requestBearerTokenHash) {
         const reader = this.useTryToConstructContextReaders[requestBearerTokenHash];
@@ -2630,6 +2682,7 @@ class GreeterInstance {
             reader = {
                 abortController: new AbortController(),
                 event,
+                isLoading: true,
                 promise,
                 used: false,
                 scheduledUnusedTimeoutsCount: 0,
@@ -2658,6 +2711,7 @@ class GreeterInstance {
                     }
                 },
                 setIsLoading(isLoading) {
+                    this.isLoading = isLoading;
                     for (const setIsLoading of Object.values(this.setIsLoadings)) {
                         setIsLoading(isLoading);
                     }
@@ -2738,11 +2792,11 @@ class GreeterInstance {
         // If we already have a `response` or `status` need to set it.
         if (reader.response) {
             setResponse(reader.response);
-            setIsLoading(false);
         }
         else if (reader.status) {
             setStatus(reader.status);
         }
+        setIsLoading(reader.isLoading);
     }
     unuseTryToConstructExternalContext(id, requestBearerTokenHash) {
         const reader = this.useTryToConstructExternalContextReaders[requestBearerTokenHash];
@@ -2776,6 +2830,7 @@ class GreeterInstance {
             reader = {
                 abortController: new AbortController(),
                 event,
+                isLoading: true,
                 promise,
                 used: false,
                 scheduledUnusedTimeoutsCount: 0,
@@ -2804,6 +2859,7 @@ class GreeterInstance {
                     }
                 },
                 setIsLoading(isLoading) {
+                    this.isLoading = isLoading;
                     for (const setIsLoading of Object.values(this.setIsLoadings)) {
                         setIsLoading(isLoading);
                     }
@@ -2884,11 +2940,11 @@ class GreeterInstance {
         // If we already have a `response` or `status` need to set it.
         if (reader.response) {
             setResponse(reader.response);
-            setIsLoading(false);
         }
         else if (reader.status) {
             setStatus(reader.status);
         }
+        setIsLoading(reader.isLoading);
     }
     unuseTestLongRunningFetch(id, requestBearerTokenHash) {
         const reader = this.useTestLongRunningFetchReaders[requestBearerTokenHash];
@@ -3020,6 +3076,7 @@ class GreeterInstance {
             reader = {
                 abortController: new AbortController(),
                 event,
+                isLoading: true,
                 promise,
                 used: false,
                 scheduledUnusedTimeoutsCount: 0,
@@ -3048,6 +3105,7 @@ class GreeterInstance {
                     }
                 },
                 setIsLoading(isLoading) {
+                    this.isLoading = isLoading;
                     for (const setIsLoading of Object.values(this.setIsLoadings)) {
                         setIsLoading(isLoading);
                     }
@@ -3128,11 +3186,11 @@ class GreeterInstance {
         // If we already have a `response` or `status` need to set it.
         if (reader.response) {
             setResponse(reader.response);
-            setIsLoading(false);
         }
         else if (reader.status) {
             setStatus(reader.status);
         }
+        setIsLoading(reader.isLoading);
     }
     unuseGetWholeState(id, requestBearerTokenHash) {
         const reader = this.useGetWholeStateReaders[requestBearerTokenHash];
@@ -3166,6 +3224,7 @@ class GreeterInstance {
             reader = {
                 abortController: new AbortController(),
                 event,
+                isLoading: true,
                 promise,
                 used: false,
                 scheduledUnusedTimeoutsCount: 0,
@@ -3194,6 +3253,7 @@ class GreeterInstance {
                     }
                 },
                 setIsLoading(isLoading) {
+                    this.isLoading = isLoading;
                     for (const setIsLoading of Object.values(this.setIsLoadings)) {
                         setIsLoading(isLoading);
                     }
@@ -3274,11 +3334,11 @@ class GreeterInstance {
         // If we already have a `response` or `status` need to set it.
         if (reader.response) {
             setResponse(reader.response);
-            setIsLoading(false);
         }
         else if (reader.status) {
             setStatus(reader.status);
         }
+        setIsLoading(reader.isLoading);
     }
     unuseFailWithException(id, requestBearerTokenHash) {
         const reader = this.useFailWithExceptionReaders[requestBearerTokenHash];
@@ -3312,6 +3372,7 @@ class GreeterInstance {
             reader = {
                 abortController: new AbortController(),
                 event,
+                isLoading: true,
                 promise,
                 used: false,
                 scheduledUnusedTimeoutsCount: 0,
@@ -3340,6 +3401,7 @@ class GreeterInstance {
                     }
                 },
                 setIsLoading(isLoading) {
+                    this.isLoading = isLoading;
                     for (const setIsLoading of Object.values(this.setIsLoadings)) {
                         setIsLoading(isLoading);
                     }
@@ -3420,11 +3482,11 @@ class GreeterInstance {
         // If we already have a `response` or `status` need to set it.
         if (reader.response) {
             setResponse(reader.response);
-            setIsLoading(false);
         }
         else if (reader.status) {
             setStatus(reader.status);
         }
+        setIsLoading(reader.isLoading);
     }
     unuseFailWithAborted(id, requestBearerTokenHash) {
         const reader = this.useFailWithAbortedReaders[requestBearerTokenHash];
@@ -3654,6 +3716,7 @@ class GreeterInstance {
             reader = {
                 abortController: new AbortController(),
                 event,
+                isLoading: true,
                 promise,
                 used: false,
                 scheduledUnusedTimeoutsCount: 0,
@@ -3682,6 +3745,7 @@ class GreeterInstance {
                     }
                 },
                 setIsLoading(isLoading) {
+                    this.isLoading = isLoading;
                     for (const setIsLoading of Object.values(this.setIsLoadings)) {
                         setIsLoading(isLoading);
                     }
@@ -3762,11 +3826,11 @@ class GreeterInstance {
         // If we already have a `response` or `status` need to set it.
         if (reader.response) {
             setResponse(reader.response);
-            setIsLoading(false);
         }
         else if (reader.status) {
             setStatus(reader.status);
         }
+        setIsLoading(reader.isLoading);
     }
     unuseReadRecursiveMessage(id, requestBearerTokenHash) {
         const reader = this.useReadRecursiveMessageReaders[requestBearerTokenHash];

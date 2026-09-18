@@ -84,6 +84,14 @@ stale `response` — and transport disconnects auto-reconnect without
 surfacing as `aborted`, so don't build an online/offline indicator
 out of it.
 
+An `aborted` reader is final: the error is the backend's answer, and
+the reader reads again only once a mutation on the same state goes
+through this client (a constructor after `StateNotConstructed`, for
+instance) or the component renders with a different `id`, request or
+bearer token. A reader whose error should clear because of _other_
+clients' writes must return that condition in its response instead
+of raising it; a response gets updated on every state change.
+
 ## Mutations Never Throw
 
 They resolve to `{ response, aborted }`. A `try/catch` around one
