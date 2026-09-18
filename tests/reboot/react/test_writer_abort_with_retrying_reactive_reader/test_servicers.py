@@ -1,5 +1,5 @@
 from google.protobuf import empty_pb2
-from rbt.v1alpha1.errors_pb2 import Aborted
+from rbt.v1alpha1.errors_pb2 import Aborted, Unavailable
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import ReaderContext, WriterContext
 from tests.reboot.react.test_writer_abort_with_retrying_reactive_reader import (
@@ -37,7 +37,13 @@ class TestServicer(Test.singleton.Servicer):
                 message='This is a response from the test servicer.'
             )
         else:
-            raise RuntimeError('This is an error from the test servicer.')
+            # `Unavailable` is one of the errors a reactive reader
+            # retries, so raising it keeps the reader retrying until
+            # the writer has aborted.
+            raise Test.ReturnResponseOrRaiseAborted(
+                Unavailable(),
+                message='This is an error from the test servicer.',
+            )
 
     async def FailWithAborted(
         self,
