@@ -436,6 +436,11 @@ export function reactively<
     assert(request !== undefined);
 
     while (signal === undefined || !signal.aborted) {
+      // The signal of this attempt's stream: `setRequest()` aborts it,
+      // and replaces `responsesAbortController`, to have the next
+      // attempt read the new request.
+      const attemptSignal = responsesAbortController.signal;
+
       try {
         // The reactive read path multiplexes many RPCs over one
         // WebSocket and each call may carry a different bearer (a
@@ -458,7 +463,7 @@ export function reactively<
         const queryResponses = reactiveReader({
           endpoint: `${url}/__/reboot/rpc/${stateRef}`,
           request: queryRequest,
-          signal: responsesAbortController.signal,
+          signal: attemptSignal,
           websockets,
         });
 
@@ -472,9 +477,25 @@ export function reactively<
             yield response;
           }
         }
+
+        if (attemptSignal.aborted) {
+          // `setRequest()` closed the stream; read the new request.
+          continue;
+        }
+
+        // The server closed the stream without an answer, e.g., while
+        // shutting down: reconnect the way a transport failure is.
+        await backoff.wait({
+          log: `[Reboot] Reactive call to \`${method}\` ended; retrying with backoff ...`,
+        });
       } catch (e) {
         if (signal !== undefined && signal.aborted) {
           return;
+        }
+
+        if (attemptSignal.aborted) {
+          // `setRequest()` closed the stream; read the new request.
+          continue;
         }
 
         if (e instanceof Status && !isRetryableStatusCode(e.code)) {
