@@ -2333,7 +2333,10 @@ header h1 {
   background: hsl(var(--muted));
 }
 
-.scenario-detail code.span-element-role {
+/* Muted and plain: what an element is, and which color scheme the
+   app is opened in. */
+.scenario-detail code.span-element-role,
+.scenario-detail code.span-color-scheme {
   color: hsl(var(--muted-foreground));
   background: none;
   padding: 0;

@@ -1,7 +1,7 @@
 """What `reboot.bdd.grammar.parse` makes of each built-in step's
 text: which built-in step it is, and the parts the step takes."""
 import unittest
-from rbt.v1alpha1.bdd.grammar_pb2 import Assertion, Element
+from rbt.v1alpha1.bdd.grammar_pb2 import Assertion, Element, OpensWebApp
 from reboot.bdd.grammar import parse
 
 
@@ -297,14 +297,23 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(syntax.creates_via.user, 'bob')
 
     def test_web_app_steps(self) -> None:
-        syntax = parse('"alice" opens the web app')
+        syntax = parse('"alice" opens the web app in light mode')
         assert syntax is not None
         self.assertEqual(syntax.opens_web_app.user, 'alice')
         self.assertFalse(syntax.opens_web_app.HasField('path'))
+        self.assertEqual(
+            syntax.opens_web_app.color_scheme, OpensWebApp.ColorScheme.LIGHT
+        )
 
-        syntax = parse('"alice" opens the web app at "/accounts"')
+        syntax = parse('"alice" opens the web app at "/accounts" in dark mode')
         assert syntax is not None
         self.assertEqual(syntax.opens_web_app.path, '/accounts')
+        self.assertEqual(
+            syntax.opens_web_app.color_scheme, OpensWebApp.ColorScheme.DARK
+        )
+
+        # The step always says the color scheme.
+        self.assertIsNone(parse('"alice" opens the web app'))
 
         syntax = parse(
             '"alice" clicks the "Open Account" button in the web app'

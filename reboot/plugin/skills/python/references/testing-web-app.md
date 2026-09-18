@@ -22,7 +22,7 @@ state:
 ```gherkin
 Scenario: Opening a first account in the web app
   Given "alice" is an authenticated user
-  When "alice" opens the web app
+  When "alice" opens the web app in light mode
   Then "alice" sees "Signed in as alice" in the web app
   When "alice" fills "Initial Deposit ($)" in the web app with `1000`
   And "alice" clicks the "Open Account" button in the web app
@@ -131,23 +131,23 @@ Every step names the user acting, a user the scenario declared.
 **Each user gets a browser of their own**, so two users can be in
 the app in one scenario.
 
-| Step                                                                          | What it does                                                              |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `"alice" opens the web app`                                                   | Opens the app's origin in alice's browser (`at "/path"` for another page) |
-| `"alice" clicks the "Open Account" button in the web app`                     | Clicks the element of that role and accessible name                       |
-| `"alice" fills "Amount ($)" in the web app with `250``                        | Fills the field with that label                                           |
-| `"alice" selects "<first account id>" in "From Account" in the web app`       | Picks an option in the select with that label                             |
-| `"alice" checks "Remember me" in the web app` / `unchecks`                    | Sets the checkbox with that label                                         |
-| `"alice" presses "Enter" in the web app`                                      | Presses a key in the focused element                                      |
-| `"alice" sees "$1000" in the web app`                                         | Asserts the text is visible now                                           |
-| `"alice" sees "$1000" in the "Your Accounts" table in the web app`            | Asserts the text within that element                                      |
-| `"alice" eventually sees "$1000" in the web app within 10 seconds`            | Waits for the text, at most that long                                     |
-| `"alice" does not see "<carol account id>" in the web app`                    | Asserts the text is absent                                                |
-| `"alice" sees the "Sign in" button in the web app is enabled` / `is disabled` | Asserts the element's state                                               |
-| `"alice" sees the web app at "/accounts"`                                     | Asserts the page's path                                                   |
-| `"alice" saves the text of the "account-id" element in the web app as "id"`   | Reads an element by test id into a saved value                            |
-| `"bob" is signed in to the web app with their user id saved as "bob id"`      | Binds bob's browser session to bob (below)                                |
-| `"bob" is signed out of the web app`                                          | Waits for bob's session to end (below)                                    |
+| Step                                                                          | What it does                                                                                                                       |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `"alice" opens the web app in light mode`                                     | Opens the app's origin in alice's browser, in that color scheme (`light` or `dark`; `at "/path"` before the mode for another page) |
+| `"alice" clicks the "Open Account" button in the web app`                     | Clicks the element of that role and accessible name                                                                                |
+| `"alice" fills "Amount ($)" in the web app with `250``                        | Fills the field with that label                                                                                                    |
+| `"alice" selects "<first account id>" in "From Account" in the web app`       | Picks an option in the select with that label                                                                                      |
+| `"alice" checks "Remember me" in the web app` / `unchecks`                    | Sets the checkbox with that label                                                                                                  |
+| `"alice" presses "Enter" in the web app`                                      | Presses a key in the focused element                                                                                               |
+| `"alice" sees "$1000" in the web app`                                         | Asserts the text is visible now                                                                                                    |
+| `"alice" sees "$1000" in the "Your Accounts" table in the web app`            | Asserts the text within that element                                                                                               |
+| `"alice" eventually sees "$1000" in the web app within 10 seconds`            | Waits for the text, at most that long                                                                                              |
+| `"alice" does not see "<carol account id>" in the web app`                    | Asserts the text is absent                                                                                                         |
+| `"alice" sees the "Sign in" button in the web app is enabled` / `is disabled` | Asserts the element's state                                                                                                        |
+| `"alice" sees the web app at "/accounts"`                                     | Asserts the page's path                                                                                                            |
+| `"alice" saves the text of the "account-id" element in the web app as "id"`   | Reads an element by test id into a saved value                                                                                     |
+| `"bob" is signed in to the web app with their user id saved as "bob id"`      | Binds bob's browser session to bob (below)                                                                                         |
+| `"bob" is signed out of the web app`                                          | Waits for bob's session to end (below)                                                                                             |
 
 - The **roles** a step may name are a closed list: `button`,
   `link`, `tab`, `checkbox`, `radio`, `menuitem`, `option`, `row`,
@@ -168,7 +168,7 @@ binding step ties their browser's session to their name:
 ```gherkin
 Scenario: Signing in and out with the Development picker
   Given "ben" is an unauthenticated user
-  When "ben" opens the web app
+  When "ben" opens the web app in light mode
   And "ben" clicks the "Sign in" button in the web app
   And "ben" clicks the "Ben" link in the web app
   Then "ben" is signed in to the web app with their user id saved as "ben user id"
@@ -260,6 +260,10 @@ tests/opening_accounts.recordings/
   result stays on screen, default 1000); `0` for either turns that
   pacing off. Only the browser is paced; the page and the backend
   run at full speed.
+- **The step says the color scheme**, `in light mode` or `in dark mode`, and the browser emulates that `prefers-color-scheme`
+  whatever the developer's OS theme, so the recording shows what the
+  scenario says, and an app that follows the OS theme is asserted on
+  in the theme the step names.
 
 ## Running
 
