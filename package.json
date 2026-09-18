@@ -40,6 +40,7 @@
     "uuid": "^11.1.1",
     "which-pm-runs": "^1.1.0",
     "@standard-schema/spec": "1.0.0",
+    "@supercharge/promise-pool": "3.3.0",
     "@typescript/vfs": "*",
     "chalk": "^4.1.2",
     "vite": "^6.3.5",

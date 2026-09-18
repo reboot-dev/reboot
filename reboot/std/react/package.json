@@ -14,7 +14,8 @@
     "@reboot-dev/reboot-react": "1.6.0",
     "@reboot-dev/reboot-std-api": "1.6.0",
     "@reboot-dev/reboot-web": "1.6.0",
-    "@scarf/scarf": "1.4.0"
+    "@scarf/scarf": "1.4.0",
+    "@supercharge/promise-pool": "3.3.0"
   },
   "license": "Apache-2.0",
   "devDependencies": {
@@ -23,6 +24,7 @@
   "exports": {
     "./package.json": "./package.json",
     ".": "./index.js",
+    "./blob": "./blob/index.js",
     "./presence": "./presence/index.js"
   }
 }

@@ -149,6 +149,14 @@ class PythonWebFramework(WebFramework):
             assert "methods" not in kwargs
             return self._api_route(path, methods=["POST"], **kwargs)
 
+        def put(self, path: str, **kwargs):
+            # Rather than list out all of the possible keyword args
+            # that `FastAPI` expects we'll just pass along any that
+            # are passed to us, but we don't expect `methods` as we
+            # override that below.
+            assert "methods" not in kwargs
+            return self._api_route(path, methods=["PUT"], **kwargs)
+
         def options(self, path: str, **kwargs):
             # Used for CORS preflight handlers.
             assert "methods" not in kwargs
@@ -291,6 +299,15 @@ class PythonWebFramework(WebFramework):
                 request.state.reboot_external_context = (
                     external_context_from_request(request)
                 )
+            # Offered rather than applied, for a handler that can
+            # establish a caller's right itself and only then wants to
+            # act on the application's behalf. Reaching for this is a
+            # handler saying it has done that; the route-level
+            # `app_internal=True` above, which grants the same thing
+            # on the strength of a path alone, cannot make that check.
+            request.state.reboot_app_internal_context = (
+                app_internal_external_context_from_request
+            )
 
             return await call_next(request)
 

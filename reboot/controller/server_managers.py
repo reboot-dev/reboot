@@ -15,7 +15,6 @@ import threading
 import time
 import traceback
 from dataclasses import dataclass
-from google.protobuf import json_format
 from pathlib import Path
 from rbt.v1alpha1 import database_pb2, placement_planner_pb2
 from reboot.aio.auth.token_verifiers import TokenVerifier
@@ -30,6 +29,7 @@ from reboot.aio.servers import ServiceServer
 from reboot.aio.servicers import Serviceable
 from reboot.aio.state_managers import SidecarStateManager
 from reboot.aio.types import ApplicationId, RoutableAddress, ServerId
+from reboot.controller.replicas import replica_config
 from reboot.controller.servers import ServerSpec
 from reboot.controller.settings import (
     ENVVAR_REBOOT_REPLICA_CONFIG,
@@ -47,6 +47,8 @@ from reboot.settings import (
     ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_NODEJS,
     EVERY_LOCAL_NETWORK_ADDRESS,
+    ONLY_LOCALHOST_NETWORK_ADDRESS,
+    LocalEnvoyMode,
 )
 from typing import Awaitable, Callable, Optional, Sequence
 
@@ -554,16 +556,7 @@ class LocalServerManager(ServerManager):
         self._replica_index = (
             int(replica_index_str) if replica_index_str is not None else 0
         )
-        self._replica_config: Optional[placement_planner_pb2.ReplicaConfig
-                                      ] = None
-        if replica_config_json is not None:
-            self._replica_config = placement_planner_pb2.ReplicaConfig()
-            json_format.Parse(
-                replica_config_json,
-                self._replica_config,
-                # For forwards-compatibility with newer fields.
-                ignore_unknown_fields=True,
-            )
+        self._replica_config = replica_config()
 
     def __del__(self):
         """Custom destructor in order to avoid the temporary directory being
@@ -794,7 +787,17 @@ class LocalServerManager(ServerManager):
         async def launch():
             assert self._revision is not None
 
-            host = EVERY_LOCAL_NETWORK_ADDRESS
+            # Loopback is as much as a server needs to offer: what
+            # reaches it is Envoy, on the same host. Two cases need
+            # more. Envoy in a Docker container reaches the host from
+            # outside it, and on Reboot Cloud what reaches a server is
+            # not on its host at all.
+            host = ONLY_LOCALHOST_NETWORK_ADDRESS
+            if on_cloud() or (
+                self._revision.local_envoy and
+                LocalEnvoyFactory.pick_mode() is LocalEnvoyMode.DOCKER
+            ):
+                host = EVERY_LOCAL_NETWORK_ADDRESS
 
             if not self._revision.in_process:
                 return await self._launch_subprocess_server(

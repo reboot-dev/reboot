@@ -1,0 +1,30 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+
+ts_project(
+    name = "blob_ts",
+    srcs = [
+        "index.tsx",
+        "package.json",
+        "put.ts",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "jsx": "react-jsx",
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "strictNullChecks": True,
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@reboot-dev/reboot-react",
+        "//:node_modules/@reboot-dev/reboot-std-api",
+        "//:node_modules/@reboot-dev/reboot-web",
+        "//:node_modules/@supercharge/promise-pool",
+        "//:node_modules/react",
+    ],
+)

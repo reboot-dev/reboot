@@ -171,6 +171,10 @@ class Reboot:
 
         assert database_address is not None
 
+        # Where this instance keeps state on local disk; `None` when an
+        # external database holds it instead.
+        self._state_directory = state_directory
+
         self._application_metadata = ApplicationMetadata(
             application_id=self._application_id,
             database_address=database_address,
@@ -192,6 +196,12 @@ class Reboot:
             # parallel).
             '127.0.0.1:0'
         )
+
+    @property
+    def state_directory(self) -> Optional[Path]:
+        """Where this instance keeps state on local disk, or `None` when
+        an external database holds it instead."""
+        return self._state_directory
 
     async def start(self):
         # Monitor the "parent" event loop; this is in addition to

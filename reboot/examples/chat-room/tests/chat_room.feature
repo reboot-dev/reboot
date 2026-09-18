@@ -6,8 +6,7 @@ Feature: Chat room
 
   Scenario: Messages record in order
     When "anonymous" does a `send` with `message="Hello, World"` on `ChatRoom` of "testing-chat-room"
-    Then as "anonymous", `messages` on the `ChatRoom` for "testing-chat-room" has `messages=["Hello, World"]`
+    Then as "anonymous", `messages` on the `ChatRoom` for "testing-chat-room" has `messages` of length `1` and `messages[0].text="Hello, World"`
     When "anonymous" does a `send` with `message="Hello, Reboot!"` on `ChatRoom` of "testing-chat-room"
     And "anonymous" does a `send` with `message="Hello, Peace of Mind!"` on `ChatRoom` of "testing-chat-room"
-    Then as "anonymous", `messages` on the `ChatRoom` for "testing-chat-room" has `messages=["Hello, World", "Hello, Reboot!", "Hello, Peace of Mind!"]`
-    And as "anonymous", `messages` on the `ChatRoom` for "testing-chat-room" has `messages` of length `3` and `messages` containing `"Hello, Reboot!"`
+    Then as "anonymous", `messages` on the `ChatRoom` for "testing-chat-room" has `messages` of length `3`, `messages[0].text="Hello, World"`, `messages[1].text="Hello, Reboot!"` and `messages[2].text="Hello, Peace of Mind!"`

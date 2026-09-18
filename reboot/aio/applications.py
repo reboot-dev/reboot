@@ -353,6 +353,12 @@ class Application:
             else:
                 servicers = library_servicers
 
+            legacy_grpc_servicers = legacy_grpc_servicers or []
+            legacy_grpc_servicers.extend(
+                servicer for library in libraries
+                for servicer in library.legacy_grpc_servicers()
+            )
+
         if servicers is not None and len(servicers) == 0:
             raise ValueError("'servicers' can't be an empty list")
 
@@ -1114,6 +1120,16 @@ class Application:
         # Refuse to run with a `reboot` library that doesn't match the
         # `rbt` CLI that spawned us.
         check_expected_version()
+
+        # Published so that everything that keeps state beside the
+        # database -- the libraries set up below, and the servers this
+        # process spawns, which inherit its environment -- derives the
+        # same directory from the environment, whether `rbt` named one
+        # or a temporary one was picked for an unnamed run.
+        if self._rbt is not None and self._rbt.state_directory is not None:
+            os.environ[ENVVAR_RBT_STATE_DIRECTORY] = str(
+                self._rbt.state_directory
+            )
 
         # Before running, do any pre-run library set up.
         for library in self.libraries:

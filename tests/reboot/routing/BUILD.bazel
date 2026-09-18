@@ -31,6 +31,20 @@ diff_test(
 )
 
 py_test(
+    name = "envoy_config_test_py",
+    timeout = "short",
+    srcs = ["envoy_config_test.py"],
+    main = "envoy_config_test.py",
+    deps = [
+        "//envoy/config/route/v3:routev3_py_proto",
+        "//envoy/extensions/filters/network/http_connection_manager/v3:http_connection_managerv3_py_proto",
+        "//reboot:helpers_py",
+        "//reboot/routing:envoy_config_py",
+        "//tests/reboot:greeter_servicers_py",
+    ],
+)
+
+py_test(
     name = "xds_server_test_py",
     timeout = "short",
     srcs = ["xds_server_test.py"],

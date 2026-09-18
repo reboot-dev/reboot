@@ -3,7 +3,11 @@ import os
 import reboot.aio.reboot
 import secrets
 import unittest
-from reboot.aio.applications import Application, NodeApplication
+from reboot.aio.applications import (
+    Application,
+    NodeAdaptorLibrary,
+    NodeApplication,
+)
 from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import (
     ExchangeResult,
@@ -22,6 +26,7 @@ from reboot.aio.reboot import ApplicationRevision
 from reboot.aio.servicers import Servicer
 from reboot.run_environments import in_nodejs, on_cloud, running_rbt_serve
 from reboot.settings import (
+    ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG,
     ENVVAR_REBOOT_IN_TEST,
@@ -422,6 +427,26 @@ class Reboot(reboot.aio.reboot.Reboot):
 
         # Should only have `application`, `local_envoy`,
         # `local_envoy_port`, `servers`, `effect_validation`.
+
+        # Published for the libraries set up below and the servers
+        # brought up after them, just as `Application.run()` does for a
+        # real run. Published at `up` rather than at construction
+        # because an `Application` a test constructs under a faked
+        # `RBT_DEV` builds a `Reboot` of its own from this variable,
+        # and that one needs a directory of its own rather than this
+        # harness's database, which is open in this same process.
+        if self.state_directory is not None:
+            os.environ[ENVVAR_RBT_STATE_DIRECTORY] = str(self.state_directory)
+
+        # Do any pre-run library set up, just like `Application.run()`
+        # does; e.g. a library may register HTTP routes. Libraries must
+        # tolerate being `pre_run` more than once, since a test may
+        # `up` the same `Application` after a `down`. A Node.js
+        # library gets its pre-run in TypeScript, so, as in
+        # `NodeApplication.run()`, only the others are run here.
+        for library in application.libraries:
+            if not isinstance(library, NodeAdaptorLibrary):
+                await library.pre_run(application)
 
         # Check if application.http has methods or mounts (note this
         # isn't relevant for TypeScript, which doesn't have that

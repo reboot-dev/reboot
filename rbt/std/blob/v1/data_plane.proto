@@ -1,0 +1,174 @@
+// The blob data-plane interface.
+//
+// A `BlobDataPlane` holds blob *bytes*; all blob *metadata* lives in
+// the `Blob` control-plane state machine (see `blob.proto`). The
+// control plane never touches bytes: it calls this service to
+// provision uploads, finalize them, mint download URLs, and delete
+// objects, and the bytes themselves travel directly between the client
+// and wherever the data plane keeps them, over the URLs it mints: a
+// presigned-URL store like S3, or the HTTP routes of an application
+// that hosts the filesystem data plane itself.
+//
+// This is a plain gRPC service, deliberately free of any Reboot
+// framework options, so that it can be implemented by anything and
+// addressed by a bare URL (`REBOOT_BLOB_DATA_PLANE_URL`).
+//
+// Errors, and who retries them: a data plane retries nothing itself.
+// The one failure a method declares is `Commit`'s `error`, for a
+// commit that can never succeed. Every other failure -- a store that
+// cannot be reached, a response that never arrived, a throttle, a 5xx
+// -- is an undeclared gRPC error, which the caller may retry until
+// the call succeeds. Keeping every retry in the caller keeps it in
+// one place, and lets a data plane stay stateless.
+//
+// That contract is what makes idempotency a requirement: every method
+// must be *safe* to call more than once for the same `blob_id`, since
+// a retry may repeat a call whose effect took but whose response was
+// lost. `Commit` and `Delete` are naturally idempotent (a committed
+// blob returns its ETag; deleting an absent blob succeeds).
+// `Create` should reuse an existing uncommitted session where it
+// can; a backend that can only mint fresh upload IDs is still
+// acceptable — a lost response then orphans a session, which is
+// reclaimed when the blob expires uncommitted or is deleted.
+
+syntax = "proto3";
+
+package rbt.std.blob.v1;
+
+service BlobDataPlane {
+  // Reports what a caller needs to know to use this data plane: the
+  // part size clients must upload in.
+  rpc Configuration(ConfigurationRequest) returns (ConfigurationResponse);
+
+  // Creates the blob in the data plane: provisions the upload session
+  // its parts are written under and returns the session's data-plane
+  // upload ID (e.g. an S3 multipart upload ID). Should reuse an
+  // existing uncommitted session for the same blob where possible; a
+  // fresh session is acceptable (see the idempotency note above).
+  rpc Create(DataPlaneCreateRequest) returns (DataPlaneCreateResponse);
+
+  // Mints URLs to which the client `PUT`s each requested part's bytes
+  // directly. A URL is either absolute (e.g. a presigned S3 URL,
+  // directly reachable by the client) or application-relative, for a
+  // data plane the application serves itself.
+  rpc GetPartUploadInstructions(DataPlaneGetPartUploadInstructionsRequest)
+      returns (DataPlaneGetPartUploadInstructionsResponse);
+
+  // Finalizes the object from its uploaded parts, validating the
+  // reported ETags/sizes against the real bytes and enforcing
+  // `max_size` against the real total. Returns the composite ETag, or
+  // a permanent-failure `error` (ETag mismatch, over `max_size`, ...)
+  // for a commit that can never succeed as reported. A *transient*
+  // failure is a gRPC error instead, for the caller to retry.
+  // Idempotent: committing an already-committed blob returns its ETag.
+  rpc Commit(DataPlaneCommitRequest) returns (DataPlaneCommitResponse);
+
+  // Mints a URL from which the committed object's bytes can be
+  // downloaded: absolute (e.g. a presigned S3/CloudFront URL) or
+  // application-relative, like `GetPartUploadInstructions` URLs.
+  rpc GetDownloadUrl(DataPlaneGetDownloadUrlRequest)
+      returns (DataPlaneGetDownloadUrlResponse);
+
+  // Removes the object's bytes and any incomplete upload session.
+  // Idempotent: deleting an absent blob succeeds.
+  rpc Delete(DataPlaneDeleteRequest) returns (DataPlaneDeleteResponse);
+}
+
+message ConfigurationRequest {}
+
+message ConfigurationResponse {
+  // The part size clients must use; every part but the last must be
+  // exactly this size.
+  uint64 part_size = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message DataPlaneCreateRequest {
+  string blob_id = 1;
+  string content_type = 2;
+}
+
+message DataPlaneCreateResponse {
+  string upload_id = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message DataPlaneGetPartUploadInstructionsRequest {
+  string blob_id = 1;
+  string upload_id = 2;
+  repeated uint32 part_numbers = 3;
+}
+
+message DataPlanePartUploadInstruction {
+  uint32 part_number = 1;
+  string url = 2;
+}
+
+message DataPlaneGetPartUploadInstructionsResponse {
+  repeated DataPlanePartUploadInstruction instructions = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message DataPlaneUploadedPart {
+  uint32 number = 1;
+  string etag = 2;
+  uint64 size = 3;
+}
+
+message DataPlaneCommitRequest {
+  string blob_id = 1;
+  string upload_id = 2;
+  string content_type = 3;
+  repeated DataPlaneUploadedPart parts = 4;
+  optional uint64 max_size = 5;
+}
+
+message DataPlaneCommitResponse {
+  // A commit either finished the object or did not; there is no answer
+  // that is both.
+  oneof outcome {
+    // The committed object's composite ETag.
+    string etag = 1;
+
+    // A permanent-failure reason: what the data plane holds can never
+    // commit as reported (a part's bytes or size differ from what
+    // was reported, a middle part is short, the total exceeds
+    // `max_size`, the session is gone). Retrying the call would only
+    // repeat it.
+    string error = 2;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message DataPlaneGetDownloadUrlRequest {
+  string blob_id = 1;
+  optional uint64 ttl_seconds = 2;
+}
+
+message DataPlaneGetDownloadUrlResponse {
+  string url = 1;
+
+  // How long `url` is valid for: the requested `ttl_seconds` capped
+  // by whatever this data plane's signing scheme allows.
+  uint32 ttl_seconds = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message DataPlaneDeleteRequest {
+  string blob_id = 1;
+
+  // Upload sessions the caller knows are outstanding for this blob.
+  // Deleting the object does not reach the bytes an unfinished
+  // upload has already parked, and the data plane cannot discover
+  // those sessions itself without permission to enumerate every
+  // application's uploads, so the IDs come from the side that
+  // recorded them.
+  repeated string upload_ids = 2;
+}
+
+message DataPlaneDeleteResponse {}
