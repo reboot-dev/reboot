@@ -29,6 +29,35 @@ more than the command itself.
 
 Add `--help` to any of them for the full flag list.
 
+## Optional agent-session relay
+
+The developer dashboard can host a chat panel backed by an external,
+provider-specific agent-session relay:
+
+```console
+rbt dashboard --agent-relay-url=wss://localhost:8787/dashboard-agent
+```
+
+Reboot does not connect to an agent runtime or store agent credentials. It only
+passes this public WebSocket URL to the local dashboard page. The relay owns
+browser authentication, authorization, provider credentials, session ownership,
+and protocol translation. Do not put credentials in the URL.
+
+The dashboard uses this small relay protocol, so a relay can support a
+persistent session from any agent runtime without making that runtime a Reboot
+dependency:
+
+```json
+{"type":"session.resume","session_id":"opaque-session-id"}
+{"type":"prompt.submit","session_id":"opaque-session-id","text":"Explain this model","request_id":"uuid"}
+```
+
+The relay returns `session.ready`, streamed `message.delta`, and `error`
+events. Session IDs are opaque relay-owned values; the dashboard only retains
+them locally to reconnect a browser to the same conversation. A relay must bind
+them to the authenticated browser principal and prevent concurrent writers to a
+single agent session.
+
 :::tip Inspecting state
 `rbt inspect` works against a local `rbt dev run` backend and against
 a deployed Reboot Cloud application (via `--application-url` and

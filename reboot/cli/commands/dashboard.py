@@ -7,6 +7,7 @@ import shutil
 import sys
 import webbrowser
 from pathlib import Path
+from urllib.parse import urlparse
 from reboot.aio.backoff import Backoff
 from reboot.cli.commands.dev import (
     _dashboard_reachable,
@@ -29,6 +30,7 @@ from reboot.dashboard.backend.constants import (
     DEFAULT_DASHBOARD_PORT,
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
+    ENVVAR_RBT_DASHBOARD_AGENT_RELAY_URL,
     ENVVAR_RBT_GENERATED_DIRECTORY,
 )
 from reboot.settings import (
@@ -71,6 +73,32 @@ def register_dashboard(parser: ArgumentParser):
         help='port on which the dashboard will serve traffic; defaults to '
         f'{DEFAULT_DASHBOARD_PORT}',
     )
+    parser.subcommand('dashboard').add_argument(
+        '--agent-relay-url',
+        type=str,
+        help='WebSocket URL of an optional agent-session relay',
+    )
+
+
+def _agent_relay_url(value: str) -> str:
+    """An absolute WebSocket URL with no credential or fragment.
+
+    The relay owns provider authentication; embedding credentials in a command
+    line would expose them to the process list and browser-facing config.
+    """
+    parsed = urlparse(value)
+    if (
+        parsed.scheme not in ('ws', 'wss')
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        raise argparse.ArgumentTypeError(
+            'agent relay URL must be an absolute ws:// or wss:// URL without '
+            'credentials or a fragment'
+        )
+    return value
 
 
 def _api_directory(parser: ArgumentParser) -> str:
@@ -195,6 +223,15 @@ def _dashboard_env(
     # `api/bank/v1/account.py`; the dashboard runs in this working
     # directory, where that spelling resolves.
     composed[ENVVAR_RBT_API_DIRECTORY] = api_directory
+
+    # This is intentionally the only agent-related value passed to the
+    # dashboard. It is safe to expose to the browser; credentials and the
+    # provider connection remain in the separately configured relay.
+    composed.pop(ENVVAR_RBT_DASHBOARD_AGENT_RELAY_URL, None)
+    if args.agent_relay_url is not None:
+        composed[ENVVAR_RBT_DASHBOARD_AGENT_RELAY_URL] = _agent_relay_url(
+            args.agent_relay_url
+        )
 
     # Where the developer's servicers are, spelled the same way and
     # for the same reason. Left out of the environment entirely when
