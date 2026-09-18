@@ -287,5 +287,25 @@ with `await rbt.create_external_context_as(name, user_id)` is enough
 for `User.ref(user_id)` to resolve. The auto-construction happens
 only under `oauth=`; an app with a `User` type and no `oauth=` fails
 to start, except under the test harness, which supplies a test OAuth
-provider when `oauth=` is omitted (`testing-harness.md`). Other state types are constructed explicitly, by their
-factory `create`.
+provider when `oauth=` is omitted (`testing-harness.md`). Other
+state types are constructed explicitly, by their factory `create`.
+
+To give a new `User` initial state (e.g. allocate the id of an
+`OrderedMap` index, `state-collections.md`), override its
+constructor on the servicer. Reboot adds `create` to the `User` API
+itself, as a factory `Transaction` (declaring one is an error), and
+calls it when the user first signs in:
+
+```python
+class UserServicer(User.Servicer):
+
+    async def create(self, context: TransactionContext) -> None:
+        self.state.todos_index_id = str(uuid4())
+```
+
+Being a `Transaction`, it may also call other states (e.g. sign the
+user up with a singleton). It needs no `if context.constructor:`
+check: `create` is a constructor, so a call to it on a `User` that
+already exists, whether from the framework or from anything else
+that can reach the API, aborts with `StateAlreadyConstructed` before
+the body runs. Inside `create`, the state is always new.
