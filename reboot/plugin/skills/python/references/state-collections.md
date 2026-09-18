@@ -324,6 +324,17 @@ form runs:
    convention has no such moment; the related actor springs into
    existence on whichever method happens to touch it first.
 
+### Deleting an Entity
+
+Reboot has no call that deletes a state. "Deleting" a todo, a
+document, or a person means removing its id from every collection
+that references it (`OrderedMap.remove`, or dropping it from a
+`list[str]`), in the same `Transaction` that decides to delete it.
+The entity's own state stays behind, unreachable through the app.
+If its contents must actually go (personal data, a secret), also
+call a writer on it that clears its fields, and have its readers
+treat the cleared state as gone.
+
 ### Decision Flow (Summary)
 
 1. **Does the item have identity / lifecycle / its own methods?**
