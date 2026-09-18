@@ -1,6 +1,6 @@
 ---
 name: run
-description: Run an existing Reboot application locally. Detects whether the project is an MCP UI or a standalone Web App, makes sure dependencies and secrets are in place, then starts every process the app needs — a Cloudflare quick tunnel (so external MCP clients can reach the dev server) via the bundled `cloudflared` shim, the backend (`rbt dev run`), and the frontend dev server (for MCP UIs it also opens the setup wizard, from which the user can launch MCPJam on demand). Use this to bring an app back up, e.g. at the start of a new session.
+description: Run an existing Reboot application locally. Detects whether the project is an MCP UI or a standalone Web App, makes sure dependencies and secrets are in place, then starts every process the app needs — for an MCP UI a Cloudflare quick tunnel (so external MCP clients can reach the dev server) via the bundled `cloudflared` shim, the backend (`rbt dev run`), and the frontend dev server (for MCP UIs it also opens the setup wizard, from which the user can launch MCPJam on demand). Use this to bring an app back up, e.g. at the start of a new session.
 argument-hint: [<project-directory>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit, AskUserQuestion
 ---
@@ -39,15 +39,17 @@ strongest first.
 
 **MCP UI** — any of:
 
-- An API file under `api/` uses `mcp=Tool()`, `mcp=None`, or `UI(`
-  (the `UI()` method type).
+- An API file under `api/` uses `mcp=Tool(` or `UI(` (the `UI()`
+  method type). `mcp=None` says nothing: every method of every app
+  requires the `mcp=` argument, so a Web App has `mcp=None` on all
+  of them.
 - `.rbtrc` has a `dev run --default-config=hmr` line together with
   a `dev run:hmr --frontend-host=...` line.
 - The frontend uses the nested `frontend/mcp/<name>/index.html` layout.
 
 **Web App** — all of:
 
-- No `mcp=` / `UI(` anywhere under `api/`.
+- No `mcp=Tool(` / `UI(` anywhere under `api/`.
 - A single SPA entry at `web/index.html` (top of `web/`, not under
   `frontend/mcp/`).
 
@@ -103,12 +105,15 @@ The full secrets story — dev vs. Reboot Cloud — is in
 Run each process in its own background shell, from the project
 root.
 
-### Backend — both app types
+### Tunnel — MCP UIs only
 
-Before starting the backend, kick off a Cloudflare quick tunnel
-pointed at the dev server's port so external MCP clients (e.g.
-ChatGPT) can reach it. Run the bundled `cloudflared` shim in its
-own background shell with two flags you choose:
+Before starting an MCP UI's backend, kick off a Cloudflare quick
+tunnel pointed at the dev server's port so external MCP clients
+(e.g. ChatGPT) can reach it. Skip the tunnel for a **Web App**: it
+has no MCP clients, and a tunnel would publish a dev server where
+the `Development()` picker lets anyone sign in as anyone. Run the
+bundled `cloudflared` shim in its own background shell with two
+flags you choose:
 
 - `--url http://localhost:<BACKEND_PORT>` — the dev server's HTTP
   port (the default is `9991`; pick a different free port if `9991`
@@ -131,7 +136,9 @@ server and the tunnel agree on the port — Reboot's default is
 otherwise see `python/references/lifecycle-rbtrc.md` for the
 `application_port` knob.
 
-Then start the backend itself in its own background shell:
+### Backend — both app types
+
+Start the backend in its own background shell:
 
 ```sh
 uv run rbt dev run --no-chaos
