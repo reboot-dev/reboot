@@ -287,5 +287,19 @@ with `await rbt.create_external_context_as(name, user_id)` is enough
 for `User.ref(user_id)` to resolve. The auto-construction happens
 only under `oauth=`; an app with a `User` type and no `oauth=` fails
 to start, except under the test harness, which supplies a test OAuth
-provider when `oauth=` is omitted (`testing-harness.md`). Other state types are constructed explicitly, by their
-factory `create`.
+provider when `oauth=` is omitted (`testing-harness.md`). Other
+state types are constructed explicitly, by their factory `create`.
+
+To give a new `User` initial state (e.g. allocate the id of an
+`OrderedMap` index, `state-collections.md`), override its
+constructor on the servicer; it is not declared in the API:
+
+```python
+class UserServicer(User.Servicer):
+
+    async def create(self, context: TransactionContext) -> None:
+        self.state.todos_index_id = str(uuid4())
+```
+
+The framework calls it once per identity, as a `Transaction`, so it
+may also call other states (e.g. sign the user up with a singleton).

@@ -196,13 +196,15 @@ class UserState(Model):
 
 class UserServicer(User.Servicer):
 
-    async def create(self, context: WriterContext) -> None:
-        if context.constructor:
-            # Just allocate the ID — the OrderedMap is constructed
-            # implicitly on the first `insert`. Until then, reading it
-            # aborts with `StateNotConstructed`; see
-            # `stdlib-ordered-map.md`.
-            self.state.people_index_id = str(uuid4())
+    # The auto-constructed `User`'s constructor, a `Transaction` the
+    # framework calls once, when the user first signs in. It is not
+    # declared in the API; override it to initialize the state.
+    async def create(self, context: TransactionContext) -> None:
+        # Just allocate the ID — the OrderedMap is constructed
+        # implicitly on the first `insert`. Until then, reading it
+        # aborts with `StateNotConstructed`; see
+        # `stdlib-ordered-map.md`.
+        self.state.people_index_id = str(uuid4())
 
     async def add_person(
         self,
@@ -270,11 +272,10 @@ class UserState(Model):
 
 class UserServicer(User.Servicer):
 
-    async def create(self, context: WriterContext) -> None:
-        if context.constructor:
-            self.state.profile_id = str(uuid4())
-            self.state.drafts_index_id = str(uuid4())
-            self.state.inbox_queue_id = str(uuid4())
+    async def create(self, context: TransactionContext) -> None:
+        self.state.profile_id = str(uuid4())
+        self.state.drafts_index_id = str(uuid4())
+        self.state.inbox_queue_id = str(uuid4())
 
     async def add_draft(
         self, context: TransactionContext, request: User.AddDraftRequest,
