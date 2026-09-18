@@ -12,6 +12,7 @@
 // are a plain `fetch`, with retries of their own in `put.ts`.
 
 import { useRebootClient } from "@reboot-dev/reboot-react";
+import { PromisePool } from "@supercharge/promise-pool";
 import { Blob_Status } from "@reboot-dev/reboot-std-api/blob/v1/blob_pb.js";
 import { useBlob } from "@reboot-dev/reboot-std-api/blob/v1/blob_rbt_react.js";
 import { Blob } from "@reboot-dev/reboot-std-api/blob/v1/blob_rbt_web.js";
@@ -85,9 +86,10 @@ export class BlobUploader {
     partNumbers: number[],
     options?: { signal?: AbortSignal }
   ): Promise<{ partSize: number; urls: Map<number, string> }> {
-    // `ready` is false until `CreateWorkflow` has provisioned the
-    // data-plane upload session, so watch until it flips rather than
-    // asking again on a timer.
+    // `ready` is false until the session has been provisioned, so
+    // watch until it flips rather than asking again on a timer. Not
+    // if the caller has already aborted, though, in which case no
+    // watch is started at all.
     options?.signal?.throwIfAborted();
     const controller = new AbortController();
     options?.signal?.addEventListener("abort", () => controller.abort(), {
@@ -114,6 +116,9 @@ export class BlobUploader {
         }
         return { partSize: Number(response.partSize), urls };
       }
+      // The watch ends without an answer only when it was aborted: by
+      // the caller, whose abort reason is then the error, or by the
+      // stream ending on its own, which is not expected.
       options?.signal?.throwIfAborted();
       throw new Error(
         `Stopped watching blob ${this.options.blobId} before its upload ` +
@@ -127,51 +132,34 @@ export class BlobUploader {
 
   /**
    * `PUT`s one part's bytes to the data plane and reports it to the
-   * control plane. Idempotent per part number.
+   * control plane: the step an `upload()` is made of, for a caller
+   * that produces its parts itself. Idempotent per part number.
+   *
+   * The `PUT` is retried a bounded number of times (the policy is in
+   * `put.ts`), unlike the control-plane calls, whose client retries
+   * them for as long as the caller waits. A failure that no attempt
+   * can fix, or that outlasts the attempts, is thrown; the part is
+   * then still pending, and a later `upload()` of the same blob picks
+   * it up again.
    */
   async putPart(
     partNumber: number,
     bytes: globalThis.Blob | Uint8Array,
     options?: { signal?: AbortSignal }
   ): Promise<void> {
-    const { urls } = await this.partUploadInstructions([partNumber], options);
-    const url = urls.get(partNumber);
-    if (url === undefined) {
-      throw new Error(`No upload URL for part ${partNumber}`);
-    }
-    await this.putPartToUrl(partNumber, url, bytes, options);
-  }
-
-  /**
-   * `PUT`s one part's bytes to an already-minted URL and reports it to
-   * the control plane. The `PUT` is retried a bounded number of times
-   * (the policy is in `put.ts`), unlike the control-plane calls, whose
-   * client retries them for as long as the caller waits. A failure
-   * that no attempt can fix, or that outlasts the attempts, is thrown;
-   * the part is then still pending, and a later `upload()` of the same
-   * blob picks it up again.
-   */
-  private async putPartToUrl(
-    partNumber: number,
-    url: string,
-    bytes: globalThis.Blob | Uint8Array,
-    options?: { signal?: AbortSignal }
-  ): Promise<void> {
+    const mint = async () => {
+      const { urls } = await this.partUploadInstructions([partNumber], options);
+      const url = urls.get(partNumber);
+      if (url === undefined) {
+        throw new Error(`No upload URL for part ${partNumber}`);
+      }
+      return url;
+    };
     const etag = await putPartWithRetries(
       partNumber,
-      url,
+      await mint(),
       bytes,
-      async () => {
-        const { urls } = await this.partUploadInstructions(
-          [partNumber],
-          options
-        );
-        const fresh = urls.get(partNumber);
-        if (fresh === undefined) {
-          throw new Error(`No upload URL for part ${partNumber}`);
-        }
-        return fresh;
-      },
+      mint,
       options
     );
     const size = bytes instanceof Uint8Array ? bytes.byteLength : bytes.size;
@@ -192,12 +180,11 @@ export class BlobUploader {
    */
   async commit(options?: { signal?: AbortSignal }): Promise<UploadResult> {
     // `Commit` returns as soon as the blob is marked COMMITTING; the
-    // data plane finalizes the object in a workflow, and the outcome
-    // lands back on the blob's state. Subscribe rather than re-read on
-    // a timer: `Info` is a reader, so the update is pushed. Committing
-    // first is safe because a reactive read always yields current
-    // state before any update, and `Commit` clears the error from a
-    // previous attempt as it marks the blob COMMITTING.
+    // outcome lands on the blob's state later. Subscribe rather than
+    // re-read on a timer: `Info` is a reader, so the update is
+    // pushed. Committing before watching is safe because a reactive
+    // read always yields current state before any update. No watch
+    // is started for a caller that has already aborted, though.
     await this.blob.commit(this.context);
 
     options?.signal?.throwIfAborted();
@@ -227,6 +214,9 @@ export class BlobUploader {
           return { error: "The blob was removed before it committed" };
         }
       }
+      // The watch ends without a verdict only when it was aborted: by
+      // the caller, whose abort reason is then the error, or by the
+      // stream ending on its own, which is not expected.
       options?.signal?.throwIfAborted();
       throw new Error(
         `Stopped watching blob ${this.options.blobId} before it committed`
@@ -260,10 +250,10 @@ export class BlobUploader {
       uploadedBytes += size;
     }
 
-    // The parts of a window share one signal: the caller's, plus a
-    // stop as soon as one of them has failed for good, so that the
-    // others do not run out their retries and report parts to a blob
-    // whose upload has already been rejected.
+    // The parts share one signal: the caller's, plus a stop as soon as
+    // one of them has failed for good, so that the others do not run
+    // out their retries and report parts to a blob whose upload has
+    // already been rejected.
     const parts = new AbortController();
     options?.signal?.addEventListener(
       "abort",
@@ -279,38 +269,28 @@ export class BlobUploader {
       }
     }
 
-    // One `partUploadInstructions` call per window rather than one per
-    // part, and no more URLs minted ahead of use than a window's worth:
-    // the URLs are short-lived, so fetching them all up front would see
-    // the later ones expire before their turn.
-    for (let index = 0; index < pending.length; index += UPLOAD_CONCURRENCY) {
-      const window = pending.slice(index, index + UPLOAD_CONCURRENCY);
-      const { urls } = await this.partUploadInstructions(window, options);
-      await Promise.all(
-        window.map(async (partNumber) => {
-          const offset = (partNumber - 1) * partSize;
-          const bytes = data.slice(
-            offset,
-            Math.min(offset + partSize, totalBytes)
-          );
-          try {
-            // Inside the `try`, so that a part refused a URL stops its
-            // window-mates too.
-            const url = urls.get(partNumber);
-            if (url === undefined) {
-              throw new Error(`No upload URL for part ${partNumber}`);
-            }
-            await this.putPartToUrl(partNumber, url, bytes, partOptions);
-          } catch (error) {
-            parts.abort(error);
-            throw error;
-          }
-          uploadedBytes +=
-            bytes instanceof Uint8Array ? bytes.byteLength : bytes.size;
-          options?.onProgress?.({ uploadedBytes, totalBytes });
-        })
-      );
-    }
+    // Each part mints its own URL just before its `PUT`: the URLs are
+    // short-lived, so minting them all up front would see the later
+    // ones expire before their turn.
+    await PromisePool.withConcurrency(UPLOAD_CONCURRENCY)
+      .for(pending)
+      .handleError(async (error) => {
+        // Thrown so that the pool stops and `upload()` rejects with
+        // the first failure; the parts still in flight are aborted.
+        parts.abort(error);
+        throw error;
+      })
+      .process(async (partNumber) => {
+        const offset = (partNumber - 1) * partSize;
+        const bytes = data.slice(
+          offset,
+          Math.min(offset + partSize, totalBytes)
+        );
+        await this.putPart(partNumber, bytes, partOptions);
+        uploadedBytes +=
+          bytes instanceof Uint8Array ? bytes.byteLength : bytes.size;
+        options?.onProgress?.({ uploadedBytes, totalBytes });
+      });
 
     return await this.commit(options);
   }

@@ -5,32 +5,13 @@
 // out. Internal to the package: the `exports` map leaves it out of
 // the public surface.
 
-// How many times one part's `PUT` is attempted before the upload
-// fails, and how the attempts are spaced: the delay doubles from the
-// first one, so that a blip is ridden out in a few seconds while an
-// outage is reported rather than waited out. Each delay is jittered,
-// so that the parts of one window, which fail together, do not retry
-// together.
-export const PUT_ATTEMPTS = 4;
-export const PUT_FIRST_RETRY_DELAY_MS = 500;
+import { Backoff } from "@reboot-dev/reboot-api";
 
-/**
- * Resolves after `ms`, or rejects at once if `signal` aborts first.
- */
-export function delay(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    signal?.throwIfAborted();
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(signal?.reason);
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
+// How many times one part's `PUT` is attempted before the upload
+// fails. The attempts are spaced by the client's own `Backoff`, so
+// that a blip is ridden out in a few seconds while an outage is
+// reported rather than waited out.
+export const PUT_ATTEMPTS = 4;
 
 /**
  * How one attempt to `PUT` a part ended: with the part's ETag, or with
@@ -40,15 +21,6 @@ export function delay(ms: number, signal?: AbortSignal): Promise<void> {
 export type PutAttempt =
   | { ok: true; etag: string }
   | { ok: false; retry: boolean; remint: boolean; reason: string };
-
-/**
- * What `putPartWithRetries` reaches the world through. Both default to
- * the real thing; a test hands in its own.
- */
-export interface PutPartDependencies {
-  fetch?: typeof globalThis.fetch;
-  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
-}
 
 /**
  * One attempt to `PUT` a part. Retried: a request that never got an
@@ -66,12 +38,12 @@ export interface PutPartDependencies {
 export async function tryPutPart(
   url: string,
   bytes: globalThis.Blob | Uint8Array,
-  signal?: AbortSignal,
-  fetchImpl: typeof globalThis.fetch = globalThis.fetch
+  signal?: AbortSignal
 ): Promise<PutAttempt> {
+  signal?.throwIfAborted();
   let response: Response;
   try {
-    response = await fetchImpl(url, { method: "PUT", body: bytes, signal });
+    response = await fetch(url, { method: "PUT", body: bytes, signal });
   } catch (error) {
     // Aborting is the caller's doing, not the network's.
     signal?.throwIfAborted();
@@ -128,16 +100,19 @@ export async function putPartWithRetries(
   url: string,
   bytes: globalThis.Blob | Uint8Array,
   remint: () => Promise<string>,
-  options?: { signal?: AbortSignal } & PutPartDependencies
+  options?: { signal?: AbortSignal }
 ): Promise<string> {
-  const fetchImpl = options?.fetch ?? globalThis.fetch;
-  const sleep = options?.sleep ?? delay;
+  // Waits of up to half a second, a second and two seconds, each
+  // jittered, so that the parts of one upload, which fail together,
+  // do not retry together.
+  const backoff = new Backoff({
+    initialBackoffSeconds: 1,
+    maxBackoffSeconds: 4,
+    backoffMultiplier: 2,
+  });
   for (let attempt = 1; ; attempt++) {
-    const outcome = await tryPutPart(url, bytes, options?.signal, fetchImpl);
-    // Compared rather than negated: this package compiles without
-    // `strict`, and only an equality check narrows a discriminant
-    // then.
-    if (outcome.ok === false) {
+    const outcome = await tryPutPart(url, bytes, options?.signal);
+    if (!outcome.ok) {
       if (!outcome.retry || attempt >= PUT_ATTEMPTS) {
         throw new Error(
           `Part ${partNumber} upload failed after ${attempt} ` +
@@ -147,8 +122,7 @@ export async function putPartWithRetries(
       if (outcome.remint) {
         url = await remint();
       }
-      const backoff = PUT_FIRST_RETRY_DELAY_MS * 2 ** (attempt - 1);
-      await sleep(backoff * (0.5 + Math.random() / 2), options?.signal);
+      await backoff.wait();
       continue;
     }
     return outcome.etag;

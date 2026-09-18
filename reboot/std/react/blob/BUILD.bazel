@@ -14,6 +14,7 @@ ts_project(
             "jsx": "react-jsx",
             "module": "nodenext",
             "moduleResolution": "nodenext",
+            "strictNullChecks": True,
             "target": "es2020",
         },
     },
@@ -23,6 +24,7 @@ ts_project(
         "//:node_modules/@reboot-dev/reboot-react",
         "//:node_modules/@reboot-dev/reboot-std-api",
         "//:node_modules/@reboot-dev/reboot-web",
+        "//:node_modules/@supercharge/promise-pool",
         "//:node_modules/react",
     ],
 )

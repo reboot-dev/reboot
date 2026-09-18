@@ -13,11 +13,13 @@ ts_project(
             "declaration": True,
             "module": "nodenext",
             "moduleResolution": "nodenext",
+            "strictNullChecks": True,
             "target": "es2020",
         },
     },
     visibility = ["//visibility:public"],
     deps = [
+        "//:node_modules/@reboot-dev/reboot-api",
         "//:node_modules/@types/node",
         "//reboot/std/react/blob:blob_ts",
     ],
