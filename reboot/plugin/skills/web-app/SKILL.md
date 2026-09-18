@@ -575,6 +575,20 @@ Key differences from a `mcp-ui` layout:
     there. Write the calls from that reference and do **not** open
     `web/src/api/**/*_rbt_react.ts` to check them — it is tens of
     thousands of lines that then ride along on every later turn.
+
+    How the app **looks** is not Reboot's concern and this skill
+    says nothing about it. Before writing any page, load Anthropic's
+    `frontend-design` skill and follow it: it picks a visual
+    direction for this app and holds the page to a modern quality
+    bar. If the skill is not available, say so once and suggest the
+    user install it with
+    `/plugin install frontend-design@claude-plugins-official`, then
+    carry on. Keep the accessible markup the scenarios need
+    (`python/references/testing-web-app.md`) whatever the design:
+    paired labels, buttons named by what they do. Don't pick a
+    `<table>` to make something testable:
+    `sees "..." in the web app` needs no container, and only real
+    tabular data (a ledger, a comparison) belongs in a table.
 12. `cd web && npm run build` (sanity check the bundle).
 13. **Write and run the scenarios of every feature before handing
     the app off.** Each feature file from the design phase gets its
