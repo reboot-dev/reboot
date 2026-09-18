@@ -206,8 +206,8 @@ exactly one of them — the step that needs it.
 > the MCP frontend — `UI()` artifacts, the MCPJam inspector, the
 > nested `frontend/mcp/<name>/` Vite output, `mcp=Tool()` markers,
 > popping a widget out into a web app. Reaching into them costs
-> context and produces MCP-UI-shaped code (`mcp=None` on every
-> method of an app with no MCP frontend). The web equivalents are
+> context and produces MCP-UI-shaped code (`mcp=Tool()` markers and
+> `UI()` methods in an app with no MCP frontend). The web equivalents are
 > [`references/react-client.md`](references/react-client.md) and the
 > `python` references named below. The single exception is
 > [mcp-ui/references/auth-oauth-providers.md](../mcp-ui/references/auth-oauth-providers.md),
@@ -542,8 +542,10 @@ Key differences from a `mcp-ui` layout:
 4. Write the API definition (`api/<pkg>/v1/<name>.py`). Pydantic
    rules live in `python/references/api-pydantic.md`; method
    marker → context-type rules in
-   `python/references/api-methods.md`. Do **not** add `mcp=Tool()`
-   or `UI()` — those are MCP-UI only.
+   `python/references/api-methods.md`. Every `Reader`, `Writer`,
+   `Transaction` and `Workflow` still requires the `mcp=` argument:
+   write `mcp=None` on each one. Do **not** add `mcp=Tool()` or
+   `UI()`; those are MCP-UI only.
 5. `uv run rbt generate`. Don't read what it wrote: the signature
    your servicer must match is in `python/references/api-methods.md`
    ("The Servicer Signature Each Declaration Obliges").
