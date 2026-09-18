@@ -40,9 +40,9 @@ from reboot.aio.contexts import (
 from reboot.aio.external import InitializeContext
 from reboot.std.collections.v1.sorted_map import SortedMap, sorted_map_library
 from reboot.thirdparty.mailgun import ENVVAR_MAILGUN_API_KEY
+from reboot.uuidv7 import uuid7
 from typing import Optional
 from uuid import uuid4
-from uuid7 import create as uuid7
 
 logger = get_logger(__name__)
 

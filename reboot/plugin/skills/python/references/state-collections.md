@@ -185,7 +185,7 @@ from reboot.std.collections.ordered_map.v1.ordered_map import (
     OrderedMap, ordered_map_library,
 )
 from uuid import uuid4
-from uuid7 import create as uuid7
+from reboot.uuidv7 import uuid7
 
 
 class UserState(Model):

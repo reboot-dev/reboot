@@ -98,7 +98,6 @@ version = "0.1.0"
 requires-python = ">= 3.10"
 dependencies = [
     "httpx>=0.27,<1.0",
-    "uuid7>=0.1.0",
     "anyio>=4.0.0",
     "reboot>=1.0.3",
 ]
