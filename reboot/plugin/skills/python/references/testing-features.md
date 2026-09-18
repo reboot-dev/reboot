@@ -216,7 +216,10 @@ And the resulting `account_id` is saved as "alice account id"
 - **A saved name is a quoted string** and may have spaces, `"first account id"`, and is said back as `<first account id>`: in a
   state id (`of "<account id>"`), a user id, a bearer token, or a
   property value (`amount=<balance>`). A `<name>` inside a JSON
-  string stays literal. A `Scenario Outline`'s columns are said the
+  string stays literal, so in a value write it bare:
+  `todo_id=<errand>` passes the saved id, while `todo_id="<errand>"`
+  passes the text `<errand>`. The quotes in `of "<account id>"` are
+  the step's own, not JSON. A `Scenario Outline`'s columns are said the
   same way, so a save may not reuse a column's name.
 - **Values are JSON** with JSON5's leniencies: `owner={name: "Frank", tags: ["vip"]}`. A dotted path nests when calling,
   `owner.name="Frank"`, and reaches into the response when

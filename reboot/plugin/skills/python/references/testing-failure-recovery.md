@@ -166,9 +166,9 @@ self.assertEqual(response.quantity, 2)
 
 **If you do count invocations of a writer or transaction body, turn
 effect validation off for that test.** In unit tests the harness
-enables effect validation by default: it deliberately re-runs
-writer and transaction bodies and compares the resulting mutations,
-to catch bodies that aren't safe to re-execute (see
+enables effect validation by default: it deliberately runs writer
+and transaction bodies twice, keeping only the second run's
+mutations, to expose bodies that aren't safe to re-execute (see
 `servicer-writer.md`). A `nonlocal` counter therefore reports more
 calls than the test made, and the assertion fails for a reason that
 has nothing to do with recovery:

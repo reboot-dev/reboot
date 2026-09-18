@@ -233,7 +233,7 @@ async def fn(state):
 await Service.ref().write(context, fn)
 ```
 
-### 19. Schema Evolution Is Additive-Only Once State Persists
+### 20. Schema Evolution Is Additive-Only Once State Persists
 
 Changing the API of an application that has persisted state or has
 been deployed can make it fail to boot ("Updated state or method
@@ -241,7 +241,7 @@ definitions are not backwards compatible") and get its deploy
 rejected. Read `api-schema-evolution.md` for the rules you must
 follow before changing such an API.
 
-### 20. A `ref()` Belongs to One Context — `MixedContextsError`
+### 21. A `ref()` Belongs to One Context — `MixedContextsError`
 
 **Reusing a ref for many calls on the same context is fine** — hold
 it in a local and call it as often as you like:
@@ -275,7 +275,7 @@ await TaskList.ref(list_id).get(alice2)
 The error names the fix directly: "Instead create a new
 `WeakReference` for every `Context`."
 
-### 21. The State Type Named `User` Is Auto-Constructed
+### 22. The State Type Named `User` Is Auto-Constructed
 
 A state type literally named `User` is special: when
 `Application(oauth=...)` is configured, Reboot auto-constructs one
@@ -286,5 +286,20 @@ browser, and do not construct it in tests — impersonating a user
 with `await rbt.create_external_context_as(name, user_id)` is enough
 for `User.ref(user_id)` to resolve. The auto-construction happens
 only under `oauth=`; an app with a `User` type and no `oauth=` fails
-to start. Other state types are constructed explicitly, by their
-factory `create`.
+to start, except under the test harness, which supplies a test OAuth
+provider when `oauth=` is omitted (`testing-harness.md`). Other
+state types are constructed explicitly, by their factory `create`.
+
+To give a new `User` initial state (e.g. allocate the id of an
+`OrderedMap` index, `state-collections.md`), override its
+constructor on the servicer; it is not declared in the API:
+
+```python
+class UserServicer(User.Servicer):
+
+    async def create(self, context: TransactionContext) -> None:
+        self.state.todos_index_id = str(uuid4())
+```
+
+The framework calls it once per identity, as a `Transaction`, so it
+may also call other states (e.g. sign the user up with a singleton).
