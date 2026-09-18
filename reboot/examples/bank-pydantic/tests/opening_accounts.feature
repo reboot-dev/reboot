@@ -26,7 +26,7 @@ Feature: Customers can open an account
 
     Scenario: Opening a first account in the web app
       Given "alice" is an authenticated user
-      When "alice" opens the web app
+      When "alice" opens the web app in light mode
       Then "alice" sees "Signed in as alice" in the web app
       When "alice" fills "Initial Deposit ($)" in the web app with `1000`
       And "alice" clicks the "Open Account" button in the web app

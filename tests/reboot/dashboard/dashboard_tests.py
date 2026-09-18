@@ -247,7 +247,8 @@ def _scenario(line: int) -> feature_pb2.Scenario:
         steps=[
             feature_pb2.Step(
                 keyword='When',
-                text=f'"alice" opens the web app at "/aisle/{line}"',
+                text=f'"alice" opens the web app at "/aisle/{line}" in '
+                'light mode',
                 line=line + 1,
                 screenshot=f'tests/shopping.recordings/{line}/1.png',
             ),
