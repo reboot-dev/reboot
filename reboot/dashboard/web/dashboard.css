@@ -122,6 +122,9 @@ main {
 .agent-chat-user { background: hsl(var(--accent) / 0.2); }
 .agent-chat-assistant { background: hsl(var(--muted)); }
 .agent-chat-error { margin: 0; padding: 0 12px 8px; }
+.agent-chat-approval { background: hsl(var(--accent) / 0.12); border-top: 1px solid hsl(var(--border)); padding: 10px 12px; }
+.agent-chat-approval p { margin: 0 0 8px; }
+.agent-chat-approval button + button { margin-left: 8px; }
 .agent-chat-form { border-top: 1px solid hsl(var(--border)); display: flex; gap: 8px; padding: 10px 12px; }
 .agent-chat-form textarea { flex: 1; min-height: 42px; resize: vertical; }
 

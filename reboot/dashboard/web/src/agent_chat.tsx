@@ -6,10 +6,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { v4 as uuidv4 } from "uuid";
 
 const CONFIG_PATH = "/dashboard/agent-bridge-config";
-const SESSION_STORAGE_KEY = "reboot.dashboard.agent-bridge.session-id";
 
 type Config =
   | { enabled: false }
@@ -20,40 +18,32 @@ type Message = {
   text: string;
 };
 
-type RelayEvent = {
-  type: string;
-  session_id?: string;
-  text?: string;
-  message?: string;
+type Approval = {
+  id: string;
+  message: string;
 };
 
-function storedSessionId(): string | undefined {
-  try {
-    return localStorage.getItem(SESSION_STORAGE_KEY) ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function storeSessionId(sessionId: string): void {
-  try {
-    localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
-  } catch {
-    // Private browsing may disable storage. The relay session still
-    // works for the current page lifetime.
-  }
-}
+type RelayEvent = {
+  type: string;
+  approval_id?: string;
+  message?: string;
+  text?: string;
+};
 
 /** An optional, relay-backed session panel. The relay—not the dashboard—
- * owns agent credentials, authorization, and provider-specific protocol. */
+ * owns agent credentials, authorization, provider sessions, and protocol
+ * translation. Browser messages are deliberately semantic rather than
+ * provider-shaped: the browser cannot select a provider session or invoke
+ * provider RPC methods. */
 export const AgentChat: FC = () => {
   const socket = useRef<WebSocket | undefined>(undefined);
-  const sessionId = useRef<string | undefined>(storedSessionId());
   const [config, setConfig] = useState<Config | undefined>();
   const [connected, setConnected] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string>();
+  const [approval, setApproval] = useState<Approval>();
+  const [sending, setSending] = useState(false);
   const [reconnect, setReconnect] = useState(0);
 
   useEffect(() => {
@@ -84,9 +74,6 @@ export const AgentChat: FC = () => {
     connection.onopen = () => {
       setConnected(true);
       setError(undefined);
-      connection.send(
-        JSON.stringify({ type: "session.resume", session_id: sessionId.current })
-      );
     };
     connection.onmessage = (event: MessageEvent<string>) => {
       let message: RelayEvent;
@@ -96,22 +83,40 @@ export const AgentChat: FC = () => {
         setError("The agent relay sent an invalid message.");
         return;
       }
-      if (message.type === "session.ready" && message.session_id !== undefined) {
-        sessionId.current = message.session_id;
-        storeSessionId(message.session_id);
-      } else if (message.type === "message.delta" && message.text !== undefined) {
+      if (message.type === "message.delta" && message.text !== undefined) {
         setMessages((current) => {
           const last = current[current.length - 1];
           return last?.role === "assistant"
             ? [...current.slice(0, -1), { role: "assistant", text: last.text + message.text }]
             : [...current, { role: "assistant", text: message.text }];
         });
+      } else if (message.type === "message.complete" && message.text !== undefined) {
+        setMessages((current: Message[]) => {
+          const last = current[current.length - 1];
+          return last?.role === "assistant"
+            ? [...current.slice(0, -1), { role: "assistant", text: message.text }]
+            : [...current, { role: "assistant", text: message.text }];
+        });
+      } else if (message.type === "turn.complete") {
+        setSending(false);
+      } else if (
+        message.type === "approval.request" &&
+        message.approval_id !== undefined
+      ) {
+        setApproval({
+          id: message.approval_id,
+          message: message.message ?? "The attached agent needs your approval.",
+        });
       } else if (message.type === "error") {
+        setSending(false);
         setError(message.message ?? "The agent relay reported an error.");
       }
     };
     connection.onerror = () => setError("Could not connect to the agent relay.");
-    connection.onclose = () => setConnected(false);
+    connection.onclose = () => {
+      setConnected(false);
+      setSending(false);
+    };
     return () => connection.close();
   }, [config, reconnect]);
 
@@ -119,20 +124,28 @@ export const AgentChat: FC = () => {
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       const text = draft.trim();
-      if (text.length === 0 || socket.current?.readyState !== WebSocket.OPEN) return;
+      if (
+        text.length === 0 ||
+        sending ||
+        socket.current?.readyState !== WebSocket.OPEN
+      ) {
+        return;
+      }
       setMessages((current) => [...current, { role: "user", text }]);
-      socket.current.send(
-        JSON.stringify({
-          type: "prompt.submit",
-          session_id: sessionId.current,
-          text,
-          request_id: uuidv4(),
-        })
-      );
+      setSending(true);
+      socket.current.send(JSON.stringify({ type: "prompt", text }));
       setDraft("");
     },
-    [draft]
+    [draft, sending]
   );
+
+  const respondToApproval = useCallback((choice: "allow" | "deny") => {
+    if (approval === undefined || socket.current?.readyState !== WebSocket.OPEN) return;
+    socket.current.send(
+      JSON.stringify({ type: "approval.respond", approval_id: approval.id, choice })
+    );
+    setApproval(undefined);
+  }, [approval]);
 
   if (config === undefined || !config.enabled) return null;
 
@@ -157,15 +170,22 @@ export const AgentChat: FC = () => {
         ))}
       </div>
       {error !== undefined && <p className="agent-chat-error">{error}</p>}
+      {approval !== undefined && (
+        <section className="agent-chat-approval" aria-live="assertive">
+          <p>{approval.message}</p>
+          <button onClick={() => respondToApproval("allow")} type="button">Allow</button>
+          <button onClick={() => respondToApproval("deny")} type="button">Deny</button>
+        </section>
+      )}
       <form className="agent-chat-form" onSubmit={submit}>
         <textarea
           aria-label="Message agent"
-          disabled={!connected}
+          disabled={!connected || sending}
           onChange={(event) => setDraft(event.target.value)}
           placeholder="Message the attached agent session"
           value={draft}
         />
-        <button disabled={!connected || draft.trim().length === 0} type="submit">
+        <button disabled={!connected || sending || draft.trim().length === 0} type="submit">
           Send
         </button>
       </form>

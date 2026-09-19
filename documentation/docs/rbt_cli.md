@@ -43,20 +43,35 @@ passes this public WebSocket URL to the local dashboard page. The relay owns
 browser authentication, authorization, provider credentials, session ownership,
 and protocol translation. Do not put credentials in the URL.
 
-The dashboard uses this small relay protocol, so a relay can support a
-persistent session from any agent runtime without making that runtime a Reboot
-dependency:
+The dashboard speaks a small semantic protocol to the relay. The browser can only
+submit a prompt; it cannot choose an agent session, profile, provider method, or
+provider credential:
 
 ```json
-{"type":"session.resume","session_id":"opaque-session-id"}
-{"type":"prompt.submit","session_id":"opaque-session-id","text":"Explain this model","request_id":"uuid"}
+{"type":"prompt","text":"Explain this model"}
 ```
 
-The relay returns `session.ready`, streamed `message.delta`, and `error`
-events. Session IDs are opaque relay-owned values; the dashboard only retains
-them locally to reconnect a browser to the same conversation. A relay must bind
-them to the authenticated browser principal and prevent concurrent writers to a
-single agent session.
+The relay returns allowlisted display events:
+
+```json
+{"type":"message.delta","text":"The model"}
+{"type":"message.complete","text":"The model stores durable clinic state."}
+{"type":"turn.complete"}
+{"type":"approval.request","approval_id":"opaque-relay-id","message":"Allow the attached agent to run its proposed command?"}
+```
+
+For an approval request the dashboard can return only an allowlisted decision,
+using the relay-issued opaque approval ID:
+
+```json
+{"type":"approval.respond","approval_id":"opaque-relay-id","choice":"allow"}
+```
+
+The relay owns the authenticated browser-to-session mapping, persistent agent
+session, request IDs, concurrency control, credentials, and provider protocol.
+The browser never receives or stores an agent session ID. A relay must bind a
+conversation to the authenticated browser principal, reject concurrent writers
+to one agent session, and expose only its authenticated private endpoint.
 
 :::tip Inspecting state
 `rbt inspect` works against a local `rbt dev run` backend and against
