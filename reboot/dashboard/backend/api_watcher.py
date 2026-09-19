@@ -29,6 +29,7 @@ from rbt.v1alpha1.api import api_pb2
 from reboot.aio.concurrently import concurrently
 from reboot.aio.contexts import WorkflowContext
 from reboot.aio.workflows import at_least_once
+from reboot.api_digest import api_digest
 from reboot.cli.common.watch import file_watcher
 from reboot.dashboard.backend.api_reader import read_api_file
 from reboot.dashboard.backend.changelog import changes_between
@@ -41,7 +42,6 @@ from reboot.dashboard.backend.walk import (
     _standardized_path,
     _walk,
 )
-from reboot.pydantic_api import api_digest
 from typing import Mapping, Optional
 
 

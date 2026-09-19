@@ -6,8 +6,9 @@ import os
 import typing
 from rbt.v1alpha1.api import api_pb2, schema_pb2
 from reboot.api import API, UserPydanticError, to_pascal_case, to_snake_case
+from reboot.api_digest import api_digest
 from reboot.fail import fail
-from reboot.pydantic_api import api_digest, api_of
+from reboot.pydantic_api import api_of
 from reboot.pydantic_schema import Schemas
 from types import MappingProxyType
 from typing import List, Optional
