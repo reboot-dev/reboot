@@ -8,6 +8,7 @@ own process, with its own state store, alongside the application
 being developed.
 """
 import asyncio
+import os
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import Dashboard, Preferences
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
@@ -20,6 +21,7 @@ from reboot.dashboard.backend.constants import (
     CHANGELOG_ID,
     DASHBOARD_ID,
     DASHBOARD_PATH,
+    ENVVAR_RBT_DASHBOARD_AGENT_RELAY_URL,
     PREFERENCES_ID,
     PRESENCE_ID,
 )
@@ -32,7 +34,7 @@ from reboot.std.collections.ordered_map.v1.ordered_map import (
 )
 from reboot.std.presence.v1 import presence
 from starlette.exceptions import HTTPException
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 
 # The built page, beside this module, which is the same arrangement
@@ -105,6 +107,19 @@ def application() -> Application:
         """A scenario's video or a step's screenshot, from beside the
         feature file under the working directory."""
         return FileResponse(_recording(Path.cwd(), relative))
+
+    @application.http.get(DASHBOARD_PATH + '/agent-bridge-config')
+    async def agent_bridge_config() -> JSONResponse:
+        """The optional relay's public URL, never its credentials.
+
+        Kept as a runtime endpoint so a developer can configure a relay without
+        rebuilding the dashboard bundle. A missing URL leaves the dashboard
+        exactly as it was before agent-session support existed.
+        """
+        relay_url = os.environ.get(ENVVAR_RBT_DASHBOARD_AGENT_RELAY_URL)
+        if relay_url is None:
+            return JSONResponse({'enabled': False})
+        return JSONResponse({'enabled': True, 'relay_url': relay_url})
 
     application.http.mount(
         DASHBOARD_PATH,

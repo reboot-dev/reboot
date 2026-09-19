@@ -29,6 +29,51 @@ more than the command itself.
 
 Add `--help` to any of them for the full flag list.
 
+## Optional agent-session relay
+
+The developer dashboard can host a chat panel backed by an external,
+provider-specific agent-session relay:
+
+```console
+rbt dashboard --agent-relay-url=wss://localhost:8787/dashboard-agent
+```
+
+Reboot does not connect to an agent runtime or store agent credentials. It only
+passes this public WebSocket URL to the local dashboard page. The relay owns
+browser authentication, authorization, provider credentials, session ownership,
+and protocol translation. Do not put credentials in the URL.
+
+The dashboard speaks a small semantic protocol to the relay. The browser can only
+submit a prompt; it cannot choose an agent session, profile, provider method, or
+provider credential:
+
+```json
+{"type":"prompt","text":"Explain this model"}
+```
+
+The relay returns allowlisted display events:
+
+```json
+{"type":"message.delta","text":"The model"}
+{"type":"message.complete","text":"The model stores durable clinic state."}
+{"type":"turn.complete"}
+{"type":"approval.request","request_id":"opaque-relay-id","command":"pytest tests/","choices":["allow","deny"]}
+```
+
+For an approval request, the dashboard renders the terminal command and only
+the choices supplied by the relay. It can return only one of those choices,
+using the relay-issued opaque request ID:
+
+```json
+{"type":"approval.respond","request_id":"opaque-relay-id","choice":"allow"}
+```
+
+The relay owns the authenticated browser-to-session mapping, persistent agent
+session, request IDs, concurrency control, credentials, and provider protocol.
+The browser never receives or stores an agent session ID. A relay must bind a
+conversation to the authenticated browser principal, reject concurrent writers
+to one agent session, and expose only its authenticated private endpoint.
+
 :::tip Inspecting state
 `rbt inspect` works against a local `rbt dev run` backend and against
 a deployed Reboot Cloud application (via `--application-url` and

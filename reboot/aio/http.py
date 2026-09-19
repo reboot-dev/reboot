@@ -294,6 +294,16 @@ class PythonWebFramework(WebFramework):
 
             return await call_next(request)
 
+        # Exact application routes must precede mounted applications: a mount
+        # such as the dashboard's `/dashboard` static tree otherwise consumes
+        # a sibling `/dashboard/...` API route before FastAPI can match it.
+        for api_route in self._http._api_routes:
+            fastapi.add_api_route(
+                api_route.path,
+                api_route.endpoint,
+                **api_route.kwargs,
+            )
+
         for mount in self._http._mounts:
             assert mount.app is not None or mount.factory is not None
             fastapi.mount(
@@ -301,13 +311,6 @@ class PythonWebFramework(WebFramework):
                 mount.app or mount.factory(  # type: ignore[misc]
                     external_context_from_request,
                 ),
-            )
-
-        for api_route in self._http._api_routes:
-            fastapi.add_api_route(
-                api_route.path,
-                api_route.endpoint,
-                **api_route.kwargs,
             )
 
         config = uvicorn.Config(
