@@ -134,6 +134,7 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        ":changelog_py",
         ":check_py",
         ":constants_py",
         ":pyright_py",
