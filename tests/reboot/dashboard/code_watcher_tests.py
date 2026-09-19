@@ -810,6 +810,21 @@ class PythonPathTest(unittest.IsolatedAsyncioTestCase):
             ] not in ([], [look.digest])
         )
 
+    async def test_nothing_says_to_run_generate(self) -> None:
+        """With no directory `rbt generate` writes Python to, the code
+        is generated some other way: there is nowhere to find a
+        module missing from and nothing `rbt generate` would fix."""
+        path = Path(self._api.name) / 'shop' / 'v1' / 'shop.py'
+        path.parent.mkdir(parents=True)
+        path.write_text(API_FILE.format(state='Shop', description='None'))
+
+        response = await self._get(
+            satisfied=lambda response: len(response.api_digests) == 1
+        )
+
+        self.assertEqual(len(response.generated), 0)
+        self.assertFalse(response.HasField('needs_generate_reason'))
+
 
 class GeneratedListingTest(unittest.IsolatedAsyncioTestCase):
     """What the generated directory's listing reads off its files."""

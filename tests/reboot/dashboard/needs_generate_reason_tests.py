@@ -10,27 +10,43 @@ from reboot.dashboard.backend.needs_generate_reason import (
 Reason = DashboardGetResponse.NeedsGenerateReason
 
 
+def _reason(state: Dashboard):
+    """The reason for a developer who told `rbt generate` where to
+    write Python, which is every developer running it."""
+    return needs_generate_reason(state, generated_directory_named=True)
+
+
 class NeedsGenerateReasonTest(unittest.TestCase):
 
+    def test_no_generated_directory_named_is_no_reason(self) -> None:
+        # Code generated some other way, such as by Bazel: there is
+        # nowhere to find a module missing from, and nothing
+        # `rbt generate` would fix.
+        state = Dashboard()
+        state.api_digests['shop/v1/shop_rbt.py'] = 'a' * 64
+        self.assertIsNone(
+            needs_generate_reason(state, generated_directory_named=False)
+        )
+
     def test_nothing_declared_is_no_reason(self) -> None:
-        self.assertIsNone(needs_generate_reason(Dashboard()))
+        self.assertIsNone(_reason(Dashboard()))
 
     def test_a_module_not_generated_is_missing(self) -> None:
         state = Dashboard()
         state.api_digests['shop/v1/shop_rbt.py'] = 'a' * 64
-        self.assertEqual(needs_generate_reason(state), Reason.MISSING)
+        self.assertEqual(_reason(state), Reason.MISSING)
 
     def test_a_digest_that_moved_is_changed(self) -> None:
         state = Dashboard()
         state.api_digests['shop/v1/shop_rbt.py'] = 'a' * 64
         state.generated['shop/v1/shop_rbt.py'].api_digest = 'b' * 64
-        self.assertEqual(needs_generate_reason(state), Reason.CHANGED)
+        self.assertEqual(_reason(state), Reason.CHANGED)
 
     def test_a_digest_that_matches_is_no_reason(self) -> None:
         state = Dashboard()
         state.api_digests['shop/v1/shop_rbt.py'] = 'a' * 64
         state.generated['shop/v1/shop_rbt.py'].api_digest = 'a' * 64
-        self.assertIsNone(needs_generate_reason(state))
+        self.assertIsNone(_reason(state))
 
     def test_a_module_recording_no_digest_is_changed(self) -> None:
         state = Dashboard()
@@ -38,7 +54,7 @@ class NeedsGenerateReasonTest(unittest.TestCase):
         state.generated['shop/v1/shop_rbt.py'].modified.CopyFrom(
             Timestamp(seconds=1)
         )
-        self.assertEqual(needs_generate_reason(state), Reason.CHANGED)
+        self.assertEqual(_reason(state), Reason.CHANGED)
 
     def test_the_worst_reason_over_all_files_wins(self) -> None:
         state = Dashboard()
@@ -46,7 +62,7 @@ class NeedsGenerateReasonTest(unittest.TestCase):
         state.generated['shop/v1/shop_rbt.py'].api_digest = 'a' * 64
         state.api_digests['shop/v1/depot_rbt.py'] = 'c' * 64
         state.generated['shop/v1/depot_rbt.py'].api_digest = 'd' * 64
-        self.assertEqual(needs_generate_reason(state), Reason.CHANGED)
+        self.assertEqual(_reason(state), Reason.CHANGED)
 
 
 if __name__ == '__main__':
