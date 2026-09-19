@@ -18,16 +18,19 @@ type Message = {
   text: string;
 };
 
-type Approval = {
-  id: string;
-  message: string;
+type ApprovalRequest = {
+  requestId: string;
+  command?: string;
+  choices: string[];
 };
 
 type RelayEvent = {
   type: string;
-  approval_id?: string;
-  message?: string;
   text?: string;
+  message?: string;
+  request_id?: string;
+  command?: string;
+  choices?: string[];
 };
 
 /** An optional, relay-backed session panel. The relay—not the dashboard—
@@ -42,7 +45,7 @@ export const AgentChat: FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string>();
-  const [approval, setApproval] = useState<Approval>();
+  const [approval, setApproval] = useState<ApprovalRequest>();
   const [sending, setSending] = useState(false);
   const [reconnect, setReconnect] = useState(0);
 
@@ -99,13 +102,11 @@ export const AgentChat: FC = () => {
         });
       } else if (message.type === "turn.complete") {
         setSending(false);
-      } else if (
-        message.type === "approval.request" &&
-        message.approval_id !== undefined
-      ) {
+      } else if (message.type === "approval.request" && message.request_id !== undefined) {
         setApproval({
-          id: message.approval_id,
-          message: message.message ?? "The attached agent needs your approval.",
+          requestId: message.request_id,
+          command: message.command,
+          choices: message.choices ?? ["deny"],
         });
       } else if (message.type === "error") {
         setSending(false);
@@ -139,10 +140,10 @@ export const AgentChat: FC = () => {
     [draft, sending]
   );
 
-  const respondToApproval = useCallback((choice: "allow" | "deny") => {
+  const respondToApproval = useCallback((choice: string) => {
     if (approval === undefined || socket.current?.readyState !== WebSocket.OPEN) return;
     socket.current.send(
-      JSON.stringify({ type: "approval.respond", approval_id: approval.id, choice })
+      JSON.stringify({ type: "approval.respond", request_id: approval.requestId, choice })
     );
     setApproval(undefined);
   }, [approval]);
@@ -171,10 +172,16 @@ export const AgentChat: FC = () => {
       </div>
       {error !== undefined && <p className="agent-chat-error">{error}</p>}
       {approval !== undefined && (
-        <section className="agent-chat-approval" aria-live="assertive">
-          <p>{approval.message}</p>
-          <button onClick={() => respondToApproval("allow")} type="button">Allow</button>
-          <button onClick={() => respondToApproval("deny")} type="button">Deny</button>
+        <section className="agent-chat-approval" aria-label="Terminal command approval">
+          <strong>Approve terminal command?</strong>
+          {approval.command !== undefined && <pre>{approval.command}</pre>}
+          <div>
+            {approval.choices.map((choice) => (
+              <button key={choice} onClick={() => respondToApproval(choice)} type="button">
+                {choice}
+              </button>
+            ))}
+          </div>
         </section>
       )}
       <form className="agent-chat-form" onSubmit={submit}>

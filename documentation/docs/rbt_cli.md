@@ -57,14 +57,15 @@ The relay returns allowlisted display events:
 {"type":"message.delta","text":"The model"}
 {"type":"message.complete","text":"The model stores durable clinic state."}
 {"type":"turn.complete"}
-{"type":"approval.request","approval_id":"opaque-relay-id","message":"Allow the attached agent to run its proposed command?"}
+{"type":"approval.request","request_id":"opaque-relay-id","command":"pytest tests/","choices":["allow","deny"]}
 ```
 
-For an approval request the dashboard can return only an allowlisted decision,
-using the relay-issued opaque approval ID:
+For an approval request, the dashboard renders the terminal command and only
+the choices supplied by the relay. It can return only one of those choices,
+using the relay-issued opaque request ID:
 
 ```json
-{"type":"approval.respond","approval_id":"opaque-relay-id","choice":"allow"}
+{"type":"approval.respond","request_id":"opaque-relay-id","choice":"allow"}
 ```
 
 The relay owns the authenticated browser-to-session mapping, persistent agent

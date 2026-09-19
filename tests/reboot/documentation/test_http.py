@@ -34,6 +34,11 @@ async def hello_greeter(
     return {"message": response.message}
 
 
+@application.http.get("/mount/health")
+def mount_health():
+    return {"message": "application route"}
+
+
 fastapi = FastAPI()
 
 
@@ -106,6 +111,17 @@ class TestSomething(unittest.IsolatedAsyncioTestCase):
             ) as get:
                 self.assertEqual(get.status, 200)
                 self.assertEqual(await get.json(), {"message": "H3110"})
+
+        # Exact application routes take precedence over their mounted parent.
+        async with aiohttp.ClientSession() as session:
+            async with session.request(
+                'GET',
+                self.rbt.url() + "/mount/health",
+            ) as get:
+                self.assertEqual(get.status, 200)
+                self.assertEqual(
+                    await get.json(), {"message": "application route"}
+                )
 
 
 if __name__ == '__main__':
