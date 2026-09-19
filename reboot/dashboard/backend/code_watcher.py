@@ -1955,6 +1955,7 @@ async def watch(
     *,
     application: Path,
     generated_directory: Optional[Path],
+    python_path: Sequence[Path] = (),
 ) -> None:
     """Returns only when the dashboard stops, recording the servicers
     in the developer's application for as long as it runs.
@@ -1962,9 +1963,17 @@ async def watch(
     `generated_directory` is where `rbt generate` writes Python code,
     which is where the state types the servicers service are defined.
     If `generated_directory` is `None` then no generated files are
-    walked or watched, pyright resolves no `_rbt` module so we
+    listed, and unless the generated code is found under
+    `python_path` instead, pyright resolves no `_rbt` module so we
     shouldn't ever find a servicer and thus the analysis won't return
-    any."""
+    any.
+
+    `python_path` is the `PYTHONPATH` the developer has `rbt dev run`
+    give the application: where its imports are found when they are
+    rooted somewhere other than the application's own directory,
+    e.g. a package of a `src` directory, or one built by Bazel, whose
+    imports are rooted at the repository and whose generated code is
+    in `bazel-bin`."""
     application = _standardized_path(application)
 
     # Roots are compared, with `is_relative_to`, against filenames
@@ -1972,15 +1981,39 @@ async def watch(
     # paths only compare when both are spelled the same way, so
     # they are standardized here, once, for the walk and the
     # analysis both. The application's own directory is what
-    # running the application puts first on its path; the generated
-    # directory is a root like any other: generated files are
-    # walked and digested like the developer's own.
+    # running the application puts first on its path, and the
+    # `PYTHONPATH` comes next, in its own order, the way Python
+    # searches them; the generated directory is a root like any
+    # other: generated files are walked and digested like the
+    # developer's own.
     roots = [application.parent]
     if generated_directory is not None:
         generated_directory = _standardized_path(generated_directory)
-        roots.append(generated_directory)
 
-    globs = [str(root / SOURCE_GLOB) for root in roots]
+    # Watched whole, so that a file created under one wakes an
+    # iteration: where the developer writes servicers, and where
+    # `rbt generate` writes.
+    globs = [
+        str(root / SOURCE_GLOB) for root in roots +
+        ([generated_directory] if generated_directory is not None else [])
+    ]
+
+    # The directories of the `PYTHONPATH` are roots too, but are not
+    # watched whole: one may be as large as a repository, or Bazel's
+    # whole output tree, and a watch is of every directory beneath
+    # it. Each file the walk reached under one is watched by its exact
+    # path instead, below. That misses only a file created where an
+    # import already written found none, which the next save of
+    # anything picks up.
+    python_path_roots: list[Path] = []
+    for directory in python_path:
+        root = _standardized_path(directory)
+        if root not in roots and root != generated_directory:
+            roots.append(root)
+            python_path_roots.append(root)
+
+    if generated_directory is not None:
+        roots.append(generated_directory)
 
     # What a previous run recorded: starting from it, only files
     # that changed while the dashboard was down are parsed and
@@ -2018,6 +2051,13 @@ async def watch(
                     dependency.filename
                     for file in known.values()
                     for dependency in file.external
+                } | {
+                    # Likewise each file reached under a directory of
+                    # the `PYTHONPATH`, which is not watched whole.
+                    str(filename) for filename in known if any(
+                        filename.is_relative_to(root)
+                        for root in python_path_roots
+                    )
                 }
             )
 
