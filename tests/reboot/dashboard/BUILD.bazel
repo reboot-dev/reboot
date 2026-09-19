@@ -106,6 +106,31 @@ py_web_test_suite_env(
 )
 
 py_test(
+    name = "feature_tests_py",
+    srcs = [
+        ":conftest.py",
+        ":feature_tests.py",
+        "//tests/reboot:pytest_main.py",
+    ],
+    args = [
+        "tests/reboot/dashboard/feature_tests.py",
+        "-v",
+    ],
+    data = [
+        ":preferences.feature",
+    ],
+    main = "pytest_main.py",
+    deps = [
+        requirement("pytest"),
+        requirement("pytest-bdd"),
+        "//reboot:bdd_plugin_py",
+        "//reboot/aio:applications_py",
+        "//reboot/bdd:steps_py",
+        "//reboot/dashboard/backend:main_py",
+    ],
+)
+
+py_test(
     name = "preferences_tests_py",
     srcs = ["preferences_tests.py"],
     main = "preferences_tests.py",
