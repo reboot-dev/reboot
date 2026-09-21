@@ -82,12 +82,6 @@ def _data_types(apis: APIs) -> dict[str, tuple[API, Schema]]:
     }
 
 
-def _package_of(schema: Schema) -> str:
-    """The package the model belongs to: its module without the last
-    segment."""
-    return schema.module.rsplit('.', 1)[0]
-
-
 def _properties_of(schema: Schema) -> dict[int, Property]:
     """Every property a model's schema declares, by tag: every field
     of a model is declared with `Field(tag=...)`, which is what makes
@@ -411,7 +405,7 @@ def changes_between(before: APIs, after: APIs) -> Iterator[Change]:
                 data_type_added=DataTypeAdded(
                     name=name,
                     filename=added_api.filename,
-                    package=_package_of(added_schema),
+                    package=added_schema.package,
                 )
             )
             continue
@@ -421,7 +415,7 @@ def changes_between(before: APIs, after: APIs) -> Iterator[Change]:
                 data_type_removed=DataTypeRemoved(
                     name=name,
                     filename=removed_api.filename,
-                    package=_package_of(removed_schema),
+                    package=removed_schema.package,
                 )
             )
             continue
@@ -432,7 +426,7 @@ def changes_between(before: APIs, after: APIs) -> Iterator[Change]:
         changed_data_type = DataTypeChanged(
             name=name,
             filename=new_api.filename,
-            package=_package_of(new_schema),
+            package=new_schema.package,
             properties=_property_changes(
                 _properties_of(old_schema),
                 _properties_of(new_schema),

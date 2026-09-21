@@ -46,6 +46,7 @@ py_test(
         "//reboot/dashboard/backend:api_watcher_py",
         "//reboot/dashboard/backend:main_py",
         "//reboot/dashboard/backend:walk_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:api_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:schema_py_proto",
     ],
 )

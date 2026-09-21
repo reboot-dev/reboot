@@ -147,7 +147,12 @@ def _schema_of(
             # A model reached again, through another property or through
             # itself, is read once.
             return Type(reference=Reference(name=name)), schemas
-        schema = Schema(name=annotation.__name__, module=annotation.__module__)
+        schema = Schema(
+            name=annotation.__name__,
+            # The package the module is in, e.g. `shop.v1` for
+            # `shop.v1.shop`, and none for a module in none.
+            package=annotation.__module__.rpartition('.')[0],
+        )
         if annotation.__doc__ is not None:
             schema.description = inspect.cleandoc(annotation.__doc__)
         # Filed before its properties are read, so that a model referring

@@ -63,7 +63,7 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
         # module the generated code spells the file as.
         self.assertEqual(api.filename, 'shop/v1/shop.py')
         self.assertEqual(api.package, 'shop.v1')
-        self.assertEqual(api.module, 'shop.v1.shop')
+        self.assertEqual(api.pydantic.module, 'shop.v1.shop')
 
         shop = _state_types_by_name(list(api.state_types))['Shop']
 

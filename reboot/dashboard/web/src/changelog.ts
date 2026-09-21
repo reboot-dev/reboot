@@ -15,7 +15,6 @@ import type { Kind } from "./link_properties_to_data_types";
 import {
   formatConstraints,
   formatType,
-  packageOfDataTypeName,
   packageOfStateTypeName,
 } from "./link_properties_to_data_types";
 

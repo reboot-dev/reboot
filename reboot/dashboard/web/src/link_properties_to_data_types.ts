@@ -30,13 +30,6 @@ export const kindOfMethod = (method: api_pb.Method): Kind | undefined =>
 
 export const labelOfKind = (kind: Kind): string => kind;
 
-// The proto package a data type's name belongs to: `bank.v1` for
-// `bank.v1.account.Account`, dropping the class and the module's own
-// segment, since a data type is named by its reference name. The
-// page groups types by package.
-export const packageOfDataTypeName = (name: string): string =>
-  name.split(".").slice(0, -2).join(".");
-
 // The proto package a state type name belongs to: `bank.v1` for
 // `bank.v1.Account`, dropping only the class, since a state type is
 // named by its package, not its module.
@@ -354,7 +347,7 @@ export const linkDataTypes = ({ apis }: { apis: APIs }): LinkedDataType[] => {
       linkedDataTypesById.set(reference.name, {
         id: reference.name,
         name: schema?.name ?? "",
-        package: packageOfDataTypeName(reference.name),
+        package: schema?.package ?? "",
         filename: api.filename,
         description: schema?.description,
         properties: rowsOfSchema({ api, schema }),

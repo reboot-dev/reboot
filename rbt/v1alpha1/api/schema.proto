@@ -116,11 +116,19 @@ message Property {
 
 // Represents one model: its properties, in declaration order.
 message Schema {
+  // What was the module the model is declared in, which the name
+  // its schema is filed under already begins with. What was read of
+  // it was the package.
+  reserved 2;
+  reserved "module";
+
   // The model's class name.
   string name = 1;
-  // The module the model is declared in.
-  string module = 2;
   repeated Property properties = 3;
   // What the model means: its docstring.
   optional string description = 4;
+  // The package the model belongs to, e.g. "shop.v1", which is what
+  // types are grouped by: the package of the file declaring it,
+  // which need not be the file describing it.
+  string package = 6;
 }

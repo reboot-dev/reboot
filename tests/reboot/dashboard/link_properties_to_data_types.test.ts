@@ -10,7 +10,6 @@ import {
   propertiesOfState,
   formatType,
   linkDataTypes,
-  packageOfDataTypeName,
   packageOfStateTypeName,
   qualifiedName,
 } from "../../../reboot/dashboard/web/src/link_properties_to_data_types";
@@ -234,10 +233,6 @@ describe("the data types the description carries", () => {
 });
 
 describe("the package a name belongs to", () => {
-  it("drops the module and the class from a data type name", () => {
-    expect(packageOfDataTypeName("shop.v1.shop.Item")).toBe("shop.v1");
-  });
-
   it("drops only the class from a state type name", () => {
     expect(packageOfStateTypeName("shop.v1.Shop")).toBe("shop.v1");
   });

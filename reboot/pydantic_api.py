@@ -194,8 +194,8 @@ def api_of(api: API, *, filename: str) -> api_pb2.API:
     return api_pb2.API(
         filename=filename,
         package=package,
-        module=module,
         state_types=state_types,
         data_types=data_types,
         schemas=dict(schemas),
+        pydantic=api_pb2.API.Pydantic(module=module),
     )

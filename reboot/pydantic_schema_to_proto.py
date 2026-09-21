@@ -575,7 +575,7 @@ async def generate_from_api(
     await proto.write('import "rbt/v1alpha1/options.proto";\n')
     await proto.write('import "rbt/v1alpha1/tasks.proto";\n')
     await proto.write(
-        f"option (rbt.v1alpha1.file).pydantic = \"{api.module}\";\n"
+        f"option (rbt.v1alpha1.file).pydantic = \"{api.pydantic.module}\";\n"
     )
 
     await proto.write('\n')

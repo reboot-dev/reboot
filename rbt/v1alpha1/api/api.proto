@@ -11,6 +11,14 @@ import "rbt/v1alpha1/api/schema.proto";
 
 // Represents one API file's `api = API(...)`.
 message API {
+  // What a pydantic file alone declares.
+  message Pydantic {
+    // The Python module the file is, dotted, e.g. "shop.v1.shop":
+    // what a `Reference` to a model of the file begins with, and what
+    // generated code imports the models from.
+    string module = 1;
+  }
+
   // The file, relative to the API directory, e.g. "shop/v1/shop.py":
   // what `package` and `module` are derived from.
   string filename = 1;
@@ -19,9 +27,10 @@ message API {
   // "shop.v1".
   string package = 2;
 
-  // The module the file is, dotted, e.g. "shop.v1.shop": what a
-  // `Reference` to a model of this file begins with.
-  string module = 3;
+  // What was the module the file is, which only a pydantic file
+  // is: now `Pydantic.module`.
+  reserved 3;
+  reserved "module";
 
   // In declaration order, which is the order they generate in.
   repeated StateType state_types = 4;
@@ -39,6 +48,12 @@ message API {
   // The schema of every model the state types mention, state models
   // included, by the name a `Reference` carries.
   map<string, Schema> schemas = 6;
+
+  // What the file was written as, which says how its author spells
+  // what it declares. Only a pydantic file is described so far.
+  oneof source {
+    Pydantic pydantic = 9;
+  }
 }
 
 // Represents one `Type(...)` of the `API`.
