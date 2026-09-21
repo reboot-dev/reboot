@@ -268,6 +268,7 @@ class DashboardServicer(Dashboard.Servicer):
         self.state.apis.MergeFrom(request.apis)
         self.state.api_digests.clear()
         self.state.api_digests.MergeFrom(request.api_digests)
+        self.state.api_reading_version = request.api_reading_version
         self.state.api_check.CopyFrom(request.check)
         self.state.api_changed_at.CopyFrom(request.check.at)
 

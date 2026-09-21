@@ -44,6 +44,14 @@ from reboot.dashboard.backend.walk import (
 )
 from typing import Mapping, Optional
 
+# The version of what reading an API file describes, which the
+# dashboard's state records beside it. Counted up whenever a file
+# comes to be described differently, or what is digested of it does:
+# a file that has not changed is otherwise carried forward as an
+# earlier reading described it, which never says the new thing, and
+# whose digest no code generated since records.
+API_READING_VERSION = 1
+
 
 @dataclass(frozen=True, kw_only=True)
 class ReadFile:
@@ -104,12 +112,19 @@ def _reconstitute_known(
     from the state: each `File` with what was recorded as declared by
     its file. What a restarted watch starts from, so that only files
     that changed while the dashboard was down are read again."""
+    # Recorded by a reading of another version, which may not describe
+    # what this one does, each file is kept -- so that what changes is
+    # still told apart from what was there all along -- but without
+    # the digest that says it need not be read again, so every file
+    # is.
+    stale = state.api_reading_version != API_READING_VERSION
+
     known: dict[Path, ReadFile] = {}
     for relative, file in state.api_files.items():
         filename = _standardized_path(api_directory / relative)
         known[filename] = ReadFile(
             filename=filename,
-            digest=file.digest,
+            digest=file.digest if not stale else b'',
             dependencies=dict(file.dependencies),
             external=tuple(file.external),
             api=state.apis[relative] if relative in state.apis else None,
@@ -345,6 +360,7 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
                         api_digests=_api_digests(
                             known_now, api_directory=directory
                         ),
+                        api_reading_version=API_READING_VERSION,
                         changes=changes,
                         check=check,
                     )

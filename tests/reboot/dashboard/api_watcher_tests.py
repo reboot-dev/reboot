@@ -261,6 +261,44 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    async def test_what_an_older_reading_recorded_is_read_again(self) -> None:
+        """A dashboard upgraded over the state an older one left reads
+        every file again, though none changed: a file is otherwise
+        carried forward as the older reading described it, which does
+        not say what this one does, and whose digest no code
+        generated since records. What was there all along is not
+        recorded as having changed."""
+        self._write_api_file(self.directory, 'shop', 'Shop')
+
+        await self._start_dashboard()
+        read = await self._wait_for_api(
+            lambda api: len(_state_types_in(api)) == 1
+        )
+        digest = read.api_digests['shop/v1/shop_rbt.py']
+        changes = len(await self._changelog_entries())
+
+        # What an older dashboard would have left: the same file, by
+        # the same bytes, under a digest of what it described, and no
+        # version, which is what a state written before there was one
+        # holds.
+        context = self.rbt.create_external_context(name=self.id())
+        await Dashboard.ref(DASHBOARD_ID).UpdateApi(
+            context,
+            api_directory=read.api_directory,
+            api_files=dict(read.api_files),
+            apis=dict(read.apis),
+            api_digests={'shop/v1/shop_rbt.py': 'a' * 64},
+            check=read.api_check,
+        )
+
+        await self.rbt.down()
+        await self.rbt.up(revision=self.revision)
+
+        await self._wait_for_api(
+            lambda api: api.api_digests['shop/v1/shop_rbt.py'] == digest
+        )
+        self.assertEqual(len(await self._changelog_entries()), changes)
+
     async def test_a_restart_keeps_what_unchanged_files_declare(self) -> None:
         """A dashboard brought back up joins each file's state types
         back onto the file it recorded, so an edit to one file after

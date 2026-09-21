@@ -43,6 +43,14 @@ message Dashboard {
   // module records the digest it was generated from.
   map<string, string> api_digests = 5;
 
+  // Represents the version of the reading that recorded `api_files`,
+  // `apis` and `api_digests`. A dashboard whose reader describes a
+  // file differently reads every file again rather than carrying
+  // forward what an earlier one described, which would never say it,
+  // and whose digest generated code written since would never match;
+  // see `API_READING_VERSION`.
+  uint32 api_reading_version = 20;
+
   // Every servicer found in the developer's application, sorted. A
   // state type with no entry here is one no servicer was found for.
   // A state type with two is two classes servicing it, which is for
@@ -174,6 +182,8 @@ message DashboardUpdateApiRequest {
   // The check that found what this records, recorded in the same
   // write, so that a page that sees the check sees what it found.
   Check check = 7;
+
+  uint32 api_reading_version = 8;
 }
 
 message DashboardUpdateApiResponse {}
