@@ -4,7 +4,7 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 license = "Apache-2.0"
-description = "Experimental Rust schema emitter for Reboot"
+description = "Experimental Rust schema emitter and proto-first client for Reboot"
 
 [lib]
 path = "src/lib.rs"
@@ -12,3 +12,12 @@ path = "src/lib.rs"
 [[bin]]
 name = "reboot-rust-schema"
 path = "src/main.rs"
+
+[dependencies]
+prost = "0.13"
+tonic = "0.12"
+uuid = { version = "1", features = ["v4"] }
+
+[build-dependencies]
+protoc-bin-vendored = "3"
+tonic-build = "0.12"

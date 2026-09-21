@@ -115,6 +115,93 @@ impl std::fmt::Display for SchemaError {
 
 impl std::error::Error for SchemaError {}
 
+/// Generated directly from Reboot's existing cross-language test protocol.
+///
+/// This intentionally bypasses schema reflection and generated Reboot servicer
+/// classes. It proves the public protobuf/gRPC client boundary from Rust.
+pub mod proto {
+    tonic::include_proto!("tests.reboot.protoc");
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum ContextError {
+    InvalidMetadata,
+}
+
+impl std::fmt::Display for ContextError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidMetadata => write!(f, "Reboot metadata value is invalid"),
+        }
+    }
+}
+
+impl std::error::Error for ContextError {}
+
+/// The portable subset of Reboot's external-call context.
+///
+/// `state_ref` must already be a valid encoded Reboot state reference. Encoding
+/// state type tags is still owned by the current runtime; this client never
+/// guesses or synthesizes them.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternalContext {
+    state_ref: String,
+    bearer_token: Option<String>,
+}
+
+impl ExternalContext {
+    pub fn new(state_ref: impl Into<String>) -> Self {
+        Self {
+            state_ref: state_ref.into(),
+            bearer_token: None,
+        }
+    }
+
+    pub fn with_bearer_token(mut self, bearer_token: impl Into<String>) -> Self {
+        self.bearer_token = Some(bearer_token.into());
+        self
+    }
+
+    pub fn reader<T>(&self, message: T) -> Result<tonic::Request<T>, ContextError> {
+        self.request(message, None)
+    }
+
+    pub fn writer<T>(&self, message: T) -> Result<tonic::Request<T>, ContextError> {
+        self.request(message, Some(uuid::Uuid::new_v4()))
+    }
+
+    fn request<T>(
+        &self,
+        message: T,
+        idempotency_key: Option<uuid::Uuid>,
+    ) -> Result<tonic::Request<T>, ContextError> {
+        let mut request = tonic::Request::new(message);
+        request.metadata_mut().insert(
+            "x-reboot-state-ref",
+            self.state_ref
+                .parse()
+                .map_err(|_| ContextError::InvalidMetadata)?,
+        );
+        if let Some(key) = idempotency_key {
+            request.metadata_mut().insert(
+                "x-reboot-idempotency-key",
+                key.to_string()
+                    .parse()
+                    .map_err(|_| ContextError::InvalidMetadata)?,
+            );
+        }
+        if let Some(token) = &self.bearer_token {
+            request.metadata_mut().insert(
+                "authorization",
+                format!("Bearer {token}")
+                    .parse()
+                    .map_err(|_| ContextError::InvalidMetadata)?,
+            );
+        }
+        Ok(request)
+    }
+}
+
 impl ApplicationSpec {
     pub fn validate(&self) -> Result<(), SchemaError> {
         if self.package.is_empty() {
@@ -260,6 +347,35 @@ mod tests {
         assert!(proto.contains(
             "option (rbt.v1alpha1.method) = { writer: {}, description: \"Renames the clinic.\" };"
         ));
+    }
+
+    #[test]
+    fn external_context_attaches_reboot_metadata() {
+        let context = ExternalContext::new("opaque-state-ref").with_bearer_token("test-token");
+        let request = context
+            .writer(proto::Text {
+                content: "hello from rust".to_owned(),
+            })
+            .unwrap();
+        let metadata = request.metadata();
+        assert_eq!(
+            metadata.get("x-reboot-state-ref").unwrap(),
+            "opaque-state-ref"
+        );
+        assert!(
+            uuid::Uuid::parse_str(
+                metadata
+                    .get("x-reboot-idempotency-key")
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+            )
+            .is_ok()
+        );
+        assert_eq!(metadata.get("authorization").unwrap(), "Bearer test-token");
+
+        let reader = context.reader(proto::Empty {}).unwrap();
+        assert!(reader.metadata().get("x-reboot-idempotency-key").is_none());
     }
 
     #[test]
