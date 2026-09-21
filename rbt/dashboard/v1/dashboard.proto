@@ -882,7 +882,7 @@ message Generated {
   // Represents the digest of what the API file declared when the
   // module was generated from it, as the module records it. Absent
   // for a module recording none: one generated before digests were
-  // recorded, or from a `.proto`.
+  // recorded, or from a `.proto` declaring no state.
   optional string api_digest = 2;
 }
 
