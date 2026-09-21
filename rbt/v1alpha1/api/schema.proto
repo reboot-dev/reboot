@@ -3,6 +3,7 @@ syntax = "proto3";
 package rbt.v1alpha1.api;
 
 import "google/protobuf/struct.proto";
+import "google/protobuf/type.proto";
 
 // The schema of a model an API declares, as a grammar: the closed set
 // of forms Reboot knows how to generate for and describe. What
@@ -10,7 +11,10 @@ import "google/protobuf/struct.proto";
 // a state type with, so that the two agree by construction: a type
 // outside this set is one neither can express.
 
-// Represents one type.
+// Represents one type, as what a value of it is in JSON, which is
+// what reading and writing one takes: a `.proto`'s `int64` is a
+// `STRING`, since that is how one is shipped, and its `origin` is
+// what says it is an `int64` where it was declared.
 message Type {
   oneof type {
     Scalar scalar = 1;
@@ -20,6 +24,42 @@ message Type {
     Reference reference = 5;
     Optional optional = 6;
     DiscriminatedUnion discriminated_union = 7;
+    // An enum, by the name it is filed under in `API.enums`, which
+    // is what tells it from a `reference`, filed under
+    // `API.schemas`. In JSON, the name of one of its values.
+    Reference enum = 8;
+  }
+
+  // What the type is where it was declared, when that is more than
+  // JSON shows. Absent when JSON shows all of it, which is so of
+  // everything a pydantic API declares.
+  optional Origin origin = 9;
+}
+
+// Represents what a type is where it was declared, beneath what it is
+// in JSON: which depends on what the API was written as, each of
+// which says it its own way.
+message Origin {
+  // Represents what a field of a `.proto` was declared as, the way
+  // the field's descriptor says it: its `type`, and for a message or
+  // an enum, its `type_name`.
+  message Proto {
+    // E.g. the `TYPE_INT64` that JSON ships as a string, or the
+    // `TYPE_BYTES` it ships as base64. Protobuf's own enum, with the
+    // numbers a descriptor's `type` has.
+    google.protobuf.Field.Kind kind = 1;
+
+    // The full proto name of what was declared, e.g.
+    // "google.protobuf.Timestamp", which JSON ships as a string, or
+    // "google.protobuf.Value", which is any JSON value at all.
+    // Present exactly when `kind` is `TYPE_MESSAGE`, `TYPE_GROUP` or
+    // `TYPE_ENUM`. Without the leading '.' a descriptor spells it
+    // with, the way a `Reference` names a message.
+    optional string type_name = 2;
+  }
+
+  oneof origin {
+    Proto proto = 1;
   }
 }
 
@@ -39,9 +79,16 @@ message Array {
   Type item = 1;
 }
 
-// Represents a `dict[str, value]`: the keys are always strings.
+// Represents a `dict[str, value]`, or a `.proto`'s `map<key, value>`.
 message Map {
   Type value = 1;
+  // What a key is: in JSON always a string, so a `STRING`, with what
+  // it was declared as beneath it, e.g. the `TYPE_UINT32` of a
+  // `.proto`'s `map<uint32, value>`. A `Type` so that whatever keys
+  // may come to be declared as, a closed set of strings included, is
+  // said the way it is said of any value. Absent for keys declared
+  // as strings and nothing more, which is every `dict`.
+  optional Type key = 2;
 }
 
 // Represents one member of a `Literal[...]`: the JSON value it is,
@@ -100,6 +147,19 @@ message DiscriminatedUnion {
   repeated Variant variants = 2;
 }
 
+// Represents a `.proto`'s `oneof`: at most one of its members is
+// given. The members are properties of the model like any other,
+// which is what they are in JSON, where nothing is named after the
+// `oneof`; this says which of them exclude each other.
+message OneOf {
+  // The name the developer gave it, e.g. "kind".
+  string name = 1;
+  // The members, by tag, in declaration order.
+  repeated uint32 tags = 2;
+  // What the developer wrote in the comment above the `oneof`.
+  optional string description = 3;
+}
+
 // Represents what a value must satisfy beyond its type, as
 // `Field(...)` declares it: the numeric bounds, the length bounds of
 // a string, list or dict, and the pattern a string must match. Each
@@ -140,9 +200,9 @@ message Property {
 
 // Represents one model: its properties, in declaration order.
 message Schema {
-  // What was the module the model is declared in, which the name
-  // its schema is filed under already begins with. What was read of
-  // it was the package.
+  // What was the module the model is declared in, which only a
+  // pydantic model has, and which the name its schema is filed under
+  // already begins with. What was read of it was the package.
   reserved 2;
   reserved "module";
 
@@ -151,8 +211,38 @@ message Schema {
   repeated Property properties = 3;
   // What the model means: its docstring.
   optional string description = 4;
+  // Which of the properties exclude each other, in declaration
+  // order. Only a `.proto` declares any.
+  repeated OneOf one_ofs = 5;
   // The package the model belongs to, e.g. "shop.v1", which is what
   // types are grouped by: the package of the file declaring it,
   // which need not be the file describing it.
   string package = 6;
+}
+
+// Represents one enum a `.proto` declares: its values, in
+// declaration order.
+message Enum {
+  // Represents one value of an enum.
+  message Value {
+    // The name the developer gave it, e.g. "MISSING", which is what
+    // the value is in JSON.
+    string name = 1;
+    // The number it is shipped as otherwise.
+    int32 number = 2;
+    // What the developer wrote in the comment above the value.
+    optional string description = 3;
+    // Whether the value is declared deprecated.
+    bool deprecated = 4;
+  }
+
+  // The enum's name within its package, which for one nested in a
+  // message carries the message's, e.g. "KindChanged.Kind".
+  string name = 1;
+  // The package the enum belongs to, e.g. "shop.v1": the package of
+  // the file declaring it, which need not be the file describing it.
+  string package = 2;
+  repeated Value values = 3;
+  // What the developer wrote in the comment above the enum.
+  optional string description = 4;
 }

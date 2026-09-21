@@ -371,6 +371,18 @@ py_library(
 )
 
 py_library(
+    name = "proto_api_py",
+    srcs = ["proto_api.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("protobuf"),
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:api_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:schema_py_proto",
+    ],
+)
+
+py_library(
     name = "pydantic_api_py",
     srcs = ["pydantic_api.py"],
     visibility = ["//visibility:public"],

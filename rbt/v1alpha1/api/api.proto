@@ -5,11 +5,13 @@ package rbt.v1alpha1.api;
 import "rbt/v1alpha1/api/schema.proto";
 
 // What one API file declares, as a grammar: the closed set of forms a
-// pydantic `API(...)` can take, which `rbt generate` prints proto from
-// and the dashboard describes. Every model a state type mentions is
-// in `schemas`, by the name a `Reference` carries.
+// pydantic `API(...)` or a `.proto` can take, which `rbt generate`
+// prints proto from a pydantic API with and the dashboard describes
+// either with. Every model a state type mentions is in `schemas`,
+// and every enum in `enums`, by the name a `Reference` carries.
 
-// Represents one API file's `api = API(...)`.
+// Represents one API file: a pydantic file's `api = API(...)`, or
+// what a `.proto` declares.
 message API {
   // What a pydantic file alone declares.
   message Pydantic {
@@ -19,12 +21,16 @@ message API {
     string module = 1;
   }
 
-  // The file, relative to the API directory, e.g. "shop/v1/shop.py":
-  // what `package` and `module` are derived from.
+  // What a `.proto` alone declares: nothing yet.
+  message Proto {}
+
+  // The file, relative to the API directory, e.g. "shop/v1/shop.py"
+  // or "shop/v1/shop.proto": what a pydantic file's `package` and
+  // `module` are derived from.
   string filename = 1;
 
-  // The package the file generates to: its directory, dotted, e.g.
-  // "shop.v1".
+  // The package the file generates to, e.g. "shop.v1": a pydantic
+  // file's directory, dotted, and a `.proto`'s `package`.
   string package = 2;
 
   // What was the module the file is, which only a pydantic file
@@ -35,24 +41,40 @@ message API {
   // In declaration order, which is the order they generate in.
   repeated StateType state_types = 4;
 
-  // The models that are not state models: the requests, responses
-  // and errors of the methods, the requests of the UIs, and anything
-  // those contain, however deeply nested. Each is listed once, where
-  // it is first met walking the file in declaration order: state
-  // type by state type; within one, the state model's properties,
-  // then each UI's request, then each method's request, response and
-  // errors; and a model's properties, in declaration order, before
-  // the property after it.
+  // The models that are not state models, each listed once, in the
+  // order they are described. For a `.proto`, every message the file
+  // declares, in declaration order, and whatever those mention from
+  // the files it imports, where first mentioned. For a pydantic
+  // file, only what a state type mentions, which is how the models
+  // are read: the requests, responses and errors of the methods, the
+  // requests of the UIs, and anything those contain, however deeply
+  // nested, where first met walking state type by state type; within
+  // one, the state model's properties, then each UI's request, then
+  // each method's request, response and errors; and a model's
+  // properties, in declaration order, before the property after it.
+  // That a pydantic file's other models are not described is a gap
+  // to close.
   repeated Reference data_types = 5;
 
   // The schema of every model the state types mention, state models
   // included, by the name a `Reference` carries.
   map<string, Schema> schemas = 6;
 
+  // Every enum the models mention, by the name a `Reference` carries.
+  // Only a `.proto` declares any: a pydantic API spells a closed set
+  // of strings as `Literals`. Every enum is a data type, so there is
+  // no list of which are, the way `data_types` says which schemas.
+  map<string, Enum> enums = 7;
+
+  // Whether the file is declared outside the application's API.
+  bool external = 11;
+
   // What the file was written as, which says how its author spells
-  // what it declares. Only a pydantic file is described so far.
+  // what it declares: a `list[Item]` of a pydantic file is a
+  // `repeated Item` of a `.proto`.
   oneof source {
     Pydantic pydantic = 9;
+    Proto proto = 10;
   }
 }
 
