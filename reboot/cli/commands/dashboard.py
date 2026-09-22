@@ -7,12 +7,11 @@ import shutil
 import sys
 import webbrowser
 from pathlib import Path
+from rbt.dashboard.v1.dashboard_rbt import Preferences
+from rbt.std.presence.v1.presence_rbt import Presence
 from reboot.aio.backoff import Backoff
+from reboot.aio.external import ExternalContext
 from reboot.cli.commands.dev import (
-    _dashboard_reachable,
-    _open_on_restart,
-    _viewers,
-    automatically_opened_url,
     check_local_envoy_mode,
     try_and_become_child_subreaper_on_linux,
 )
@@ -26,10 +25,13 @@ from reboot.cli.common.directories import (
 from reboot.cli.common.rc import ArgumentParser
 from reboot.cli.common.subprocesses import Subprocesses
 from reboot.dashboard.backend.constants import (
+    DASHBOARD_PATH,
     DEFAULT_DASHBOARD_PORT,
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
     ENVVAR_RBT_GENERATED_DIRECTORY,
+    PREFERENCES_ID,
+    PRESENCE_ID,
 )
 from reboot.settings import (
     ENVVAR_RBT_DEV,
@@ -282,14 +284,80 @@ async def _run_dashboard(
         await backoff()
 
 
+async def _viewers(dashboard_url: str) -> list[str]:
+    """The subscriber ids of everyone looking at a dashboard.
+
+    The dashboard constructs the `Presence` instance, empty, when it
+    initializes, so there is an answer from the moment it is up.
+    """
+    context = ExternalContext(name="open-dashboard", url=dashboard_url)
+    response = await Presence.ref(PRESENCE_ID).List(context)
+    return list(response.subscriber_ids)
+
+
+async def _open_automatically(dashboard_url: str) -> bool:
+    """Whether the developer still wants a dashboard opened for them.
+
+    The dashboard's notice writes this when they click "Don't reopen
+    automatically", and it outlives the `rbt dashboard` they clicked
+    it in. The dashboard writes the default when it initializes, so
+    nobody ever clicking means a dashboard opens.
+    """
+    context = ExternalContext(name="open-dashboard", url=dashboard_url)
+    response = await Preferences.ref(PREFERENCES_ID).Get(context)
+    return not response.suppress_automatic_open
+
+
+def automatically_opened_url(dashboard_url: str) -> str:
+    """The URL a dashboard is opened at, which tells the page it was
+    opened automatically, letting it offer not to be opened again.
+
+    Everything else sends people to the root, which forwards to the
+    page wherever it is served, but this passes the page's whole path:
+    the root is served by the `RootPage` servicer through Envoy's
+    gRPC-JSON transcoder, which fails a request carrying a query
+    parameter the method has no field for (with `grpc-status: 2`, "Bad
+    method header", and an empty body), so `/?opened=automatically`
+    would never reach the page. The query only ever comes from here, so
+    nobody is told to type it.
+    """
+    return f'{dashboard_url}{DASHBOARD_PATH}/?opened=automatically'
+
+
+async def _dashboard_reachable(port: int) -> bool:
+    """Whether something is accepting connections on the dashboard's
+    port."""
+    try:
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection('127.0.0.1', port),
+            timeout=2.0,
+        )
+    except (OSError, asyncio.TimeoutError):
+        return False
+    writer.close()
+    try:
+        await writer.wait_closed()
+    except OSError:
+        pass
+    return True
+
+
 async def _open_when_serving(*, port: int) -> None:
     """Opens the dashboard once it is serving, unless somebody is
     already looking at one: the page subscribes to `Presence` for as
-    long as it is open, so a tab left up keeps a second one from
-    appearing, and a tab that was closed is replaced.
+    long as it is open, so a tab left up -- from an earlier
+    `rbt dashboard`, or from this session's browser -- keeps a second
+    one from appearing, and a tab that was closed is replaced.
 
     Also stays shut when the developer clicked "Don't reopen
-    automatically" in the notice an automatic open shows.
+    automatically" in the notice an automatic open shows, which is
+    remembered until they say otherwise.
+
+    `Presence` learns that a viewer has gone from the cancellation of
+    the page's `Connect` RPC, and nothing else. A proxy that holds its
+    server-side socket open after the browser goes away therefore
+    leaves a viewer listed who is not there, and the effect is that no
+    dashboard opens; the URL this prints still reaches it.
     """
     dashboard_url = f'http://127.0.0.1:{port}'
     # The root, which forwards to the page wherever it is served.
@@ -300,19 +368,21 @@ async def _open_when_serving(*, port: int) -> None:
         while not await _dashboard_reachable(port):
             await backoff()
 
+        # Asked of the application rather than the proxy, so this
+        # doubles as the readiness gate: reachable means Envoy
+        # answers, and the application behind it comes up moments
+        # later.
         viewers: Optional[list[str]] = None
         while viewers is None:
             try:
                 viewers = await _viewers(dashboard_url)
             except Exception:
-                # Reachable means the proxy answers; the application
-                # behind it comes up moments later.
                 await backoff()
 
         if len(viewers) > 0:
             return
 
-        if not await _open_on_restart(dashboard_url):
+        if not await _open_automatically(dashboard_url):
             return
 
         # `webbrowser` honors `$BROWSER`, which is what makes this
