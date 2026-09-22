@@ -44,14 +44,14 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
     async def _read_preferences(self) -> bool:
         context = self.rbt.create_external_context(name=self.id())
         response = await Preferences.ref(PREFERENCES_ID).Get(context)
-        return response.suppress_open_on_restart
+        return response.suppress_automatic_open
 
-    async def _set_suppress_open_on_restart(self, suppress: bool) -> None:
+    async def _set_suppress_automatic_open(self, suppress: bool) -> None:
         """Makes the choice the dashboard's banner makes."""
         context = self.rbt.create_external_context(name=self.id())
-        await Preferences.ref(PREFERENCES_ID).SetSuppressOpenOnRestart(
+        await Preferences.ref(PREFERENCES_ID).SetSuppressAutomaticOpen(
             context,
-            suppress_open_on_restart=suppress,
+            suppress_automatic_open=suppress,
         )
 
     async def _read_expanded_methods(self) -> list[str]:
@@ -93,7 +93,7 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
         # dashboard constructs on every `rbt dashboard`, and a page
         # that expands a state type must not write back a stale
         # answer to a question it was not asked.
-        await self._set_suppress_open_on_restart(True)
+        await self._set_suppress_automatic_open(True)
         await self._set_methods_expanded('bank.v1.Account', ['deposit'], True)
 
         await initialize(self._initialize_context())
