@@ -1,11 +1,10 @@
 import argparse
 from importlib import resources
-from pathlib import PurePosixPath
 from reboot.cli.common.rc import ArgumentParser
 from typing import Optional
 
 
-_SKILLS_DIRECTORY = ('plugin', 'skills')
+_SKILLS_DIRECTORY = ('cli', 'skills')
 
 
 def _skills_root():
@@ -36,16 +35,16 @@ def _skill_description(skill_name: str) -> str:
     return ''
 
 
-def skill_subcommands() -> list[str]:
+def skills_subcommands() -> list[str]:
     return [
-        'skill list',
-        'skill get',
+        'skills list',
+        'skills get',
     ]
 
 
-def register_skill(parser: ArgumentParser) -> None:
+def register_skills(parser: ArgumentParser) -> None:
     """Register commands for the version-matched skills bundled with rbt."""
-    get = parser.subcommand('skill get')
+    get = parser.subcommand('skills get')
     get.add_argument(
         'name',
         type=str,
@@ -60,12 +59,12 @@ def _get_skill(name: str):
     return _skills_root().joinpath(name, 'SKILL.md')
 
 
-async def handle_skill_subcommand(args: argparse.Namespace) -> Optional[int]:
-    if args.subcommand == 'skill list':
+async def handle_skills_subcommand(args: argparse.Namespace) -> Optional[int]:
+    if args.subcommand == 'skills list':
         for name in _skill_names():
             print(f'{name}\t{_skill_description(name)}')
         return 0
-    elif args.subcommand == 'skill get':
+    elif args.subcommand == 'skills get':
         content = _get_skill(args.name).read_text()
         print(content, end='' if content.endswith('\n') else '\n')
         return 0

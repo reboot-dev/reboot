@@ -1,10 +1,4 @@
 filegroup(
-    name = "skills",
-    srcs = glob(["skills/**"]),
-    visibility = ["//visibility:public"],
-)
-
-filegroup(
     name = "install_sh",
     srcs = ["install.sh"],
     visibility = ["//visibility:public"],

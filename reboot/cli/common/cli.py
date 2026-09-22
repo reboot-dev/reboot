@@ -38,9 +38,9 @@ from reboot.cli.commands.inspect import (
     register_inspect,
 )
 from reboot.cli.commands.skills import (
-    handle_skill_subcommand,
-    register_skill,
-    skill_subcommands,
+    handle_skills_subcommand,
+    register_skills,
+    skills_subcommands,
 )
 from reboot.cli.commands.serve import (
     handle_serve_subcommand,
@@ -83,7 +83,7 @@ def create_parser(
         subcommands=(
             cloud_subcommands() + dashboard_subcommands() + dev_subcommands() +
             export_and_import_subcommands() + generate_subcommands() +
-            init_subcommands() + inspect_subcommands() + skill_subcommands() +
+            init_subcommands() + inspect_subcommands() + skills_subcommands() +
             serve_subcommands() + task_subcommands()
         ),
         rc_file=rc_file,
@@ -99,7 +99,7 @@ def create_parser(
     register_generate(parser)
     register_init(parser)
     register_inspect(parser)
-    register_skill(parser)
+    register_skills(parser)
     register_serve(parser)
     register_task(parser)
 
@@ -164,7 +164,7 @@ async def cli() -> int:
         return result
     elif (result := await handle_inspect_subcommand(args)) is not None:
         return result
-    elif (result := await handle_skill_subcommand(args)) is not None:
+    elif (result := await handle_skills_subcommand(args)) is not None:
         return result
     elif (
         result := await handle_serve_subcommand(

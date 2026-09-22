@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reboot MCP UI"
+  short_description: "Build a Reboot MCP UI for ChatGPT, Claude, VSCode, Goose"
+  default_prompt: "Use Reboot MCP UI to build an MCP UI from a description."
