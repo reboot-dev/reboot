@@ -479,7 +479,7 @@ nav a .nav-name {
 /* That the page is watching, said where what it is watching for will
    appear. */
 .watching {
-  max-width: 840px;
+  max-width: var(--page-column);
   margin: 0 auto;
   padding: 0 calc(var(--pane-gutter) + 10px) 10px;
   font-family: ui-monospace, Menlo, monospace;
@@ -534,7 +534,7 @@ nav a .nav-name {
      gap would cut it into stripes. The space between columns is the
      cells' own padding. */
   gap: 1px 0;
-  max-width: 840px;
+  max-width: var(--page-column);
   margin: 0 auto;
   padding: 0 var(--pane-gutter) 24px;
 }
@@ -722,16 +722,35 @@ a.change-name:hover {
 /* --- Document pane --- */
 
 .pane {
+  /* The column every page on it centres its content in. Named here
+     so the pages that want a wider one say so in a single place
+     rather than each region repeating a width. */
+  --page-column: 840px;
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   background: hsl(var(--background));
 }
 
+/* The features page is a wall of cards, and cards multiply to fill
+   whatever width they are given, so it earns more room than the
+   reading column the other pages sit in. `min()` rather than a
+   media query because the sidebar is dragged to any width it likes:
+   the pane's width is not the viewport's, and no container query
+   runs in every browser this has to.
+
+   The changelog is deliberately not in this list. Its rows are five
+   columns sized to what they hold and one sentence, so nothing in
+   it multiplies: width past the reading column lands as white to
+   the right of every row rather than as anything to read. */
+.pane.page-features {
+  --page-column: min(1600px, 100%);
+}
+
 /* Centred in the pane, in the same column as the page under it,
    with the pane's gutter at either side of the column. */
 header {
-  max-width: 840px;
+  max-width: var(--page-column);
   margin: 0 auto;
   padding: 40px var(--pane-gutter) 28px;
 }
@@ -746,7 +765,7 @@ header h1 {
 /* A feature's page, in the same column as the heading over it. The
    types pane sets its own padding on the same class. */
 .state-type {
-  max-width: 840px;
+  max-width: var(--page-column);
   margin: 0 auto;
   padding: 0 var(--pane-gutter) 48px;
 }
@@ -1435,7 +1454,7 @@ header h1 {
    otherwise shrink to its words. */
 .graph-note {
   width: 100%;
-  max-width: 840px;
+  max-width: var(--page-column);
   padding: 24px var(--pane-gutter);
   font-size: 13px;
   line-height: 1.5;
@@ -2427,7 +2446,7 @@ header .state-type-description {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-width: 840px;
+  max-width: var(--page-column);
   margin: 0 auto 28px;
   padding: 0 var(--pane-gutter);
 }
@@ -2616,24 +2635,34 @@ header .state-type-description {
    over them share, so the cards' left edge is theirs. */
 .features-overview {
   display: grid;
-  grid-template-columns: 3fr 2fr;
+  /* The aside is a list of short method names, so it is given a
+     share that stops: at a wide column a second proportional track
+     would hand it hundreds of pixels it has nothing to put in. */
+  grid-template-columns: minmax(0, 1fr) clamp(220px, 22%, 320px);
   gap: 32px;
-  max-width: 840px;
+  max-width: var(--page-column);
   margin: 0 auto;
   padding: 0 var(--pane-gutter);
 }
 
+/* The cards flow down one column and on into the next, as many
+   columns as the width allows. Columns rather than a grid because
+   the cards are of every height: a grid puts them in rows, and a
+   row is as tall as its tallest card, so every shorter card in it
+   trails a different amount of empty space. Flowed, each card is
+   its own height and the space between any two is the same. */
 .feature-summaries {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+  columns: 420px;
+  column-gap: 18px;
 }
 
-/* One feature as a card. */
+/* One feature as a card, whole: never split across a column break. */
 .feature-summary {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  break-inside: avoid;
+  margin-bottom: 18px;
   padding: 16px 18px;
   border: 1px solid hsl(var(--border));
   border-radius: 10px;
@@ -2735,7 +2764,7 @@ header .state-type-description {
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
-  max-width: 840px;
+  max-width: var(--page-column);
   margin: 0 auto 24px;
   padding: 0 var(--pane-gutter);
 }
@@ -2765,7 +2794,7 @@ header .state-type-description {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: 840px;
+  max-width: var(--page-column);
   margin: 0 auto 24px;
   padding: 0 var(--pane-gutter);
 }
