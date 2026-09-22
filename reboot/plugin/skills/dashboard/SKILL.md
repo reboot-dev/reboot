@@ -1,6 +1,6 @@
 ---
 name: dashboard
-description: Start the Reboot developer dashboard (`rbt dashboard`) for a project and open it in the browser. Puts the minimum files in place (a `pyproject.toml` depending on `reboot[dev]`, a `.rbtrc`, the API directory), starts the dashboard in a background shell if one is not already serving (it opens itself in the browser), and hands the user its URL. Use this while BUILDING an app — the dashboard watches the API directory from before anything is running, so the developer watches the API take shape as it is written. Not for running an app; `rbt dev run` manages its dashboard itself once the app exists (see the run skill).
+description: Start the Reboot developer dashboard (`rbt dashboard`) for a project and open it in the browser. Puts the minimum files in place (a `pyproject.toml` depending on `reboot[dev]`, a `.rbtrc`, the API directory), starts the dashboard in a background shell if one is not already serving (it opens itself in the browser), and hands the user its URL. Use this while BUILDING an app — the dashboard watches the API directory from before anything is running, so the developer watches the API take shape as it is written. Not for running an app (see the run skill).
 argument-hint: [<project-directory>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -28,8 +28,7 @@ and `web-app` skills do, right before the API is written) or when
 the user asks for the dashboard while an app is being built.
 
 > This skill **starts the dashboard**, nothing else. It does not run
-> the application — that is the [run skill](../run/SKILL.md), and
-> `rbt dev run` looks after its own dashboard once the app exists.
+> the application — that is the [run skill](../run/SKILL.md).
 > The dashboard is optional: if any step below fails, tell the user
 > the dashboard is not available and carry on with whatever you were
 > building. Do not stop the build to debug it.
@@ -97,9 +96,8 @@ If that succeeds, a dashboard is already up — do not start a second
 one. Surface the URL and stop.
 
 (If port 9871 is held by something that is _not_ this project's
-dashboard — rare — start on another port with `--port=<port>`, and
-remember that a later `rbt dev run` then needs
-`--dashboard-port=<port>` to find it.)
+dashboard — rare — start on another port with `--port=<port>` and
+surface that port instead.)
 
 ## Step 4 — Start the dashboard
 
@@ -117,7 +115,7 @@ It prints `Your dashboard is at http://127.0.0.1:9871/`
 immediately and keeps running; wait until the probe from Step 3
 succeeds before calling it up. It stays running for the life of the
 session — leave it alone afterwards; it never needs a restart when
-code changes, and `rbt dev run` coexists with it.
+code changes.
 
 If it fails to come up (for example the local Envoy check fails
 because neither Docker nor an `envoy` executable is available), warn
@@ -128,8 +126,7 @@ the user in one sentence and continue the build without it.
 Do not open the page yourself. `rbt dashboard` opens it in the
 browser once it is serving, unless a tab is already showing it or
 the developer chose "Don't reopen automatically"; opening it as well
-gives the developer two tabs. `rbt dev run` opens no dashboard of
-its own unless it is passed `--open-dashboard`.
+gives the developer two tabs.
 
 Tell the user the dashboard is up and what it is for — e.g.
 "Developer dashboard (watch the API as I build it) at

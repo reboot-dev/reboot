@@ -536,13 +536,14 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
     async def test_the_notice_turns_reopening_off(self) -> None:
         # The CLI opens the page with `?opened=automatically`, and the
         # notice that says so offers not to be reopened: that button
-        # writes the preference `rbt dev run` reads before deciding
+        # writes the preference `rbt dashboard` reads before deciding
         # whether to open a dashboard, which `open_dashboard_tests`
         # covers. Closing the notice writes nothing, so the test
         # closes first, then suppresses, and the preference must only
         # change on the second.
         #
-        # The page's own path, not the root, as `rbt dev run` opens it:
+        # The page's own path, not the root, as `rbt dashboard` opens
+        # it:
         # the root is served through Envoy's gRPC-JSON transcoder, which
         # fails a request carrying a query parameter its method has no
         # field for, so `/?opened=automatically` never reaches the page.
@@ -970,8 +971,8 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_the_page_holds_presence(self) -> None:
-        # `rbt dev run` opens a dashboard only when `Presence` lists no
-        # viewer, so the page must subscribe while it is open and be
+        # `rbt dashboard` opens a dashboard only when `Presence` lists
+        # no viewer, so the page must subscribe while it is open and be
         # unlisted once it is closed.
         driver = await asyncio.to_thread(_new_driver)
         try:

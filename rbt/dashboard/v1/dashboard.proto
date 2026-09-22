@@ -883,11 +883,9 @@ message Preferences {
   option (rbt.v1alpha1.state) = {
   };
 
-  // Whether the developer has asked `rbt dev run` to stop opening a
-  // dashboard by itself. False, the default, means `rbt dev run`
-  // opens a dashboard when none is already open.
-  //
-  // `--open-dashboard` opens one even when this is true.
+  // Whether the developer has asked `rbt dashboard` to stop opening
+  // a dashboard by itself. False, the default, means `rbt dashboard`
+  // opens one when none is already open.
   bool suppress_automatic_open = 1;
 
   // The methods whose detail the developer has opened, spelled as

@@ -1,13 +1,16 @@
-"""`rbt dev run` opens a dashboard when nobody is looking at one.
+"""`rbt dashboard` opens a dashboard when nobody is looking at one.
 
 The dashboard page subscribes to `Presence` for as long as it is open,
 so the question the CLI asks is who is looking right now, which
 reopens a dashboard the developer closed and never puts a second tab in
 front of one they left up. It asks a second question first: whether the
-developer clicked the dashboard's "Don't reopen this dashboard on
-restart" banner, which is remembered in `Preferences`.
+developer clicked the dashboard's "Don't reopen automatically" notice,
+which is remembered in `Preferences`.
 
-The page's own subscription and its banner are exercised in
+Both questions are the reason a build can start a dashboard at its
+first step and every later `rbt dashboard` leave that one alone.
+
+The page's own subscription and its notice are exercised in
 `dashboard_tests`; here the subscriber and the choice are made
 directly, so these tests need no browser.
 """
@@ -18,8 +21,8 @@ from rbt.std.presence.subscriber.v1.subscriber_rbt import Subscriber
 from rbt.std.presence.v1.presence_rbt import Presence
 from rbt.v1alpha1.errors_pb2 import NotFound
 from reboot.aio.tests import Reboot
-from reboot.cli.commands.dev import (
-    _open_dashboard_once,
+from reboot.cli.commands.dashboard import (
+    _open_when_serving,
     automatically_opened_url,
 )
 from reboot.dashboard.backend.constants import PREFERENCES_ID, PRESENCE_ID
@@ -33,7 +36,8 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         self.rbt = Reboot()
         await self.rbt.start()
         await self.rbt.up(application(), local_envoy=True)
-        self.url = f'http://127.0.0.1:{self.rbt.envoy_port()}'
+        self.port = self.rbt.envoy_port()
+        self.url = f'http://127.0.0.1:{self.port}'
         # The root, which forwards to the page wherever it is served.
         self.dashboard_url = f'{self.url}/'
         # An open the developer did not ask for tells the page so, which
@@ -82,7 +86,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def _suppress_reopening(self, suppress: bool) -> None:
-        """Makes the choice the dashboard's banner makes."""
+        """Makes the choice the dashboard's notice makes."""
         context = self.rbt.create_external_context(name=self.id())
         await Preferences.ref(PREFERENCES_ID).SetSuppressAutomaticOpen(
             context,
@@ -101,7 +105,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self._viewer_ids(), [])
 
         with patch('webbrowser.open', return_value=True) as browser:
-            await _open_dashboard_once(dashboard_url=self.url, forced=False)
+            await _open_when_serving(port=self.port)
 
         # The browser gets the dashboard's path; `ExternalContext` only
         # ever sees the origin, which is all it accepts.
@@ -112,20 +116,9 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self._viewer_ids(), ['a-tab-that-is-open'])
 
         with patch('webbrowser.open', return_value=True) as browser:
-            with patch('reboot.cli.common.terminal.info') as told:
-                await _open_dashboard_once(
-                    dashboard_url=self.url,
-                    forced=False,
-                )
+            await _open_when_serving(port=self.port)
 
         browser.assert_not_called()
-
-        # And it must say so: the tab being counted may be behind
-        # another window, so a run that opens nothing and explains
-        # nothing is indistinguishable from a broken one.
-        told.assert_called_once()
-        self.assertIn('--open-dashboard', told.call_args.args[0])
-        self.assertIn(self.dashboard_url, told.call_args.args[0])
 
     async def test_opens_again_once_the_last_viewer_has_gone(self) -> None:
         await self._view('a-tab-that-closes')
@@ -143,7 +136,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.1)
 
         with patch('webbrowser.open', return_value=True) as browser:
-            await _open_dashboard_once(dashboard_url=self.url, forced=False)
+            await _open_when_serving(port=self.port)
 
         browser.assert_called_once_with(self.automatically_opened_url)
 
@@ -151,47 +144,22 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         self
     ) -> None:
         # Nobody is looking at a dashboard, so the only thing keeping
-        # one from opening is the choice the banner recorded.
+        # one from opening is the choice the notice recorded.
         await self._suppress_reopening(True)
 
         with patch('webbrowser.open', return_value=True) as browser:
-            with patch('reboot.cli.common.terminal.info') as told:
-                await _open_dashboard_once(
-                    dashboard_url=self.url,
-                    forced=False,
-                )
+            await _open_when_serving(port=self.port)
 
         browser.assert_not_called()
 
-        # And it must say how to get one anyway, since a choice made
-        # in an earlier `rbt dev run` is not something the developer
-        # is looking at now.
-        told.assert_called_once()
-        self.assertIn('--open-dashboard', told.call_args.args[0])
-        self.assertIn(self.dashboard_url, told.call_args.args[0])
-
-        # The second banner undoes the first, so a developer who
-        # clicked once is not stuck with it.
+        # Unsetting the choice undoes it, so a developer who clicked
+        # once is not stuck with it.
         await self._suppress_reopening(False)
 
         with patch('webbrowser.open', return_value=True) as browser:
-            await _open_dashboard_once(dashboard_url=self.url, forced=False)
+            await _open_when_serving(port=self.port)
 
         browser.assert_called_once_with(self.automatically_opened_url)
-
-    async def test_forcing_opens_whatever_would_have_held_it_back(
-        self
-    ) -> None:
-        # Both of the things that stop an opening at once, so that
-        # `--open-dashboard` means what it says regardless of which
-        # one is in the way.
-        await self._view('a-tab-that-is-open')
-        await self._suppress_reopening(True)
-
-        with patch('webbrowser.open', return_value=True) as browser:
-            await _open_dashboard_once(dashboard_url=self.url, forced=True)
-
-        browser.assert_called_once_with(self.dashboard_url)
 
     async def test_says_where_the_dashboard_is_when_none_could_be_opened(
         self
@@ -201,10 +169,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         # was shown, so the developer is told the address instead.
         with patch('webbrowser.open', return_value=False):
             with patch('reboot.cli.common.terminal.warn') as warned:
-                await _open_dashboard_once(
-                    dashboard_url=self.url,
-                    forced=False,
-                )
+                await _open_when_serving(port=self.port)
 
         warned.assert_called_once()
         self.assertIn(self.dashboard_url, warned.call_args.args[0])

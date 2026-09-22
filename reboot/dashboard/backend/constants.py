@@ -26,8 +26,8 @@ DEFAULT_DASHBOARD_PORT = 9871
 DASHBOARD_ID = 'dashboard'
 
 # The `Preferences` state holding what the developer has said about
-# opening dashboards: the dashboard's banner writes it and `rbt dev
-# run` reads it.
+# opening dashboards: the dashboard's notice writes it and
+# `rbt dashboard` reads it.
 PREFERENCES_ID = 'preferences'
 
 # The `OrderedMap` of changes to the developer's API files, keyed by
@@ -55,8 +55,8 @@ ENVVAR_RBT_APPLICATION = 'RBT_APPLICATION'
 ENVVAR_RBT_GENERATED_DIRECTORY = 'RBT_GENERATED_DIRECTORY'
 
 # The `Presence` state the dashboard page subscribes to, recording who
-# is looking at a dashboard right now. `rbt dev run` reads it to decide
-# whether to open one.
+# is looking at a dashboard right now. `rbt dashboard` reads it to
+# decide whether to open one.
 #
 # The page names this, `DASHBOARD_ID` and `PREFERENCES_ID` independently,
 # in `frontend/src/constants.ts`, since TypeScript cannot read them

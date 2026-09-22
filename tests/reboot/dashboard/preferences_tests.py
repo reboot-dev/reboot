@@ -1,14 +1,15 @@
 """`Preferences` has a value before anybody has chosen one.
 
-The dashboard's banner renders from a reactive read of `Preferences`,
+The dashboard's notice renders from a reactive read of `Preferences`,
 and a reader aborts with `StateNotConstructed` until something has
 written, so the dashboard application writes the defaults at
 startup. That write must not undo a choice the developer already
 made, because it runs on every start of `rbt dashboard`, which is
 exactly when a click from an earlier run has to survive.
 
-The banner that does the clicking is exercised in `dashboard_tests`,
-and what `rbt dev run` does with the answer in `open_dashboard_tests`.
+The notice that does the clicking is exercised in `dashboard_tests`,
+and what `rbt dashboard` does with the answer in
+`open_dashboard_tests`.
 """
 import unittest
 import uuid
@@ -47,7 +48,7 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
         return response.suppress_automatic_open
 
     async def _set_suppress_automatic_open(self, suppress: bool) -> None:
-        """Makes the choice the dashboard's banner makes."""
+        """Makes the choice the dashboard's notice makes."""
         context = self.rbt.create_external_context(name=self.id())
         await Preferences.ref(PREFERENCES_ID).SetSuppressAutomaticOpen(
             context,
@@ -79,9 +80,9 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
         # The application's `initialize` constructed `Preferences`
         # when it came up; a reader would otherwise abort with
         # `StateNotConstructed`, and a page that loaded first would
-        # have nothing to render its banner from.
+        # have nothing to render its notice from.
         #
-        # False, so that somebody who has never clicked the banner gets
+        # False, so that somebody who has never clicked the notice gets
         # a dashboard opened for them.
         self.assertFalse(await self._read_preferences())
 

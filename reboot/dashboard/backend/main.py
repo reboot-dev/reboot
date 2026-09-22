@@ -127,7 +127,7 @@ def application() -> Application:
 
 async def initialize(context: InitializeContext) -> None:
     """Gives `Preferences` the answer somebody who has never clicked
-    its banner should get."""
+    its notice should get."""
     await Preferences.ref(PREFERENCES_ID).SetSuppressAutomaticOpen(
         context,
         suppress_automatic_open=False,

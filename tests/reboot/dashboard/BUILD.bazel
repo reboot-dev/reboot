@@ -126,7 +126,7 @@ py_test(
         "//rbt/std/presence/subscriber/v1:subscriber_py_reboot",
         "//rbt/std/presence/v1:presence_py_reboot",
         "//reboot/aio:tests_py",
-        "//reboot/cli/commands:dev_py",
+        "//reboot/cli/commands:dashboard_py",
         "//reboot/dashboard/backend:main_py",
     ],
 )
