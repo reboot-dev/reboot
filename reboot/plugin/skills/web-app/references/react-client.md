@@ -15,8 +15,14 @@ MCP-host-specific and do not apply to a web app.
 
 ## The `web/` Shell
 
-Stock Vite React-TS scaffolding (`npm create vite@latest web -- --template react-ts`), plus the two Reboot packages. Pin them to
-the same version as the backend's `reboot` dependency:
+Stock Vite React-TS scaffolding
+(`npm create vite@latest web -- --template react-ts`). Keep the
+`react`, `react-dom`, and `devDependencies` (Vite, its React plugin,
+TypeScript, the `@types/*`) at the versions it writes; they are made
+to work together, and pinning them here would only go stale. Add the
+two Reboot packages, pinned to the same version as the backend's
+`reboot` dependency, `@bufbuild/protobuf` at the exact version
+`@reboot-dev/reboot-react` names as its peer dependency, and `zod`:
 
 ```json
 {
@@ -28,14 +34,24 @@ the same version as the backend's `reboot` dependency:
     "build": "tsc -b && vite build"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "1.10.1",
     "@reboot-dev/reboot-api": "<same version as `reboot` in pyproject.toml>",
     "@reboot-dev/reboot-react": "<same version>",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "react": "<as the scaffold wrote it>",
+    "react-dom": "<as the scaffold wrote it>",
     "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "<as the scaffold wrote them>": ""
   }
 }
 ```
+
+The Vite config below reads `process.env.PORT`, so `tsc -b` needs
+Node's types: `@types/node` and `"types": ["node"]` in
+`tsconfig.node.json`'s `compilerOptions`, both of which the scaffold
+writes. Without them the build fails with
+`Cannot find name 'process'`.
 
 `vite.config.ts` is the stock config with two additions, both
 load-bearing:

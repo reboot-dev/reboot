@@ -195,11 +195,9 @@ derived state diverge. Capture "now" once via `at_least_once` so every
 replay reuses the memoized value; see the `at_least_once` guidance on
 capturing "now" deterministically in `servicer-workflow.md`. (In a
 plain `Writer` tick, reading `datetime.now(timezone.utc)` to compute
-the next `when=` is fine — scheduled-task timing isn't replay-validated.
-What to avoid is _persisting_ a wall-clock or random value into
-`self.state` from a writer: writer bodies re-execute under transient
-retries and dev-mode effect validation, so a stored non-deterministic
-value would differ across runs. See `servicer-writer.md`.)
+the next `when=` is fine — scheduled-task timing isn't replay-validated,
+and a writer keeps only one run's mutations, so storing such a value
+in `self.state` is fine too. See `servicer-writer.md`.)
 
 ## Catch-Up After Downtime Fires Once, Not a Backfill
 

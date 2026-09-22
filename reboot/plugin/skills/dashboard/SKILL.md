@@ -1,6 +1,6 @@
 ---
 name: dashboard
-description: Start the Reboot developer dashboard (`rbt dashboard`) for a project and open it in the browser. Puts the minimum files in place (a `pyproject.toml` depending on `reboot[dev]`, a `.rbtrc`, the API directory), starts the dashboard in a background shell if one is not already serving, and opens its URL once. Use this while BUILDING an app — the dashboard watches the API directory from before anything is running, so the developer watches the API take shape as it is written. Not for running an app; `rbt dev run` manages its dashboard itself once the app exists (see the run skill).
+description: Start the Reboot developer dashboard (`rbt dashboard`) for a project and open it in the browser. Puts the minimum files in place (a `pyproject.toml` depending on `reboot[dev]`, a `.rbtrc`, the API directory), starts the dashboard in a background shell if one is not already serving (it opens itself in the browser), and hands the user its URL. Use this while BUILDING an app — the dashboard watches the API directory from before anything is running, so the developer watches the API take shape as it is written. Not for running an app; `rbt dev run` manages its dashboard itself once the app exists (see the run skill).
 argument-hint: [<project-directory>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -123,21 +123,14 @@ If it fails to come up (for example the local Envoy check fails
 because neither Docker nor an `envoy` executable is available), warn
 the user in one sentence and continue the build without it.
 
-## Step 5 — Open it once
+## Step 5 — Hand over the URL
 
-Open the URL in the browser, best-effort, exactly once:
+Do not open the page yourself. `rbt dashboard` opens it in the
+browser once it is serving, unless a tab is already showing it or
+the developer chose "Don't reopen automatically"; opening it as well
+gives the developer two tabs. `rbt dev run` opens no dashboard of
+its own unless it is passed `--open-dashboard`.
 
-```sh
-"$BROWSER" http://127.0.0.1:9871/ || \
-  xdg-open http://127.0.0.1:9871/ || \
-  python3 -m webbrowser http://127.0.0.1:9871/
-```
-
-Once is enough for good: the page tracks its own viewers
-(`Presence`) and the developer's preference about reopening, and
-`rbt dev run` consults both before ever opening another. Never
-re-open the page yourself on reloads or restarts.
-
-Then tell the user the dashboard is up and what it is for — e.g.
+Tell the user the dashboard is up and what it is for — e.g.
 "Developer dashboard (watch the API as I build it) at
 http://127.0.0.1:9871/" — and get on with the build.

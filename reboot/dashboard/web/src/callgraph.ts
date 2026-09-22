@@ -49,7 +49,15 @@ export interface GraphMethod {
   factory: boolean;
   calls: GraphCall[];
   runs: GraphRun[];
+  // Whether Reboot adds the method to an auto-constructed state type
+  // and calls it itself as a user signs in, rather than the API file
+  // declaring it; see `INJECTED_METHODS`.
+  injected?: boolean;
 }
+
+// The methods Reboot adds to an auto-constructed state type: the
+// constructor, and the one that delivers the user's verified claims.
+const INJECTED_METHODS = new Set(["create", "set_claims"]);
 
 export interface GraphStateType {
   // The fully qualified name, `bank.v1.account.Account`, which is
@@ -451,6 +459,8 @@ export const joinStateTypes = (
                 factory: method.factory,
                 calls: countCalls(analyzed?.calls),
                 runs: countRuns(analyzed?.runs),
+                ...(stateType.autoConstruct &&
+                  INJECTED_METHODS.has(method.name) && { injected: true }),
               };
             }),
           },

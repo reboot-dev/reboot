@@ -196,13 +196,15 @@ class UserState(Model):
 
 class UserServicer(User.Servicer):
 
-    async def create(self, context: WriterContext) -> None:
-        if context.constructor:
-            # Just allocate the ID — the OrderedMap is constructed
-            # implicitly on the first `insert`. Until then, reading it
-            # aborts with `StateNotConstructed`; see
-            # `stdlib-ordered-map.md`.
-            self.state.people_index_id = str(uuid4())
+    # The auto-constructed `User`'s constructor, a `Transaction` the
+    # framework calls once, when the user first signs in. It is not
+    # declared in the API; override it to initialize the state.
+    async def create(self, context: TransactionContext) -> None:
+        # Just allocate the ID — the OrderedMap is constructed
+        # implicitly on the first `insert`. Until then, reading it
+        # aborts with `StateNotConstructed`; see
+        # `stdlib-ordered-map.md`.
+        self.state.people_index_id = str(uuid4())
 
     async def add_person(
         self,
@@ -270,11 +272,10 @@ class UserState(Model):
 
 class UserServicer(User.Servicer):
 
-    async def create(self, context: WriterContext) -> None:
-        if context.constructor:
-            self.state.profile_id = str(uuid4())
-            self.state.drafts_index_id = str(uuid4())
-            self.state.inbox_queue_id = str(uuid4())
+    async def create(self, context: TransactionContext) -> None:
+        self.state.profile_id = str(uuid4())
+        self.state.drafts_index_id = str(uuid4())
+        self.state.inbox_queue_id = str(uuid4())
 
     async def add_draft(
         self, context: TransactionContext, request: User.AddDraftRequest,
@@ -322,6 +323,17 @@ form runs:
    constructor marks "this actor now owns that one." The inline
    convention has no such moment; the related actor springs into
    existence on whichever method happens to touch it first.
+
+### Deleting an Entity
+
+Reboot has no call that deletes a state. "Deleting" a todo, a
+document, or a person means removing its id from every collection
+that references it (`OrderedMap.remove`, or dropping it from a
+`list[str]`), in the same `Transaction` that decides to delete it.
+The entity's own state stays behind, unreachable through the app.
+If its contents must actually go (personal data, a secret), also
+call a writer on it that clears its fields, and have its readers
+treat the cleared state as gone.
 
 ### Decision Flow (Summary)
 

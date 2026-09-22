@@ -4,17 +4,20 @@ the application under development.
 These tests run the dashboard under the `Reboot()` harness, write the
 API state directly, and drive the served page with a browser: the
 models page, whose types pane shows a state type named in the URL's
-`type` parameter and a data type named in its `data` parameter.
+`type` parameter and a data type named in its `data` parameter, and
+the features page, which shows one feature file's scenarios.
 """
 import asyncio
 import copy
 import socket
+import time
 import unittest
 from google.protobuf.json_format import ParseDict
 from google.protobuf.timestamp_pb2 import Timestamp
 from rbt.dashboard.v1.dashboard_pb2 import Check, Servicer
 from rbt.dashboard.v1.dashboard_rbt import Dashboard, Preferences
 from rbt.v1alpha1.api import api_pb2
+from rbt.v1alpha1.bdd import feature_pb2
 from reboot.aio.tests import Reboot
 from reboot.dashboard.backend.constants import (
     DASHBOARD_ID,
@@ -229,6 +232,63 @@ _SERVICER = Servicer(
     ],
 )
 
+# A feature taller than the window: a gallery of the first
+# screenshot of each of its scenarios, then the scenarios, enough of
+# them that the page scrolls.
+_FEATURE_FILENAME = 'tests/shopping.feature'
+_SCENARIO_LINES = [10 * number for number in range(1, 13)]
+
+
+def _scenario(line: int) -> feature_pb2.Scenario:
+    return feature_pb2.Scenario(
+        keyword='Scenario',
+        name=f'Shopping on line {line}',
+        line=line,
+        steps=[
+            feature_pb2.Step(
+                keyword='When',
+                text=f'"alice" opens the web app at "/aisle/{line}"',
+                line=line + 1,
+                screenshot=f'tests/shopping.recordings/{line}/1.png',
+            ),
+            feature_pb2.Step(
+                keyword='Then',
+                text=f'"alice" sees "Aisle {line}" in the web app',
+                line=line + 2,
+                screenshot=f'tests/shopping.recordings/{line}/2.png',
+            ),
+        ],
+    )
+
+
+_FEATURE = feature_pb2.Feature(
+    keyword='Feature',
+    name='People can go shopping',
+    scenarios=[_scenario(line) for line in _SCENARIO_LINES],
+)
+
+
+def _scenario_path(line: int) -> str:
+    """The route of a scenario, and so the `id` of its row."""
+    return f'/features/{_FEATURE_FILENAME}/scenarios/{line}'
+
+
+# Where a scenario's row sits in the pane, and whether it is open.
+_SCENARIO_STATE = """
+const [path] = arguments;
+const row = document.getElementById(path);
+const pane = row.closest('.pane');
+const rowBox = row.getBoundingClientRect();
+const paneBox = pane.getBoundingClientRect();
+return {
+  top: rowBox.top - paneBox.top,
+  paneHeight: pane.clientHeight,
+  scrollTop: pane.scrollTop,
+  expanded: row.querySelector('.scenario-head').getAttribute(
+    'aria-expanded'),
+};
+"""
+
 
 class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
@@ -304,6 +364,82 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             api_directory='api',
             api_files={},
             apis={_FILENAME: ParseDict(_API, api_pb2.API())},
+        )
+
+    async def _record_feature(self) -> None:
+        """Writes one feature file's scenarios straight into the
+        application, beside the state types the page needs before it
+        shows anything. Reading feature files is covered by
+        `features_watcher_tests`."""
+        await self._record_state_types()
+        at = Timestamp()
+        at.GetCurrentTime()
+        context = self.rbt.create_external_context(name=self.id())
+        await Dashboard.ref(DASHBOARD_ID).UpdateFeatures(
+            context,
+            features={_FEATURE_FILENAME: _FEATURE},
+            check=Check(at=at),
+        )
+
+    def _open_feature(self, driver, path: str = '') -> None:
+        """Opens the feature's page, or one of its sections by `path`,
+        and waits for its scenarios."""
+        driver.get(
+            f'{self.url}{DASHBOARD_PATH}/#/features/{_FEATURE_FILENAME}{path}'
+        )
+        WebDriverWait(driver, 60).until(
+            lambda driver: len(
+                driver.find_elements(By.CLASS_NAME, 'scenario-name')
+            ) == len(_SCENARIO_LINES)
+        )
+
+    def _wait_for_scenario_in_view(self, driver, line: int) -> dict:
+        """Waits until the scenario is open with its top in the pane,
+        and returns where it is."""
+
+        def in_view(driver):
+            state = driver.execute_script(
+                _SCENARIO_STATE, _scenario_path(line)
+            )
+            if (
+                state['expanded'] == 'true' and 0 <= state['top'] and
+                state['top'] < state['paneHeight']
+            ):
+                return state
+            return False
+
+        state = WebDriverWait(driver, 60).until(in_view)
+        # A smooth scroll may still be settling once the row is in
+        # view; wait it out, so what is counted is the whole scroll.
+        time.sleep(1)
+        return {
+            **state,
+            'scrolls':
+                driver.execute_script('return window.scrolls;'),
+        }
+
+    def _click_gallery_card(self, driver, line: int) -> None:
+        """Clicks the scenario's card, counting the pane's scroll events
+        from then on in `window.scrolls`."""
+        driver.execute_script(
+            'window.scrolls = 0;'
+            'document.querySelector(".pane").onscroll = '
+            '  () => { window.scrolls += 1; };'
+        )
+        driver.find_element(
+            By.CSS_SELECTOR,
+            '.feature-gallery-item'
+            f'[href="#{_scenario_path(line)}"]',
+        ).click()
+
+    def _scroll_to_top(self, driver) -> None:
+        driver.execute_script(
+            'document.querySelector(".pane").scrollTo(0, 0);'
+        )
+        WebDriverWait(driver, 60).until(
+            lambda driver: driver.execute_script(
+                'return document.querySelector(".pane").scrollTop;'
+            ) == 0
         )
 
     def _run_in_browser(self, body):
@@ -606,6 +742,232 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen['url_after_click'], link_to('stock'))
         self.assertEqual(len(seen['chosen_rows']), 1)
         self.assertTrue(seen['chosen_rows'][0].startswith('stock'))
+
+    async def test_a_feature_opens_at_its_top(self) -> None:
+        # The feature's name, gallery, and the methods it uses are at
+        # the top of its page, above its scenarios, and that is where
+        # it opens, however far down its scenarios reach.
+        await self._record_feature()
+
+        def body(driver):
+            self._open_feature(driver)
+            WebDriverWait(driver, 60).until(
+                expected_conditions.presence_of_element_located(
+                    (By.CLASS_NAME, 'feature-gallery-item')
+                )
+            )
+            # The page scrolls to what a URL names once it has
+            # rendered, so give it the moment it would take.
+            time.sleep(1)
+            return driver.execute_script(
+                'const pane = document.querySelector(".pane"); '
+                'return [pane.scrollTop, '
+                'pane.scrollHeight - pane.clientHeight];'
+            )
+
+        scroll_top, max_scroll_top = await asyncio.to_thread(
+            self._run_in_browser, body
+        )
+
+        # The page is long enough that a scroll would have shown.
+        self.assertGreater(max_scroll_top, 0)
+        self.assertEqual(scroll_top, 0)
+
+    async def test_a_gallery_card_opens_its_scenario(self) -> None:
+        # A card in the gallery stands for one scenario, and a click on
+        # it takes the reader to that scenario, open, with its steps'
+        # screenshots, scrolling there so the reader sees where it is:
+        # every time it is clicked, whatever the scenario's state.
+        await self._record_feature()
+        line = _SCENARIO_LINES[-1]
+        head = (
+            By.CSS_SELECTOR,
+            f'[id="{_scenario_path(line)}"] .scenario-head',
+        )
+
+        def expanded(driver) -> str:
+            return driver.execute_script(
+                _SCENARIO_STATE, _scenario_path(line)
+            )['expanded']
+
+        def body(driver):
+            seen = {}
+
+            # Closed.
+            self._open_feature(driver)
+            self._click_gallery_card(driver, line)
+            seen['closed'] = self._wait_for_scenario_in_view(driver, line)
+            seen['url'] = driver.current_url
+            seen['open'] = [
+                head.get_attribute('aria-expanded') for head in
+                driver.find_elements(By.CSS_SELECTOR, '.scenario-head')
+            ]
+
+            # Open, from the click before, and scrolled away from.
+            self._scroll_to_top(driver)
+            self._click_gallery_card(driver, line)
+            seen['open and scrolled away from'] = (
+                self._wait_for_scenario_in_view(driver, line)
+            )
+
+            # Closed again by hand, and scrolled away from.
+            driver.find_element(*head).click()
+            WebDriverWait(driver, 60
+                         ).until(lambda driver: expanded(driver) == 'false')
+            self._scroll_to_top(driver)
+            self._click_gallery_card(driver, line)
+            seen['closed by hand'] = self._wait_for_scenario_in_view(
+                driver, line
+            )
+
+            # Opened by hand on the feature's own page, where the URL
+            # names no scenario, and scrolled away from. Loaded afresh:
+            # going there from the scenario's URL changes only the
+            # fragment, and the row on screen until the page has caught
+            # up is the one opened above.
+            self._open_feature(driver)
+            driver.refresh()
+            WebDriverWait(driver, 60).until(
+                expected_conditions.presence_of_element_located(head)
+            )
+            driver.find_element(*head).click()
+            WebDriverWait(driver,
+                          60).until(lambda driver: expanded(driver) == 'true')
+            self._scroll_to_top(driver)
+            self._click_gallery_card(driver, line)
+            seen['opened by hand'] = self._wait_for_scenario_in_view(
+                driver, line
+            )
+            return seen
+
+        seen = await asyncio.to_thread(self._run_in_browser, body)
+
+        # The URL names the scenario, so the reader can share it.
+        self.assertTrue(
+            seen['url'].endswith(f'#{_scenario_path(line)}'), seen['url']
+        )
+        # Only the chosen scenario opened.
+        self.assertEqual(
+            seen['open'],
+            ['false'] * (len(_SCENARIO_LINES) - 1) + ['true'],
+        )
+        for case in [
+            'closed',
+            'open and scrolled away from',
+            'closed by hand',
+            'opened by hand',
+        ]:
+            # Each click scrolled the pane down to the last scenario,
+            # smoothly: a jump is one scroll event, a smooth scroll
+            # many.
+            self.assertGreater(seen[case]['scrollTop'], 0, case)
+            self.assertGreater(seen[case]['scrolls'], 1, case)
+
+    async def test_a_link_to_a_scenario_opens_it(self) -> None:
+        # A scenario has a URL of its own, which opens the page on
+        # that scenario, open. The steps of the scenarios left closed,
+        # and their screenshots' links, cannot be seen or clicked, so
+        # they are out of the accessibility tree and the tab order.
+        await self._record_feature()
+        line = _SCENARIO_LINES[len(_SCENARIO_LINES) // 2]
+
+        def body(driver):
+            self._open_feature(driver, path=f'/scenarios/{line}')
+            state = self._wait_for_scenario_in_view(driver, line)
+            inert = {
+                row.get_attribute('id'):
+                    row.find_element(By.CLASS_NAME,
+                                     'scenario-detail').get_attribute('inert')
+                    is not None
+                for row in driver.find_elements(By.CLASS_NAME, 'scenario')
+            }
+            return state, inert
+
+        state, inert = await asyncio.to_thread(self._run_in_browser, body)
+
+        self.assertGreater(state['scrollTop'], 0)
+        self.assertEqual(
+            inert,
+            {
+                _scenario_path(other): other != line
+                for other in _SCENARIO_LINES
+            },
+        )
+
+    async def test_the_sidebar_is_links(self) -> None:
+        # The sidebar lists the pages and, on the features page, the
+        # features, each a link that keyboard focus reaches, so a
+        # keyboard or a screen reader can follow it, not only a mouse.
+        await self._record_feature()
+
+        def body(driver):
+            self._open_feature(driver)
+            return driver.execute_script(
+                'return [...document.querySelectorAll("nav a")].map('
+                '  (link) => {'
+                '    link.focus();'
+                '    const focused = document.activeElement === link;'
+                '    link.blur();'
+                # The name, without a "new" beside it.
+                '    return [link.innerText.split("\\n")[0], focused];'
+                '  });'
+            )
+
+        links = await asyncio.to_thread(self._run_in_browser, body)
+
+        names = [name for name, _ in links]
+        self.assertIn('MODELS', names)
+        self.assertIn('FEATURES', names)
+        self.assertIn('People can go shopping', names)
+        self.assertEqual(
+            [name for name, focused in links if not focused],
+            [],
+        )
+
+    async def test_a_call_edge_names_its_methods(self) -> None:
+        # The graph draws one edge per call, and more than one may
+        # join the same two boxes, so each says which methods it
+        # joins, not only which boxes, to a screen reader.
+        def body(driver):
+            driver.get(f'{self.url}{DASHBOARD_PATH}/#/models')
+            WebDriverWait(driver, 60).until(
+                expected_conditions.presence_of_element_located(
+                    (By.CSS_SELECTOR, '.react-flow__edge')
+                )
+            )
+            return sorted(
+                edge.get_attribute('aria-label') for edge in
+                driver.find_elements(By.CSS_SELECTOR, '.react-flow__edge')
+            )
+
+        context = self.rbt.create_external_context(name=self.id())
+        await Dashboard.ref(DASHBOARD_ID).UpdateApi(
+            context,
+            api_directory='api',
+            api_files={},
+            apis={_FILENAME: ParseDict(_API_WITH_CALLS, api_pb2.API())},
+        )
+        at = Timestamp()
+        at.GetCurrentTime()
+        await Dashboard.ref(DASHBOARD_ID).UpdateCode(
+            context,
+            servicers=[_SERVICER],
+            code_files={},
+            generated={},
+            changes=[],
+            check=Check(at=at),
+        )
+
+        labels = await asyncio.to_thread(self._run_in_browser, body)
+
+        self.assertEqual(
+            labels,
+            [
+                'shop.v1.Shop.look calls shop.v1.Shop.look',
+                'shop.v1.Shop.restock calls shop.v1.Shop.stock',
+                'shop.v1.Shop.stock calls shop.v1.Shop.look',
+            ],
+        )
 
     async def test_the_page_holds_presence(self) -> None:
         # `rbt dev run` opens a dashboard only when `Presence` lists no

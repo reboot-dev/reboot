@@ -92,8 +92,10 @@ SMS login code — **cannot be rolled back**. A transaction making
 such a call directly breaks that guarantee: the transaction can
 still abort, but the external call already happened. Reboot may
 also retry a transaction internally, and in development re-run its
-body for **effect validation** (asserting the mutations are
-deterministic) — both fire the external call more than once.
+body for **effect validation** (discarding the first run's
+mutations and keeping the second's) — both fire the external call
+more than once. Values that differ between runs, such as a
+`uuid4()` id, are fine: only one run's mutations are kept.
 
 So a transaction must **never** make an external call itself. It may
 freely call other **in-system actors**, and the correct pattern is for
