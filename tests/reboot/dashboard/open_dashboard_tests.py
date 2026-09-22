@@ -84,9 +84,9 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
     async def _suppress_reopening(self, suppress: bool) -> None:
         """Makes the choice the dashboard's banner makes."""
         context = self.rbt.create_external_context(name=self.id())
-        await Preferences.ref(PREFERENCES_ID).SetSuppressOpenOnRestart(
+        await Preferences.ref(PREFERENCES_ID).SetSuppressAutomaticOpen(
             context,
-            suppress_open_on_restart=suppress,
+            suppress_automatic_open=suppress,
         )
 
     async def _viewer_ids(self) -> list[str]:

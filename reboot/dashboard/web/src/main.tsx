@@ -4254,7 +4254,7 @@ const StateTypeRedirect: FC = () => {
 const App: FC = () => {
   const {
     useGet,
-    setSuppressOpenOnRestart,
+    setSuppressAutomaticOpen,
     setNavWidth,
     setPaneWidth,
     setSeen,
@@ -4323,7 +4323,7 @@ const App: FC = () => {
       {openedNotice && (
         <OpenedNotice
           onSuppress={() => {
-            setSuppressOpenOnRestart({ suppressOpenOnRestart: true });
+            setSuppressAutomaticOpen({ suppressAutomaticOpen: true });
             setOpenedNotice(false);
           }}
           onClose={() => setOpenedNotice(false)}
