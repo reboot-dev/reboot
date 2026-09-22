@@ -12,30 +12,12 @@ def main():
         import os
         import platform
         import reboot.aio.tracing
-        import signal
         import sys
+        from reboot.aio.signals import exit_by_raised_signal, raised_signal
         from reboot.cli.common.cli import cli
 
         reboot.aio.tracing.start("reboot cli")
 
-        handling_keyboard_interrupt = False
-
-        def signal_handler(sig, frame):
-            nonlocal handling_keyboard_interrupt
-            if handling_keyboard_interrupt:
-                try:
-                    # Don't print an exception and stack trace if the user does
-                    # another Ctrl-C.
-                    sys.exit(sig)
-                except SystemExit:
-                    pass
-            else:
-                handling_keyboard_interrupt = True
-                asyncio.get_event_loop().stop()
-
-                raise KeyboardInterrupt
-
-        signal.signal(signal.SIGINT, signal_handler)
         # We ignore _known_ warnings from
         # `multiprocessing.resource_tracker` that we know are harmless so
         # that we don't spam stdout. See #2793.
@@ -63,11 +45,21 @@ def main():
                 "is important for you!"
             )
             sys.exit(1)
-        returncode = asyncio.run(cli())
+        try:
+            returncode = asyncio.run(cli())
+        except asyncio.CancelledError:
+            # A signal handled by `cancel_main_task_on()` cancelled
+            # `cli()`, which has now cleaned up after itself. Without a
+            # signal behind it, something else cancelled the main task,
+            # which is a bug that should surface as a traceback rather
+            # than pass for an exit by signal.
+            if raised_signal() is None:
+                raise
+            exit_by_raised_signal()
         sys.exit(returncode)
     except KeyboardInterrupt:
-        # Don't print an exception and stack trace if the user does a
-        # Ctrl-C.
+        # A Ctrl-C before `cli()` took over SIGINT, i.e., during the
+        # imports above: exit without a stack trace.
         import sys
         sys.exit(2)
 

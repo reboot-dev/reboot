@@ -1,7 +1,9 @@
 import os
 import reboot.cli.common.terminal as terminal
+import signal
 import sys
 from pathlib import Path
+from reboot.aio.signals import cancel_main_task_on
 from reboot.cli.commands.cloud import (
     cloud_subcommands,
     handle_cloud_subcommand,
@@ -48,7 +50,6 @@ from reboot.cli.commands.task import (
     task_subcommands,
 )
 from reboot.cli.common.rc import ArgumentParser
-from reboot.cli.common.subprocesses import Subprocesses
 from reboot.cli.common.update_check import check_for_newer_version
 from typing import Optional
 
@@ -113,6 +114,23 @@ async def cli() -> int:
             "`tini` (https://github.com/krallin/tini).\n"
         )
 
+    # Every signal that would kill us instead unwinds us first, so that
+    # our cleanup context managers terminate the subprocesses we
+    # started, and then kills us: Ctrl-C (SIGINT), Ctrl-\ (SIGQUIT),
+    # our parent terminal going away (SIGHUP), a reader like `head`
+    # closing our output pipe early (SIGPIPE), and tools that run us in
+    # the background (IDEs, agents, process managers, Kubernetes)
+    # stopping us (SIGTERM).
+    cancel_main_task_on(
+        [
+            signal.SIGINT,
+            signal.SIGQUIT,
+            signal.SIGHUP,
+            signal.SIGPIPE,
+            signal.SIGTERM,
+        ]
+    )
+
     # Sets up the terminal for logging.
     verbose, argv = ArgumentParser.strip_any_arg(sys.argv, '-v', '--verbose')
     terminal.init(verbose=verbose)
@@ -120,9 +138,6 @@ async def cli() -> int:
     # Best-effort notice (to stderr) when a newer Reboot release is
     # available; throttled and silent on any failure.
     check_for_newer_version()
-
-    # Install signal handlers to help ensure that Subprocesses get cleaned up.
-    Subprocesses.install_terminal_app_signal_handlers()
 
     parser = create_parser(argv=argv)
 
