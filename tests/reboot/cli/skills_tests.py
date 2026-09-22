@@ -1,0 +1,31 @@
+import asyncio
+import contextlib
+import io
+import reboot.cli.common.cli as cli
+import unittest
+
+
+class SkillsTestCase(unittest.TestCase):
+
+    def _run(self, command: list[str]) -> str:
+        parser = cli.create_parser(argv=['rbt', *command])
+        args, _ = parser.parse_args()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = asyncio.run(cli.handle_skill_subcommand(args))
+        self.assertEqual(result, 0)
+        return output.getvalue()
+
+    def test_list_includes_bundled_app_skill(self) -> None:
+        output = self._run(['skill', 'list'])
+        self.assertIn('app\tBuild a Reboot application', output)
+        self.assertIn('python\t', output)
+
+    def test_get_prints_exact_skill_content(self) -> None:
+        output = self._run(['skill', 'get', 'app'])
+        self.assertTrue(output.startswith('---\nname: app\n'))
+        self.assertIn('# app — Build a Reboot Application', output)
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)
