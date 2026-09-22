@@ -27,9 +27,9 @@ local server_id_by_keyrange_start = {
   ["{{ route_map_entry.shard_keyrange_start }}"] = "{{ route_map_entry.server_id }}",
   {% endfor %}
 }
--- The "first byte"s (shard boundaries) from the route map, from high to low.
-local shard_keyrange_starts_high_to_low = {
-  {% for route_map_entry in route_map|reverse %}
+-- The "first byte"s (shard boundaries) from the route map, from low to high.
+local shard_keyrange_starts_low_to_high = {
+  {% for route_map_entry in route_map %}
   "{{ route_map_entry.shard_keyrange_start }}",
   {% endfor %}
 }
@@ -219,27 +219,39 @@ function envoy_on_request(request_handle)
   -- Pick a server based on the state ID. We do this as follows:
   -- 1. Take a SHA1 hash of the state ID (which includes a service tag).
   --    TODO: only hash the _top-level_ state ID, once colocation is a thing.
-  -- 2. Walk through the shard map, and find the shard whose key range
-  --    contains the resulting hash.
+  -- 2. Binary search the shard map for the shard whose key range
+  --    contains the resulting hash: the last shard whose key range
+  --    starts at or before the hash. This is the same lookup as
+  --    `shard_for_actor()` in `reboot/aio/placement.py`; we MUST keep
+  --    them in sync for our routing logic to work.
   local hashed_state_ref = sha1.binary(state_ref)
-  -- TODO: do binary search instead of this linear lookup.
-  for i = 1, #shard_keyrange_starts_high_to_low do
-    local shard_keyrange_start = shard_keyrange_starts_high_to_low[i]
-    if shard_keyrange_start <= hashed_state_ref then
-      -- This is the shard that will hold our state.
-      local server_id = server_id_by_keyrange_start[shard_keyrange_start]
-      request_handle:headers():add("x-reboot-server-id", server_id)
-      request_handle:logDebug(
-          "Picked server '" .. server_id .. "' for state '" .. state_ref .. "'"
-      )
-      return
+  local low = 1
+  local high = #shard_keyrange_starts_low_to_high + 1
+  while low < high do
+    local middle = math.floor((low + high) / 2)
+    if shard_keyrange_starts_low_to_high[middle] <= hashed_state_ref then
+      low = middle + 1
+    else
+      high = middle
     end
   end
+  -- `low` is now the first shard whose key range starts after the hash,
+  -- so the shard that will hold our state is the one before it.
+  local shard_keyrange_start = shard_keyrange_starts_low_to_high[low - 1]
+  if shard_keyrange_start ~= nil then
+    local server_id = server_id_by_keyrange_start[shard_keyrange_start]
+    request_handle:headers():add("x-reboot-server-id", server_id)
+    request_handle:logDebug(
+        "Picked server '" .. server_id .. "' for state '" .. state_ref .. "'"
+    )
+    return
+  end
 
-  -- This code should be unreachable; the last shard in the
-  -- `shard_keyrange_start` list should have a value of `0` and thereby
-  -- there can't be traffic that doesn't have a shard to go to. If we
-  -- print the following we in fact have a bug.
+  -- This code should be unreachable; the first shard in the
+  -- `shard_keyrange_starts_low_to_high` list should have a value of `""`,
+  -- which is less than or equal to every hash, and thereby there can't
+  -- be traffic that doesn't have a shard to go to. If we print the
+  -- following we in fact have a bug.
   request_handle:logErr(
       "Failed to pick server for state '" .. state_ref .. "'"
   )
