@@ -474,7 +474,7 @@ async def _open_on_restart(dashboard_url: str) -> bool:
     """
     context = ExternalContext(name="dev-run-open-dashboard", url=dashboard_url)
     response = await Preferences.ref(PREFERENCES_ID).Get(context)
-    return not response.suppress_open_on_restart
+    return not response.suppress_automatic_open
 
 
 # Whether `rbt dev run` may open a dashboard nobody asked it for.

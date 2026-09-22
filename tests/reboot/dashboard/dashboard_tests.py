@@ -523,14 +523,14 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             expected_conditions.invisibility_of_element_located(notice)
         )
 
-    async def _wait_for_suppress_open_on_restart(self, expected: bool) -> None:
+    async def _wait_for_suppress_automatic_open(self, expected: bool) -> None:
         """Returns once the preference reads `expected`: the notice's
         write is what the page sends after the click, so seeing it is
         how the test knows the choice reached the application."""
         context = self.rbt.create_external_context(name=self.id())
         async for response in Preferences.ref(PREFERENCES_ID
                                              ).reactively().Get(context):
-            if response.suppress_open_on_restart == expected:
+            if response.suppress_automatic_open == expected:
                 return
 
     async def test_the_notice_turns_reopening_off(self) -> None:
@@ -552,7 +552,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
         await asyncio.to_thread(self._run_in_browser, close)
 
-        await self._wait_for_suppress_open_on_restart(False)
+        await self._wait_for_suppress_automatic_open(False)
 
         def suppress(driver):
             driver.get(f'{self.url}{DASHBOARD_PATH}/?opened=automatically')
@@ -560,7 +560,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
         await asyncio.to_thread(self._run_in_browser, suppress)
 
-        await self._wait_for_suppress_open_on_restart(True)
+        await self._wait_for_suppress_automatic_open(True)
 
     # Where the pane shows the data type `Shelf`, the way it shows a
     # state type.
