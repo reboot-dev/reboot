@@ -336,6 +336,24 @@ def legal_diff_mcp_change(
     return path == "mcp" or path.startswith("mcp.")
 
 
+def legal_diff_description_change(
+    diff: PathDiff,
+    old: options_pb2.MethodOptions,
+    new: options_pb2.MethodOptions,
+) -> bool:
+    """Writing, rewriting, or deleting a method's description is always
+    allowed.
+
+    A description is prose for the humans and agents reading the API;
+    nothing is persisted or put on the wire because of it, so no
+    existing client or stored state can be invalidated by a change to
+    it. The same is true of the deprecated `mcp.description`, which
+    `legal_diff_mcp_change` already allows.
+    """
+    path, _, _ = diff
+    return path == "description"
+
+
 LegalMethodOptionDiffPredicate = Callable[
     [PathDiff, options_pb2.MethodOptions, options_pb2.MethodOptions], bool]
 
@@ -346,6 +364,7 @@ _LEGAL_REBOOT_METHOD_OPTION_DIFFS: list[LegalMethodOptionDiffPredicate] = [
     legal_diff_transaction_mode_change,
     legal_diff_errors_change,
     legal_diff_mcp_change,
+    legal_diff_description_change,
 ]
 
 ProtoValidationErrorMessage = str

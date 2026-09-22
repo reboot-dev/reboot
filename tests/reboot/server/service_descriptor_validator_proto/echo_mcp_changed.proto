@@ -7,15 +7,18 @@ package tests.reboot.server.service_descriptor_validator_proto;
 
 message Echo {
   option (rbt.v1alpha1.state) = {
+    description: "The consistency boundary around one caller's messages.",
   };
   repeated string messages = 1;
 }
 
-// Same as echo_mcp_added, but with different `mcp` options.
+// Same as echo_mcp_added, but with every description rewritten and
+// different `mcp` options.
 service EchoMethods {
   rpc Reply(SingleStringField) returns (SingleStringField) {
     option (rbt.v1alpha1.method) = {
       writer: {},
+      description: "Add a message to the end of the echoed messages.",
       mcp: {
         tool: true,
         name: "custom_reply",

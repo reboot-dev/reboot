@@ -793,22 +793,25 @@ class ServiceDescriptorValidatorProtoTestCase(unittest.TestCase):
             self.original,
         )
 
-    def test_mcp_added(self):
-        """Test that adding MCP options to a method is allowed."""
+    def test_description_and_mcp_added(self):
+        """Test that adding a description to a state and its methods, and
+        MCP options to a method, is allowed."""
         validate_descriptor_sets_are_backwards_compatible(
             self.original,
             self.mcp_added,
         )
 
-    def test_mcp_removed(self):
-        """Test that removing MCP options from a method is allowed."""
+    def test_description_and_mcp_removed(self):
+        """Test that taking those descriptions and MCP options away again
+        is allowed."""
         validate_descriptor_sets_are_backwards_compatible(
             self.mcp_added,
             self.original,
         )
 
-    def test_mcp_changed(self):
-        """Test that changing MCP options on a method is allowed."""
+    def test_description_and_mcp_changed(self):
+        """Test that rewriting those descriptions, and changing a method's
+        MCP options, is allowed."""
         validate_descriptor_sets_are_backwards_compatible(
             self.mcp_added,
             self.mcp_changed,

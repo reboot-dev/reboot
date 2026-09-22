@@ -7,15 +7,18 @@ package tests.reboot.server.service_descriptor_validator_proto;
 
 message Echo {
   option (rbt.v1alpha1.state) = {
+    description: "The messages echoed back to a caller.",
   };
   repeated string messages = 1;
 }
 
-// Same as echo_original, but with `mcp` added to the Reply method.
+// Same as echo_original, but with the options that prose and MCP
+// clients read -- `description` and `mcp` -- added.
 service EchoMethods {
   rpc Reply(SingleStringField) returns (SingleStringField) {
     option (rbt.v1alpha1.method) = {
       writer: {},
+      description: "Append a message.",
       mcp: {
         tool: true,
         description: "Reply to a message",
