@@ -35,6 +35,24 @@ backend behind a standalone React frontend served at a normal URL.
 > additions (`mcp=Tool()`, `UI()`, MCPJam).
 > This skill alone covers the web side.
 
+## Do This First
+
+Before the design phase, in this order. Each step points to its full
+explanation.
+
+1. **Write the project shell**: `.python-version`, `pyproject.toml`
+   with `reboot[dev]`, `.rbtrc`, `.gitignore`, and an empty `api/`.
+   See `python/references/lifecycle-project-setup.md` and
+   `python/references/lifecycle-rbtrc.md`.
+2. **Run `uv sync`**, which installs `rbt`. See
+   `python/references/lifecycle-project-setup.md`.
+3. **Start the developer dashboard.** See the
+   [`dashboard` skill](../dashboard/SKILL.md).
+4. **Agree on each feature with the user and write it as a `@wip`
+   feature file.** See the [`feature` skill](../feature/SKILL.md).
+
+For an existing app, steps 1 and 2 are done already; start at 3.
+
 ## When to Use
 
 - Building a new Reboot Web App from a description.
@@ -343,11 +361,9 @@ wrong means regenerating everything across the project.
 
 ### Design Phase
 
-0. For each capability the app has, follow the
-   [`feature` skill](../feature/SKILL.md): agree on it in plain
-   English with the user, and write it down as a `@wip` feature
-   file before the API exists. The design below is derived from
-   those features.
+The design is derived from the features agreed in
+[Do This First](#do-this-first).
+
 1. Analyze the user's description using the State Model Assessment
    below.
 2. State the design you are about to build:
@@ -529,68 +545,65 @@ Key differences from a `mcp-ui` layout:
 ## Step-by-Step Build Flow
 
 **All commands run from the application directory.**
+[Do This First](#do-this-first) is done; if it is not, do it now.
 
-1. Create `.python-version`, `pyproject.toml`, `.rbtrc`, and
-   `.mypy.ini` — same shape as in
-   `python/references/lifecycle-{project-setup,rbtrc}.md`. In
+1. Create `.mypy.ini`, naming the API package the design settled
+   on — the template lives in
+   `python/references/lifecycle-project-setup.md`. The rest of the
+   project shell is from [Do This First](#do-this-first). In
    `.rbtrc`, point the React codegen at `web/src/api`:
    ```sh
    generate --react=web/src/api
    generate --web=web/src/api
    ```
-2. `uv sync`.
-3. Start the developer dashboard — load the
-   [`dashboard` skill](../dashboard/SKILL.md) and follow it — so
-   the user can watch the API take shape while you write it. If it
-   fails to come up, say so in one sentence and keep building; do
-   not stop to debug it.
-4. Write the API definition (`api/<pkg>/v1/<name>.py`). Pydantic
+2. Write the API definition (`api/<pkg>/v1/<name>.py`). Pydantic
    rules live in `python/references/api-pydantic.md`; method
    marker → context-type rules in
    `python/references/api-methods.md`. Every `Reader`, `Writer`,
    `Transaction` and `Workflow` still requires the `mcp=` argument:
    write `mcp=None` on each one. Do **not** add `mcp=Tool()` or
    `UI()`; those are MCP-UI only.
-5. `uv run rbt generate`. Don't read what it wrote: the signature
+3. `uv run rbt generate`. Don't read what it wrote: the signature
    your servicer must match is in `python/references/api-methods.md`
    ("The Servicer Signature Each Declaration Obliges").
-6. Write the servicer (`backend/src/servicers/<name>.py`) —
+4. Write the servicer (`backend/src/servicers/<name>.py`) —
    context-type patterns in `python/references/servicer-*.md`.
-7. Write `main.py` — `python/references/lifecycle-application-entry.md`.
-8. Initialize the React app at `web/` with your preferred tool
+5. Write `main.py` — `python/references/lifecycle-application-entry.md`.
+6. Initialize the React app at `web/` with your preferred tool
    (e.g. `npm create vite@latest web -- --template react-ts`) or
    a Reboot-provided template if one exists for plain web apps.
    Read [`references/react-client.md`](references/react-client.md)
    now — it has the `package.json` dependency set, the `dedupe`
    entry the Vite config needs, and `web/.env.development` with
    `VITE_REBOOT_URL`.
-9. `cd web && npm install` and add the Reboot React client
+7. `cd web && npm install` and add the Reboot React client
    package(s) per your project's `package.json`.
-10. `uv run rbt generate` again — the React bindings need
-    `node_modules` to resolve types correctly.
-11. Build the frontend from
-    [`references/react-client.md`](references/react-client.md): the
-    provider and its `url`, the generated hook/mutator/error
-    declarations, sign-in, and typed errors are all written out
-    there. Write the calls from that reference and do **not** open
-    `web/src/api/**/*_rbt_react.ts` to check them — it is tens of
-    thousands of lines that then ride along on every later turn.
+8. `uv run rbt generate` again — the React bindings need
+   `node_modules` to resolve types correctly.
+9. Build the frontend from
+   [`references/react-client.md`](references/react-client.md): the
+   provider and its `url`, the generated hook/mutator/error
+   declarations, sign-in, and typed errors are all written out
+   there. Write the calls from that reference and do **not** open
+   `web/src/api/**/*_rbt_react.ts` to check them — it is tens of
+   thousands of lines that then ride along on every later turn.
 
-    How the app **looks** is not Reboot's concern and this skill
-    says nothing about it. Before writing any page, load Anthropic's
-    `frontend-design` skill and follow it: it picks a visual
-    direction for this app and holds the page to a modern quality
-    bar. If the skill is not available, say so once and suggest the
-    user install it with
-    `/plugin install frontend-design@claude-plugins-official`, then
-    carry on. Keep the accessible markup the scenarios need
-    (`python/references/testing-web-app.md`) whatever the design:
-    paired labels, buttons named by what they do. Don't pick a
-    `<table>` to make something testable:
-    `sees "..." in the web app` needs no container, and only real
-    tabular data (a ledger, a comparison) belongs in a table.
-12. `cd web && npm run build` (sanity check the bundle).
-13. **Write and run the scenarios of every feature before handing
+   How the app **looks** is not Reboot's concern and this skill
+   says nothing about it. Before writing any page, load Anthropic's
+   `frontend-design` skill and follow it: it picks a visual
+   direction for this app and holds the page to a modern quality
+   bar. If the skill is not available, say so once and suggest the
+   user install it with
+   `/plugin install frontend-design@claude-plugins-official`, then
+   carry on. Keep the accessible markup the scenarios need
+   (`python/references/testing-web-app.md`) whatever the design:
+   paired labels, buttons named by what they do. Don't pick a
+   `<table>` to make something testable:
+   `sees "..." in the web app` needs no container, and only real
+   tabular data (a ledger, a comparison) belongs in a table.
+
+10. `cd web && npm run build` (sanity check the bundle).
+11. **Write and run the scenarios of every feature before handing
     the app off.** Each feature file from the design phase gets its
     scenarios now: every action the user should be able to _do_ in
     the UI ("sign up and see my profile", "submit the form and see
@@ -600,7 +613,7 @@ Key differences from a `mcp-ui` layout:
     clicks through are web app scenarios per
     `python/references/testing-web-app.md` (they need `playwright`,
     `pytest-playwright`, `uv run playwright install chromium`, and
-    the page's accessible markup from step 11). Every step names
+    the page's accessible markup from step 9). Every step names
     who calls; a user who must be signed in is declared with
     `"alice" is an authenticated user`, which is how the real
     authorizers get exercised: register the **real** servicers and
@@ -620,7 +633,7 @@ Key differences from a `mcp-ui` layout:
     browser. Point the user at the dashboard's Features page to
     review the features, and at the recordings of the browser
     scenarios.
-14. Run the app — load the [`run` skill](../run/SKILL.md) and
+12. Run the app — load the [`run` skill](../run/SKILL.md) and
     follow it. It is the single canonical "start the app"
     procedure: it makes sure dependencies and secrets are in
     place, starts the backend and frontend dev server, waits for
@@ -629,7 +642,8 @@ Key differences from a `mcp-ui` layout:
 
 ## Update Flow
 
-When modifying an existing app:
+When modifying an existing app, first start the dashboard (step 3
+of [Do This First](#do-this-first)), then:
 
 1. Read `.rbtrc`, the API definition, servicer, `main.py`, and
    `web/src/App.tsx`.
