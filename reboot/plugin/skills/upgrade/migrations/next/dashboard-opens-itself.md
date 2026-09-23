@@ -18,3 +18,8 @@ To get a dashboard, run `rbt dashboard` in its own terminal — it
 needs no flags, watches the API directory named by the
 `generate <dir>` line in `.rbtrc`, and serves on port 9871
 (`--port=<port>` to move it).
+
+If the project relied on `--open-dashboard` to get a window after
+clicking the "Don't reopen automatically" notice,
+`rbt dashboard --auto-open` turns automatic opening back on.
+`rbt dashboard --no-auto-open` serves the page and opens nothing.

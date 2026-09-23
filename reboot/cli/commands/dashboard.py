@@ -74,6 +74,21 @@ def register_dashboard(parser: ArgumentParser):
         f'{DEFAULT_DASHBOARD_PORT}',
     )
 
+    parser.subcommand('dashboard').add_argument(
+        '--auto-open',
+        type=bool,
+        # Three states. Unset opens a dashboard automatically unless
+        # somebody is already looking at one or
+        # `suppress_automatic_open` is true; '--auto-open' sets
+        # `suppress_automatic_open` to false first; '--no-auto-open'
+        # opens none.
+        default=None,
+        help='open a dashboard in your browser once it is serving, '
+        'unless you are already looking at one; by default only if you '
+        "haven't clicked the page's \"Don't reopen automatically\", "
+        'which `--auto-open` undoes',
+    )
+
 
 def _api_directory(parser: ArgumentParser) -> str:
     """Returns the directory holding the developer's API files, which
@@ -295,6 +310,19 @@ async def _viewers(dashboard_url: str) -> list[str]:
     return list(response.subscriber_ids)
 
 
+async def _set_suppress_automatic_open(
+    dashboard_url: str,
+    suppress_automatic_open: bool,
+) -> None:
+    """Records whether the developer wants dashboards opened for them,
+    which the dashboard's notice sets to true."""
+    context = ExternalContext(name="open-dashboard", url=dashboard_url)
+    await Preferences.ref(PREFERENCES_ID).SetSuppressAutomaticOpen(
+        context,
+        suppress_automatic_open=suppress_automatic_open,
+    )
+
+
 async def _open_automatically(dashboard_url: str) -> bool:
     """Whether the developer still wants a dashboard opened for them.
 
@@ -342,7 +370,11 @@ async def _dashboard_reachable(port: int) -> bool:
     return True
 
 
-async def _open_when_serving(*, port: int) -> None:
+async def _open_when_serving(
+    *,
+    port: int,
+    auto_open: Optional[bool],
+) -> None:
     """Opens the dashboard once it is serving, unless somebody is
     already looking at one: the page subscribes to `Presence` for as
     long as it is open, so a tab left up -- from an earlier
@@ -350,8 +382,10 @@ async def _open_when_serving(*, port: int) -> None:
     one from appearing, and a tab that was closed is replaced.
 
     Also stays shut when the developer clicked "Don't reopen
-    automatically" in the notice an automatic open shows, which is
-    remembered until they say otherwise.
+    automatically" in the notice an automatic open shows, which sets
+    `suppress_automatic_open` to true. `--auto-open` -- `auto_open`
+    being `True` here -- sets it back to false before deciding;
+    `--no-auto-open` opens nothing.
 
     `Presence` learns that a viewer has gone from the cancellation of
     the page's `Connect` RPC, and nothing else. A proxy that holds its
@@ -359,6 +393,9 @@ async def _open_when_serving(*, port: int) -> None:
     leaves a viewer listed who is not there, and the effect is that no
     dashboard opens; the URL this prints still reaches it.
     """
+    if auto_open is False:
+        return
+
     dashboard_url = f'http://127.0.0.1:{port}'
     # The root, which forwards to the page wherever it is served.
     page_url = f'{dashboard_url}/'
@@ -378,6 +415,9 @@ async def _open_when_serving(*, port: int) -> None:
                 viewers = await _viewers(dashboard_url)
             except Exception:
                 await backoff()
+
+        if auto_open is True:
+            await _set_suppress_automatic_open(dashboard_url, False)
 
         if len(viewers) > 0:
             return
@@ -445,7 +485,7 @@ async def dashboard(
         terminal.info(f'Your dashboard is at http://127.0.0.1:{port}/\n')
 
         open_task = asyncio.create_task(
-            _open_when_serving(port=port),
+            _open_when_serving(port=port, auto_open=args.auto_open),
             name=f'_open_when_serving(...) in {__name__}',
         )
 

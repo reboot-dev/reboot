@@ -105,7 +105,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self._viewer_ids(), [])
 
         with patch('webbrowser.open', return_value=True) as browser:
-            await _open_when_serving(port=self.port)
+            await _open_when_serving(port=self.port, auto_open=None)
 
         # The browser gets the dashboard's path; `ExternalContext` only
         # ever sees the origin, which is all it accepts.
@@ -116,7 +116,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self._viewer_ids(), ['a-tab-that-is-open'])
 
         with patch('webbrowser.open', return_value=True) as browser:
-            await _open_when_serving(port=self.port)
+            await _open_when_serving(port=self.port, auto_open=None)
 
         browser.assert_not_called()
 
@@ -136,7 +136,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.1)
 
         with patch('webbrowser.open', return_value=True) as browser:
-            await _open_when_serving(port=self.port)
+            await _open_when_serving(port=self.port, auto_open=None)
 
         browser.assert_called_once_with(self.automatically_opened_url)
 
@@ -148,7 +148,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         await self._suppress_reopening(True)
 
         with patch('webbrowser.open', return_value=True) as browser:
-            await _open_when_serving(port=self.port)
+            await _open_when_serving(port=self.port, auto_open=None)
 
         browser.assert_not_called()
 
@@ -157,9 +157,45 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         await self._suppress_reopening(False)
 
         with patch('webbrowser.open', return_value=True) as browser:
-            await _open_when_serving(port=self.port)
+            await _open_when_serving(port=self.port, auto_open=None)
 
         browser.assert_called_once_with(self.automatically_opened_url)
+
+    async def test_auto_open_undoes_dont_reopen(self) -> None:
+        # `--auto-open` sets `suppress_automatic_open` back to false,
+        # and then opens a dashboard the way the default does.
+        await self._suppress_reopening(True)
+
+        with patch('webbrowser.open', return_value=True) as browser:
+            await _open_when_serving(port=self.port, auto_open=True)
+
+        browser.assert_called_once_with(self.automatically_opened_url)
+
+        # And it stays undone for every later `rbt dashboard`.
+        with patch('webbrowser.open', return_value=True) as browser:
+            await _open_when_serving(port=self.port, auto_open=None)
+
+        browser.assert_called_once_with(self.automatically_opened_url)
+
+    async def test_auto_open_still_leaves_a_viewer_alone(self) -> None:
+        await self._view('a-tab-that-is-open')
+        await self._suppress_reopening(True)
+
+        with patch('webbrowser.open', return_value=True) as browser:
+            await _open_when_serving(port=self.port, auto_open=True)
+
+        browser.assert_not_called()
+
+        # The choice was undone all the same.
+        context = self.rbt.create_external_context(name=self.id())
+        preferences = await Preferences.ref(PREFERENCES_ID).Get(context)
+        self.assertFalse(preferences.suppress_automatic_open)
+
+    async def test_no_auto_open_opens_nothing(self) -> None:
+        with patch('webbrowser.open', return_value=True) as browser:
+            await _open_when_serving(port=self.port, auto_open=False)
+
+        browser.assert_not_called()
 
     async def test_says_where_the_dashboard_is_when_none_could_be_opened(
         self
@@ -169,7 +205,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         # was shown, so the developer is told the address instead.
         with patch('webbrowser.open', return_value=False):
             with patch('reboot.cli.common.terminal.warn') as warned:
-                await _open_when_serving(port=self.port)
+                await _open_when_serving(port=self.port, auto_open=None)
 
         warned.assert_called_once()
         self.assertIn(self.dashboard_url, warned.call_args.args[0])
