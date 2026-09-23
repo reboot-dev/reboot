@@ -191,9 +191,16 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         preferences = await Preferences.ref(PREFERENCES_ID).Get(context)
         self.assertFalse(preferences.suppress_automatic_open)
 
-    async def test_no_auto_open_opens_nothing(self) -> None:
+    async def test_no_auto_open_saves_dont_reopen(self) -> None:
+        # `--no-auto-open` saves what "Don't reopen automatically"
+        # saves, so it lasts beyond this start.
         with patch('webbrowser.open', return_value=True) as browser:
             await _open_when_serving(port=self.port, auto_open=False)
+
+        browser.assert_not_called()
+
+        with patch('webbrowser.open', return_value=True) as browser:
+            await _open_when_serving(port=self.port, auto_open=None)
 
         browser.assert_not_called()
 

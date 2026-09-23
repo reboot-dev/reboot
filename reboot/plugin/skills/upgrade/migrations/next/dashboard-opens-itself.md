@@ -22,4 +22,4 @@ needs no flags, watches the API directory named by the
 If the project relied on `--open-dashboard` to get a window after
 clicking the "Don't reopen automatically" notice,
 `rbt dashboard --auto-open` turns automatic opening back on.
-`rbt dashboard --no-auto-open` serves the page and opens nothing.
+`rbt dashboard --no-auto-open` turns it off.

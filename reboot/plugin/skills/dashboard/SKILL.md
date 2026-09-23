@@ -135,5 +135,5 @@ http://127.0.0.1:9871/" — and get on with the build.
 If the developer expected a window and none appeared, give them the
 URL; that always works. If they clicked "Don't reopen automatically"
 and want automatic opening back, the next `rbt dashboard --auto-open`
-turns it back on (`--no-auto-open` serves the page and opens
-nothing).
+turns it back on; `--no-auto-open` turns it off, as the page's
+button does.

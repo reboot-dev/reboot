@@ -77,16 +77,14 @@ def register_dashboard(parser: ArgumentParser):
     parser.subcommand('dashboard').add_argument(
         '--auto-open',
         type=bool,
-        # Three states. Unset opens a dashboard automatically unless
-        # somebody is already looking at one or
-        # `suppress_automatic_open` is true; '--auto-open' sets
-        # `suppress_automatic_open` to false first; '--no-auto-open'
-        # opens none.
+        # Three states. '--auto-open' and '--no-auto-open' save
+        # `suppress_automatic_open` as false and true; unset follows
+        # whatever was saved last, by either flag or by the page's
+        # "Don't reopen automatically".
         default=None,
         help='open a dashboard in your browser once it is serving, '
-        'unless you are already looking at one; by default only if you '
-        "haven't clicked the page's \"Don't reopen automatically\", "
-        'which `--auto-open` undoes',
+        'unless one is already open; `--no-auto-open` opens none. Either '
+        'is remembered for later runs'
     )
 
 
@@ -381,11 +379,10 @@ async def _open_when_serving(
     `rbt dashboard`, or from this session's browser -- keeps a second
     one from appearing, and a tab that was closed is replaced.
 
-    Also stays shut when the developer clicked "Don't reopen
-    automatically" in the notice an automatic open shows, which sets
-    `suppress_automatic_open` to true. `--auto-open` -- `auto_open`
-    being `True` here -- sets it back to false before deciding;
-    `--no-auto-open` opens nothing.
+    Also stays shut while `suppress_automatic_open` is true, which
+    "Don't reopen automatically" in the notice an automatic open shows
+    saves. `auto_open` saves it too, before deciding: `--auto-open`
+    as false, `--no-auto-open` as true.
 
     `Presence` learns that a viewer has gone from the cancellation of
     the page's `Connect` RPC, and nothing else. A proxy that holds its
@@ -393,9 +390,6 @@ async def _open_when_serving(
     leaves a viewer listed who is not there, and the effect is that no
     dashboard opens; the URL this prints still reaches it.
     """
-    if auto_open is False:
-        return
-
     dashboard_url = f'http://127.0.0.1:{port}'
     # The root, which forwards to the page wherever it is served.
     page_url = f'{dashboard_url}/'
@@ -416,8 +410,11 @@ async def _open_when_serving(
             except Exception:
                 await backoff()
 
-        if auto_open is True:
-            await _set_suppress_automatic_open(dashboard_url, False)
+        if auto_open is not None:
+            await _set_suppress_automatic_open(
+                dashboard_url,
+                not auto_open,
+            )
 
         if len(viewers) > 0:
             return
