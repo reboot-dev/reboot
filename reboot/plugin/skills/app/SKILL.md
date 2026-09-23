@@ -178,10 +178,9 @@ chat-y", **ask**.
 
 ## Note
 
-Whichever route, each capability of the app is agreed on in plain
-English and written down as a `@wip` feature file before its API
-exists, per the [`feature` skill](../feature/SKILL.md); the build
-flows of both routes start there.
+Whichever route, the skill's "Do This First" steps come before any
+design: the project shell, `uv sync`, the developer dashboard, and
+the features agreed as `@wip` feature files.
 
 Both `mcp-ui` and `web-app` layer on top of the [`python`
 skill](../python/SKILL.md) for Reboot backend mechanics. You don't need

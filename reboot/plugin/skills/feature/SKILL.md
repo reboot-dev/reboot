@@ -91,9 +91,11 @@ no test suite yet, set one up per `testing-project-setup.md`, which
 includes `reboot[dev]` in the dev dependencies and `*.recordings/`
 in `.gitignore`.
 
-If the dashboard is running (the `dashboard` skill), the feature
-shows up on its Features page at once, marked as work in progress.
-Tell the user it is there.
+The dashboard should already be running: the build flows start it
+before the first feature is written. If it is not, follow the
+[`dashboard` skill](../dashboard/SKILL.md) now. The feature shows up
+on its Features page at once, marked as work in progress. Tell the
+user it is there.
 
 ## Step 3 — Build the feature
 

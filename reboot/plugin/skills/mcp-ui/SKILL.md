@@ -35,6 +35,26 @@ Build complete Reboot MCP UIs from a user description.
 > carries a session cookie, and `/callback` sets that cookie
 > on every flow.
 
+## Do This First
+
+Before the design phase, in this order. Each step points to its full
+explanation.
+
+1. **Write the project shell**: `.python-version`, `pyproject.toml`
+   with `reboot[dev]`, `.rbtrc`, `.gitignore`, and an empty `api/`.
+   See `python/references/lifecycle-project-setup.md`,
+   `python/references/lifecycle-rbtrc.md`, and
+   [`references/project-shell.md`](references/project-shell.md) for
+   what an MCP UI adds.
+2. **Run `uv sync`**, which installs `rbt`. See
+   `python/references/lifecycle-project-setup.md`.
+3. **Start the developer dashboard.** See the
+   [`dashboard` skill](../dashboard/SKILL.md).
+4. **Agree on each feature with the user and write it as a `@wip`
+   feature file.** See the [`feature` skill](../feature/SKILL.md).
+
+For an existing app, steps 1 and 2 are done already; start at 3.
+
 ## Installation
 
 Install the plugin (works for both Claude Code and Codex):
@@ -276,6 +296,9 @@ is the foundation — getting entities, field types, or method types
 wrong means regenerating everything across 12+ files.
 
 ### Design Phase
+
+The design is derived from the features agreed in
+[Do This First](#do-this-first).
 
 1. Analyze the user's description using the State Model Assessment
    below.
@@ -712,44 +735,38 @@ a worked set are in
 ## Step-by-Step Build Flow
 
 **All commands run from the application directory.**
+[Do This First](#do-this-first) is done; if it is not, do it now.
 
-1. Create `.python-version`, `pyproject.toml`, `.rbtrc`, and
-   `.mypy.ini` — see
-   [`references/project-shell.md`](references/project-shell.md);
-   the `.mypy.ini` template lives in
-   `python/references/lifecycle-project-setup.md`.
-2. `uv sync`.
-3. Start the developer dashboard — load the
-   [`dashboard` skill](../dashboard/SKILL.md) and follow it — so
-   the user can watch the API take shape while you write it. If it
-   fails to come up, say so in one sentence and keep building; do
-   not stop to debug it.
-4. Write API definition (`api/<pkg>/v1/<name>.py`) — see
+1. Create `.mypy.ini`, naming the API package the design settled
+   on — the template lives in
+   `python/references/lifecycle-project-setup.md`. The rest of the
+   project shell is from [Do This First](#do-this-first).
+2. Write API definition (`api/<pkg>/v1/<name>.py`) — see
    [`references/api-method-types.md`](references/api-method-types.md)
    and [`references/api-state-shapes.md`](references/api-state-shapes.md);
    field-level pydantic rules in
    `python/references/api-pydantic.md`.
-5. `uv run rbt generate`. Don't read what it wrote: the signature
+3. `uv run rbt generate`. Don't read what it wrote: the signature
    your servicer must match is in `python/references/api-methods.md`
    ("The Servicer Signature Each Declaration Obliges").
-6. Write servicer (`backend/src/servicers/<name>.py`) — see
+4. Write servicer (`backend/src/servicers/<name>.py`) — see
    [`references/servicer-patterns.md`](references/servicer-patterns.md);
    context-type rules in `python/references/servicer-*.md`.
-7. Write `backend/src/example_prompts.py` (the wizard's example
+5. Write `backend/src/example_prompts.py` (the wizard's example
    prompts) and `main.py` (which imports them and passes
    `example_prompts=` to `Application`) — see
    [`references/project-shell.md`](references/project-shell.md) and
    `python/references/lifecycle-application-entry.md`.
-8. `npm create @reboot-dev/ui`.
-9. `cd frontend && npm install`.
-10. `uv run rbt generate` (React bindings need `node_modules`).
-11. Customize React UIs — see
-    [`references/react-scaffolding.md`](references/react-scaffolding.md)
-    for the `frontend/` shell and
-    [`references/react-app-tsx.md`](references/react-app-tsx.md) for
-    `App.tsx` patterns.
-12. `cd frontend && npm run build`.
-13. **Write and run the scenarios of every feature before handing
+6. `npm create @reboot-dev/ui`.
+7. `cd frontend && npm install`.
+8. `uv run rbt generate` (React bindings need `node_modules`).
+9. Customize React UIs — see
+   [`references/react-scaffolding.md`](references/react-scaffolding.md)
+   for the `frontend/` shell and
+   [`references/react-app-tsx.md`](references/react-app-tsx.md) for
+   `App.tsx` patterns.
+10. `cd frontend && npm run build`.
+11. **Write and run the scenarios of every feature before handing
     the app off.** Each feature file from the design phase (the
     [`feature` skill](../feature/SKILL.md)) gets its scenarios now:
     every action the user should be able to _do_ through the MCP
@@ -771,7 +788,7 @@ a worked set are in
     are what catches contract bugs before the user sees them in
     MCPJam. Point the user at the dashboard's Features page to
     review the features.
-14. Run the app — load the [`run` skill](../run/SKILL.md) and
+12. Run the app — load the [`run` skill](../run/SKILL.md) and
     follow it. It is the single canonical "start the app"
     procedure: it detects the app type, makes sure dependencies
     and secrets are in place, and starts the backend and
@@ -790,7 +807,8 @@ a worked set are in
 
 ## Update Flow
 
-When modifying an existing app:
+When modifying an existing app, first start the dashboard (step 3
+of [Do This First](#do-this-first)), then:
 
 1. Read `.rbtrc`, API definition, servicer, `main.py`.
 2. Assess state model changes. If the app has persisted state or

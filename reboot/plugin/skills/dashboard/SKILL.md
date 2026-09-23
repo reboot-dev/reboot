@@ -1,6 +1,6 @@
 ---
 name: dashboard
-description: Start the Reboot developer dashboard (`rbt dashboard`) for a project and open it in the browser. Puts the minimum files in place (a `pyproject.toml` depending on `reboot[dev]`, a `.rbtrc`, the API directory), starts the dashboard in a background shell if one is not already serving (it opens itself in the browser), and hands the user its URL. Use this while BUILDING an app — the dashboard watches the API directory from before anything is running, so the developer watches the API take shape as it is written. Not for running an app (see the run skill).
+description: Start the Reboot developer dashboard (`rbt dashboard`) for a project and open it in the browser. Puts the minimum files in place (a `pyproject.toml` depending on `reboot[dev]`, a `.rbtrc`, the API directory), starts the dashboard in a background shell if one is not already serving (it opens itself in the browser), and hands the user its URL. Use this FIRST when building or changing an app, as soon as `rbt` is installed and before any design or API work — the dashboard watches the feature and API files from before anything is running, so the developer watches them take shape as they are written. Not for running an app (see the run skill).
 argument-hint: [<project-directory>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -20,12 +20,12 @@ the recordings of its browser scenarios), and a changelog of how the
 API has evolved. It reads the API and feature **files**, not a
 running application, so it works from before the first API file is
 written — which is exactly when to start it: bring the dashboard up
-early in a build and the developer watches the API take shape while
-you write it.
+as soon as `rbt` is installed, before the first feature or API file,
+and the developer watches both take shape while you write them.
 
 Use this skill when a build flow directs you here (the `mcp-ui`
-and `web-app` skills do, right before the API is written) or when
-the user asks for the dashboard while an app is being built.
+and `web-app` skills do, in their "Do This First" steps, before the
+design phase) or when the user asks for the dashboard.
 
 > This skill **starts the dashboard**, nothing else. It does not run
 > the application — that is the [run skill](../run/SKILL.md).
