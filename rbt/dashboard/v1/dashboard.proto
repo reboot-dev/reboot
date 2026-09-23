@@ -883,12 +883,10 @@ message Preferences {
   option (rbt.v1alpha1.state) = {
   };
 
-  // Whether the developer has asked `rbt dev run` to stop opening a
-  // dashboard by itself. False, the default, means `rbt dev run`
-  // opens a dashboard when none is already open.
-  //
-  // `--open-dashboard` opens one even when this is true.
-  bool suppress_open_on_restart = 1;
+  // Whether the developer has asked `rbt dashboard` to stop opening
+  // a dashboard by itself. False, the default, means `rbt dashboard`
+  // opens one when none is already open.
+  bool suppress_automatic_open = 1;
 
   // The methods whose detail the developer has opened, spelled as
   // the state type's fully qualified name, a dot, then the method:
@@ -962,7 +960,7 @@ message CallGraphLayout {
 message PreferencesGetRequest {}
 
 message PreferencesGetResponse {
-  bool suppress_open_on_restart = 1;
+  bool suppress_automatic_open = 1;
   repeated string expanded_methods = 2;
   optional uint32 nav_width = 3;
   optional uint32 pane_width = 4;
@@ -972,11 +970,11 @@ message PreferencesGetResponse {
   optional CallGraphLayout call_graph_layout = 8;
 }
 
-message PreferencesSetSuppressOpenOnRestartRequest {
-  bool suppress_open_on_restart = 1;
+message PreferencesSetSuppressAutomaticOpenRequest {
+  bool suppress_automatic_open = 1;
 }
 
-message PreferencesSetSuppressOpenOnRestartResponse {}
+message PreferencesSetSuppressAutomaticOpenResponse {}
 
 message PreferencesSetMethodsExpandedRequest {
   // The fully qualified name of one state type, spelled as the
@@ -1101,8 +1099,8 @@ service PreferencesMethods {
     };
   }
 
-  rpc SetSuppressOpenOnRestart(PreferencesSetSuppressOpenOnRestartRequest)
-      returns (PreferencesSetSuppressOpenOnRestartResponse) {
+  rpc SetSuppressAutomaticOpen(PreferencesSetSuppressAutomaticOpenRequest)
+      returns (PreferencesSetSuppressAutomaticOpenResponse) {
     option (rbt.v1alpha1.method).writer = {
     };
   }

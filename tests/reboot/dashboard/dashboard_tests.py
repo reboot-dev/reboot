@@ -523,26 +523,27 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             expected_conditions.invisibility_of_element_located(notice)
         )
 
-    async def _wait_for_suppress_open_on_restart(self, expected: bool) -> None:
+    async def _wait_for_suppress_automatic_open(self, expected: bool) -> None:
         """Returns once the preference reads `expected`: the notice's
         write is what the page sends after the click, so seeing it is
         how the test knows the choice reached the application."""
         context = self.rbt.create_external_context(name=self.id())
         async for response in Preferences.ref(PREFERENCES_ID
                                              ).reactively().Get(context):
-            if response.suppress_open_on_restart == expected:
+            if response.suppress_automatic_open == expected:
                 return
 
     async def test_the_notice_turns_reopening_off(self) -> None:
         # The CLI opens the page with `?opened=automatically`, and the
         # notice that says so offers not to be reopened: that button
-        # writes the preference `rbt dev run` reads before deciding
+        # writes the preference `rbt dashboard` reads before deciding
         # whether to open a dashboard, which `open_dashboard_tests`
         # covers. Closing the notice writes nothing, so the test
         # closes first, then suppresses, and the preference must only
         # change on the second.
         #
-        # The page's own path, not the root, as `rbt dev run` opens it:
+        # The page's own path, not the root, as `rbt dashboard` opens
+        # it:
         # the root is served through Envoy's gRPC-JSON transcoder, which
         # fails a request carrying a query parameter its method has no
         # field for, so `/?opened=automatically` never reaches the page.
@@ -552,7 +553,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
         await asyncio.to_thread(self._run_in_browser, close)
 
-        await self._wait_for_suppress_open_on_restart(False)
+        await self._wait_for_suppress_automatic_open(False)
 
         def suppress(driver):
             driver.get(f'{self.url}{DASHBOARD_PATH}/?opened=automatically')
@@ -560,7 +561,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
         await asyncio.to_thread(self._run_in_browser, suppress)
 
-        await self._wait_for_suppress_open_on_restart(True)
+        await self._wait_for_suppress_automatic_open(True)
 
     # Where the pane shows the data type `Shelf`, the way it shows a
     # state type.
@@ -970,8 +971,8 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_the_page_holds_presence(self) -> None:
-        # `rbt dev run` opens a dashboard only when `Presence` lists no
-        # viewer, so the page must subscribe while it is open and be
+        # `rbt dashboard` opens a dashboard only when `Presence` lists
+        # no viewer, so the page must subscribe while it is open and be
         # unlisted once it is closed.
         driver = await asyncio.to_thread(_new_driver)
         try:

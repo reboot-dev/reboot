@@ -24,8 +24,8 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     PreferencesSetPaneWidthResponse,
     PreferencesSetSeenRequest,
     PreferencesSetSeenResponse,
-    PreferencesSetSuppressOpenOnRestartRequest,
-    PreferencesSetSuppressOpenOnRestartResponse,
+    PreferencesSetSuppressAutomaticOpenRequest,
+    PreferencesSetSuppressAutomaticOpenResponse,
 )
 from rbt.dashboard.v1.dashboard_rbt import Dashboard, Preferences
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
@@ -288,7 +288,7 @@ class PreferencesServicer(Preferences.Servicer):
         request: PreferencesGetRequest,
     ) -> PreferencesGetResponse:
         return PreferencesGetResponse(
-            suppress_open_on_restart=self.state.suppress_open_on_restart,
+            suppress_automatic_open=self.state.suppress_automatic_open,
             expanded_methods=self.state.expanded_methods,
             nav_width=(
                 self.state.nav_width
@@ -316,13 +316,13 @@ class PreferencesServicer(Preferences.Servicer):
             ),
         )
 
-    async def SetSuppressOpenOnRestart(
+    async def SetSuppressAutomaticOpen(
         self,
         context: WriterContext,
-        request: PreferencesSetSuppressOpenOnRestartRequest,
-    ) -> PreferencesSetSuppressOpenOnRestartResponse:
-        self.state.suppress_open_on_restart = request.suppress_open_on_restart
-        return PreferencesSetSuppressOpenOnRestartResponse()
+        request: PreferencesSetSuppressAutomaticOpenRequest,
+    ) -> PreferencesSetSuppressAutomaticOpenResponse:
+        self.state.suppress_automatic_open = request.suppress_automatic_open
+        return PreferencesSetSuppressAutomaticOpenResponse()
 
     async def SetMethodsExpanded(
         self,
