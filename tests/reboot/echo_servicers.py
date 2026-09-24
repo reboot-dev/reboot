@@ -79,7 +79,9 @@ class MyEchoServicer(Echo.singleton.Servicer):
             assert (
                 "reboot.aio.contexts.WriterContext is not an "
                 "instance or subclass of one of the expected type(s): "
-                "['reboot.aio.contexts.TransactionContext']"
+                "['reboot.aio.contexts.TransactionContext', "
+                "'reboot.aio.contexts.WorkflowContext', "
+                "'reboot.aio.external.ExternalContext']"
             ) in str(error)
         else:
             raise Exception('Should not be able to schedule another writer!')

@@ -242,6 +242,96 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         # clock) and thus we should determine what the best way to
         # figure that out is.
 
+    async def test_schedule_from_external_context(self) -> None:
+        """Tests that `schedule()` from an `ExternalContext` returns a
+        task that can be awaited, the same as `spawn()` does."""
+        await self.rbt.up(Application(servicers=[MyEchoServicer]))
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        echo = Echo.ref('test-id')
+        await echo.Reply(context, message="Hello, world!")
+
+        # The annotation has `mypy` check that scheduling from an
+        # `ExternalContext` returns a task rather than a `TaskId`.
+        task: Echo.SearchAndReplaceTask = await echo.schedule(
+        ).SearchAndReplace(
+            context,
+            search='Hello',
+            replace='Goodbye',
+        )
+
+        search_and_replace_response = await asyncio.wait_for(task, timeout=20)
+
+        self.assertEqual(search_and_replace_response.replacements, 1)
+
+    async def test_schedule_from_workflow(self) -> None:
+        """Tests that `schedule()` from a `workflow` returns a task
+        that can be awaited, and that a "bare" `schedule()` is
+        idempotent per workflow, so a retried workflow gets back the
+        task it scheduled the first time, the same as `spawn()` does."""
+        task_ids: list[tasks_pb2.TaskId] = []
+
+        class WorkflowServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def constructor_writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            async def writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse(content=request.content)
+
+            @classmethod
+            async def workflow(
+                cls,
+                context: WorkflowContext,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                # The annotation has `mypy` check that scheduling from
+                # a `WorkflowContext` returns a task rather than a
+                # `TaskId`.
+                task: General.WriterTask = await General.ref().schedule(
+                ).Writer(
+                    context,
+                    content={'scheduled': 'from a workflow'},
+                )
+                task_ids.append(task.task_id)
+
+                response = await task
+
+                if len(task_ids) == 1:
+                    raise RuntimeError('Failing once to retry the workflow')
+
+                return response
+
+        await self.rbt.up(Application(servicers=[WorkflowServicer]))
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        g, _ = await General.ConstructorWriter(context)
+
+        response = await g.Workflow(context)
+
+        self.assertEqual(response.content, {'scheduled': 'from a workflow'})
+        # The workflow ran at least twice (once failing, and possibly
+        # again for effect validation), and every run got back the
+        # same task.
+        self.assertGreaterEqual(len(task_ids), 2)
+        for task_id in task_ids:
+            self.assertEqual(task_id, task_ids[0])
+
     async def test_background_tasks_stopped_on_rbt_down_and_restarted_on_rbt_up(
         self
     ):
@@ -861,10 +951,15 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
                         content={'timezone_attached': attach_timezone},
                     )
                 else:
-                    await self.ref().schedule(when=datetime.now()).Workflow(
+                    # The annotation has `mypy` check that scheduling
+                    # from a `WriterContext` still returns a `TaskId`.
+                    task_id: tasks_pb2.TaskId = await self.ref().schedule(
+                        when=datetime.now()
+                    ).Workflow(
                         context,
                         content={'timezone_attached': attach_timezone},
                     )
+                    assert isinstance(task_id, tasks_pb2.TaskId)
                 return GeneralResponse()
 
             @classmethod

@@ -22990,6 +22990,20 @@ class Echo:
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
         ) -> Echo.WeakReference._Schedule:
+            # Within a `workflow`, all "bare" `schedule()` calls are
+            # syntactic sugar for `per_workflow()`, unless we're
+            # within a control loop, in which case they are syntactic
+            # sugar for `per_iteration()`; the same as `spawn()`.
+            context = IMPORT_reboot_aio_contexts.Context.get()
+            if context is not None:
+                if isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return (
+                        self.per_iteration() if context.within_loop()
+                        else self.per_workflow()
+                    ).schedule(when=when)
+                elif isinstance(context, IMPORT_reboot_aio_external.InitializeContext):
+                    return self.idempotently().schedule(when=when)
+
             return Echo.WeakReference._Schedule(self._application_id, self._tasks, when=when)
 
         class _Schedule:
@@ -23027,15 +23041,34 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def Reply(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.ReplyRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.ReplyTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def Reply(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                message: IMPORT_typing.Optional[str] | Unset = UNSET,
+            ) -> Echo.ReplyTask:
+                ...
+
             async def Reply( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplyRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.ReplyTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReplyRequest)
@@ -23088,6 +23121,12 @@ class Echo:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.ReplyTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -23111,13 +23150,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def Replay(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.ReplayRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.ReplayTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def Replay(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.ReplayTask:
+                ...
+
             async def Replay( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplayRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.ReplayTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReplayRequest)
@@ -23168,6 +23224,12 @@ class Echo:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.ReplayTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -23193,15 +23255,34 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def WaitFor(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.WaitForRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.WaitForTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def WaitFor(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                message: IMPORT_typing.Optional[str] | Unset = UNSET,
+            ) -> Echo.WaitForTask:
+                ...
+
             async def WaitFor( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.WaitForRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.WaitForTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.WaitForRequest)
@@ -23254,6 +23335,12 @@ class Echo:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.WaitForTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -23280,16 +23367,36 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def SearchAndReplace(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.SearchAndReplaceRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.SearchAndReplaceTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def SearchAndReplace(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                search: IMPORT_typing.Optional[str] | Unset = UNSET,
+                replace: IMPORT_typing.Optional[str] | Unset = UNSET,
+            ) -> Echo.SearchAndReplaceTask:
+                ...
+
             async def SearchAndReplace( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.SearchAndReplaceRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 search: IMPORT_typing.Optional[str] | Unset = UNSET,
                 replace: IMPORT_typing.Optional[str] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.SearchAndReplaceTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.SearchAndReplaceRequest)
@@ -23344,6 +23451,12 @@ class Echo:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.SearchAndReplaceTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -23369,15 +23482,34 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def FailOnceShouldBeRetried(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.FailOnceShouldBeRetriedRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.FailOnceShouldBeRetriedTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def FailOnceShouldBeRetried(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                message: IMPORT_typing.Optional[str] | Unset = UNSET,
+            ) -> Echo.FailOnceShouldBeRetriedTask:
+                ...
+
             async def FailOnceShouldBeRetried( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.FailOnceShouldBeRetriedRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.FailOnceShouldBeRetriedTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.FailOnceShouldBeRetriedRequest)
@@ -23430,6 +23562,12 @@ class Echo:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.FailOnceShouldBeRetriedTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -23455,15 +23593,34 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def FailOnceShouldBeRetriedWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.FailOnceShouldBeRetriedWorkflowRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.FailOnceShouldBeRetriedWorkflowTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def FailOnceShouldBeRetriedWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                message: IMPORT_typing.Optional[str] | Unset = UNSET,
+            ) -> Echo.FailOnceShouldBeRetriedWorkflowTask:
+                ...
+
             async def FailOnceShouldBeRetriedWorkflow( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.FailOnceShouldBeRetriedWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.FailOnceShouldBeRetriedWorkflowTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.FailOnceShouldBeRetriedWorkflowRequest)
@@ -23516,6 +23673,12 @@ class Echo:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.FailOnceShouldBeRetriedWorkflowTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -23539,13 +23702,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def TooManyTasks(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.TooManyTasksRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.TooManyTasksTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def TooManyTasks(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.TooManyTasksTask:
+                ...
+
             async def TooManyTasks( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.TooManyTasksRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.TooManyTasksTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.TooManyTasksRequest)
@@ -23596,6 +23776,12 @@ class Echo:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.TooManyTasksTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -23619,13 +23805,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def Hanging(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.HangingRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.HangingTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def Hanging(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.HangingTask:
+                ...
+
             async def Hanging( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.HangingRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.HangingTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.HangingRequest)
@@ -23676,6 +23879,12 @@ class Echo:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.HangingTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -23699,13 +23908,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def ReactiveWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.ReactiveWorkflowRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.ReactiveWorkflowTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def ReactiveWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.ReactiveWorkflowTask:
+                ...
+
             async def ReactiveWorkflow( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReactiveWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.ReactiveWorkflowTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReactiveWorkflowRequest)
@@ -23756,6 +23982,12 @@ class Echo:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.ReactiveWorkflowTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -23779,13 +24011,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def ControlLoop(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.ControlLoopRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.ControlLoopTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def ControlLoop(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.ControlLoopTask:
+                ...
+
             async def ControlLoop( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ControlLoopRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.ControlLoopTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ControlLoopRequest)
@@ -23836,6 +24085,12 @@ class Echo:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.ControlLoopTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -23859,13 +24114,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def AtMostOnceWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.AtMostOnceWorkflowRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.AtMostOnceWorkflowTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def AtMostOnceWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.AtMostOnceWorkflowTask:
+                ...
+
             async def AtMostOnceWorkflow( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.AtMostOnceWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.AtMostOnceWorkflowTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.AtMostOnceWorkflowRequest)
@@ -23916,6 +24188,12 @@ class Echo:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.AtMostOnceWorkflowTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -23941,15 +24219,34 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def WorkflowCallingWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.WorkflowCallingWorkflowRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.WorkflowCallingWorkflowTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def WorkflowCallingWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                call_workflow: IMPORT_typing.Optional[bool] | Unset = UNSET,
+            ) -> Echo.WorkflowCallingWorkflowTask:
+                ...
+
             async def WorkflowCallingWorkflow( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.WorkflowCallingWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 call_workflow: IMPORT_typing.Optional[bool] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.WorkflowCallingWorkflowTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.WorkflowCallingWorkflowRequest)
@@ -24002,6 +24299,12 @@ class Echo:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.WorkflowCallingWorkflowTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -24025,13 +24328,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def RaiseValueError(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.RaiseValueErrorRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.RaiseValueErrorTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def RaiseValueError(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.RaiseValueErrorTask:
+                ...
+
             async def RaiseValueError( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseValueErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.RaiseValueErrorTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.RaiseValueErrorRequest)
@@ -24082,6 +24402,12 @@ class Echo:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.RaiseValueErrorTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -24105,13 +24431,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def RaiseSpecifiedError(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.RaiseSpecifiedErrorRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.RaiseSpecifiedErrorTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def RaiseSpecifiedError(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.RaiseSpecifiedErrorTask:
+                ...
+
             async def RaiseSpecifiedError( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseSpecifiedErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.RaiseSpecifiedErrorTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.RaiseSpecifiedErrorRequest)
@@ -24162,6 +24505,12 @@ class Echo:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.RaiseSpecifiedErrorTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -24187,15 +24536,34 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def FailingWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.FailingWorkflowRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.FailingWorkflowTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def FailingWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                failure_message: IMPORT_typing.Optional[str] | Unset = UNSET,
+            ) -> Echo.FailingWorkflowTask:
+                ...
+
             async def FailingWorkflow( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.FailingWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 failure_message: IMPORT_typing.Optional[str] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.FailingWorkflowTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.FailingWorkflowRequest)
@@ -24248,6 +24616,12 @@ class Echo:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.FailingWorkflowTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -24296,17 +24670,34 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def Reply(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.ReplyRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.ReplyTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def Reply(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                message: IMPORT_typing.Optional[str] | Unset = UNSET,
+            ) -> Echo.ReplyTask:
+                ...
+
             async def Reply( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplyRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.ReplyTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24360,7 +24751,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Reply(
                     __request__,
@@ -24368,6 +24759,14 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.ReplyTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24390,15 +24789,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def Replay(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.ReplayRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.ReplayTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def Replay(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.ReplayTask:
+                ...
+
             async def Replay( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplayRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.ReplayTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24450,7 +24864,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Replay(
                     __request__,
@@ -24458,6 +24872,14 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.ReplayTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24482,17 +24904,34 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def WaitFor(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.WaitForRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.WaitForTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def WaitFor(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                message: IMPORT_typing.Optional[str] | Unset = UNSET,
+            ) -> Echo.WaitForTask:
+                ...
+
             async def WaitFor( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.WaitForRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.WaitForTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24546,7 +24985,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).WaitFor(
                     __request__,
@@ -24554,6 +24993,14 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.WaitForTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24579,18 +25026,36 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def SearchAndReplace(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.SearchAndReplaceRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.SearchAndReplaceTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def SearchAndReplace(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                search: IMPORT_typing.Optional[str] | Unset = UNSET,
+                replace: IMPORT_typing.Optional[str] | Unset = UNSET,
+            ) -> Echo.SearchAndReplaceTask:
+                ...
+
             async def SearchAndReplace( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.SearchAndReplaceRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 search: IMPORT_typing.Optional[str] | Unset = UNSET,
                 replace: IMPORT_typing.Optional[str] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.SearchAndReplaceTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24646,7 +25111,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).SearchAndReplace(
                     __request__,
@@ -24654,6 +25119,14 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.SearchAndReplaceTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24678,17 +25151,34 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def FailOnceShouldBeRetried(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.FailOnceShouldBeRetriedRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.FailOnceShouldBeRetriedTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def FailOnceShouldBeRetried(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                message: IMPORT_typing.Optional[str] | Unset = UNSET,
+            ) -> Echo.FailOnceShouldBeRetriedTask:
+                ...
+
             async def FailOnceShouldBeRetried( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.FailOnceShouldBeRetriedRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.FailOnceShouldBeRetriedTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24742,7 +25232,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).FailOnceShouldBeRetried(
                     __request__,
@@ -24750,6 +25240,14 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.FailOnceShouldBeRetriedTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24774,17 +25272,34 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def FailOnceShouldBeRetriedWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.FailOnceShouldBeRetriedWorkflowRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.FailOnceShouldBeRetriedWorkflowTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def FailOnceShouldBeRetriedWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                message: IMPORT_typing.Optional[str] | Unset = UNSET,
+            ) -> Echo.FailOnceShouldBeRetriedWorkflowTask:
+                ...
+
             async def FailOnceShouldBeRetriedWorkflow( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.FailOnceShouldBeRetriedWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.FailOnceShouldBeRetriedWorkflowTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24838,7 +25353,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).FailOnceShouldBeRetriedWorkflow(
                     __request__,
@@ -24846,6 +25361,14 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.FailOnceShouldBeRetriedWorkflowTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24868,15 +25391,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def TooManyTasks(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.TooManyTasksRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.TooManyTasksTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def TooManyTasks(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.TooManyTasksTask:
+                ...
+
             async def TooManyTasks( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.TooManyTasksRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.TooManyTasksTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24928,7 +25466,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).TooManyTasks(
                     __request__,
@@ -24936,6 +25474,14 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.TooManyTasksTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24958,15 +25504,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def Hanging(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.HangingRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.HangingTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def Hanging(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.HangingTask:
+                ...
+
             async def Hanging( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.HangingRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.HangingTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25018,7 +25579,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Hanging(
                     __request__,
@@ -25026,6 +25587,14 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.HangingTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25048,15 +25617,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def ReactiveWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.ReactiveWorkflowRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.ReactiveWorkflowTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def ReactiveWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.ReactiveWorkflowTask:
+                ...
+
             async def ReactiveWorkflow( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReactiveWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.ReactiveWorkflowTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25108,7 +25692,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).ReactiveWorkflow(
                     __request__,
@@ -25116,6 +25700,14 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.ReactiveWorkflowTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25138,15 +25730,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def ControlLoop(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.ControlLoopRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.ControlLoopTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def ControlLoop(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.ControlLoopTask:
+                ...
+
             async def ControlLoop( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ControlLoopRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.ControlLoopTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25198,7 +25805,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).ControlLoop(
                     __request__,
@@ -25206,6 +25813,14 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.ControlLoopTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25228,15 +25843,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def AtMostOnceWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.AtMostOnceWorkflowRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.AtMostOnceWorkflowTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def AtMostOnceWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.AtMostOnceWorkflowTask:
+                ...
+
             async def AtMostOnceWorkflow( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.AtMostOnceWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.AtMostOnceWorkflowTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25288,7 +25918,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).AtMostOnceWorkflow(
                     __request__,
@@ -25296,6 +25926,14 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.AtMostOnceWorkflowTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25320,17 +25958,34 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def WorkflowCallingWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.WorkflowCallingWorkflowRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.WorkflowCallingWorkflowTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def WorkflowCallingWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                call_workflow: IMPORT_typing.Optional[bool] | Unset = UNSET,
+            ) -> Echo.WorkflowCallingWorkflowTask:
+                ...
+
             async def WorkflowCallingWorkflow( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.WorkflowCallingWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 call_workflow: IMPORT_typing.Optional[bool] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.WorkflowCallingWorkflowTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25384,7 +26039,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).WorkflowCallingWorkflow(
                     __request__,
@@ -25392,6 +26047,14 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.WorkflowCallingWorkflowTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25414,15 +26077,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def RaiseValueError(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.RaiseValueErrorRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.RaiseValueErrorTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def RaiseValueError(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.RaiseValueErrorTask:
+                ...
+
             async def RaiseValueError( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseValueErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.RaiseValueErrorTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25474,7 +26152,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).RaiseValueError(
                     __request__,
@@ -25482,6 +26160,14 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.RaiseValueErrorTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25504,15 +26190,30 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def RaiseSpecifiedError(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.RaiseSpecifiedErrorRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.RaiseSpecifiedErrorTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def RaiseSpecifiedError(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.RaiseSpecifiedErrorTask:
+                ...
+
             async def RaiseSpecifiedError( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseSpecifiedErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.RaiseSpecifiedErrorTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25564,7 +26265,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).RaiseSpecifiedError(
                     __request__,
@@ -25572,6 +26273,14 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.RaiseSpecifiedErrorTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25596,17 +26305,34 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def FailingWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Echo.FailingWorkflowRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Echo.FailingWorkflowTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def FailingWorkflow(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                failure_message: IMPORT_typing.Optional[str] | Unset = UNSET,
+            ) -> Echo.FailingWorkflowTask:
+                ...
+
             async def FailingWorkflow( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.FailingWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 failure_message: IMPORT_typing.Optional[str] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Echo.FailingWorkflowTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25660,7 +26386,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).FailingWorkflow(
                     __request__,
@@ -25668,6 +26394,14 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Echo.FailingWorkflowTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -28511,6 +29245,18 @@ class Echo:
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
         ) -> Echo.WeakReference._SelfSchedule:
+            # See `WeakReference.schedule()` for why a `workflow` gets
+            # an idempotent schedule.
+            context = IMPORT_reboot_aio_contexts.Context.get()
+            if context is not None:
+                if isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return (
+                        self.per_iteration() if context.within_loop()
+                        else self.per_workflow()
+                    ).schedule(when=when)
+                elif isinstance(context, IMPORT_reboot_aio_external.InitializeContext):
+                    return self.idempotently().schedule(when=when)
+
             return Echo.WeakReference._SelfSchedule(self._application_id, self._tasks, when=when)
 
         @IMPORT_typing.overload

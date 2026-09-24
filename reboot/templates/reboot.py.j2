@@ -5998,6 +5998,20 @@ class {{ client.proto.state_name }}:
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
         ) -> {{ client.proto.state_name }}.WeakReference._Schedule:
+            # Within a `workflow`, all "bare" `schedule()` calls are
+            # syntactic sugar for `per_workflow()`, unless we're
+            # within a control loop, in which case they are syntactic
+            # sugar for `per_iteration()`; the same as `spawn()`.
+            context = IMPORT_reboot_aio_contexts.Context.get()
+            if context is not None:
+                if isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return (
+                        self.per_iteration() if context.within_loop()
+                        else self.per_workflow()
+                    ).schedule(when=when)
+                elif isinstance(context, IMPORT_reboot_aio_external.InitializeContext):
+                    return self.idempotently().schedule(when=when)
+
             return {{ client.proto.state_name }}.WeakReference._Schedule(self._application_id, self._tasks, when=when)
 
         class _Schedule:
@@ -6020,22 +6034,28 @@ class {{ client.proto.state_name }}:
             {% for method in service.methods %}
             {# NOTE: We could in theory support scheduling constructors: see #3038. #}
             {% if not method.options.proto.constructor and not method.proto.server_streaming %}
-            {# NOTE: If there is 'None' request , we will have the same
-            function signature, so no overloads are needed. #}
+            {# The context decides what scheduling returns: a
+            `writer` or `transaction` gets a `TaskId`, because waiting on
+            the task would hold its lock open, while a `workflow` or
+            external caller gets a `Task` it may `await`. #}
+            {% for overload_context, overload_return in [
+                ("IMPORT_reboot_aio_contexts.TransactionContext", "IMPORT_rbt_v1alpha1.tasks_pb2.TaskId"),
+                ("IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext", client.proto.state_name ~ "." ~ method.proto.name ~ "Task"),
+            ] %}
             {% if method.has_non_none_request %}
             @IMPORT_typing.overload
             async def {{ method.proto.name }}(
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: {{ overload_context }},
                 __request_or_options__: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> {{ overload_return }}:
                 ...
 
             @IMPORT_typing.overload
             async def {{ method.proto.name }}(
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: {{ overload_context }},
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 {% for name, type in method.input_type_fields.items() %}
                 {% if loop.first %}
@@ -6047,13 +6067,23 @@ class {{ client.proto.state_name }}:
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> {{ overload_return }}:
                 ...
-            {% endif %}
 
+            {% else %}
+            @IMPORT_typing.overload
+            async def {{ method.proto.name }}(
+                __this__,
+                __context__: {{ overload_context }},
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> {{ overload_return }}:
+                ...
+
+            {% endif %}
+            {% endfor %}
             async def {{ method.proto.name }}( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 {% if method.has_non_none_request %}
                 __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
                 {% endif %}
@@ -6068,8 +6098,8 @@ class {{ client.proto.state_name }}:
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | {{ client.proto.state_name }}.{{ method.proto.name }}Task:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -6133,6 +6163,12 @@ class {{ client.proto.state_name }}:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return {{ client.proto.state_name }}.{{ method.proto.name }}Task(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -6169,22 +6205,28 @@ class {{ client.proto.state_name }}:
             {% for method in service.methods %}
             {# NOTE: We could in theory support scheduling constructors: see #3038. #}
             {% if not method.options.proto.constructor and not method.proto.server_streaming %}
-            {# NOTE: If there is 'None' request , we will have the same
-            function signature, so no overloads are needed. #}
+            {# The context decides what scheduling returns: a
+            `writer` or `transaction` gets a `TaskId`, because waiting on
+            the task would hold its lock open, while a `workflow` or
+            external caller gets a `Task` it may `await`. #}
+            {% for overload_context, overload_return in [
+                ("IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext", "IMPORT_rbt_v1alpha1.tasks_pb2.TaskId"),
+                ("IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext", client.proto.state_name ~ "." ~ method.proto.name ~ "Task"),
+            ] %}
             {% if method.has_non_none_request %}
             @IMPORT_typing.overload
             async def {{ method.proto.name }}(
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: {{ overload_context }},
                 __request_or_options__: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> {{ overload_return }}:
                 ...
 
             @IMPORT_typing.overload
             async def {{ method.proto.name }}(
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: {{ overload_context }},
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 {% for name, type in method.input_type_fields.items() %}
                 {% if loop.first %}
@@ -6196,13 +6238,23 @@ class {{ client.proto.state_name }}:
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> {{ overload_return }}:
                 ...
-            {% endif %}
 
+            {% else %}
+            @IMPORT_typing.overload
+            async def {{ method.proto.name }}(
+                __this__,
+                __context__: {{ overload_context }},
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> {{ overload_return }}:
+                ...
+
+            {% endif %}
+            {% endfor %}
             async def {{ method.proto.name }}( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 {% if method.has_non_none_request %}
                 __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
                 {% endif %}
@@ -6217,10 +6269,8 @@ class {{ client.proto.state_name }}:
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | {{ client.proto.state_name }}.{{ method.proto.name }}Task:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
@@ -6285,7 +6335,7 @@ class {{ client.proto.state_name }}:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).{{ method.proto.name }}(
                     {% if method.has_non_none_request %}
@@ -6295,6 +6345,14 @@ class {{ client.proto.state_name }}:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return {{ client.proto.state_name }}.{{ method.proto.name }}Task(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -6987,6 +7045,18 @@ class {{ client.proto.state_name }}:
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
         ) -> {{ client.proto.state_name }}.WeakReference._SelfSchedule:
+            # See `WeakReference.schedule()` for why a `workflow` gets
+            # an idempotent schedule.
+            context = IMPORT_reboot_aio_contexts.Context.get()
+            if context is not None:
+                if isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return (
+                        self.per_iteration() if context.within_loop()
+                        else self.per_workflow()
+                    ).schedule(when=when)
+                elif isinstance(context, IMPORT_reboot_aio_external.InitializeContext):
+                    return self.idempotently().schedule(when=when)
+
             return {{ client.proto.state_name }}.WeakReference._SelfSchedule(self._application_id, self._tasks, when=when)
 
         @IMPORT_typing.overload

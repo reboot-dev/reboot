@@ -22452,6 +22452,20 @@ class Ping:
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
         ) -> Ping.WeakReference._Schedule:
+            # Within a `workflow`, all "bare" `schedule()` calls are
+            # syntactic sugar for `per_workflow()`, unless we're
+            # within a control loop, in which case they are syntactic
+            # sugar for `per_iteration()`; the same as `spawn()`.
+            context = IMPORT_reboot_aio_contexts.Context.get()
+            if context is not None:
+                if isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return (
+                        self.per_iteration() if context.within_loop()
+                        else self.per_workflow()
+                    ).schedule(when=when)
+                elif isinstance(context, IMPORT_reboot_aio_external.InitializeContext):
+                    return self.idempotently().schedule(when=when)
+
             return Ping.WeakReference._Schedule(self._application_id, self._tasks, when=when)
 
         class _Schedule:
@@ -22470,13 +22484,28 @@ class Ping:
                 self._idempotency = idempotency
 
             # Ping callable tasks:
-
-            async def DoPing( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def DoPing(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def DoPing(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Ping.DoPingTask:
+                ...
+
+            async def DoPing( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Ping.DoPingTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -22508,6 +22537,12 @@ class Ping:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Ping.DoPingTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -22534,16 +22569,36 @@ class Ping:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def DoPingPeriodically(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Ping.DoPingPeriodicallyRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Ping.DoPingPeriodicallyTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def DoPingPeriodically(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                num_pings: int | Unset = UNSET,
+                period_seconds: float | Unset = UNSET,
+            ) -> Ping.DoPingPeriodicallyTask:
+                ...
+
             async def DoPingPeriodically( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Ping.DoPingPeriodicallyRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 num_pings: int | Unset = UNSET,
                 period_seconds: float | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Ping.DoPingPeriodicallyTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Ping.DoPingPeriodicallyRequest)
@@ -22598,19 +22653,40 @@ class Ping:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Ping.DoPingPeriodicallyTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             do_ping_periodically = DoPingPeriodically
-
-            async def Describe( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def Describe(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def Describe(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Ping.DescribeTask:
+                ...
+
+            async def Describe( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Ping.DescribeTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -22642,19 +22718,40 @@ class Ping:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Ping.DescribeTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             describe = Describe
-
-            async def NumPings( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def NumPings(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def NumPings(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Ping.NumPingsTask:
+                ...
+
+            async def NumPings( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Ping.NumPingsTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -22686,6 +22783,12 @@ class Ping:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Ping.NumPingsTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -22715,15 +22818,28 @@ class Ping:
                 self._idempotency = idempotency
 
             # Ping callable tasks:
-
-            async def DoPing( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def DoPing(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def DoPing(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Ping.DoPingTask:
+                ...
+
+            async def DoPing( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Ping.DoPingTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -22756,13 +22872,21 @@ class Ping:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).DoPing(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Ping.DoPingTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -22788,18 +22912,36 @@ class Ping:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def DoPingPeriodically(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: Ping.DoPingPeriodicallyRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Ping.DoPingPeriodicallyTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def DoPingPeriodically(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                num_pings: int | Unset = UNSET,
+                period_seconds: float | Unset = UNSET,
+            ) -> Ping.DoPingPeriodicallyTask:
+                ...
+
             async def DoPingPeriodically( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Ping.DoPingPeriodicallyRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 num_pings: int | Unset = UNSET,
                 period_seconds: float | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Ping.DoPingPeriodicallyTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -22855,7 +22997,7 @@ class Ping:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).DoPingPeriodically(
                     __request__,
@@ -22864,19 +23006,40 @@ class Ping:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Ping.DoPingPeriodicallyTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
+
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             do_ping_periodically = DoPingPeriodically
-
-            async def Describe( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def Describe(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def Describe(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Ping.DescribeTask:
+                ...
+
+            async def Describe( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Ping.DescribeTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -22909,7 +23072,7 @@ class Ping:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Describe(
                     idempotency=__idempotency__,
@@ -22917,19 +23080,40 @@ class Ping:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Ping.DescribeTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
+
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             describe = Describe
-
-            async def NumPings( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def NumPings(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def NumPings(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Ping.NumPingsTask:
+                ...
+
+            async def NumPings( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Ping.NumPingsTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -22962,13 +23146,21 @@ class Ping:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).NumPings(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Ping.NumPingsTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -23539,6 +23731,18 @@ class Ping:
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
         ) -> Ping.WeakReference._SelfSchedule:
+            # See `WeakReference.schedule()` for why a `workflow` gets
+            # an idempotent schedule.
+            context = IMPORT_reboot_aio_contexts.Context.get()
+            if context is not None:
+                if isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return (
+                        self.per_iteration() if context.within_loop()
+                        else self.per_workflow()
+                    ).schedule(when=when)
+                elif isinstance(context, IMPORT_reboot_aio_external.InitializeContext):
+                    return self.idempotently().schedule(when=when)
+
             return Ping.WeakReference._SelfSchedule(self._application_id, self._tasks, when=when)
 
         @IMPORT_typing.overload
@@ -24949,6 +25153,20 @@ class Pong:
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
         ) -> Pong.WeakReference._Schedule:
+            # Within a `workflow`, all "bare" `schedule()` calls are
+            # syntactic sugar for `per_workflow()`, unless we're
+            # within a control loop, in which case they are syntactic
+            # sugar for `per_iteration()`; the same as `spawn()`.
+            context = IMPORT_reboot_aio_contexts.Context.get()
+            if context is not None:
+                if isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return (
+                        self.per_iteration() if context.within_loop()
+                        else self.per_workflow()
+                    ).schedule(when=when)
+                elif isinstance(context, IMPORT_reboot_aio_external.InitializeContext):
+                    return self.idempotently().schedule(when=when)
+
             return Pong.WeakReference._Schedule(self._application_id, self._tasks, when=when)
 
         class _Schedule:
@@ -24967,13 +25185,28 @@ class Pong:
                 self._idempotency = idempotency
 
             # Pong callable tasks:
-
-            async def DoPong( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def DoPong(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def DoPong(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Pong.DoPongTask:
+                ...
+
+            async def DoPong( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Pong.DoPongTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -25005,19 +25238,40 @@ class Pong:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Pong.DoPongTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             do_pong = DoPong
-
-            async def NumPongs( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def NumPongs(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def NumPongs(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Pong.NumPongsTask:
+                ...
+
+            async def NumPongs( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Pong.NumPongsTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -25049,6 +25303,12 @@ class Pong:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Pong.NumPongsTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -25078,15 +25338,28 @@ class Pong:
                 self._idempotency = idempotency
 
             # Pong callable tasks:
-
-            async def DoPong( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def DoPong(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def DoPong(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Pong.DoPongTask:
+                ...
+
+            async def DoPong( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Pong.DoPongTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -25119,7 +25392,7 @@ class Pong:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).DoPong(
                     idempotency=__idempotency__,
@@ -25127,19 +25400,40 @@ class Pong:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Pong.DoPongTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
+
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             do_pong = DoPong
-
-            async def NumPongs( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def NumPongs(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def NumPongs(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Pong.NumPongsTask:
+                ...
+
+            async def NumPongs( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Pong.NumPongsTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -25172,13 +25466,21 @@ class Pong:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).NumPongs(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Pong.NumPongsTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25468,6 +25770,18 @@ class Pong:
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
         ) -> Pong.WeakReference._SelfSchedule:
+            # See `WeakReference.schedule()` for why a `workflow` gets
+            # an idempotent schedule.
+            context = IMPORT_reboot_aio_contexts.Context.get()
+            if context is not None:
+                if isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return (
+                        self.per_iteration() if context.within_loop()
+                        else self.per_workflow()
+                    ).schedule(when=when)
+                elif isinstance(context, IMPORT_reboot_aio_external.InitializeContext):
+                    return self.idempotently().schedule(when=when)
+
             return Pong.WeakReference._SelfSchedule(self._application_id, self._tasks, when=when)
 
         @IMPORT_typing.overload
@@ -27995,6 +28309,20 @@ class User:
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
         ) -> User.WeakReference._Schedule:
+            # Within a `workflow`, all "bare" `schedule()` calls are
+            # syntactic sugar for `per_workflow()`, unless we're
+            # within a control loop, in which case they are syntactic
+            # sugar for `per_iteration()`; the same as `spawn()`.
+            context = IMPORT_reboot_aio_contexts.Context.get()
+            if context is not None:
+                if isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return (
+                        self.per_iteration() if context.within_loop()
+                        else self.per_workflow()
+                    ).schedule(when=when)
+                elif isinstance(context, IMPORT_reboot_aio_external.InitializeContext):
+                    return self.idempotently().schedule(when=when)
+
             return User.WeakReference._Schedule(self._application_id, self._tasks, when=when)
 
         class _Schedule:
@@ -28032,15 +28360,34 @@ class User:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def CreateCounter(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: User.CreateCounterRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> User.CreateCounterTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def CreateCounter(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                description: str | Unset = UNSET,
+            ) -> User.CreateCounterTask:
+                ...
+
             async def CreateCounter( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[User.CreateCounterRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 description: str | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | User.CreateCounterTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=User.CreateCounterRequest)
@@ -28093,19 +28440,40 @@ class User:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return User.CreateCounterTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             create_counter = CreateCounter
-
-            async def ListCounters( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def ListCounters(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def ListCounters(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> User.ListCountersTask:
+                ...
+
+            async def ListCounters( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | User.ListCountersTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -28137,19 +28505,40 @@ class User:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return User.ListCountersTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             list_counters = ListCounters
-
-            async def Whoami( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def Whoami(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def Whoami(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> User.WhoamiTask:
+                ...
+
+            async def Whoami( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | User.WhoamiTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -28181,6 +28570,12 @@ class User:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return User.WhoamiTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -28206,15 +28601,34 @@ class User:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def SetClaims(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: User.SetClaimsRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> User.SetClaimsTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def SetClaims(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
+            ) -> User.SetClaimsTask:
+                ...
+
             async def SetClaims( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[User.SetClaimsRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | User.SetClaimsTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=User.SetClaimsRequest)
@@ -28267,6 +28681,12 @@ class User:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return User.SetClaimsTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -28315,17 +28735,34 @@ class User:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def CreateCounter(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: User.CreateCounterRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> User.CreateCounterTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def CreateCounter(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                description: str | Unset = UNSET,
+            ) -> User.CreateCounterTask:
+                ...
+
             async def CreateCounter( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[User.CreateCounterRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 description: str | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | User.CreateCounterTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -28379,7 +28816,7 @@ class User:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).CreateCounter(
                     __request__,
@@ -28388,19 +28825,40 @@ class User:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return User.CreateCounterTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
+
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             create_counter = CreateCounter
-
-            async def ListCounters( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def ListCounters(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def ListCounters(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> User.ListCountersTask:
+                ...
+
+            async def ListCounters( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | User.ListCountersTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -28433,7 +28891,7 @@ class User:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).ListCounters(
                     idempotency=__idempotency__,
@@ -28441,19 +28899,40 @@ class User:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return User.ListCountersTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
+
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             list_counters = ListCounters
-
-            async def Whoami( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def Whoami(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def Whoami(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> User.WhoamiTask:
+                ...
+
+            async def Whoami( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | User.WhoamiTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -28486,13 +28965,21 @@ class User:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Whoami(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return User.WhoamiTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -28517,17 +29004,34 @@ class User:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
+            @IMPORT_typing.overload
+            async def SetClaims(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: User.SetClaimsRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> User.SetClaimsTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def SetClaims(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
+            ) -> User.SetClaimsTask:
+                ...
+
             async def SetClaims( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[User.SetClaimsRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | User.SetClaimsTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -28581,7 +29085,7 @@ class User:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).SetClaims(
                     __request__,
@@ -28589,6 +29093,14 @@ class User:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return User.SetClaimsTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -29252,6 +29764,18 @@ class User:
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
         ) -> User.WeakReference._SelfSchedule:
+            # See `WeakReference.schedule()` for why a `workflow` gets
+            # an idempotent schedule.
+            context = IMPORT_reboot_aio_contexts.Context.get()
+            if context is not None:
+                if isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return (
+                        self.per_iteration() if context.within_loop()
+                        else self.per_workflow()
+                    ).schedule(when=when)
+                elif isinstance(context, IMPORT_reboot_aio_external.InitializeContext):
+                    return self.idempotently().schedule(when=when)
+
             return User.WeakReference._SelfSchedule(self._application_id, self._tasks, when=when)
 
         @IMPORT_typing.overload
@@ -31663,6 +32187,20 @@ class Counter:
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
         ) -> Counter.WeakReference._Schedule:
+            # Within a `workflow`, all "bare" `schedule()` calls are
+            # syntactic sugar for `per_workflow()`, unless we're
+            # within a control loop, in which case they are syntactic
+            # sugar for `per_iteration()`; the same as `spawn()`.
+            context = IMPORT_reboot_aio_contexts.Context.get()
+            if context is not None:
+                if isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return (
+                        self.per_iteration() if context.within_loop()
+                        else self.per_workflow()
+                    ).schedule(when=when)
+                elif isinstance(context, IMPORT_reboot_aio_external.InitializeContext):
+                    return self.idempotently().schedule(when=when)
+
             return Counter.WeakReference._Schedule(self._application_id, self._tasks, when=when)
 
         class _Schedule:
@@ -31681,13 +32219,28 @@ class Counter:
                 self._idempotency = idempotency
 
             # Counter callable tasks:
-
-            async def Increment( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def Increment(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def Increment(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Counter.IncrementTask:
+                ...
+
+            async def Increment( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Counter.IncrementTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -31719,19 +32272,40 @@ class Counter:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Counter.IncrementTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             increment = Increment
-
-            async def Value( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def Value(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def Value(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Counter.ValueTask:
+                ...
+
+            async def Value( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Counter.ValueTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -31763,19 +32337,40 @@ class Counter:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Counter.ValueTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             value = Value
-
-            async def Description( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def Description(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def Description(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Counter.DescriptionTask:
+                ...
+
+            async def Description( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Counter.DescriptionTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -31807,6 +32402,12 @@ class Counter:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Counter.DescriptionTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
                 return __task_id__
 
             # Keep the original functions on the client, so old code will
@@ -31836,15 +32437,28 @@ class Counter:
                 self._idempotency = idempotency
 
             # Counter callable tasks:
-
-            async def Increment( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def Increment(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def Increment(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Counter.IncrementTask:
+                ...
+
+            async def Increment( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Counter.IncrementTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -31877,7 +32491,7 @@ class Counter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Increment(
                     idempotency=__idempotency__,
@@ -31885,19 +32499,40 @@ class Counter:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Counter.IncrementTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
+
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             increment = Increment
-
-            async def Value( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def Value(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def Value(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Counter.ValueTask:
+                ...
+
+            async def Value( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Counter.ValueTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -31930,7 +32565,7 @@ class Counter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Value(
                     idempotency=__idempotency__,
@@ -31938,19 +32573,40 @@ class Counter:
                     bearer_token=__bearer_token__,
                 )
 
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Counter.ValueTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
+
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             value = Value
-
-            async def Description( # type: ignore[misc]
+            @IMPORT_typing.overload
+            async def Description(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
-                # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                ...
+
+            @IMPORT_typing.overload
+            async def Description(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> Counter.DescriptionTask:
+                ...
+
+            async def Description( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId | Counter.DescriptionTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -31983,13 +32639,21 @@ class Counter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Description(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                if isinstance(__context__, (IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext)):
+                    return Counter.DescriptionTask(
+                        __context__,
+                        task_id=__task_id__,
+                    )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -32379,6 +33043,18 @@ class Counter:
             *,
             when: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
         ) -> Counter.WeakReference._SelfSchedule:
+            # See `WeakReference.schedule()` for why a `workflow` gets
+            # an idempotent schedule.
+            context = IMPORT_reboot_aio_contexts.Context.get()
+            if context is not None:
+                if isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return (
+                        self.per_iteration() if context.within_loop()
+                        else self.per_workflow()
+                    ).schedule(when=when)
+                elif isinstance(context, IMPORT_reboot_aio_external.InitializeContext):
+                    return self.idempotently().schedule(when=when)
+
             return Counter.WeakReference._SelfSchedule(self._application_id, self._tasks, when=when)
 
         @IMPORT_typing.overload
