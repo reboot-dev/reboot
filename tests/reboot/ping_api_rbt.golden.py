@@ -21719,7 +21719,12 @@ class Ping:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Ping.DescribeResponse, None] | tuple[None, Ping.DescribeAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='describe',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
@@ -21871,7 +21876,12 @@ class Ping:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Ping.NumPingsResponse, None] | tuple[None, Ping.NumPingsAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='num_pings',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
@@ -22385,9 +22395,11 @@ class Ping:
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
             ) -> Ping.WeakReference._UntilChangesSatisfies[Ping.State]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     context,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='read',
                 )
 
                 async def callable():
@@ -22413,9 +22425,11 @@ class Ping:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Ping.WeakReference._UntilChangesSatisfies[Ping.DescribeResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='describe',
                 )
 
                 __options__ = __options__ or IMPORT_reboot_aio_call.Options()
@@ -22450,9 +22464,11 @@ class Ping:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Ping.WeakReference._UntilChangesSatisfies[Ping.NumPingsResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='num_pings',
                 )
 
                 __options__ = __options__ or IMPORT_reboot_aio_call.Options()
@@ -22510,7 +22526,14 @@ class Ping:
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='do_ping',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -22577,7 +22600,14 @@ class Ping:
                 num_pings: int | Unset = UNSET,
                 period_seconds: float | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='do_ping_periodically',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Ping.DoPingPeriodicallyRequest)
@@ -22644,7 +22674,14 @@ class Ping:
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='describe',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -22688,7 +22725,14 @@ class Ping:
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='num_pings',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -22755,9 +22799,14 @@ class Ping:
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='do_ping',
+                )
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -22831,9 +22880,14 @@ class Ping:
                 num_pings: int | Unset = UNSET,
                 period_seconds: float | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='do_ping_periodically',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -22908,9 +22962,14 @@ class Ping:
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='describe',
+                )
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -22961,9 +23020,14 @@ class Ping:
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='num_pings',
+                )
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -23054,7 +23118,14 @@ class Ping:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Ping.DoPingTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='do_ping',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -23123,7 +23194,14 @@ class Ping:
                 num_pings: int | Unset = UNSET,
                 period_seconds: float | Unset = UNSET,
             ) -> Ping.DoPingPeriodicallyTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='do_ping_periodically',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Ping.DoPingPeriodicallyRequest)
@@ -23193,7 +23271,14 @@ class Ping:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Ping.DescribeTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='describe',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -23239,7 +23324,14 @@ class Ping:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Ping.NumPingsTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='num_pings',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -24538,7 +24630,12 @@ class Pong:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Pong.NumPongsResponse, None] | tuple[None, Pong.NumPongsAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='num_pongs',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
@@ -24936,9 +25033,11 @@ class Pong:
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
             ) -> Pong.WeakReference._UntilChangesSatisfies[Pong.State]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     context,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='read',
                 )
 
                 async def callable():
@@ -24964,9 +25063,11 @@ class Pong:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Pong.WeakReference._UntilChangesSatisfies[Pong.NumPongsResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='num_pongs',
                 )
 
                 __options__ = __options__ or IMPORT_reboot_aio_call.Options()
@@ -25024,7 +25125,14 @@ class Pong:
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='do_pong',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -25068,7 +25176,14 @@ class Pong:
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='num_pongs',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -25135,9 +25250,14 @@ class Pong:
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='do_pong',
+                )
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -25188,9 +25308,14 @@ class Pong:
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='num_pongs',
+                )
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -25281,7 +25406,14 @@ class Pong:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Pong.DoPongTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='do_pong',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -25327,7 +25459,14 @@ class Pong:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Pong.NumPongsTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='num_pongs',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27291,7 +27430,12 @@ class User:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[User.ListCountersResponse, None] | tuple[None, User.ListCountersAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='list_counters',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
@@ -27443,7 +27587,12 @@ class User:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[User.WhoamiResponse, None] | tuple[None, User.WhoamiAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='whoami',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
@@ -27979,9 +28128,11 @@ class User:
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
             ) -> User.WeakReference._UntilChangesSatisfies[User.State]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     context,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='read',
                 )
 
                 async def callable():
@@ -28007,9 +28158,11 @@ class User:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> User.WeakReference._UntilChangesSatisfies[User.ListCountersResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='list_counters',
                 )
 
                 __options__ = __options__ or IMPORT_reboot_aio_call.Options()
@@ -28044,9 +28197,11 @@ class User:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> User.WeakReference._UntilChangesSatisfies[User.WhoamiResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='whoami',
                 )
 
                 __options__ = __options__ or IMPORT_reboot_aio_call.Options()
@@ -28125,7 +28280,14 @@ class User:
                 *,
                 description: str | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='create_counter',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=User.CreateCounterRequest)
@@ -28190,7 +28352,14 @@ class User:
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='list_counters',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -28234,7 +28403,14 @@ class User:
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='whoami',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -28299,7 +28475,14 @@ class User:
                 *,
                 claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='set_claims',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=User.SetClaimsRequest)
@@ -28408,9 +28591,14 @@ class User:
                 *,
                 description: str | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='create_counter',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -28483,9 +28671,14 @@ class User:
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='list_counters',
+                )
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -28536,9 +28729,14 @@ class User:
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='whoami',
+                )
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -28610,9 +28808,14 @@ class User:
                 *,
                 claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='set_claims',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -28746,7 +28949,14 @@ class User:
                 *,
                 description: str | Unset = UNSET,
             ) -> User.CreateCounterTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='create_counter',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=User.CreateCounterRequest)
@@ -28814,7 +29024,14 @@ class User:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> User.ListCountersTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='list_counters',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -28860,7 +29077,14 @@ class User:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> User.WhoamiTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='whoami',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -28927,7 +29151,14 @@ class User:
                 *,
                 claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
             ) -> User.SetClaimsTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='set_claims',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=User.SetClaimsRequest)
@@ -31105,7 +31336,12 @@ class Counter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Counter.ValueResponse, None] | tuple[None, Counter.ValueAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='value',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
@@ -31257,7 +31493,12 @@ class Counter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Counter.DescriptionResponse, None] | tuple[None, Counter.DescriptionAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='description',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
@@ -31681,9 +31922,11 @@ class Counter:
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
             ) -> Counter.WeakReference._UntilChangesSatisfies[Counter.State]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     context,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='read',
                 )
 
                 async def callable():
@@ -31709,9 +31952,11 @@ class Counter:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Counter.WeakReference._UntilChangesSatisfies[Counter.ValueResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='value',
                 )
 
                 __options__ = __options__ or IMPORT_reboot_aio_call.Options()
@@ -31746,9 +31991,11 @@ class Counter:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Counter.WeakReference._UntilChangesSatisfies[Counter.DescriptionResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='description',
                 )
 
                 __options__ = __options__ or IMPORT_reboot_aio_call.Options()
@@ -31806,7 +32053,14 @@ class Counter:
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='increment',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -31850,7 +32104,14 @@ class Counter:
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='value',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -31894,7 +32155,14 @@ class Counter:
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='description',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
@@ -31961,9 +32229,14 @@ class Counter:
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='increment',
+                )
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -32014,9 +32287,14 @@ class Counter:
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='value',
+                )
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -32067,9 +32345,14 @@ class Counter:
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='description',
+                )
 
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -32160,7 +32443,14 @@ class Counter:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Counter.IncrementTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='increment',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -32206,7 +32496,14 @@ class Counter:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Counter.ValueTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='value',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -32252,7 +32549,14 @@ class Counter:
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Counter.DescriptionTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='description',
+                )
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
