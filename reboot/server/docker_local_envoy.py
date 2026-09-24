@@ -1,20 +1,18 @@
 import asyncio
 import json
 import logging
-import os
 import reboot.aio.signals as signals
 import reboot.aio.tracing
 import signal
-import socket
 import subprocess
 import tempfile
-import threading
 import traceback
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from log.log import get_logger
 from pathlib import Path
 from reboot.aio.types import ApplicationId
 from reboot.routing.envoy_config import ServerInfo
+from reboot.server.envoy_nanny import envoy_nanny_command
 from reboot.server.local_envoy import LocalEnvoy
 from reboot.settings import (
     DEFAULT_INSECURE_PORT,
@@ -57,15 +55,6 @@ class DockerLocalEnvoy(LocalEnvoy):
         debug_mode: bool,
         allowed_origins: Optional[list[str]],
     ):
-        local_envoy_nanny_path = self._envoy_nanny_path()
-
-        # Not using 'aiofiles' here because we're not in an async context yet.
-        if not os.path.isfile(local_envoy_nanny_path):
-            raise FileNotFoundError(
-                "Expecting 'local_envoy_nanny' executable at path "
-                f"'{local_envoy_nanny_path}'"
-            )
-
         self._published_public_port = public_port
         self._published_trusted_port = 0
         self._container_id: Optional[str] = None
@@ -122,17 +111,9 @@ class DockerLocalEnvoy(LocalEnvoy):
 
         self._using_localhost_direct = self._use_tls and certificate is None
 
-        # Indicator of whether or not we are stopping. Used at the
-        # least by the nanny server thread to avoid spamming stderr
-        # with exceptions when the server socket gets closed.
+        # Indicator of whether or not we are stopping, which tells the
+        # nanny's watchdog a deliberate stop apart from a failure.
         self._stopping = False
-
-        # Open a server socket that listens for connections from the
-        # 'local_envoy_nanny' so that in the event our process is
-        # killed abruptly the nanny will get an EOF (or error) and
-        # send a SIGTERM to envoy which should stop the container.
-        self._nanny_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._nanny_socket.bind((EVERY_LOCAL_NETWORK_ADDRESS, 0))
 
         # A background task that follows the logs of the Envoy container,
         # possibly forwarding them to the `self._unprocessed_log_lines`, and
@@ -148,9 +129,6 @@ class DockerLocalEnvoy(LocalEnvoy):
         # no longer interested in the logs for that purpose.
         self._unprocessed_log_lines: Optional[asyncio.Queue[str]
                                              ] = asyncio.Queue()
-
-    def _envoy_nanny_path(self):
-        return os.path.join(os.path.dirname(__file__), 'local_envoy_nanny')
 
     async def set_servers(self, servers: list[ServerInfo]):
         # When callers say "localhost", they mean "on the same host". But
@@ -291,7 +269,6 @@ class DockerLocalEnvoy(LocalEnvoy):
                     )
 
             self._tmp_envoy_dir.cleanup()
-            self._nanny_socket.close()
 
     @reboot.aio.tracing.function_span()
     async def _docker_run_envoy(self) -> None:
@@ -444,15 +421,14 @@ class DockerLocalEnvoy(LocalEnvoy):
         local_envoy_run_command += [
             '--add-host=host.docker.internal:host-gateway',
             f'--volume={self._tmp_envoy_dir.name}:{DOCKERIZED_ENVOY_DIR}:ro',
-            f'--volume={self._envoy_nanny_path()}:/local_envoy_nanny:ro',
             # Envoy must have its configuration directory as its working dir to
             # let our Lua code find the libraries that we've copied into that
             # directory.
             f'--workdir={DOCKERIZED_ENVOY_DIR}',
             # NOTE: invariant here that the default entry point of the
             # container will run envoy at PID 1 because that is what
-            # the 'local_envoy_nanny' will send a SIGTERM to in the
-            # event of orphaning.
+            # the nanny will send a SIGTERM to in the event of
+            # orphaning.
             ENVOY_PROXY_IMAGE,
             '-c',
             str(self._envoy_config_observed_path),
@@ -563,43 +539,20 @@ class DockerLocalEnvoy(LocalEnvoy):
 
     @reboot.aio.tracing.function_span()
     async def _exec_local_envoy_nanny(self):
-        # Start listening for the 'local_envoy_nanny' to connect. We
-        # use a daemon thread which ignores any errors after we've
-        # stopped so that we don't spam stderr with an exception.
-        self._nanny_socket.listen(1)
-
-        def accept():
-            clients: list[socket.socket] = []
-            try:
-                while True:
-                    client, address = self._nanny_socket.accept()
-                    clients.append(client)
-            except Exception as e:
-                if not self._stopping:
-                    raise RuntimeError(
-                        'Failed to accept on "nanny socket; '
-                        '*** ENVOY MAY BECOME AN ORPHANED CONTAINER ***'
-                    ) from e
-
-        threading.Thread(target=accept, daemon=True).start()
-
-        _, port = self._nanny_socket.getsockname()
-
-        # Run the nanny which will connect back to our server socket!
+        # Run the nanny inside the Envoy container, with a pipe as its
+        # standard input whose write end only we hold, so that it
+        # terminates Envoy (PID 1 in the container) once we have exited.
         #
-        # We do this by forking of a process that starts `local_envoy_nanny` in
-        # the docker container of the envoy we just started.
-        # We then create an `asyncio` task that watches the local_envoy_nanny
-        # process and waits for it to terminate. Should it terminate early with
-        # a non-zero exit code we'll raise an error and stop the container.
+        # We watch the `docker exec` from an `asyncio` task: should it
+        # exit early with a non-zero exit code we raise an error and
+        # stop the container.
         local_envoy_nanny_launcher = await asyncio.create_subprocess_exec(
             'docker',
             'exec',
+            '--interactive',
             f'{self._container_id}',
-            '/local_envoy_nanny',
-            'host.docker.internal',
-            f'{port}',
-            stdin=asyncio.subprocess.DEVNULL,
+            *envoy_nanny_command(1),
+            stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
@@ -630,10 +583,10 @@ class DockerLocalEnvoy(LocalEnvoy):
                 ) != '' else '<empty>'
 
                 if not self._stopping:
-                    log('Output from local_envoy_nanny: %s', output)
+                    log('Output from the Envoy nanny: %s', output)
 
                 error = RuntimeError(
-                    f"Failed to run 'local_envoy_nanny': {output}; "
+                    f"Failed to run the Envoy nanny: {output}; "
                     '*** ENVOY MAY BECOME AN ORPHANED CONTAINER ***'
                 )
 

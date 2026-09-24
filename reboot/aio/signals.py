@@ -1,22 +1,44 @@
+import asyncio
 import os
 import signal
 from collections import defaultdict
 from contextlib import contextmanager
 from reboot.aio.once import Once
 from reboot.settings import ENVVAR_SIGNALS_AVAILABLE
-from typing import Callable, Optional
+from typing import Any, Callable, NoReturn, Optional
 
-# Helpers for creating a safe(r) mechanism for being able to run
-# handlers when signals have been raised and before their default
-# handling occurs.
+# The one place where a Reboot process installs signal handlers. A
+# signal is handled in one of two ways:
 #
-# NOTE: this is not a generic signal handler mechanism as after all of
-# the handlers are executed the default signal handler will be
-# re-installed and the signal will be raised again. We can extend the
-# functionality to that in the future if necessary, but it needs to be
-# considered carefully because it can lead to brittle usage due to not
-# every handler knowing whether or not one of the handlers will induce
-# a program exit.
+# - Cleanup, then the default action: the handlers installed for the
+#   signal via `install_cleanup()` run when it is raised, after which
+#   the default handler is re-installed and the signal is raised again.
+#   For `SIGTERM` and `SIGQUIT` that means the process still exits, so
+#   this is not a generic signal handler mechanism, and every cleanup
+#   handler must tolerate the process exiting right after it runs.
+#
+# - Cancelling the main `asyncio` task, via `cancel_main_task_on()`,
+#   for a process that owns subprocesses and needs its `async with`
+#   cleanup to run before it exits. Once the task has unwound,
+#   `exit_by_raised_signal()` runs the signal's cleanup handlers and
+#   takes the default action, so the process still ends by the signal.
+#
+# The two serve different callers. Library code registers with
+# `install_cleanup()` and may assume nothing about how the process
+# ends: the callback runs right before it dies, whichever way handled
+# the signal. Only a process entry point decides, once, that the
+# signals which would kill it unwind it first, and it must then catch
+# the resulting `CancelledError` at the top and finish with
+# `exit_by_raised_signal()`. A process that never calls
+# `cancel_main_task_on()` dies immediately on every signal, after its
+# cleanup handlers.
+#
+# Invariants, each enforced below rather than assumed: a signal has at
+# most one handler, ours, and a foreign one fails at install time; the
+# first signal that starts an unwinding wins and later ones are
+# dropped, so the cleanup underway cannot be interrupted; and
+# `SIGKILL` runs none of this, so anything that must survive it needs
+# another mechanism, such as the Envoy nanny's pipe.
 
 # Collection of cleanup handlers that have been installed.
 #
@@ -30,6 +52,12 @@ _cleanup_handlers: defaultdict[
 #
 # Do not use directly, instead call 'raised_signal()'.
 _raised_signal: Optional[int] = None
+
+# The signals that `cancel_main_task_on()` has taken over, which
+# `_initialize_signals()` therefore leaves alone.
+#
+# Do not use directly, instead call 'cancel_main_task_on()'.
+_signals_cancelling_main_task: set[int] = set()
 
 # Whether or not signals are available, e.g., because Python might be
 # embedded within a Node process.
@@ -64,42 +92,31 @@ def _signal_handler(signum, frame):
 
 # Signals that are supported for installing cleanup handlers.
 #
-# NOTE: we deliberately DO NOT support SIGINT because that behavior is
-# currently handled cleanly by Python by raising `KeyboardInterrupt`
-# which when using `asyncio.run()` will cancel outstanding tasks for
-# you.
-#
-# TODO(benh): investigate how to install a global signal handler that
-# works similar to SIGINT and cancels all outstanding tasks.
+# NOTE: SIGINT is left to Python, which raises `KeyboardInterrupt`,
+# except where `cancel_main_task_on()` takes it over.
 supported_signals = [signal.SIGTERM, signal.SIGQUIT]
 
 
 def _initialize_signals():
     """Helper for initializing the process signal handlers."""
     global _signals_available
+    global _signals_cancelling_main_task
 
     if not _signals_available:
         return
 
-    assert signal.SIGTERM in supported_signals
+    for signum in supported_signals:
+        # A signal that cancels the main task already has its handler.
+        if signum in _signals_cancelling_main_task:
+            continue
 
-    handler = signal.signal(signal.SIGTERM, _signal_handler)
+        handler = signal.signal(signum, _signal_handler)
 
-    if handler not in (signal.SIG_DFL, signal.SIG_IGN):
-        raise RuntimeError(
-            'Custom signal handlers are not (yet) supported; '
-            'please remove your signal handler'
-        )
-
-    assert signal.SIGQUIT in supported_signals
-
-    handler = signal.signal(signal.SIGQUIT, _signal_handler)
-
-    if handler not in (signal.SIG_DFL, signal.SIG_IGN):
-        raise RuntimeError(
-            'Custom signal handlers are not (yet) supported; '
-            'please remove your signal handler'
-        )
+        if handler not in (signal.SIG_DFL, signal.SIG_IGN):
+            raise RuntimeError(
+                'Custom signal handlers are not (yet) supported; '
+                'please remove your signal handler'
+            )
 
 
 # Once for initializing signals.
@@ -164,3 +181,67 @@ def cleanup_on_raise(signums: list[int], *, handler: Callable[[], None]):
         yield
     finally:
         uninstall_cleanup(signums, handler)
+
+
+def cancel_main_task_on(signums: list[int]) -> None:
+    """Makes each of the signals in `signums` cancel the current `asyncio`
+    task, which must be the main task, instead of taking its default
+    action, so that the task's cleanup context managers run before the
+    process exits. Once the task has unwound, the caller finishes the
+    signal's handling with `exit_by_raised_signal()`, which runs the
+    signal's `install_cleanup()` handlers and takes its default action.
+
+    Must be called from the main thread, from within a running event
+    loop, and at most once per signal."""
+    global _signals_available
+    global _signals_cancelling_main_task
+
+    if not _signals_available:
+        return
+
+    main_task = asyncio.current_task()
+    if main_task is None:
+        raise AssertionError("May only be called from within asyncio.")
+
+    def cancel_main_task(main_task: asyncio.Task[Any], signum: int) -> None:
+        global _raised_signal
+        # A further signal while the main task is unwinding, e.g., a
+        # second Ctrl-C, would inject another cancellation into the
+        # cleanup underway and abandon it, so only the first one counts.
+        if _raised_signal is not None:
+            return
+        _raised_signal = signum
+        main_task.cancel()
+
+    loop = asyncio.get_running_loop()
+
+    for signum in signums:
+        # `asyncio` replaces whatever handler a signal has without
+        # telling us, so first check that it is not somebody else's.
+        # Python itself starts with `default_int_handler` on SIGINT.
+        previous = signal.getsignal(signum)
+        if previous not in (
+            signal.SIG_DFL,
+            signal.SIG_IGN,
+            None,
+            signal.default_int_handler,
+            _signal_handler,
+        ):
+            raise RuntimeError(
+                f"Only one handler may be installed for signal {signum}; "
+                f"found {previous}"
+            )
+        _signals_cancelling_main_task.add(signum)
+        loop.add_signal_handler(signum, cancel_main_task, main_task, signum)
+
+
+def exit_by_raised_signal() -> NoReturn:
+    """Finishes handling a signal that `cancel_main_task_on()` turned into
+    a cancellation, now that the main task has unwound: runs the
+    signal's `install_cleanup()` handlers and then re-raises it with its
+    default action, so that the process ends the way the signal would
+    have ended it. Requires that such a signal was raised."""
+    signum = raised_signal()
+    assert signum is not None, "No signal was raised"
+    _signal_handler(signum, None)
+    raise AssertionError(f"Signal {signum} did not end the process")

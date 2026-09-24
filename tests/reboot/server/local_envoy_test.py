@@ -260,6 +260,24 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
             "servicers are serving requests with the same server header"
         )
 
+        # Envoy's Lua filter and Python's placement client each map a
+        # state to the server owning its shard, from the same plan; they
+        # must agree for every state.
+        for i in range(200):
+            state_id = f"shard-check-{i}"
+            _, response = await General.ConstructorWriter(context, state_id)
+            state_ref = StateRef.from_maybe_readable(
+                f"tests.reboot.General:{state_id}"
+            )
+            self.assertEqual(
+                rbt._placement_client.server_for_actor(
+                    revision.config.application_id(),
+                    state_ref,
+                ),
+                response.content[SERVER_ID_HEADER],
+                f"Envoy routed state '{state_id}' to the wrong server",
+            )
+
         # When talking to the same states again, we should go to the same
         # servers again - also when using HTTP calls with human-readable
         # state refs.

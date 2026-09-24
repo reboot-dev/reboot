@@ -149,11 +149,26 @@ def _shard_keyrange_starts(num_shards: int) -> list[int]:
     return [i * shard_size for i in range(0, num_shards)]
 
 
+# Prepended to every Lua filter to turn off LuaJIT's compiler on macOS.
+# On Apple Silicon LuaJIT often fails to allocate machine code memory
+# within branch range of its interpreter. Every failure flushes all
+# compiled traces and raises an error that the macOS unwinder handles
+# ~200x slower than Linux's. The resulting retry loop pins Envoy's
+# workers for minutes after each start, until they miss HTTP/2
+# keepalives. Interpreted, the filters cost tens of microseconds per
+# request.
+#
+# TODO: remove this once Envoy bundles a LuaJIT that includes commit
+# 68354f4447 ("Allow mcode allocations outside of the jump range to the
+# support code"), which lifts the branch range requirement.
+_LUA_JIT_OFF_ON_MACOS = 'if jit and jit.os == "OSX" then jit.off() end\n'
+
+
 def _lua_any(source_code: str) -> any_pb2.Any:
     return any_pack(
         lua_pb2.Lua(
             default_source_code=base_pb2.DataSource(
-                inline_string=source_code,
+                inline_string=_LUA_JIT_OFF_ON_MACOS + source_code,
             ),
         )
     )
