@@ -3897,7 +3897,9 @@ const Overview: FC<{
         <Separator className="nav-resizer" />
         <Panel className="pane-panel">
           <div
-            className={page === "models" ? "pane graph-pane" : "pane"}
+            className={
+              page === "models" ? "pane graph-pane" : `pane page-${page}`
+            }
             ref={pane}
           >
             {page !== "models" && (
