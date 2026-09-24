@@ -39,8 +39,9 @@ message Dashboard {
   // The digest of what each file declaring an `api` declares, as
   // it is now, keyed by the module `rbt generate` writes for the
   // file, relative to the generated directory the way `generated`
-  // is keyed: `shop/v1/shop_rbt.py` for `shop/v1/shop.py`. The
-  // module records the digest it was generated from.
+  // is keyed: `shop/v1/shop_rbt.py` for `shop/v1/shop.py` and for
+  // `shop/v1/shop.proto`. The module records the digest it was
+  // generated from.
   map<string, string> api_digests = 5;
 
   // Represents the version of the reading that recorded `api_files`,

@@ -22,7 +22,7 @@ from reboot.dashboard.backend.constants import (
     ENVVAR_RBT_API_DIRECTORY,
 )
 from reboot.dashboard.backend.main import application
-from reboot.dashboard.backend.walk import _modified_at
+from reboot.dashboard.backend.walk import _modified_at, _standardized_path
 from typing import Optional
 from unittest.mock import patch
 
@@ -181,6 +181,66 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertIn('shop/v1/models.py', api.api_files)
+
+    async def test_a_change_to_an_imported_proto_reads_its_importer(
+        self,
+    ) -> None:
+        """A `.proto` is read the way a Pydantic file is: what it
+        declares is recorded under the module `rbt generate` writes
+        for it, and a change to a `.proto` it imports reads it
+        again, so what it declares follows."""
+        parts = self.directory / 'shop' / 'v1' / 'parts.proto'
+        parts.parent.mkdir(parents=True, exist_ok=True)
+        parts.write_text(
+            'syntax = "proto3";\n'
+            'package shop.v1;\n'
+            'enum Size {\n'
+            '  SMALL = 0;\n'
+            '}\n'
+        )
+        depot = self.directory / 'shop' / 'v1' / 'depot.proto'
+        depot.write_text(
+            'syntax = "proto3";\n'
+            'package shop.v1;\n'
+            'import "rbt/v1alpha1/options.proto";\n'
+            'import "shop/v1/parts.proto";\n'
+            'message Depot {\n'
+            '  option (rbt.v1alpha1.state) = {};\n'
+            '  Size size = 1;\n'
+            '}\n'
+        )
+
+        await self._start_dashboard()
+        api = await self._wait_for_api(
+            lambda api: len(_state_types_in(api)) == 1
+        )
+
+        # Both files declare an API, the one of shared messages too.
+        self.assertEqual(
+            sorted(api.apis), ['shop/v1/depot.proto', 'shop/v1/parts.proto']
+        )
+        self.assertEqual(
+            sorted(api.api_digests),
+            ['shop/v1/depot_rbt.py', 'shop/v1/parts_rbt.py'],
+        )
+        # The import of a file of the directory is a dependency the
+        # walk follows.
+        self.assertEqual(
+            api.api_files['shop/v1/depot.proto'].
+            dependencies['shop/v1/parts.proto'].filename,
+            str(_standardized_path(parts)),
+        )
+
+        # A second value, in the imported file only.
+        parts.write_text(parts.read_text().replace('}', '  LARGE = 1;\n}'))
+
+        # Described by the file declaring it.
+        await self._wait_for_api(
+            lambda api: [
+                value.name for value in api.apis['shop/v1/parts.proto'].enums[
+                    'shop.v1.Size'].values
+            ] == ['SMALL', 'LARGE']
+        )
 
     async def test_a_burst_of_saves_reads_every_saved_file(self) -> None:
         """Files saved together are all read, however many of the

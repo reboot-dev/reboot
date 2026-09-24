@@ -85,6 +85,7 @@ from reboot.dashboard.backend.check import timed
 from reboot.dashboard.backend.pyright import Location, Pyright
 from reboot.dashboard.backend.walk import (
     GENERATED_SUFFIXES,
+    PYTHON,
     SOURCE_GLOB,
     Dependency,
     Digest,
@@ -526,6 +527,14 @@ class HelperFile:
     external: Optional[Dependency]
 
 
+def _python_syntax(syntax: Optional[ast.Module]) -> ast.Module:
+    """The syntax of a file the code watcher walked, which is always
+    Python's: the walk reads `.proto` files only for the API watcher,
+    and records no syntax for them."""
+    assert syntax is not None, 'The code watcher walks Python files only'
+    return syntax
+
+
 def _helper_definitions(
     filename: Path,
     parse: Parse,
@@ -542,7 +551,7 @@ def _helper_definitions(
                     text=parse.text,
                     syntax=node,
                 )
-            for node in ast.walk(parse.syntax)
+            for node in ast.walk(_python_syntax(parse.syntax))
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
     )
@@ -686,7 +695,7 @@ def _possible_agent_definitions(parse: Parse) -> Mapping[int, ast.Call]:
     # How many times each name is assigned at the top level.
     assigned: dict[str, int] = {}
 
-    for statement in parse.syntax.body:
+    for statement in _python_syntax(parse.syntax).body:
         match statement:
             case ast.Assign(targets=targets):
                 for target in targets:
@@ -813,6 +822,7 @@ class Analysis:
 
         parse = Parse.from_bytes(
             source,
+            language=PYTHON,
             digest=hashlib.sha256(source).digest(),
             modified=modified,
         )
@@ -865,7 +875,7 @@ class Analysis:
             parse, external = await analysis._parse(filename)
             read = GeneratedFile(
                 definitions=(
-                    _generated_definitions(parse.syntax)
+                    _generated_definitions(_python_syntax(parse.syntax))
                     if parse is not None else MappingProxyType({})
                 ),
                 external=external,
@@ -1588,7 +1598,7 @@ async def _analyze_file(
     tools: list[Agent.Tool] = []
     hazards: list[Hazard] = []
 
-    for node in ast.walk(parsed.syntax):
+    for node in ast.walk(_python_syntax(parsed.syntax)):
         match node:
             case ast.ClassDef():
                 servicer, class_agents, analysis = await _analyze_class(

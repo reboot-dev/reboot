@@ -9,13 +9,22 @@ import ast
 import hashlib
 import io
 import os
+import re
 import tokenize
 from dataclasses import dataclass, replace
 from google.protobuf.timestamp_pb2 import Timestamp
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import File
 from types import MappingProxyType
-from typing import Generic, Mapping, Optional, Protocol, Sequence, TypeVar
+from typing import (
+    Callable,
+    Generic,
+    Mapping,
+    Optional,
+    Protocol,
+    Sequence,
+    TypeVar,
+)
 
 # A SHA-256 digest -- of a file's bytes, or of a method's syntax --
 # saying whether what was digested has changed.
@@ -39,6 +48,14 @@ GENERATED_SUFFIXES = ('_rbt.py', '_pb2.py', '_pb2_grpc.py')
 # Every file the developer might have written a servicer in, which is
 # the rule `rbt generate` and `rbt dev run` both use for source.
 SOURCE_GLOB = '**/*.py'
+
+# Every file the developer might have declared an API in as protobuf,
+# which is the rule `rbt generate` uses for them.
+PROTO_GLOB = '**/*.proto'
+
+# What tells a protobuf file from a Python one, which says how the
+# file's imports are written and where each leads.
+PROTO_SUFFIX = '.proto'
 
 
 def _modified_at(path: Path) -> Timestamp:
@@ -94,12 +111,93 @@ async def _read(filename: Path) -> tuple[bytes, Timestamp]:
         return await file.read(), modified
 
 
-def _extract_possible_module_paths_from_imports(
-    syntax: ast.Module,
-    *,
-    directory: Path,
-) -> tuple[str, ...]:
-    """Returns, for each import the file writes, the possible
+@dataclass(frozen=True, kw_only=True)
+class Parse:
+    """One file's bytes parsed."""
+
+    # The decoded text: as Python reads the bytes, honoring the
+    # encoding a coding declaration or a byte order mark declares,
+    # or as UTF-8 for a `.proto`.
+    text: str
+
+    # The text's syntax, for a Python file. `None` for a `.proto`,
+    # which the walk reads only for its imports, from its text;
+    # whether it is valid protobuf is for `protoc` to say when the
+    # file is read.
+    syntax: Optional[ast.Module]
+
+    @classmethod
+    def from_bytes(
+        cls,
+        source: bytes,
+        *,
+        language: 'Language',
+        digest: Digest,
+        modified: Timestamp,
+    ) -> 'Parse | Unparseable':
+        """Returns a file's bytes parsed the way its language is, and
+        `Unparseable` for bytes that will not decode or will not
+        parse, half-written being the normal state of a file somebody
+        is typing into. `digest` is of the bytes, which the caller
+        has in hand."""
+        try:
+            return language.parse(source)
+        except (SyntaxError, ValueError) as error:
+            return Unparseable(digest=digest, modified=modified, error=error)
+
+
+@dataclass(frozen=True, kw_only=True)
+class Unparseable:
+    """One file's bytes that would not decode or parse."""
+
+    # Of the bytes, saying whether parsing them again would say
+    # anything new.
+    digest: Digest
+
+    # When the bytes were last modified, from the open file they
+    # came from.
+    modified: Timestamp
+
+    # Why: the error decoding or parsing raised, e.g. a
+    # `SyntaxError` for invalid syntax, a `UnicodeDecodeError`, which
+    # is a `ValueError`, for bytes the declared encoding will not
+    # decode, and a plain `ValueError` for bytes `ast` rejects before
+    # parsing, such as ones holding a null byte.
+    error: SyntaxError | ValueError
+
+
+@dataclass(frozen=True, kw_only=True)
+class Language:
+    """How the walk reads one kind of file: how its bytes parse,
+    which possible module paths its imports determine, and where a
+    possible module path may be completed to a file. Chosen once per
+    file, by `_language_of`, so that nothing else asks what kind of
+    file it has."""
+
+    # Parses a file's bytes, raising `SyntaxError` or `ValueError`
+    # for bytes that will not decode or parse.
+    parse: Callable[[bytes], Parse]
+
+    # Returns the possible module paths a parsed file's imports
+    # determine, given the directory the file is in, which is what a
+    # relative import is relative to.
+    module_paths: Callable[[Parse, Path], tuple[str, ...]]
+
+    # Returns the files a possible module path may be completed to,
+    # in the order to try them, given the roots.
+    candidates: Callable[[str, Sequence[Path]], list[Path]]
+
+
+def _parse_python(source: bytes) -> Parse:
+    """Parses a Python file's bytes, honoring the encoding a coding
+    declaration or a byte order mark declares."""
+    encoding, _ = tokenize.detect_encoding(io.BytesIO(source).readline)
+    text = source.decode(encoding)
+    return Parse(text=text, syntax=ast.parse(text))
+
+
+def _python_module_paths(parse: Parse, directory: Path) -> tuple[str, ...]:
+    """Returns, for each import a Python file writes, the possible
     module paths it determines: the path of the file the import may
     load, with the `.py` or `/__init__.py` always left off, and, for
     a dotted import, the root left off too. E.g. `import
@@ -120,9 +218,10 @@ def _extract_possible_module_paths_from_imports(
     `directory` is where the file itself is, which is what a
     relative import is relative to.
     """
+    assert parse.syntax is not None
     module_paths: list[str] = []
 
-    for node in ast.walk(syntax):
+    for node in ast.walk(parse.syntax):
         match node:
             case ast.Import(names=names):
                 module_paths.extend(
@@ -183,13 +282,8 @@ def _extract_possible_module_paths_from_imports(
     return tuple(module_paths)
 
 
-async def _try_resolve_module_path(
-    module_path: str,
-    *,
-    roots: Sequence[Path],
-) -> Optional[Path]:
-    """Returns the file at a possible module path when there is
-    one, and `None` otherwise.
+def _python_candidates(module_path: str, roots: Sequence[Path]) -> list[Path]:
+    """Returns the files a Python module path may be completed to.
 
     This is the path half of Python's import rules, the half its
     finder does. An anchored module path, marked `./` or absolute,
@@ -204,24 +298,108 @@ async def _try_resolve_module_path(
     `helper/__init__.py` over a `helper/x` module, is not decided
     here: both possibilities are recorded and pyright answers during
     analysis.
+    """
+    if module_path.startswith('.' + os.sep) or os.path.isabs(module_path):
+        return [
+            Path(module_path) / '__init__.py',
+            Path(module_path + '.py'),
+        ]
+    return [
+        root / (module_path + suffix)
+        for root in roots
+        for suffix in (os.sep + '__init__.py', '.py')
+    ]
+
+
+PYTHON = Language(
+    parse=_parse_python,
+    module_paths=_python_module_paths,
+    candidates=_python_candidates,
+)
+
+# A comment or a string of a `.proto`, either of which may hold what
+# reads as an import and is not one. Matched together so that a `//`
+# inside a string does not start a comment, nor a quote inside a
+# comment a string.
+_PROTO_COMMENT_OR_STRING = re.compile(
+    r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|'
+    r"'(?:\\.|[^'\\\n])*'",
+    re.DOTALL,
+)
+
+# An `import` of a `.proto`, once the comments are gone: the imported
+# file is the one string on the line.
+_PROTO_IMPORT = re.compile(
+    r"""^\s*import\s+(?:public\s+|weak\s+)?["']([^"'\n]+)["']\s*;""",
+    re.MULTILINE,
+)
+
+
+def _parse_proto(source: bytes) -> Parse:
+    """Decodes a `.proto`'s bytes, which is all the walk reads of
+    them: its imports are taken from the text."""
+    return Parse(text=source.decode('utf-8'), syntax=None)
+
+
+def _proto_module_paths(parse: Parse, directory: Path) -> tuple[str, ...]:
+    """Returns, for each import a `.proto` writes, the possible
+    module path it determines: the imported file as written, e.g.
+    `shop/v1/item.proto` for `import "shop/v1/item.proto";`, which is
+    tried under each root. A file may exist there or not, e.g.
+    `google/protobuf/empty.proto` is shipped with `protoc` rather
+    than written by the developer; recording the path either way is
+    what lets a later iteration notice the answer changing.
+    `directory` goes unused: a `.proto` import is never relative.
+    """
+
+    def without_comments(match: re.Match[str]) -> str:
+        # A string is kept, since the imported file is one.
+        if match.group(0).startswith('/'):
+            return ' '
+        return match.group(0)
+
+    return tuple(
+        _PROTO_IMPORT.findall(
+            _PROTO_COMMENT_OR_STRING.sub(without_comments, parse.text),
+        ),
+    )
+
+
+def _proto_candidates(module_path: str, roots: Sequence[Path]) -> list[Path]:
+    """Returns the files a `.proto`'s module path may be completed
+    to: it already names its file, so it is only tried under each
+    root in order, the way `protoc` tries each `--proto_path`."""
+    return [root / module_path for root in roots]
+
+
+PROTO = Language(
+    parse=_parse_proto,
+    module_paths=_proto_module_paths,
+    candidates=_proto_candidates,
+)
+
+
+def _language_of(filename: Path) -> Language:
+    """The language of a file, by its suffix: a `.proto` is
+    protobuf, and every other file the walk reaches is Python."""
+    return PROTO if filename.suffix == PROTO_SUFFIX else PYTHON
+
+
+async def _try_resolve_module_path(
+    module_path: str,
+    *,
+    language: Language,
+    roots: Sequence[Path],
+) -> Optional[Path]:
+    """Returns the file at a possible module path when there is
+    one, and `None` otherwise: the first that exists of the files
+    the language says the module path may be completed to.
 
     `None` is not a failure: the standard library and installed
     packages live outside every root, so `import asyncio` completes
     to nothing and there is nothing to read.
     """
-    if module_path.startswith('.' + os.sep) or os.path.isabs(module_path):
-        candidates = [
-            Path(module_path) / '__init__.py',
-            Path(module_path + '.py'),
-        ]
-    else:
-        candidates = [
-            root / (module_path + suffix)
-            for root in roots
-            for suffix in (os.sep + '__init__.py', '.py')
-        ]
-
-    for candidate in candidates:
+    for candidate in language.candidates(module_path, roots):
         if await aiofiles.os.path.isfile(candidate):
             return candidate
 
@@ -257,7 +435,8 @@ class ParsedFile:
 
     # The syntax itself, so that a file parsed while resolving names
     # is not parsed again when its own servicers are looked for.
-    syntax: ast.Module
+    # `None` for a `.proto`, which has none the walk reads.
+    syntax: Optional[ast.Module]
 
     # The decoded text the syntax was parsed from, for syncing with
     # pyright before the analysis asks about the file, so that the
@@ -548,6 +727,7 @@ class Files(Generic[KnownFile]):
             # followed, which is what reaches the rest of the
             # application.
             files = files.with_unchanged_known_file(known)
+            language = _language_of(filename)
             for module_path in known.dependencies:
                 # A module path with no file at it is fine here:
                 # if a file this one recorded as a dependency is
@@ -555,17 +735,23 @@ class Files(Generic[KnownFile]):
                 # what seeds this file for reanalysis when the walk
                 # ends, and the save that fixes or removes the
                 # import starts another iteration.
-                files = await files.lookup_or_parse_module_path(module_path)
+                files = await files.lookup_or_parse_module_path(
+                    module_path,
+                    language=language,
+                )
             return known.digest, files
 
-        parse = Parse.from_bytes(source, digest=digest, modified=modified)
+        language = _language_of(filename)
+        parse = Parse.from_bytes(
+            source,
+            language=language,
+            digest=digest,
+            modified=modified,
+        )
         if isinstance(parse, Unparseable):
             return digest, files.with_unparseable_file(filename, parse)
 
-        module_paths = _extract_possible_module_paths_from_imports(
-            parse.syntax,
-            directory=filename.parent,
-        )
+        module_paths = language.module_paths(parse, filename.parent)
 
         files = replace(
             files,
@@ -582,7 +768,10 @@ class Files(Generic[KnownFile]):
         # path with no file at it is observed too: recording it is
         # what makes a file appearing there a change.
         for module_path in module_paths:
-            files = await files.lookup_or_parse_module_path(module_path)
+            files = await files.lookup_or_parse_module_path(
+                module_path,
+                language=language,
+            )
 
         parsed = ParsedFile(
             filename=filename,
@@ -603,11 +792,14 @@ class Files(Generic[KnownFile]):
     async def lookup_or_parse_module_path(
         self,
         module_path: str,
+        *,
+        language: Language,
     ) -> 'Files[KnownFile]':
         """Follows a possible module path, e.g. `shop/v1/shop_rbt`
         or `./backend/db`, to its file, met the way this walk has
         it, recording what the import observed in `dependencies`,
-        once per module path. Which file is at the module path joins
+        once per module path, completed the way `language`, the
+        importing file's, says. Which file is at the module path joins
         `resolutions`, which spares finding it again; there is no
         file at a module path when no root has one, which is what
         code outside the roots, such as the standard library, and
@@ -621,6 +813,7 @@ class Files(Generic[KnownFile]):
         if module_path not in files.resolutions:
             filename = await _try_resolve_module_path(
                 module_path,
+                language=language,
                 roots=files.roots,
             )
             if filename is not None:
@@ -653,57 +846,6 @@ class Files(Generic[KnownFile]):
                 }
             ),
         )
-
-
-@dataclass(frozen=True, kw_only=True)
-class Parse:
-    """One file's bytes parsed."""
-
-    # The decoded text, as Python reads the bytes: the encoding a
-    # coding declaration or a byte order mark declares is honored.
-    text: str
-
-    # The text's syntax.
-    syntax: ast.Module
-
-    @classmethod
-    def from_bytes(
-        cls,
-        source: bytes,
-        *,
-        digest: Digest,
-        modified: Timestamp,
-    ) -> 'Parse | Unparseable':
-        """Returns a file's bytes parsed, and `Unparseable` for bytes
-        that will not decode or will not parse, half-written being
-        the normal state of a file somebody is typing into. `digest`
-        is of the bytes, which the caller has in hand."""
-        try:
-            encoding, _ = tokenize.detect_encoding(io.BytesIO(source).readline)
-            text = source.decode(encoding)
-            return cls(text=text, syntax=ast.parse(text))
-        except (SyntaxError, ValueError) as error:
-            return Unparseable(digest=digest, modified=modified, error=error)
-
-
-@dataclass(frozen=True, kw_only=True)
-class Unparseable:
-    """One file's bytes that would not decode or parse."""
-
-    # Of the bytes, saying whether parsing them again would say
-    # anything new.
-    digest: Digest
-
-    # When the bytes were last modified, from the open file they
-    # came from.
-    modified: Timestamp
-
-    # Why: the error decoding or parsing raised, e.g. a
-    # `SyntaxError` for invalid syntax, a `UnicodeDecodeError`, which
-    # is a `ValueError`, for bytes the declared encoding will not
-    # decode, and a plain `ValueError` for bytes `ast` rejects before
-    # parsing, such as ones holding a null byte.
-    error: SyntaxError | ValueError
 
 
 async def _walk(
@@ -864,7 +1006,12 @@ async def _walk(
 
             digest = hashlib.sha256(source).digest()
 
-            parse = Parse.from_bytes(source, digest=digest, modified=modified)
+            parse = Parse.from_bytes(
+                source,
+                language=_language_of(filename),
+                digest=digest,
+                modified=modified,
+            )
             if isinstance(parse, Unparseable):
                 # Bytes that will not parse right now, possible if our
                 # walk is racing with a concurrent modification to the
