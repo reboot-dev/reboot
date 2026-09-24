@@ -55,6 +55,11 @@ from reboot.cli.common.transpile import (
     auto_transpile,
     ensure_can_auto_transpile,
 )
+from reboot.cli.common.type_check import (
+    missing_mypy,
+    mypy_installed,
+    type_check,
+)
 from reboot.cli.common.watch import FileWatcher, file_watcher
 from reboot.controller.plan_makers import validate_num_servers
 from reboot.dashboard.backend.constants import (
@@ -322,6 +327,16 @@ def _register_dev_run(parser: ArgumentParser):
         "TypeScript files, e.g., 'npx tsc'",
         default=None,
         non_empty_string=True,
+    )
+
+    parser.subcommand('dev run').add_argument(
+        '--type-check',
+        type=bool,
+        default=True,
+        help="whether or not to type-check a '--python' application, and "
+        "the code of yours that it imports, with mypy before every "
+        "(re)start, and start it only once mypy reports no errors; needs "
+        "mypy installed alongside the application",
     )
 
     parser.subcommand('dev run').add_argument(
@@ -1215,6 +1230,11 @@ async def dev_run(
             )
         )
 
+    # Likewise, a Python application runs without mypy, so this only
+    # says that it starts without a type-check.
+    if args.python and args.type_check and not mypy_installed():
+        terminal.warn(missing_mypy())
+
     tls_args = [args.tls_certificate, args.tls_key, args.tls_root_certificate]
 
     if any(tls_args) and not all(tls_args):
@@ -1992,6 +2012,43 @@ async def __dev_run(
 
                 if not await aiofiles.os.path.isfile(application):
                     terminal.fail(f"Missing application at '{application}'")
+
+                # Type-check a Python application, and start it only
+                # once mypy reports no errors.
+                if args.python and args.type_check and mypy_installed():
+                    # `--watch` need not cover `application`, so watch
+                    # it for the modification that the wait below ends
+                    # with.
+                    async with watcher.watch(
+                        [application]
+                    ) as application_event_task:
+                        if not await type_check(
+                            subprocesses,
+                            application,
+                            generated_directory=generate_python_directory,
+                        ):
+                            terminal.warn(
+                                '\n'
+                                'Type-check failed ... waiting for modification'
+                                '\n'
+                            )
+                            completed = await _wait_for_first_completed(
+                                application_event_task,
+                                watch_event_task,
+                                env_file_event_task,
+                                protos_event_task,
+                                rc_file_event_task,
+                            )
+                            if rc_file_event_task in completed:
+                                return None
+                            if protos_event_task in completed:
+                                needs_proto_compile = True
+                            terminal.info(
+                                '\n'
+                                'Application modified; restarting ... '
+                                '\n'
+                            )
+                            continue
 
                 launcher: Optional[str] = None
                 if args.python:
