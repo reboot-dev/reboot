@@ -66,6 +66,17 @@ py_library(
 )
 
 py_library(
+    name = "type_check_py",
+    srcs = ["type_check.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":subprocesses_py",
+        ":terminal_py",
+    ],
+)
+
+py_library(
     name = "watch_py",
     srcs = ["watch.py"],
     srcs_version = "PY3",

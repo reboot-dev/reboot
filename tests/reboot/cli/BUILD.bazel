@@ -61,6 +61,18 @@ py_test(
 )
 
 py_test(
+    name = "type_check_tests_py",
+    srcs = [
+        "type_check_tests.py",
+    ],
+    main = "type_check_tests.py",
+    deps = [
+        "//reboot/cli/common:subprocesses_py",
+        "//reboot/cli/common:type_check_py",
+    ],
+)
+
+py_test(
     name = "serve_tests_py",
     srcs = [
         "serve_tests.py",
