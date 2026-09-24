@@ -104,6 +104,25 @@ const SCALAR_NAMES: Record<schema_pb.Scalar, string> = {
   [schema_pb.Scalar.ANY]: "any",
 };
 
+// One member of a `Literal[...]` as the JSON value it is: `"a"`, `1`,
+// `true` or `null`. Keyed by every arm, so a new one does not compile
+// until it is spelled here.
+const formatLiteral = (literal: schema_pb.Literal): string => {
+  const value = literal.value;
+  switch (value.case) {
+    case "string":
+      return JSON.stringify(value.value);
+    case "number":
+      return String(value.value);
+    case "boolean":
+      return String(value.value);
+    case "null":
+      return "null";
+    case undefined:
+      return "null";
+  }
+};
+
 // A type written the way its author would write it: a reference by
 // the model's class name, a list as `Item[]`, a dict as
 // `Record<string, T>`, literals as `"a" | "b"`, an optional as
@@ -119,9 +138,7 @@ export const formatType = (type: schema_pb.Type | undefined): string => {
     case "map":
       return `Record<string, ${formatType(form.value.value)}>`;
     case "literals":
-      return form.value.values
-        .map((value) => JSON.stringify(value))
-        .join(" | ");
+      return form.value.values.map(formatLiteral).join(" | ");
     case "reference":
       return shortNameOfTypeName(form.value.name);
     case "optional":

@@ -13,6 +13,7 @@ import inspect
 import json
 import types
 import typing
+from google.protobuf.struct_pb2 import NULL_VALUE
 from pydantic_core import PydanticUndefined, to_jsonable_python
 from rbt.v1alpha1.api import schema_pb2
 from rbt.v1alpha1.api.schema_pb2 import (
@@ -51,6 +52,48 @@ from typing import (
 # model's module and class name. Immutable: reaching one more means
 # holding the mapping a function below returned.
 Schemas = Mapping[str, Schema]
+
+
+def literal_value(literal: object, *, path: str) -> schema_pb2.Literal:
+    """A member of a `Literal[...]` as the JSON value it is: a string,
+    a number, a boolean or `null`. `path` names the property in a
+    failure: a `Literal` may also hold bytes or an enum's members,
+    which are no JSON value."""
+    if literal is None:
+        return schema_pb2.Literal(null=NULL_VALUE)
+    # A `bool` is an `int`, so it is told first.
+    if isinstance(literal, bool):
+        return schema_pb2.Literal(boolean=literal)
+    if isinstance(literal, int):
+        return schema_pb2.Literal(number=literal)
+    if isinstance(literal, str):
+        return schema_pb2.Literal(string=literal)
+    fail(
+        f"Unexpected literal `{literal!r}` at '{path}'; a `Literal` "
+        "may hold strings, integers, booleans and `None`"
+    )
+
+
+def literal_of(member: schema_pb2.Literal) -> str | int | float | bool | None:
+    """A member of a `Literal[...]`, as `literal_value` read it, back
+    as the Python value it is."""
+    kind = member.WhichOneof('value')
+    if kind == 'null':
+        return None
+    if kind == 'boolean':
+        return member.boolean
+    if kind == 'number':
+        return (
+            int(member.number) if member.number.is_integer() else member.number
+        )
+    assert kind == 'string', f'Expecting a literal, not {member}'
+    return member.string
+
+
+def _literals(literals: tuple[object, ...], *, path: str) -> Literals:
+    return Literals(
+        values=[literal_value(literal, path=path) for literal in literals],
+    )
 
 
 def reference_name(model: type[Model]) -> str:
@@ -350,23 +393,22 @@ def _schema_of(
                     )
                 )
             elif inner_origin is Literal:
-                literal_args = get_args(inner_type)
-
-                # Verify all literal values are strings.
-                for literal_value in literal_args:
-                    if not isinstance(literal_value, str):
-                        fail(
-                            f"Unexpected literal `{literal_value}` for property "
-                            f"`{field_name}`; only string literals are "
-                            f"currently supported"
-                        )
-
                 schema.properties.append(
                     _property(
-                        field_name, tag,
-                        Type(literals=Literals(values=literal_args)), required,
-                        optional, description=description, default=default,
-                        constraints=constraints, deprecated=deprecated
+                        field_name,
+                        tag,
+                        Type(
+                            literals=_literals(
+                                get_args(inner_type),
+                                path=f"{path}.{field_name}",
+                            ),
+                        ),
+                        required,
+                        optional,
+                        description=description,
+                        default=default,
+                        constraints=constraints,
+                        deprecated=deprecated,
                     )
                 )
             elif isinstance(inner_type,
@@ -440,18 +482,12 @@ def _schema_of(
                     schemas=schemas,
                 )
             elif value_origin is Literal:
-                literal_args = get_args(value_type)
-
-                # Verify all literal values are strings.
-                for literal_value in literal_args:
-                    if not isinstance(literal_value, str):
-                        fail(
-                            f"Unexpected literal `{literal_value}` for the "
-                            f"'dict' at '{path}'; only string literals are "
-                            "currently supported"
-                        )
-
-                value = Type(literals=Literals(values=literal_args))
+                value = Type(
+                    literals=_literals(
+                        get_args(value_type),
+                        path=f"{path}.[value]",
+                    ),
+                )
             # NOTE: Discriminated unions are not supported inside `dict` values
             # because Pydantic only allows discriminators on direct model fields.
             # `Union` types here would only be `Optional[T]`, which is not supported
@@ -498,18 +534,12 @@ def _schema_of(
                     item_type, f"{path}.[item]", schemas=schemas
                 )
             elif item_origin is Literal:
-                literal_args = get_args(item_type)
-
-                # Verify all literal values are strings.
-                for literal_value in literal_args:
-                    if not isinstance(literal_value, str):
-                        fail(
-                            f"Unexpected literal `{literal_value}` for the "
-                            f"list at '{path}'; only string literals are "
-                            "currently supported"
-                        )
-
-                item = Type(literals=Literals(values=literal_args))
+                item = Type(
+                    literals=_literals(
+                        get_args(item_type),
+                        path=f"{path}.[item]",
+                    ),
+                )
             # NOTE: Discriminated unions are not supported inside `list` items
             # because Pydantic only allows discriminators on direct model fields.
             # `Union` types here would only be `Optional[T]`, which is not supported

@@ -406,6 +406,7 @@ py_library(
     deps = [
         ":api_py",
         ":fail_py",
+        ":pydantic_schema_py",
         requirement("pydantic"),
         requirement("aiofiles"),
     ],

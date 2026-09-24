@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package rbt.v1alpha1.api;
 
+import "google/protobuf/struct.proto";
+
 // The schema of a model an API declares, as a grammar: the closed set
 // of forms Reboot knows how to generate for and describe. What
 // `rbt generate` prints proto from, and what the dashboard describes
@@ -42,9 +44,31 @@ message Map {
   Type value = 1;
 }
 
-// Represents a `Literal[...]` of strings, one of which the value is.
+// Represents one member of a `Literal[...]`: the JSON value it is,
+// which is one with no structure of its own, since a `Literal` may
+// hold a string, an integer, a boolean or `None` and never a list or
+// a dict. Not a `google.protobuf.Value`, which may be either.
+message Literal {
+  oneof value {
+    string string = 1;
+    // A number, which JSON has one kind of: what an integer member
+    // is, and what a JSON number can hold, which is not every
+    // integer.
+    double number = 2;
+    bool boolean = 3;
+    google.protobuf.NullValue null = 4;
+  }
+}
+
+// Represents a `Literal[...]`, one of whose members the value is.
 message Literals {
-  repeated string values = 1;
+  // What was the members as strings, which is all a `Literal` was
+  // taken to hold.
+  reserved 1;
+
+  // The members, in declaration order, which is the order generated
+  // code numbers them in.
+  repeated Literal values = 2;
 }
 
 // Represents another model, by the name its schema is filed under:

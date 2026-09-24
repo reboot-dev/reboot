@@ -50,7 +50,7 @@ from typing import Mapping, Optional
 # a file that has not changed is otherwise carried forward as an
 # earlier reading described it, which never says the new thing, and
 # whose digest no code generated since records.
-API_READING_VERSION = 2
+API_READING_VERSION = 3
 
 
 @dataclass(frozen=True, kw_only=True)
