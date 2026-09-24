@@ -1883,11 +1883,18 @@ async def _walk_and_analyze(
     now and what changed; and `None` for an analysis that reproduces
     exactly what `known` already records, which writes nothing.
     """
-    unchanged, parsed, _, _ = await _walk(
+    unchanged, changed, _, _ = await _walk(
         entries=[application],
         roots=roots,
         known=known,
     )
+
+    # The code watcher walks Python files only, so every file read
+    # is a parsed one.
+    parsed: dict[Path, ParsedFile] = {}
+    for filename, file in changed.items():
+        assert isinstance(file, ParsedFile), 'Expecting a Python file'
+        parsed[filename] = file
 
     # A fresh pyright for every analysis, so that it reads every
     # file the way the disk has it right now: generated code,

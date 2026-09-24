@@ -16,10 +16,15 @@ py_test(
 py_test(
     name = "api_reader_tests_py",
     srcs = ["api_reader_tests.py"],
-    data = glob(["api/**"]),
+    data = glob(["api/**"]) + [
+        "//tests/reboot:echo.proto",
+        "//tests/reboot:echo_rbt.golden.py",
+    ],
     main = "api_reader_tests.py",
     deps = [
+        "//reboot:api_digest_py",
         "//reboot/dashboard/backend:api_reader_py",
+        "//reboot/dashboard/backend:code_watcher_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:api_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:schema_py_proto",
     ],
@@ -175,10 +180,38 @@ genrule(
     tools = ["//reboot/dashboard/backend:api_reader"],
 )
 
+# The same, over the `.proto` among the API files.
+genrule(
+    name = "proto_state_types",
+    srcs = glob(["api/**"]),
+    outs = ["proto_state_types.ts"],
+    cmd = "OUT=$$PWD/$@ && " +
+          "READER=$$PWD/$(location //reboot/dashboard/backend:api_reader) && " +
+          "cd $$(dirname $(location api/shop/v1/shop.py))/../../.. && " +
+          "echo 'export default ' > $$OUT && " +
+          "$$READER api shop/v1/depot.proto >> $$OUT",
+    tools = ["//reboot/dashboard/backend:api_reader"],
+)
+
+# And over the `.proto` it imports, which describes what it refers to.
+genrule(
+    name = "proto_parts_state_types",
+    srcs = glob(["api/**"]),
+    outs = ["proto_parts_state_types.ts"],
+    cmd = "OUT=$$PWD/$@ && " +
+          "READER=$$PWD/$(location //reboot/dashboard/backend:api_reader) && " +
+          "cd $$(dirname $(location api/shop/v1/shop.py))/../../.. && " +
+          "echo 'export default ' > $$OUT && " +
+          "$$READER api shop/v1/parts.proto >> $$OUT",
+    tools = ["//reboot/dashboard/backend:api_reader"],
+)
+
 ts_project(
     name = "link_properties_to_data_types_test_ts",
     srcs = [
         "link_properties_to_data_types.test.ts",
+        ":proto_parts_state_types.ts",
+        ":proto_state_types.ts",
         ":state_types.ts",
     ],
     declaration = True,

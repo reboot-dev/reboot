@@ -2,6 +2,17 @@ load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
 load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "js_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 
+# The `.proto` files themselves, for whoever reads a `.proto` that
+# imports them, such as a dashboard run on the dashboard's own API.
+filegroup(
+    name = "protos",
+    srcs = [
+        "feature.proto",
+        "grammar.proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 proto_library(
     name = "grammar_proto",
     srcs = [":grammar.proto"],

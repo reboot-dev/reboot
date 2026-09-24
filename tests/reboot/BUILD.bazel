@@ -891,6 +891,8 @@ py_test(
 )
 
 exports_files([
+    "echo.proto",
+    "echo_rbt.golden.py",
     "greeter_rbt.golden.py",
     "index.html.j2",
     "ping_api_rbt.golden.py",

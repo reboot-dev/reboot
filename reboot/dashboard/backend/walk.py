@@ -1,7 +1,8 @@
 """Walks the developer's files: reads and parses each file the
 entries reach through their imports, records what each parse
 observed, and carries forward what an earlier walk already parsed
-when the file is unchanged.
+when the file is unchanged. A `.proto` among the entries is read and
+digested, never parsed: `protoc` parses it when the file is read.
 """
 import aiofiles
 import aiofiles.os
@@ -39,6 +40,14 @@ GENERATED_SUFFIXES = ('_rbt.py', '_pb2.py', '_pb2_grpc.py')
 # Every file the developer might have written a servicer in, which is
 # the rule `rbt generate` and `rbt dev run` both use for source.
 SOURCE_GLOB = '**/*.py'
+
+# Every file the developer might have declared an API in as protobuf,
+# which is the rule `rbt generate` uses for them.
+PROTO_GLOB = '**/*.proto'
+
+# What tells a `.proto` from a Python file: read and digested by the
+# walk, parsed by `protoc`.
+PROTO_SUFFIX = '.proto'
 
 
 def _modified_at(path: Path) -> Timestamp:
@@ -270,6 +279,30 @@ class ParsedFile:
     modified: Timestamp
 
 
+@dataclass(frozen=True, kw_only=True)
+class ProtoFile:
+    """One `.proto` the walk read: enough to say whether it must be
+    read again, and nothing parsed, since `protoc` parses it when the
+    file is read. Nothing in it is followed: what it imports is
+    `protoc`'s to find."""
+
+    # The file this is, in the spelling `_standardized_path` returns.
+    filename: Path
+
+    # Of the bytes the file held, saying whether reading it again
+    # would say anything new.
+    digest: Digest
+
+    # Nothing, since no import is followed; see
+    # `ParsedFile.dependencies`. Here so that a `.proto` is carried
+    # the way any other file is.
+    dependencies: Mapping[str, Dependency]
+
+    # When the bytes were last modified, from the open file they
+    # came from.
+    modified: Timestamp
+
+
 class KnownFileProtocol(Protocol):
     """What the walk needs of a file a previous iteration recorded:
     enough to say whether it must be read again. Whatever else the
@@ -331,17 +364,19 @@ class Files(Generic[KnownFile]):
     # analyzed again.
     known: Mapping[Path, KnownFile]
 
-    # Parsed this iteration, not yet analyzed. Keyed by the spelling
-    # `_standardized_path` returns, like every map here, so that every
-    # route to one file, through a relative import, an absolute one,
-    # or a symlink, finds the same entry.
-    parsed: Mapping[Path, ParsedFile]
+    # Read this iteration, and to be read again by whoever calls: a
+    # Python file parsed, its imports followed, to be analyzed; a
+    # `.proto` read and digested, to be read by `protoc`. Keyed by
+    # the spelling `_standardized_path` returns, like every map here,
+    # so that every route to one file, through a relative import, an
+    # absolute one, or a symlink, finds the same entry.
+    changed: Mapping[Path, ParsedFile | ProtoFile]
 
     # Files whose bytes are unchanged since the previous iteration,
     # each carrying the analysis it got when it last changed. Being
     # here says only that: whether the carried analysis still stands
     # is decided at the end of the walk, where the ones that need to
-    # be reparsed join `parsed` and the rest become the iteration's
+    # be reparsed join `changed` and the rest become the iteration's
     # `known`.
     unchanged: Mapping[Path, KnownFile]
 
@@ -362,7 +397,7 @@ class Files(Generic[KnownFile]):
     # those bytes. What a cycle of imports meets: the file is
     # recorded as a dependency by its digest, already in hand,
     # rather than read again or recursed into forever. Only grows: a
-    # finished file is found in `unchanged` or `parsed` before this
+    # finished file is found in `unchanged` or `changed` before this
     # is ever consulted.
     visiting: Mapping[Path, Digest]
 
@@ -396,7 +431,7 @@ class Files(Generic[KnownFile]):
             known=MappingProxyType(
                 {file.filename: file for file in known.values()}
             ),
-            parsed=MappingProxyType({}),
+            changed=MappingProxyType({}),
             unparseable=MappingProxyType({}),
             unreadable=MappingProxyType({}),
             unchanged=MappingProxyType({}),
@@ -405,15 +440,19 @@ class Files(Generic[KnownFile]):
             dependencies=MappingProxyType({}),
         )
 
-    def with_parsed_file(self, parsed: ParsedFile) -> 'Files[KnownFile]':
-        """Returns this with one more file parsed, into `parsed`."""
-        # A file is parsed or unchanged, never both.
-        assert parsed.filename not in self.unchanged
+    def with_changed_file(
+        self,
+        file: ParsedFile | ProtoFile,
+    ) -> 'Files[KnownFile]':
+        """Returns this with one more file read this iteration, into
+        `changed`."""
+        # A file is changed or unchanged, never both.
+        assert file.filename not in self.unchanged
         return replace(
             self,
-            parsed=MappingProxyType({
-                **self.parsed,
-                parsed.filename: parsed,
+            changed=MappingProxyType({
+                **self.changed,
+                file.filename: file,
             }),
         )
 
@@ -455,8 +494,8 @@ class Files(Generic[KnownFile]):
     ) -> 'Files[KnownFile]':
         """Returns this with a file the previous iteration analyzed
         verified unchanged, the analysis it carries along with it."""
-        # A file is parsed or unchanged, never both.
-        assert file.filename not in self.parsed
+        # A file is changed or unchanged, never both.
+        assert file.filename not in self.changed
         return replace(
             self,
             unchanged=MappingProxyType(
@@ -489,7 +528,7 @@ class Files(Generic[KnownFile]):
         # Two files sitting in `unchanged` can not disagree about
         # the dependency's bytes: the recorded digest came from the
         # same walk that placed the dependency in `known`, and any
-        # change since moved the dependency to `parsed`.
+        # change since moved the dependency to `changed`.
         assert (
             filename is None or str(filename) != dependency.filename or
             filename not in self.unchanged or
@@ -507,7 +546,7 @@ class Files(Generic[KnownFile]):
         unchanged, its carried analysis along, when its bytes are
         the same as the previous iteration's; or read and parsed,
         its own imports followed depth first and recorded as its
-        dependencies, joining `parsed`. Bytes that will not decode
+        dependencies, joining `changed`. Bytes that will not decode
         or parse come back digested all the same, joining
         `unparseable`; a file that cannot be read comes back as
         `None`, joining `unreadable`. `filename`
@@ -520,7 +559,7 @@ class Files(Generic[KnownFile]):
 
         files = self
 
-        found = files.parsed.get(filename) or files.unchanged.get(filename)
+        found = files.changed.get(filename) or files.unchanged.get(filename)
         if found is not None:
             # We've either already parsed this file or determined it
             # hasn't been changed so stop the recursion and return.
@@ -557,6 +596,16 @@ class Files(Generic[KnownFile]):
                 # import starts another iteration.
                 files = await files.lookup_or_parse_module_path(module_path)
             return known.digest, files
+
+        if filename.suffix == PROTO_SUFFIX:
+            return digest, files.with_changed_file(
+                ProtoFile(
+                    filename=filename,
+                    digest=digest,
+                    dependencies=MappingProxyType({}),
+                    modified=modified,
+                ),
+            )
 
         parse = Parse.from_bytes(source, digest=digest, modified=modified)
         if isinstance(parse, Unparseable):
@@ -598,7 +647,7 @@ class Files(Generic[KnownFile]):
             modified=modified,
         )
 
-        return digest, files.with_parsed_file(parsed)
+        return digest, files.with_changed_file(parsed)
 
     async def lookup_or_parse_module_path(
         self,
@@ -711,15 +760,20 @@ async def _walk(
     entries: Sequence[Path],
     roots: Sequence[Path],
     known: Mapping[Path, KnownFile],
-) -> tuple[dict[Path, KnownFile], Mapping[Path, ParsedFile], Mapping[
-    Path, Unparseable], Mapping[Path, OSError]]:
+) -> tuple[
+    dict[Path, KnownFile],
+    Mapping[Path, ParsedFile | ProtoFile],
+    Mapping[Path, Unparseable],
+    Mapping[Path, OSError],
+]:
     """Returns the developer's files read for one iteration, as four
     maps keyed by the spelling `_standardized_path` returns:
     `unchanged`, the files whose carried analyses still stand;
-    `parsed`, the files to be analyzed; `unparseable`, the files
-    read that would not decode or parse, by digest and the error;
-    and `unreadable`, the files that could not be read, by the
-    error. Whoever calls analyzes the parsed ones and merges what
+    `changed`, the files read this iteration, a Python file parsed
+    and to be analyzed, a `.proto` digested and to be read by
+    `protoc`; `unparseable`, the files read that would not decode or
+    parse, by digest and the error; and `unreadable`, the files that
+    could not be read, by the error. Whoever calls analyzes the parsed ones and merges what
     comes back with `unchanged`, which is the `known` a next
     iteration starts from.
 
@@ -845,7 +899,7 @@ async def _walk(
     # reanalyzed is read and parsed again, and the rest are just
     # returned as `unchanged`.
     unchanged: dict[Path, KnownFile] = {}
-    parsed = dict(files.parsed)
+    changed = dict(files.changed)
     unparseable = dict(files.unparseable)
     unreadable = dict(files.unreadable)
     for filename, file in files.unchanged.items():
@@ -864,6 +918,15 @@ async def _walk(
 
             digest = hashlib.sha256(source).digest()
 
+            if filename.suffix == PROTO_SUFFIX:
+                changed[filename] = ProtoFile(
+                    filename=file.filename,
+                    digest=digest,
+                    dependencies=MappingProxyType({}),
+                    modified=modified,
+                )
+                continue
+
             parse = Parse.from_bytes(source, digest=digest, modified=modified)
             if isinstance(parse, Unparseable):
                 # Bytes that will not parse right now, possible if our
@@ -876,7 +939,7 @@ async def _walk(
                 unparseable[filename] = parse
                 continue
 
-            parsed[filename] = ParsedFile(
+            changed[filename] = ParsedFile(
                 filename=file.filename,
                 digest=digest,
                 # Since this file was unchanged we just need the latest
@@ -894,4 +957,4 @@ async def _walk(
         else:
             unchanged[filename] = file
 
-    return unchanged, parsed, unparseable, unreadable
+    return unchanged, changed, unparseable, unreadable
