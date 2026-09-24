@@ -5251,7 +5251,12 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> IMPORT_typing.AsyncIterator[{% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='{{ method.proto.name | to_snake }}',
+                )
                 {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -5854,9 +5859,11 @@ class {{ client.proto.state_name }}:
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
             ) -> {{ client.proto.state_name }}.WeakReference._UntilChangesSatisfies[{{ client.proto.state_name }}.State]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     context,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='read',
                 )
 
                 async def callable():
@@ -5930,9 +5937,11 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.WeakReference._UntilChangesSatisfies[{% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='{{ method.proto.name | to_snake }}',
                 )
 
                 {% if method.has_non_none_request %}
@@ -6069,7 +6078,14 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='{{ method.proto.name | to_snake }}',
+                )
                 {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -6218,9 +6234,14 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='{{ method.proto.name | to_snake }}',
+                )
 
                 {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
@@ -6396,7 +6417,14 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Task:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='{{ method.proto.name | to_snake }}',
+                )
                 {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.

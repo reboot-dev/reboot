@@ -111,6 +111,7 @@ py_library(
         requirement("grpcio"),
         ":aborted_py",
         ":caller_id_py",
+        ":external_py",
         ":headers_py",
         ":idempotency_py",
         ":tasks_py",
@@ -156,7 +157,6 @@ py_library(
     deps = [
         requirement("grpcio"),
         ":caller_id_py",
-        ":contexts_py",
         ":idempotency_py",
         ":resolvers_py",
         "//reboot/aio/internals:channel_manager_py",
