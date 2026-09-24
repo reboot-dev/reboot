@@ -435,6 +435,84 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
 
         await Bank.PostSignUpTask.retrieve(context, task_id=response.task_id)
 
+    async def test_schedule_with_wrong_context_error_message(self) -> None:
+        # `schedule()` is only for a `writer` or `transaction`. With
+        # any other context the generated method raises a `TypeError`
+        # whose message names the kinds of method `schedule()` is
+        # allowed from and the call to use instead (`spawn()`), rather
+        # than only the context types involved.
+        await self.rbt.up(Application(servicers=[MyEchoServicer]))
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        with self.assertRaises(TypeError) as e:
+            # Deliberately the wrong kind of context, which `mypy`
+            # also rejects.
+            await General.ref('general').schedule().Writer(
+                context
+            )  # type: ignore[call-overload]
+
+        self.assertIn(
+            '`schedule()` can not be used from outside of Reboot: '
+            '`schedule(...).writer(...)` was passed `ExternalContext` but '
+            'expects `TransactionContext`. Use `spawn()` instead: replace '
+            '`.schedule(` with `.spawn(`',
+            str(e.exception),
+        )
+        self.assertIn('`mypy`', str(e.exception))
+
+    async def test_spawn_in_transaction_error_message(self) -> None:
+        # Inside a servicer, `spawn()` from a `transaction` raises the
+        # same `TypeError`, and its message is included in the
+        # `Unknown` error the caller receives.
+
+        class SpawnInTransactionServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def constructor_writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            async def transaction(
+                self,
+                context: TransactionContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                # Deliberately the wrong kind of context, which `mypy`
+                # also rejects.
+                await self.ref().spawn().Workflow(
+                    context
+                )  # type: ignore[call-overload]
+                return GeneralResponse()
+
+        await self.rbt.up(
+            Application(servicers=[SpawnInTransactionServicer]),
+        )
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        g, _ = await General.ConstructorWriter(context)
+
+        with self.assertRaises(General.TransactionAborted) as e:
+            await g.Transaction(context)
+
+        self.assertEqual(type(e.exception.error), errors_pb2.Unknown)
+        assert e.exception.message is not None
+        self.assertIn(
+            '`spawn()` can not be used from within a `transaction`: '
+            '`spawn(...).workflow(...)` was passed `TransactionContext` '
+            'but expects one of `WorkflowContext`, `ExternalContext`. '
+            'Use `schedule()` instead: replace `.spawn(` with `.schedule(`',
+            e.exception.message,
+        )
+
     async def test_reactive_workflow_task(self) -> None:
         revision = await self.rbt.up(Application(servicers=[MyEchoServicer]))
 
