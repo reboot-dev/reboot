@@ -142,6 +142,12 @@ differ because of Codex limitations:
   hooks can only _deny_ a tool, never approve one, so there is no
   equivalent — reduce prompts with Codex's own `approval_policy` /
   `sandbox_mode` (e.g. `workspace-write` with network access) instead.
+- **Hooks must be trusted once.** Codex skips a plugin's bundled
+  hooks, the skill reminder and the type-check hook included, until
+  you review and trust their exact definitions: run `/hooks` in the
+  Codex TUI after installing (and again after a plugin update that
+  changes a hook). Claude Code runs plugin hooks as soon as the
+  plugin is enabled.
 
 ## Usage
 
@@ -169,6 +175,22 @@ library) instead of inferring Reboot behavior from trial and error.
 See [`hooks-handlers/remind.sh`](hooks-handlers/remind.sh); it works
 identically in Claude Code and Codex.
 
+## Type-check hook
+
+The skills say a Python change is done only once
+`uv run mypy backend/ tests/` reports no errors, and the plugin's
+`Stop` hook enforces it: when the agent is about to end its turn
+inside a Reboot project whose `.py` files changed since the last run
+with no errors, the hook runs that command from the project root
+and, if mypy reports errors, blocks the stop and gives the agent the
+output to fix before its turn ends. It blocks one stop per turn; if
+mypy still reports errors at the next stop, the turn ends and a
+warning says so, so the agent can ask for help. The check runs in a
+project that has a `.mypy.ini` and whose `rbt generate` output
+directory exists.
+See [`hooks-handlers/type-check.sh`](hooks-handlers/type-check.sh);
+it works identically in Claude Code and Codex.
+
 ## Repository Structure
 
 ```
@@ -191,8 +213,9 @@ plugin/
 ├── hooks/
 │   ├── hooks.json            # hook registrations (Claude Code + Codex)
 │   └── auto-approve.sh       # Claude Code PreToolUse auto-approval
-├── hooks-handlers/           # SessionStart PATH prepend (Claude Code)
-│                             # and the skill reminder (both CLIs)
+├── hooks-handlers/           # SessionStart PATH prepend (Claude Code),
+│                             # the skill reminder and the Stop
+│                             # type-check hook (both CLIs)
 └── skills/
     └── <name>/
         ├── SKILL.md          # skill definition (YAML frontmatter)

@@ -32,3 +32,14 @@ py_test(
     },
     main = "remind_test.py",
 )
+
+py_test(
+    name = "type_check_test",
+    size = "small",
+    srcs = ["type_check_test.py"],
+    data = ["//reboot/plugin/hooks-handlers:type_check_sh"],
+    env = {
+        "TYPE_CHECK_SH": "$(location //reboot/plugin/hooks-handlers:type_check_sh)",
+    },
+    main = "type_check_test.py",
+)
