@@ -242,6 +242,64 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
             ] == ['SMALL', 'LARGE']
         )
 
+        [changed] = [
+            change.enum_changed
+            for change in await self._changelog_entries()
+            if change.HasField('enum_changed')
+        ]
+        self.assertEqual(changed.name, 'shop.v1.Size')
+        self.assertEqual(changed.package, 'shop.v1')
+        [value] = changed.values
+        self.assertEqual(value.name, 'LARGE')
+        self.assertTrue(value.HasField('added'))
+
+    async def test_a_property_joining_a_oneof_is_history(self) -> None:
+        """A field moved into a `oneof` is the same property, by tag
+        and type, so nothing happens to it; what happens is to the
+        `oneof`, whose members are not what they were."""
+        depot = self.directory / 'shop' / 'v1' / 'depot.proto'
+        depot.parent.mkdir(parents=True, exist_ok=True)
+        depot.write_text(
+            'syntax = "proto3";\n'
+            'package shop.v1;\n'
+            'import "rbt/v1alpha1/options.proto";\n'
+            'message Depot {\n'
+            '  option (rbt.v1alpha1.state) = {};\n'
+            '  oneof delivery {\n'
+            '    string truck = 1;\n'
+            '  }\n'
+            '  string courier = 2;\n'
+            '}\n'
+        )
+
+        await self._start_dashboard()
+        await self._wait_for_api(lambda api: len(_state_types_in(api)) == 1)
+
+        depot.write_text(
+            depot.read_text().replace(
+                '    string truck = 1;\n  }\n  string courier = 2;\n',
+                '    string truck = 1;\n    string courier = 2;\n  }\n',
+            )
+        )
+
+        await self._wait_for_api(
+            lambda api: list(
+                api.apis['shop/v1/depot.proto'].schemas['shop.v1.Depot'].
+                one_ofs[0].tags
+            ) == [1, 2]
+        )
+
+        [changed] = [
+            change.state_type_changed
+            for change in await self._changelog_entries()
+            if change.HasField('state_type_changed')
+        ]
+        self.assertEqual(list(changed.properties), [])
+        [one_of] = changed.one_ofs
+        self.assertEqual(one_of.name, 'delivery')
+        self.assertEqual(list(getattr(one_of.members, 'from')), [1])
+        self.assertEqual(list(one_of.members.to), [1, 2])
+
     async def test_a_burst_of_saves_reads_every_saved_file(self) -> None:
         """Files saved together are all read, however many of the
         saves the watch heard: what to read is decided by walking

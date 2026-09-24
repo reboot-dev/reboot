@@ -229,6 +229,10 @@ message Change {
     CodeAdded code_added = 7;
     CodeChanged code_changed = 8;
     CodeRemoved code_removed = 9;
+
+    EnumAdded enum_added = 10;
+    EnumChanged enum_changed = 11;
+    EnumRemoved enum_removed = 12;
   }
 }
 
@@ -296,6 +300,32 @@ message PropertyChange {
     DescriptionChanged description = 9;
     ConstraintsChanged constraints = 10;
     DeprecatedChanged deprecated = 11;
+  }
+}
+
+message OneOfAdded {}
+
+message OneOfRemoved {}
+
+// The members of a `oneof` are not what they were: the tags of the
+// properties that exclude each other, before and after.
+message MembersChanged {
+  repeated uint32 from = 1;
+  repeated uint32 to = 2;
+}
+
+// One `oneof` of a state model or data type, and one thing that
+// happened to it. One entry per thing. A `oneof` is known by its
+// name, having no tag of its own; its members are properties, whose
+// own changes are `PropertyChange`s.
+message OneOfChange {
+  string name = 1;
+
+  oneof change {
+    OneOfAdded added = 2;
+    OneOfRemoved removed = 3;
+    MembersChanged members = 4;
+    DescriptionChanged description = 5;
   }
 }
 
@@ -386,8 +416,8 @@ message StateModelRenamed {
 }
 
 // Never without something that changed: every change to a state
-// type is one of its methods, one of its properties, its
-// description or its state model's name.
+// type is one of its methods, one of its properties, one of its
+// `oneof`s, its description or its state model's name.
 message StateTypeChanged {
   string name = 1;
   string filename = 2;
@@ -395,6 +425,7 @@ message StateTypeChanged {
   repeated PropertyChange properties = 4;
   optional DescriptionChanged description = 5;
   optional StateModelRenamed state_model_renamed = 6;
+  repeated OneOfChange one_ofs = 7;
 }
 
 message StateTypeRemoved {
@@ -418,12 +449,13 @@ message DataTypeAdded {
 }
 
 // Never without something that changed: every change to a data type
-// is one of its properties or its description.
+// is one of its properties, one of its `oneof`s or its description.
 message DataTypeChanged {
   string name = 1;
   string filename = 2;
   repeated PropertyChange properties = 3;
   optional DescriptionChanged description = 4;
+  repeated OneOfChange one_ofs = 6;
 
   // The package the data type belongs to. Recorded rather than
   // derived from `name`, whose spelling depends on what declared
@@ -440,6 +472,59 @@ message DataTypeRemoved {
   // derived from `name`, whose spelling depends on what declared
   // the type: a Pydantic model's name carries its module, a proto
   // message's its package.
+  string package = 3;
+}
+
+message EnumValueAdded {}
+
+message EnumValueRemoved {}
+
+// One value of an enum, and one thing that happened to it. One entry
+// per thing.
+message EnumValueChange {
+  // What identifies the value: its number, which is what it is
+  // shipped as, so a rename keeps it and a renumber does not.
+  int32 number = 1;
+
+  // Its name now; for a removed value, the name it had.
+  string name = 2;
+
+  oneof change {
+    EnumValueAdded added = 3;
+    EnumValueRemoved removed = 4;
+    Renamed renamed = 5;
+    DescriptionChanged description = 6;
+    DeprecatedChanged deprecated = 7;
+  }
+}
+
+// An enum the API files declare.
+message EnumAdded {
+  // The enum's full proto name, e.g. "shop.v1.Item.Size".
+  string name = 1;
+  string filename = 2;
+
+  // The package the enum belongs to.
+  string package = 3;
+}
+
+// Never without something that changed: every change to an enum is
+// one of its values or its description.
+message EnumChanged {
+  string name = 1;
+  string filename = 2;
+  repeated EnumValueChange values = 3;
+  optional DescriptionChanged description = 4;
+
+  // The package the enum belongs to.
+  string package = 5;
+}
+
+message EnumRemoved {
+  string name = 1;
+  string filename = 2;
+
+  // The package the enum belongs to.
   string package = 3;
 }
 
