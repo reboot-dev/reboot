@@ -9,3 +9,9 @@ filegroup(
     srcs = ["session-start.sh"],
     visibility = ["//visibility:public"],
 )
+
+filegroup(
+    name = "type_check_sh",
+    srcs = ["type-check.sh"],
+    visibility = ["//visibility:public"],
+)
