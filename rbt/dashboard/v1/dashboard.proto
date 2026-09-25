@@ -1267,4 +1267,14 @@ message Reading {
   // description. Each is `external`. Empty for a Pydantic file, whose
   // models from elsewhere are described inline.
   map<string, rbt.v1alpha1.api.API> imported = 2;
+
+  // Represents the files outside the API directory that reading the
+  // file read, each with the digest it was read with: for a
+  // `.proto`, the files `protoc` read that an import led to; for a
+  // Python file, the modules it imports, resolved to their files;
+  // either way what the developer did not write, such as Reboot's
+  // own, or a shared package on the `PYTHONPATH`. The walk of the
+  // directory never finds these, so they are recorded so that a
+  // change to one, which upgrading Reboot is, reads the file again.
+  repeated File.Dependency external = 3;
 }

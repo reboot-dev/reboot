@@ -224,11 +224,18 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
             ['shop/v1/depot_rbt.py', 'shop/v1/parts_rbt.py'],
         )
         # The import of a file of the directory is a dependency the
-        # walk follows.
+        # walk follows; Reboot's own options are outside it.
         self.assertEqual(
             api.api_files['shop/v1/depot.proto'].
             dependencies['shop/v1/parts.proto'].filename,
             str(_standardized_path(parts)),
+        )
+        self.assertIn(
+            'options.proto',
+            [
+                os.path.basename(external.filename)
+                for external in api.api_files['shop/v1/depot.proto'].external
+            ],
         )
 
         # A second value, in the imported file only.

@@ -20,14 +20,16 @@ A Pydantic file is read with `reboot.pydantic_api.api_of`, the way
 import paths `rbt generate` gives it, and what it declares is read
 off its descriptor with `reboot.proto_api.api_of`.
 """
+import ast
 import asyncio
+import hashlib
 import importlib
 import os
 import sys
 import tempfile
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from google.protobuf.json_format import MessageToJson, Parse, ParseError
-from rbt.dashboard.v1.dashboard_pb2 import Reading
+from rbt.dashboard.v1.dashboard_pb2 import File, Reading
 from rbt.v1alpha1.api import api_pb2
 from reboot import proto_api
 from reboot.api import API
@@ -47,12 +49,50 @@ def _read_pydantic(directory: str, filename: str) -> Reading:
         filename.rsplit('.py', 1)[0].replace(os.sep, '.')
     )
 
+    # The modules the file imports from outside the directory, such
+    # as `reboot.api`, a shared package on the `PYTHONPATH` or an
+    # installed one, each with the digest of its file: the walk of
+    # the directory never finds these, so a change to one, which
+    # upgrading Reboot is, reads the file again. What the file names
+    # in an `import`, resolved to the module that was loaded, and
+    # not what those import in turn. Not the standard library, which
+    # changes with Python and not with the application.
+    names: set[str] = set()
+    with open(filename) as source:
+        for node in ast.walk(ast.parse(source.read())):
+            if isinstance(node, ast.Import):
+                names.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0:
+                assert node.module is not None
+                names.add(node.module)
+                names.update(
+                    f'{node.module}.{alias.name}' for alias in node.names
+                )
+    external: dict[str, File.Dependency] = {}
+    for name in sorted(names):
+        if name.partition('.')[0] in sys.stdlib_module_names:
+            continue
+        path = getattr(sys.modules.get(name), '__file__', None)
+        if path is None:
+            continue
+        path = os.path.realpath(path)
+        if path.startswith(os.path.realpath(directory) + os.sep):
+            continue
+        with open(path, 'rb') as external_file:
+            external[path] = File.Dependency(
+                filename=path,
+                digest=hashlib.sha256(external_file.read()).digest(),
+            )
+
     api = getattr(module, 'api', None)
     if not isinstance(api, API):
         # A file containing shared code declares no `api`.
-        return Reading()
+        return Reading(external=list(external.values()))
 
-    return Reading(api=api_of(api, filename=filename))
+    return Reading(
+        api=api_of(api, filename=filename),
+        external=list(external.values()),
+    )
 
 
 def _read_proto(directory: str, filename: str) -> Reading:
@@ -90,6 +130,26 @@ def _read_proto(directory: str, filename: str) -> Reading:
                 descriptor_set_file.read()
             ).file
 
+    # Every file but those of the API directory, which the walk finds
+    # itself, found the way `protoc` found it: under the first path
+    # that has it.
+    external: list[File.Dependency] = []
+    for file in files:
+        for proto_path in proto_paths:
+            path = os.path.join(proto_path, file.name)
+            if os.path.isfile(path):
+                if proto_path != directory:
+                    with open(path, 'rb') as external_file:
+                        external.append(
+                            File.Dependency(
+                                filename=os.path.realpath(path),
+                                digest=hashlib.sha256(
+                                    external_file.read(),
+                                ).digest(),
+                            ),
+                        )
+                break
+
     file = next(file for file in files if file.name == filename)
     api = proto_api.api_of(file, filename=filename)
 
@@ -124,7 +184,7 @@ def _read_proto(directory: str, filename: str) -> Reading:
         )
         unresolved |= set(proto_api.referenced_names(imported[declaring.name]))
 
-    return Reading(api=api, imported=imported)
+    return Reading(api=api, imported=imported, external=external)
 
 
 def read(api_directory: str, filename: str) -> Reading:

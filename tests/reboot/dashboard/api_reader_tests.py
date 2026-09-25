@@ -470,6 +470,55 @@ class ProtoAPIReaderTest(unittest.IsolatedAsyncioTestCase):
         # field of either names.
         self.assertNotIn('google/protobuf/descriptor.proto', read.imported)
 
+    async def test_the_files_read_outside_the_directory_are_said(self) -> None:
+        """What `protoc` read that the developer did not write, such
+        as Reboot's own options, which the walk of the API directory
+        never finds, so that a change to one reads the file again."""
+        read, error = await read_api_file(API_DIRECTORY, 'shop/v1/depot.proto')
+
+        self.assertIsNone(error)
+        assert read is not None
+
+        names = [
+            os.path.basename(dependency.filename)
+            for dependency in read.external
+        ]
+        self.assertIn('options.proto', names)
+        self.assertIn('empty.proto', names)
+        # A file of the API directory is the walk's to find.
+        self.assertNotIn('parts.proto', names)
+        for dependency in read.external:
+            self.assertTrue(os.path.isabs(dependency.filename))
+            self.assertEqual(len(dependency.digest), 32)
+
+    async def test_the_modules_read_outside_the_directory_are_said(
+        self,
+    ) -> None:
+        """What importing a Python file loaded that the developer did
+        not write, such as `reboot.api`, which the walk of the API
+        directory never finds, so that a change to one reads the file
+        again; not the standard library, and not a file of the
+        directory, which is the walk's to find."""
+        read, error = await read_api_file(API_DIRECTORY, 'shop/v1/shop.py')
+
+        self.assertIsNone(error)
+        assert read is not None
+
+        names = [
+            os.path.basename(dependency.filename)
+            for dependency in read.external
+        ]
+        self.assertIn('api.py', names)
+        self.assertNotIn('typing.py', names)
+        for dependency in read.external:
+            self.assertTrue(os.path.isabs(dependency.filename))
+            self.assertFalse(
+                dependency.filename.startswith(
+                    os.path.realpath(API_DIRECTORY) + os.sep,
+                ),
+            )
+            self.assertEqual(len(dependency.digest), 32)
+
     async def test_the_digest_is_of_what_is_described(self) -> None:
         """The digest generated code records is of the `API` the file
         is read into, the way a pydantic file's is: whatever the

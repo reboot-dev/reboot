@@ -78,9 +78,9 @@ class ReadFile:
     dependencies: Mapping[str, Dependency]
 
     # The files outside the API directory reading this file read:
-    # the `.proto` files an import led to that the developer did not
-    # write, such as Reboot's own. None for a Pydantic file, whose
-    # reader follows nothing beyond the directory.
+    # the `.proto` files an import led to, or the modules a Python
+    # file imports, that the developer did not write, such as
+    # Reboot's own; see `Reading.external`.
     external: tuple[Dependency, ...]
 
     # What the file declares, as `api_of` read it; `None` for a file
@@ -300,7 +300,7 @@ async def _walk_and_read(
             # change to one, which the walk never finds, reads this
             # file again. A file that could not be read records
             # none, and is read again when its own bytes change.
-            external=(),
+            external=tuple(read.external) if read is not None else (),
             api=(
                 read.api if read is not None and read.HasField('api') else None
             ),
