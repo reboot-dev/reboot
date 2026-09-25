@@ -1,3 +1,4 @@
+import argparse
 import os
 import tempfile
 import unittest
@@ -5,7 +6,10 @@ from reboot.cli.commands import dashboard
 from reboot.cli.common import cli
 from reboot.cli.common.directories import dot_rbt_directory
 from reboot.cli.common.rc import ArgumentParser
-from reboot.dashboard.backend.constants import DEFAULT_DASHBOARD_PORT
+from reboot.dashboard.backend.constants import (
+    DEFAULT_DASHBOARD_PORT,
+    ENVVAR_RBT_DASHBOARD_AGENT_RELAY_URL,
+)
 from tests.reboot.cli.mock_exit import mock_raise_instead_of_exit
 from unittest.mock import patch
 
@@ -13,7 +17,13 @@ from unittest.mock import patch
 @patch('argparse.ArgumentParser.exit', mock_raise_instead_of_exit)
 class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
 
-    def _parse(self, state_directory: str, *, rbtrc: str = 'generate api/'):
+    def _parse(
+        self,
+        state_directory: str,
+        *,
+        rbtrc: str = 'generate api/',
+        extra_args: list[str] | None = None,
+    ):
         rc_file = os.path.join(state_directory, '.rbtrc')
         with open(rc_file, 'w') as file:
             file.write(rbtrc + '\n')
@@ -24,7 +34,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 'rbt',
                 f'--state-directory={state_directory}',
                 'dashboard',
-            ],
+            ] + (extra_args or []),
         )
         args, _ = parser.parse_args()
         return args, parser
@@ -204,6 +214,29 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
             # `api/bank/v1/account.py`; the dashboard runs in the
             # working directory where that spelling resolves.
             self.assertEqual(env['RBT_API_DIRECTORY'], 'api/')
+
+    async def test_agent_relay_url_is_optional_and_isolated(self) -> None:
+        with tempfile.TemporaryDirectory() as state_directory:
+            args, parser = self._parse(
+                state_directory,
+                extra_args=['--agent-relay-url=wss://relay.example/agent'],
+            )
+            env = dashboard._dashboard_env(
+                args,
+                parser,
+                port=DEFAULT_DASHBOARD_PORT,
+                api_directory=dashboard._api_directory(parser),
+                application=dashboard._application(parser),
+                generated_directory=dashboard._generated_directory(parser),
+            )
+            self.assertEqual(
+                env[ENVVAR_RBT_DASHBOARD_AGENT_RELAY_URL],
+                'wss://relay.example/agent',
+            )
+
+    async def test_agent_relay_url_rejects_credentials(self) -> None:
+        with self.assertRaises(argparse.ArgumentTypeError):
+            dashboard._agent_relay_url('wss://secret@relay.example/agent')
 
 
 if __name__ == '__main__':

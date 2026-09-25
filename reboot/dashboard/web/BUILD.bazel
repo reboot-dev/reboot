@@ -9,6 +9,7 @@ ts_config(
 ts_project(
     name = "dashboard_ts",
     srcs = [
+        "src/agent_chat.tsx",
         "src/callgraph.ts",
         "src/changelog.ts",
         "src/constants.ts",
