@@ -58,9 +58,16 @@ export const sortedAPIs = (apis: APIs): api_pb.API[] =>
     .sort()
     .map((filename) => apis[filename]);
 
+// The APIs of the application's own files, in the same order: what
+// its state types are drawn from. An `external` API, imported and not
+// the developer's, is described so that what they refer to in it can
+// be seen, and is drawn as nothing of their own.
+export const ownAPIs = (apis: APIs): api_pb.API[] =>
+  sortedAPIs(apis).filter((api) => !api.external);
+
 // The schema of the model a `Reference` names, from whichever API
-// declares it, this file's or another's; none for a name no file of
-// the application declares, such as one of Reboot's own.
+// declares it, this file's or another's; none for a name no file
+// declares, such as one imported from a file nothing refers to.
 export const schemaOf = (
   apis: APIs,
   name: string
@@ -105,6 +112,9 @@ export interface LinkedDataType {
   id: string;
   // Which of the two it is, which is what its page calls it.
   kind: "data type" | "enum";
+  // Whether it is from a file outside the application's API, imported
+  // and not the developer's, which its page says.
+  external: boolean;
   name: string;
   package: string;
   filename: string;
@@ -559,6 +569,7 @@ export const linkDataTypes = ({ apis }: { apis: APIs }): LinkedDataType[] => {
       linkedDataTypesById.set(reference.name, {
         id: reference.name,
         kind: "data type",
+        external: api.external,
         name: schema?.name ?? "",
         package: schema?.package ?? "",
         filename: api.filename,
@@ -571,6 +582,7 @@ export const linkDataTypes = ({ apis }: { apis: APIs }): LinkedDataType[] => {
       linkedDataTypesById.set(name, {
         id: name,
         kind: "enum",
+        external: api.external,
         name: declared.name,
         package: declared.package,
         filename: api.filename,

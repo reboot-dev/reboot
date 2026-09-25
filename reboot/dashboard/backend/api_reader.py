@@ -5,9 +5,9 @@ Run as a subprocess:
     python -m reboot.dashboard.backend.api_reader <api-directory> \\
         <file-relative-to-it>
 
-and it writes what the file declares to stdout, as proto JSON of an
-`rbt.v1alpha1.api.API`, or `null` for a file declaring no API; or a
-message to stderr and a non-zero exit if the file cannot be read.
+and it writes what reading the file found to stdout, as the JSON of
+an `rbt.dashboard.v1.Reading`. Or it writes a message to stderr and
+exits non-zero if the file cannot be read.
 
 A subprocess for two reasons. Reading a Pydantic API means importing
 it, so doing it in the dashboard would accumulate stale modules across
@@ -22,12 +22,12 @@ off its descriptor with `reboot.proto_api.api_of`.
 """
 import asyncio
 import importlib
-import json
 import os
 import sys
 import tempfile
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
-from google.protobuf.json_format import MessageToDict, ParseDict
+from google.protobuf.json_format import MessageToJson, Parse, ParseError
+from rbt.dashboard.v1.dashboard_pb2 import Reading
 from rbt.v1alpha1.api import api_pb2
 from reboot import proto_api
 from reboot.api import API
@@ -39,7 +39,7 @@ from typing import Optional
 _PROTO_SUFFIX = '.proto'
 
 
-def _read_pydantic(directory: str, filename: str) -> Optional[api_pb2.API]:
+def _read_pydantic(directory: str, filename: str) -> Reading:
     os.chdir(directory)
     sys.path.insert(0, directory)
 
@@ -50,12 +50,12 @@ def _read_pydantic(directory: str, filename: str) -> Optional[api_pb2.API]:
     api = getattr(module, 'api', None)
     if not isinstance(api, API):
         # A file containing shared code declares no `api`.
-        return None
+        return Reading()
 
-    return api_of(api, filename=filename)
+    return Reading(api=api_of(api, filename=filename))
 
 
-def _read_proto(directory: str, filename: str) -> api_pb2.API:
+def _read_proto(directory: str, filename: str) -> Reading:
     # Imported here since only a `.proto` needs `protoc`.
     from grpc_tools import protoc
 
@@ -91,12 +91,44 @@ def _read_proto(directory: str, filename: str) -> api_pb2.API:
             ).file
 
     file = next(file for file in files if file.name == filename)
-    return proto_api.api_of(file, filename=filename)
+    api = proto_api.api_of(file, filename=filename)
+
+    # Of the files outside the directory, those the file refers to,
+    # however many references away: each described as an `API` of its
+    # own, `external`, so that a reference into it can be followed,
+    # and never one nothing refers to, such as `descriptor.proto`,
+    # which every option imports and no field names.
+    outside = {
+        file.name: file
+        for file in files
+        if not os.path.isfile(os.path.join(directory, file.name))
+    }
+    imported: dict[str, api_pb2.API] = {}
+    unresolved = set(proto_api.referenced_names(api))
+    while len(unresolved) > 0:
+        name = unresolved.pop()
+        declaring = next(
+            (
+                outside_file for outside_file in outside.values()
+                if outside_file.name not in imported and
+                name in proto_api.declared_names(outside_file)
+            ),
+            None,
+        )
+        if declaring is None:
+            continue
+        imported[declaring.name] = proto_api.api_of(
+            declaring,
+            filename=declaring.name,
+            external=True,
+        )
+        unresolved |= set(proto_api.referenced_names(imported[declaring.name]))
+
+    return Reading(api=api, imported=imported)
 
 
-def read(api_directory: str, filename: str) -> Optional[api_pb2.API]:
-    """Returns what one API file declares, and `None` for a file
-    declaring no API."""
+def read(api_directory: str, filename: str) -> Reading:
+    """Returns what reading one API file found."""
     directory = os.path.abspath(api_directory)
 
     if filename.endswith(_PROTO_SUFFIX):
@@ -108,7 +140,7 @@ def read(api_directory: str, filename: str) -> Optional[api_pb2.API]:
 async def read_api_file(
     api_directory: str,
     filename: str,
-) -> tuple[Optional[api_pb2.API], Optional[str]]:
+) -> tuple[Optional[Reading], Optional[str]]:
     """Describes one API file in a subprocess.
 
     Returns what reading the file found, or `None` and a message when
@@ -138,14 +170,9 @@ async def read_api_file(
         return None, errors.decode().strip()
 
     try:
-        api_json = json.loads(out)
-    except json.JSONDecodeError as e:
+        return Parse(out, Reading()), None
+    except ParseError as e:
         return None, f"'{filename}' failed to load as JSON: {e}"
-
-    if api_json is None:
-        return None, None
-
-    return ParseDict(api_json, api_pb2.API()), None
 
 
 def main() -> int:
@@ -154,7 +181,7 @@ def main() -> int:
         return 2
 
     try:
-        api = read(sys.argv[1], sys.argv[2])
+        found = read(sys.argv[1], sys.argv[2])
     except SystemExit:
         # `fail()` inside `reboot.api` prints why a malformed API is
         # malformed, then raises this, as we do for a `.proto` that
@@ -166,17 +193,9 @@ def main() -> int:
         print(f'{type(e).__name__}: {e}', file=sys.stderr)
         return 1
 
-    print(
-        json.dumps(
-            # Empty repeated fields print as `[]`, matching the
-            # generated TypeScript types, whose repeated fields are
-            # always arrays.
-            MessageToDict(
-                api,
-                always_print_fields_with_no_presence=True,
-            ) if api is not None else None
-        )
-    )
+    # Empty repeated fields print as `[]`, matching the generated
+    # TypeScript types, whose repeated fields are always arrays.
+    print(MessageToJson(found, always_print_fields_with_no_presence=True))
 
     return 0
 

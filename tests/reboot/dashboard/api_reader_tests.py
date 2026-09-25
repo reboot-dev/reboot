@@ -63,10 +63,11 @@ def _method_named(state_type: StateType, name: str) -> Method:
 class APIReaderTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_describes_a_state_type_and_its_methods(self) -> None:
-        api, error = await read_api_file(API_DIRECTORY, 'shop/v1/shop.py')
+        read, error = await read_api_file(API_DIRECTORY, 'shop/v1/shop.py')
 
         self.assertIsNone(error)
-        assert api is not None
+        assert read is not None
+        api = read.api
         assert api is not None
 
         # The file relative to the API directory, and the package and
@@ -151,10 +152,11 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
     async def test_a_nested_type_is_followed_rather_than_named(self) -> None:
         # `StockResponse.items` is a list of `Item`, whose `price` is an
         # `Optional[Price]`; `schemas` describes every one of them.
-        api, error = await read_api_file(API_DIRECTORY, 'shop/v1/shop.py')
+        read, error = await read_api_file(API_DIRECTORY, 'shop/v1/shop.py')
 
         self.assertIsNone(error)
-        assert api is not None
+        assert read is not None
+        api = read.api
         assert api is not None
 
         items = _property(
@@ -194,10 +196,11 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_a_file_with_no_api_describes_nothing(self) -> None:
-        api, error = await read_api_file(API_DIRECTORY, 'shop/v1/helper.py')
+        read, error = await read_api_file(API_DIRECTORY, 'shop/v1/helper.py')
 
         self.assertIsNone(error)
-        self.assertIsNone(api)
+        assert read is not None
+        self.assertFalse(read.HasField('api'))
 
     async def test_a_file_that_does_not_parse_reports_why(self) -> None:
         # A half-written file is the normal case while someone is
@@ -207,9 +210,9 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
             Path(os.path.join(directory, 'shop', 'v1', 'shop.py')
                 ).write_text('from reboot.api import API\napi = API(\n')
 
-            api, error = await read_api_file(directory, 'shop/v1/shop.py')
+            read, error = await read_api_file(directory, 'shop/v1/shop.py')
 
-            self.assertIsNone(api)
+            self.assertIsNone(read)
             assert error is not None
             self.assertIn('SyntaxError', error)
 
@@ -231,10 +234,11 @@ class ProtoAPIReaderTest(unittest.IsolatedAsyncioTestCase):
     is, plus the forms only a `.proto` declares."""
 
     async def test_describes_a_state_type_and_its_methods(self) -> None:
-        api, error = await read_api_file(API_DIRECTORY, 'shop/v1/depot.proto')
+        read, error = await read_api_file(API_DIRECTORY, 'shop/v1/depot.proto')
 
         self.assertIsNone(error)
-        assert api is not None
+        assert read is not None
+        api = read.api
         assert api is not None
 
         # The package is the one the file declares; a message is
@@ -285,10 +289,11 @@ class ProtoAPIReaderTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_describes_the_forms_only_a_proto_declares(self) -> None:
-        api, error = await read_api_file(API_DIRECTORY, 'shop/v1/depot.proto')
+        read, error = await read_api_file(API_DIRECTORY, 'shop/v1/depot.proto')
 
         self.assertIsNone(error)
-        assert api is not None
+        assert read is not None
+        api = read.api
         assert api is not None
 
         depot = api.schemas['shop.v1.Depot']
@@ -416,16 +421,54 @@ class ProtoAPIReaderTest(unittest.IsolatedAsyncioTestCase):
         """A `.proto` of shared messages declares no state type, and
         declares its messages and enums all the same: the developer
         wrote each, and `rbt generate` writes a module for the file."""
-        api, error = await read_api_file(API_DIRECTORY, 'shop/v1/parts.proto')
+        read, error = await read_api_file(API_DIRECTORY, 'shop/v1/parts.proto')
 
         self.assertIsNone(error)
-        assert api is not None
-        self.assertEqual(list(api.state_types), [])
+        assert read is not None and read.HasField('api')
+        self.assertEqual(list(read.api.state_types), [])
         self.assertEqual(
-            [reference.name for reference in api.data_types],
+            [reference.name for reference in read.api.data_types],
             ['shop.v1.Part'],
         )
-        self.assertEqual(list(api.enums), ['shop.v1.Part.Size'])
+        self.assertEqual(list(read.api.enums), ['shop.v1.Part.Size'])
+
+    async def test_an_external_file_referred_to_is_described_once(
+        self,
+    ) -> None:
+        """A file outside the API directory that the file refers to,
+        such as one of Reboot's own, is described as an `API` of its
+        own, `external`, keyed by the path `protoc` names it by, so
+        that what is referred to can be seen; one nothing refers to,
+        such as `descriptor.proto`, is not."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'shop' / 'v1' / 'depot.proto'
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                'syntax = "proto3";\n'
+                'package shop.v1;\n'
+                'import "rbt/v1alpha1/options.proto";\n'
+                'message Depot {\n'
+                '  option (rbt.v1alpha1.state) = {};\n'
+                '  rbt.v1alpha1.UI page = 1;\n'
+                '}\n'
+            )
+
+            read, error = await read_api_file(directory, 'shop/v1/depot.proto')
+
+        self.assertIsNone(error)
+        assert read is not None and read.HasField('api')
+        self.assertFalse(read.api.external)
+
+        self.assertEqual(list(read.imported), ['rbt/v1alpha1/options.proto'])
+        options = read.imported['rbt/v1alpha1/options.proto']
+        self.assertTrue(options.external)
+        self.assertEqual(options.filename, 'rbt/v1alpha1/options.proto')
+        self.assertEqual(options.package, 'rbt.v1alpha1')
+        self.assertEqual(list(options.state_types), [])
+        self.assertIn('rbt.v1alpha1.UI', options.schemas)
+        # `descriptor.proto`, which `options.proto` imports and no
+        # field of either names.
+        self.assertNotIn('google/protobuf/descriptor.proto', read.imported)
 
     async def test_the_digest_is_of_what_is_described(self) -> None:
         """The digest generated code records is of the `API` the file
@@ -447,12 +490,12 @@ class ProtoAPIReaderTest(unittest.IsolatedAsyncioTestCase):
             async def read_after(old: str, new: str):
                 assert old in depot.read_text()
                 depot.write_text(depot.read_text().replace(old, new))
-                api, error = await read_api_file(
+                read, error = await read_api_file(
                     directory, 'shop/v1/depot.proto'
                 )
                 self.assertIsNone(error)
-                assert api is not None
-                return api
+                assert read is not None and read.HasField('api')
+                return read
 
             before = await read_after('', '')
 
@@ -487,15 +530,15 @@ class ProtoAPIReaderTest(unittest.IsolatedAsyncioTestCase):
         tests = Path(__file__).parent.parent
         # From the directory `echo.proto` was generated from, so that
         # the file is named the way the generator was given it.
-        api, error = await read_api_file(
+        read, error = await read_api_file(
             str(tests.parent.parent), 'tests/reboot/echo.proto'
         )
 
         self.assertIsNone(error)
-        assert api is not None
+        assert read is not None and read.HasField('api')
 
         self.assertEqual(
-            api_digest(api),
+            api_digest(read.api),
             await _try_extract_api_digest(tests / 'echo_rbt.golden.py'),
         )
 
@@ -505,9 +548,9 @@ class ProtoAPIReaderTest(unittest.IsolatedAsyncioTestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('syntax = "proto3";\n\nmessage Depot {\n')
 
-            api, error = await read_api_file(directory, 'shop/v1/depot.proto')
+            read, error = await read_api_file(directory, 'shop/v1/depot.proto')
 
-            self.assertIsNone(api)
+            self.assertIsNone(read)
             assert error is not None
             self.assertIn('shop/v1/depot.proto', error)
 

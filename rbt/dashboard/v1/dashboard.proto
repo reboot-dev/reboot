@@ -33,7 +33,9 @@ message Dashboard {
   map<string, File> api_files = 3;
 
   // What each file declaring an `api` declares, keyed the way
-  // `api_files` is, which is also the `filename` inside.
+  // `api_files` is, which is also the `filename` inside; and, marked
+  // `external`, what each file outside the API directory that one of
+  // them refers to declares, keyed by the path `protoc` names it by.
   map<string, rbt.v1alpha1.api.API> apis = 4;
 
   // The digest of what each file declaring an `api` declares, as
@@ -871,6 +873,14 @@ message File {
   // files. Recorded for the API's files; the implementation's are
   // not compared by time.
   google.protobuf.Timestamp modified = 5;
+
+  // Represents the files outside the API directory that reading this
+  // API file described, each keyed in `Dashboard.apis` by the path
+  // `protoc` names it by, e.g. "rbt/v1alpha1/api/api.proto", and
+  // marked `external` there. What a restarted dashboard carries
+  // forward for a file it need not read again, and what says which
+  // of those descriptions are still referred to.
+  repeated string imported = 6;
 }
 
 // Represents one file in the generated directory, as of the last
@@ -1155,4 +1165,21 @@ service PreferencesMethods {
     option (rbt.v1alpha1.method).writer = {
     };
   }
+}
+// Represents what reading one of the developer's API files found:
+// what `reboot.dashboard.backend.api_reader` writes, as JSON, and
+// the API watcher reads back.
+message Reading {
+  // What the file declares. Absent for a file declaring no API, such
+  // as a Python file of shared code.
+  optional rbt.v1alpha1.api.API api = 1;
+
+  // What each file outside the API directory that the file refers
+  // to, however many references away, declares, keyed by the path
+  // `protoc` names the file by, e.g. "rbt/v1alpha1/api/api.proto":
+  // described so that what is referred to can be seen, and by that
+  // path so that every file referring to it lands on one
+  // description. Each is `external`. Empty for a Pydantic file, whose
+  // models from elsewhere are described inline.
+  map<string, rbt.v1alpha1.api.API> imported = 2;
 }
