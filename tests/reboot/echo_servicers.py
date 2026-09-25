@@ -77,9 +77,9 @@ class MyEchoServicer(Echo.singleton.Servicer):
             )  # type: ignore[arg-type, call-overload]
         except TypeError as error:
             assert (
-                "reboot.aio.contexts.WriterContext is not an "
-                "instance or subclass of one of the expected type(s): "
-                "['reboot.aio.contexts.TransactionContext']"
+                "A `writer` can only schedule tasks for its own state: "
+                "`schedule(...).reply(...)` was passed `WriterContext` "
+                "but expects `TransactionContext`"
             ) in str(error)
         else:
             raise Exception('Should not be able to schedule another writer!')

@@ -22108,7 +22108,12 @@ class Greeter:
                 name: IMPORT_typing.Optional[str] | Unset = UNSET,
                 metadata: IMPORT_typing.Optional[dict[str, str]] | Unset = UNSET,
             ) -> IMPORT_typing.AsyncIterator[Greeter.GreetResponse]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='greet',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.GreetRequest)
@@ -22283,7 +22288,12 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[Greeter.TryToConstructContextResponse]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='try_to_construct_context',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TryToConstructContextRequest)
@@ -22454,7 +22464,12 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructExternalContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[Greeter.TryToConstructExternalContextResponse]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='try_to_construct_external_context',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TryToConstructExternalContextRequest)
@@ -22629,7 +22644,12 @@ class Greeter:
                 *,
                 sleep_time_seconds: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> IMPORT_typing.AsyncIterator[Greeter.TestLongRunningFetchResponse]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='test_long_running_fetch',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TestLongRunningFetchRequest)
@@ -22802,7 +22822,12 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.GetWholeStateRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[Greeter.GetWholeStateResponse]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='get_whole_state',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.GetWholeStateRequest)
@@ -22973,7 +22998,12 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithExceptionRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[Greeter.FailWithExceptionResponse]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='fail_with_exception',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.FailWithExceptionRequest)
@@ -23144,7 +23174,12 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithAbortedRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[Greeter.FailWithAbortedResponse]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='fail_with_aborted',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.FailWithAbortedRequest)
@@ -23315,7 +23350,12 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.ReadRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[Greeter.ReadRecursiveMessageResponse]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='read_recursive_message',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.ReadRecursiveMessageRequest)
@@ -24727,9 +24767,11 @@ class Greeter:
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.State]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     context,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='read',
                 )
 
                 async def callable():
@@ -24778,9 +24820,11 @@ class Greeter:
                 name: IMPORT_typing.Optional[str] | Unset = UNSET,
                 metadata: IMPORT_typing.Optional[dict[str, str]] | Unset = UNSET,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.GreetResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='greet',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.GreetRequest] = None
@@ -24851,9 +24895,11 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.TryToConstructContextResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='try_to_construct_context',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.TryToConstructContextRequest] = None
@@ -24920,9 +24966,11 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructExternalContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.TryToConstructExternalContextResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='try_to_construct_external_context',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.TryToConstructExternalContextRequest] = None
@@ -24993,9 +25041,11 @@ class Greeter:
                 *,
                 sleep_time_seconds: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.TestLongRunningFetchResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='test_long_running_fetch',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.TestLongRunningFetchRequest] = None
@@ -25064,9 +25114,11 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.GetWholeStateRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.GetWholeStateResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='get_whole_state',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.GetWholeStateRequest] = None
@@ -25133,9 +25185,11 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithExceptionRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.FailWithExceptionResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='fail_with_exception',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.FailWithExceptionRequest] = None
@@ -25202,9 +25256,11 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithAbortedRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.FailWithAbortedResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='fail_with_aborted',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.FailWithAbortedRequest] = None
@@ -25271,9 +25327,11 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.ReadRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.ReadRecursiveMessageResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='read_recursive_message',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.ReadRecursiveMessageRequest] = None
@@ -25369,7 +25427,14 @@ class Greeter:
                 name: IMPORT_typing.Optional[str] | Unset = UNSET,
                 metadata: IMPORT_typing.Optional[dict[str, str]] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='greet',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.GreetRequest)
@@ -25461,7 +25526,14 @@ class Greeter:
                 arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
                 revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='set_adjective',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.SetAdjectiveRequest)
@@ -25555,7 +25627,14 @@ class Greeter:
                 arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
                 revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='transaction_set_adjective',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TransactionSetAdjectiveRequest)
@@ -25641,7 +25720,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='try_to_construct_context',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TryToConstructContextRequest)
@@ -25721,7 +25807,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructExternalContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='try_to_construct_external_context',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TryToConstructExternalContextRequest)
@@ -25805,7 +25898,14 @@ class Greeter:
                 *,
                 sleep_time_seconds: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='test_long_running_fetch',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TestLongRunningFetchRequest)
@@ -25887,7 +25987,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TestLongRunningWriterRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='test_long_running_writer',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TestLongRunningWriterRequest)
@@ -25967,7 +26074,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.GetWholeStateRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='get_whole_state',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.GetWholeStateRequest)
@@ -26047,7 +26161,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithExceptionRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_with_exception',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.FailWithExceptionRequest)
@@ -26127,7 +26248,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithAbortedRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_with_aborted',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.FailWithAbortedRequest)
@@ -26207,7 +26335,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.WorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.WorkflowRequest)
@@ -26311,7 +26446,14 @@ class Greeter:
                 idempotency: IMPORT_typing.Optional[str] | Unset = UNSET,
                 state_id: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='dangerous_fields',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.DangerousFieldsRequest)
@@ -26417,7 +26559,14 @@ class Greeter:
                 *,
                 message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.RecursiveMessage] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='store_recursive_message',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.StoreRecursiveMessageRequest)
@@ -26499,7 +26648,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.ReadRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='read_recursive_message',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.ReadRecursiveMessageRequest)
@@ -26583,7 +26739,14 @@ class Greeter:
                 *,
                 depth: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='construct_and_store_recursive_message',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.ConstructAndStoreRecursiveMessageRequest)
@@ -26694,9 +26857,14 @@ class Greeter:
                 name: IMPORT_typing.Optional[str] | Unset = UNSET,
                 metadata: IMPORT_typing.Optional[dict[str, str]] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='greet',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -26796,9 +26964,14 @@ class Greeter:
                 arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
                 revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='set_adjective',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -26900,9 +27073,14 @@ class Greeter:
                 arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
                 revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='transaction_set_adjective',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -26996,9 +27174,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='try_to_construct_context',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27086,9 +27269,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructExternalContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='try_to_construct_external_context',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27180,9 +27368,14 @@ class Greeter:
                 *,
                 sleep_time_seconds: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='test_long_running_fetch',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27272,9 +27465,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TestLongRunningWriterRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='test_long_running_writer',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27362,9 +27560,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.GetWholeStateRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='get_whole_state',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27452,9 +27655,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithExceptionRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_with_exception',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27542,9 +27750,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithAbortedRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_with_aborted',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27632,9 +27845,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.WorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='workflow',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27746,9 +27964,14 @@ class Greeter:
                 idempotency: IMPORT_typing.Optional[str] | Unset = UNSET,
                 state_id: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='dangerous_fields',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27862,9 +28085,14 @@ class Greeter:
                 *,
                 message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.RecursiveMessage] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='store_recursive_message',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27954,9 +28182,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.ReadRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='read_recursive_message',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -28048,9 +28281,14 @@ class Greeter:
                 *,
                 depth: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='construct_and_store_recursive_message',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -28186,7 +28424,14 @@ class Greeter:
                 name: IMPORT_typing.Optional[str] | Unset = UNSET,
                 metadata: IMPORT_typing.Optional[dict[str, str]] | Unset = UNSET,
             ) -> Greeter.GreetTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='greet',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.GreetRequest)
@@ -28281,7 +28526,14 @@ class Greeter:
                 arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
                 revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> Greeter.SetAdjectiveTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='set_adjective',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.SetAdjectiveRequest)
@@ -28378,7 +28630,14 @@ class Greeter:
                 arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
                 revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> Greeter.TransactionSetAdjectiveTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='transaction_set_adjective',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TransactionSetAdjectiveRequest)
@@ -28467,7 +28726,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.TryToConstructContextTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='try_to_construct_context',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TryToConstructContextRequest)
@@ -28550,7 +28816,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructExternalContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.TryToConstructExternalContextTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='try_to_construct_external_context',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TryToConstructExternalContextRequest)
@@ -28637,7 +28910,14 @@ class Greeter:
                 *,
                 sleep_time_seconds: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> Greeter.TestLongRunningFetchTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='test_long_running_fetch',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TestLongRunningFetchRequest)
@@ -28722,7 +29002,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TestLongRunningWriterRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.TestLongRunningWriterTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='test_long_running_writer',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TestLongRunningWriterRequest)
@@ -28805,7 +29092,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.GetWholeStateRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.GetWholeStateTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='get_whole_state',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.GetWholeStateRequest)
@@ -28888,7 +29182,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithExceptionRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.FailWithExceptionTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='fail_with_exception',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.FailWithExceptionRequest)
@@ -28971,7 +29272,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithAbortedRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.FailWithAbortedTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='fail_with_aborted',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.FailWithAbortedRequest)
@@ -29054,7 +29362,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.WorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WorkflowTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.WorkflowRequest)
@@ -29161,7 +29476,14 @@ class Greeter:
                 idempotency: IMPORT_typing.Optional[str] | Unset = UNSET,
                 state_id: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Greeter.DangerousFieldsTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='dangerous_fields',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.DangerousFieldsRequest)
@@ -29270,7 +29592,14 @@ class Greeter:
                 *,
                 message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.RecursiveMessage] | Unset = UNSET,
             ) -> Greeter.StoreRecursiveMessageTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='store_recursive_message',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.StoreRecursiveMessageRequest)
@@ -29355,7 +29684,14 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.ReadRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.ReadRecursiveMessageTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='read_recursive_message',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.ReadRecursiveMessageRequest)
@@ -29442,7 +29778,14 @@ class Greeter:
                 *,
                 depth: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> Greeter.ConstructAndStoreRecursiveMessageTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='construct_and_store_recursive_message',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.ConstructAndStoreRecursiveMessageRequest)

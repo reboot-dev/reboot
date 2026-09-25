@@ -17,6 +17,7 @@ from rbt.v1alpha1 import database_pb2, errors_pb2, react_pb2, react_pb2_grpc
 from reboot.aio.aborted import SystemAborted, is_grpc_retryable_exception
 from reboot.aio.auth import Auth
 from reboot.aio.backoff import Backoff
+from reboot.aio.external import ExternalContext
 from reboot.aio.headers import (
     TRANSACTION_PARTICIPANTS_HEADER,
     TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER,
@@ -57,9 +58,12 @@ from typing import (
     Callable,
     Generic,
     Iterator,
+    Literal,
     Optional,
     Protocol,
+    Sequence,
     Tuple,
+    TypeAlias,
     TypeVar,
 )
 
@@ -1567,3 +1571,135 @@ class WorkflowContext(Context):
                 # NOTE: using `self.wait()` so calls through Node.js will
                 # be cancelled.
                 iteration = await self.wait(self.react.iterate(iteration))
+
+
+ContextVia: TypeAlias = Literal['schedule', 'spawn', 'reactively', 'until']
+
+
+def assert_context_type(
+    context: Context | ExternalContext,
+    expected: Sequence[type[Context | ExternalContext]],
+    *,
+    via: ContextVia,
+    method: str,
+) -> None:
+    """Check that `context`, passed to a generated `[...].{via}(...).{method}(...)`
+    call, is an instance of one of the `expected` context types.
+
+    Raises a `TypeError` whose message names the kind of method the
+    call is allowed from, the call to make instead, and a suggestion
+    to run a type checker.
+    """
+    if any(isinstance(context, expected_type) for expected_type in expected):
+        return
+
+    call = f'`{via}(...).{method}(...)`'
+    names = ', '.join(
+        f'`{expected_type.__name__}`' for expected_type in expected
+    )
+    expected_names = names if len(expected) == 1 else f'one of {names}'
+
+    tip = (
+        'Tip: running a type checker such as `mypy` on your code reports '
+        'this mistake before your code runs.'
+    )
+
+    if not isinstance(context, (Context, ExternalContext)):
+        # Not a context at all, e.g., a request object was passed
+        # first or the context was left out entirely.
+        passed = '`None`' if context is None else f'`{type(context).__name__}`'
+        raise TypeError(
+            f'{call} expects {expected_names} as its first argument but '
+            f'was passed {passed}. Pass the calling method\'s `context` as '
+            f'the first argument, e.g., `{method}(context, ...)`. {tip}'
+        )
+
+    problem: str
+    fix: Optional[str]
+
+    if via == 'schedule' and isinstance(
+        context, (WorkflowContext, ExternalContext)
+    ):
+        if isinstance(context, WorkflowContext):
+            problem = '`schedule()` can not be used from within a `workflow`'
+        else:
+            problem = '`schedule()` can not be used from outside of Reboot'
+        fix = (
+            'Use `spawn()` instead: replace `.schedule(` with `.spawn(` and '
+            'leave the rest of the call as is. Note that `spawn()` returns '
+            'a task object rather than a task ID; `await` it to get the '
+            "method's response, or use its `.task_id` property."
+        )
+    elif via == 'schedule' and isinstance(context, WriterContext):
+        problem = 'A `writer` can only schedule tasks for its own state'
+        fix = (
+            'Use `self.ref().schedule(...)` to schedule a task for the '
+            "`writer`'s own state, or make the calling method a "
+            '`transaction` to schedule a task for another state.'
+        )
+    elif via == 'schedule' and isinstance(context, ReaderContext):
+        problem = (
+            'A `reader` can not schedule tasks because a `reader` can not '
+            'have effects'
+        )
+        fix = (
+            'Schedule the task from a `writer` (via `self.ref().schedule(...)`) '
+            'or a `transaction` instead, or `spawn()` it from a `workflow`.'
+        )
+    elif via == 'spawn' and isinstance(context, TransactionContext):
+        problem = '`spawn()` can not be used from within a `transaction`'
+        fix = (
+            'Use `schedule()` instead: replace `.spawn(` with `.schedule(` '
+            'and leave the rest of the call as is. Note that `schedule()` '
+            'returns a task ID rather than a task object, because the task '
+            'is only created once the `transaction` completes; to `await` '
+            "a task's response, `spawn()` it from a `workflow`."
+        )
+    elif via == 'spawn' and isinstance(context, WriterContext):
+        problem = '`spawn()` can not be used from within a `writer`'
+        fix = (
+            'Use `self.ref().schedule(...)` instead; a `writer` can only '
+            'schedule tasks for its own state, so make the calling method '
+            'a `transaction` to run a task for another state. Note that '
+            '`schedule()` returns a task ID rather than a task object, '
+            'because the task is only created once the `writer` completes; '
+            "to `await` a task's response, `spawn()` it from a `workflow`."
+        )
+    elif via == 'spawn' and isinstance(context, ReaderContext):
+        problem = (
+            'A `reader` can not spawn tasks because a `reader` can not '
+            'have effects'
+        )
+        fix = (
+            'Spawn the task from a `workflow` or from outside of Reboot '
+            'instead, or `schedule()` it from a `writer` (via '
+            '`self.ref().schedule(...)`) or a `transaction`.'
+        )
+    elif via == 'reactively':
+        problem = (
+            '`reactively()` can only be used from within a `reader` or a '
+            '`workflow`, or from outside of Reboot'
+        )
+        fix = (
+            'Call the method directly instead: remove `.reactively()` from '
+            'the call.'
+        )
+    elif via == 'until':
+        problem = '`until()` can only be used from within a `workflow`'
+        fix = (
+            'Only a `workflow` can wait for a condition; call the method '
+            'directly instead (remove `.until(...)` from the call).'
+        )
+    else:
+        problem = f'`{via}()` can not be used with `{type(context).__name__}`'
+        fix = None
+
+    message = (
+        f'{problem}: {call} was passed `{type(context).__name__}` but '
+        f'expects {expected_names}.'
+    )
+    if fix is not None:
+        message += f' {fix}'
+    message += f' {tip}'
+
+    raise TypeError(message)
