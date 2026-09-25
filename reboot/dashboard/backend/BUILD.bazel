@@ -21,12 +21,24 @@ py_library(
 py_library(
     name = "api_reader_py",
     srcs = ["api_reader.py"],
+    # What `rbt/dashboard/v1/dashboard.proto` imports beyond the protos
+    # Reboot ships for any developer's `.proto` to import, so that a
+    # dashboard run from this repository can read the dashboard's own
+    # API.
+    data = [
+        "//rbt/v1alpha1/api:protos",
+        "//rbt/v1alpha1/bdd:protos",
+    ],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        requirement("grpcio-tools"),
+        requirement("protobuf"),
         "//rbt/dashboard/v1:dashboard_py_reboot",
         "//reboot:api_py",
+        "//reboot:proto_api_py",
         "//reboot:pydantic_api_py",
+        "//reboot/cli/common:proto_paths_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:api_py_proto",
     ],
 )
@@ -37,12 +49,21 @@ py_library(
 py_binary(
     name = "api_reader",
     srcs = ["api_reader.py"],
+    # As for `api_reader_py`.
+    data = [
+        "//rbt/v1alpha1/api:protos",
+        "//rbt/v1alpha1/bdd:protos",
+    ],
     main = "api_reader.py",
     visibility = ["//visibility:public"],
     deps = [
+        requirement("grpcio-tools"),
+        requirement("protobuf"),
         "//rbt/dashboard/v1:dashboard_py_reboot",
         "//reboot:api_py",
+        "//reboot:proto_api_py",
         "//reboot:pydantic_api_py",
+        "//reboot/cli/common:proto_paths_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:api_py_proto",
     ],
 )
@@ -79,7 +100,7 @@ py_library(
         ":constants_py",
         ":walk_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
-        "//reboot:pydantic_api_py",
+        "//reboot:api_digest_py",
         "//reboot/aio:concurrently_py",
         "//reboot/aio:external_py",
         "//reboot/aio:workflows_py",
@@ -134,6 +155,7 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        ":changelog_py",
         ":check_py",
         ":constants_py",
         ":pyright_py",

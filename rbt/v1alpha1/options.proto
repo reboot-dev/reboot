@@ -214,10 +214,12 @@ message FileOptions {
   // Path to Python schema that we want to be able to import in
   // our generated code.
   optional string pydantic = 2;
-  // A hex SHA-256 of the proto text this file held before this
-  // option was appended, which is what a pydantic API generates
-  // to: written into the generated code, so that whoever has the
-  // API in hand can tell whether the generated code came from it.
+  // A hex SHA-256 of what the pydantic API this file was generated
+  // from declares, as an `rbt.v1alpha1.api.API`: written into the
+  // generated code, so that whoever has the API in hand can tell
+  // whether the generated code came from it. A `.proto` a developer
+  // wrote carries none; code generation reads it into an `API`
+  // itself, and digests that.
   optional string api_digest = 3;
 }
 

@@ -3,7 +3,8 @@
 The dashboard may start before the application exists: in an agentic
 flow the API files are written first, then generated code, then
 servicers, then a build, then a running process. So the watcher reads
-the files themselves.
+the files themselves: the Pydantic ones and the `.proto` ones, which
+one directory may hold both of.
 
 It reads per file, all at once, and writes what every file declares
 once per change, so that a file which does not parse, the normal
@@ -23,26 +24,39 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import Change
 from rbt.dashboard.v1.dashboard_pb2 import Dashboard as DashboardState
-from rbt.dashboard.v1.dashboard_pb2 import File
+from rbt.dashboard.v1.dashboard_pb2 import File, Reading
 from rbt.dashboard.v1.dashboard_rbt import Dashboard
 from rbt.v1alpha1.api import api_pb2
 from reboot.aio.concurrently import concurrently
 from reboot.aio.contexts import WorkflowContext
 from reboot.aio.workflows import at_least_once
+from reboot.api_digest import api_digest
 from reboot.cli.common.watch import file_watcher
 from reboot.dashboard.backend.api_reader import read_api_file
 from reboot.dashboard.backend.changelog import changes_between
 from reboot.dashboard.backend.check import timed
 from reboot.dashboard.backend.walk import (
     GENERATED_SUFFIXES,
+    PROTO_GLOB,
+    PROTO_SUFFIX,
     SOURCE_GLOB,
     Dependency,
     Digest,
     _standardized_path,
     _walk,
 )
-from reboot.pydantic_api import api_digest
 from typing import Mapping, Optional
+
+# The version of what reading an API file describes, which the
+# dashboard's state records beside it. Counted up whenever a file
+# comes to be described differently, or what is digested of it does:
+# a file that has not changed is otherwise carried forward as an
+# earlier reading described it, which never says the new thing, and
+# whose digest no code generated since records.
+API_READING_VERSION = 4
+
+# What tells a Pydantic API file from a protobuf one.
+_PYDANTIC_SUFFIX = '.py'
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -64,12 +78,21 @@ class ReadFile:
     dependencies: Mapping[str, Dependency]
 
     # The files outside the API directory reading this file read:
-    # none, since the reader follows nothing beyond the directory.
+    # the `.proto` files an import led to, or the modules a Python
+    # file imports, that the developer did not write, such as
+    # Reboot's own; see `Reading.external`.
     external: tuple[Dependency, ...]
 
     # What the file declares, as `api_of` read it; `None` for a file
-    # declaring no `api`, or one that could not be read.
+    # declaring no API, or one that could not be read.
     api: Optional[api_pb2.API]
+
+    # What each file outside the API directory that this file refers
+    # to declares, by the path `protoc` names it by, each `external`;
+    # see `Reading.imported`. Recorded among the APIs beside the file's
+    # own, once however many files refer to it, and gone when none
+    # does.
+    imported: Mapping[str, api_pb2.API]
 
     # Why the file could not be read, when it could not be.
     error: Optional[str]
@@ -85,14 +108,27 @@ def _api_files(api_directory: Path) -> list[Path]:
     `_standardized_path` returns, sorted.
 
     Candidate, because an API is a Python object, built when the
-    module executes, so only reading a file tells whether it declares
-    one.
+    module executes, or a `.proto` declaring a state, which one of
+    shared messages does not, so only reading a file tells whether it
+    declares one.
     """
     return sorted(
         _standardized_path(path)
-        for path in api_directory.glob(SOURCE_GLOB)
+        for glob in (SOURCE_GLOB, PROTO_GLOB)
+        for path in api_directory.glob(glob)
         if not path.name.endswith(GENERATED_SUFFIXES)
     )
+
+
+def _generated_module(relative: str) -> str:
+    """The module `rbt generate` writes for an API file, relative to
+    the generated directory the way `Dashboard.generated` is keyed:
+    `shop/v1/shop_rbt.py` for `shop/v1/shop.py` and for
+    `shop/v1/shop.proto`."""
+    for suffix in (_PYDANTIC_SUFFIX, PROTO_SUFFIX):
+        if relative.endswith(suffix):
+            return f'{relative.removesuffix(suffix)}_rbt.py'
+    raise AssertionError(f"Expecting an API file, not '{relative}'")
 
 
 def _reconstitute_known(
@@ -104,15 +140,27 @@ def _reconstitute_known(
     from the state: each `File` with what was recorded as declared by
     its file. What a restarted watch starts from, so that only files
     that changed while the dashboard was down are read again."""
+    # Recorded by a reading of another version, which may not describe
+    # what this one does, each file is kept -- so that what changes is
+    # still told apart from what was there all along -- but without
+    # the digest that says it need not be read again, so every file
+    # is.
+    stale = state.api_reading_version != API_READING_VERSION
+
     known: dict[Path, ReadFile] = {}
     for relative, file in state.api_files.items():
         filename = _standardized_path(api_directory / relative)
         known[filename] = ReadFile(
             filename=filename,
-            digest=file.digest,
+            digest=file.digest if not stale else b'',
             dependencies=dict(file.dependencies),
             external=tuple(file.external),
             api=state.apis[relative] if relative in state.apis else None,
+            imported={
+                path: state.apis[path]
+                for path in file.imported
+                if path in state.apis
+            },
             error=file.error if file.HasField('error') else None,
             modified=file.modified,
         )
@@ -125,12 +173,19 @@ def _apis(
     api_directory: Path,
 ) -> dict[str, api_pb2.API]:
     """What each file declaring an `api` declares, keyed by the file
-    relative to the API directory, the way `Dashboard.apis` is keyed."""
-    return {
+    relative to the API directory, the way `Dashboard.apis` is keyed;
+    and what each file outside the directory that one of them refers
+    to declares, keyed by the path `protoc` names it by, once."""
+    imported = {
+        path: api for _, file in sorted(known.items())
+        for path, api in file.imported.items()
+    }
+    own = {
         _relative(filename, api_directory): file.api
         for filename, file in sorted(known.items())
         if file.api is not None
     }
+    return {**imported, **own}
 
 
 def _api_digests(
@@ -138,12 +193,11 @@ def _api_digests(
     *,
     api_directory: Path,
 ) -> dict[str, str]:
-    """The digest of what each file declaring an `api` declares,
-    keyed by the module `rbt generate` writes for the file, relative
-    to the generated directory the way `Dashboard.generated` is
-    keyed: `shop/v1/shop_rbt.py` for `shop/v1/shop.py`."""
+    """The digest of what each file declaring an API declares, which
+    is the one code generated from it records, keyed by the module
+    `rbt generate` writes for the file."""
     return {
-        f'{_relative(filename, api_directory).removesuffix(".py")}_rbt.py':
+        _generated_module(_relative(filename, api_directory)):
             api_digest(file.api)
         for filename, file in known.items()
         if file.api is not None
@@ -190,6 +244,7 @@ def _files(
         if file.error is not None:
             recorded.error = file.error
         recorded.modified.CopyFrom(file.modified)
+        recorded.imported.extend(sorted(file.imported))
         files[_relative(filename, api_directory)] = recorded
     return files
 
@@ -219,7 +274,7 @@ async def _walk_and_read(
     # Every parsed file is read, all at once: each read
     # is an interpreter importing the file, and none
     # waits on another.
-    reads: dict[Path, tuple[Optional[api_pb2.API], Optional[str]]] = {
+    reads: dict[Path, tuple[Optional[Reading], Optional[str]]] = {
         filename: read async for filename, read in concurrently(
             lambda filename: read_api_file(
                 api_directory,
@@ -236,13 +291,20 @@ async def _walk_and_read(
     # candidate that is gone, or could not be read, is in none of
     # these.
     known_now: dict[Path, ReadFile] = dict(unchanged)
-    for filename, (api, error) in reads.items():
+    for filename, (read, error) in reads.items():
         known_now[filename] = ReadFile(
             filename=filename,
             digest=parsed[filename].digest,
             dependencies=dict(parsed[filename].dependencies),
-            external=(),
-            api=api,
+            # Recorded with the digest each was read with, so that a
+            # change to one, which the walk never finds, reads this
+            # file again. A file that could not be read records
+            # none, and is read again when its own bytes change.
+            external=tuple(read.external) if read is not None else (),
+            api=(
+                read.api if read is not None and read.HasField('api') else None
+            ),
+            imported=dict(read.imported) if read is not None else {},
             error=error,
             # The parsed bytes' time, from the open file they came
             # from, so a time and a digest always describe one file.
@@ -265,6 +327,7 @@ async def _walk_and_read(
             dependencies={},
             external=(),
             api=None,
+            imported={},
             error=(
                 f'{type(unparseable_file.error).__name__}: '
                 f'{unparseable_file.error}'
@@ -309,7 +372,7 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
             # as `rbt dev run` does. The event is only a wake-up:
             # what to read is decided by walking the files.
             async with watcher.watch(
-                [SOURCE_GLOB],
+                [SOURCE_GLOB, PROTO_GLOB],
                 root_dir=str(directory),
             ) as event:
 
@@ -345,6 +408,7 @@ async def watch(context: WorkflowContext, *, api_directory: str) -> None:
                         api_digests=_api_digests(
                             known_now, api_directory=directory
                         ),
+                        api_reading_version=API_READING_VERSION,
                         changes=changes,
                         check=check,
                     )

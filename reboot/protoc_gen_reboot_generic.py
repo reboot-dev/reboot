@@ -23,6 +23,8 @@ from pyprotoc_plugin.helpers import (  # type: ignore[import]
 )
 from pyprotoc_plugin.plugins import ProtocPlugin  # type: ignore[import]
 from rbt.v1alpha1 import options_pb2
+from reboot import proto_api
+from reboot.api_digest import api_digest
 from reboot.options import (
     get_file_options,
     get_method_options,
@@ -32,6 +34,7 @@ from reboot.options import (
     has_service_options,
     is_reboot_state,
 )
+from reboot.proto_api import UserProtoError
 from reboot.settings import (
     AUTO_CONSTRUCT_PROTO_METHOD,
     SET_CLAIMS_PROTO_METHOD,
@@ -96,11 +99,6 @@ Feature = Literal[
     'streaming',
     'workflow',
 ]
-
-
-class UserProtoError(Exception):
-    """Exception raised in case of a malformed user-provided proto file."""
-    pass
 
 
 @dataclass(kw_only=True)
@@ -788,15 +786,26 @@ class RebootProtocPlugin(ProtocPlugin):
             state_full_name=state_full_name,
         )
 
-    @staticmethod
-    def _proto_file_options(file: FileDescriptor) -> ProtoFileOptions:
+    def _proto_file_options(
+        self,
+        file: FileDescriptor,
+        file_proto: FileDescriptorProto,
+    ) -> ProtoFileOptions:
         options = get_file_options(file)
         return ProtoFileOptions(
             zod=options.zod if options.HasField('zod') else None,
             pydantic=options.pydantic
             if options.HasField('pydantic') else None,
-            api_digest=options.api_digest
-            if options.HasField('api_digest') else None,
+            # A `.proto` a developer wrote is digested as the `API` it
+            # is read into, the way the dashboard reads it; the
+            # `.proto` generated from a pydantic API carries its
+            # digest as an option.
+            api_digest=(
+                options.api_digest
+                if options.HasField('api_digest') else api_digest(
+                    proto_api.api_of(file_proto, filename=file_proto.name),
+                )
+            ),
         )
 
     def _is_default_constructible(self, service: ServiceDescriptor) -> bool:
@@ -1170,7 +1179,7 @@ class RebootProtocPlugin(ProtocPlugin):
             clients=clients,
             reboot_version=REBOOT_VERSION,
             options=BaseFileOptions(
-                proto=RebootProtocPlugin._proto_file_options(file),
+                proto=self._proto_file_options(file, file_proto),
             ),
         )
 

@@ -263,12 +263,26 @@ class TypeValidationErrorsTest(unittest.TestCase):
             f"must be a `Literal` with exactly one value.",
         )
 
-    def test_literal_with_non_string_value(self):
-        """Literal fields must have string values only."""
+    def test_literal_of_json_values(self):
+        """A `Literal` may hold any JSON value: strings, integers,
+        booleans and `None`."""
 
         class State(Model):
-            # Integer literals are not supported.
             status: Literal[1, 2, 3] = Field(tag=1)
+            flag: Literal[True, False] = Field(tag=2)
+            nothing: Literal[None] = Field(tag=3)
+            mixed: Literal["a", 1, True, None] = Field(tag=4)
+
+        Type(
+            state=State,
+            methods=Methods(),
+        )
+
+    def test_literal_with_non_json_value(self):
+        """A `Literal` of bytes, which is no JSON value, is refused."""
+
+        class State(Model):
+            status: Literal[b"a"] = Field(tag=1)
 
         with self.assertRaises(UserPydanticError) as error:
             Type(
@@ -278,8 +292,9 @@ class TypeValidationErrorsTest(unittest.TestCase):
 
         self.assertEqual(
             str(error.exception),
-            "'state' has `Literal` field with non-string value `1`. "
-            "Only string literals are supported.",
+            "'state' has `Literal` field with member `b'a'`, which is no "
+            "JSON value. A `Literal` may hold strings, integers, booleans "
+            "and `None`.",
         )
 
     def test_field_not_subclass_of_model(self):

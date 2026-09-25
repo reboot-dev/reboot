@@ -13,6 +13,7 @@ from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import Change
 from rbt.dashboard.v1.dashboard_rbt import Dashboard
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
+from rbt.v1alpha1.api import api_pb2
 from rbt.v1alpha1.api.schema_pb2 import INTEGER, STRING
 from reboot.aio.tests import Reboot
 from reboot.dashboard.backend.constants import (
@@ -21,7 +22,7 @@ from reboot.dashboard.backend.constants import (
     ENVVAR_RBT_API_DIRECTORY,
 )
 from reboot.dashboard.backend.main import application
-from reboot.dashboard.backend.walk import _modified_at
+from reboot.dashboard.backend.walk import _modified_at, _standardized_path
 from typing import Optional
 from unittest.mock import patch
 
@@ -181,6 +182,131 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn('shop/v1/models.py', api.api_files)
 
+    async def test_a_change_to_an_imported_proto_reads_its_importer(
+        self,
+    ) -> None:
+        """A `.proto` is read the way a Pydantic file is: what it
+        declares is recorded under the module `rbt generate` writes
+        for it, and a change to a `.proto` it imports reads it
+        again, so what it declares follows."""
+        parts = self.directory / 'shop' / 'v1' / 'parts.proto'
+        parts.parent.mkdir(parents=True, exist_ok=True)
+        parts.write_text(
+            'syntax = "proto3";\n'
+            'package shop.v1;\n'
+            'enum Size {\n'
+            '  SMALL = 0;\n'
+            '}\n'
+        )
+        depot = self.directory / 'shop' / 'v1' / 'depot.proto'
+        depot.write_text(
+            'syntax = "proto3";\n'
+            'package shop.v1;\n'
+            'import "rbt/v1alpha1/options.proto";\n'
+            'import "shop/v1/parts.proto";\n'
+            'message Depot {\n'
+            '  option (rbt.v1alpha1.state) = {};\n'
+            '  Size size = 1;\n'
+            '}\n'
+        )
+
+        await self._start_dashboard()
+        api = await self._wait_for_api(
+            lambda api: len(_state_types_in(api)) == 1
+        )
+
+        # Both files declare an API, the one of shared messages too.
+        self.assertEqual(
+            sorted(api.apis), ['shop/v1/depot.proto', 'shop/v1/parts.proto']
+        )
+        self.assertEqual(
+            sorted(api.api_digests),
+            ['shop/v1/depot_rbt.py', 'shop/v1/parts_rbt.py'],
+        )
+        # The import of a file of the directory is a dependency the
+        # walk follows; Reboot's own options are outside it.
+        self.assertEqual(
+            api.api_files['shop/v1/depot.proto'].
+            dependencies['shop/v1/parts.proto'].filename,
+            str(_standardized_path(parts)),
+        )
+        self.assertIn(
+            'options.proto',
+            [
+                os.path.basename(external.filename)
+                for external in api.api_files['shop/v1/depot.proto'].external
+            ],
+        )
+
+        # A second value, in the imported file only.
+        parts.write_text(parts.read_text().replace('}', '  LARGE = 1;\n}'))
+
+        # Described by the file declaring it.
+        await self._wait_for_api(
+            lambda api: [
+                value.name for value in api.apis['shop/v1/parts.proto'].enums[
+                    'shop.v1.Size'].values
+            ] == ['SMALL', 'LARGE']
+        )
+
+        [changed] = [
+            change.enum_changed
+            for change in await self._changelog_entries()
+            if change.HasField('enum_changed')
+        ]
+        self.assertEqual(changed.name, 'shop.v1.Size')
+        self.assertEqual(changed.package, 'shop.v1')
+        [value] = changed.values
+        self.assertEqual(value.name, 'LARGE')
+        self.assertTrue(value.HasField('added'))
+
+    async def test_a_property_joining_a_oneof_is_history(self) -> None:
+        """A field moved into a `oneof` is the same property, by tag
+        and type, so nothing happens to it; what happens is to the
+        `oneof`, whose members are not what they were."""
+        depot = self.directory / 'shop' / 'v1' / 'depot.proto'
+        depot.parent.mkdir(parents=True, exist_ok=True)
+        depot.write_text(
+            'syntax = "proto3";\n'
+            'package shop.v1;\n'
+            'import "rbt/v1alpha1/options.proto";\n'
+            'message Depot {\n'
+            '  option (rbt.v1alpha1.state) = {};\n'
+            '  oneof delivery {\n'
+            '    string truck = 1;\n'
+            '  }\n'
+            '  string courier = 2;\n'
+            '}\n'
+        )
+
+        await self._start_dashboard()
+        await self._wait_for_api(lambda api: len(_state_types_in(api)) == 1)
+
+        depot.write_text(
+            depot.read_text().replace(
+                '    string truck = 1;\n  }\n  string courier = 2;\n',
+                '    string truck = 1;\n    string courier = 2;\n  }\n',
+            )
+        )
+
+        await self._wait_for_api(
+            lambda api: list(
+                api.apis['shop/v1/depot.proto'].schemas['shop.v1.Depot'].
+                one_ofs[0].tags
+            ) == [1, 2]
+        )
+
+        [changed] = [
+            change.state_type_changed
+            for change in await self._changelog_entries()
+            if change.HasField('state_type_changed')
+        ]
+        self.assertEqual(list(changed.properties), [])
+        [one_of] = changed.one_ofs
+        self.assertEqual(one_of.name, 'delivery')
+        self.assertEqual(list(getattr(one_of.members, 'from')), [1])
+        self.assertEqual(list(one_of.members.to), [1, 2])
+
     async def test_a_burst_of_saves_reads_every_saved_file(self) -> None:
         """Files saved together are all read, however many of the
         saves the watch heard: what to read is decided by walking
@@ -260,6 +386,52 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
                 ('shop.v1.depot.LookResponse', 'data_type_added'),
             ],
         )
+
+    async def test_what_an_older_reading_recorded_is_read_again(self) -> None:
+        """A dashboard upgraded over the state an older one left reads
+        every file again, though none changed: a file is otherwise
+        carried forward as the older reading described it, which does
+        not say what this one does, and whose digest no code
+        generated since records. What was there all along is not
+        recorded as having changed."""
+        self._write_api_file(self.directory, 'shop', 'Shop')
+
+        await self._start_dashboard()
+        read = await self._wait_for_api(
+            lambda api: len(_state_types_in(api)) == 1
+        )
+        digest = read.api_digests['shop/v1/shop_rbt.py']
+        changes = len(await self._changelog_entries())
+
+        # What an older dashboard would have left: the same file, by
+        # the same bytes, described with none of the packages this
+        # reading says, under a digest of that description, and no
+        # version, which is what a state written before there was one
+        # holds.
+        older = api_pb2.API()
+        older.CopyFrom(read.apis['shop/v1/shop.py'])
+        for schema in older.schemas.values():
+            schema.ClearField('package')
+        context = self.rbt.create_external_context(name=self.id())
+        await Dashboard.ref(DASHBOARD_ID).UpdateApi(
+            context,
+            api_directory=read.api_directory,
+            api_files=dict(read.api_files),
+            apis={'shop/v1/shop.py': older},
+            api_digests={'shop/v1/shop_rbt.py': 'a' * 64},
+            check=read.api_check,
+        )
+
+        await self.rbt.down()
+        await self.rbt.up(revision=self.revision)
+
+        api = await self._wait_for_api(
+            lambda api: api.api_digests['shop/v1/shop_rbt.py'] == digest
+        )
+        self.assertEqual(
+            {schema.package for schema in _schemas_in(api)}, {'shop.v1'}
+        )
+        self.assertEqual(len(await self._changelog_entries()), changes)
 
     async def test_a_restart_keeps_what_unchanged_files_declare(self) -> None:
         """A dashboard brought back up joins each file's state types

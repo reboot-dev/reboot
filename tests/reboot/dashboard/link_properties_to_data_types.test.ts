@@ -10,10 +10,11 @@ import {
   propertiesOfState,
   formatType,
   linkDataTypes,
-  packageOfDataTypeName,
   packageOfStateTypeName,
   qualifiedName,
 } from "../../../reboot/dashboard/web/src/link_properties_to_data_types";
+import protoPartsApiJson from "./proto_parts_state_types";
+import protoApiJson from "./proto_state_types";
 import apiJson from "./state_types";
 
 // The reader prints proto JSON, which the generated class reads: the
@@ -21,8 +22,9 @@ import apiJson from "./state_types";
 // by the file relative to the API directory, as `API.apis` keys
 // them.
 const apis: APIs = {
+  // What the file declares, of everything reading it found.
   "shop/v1/shop.py": api_pb.API.fromJson(
-    apiJson as Parameters<typeof api_pb.API.fromJson>[0]
+    apiJson.api as Parameters<typeof api_pb.API.fromJson>[0]
   ),
 };
 const api = apis["shop/v1/shop.py"];
@@ -45,7 +47,7 @@ describe("the type spelling the changelog shares with the properties table", () 
     // in the type.
     const models = Object.entries(schemas).map(([name, schema]) => ({
       schema,
-      rows: propertiesOfDataType({ api, name }),
+      rows: propertiesOfDataType({ apis, name }),
     }));
     expect(models.length).toBeGreaterThan(0);
 
@@ -73,7 +75,7 @@ describe("the description the reader writes", () => {
     expect(remaining?.response?.name).toBe("shop.v1.shop.StockResponse");
 
     const properties = propertiesOfDataType({
-      api,
+      apis,
       name: remaining!.response!.name,
     });
     const items = properties.find((property) => property.name === "items");
@@ -118,7 +120,7 @@ describe("the description the reader writes", () => {
 
     expect(error.name).toBe("shop.v1.shop.OutOfStockError");
     expect(
-      propertiesOfDataType({ api, name: error.name }).map(
+      propertiesOfDataType({ apis, name: error.name }).map(
         (property) => property.name
       )
     ).toEqual(["item"]);
@@ -140,7 +142,7 @@ describe("the data types the description carries", () => {
     expect(linkedDataTypesById().has("shop.v1.shop.ShopState")).toBe(false);
     // The state page shows the state model's properties.
     expect(
-      propertiesOfState({ api, stateType: api.stateTypes[0] }).map(
+      propertiesOfState({ apis, stateType: api.stateTypes[0] }).map(
         (property) => property.name
       )
     ).toEqual(["name", "open"]);
@@ -174,7 +176,7 @@ describe("the data types the description carries", () => {
       (method) => method.name === "remaining"
     );
     const items = propertiesOfDataType({
-      api,
+      apis,
       name: remaining!.response!.name,
     }).find((property) => property.name === "items");
     expect(items?.link).toBe("shop.v1.shop.Item");
@@ -234,11 +236,100 @@ describe("the data types the description carries", () => {
 });
 
 describe("the package a name belongs to", () => {
-  it("drops the module and the class from a data type name", () => {
-    expect(packageOfDataTypeName("shop.v1.shop.Item")).toBe("shop.v1");
-  });
-
   it("drops only the class from a state type name", () => {
     expect(packageOfStateTypeName("shop.v1.Shop")).toBe("shop.v1");
+  });
+});
+
+describe("what only a `.proto` declares", () => {
+  // Two files: `depot.proto` refers to `Part`, which `parts.proto`
+  // declares and so describes.
+  const protoApis: APIs = {
+    "shop/v1/depot.proto": api_pb.API.fromJson(
+      protoApiJson.api as Parameters<typeof api_pb.API.fromJson>[0]
+    ),
+    "shop/v1/parts.proto": api_pb.API.fromJson(
+      protoPartsApiJson.api as Parameters<typeof api_pb.API.fromJson>[0]
+    ),
+  };
+  const protoApi = protoApis["shop/v1/depot.proto"];
+  const linked = linkDataTypes({ apis: protoApis });
+
+  it("spells a type as it is in JSON, with what it was declared as", () => {
+    const properties = propertiesOfState({
+      apis: protoApis,
+      stateType: protoApi.stateTypes[0],
+    });
+    expect(
+      properties.map((property) => [
+        property.name,
+        property.type,
+        property.origin,
+      ])
+    ).toEqual([
+      // A key is a string in JSON, whatever it was declared as.
+      ["shelves", "Record<string, Part>", "map<uint32, Part>"],
+      // JSON shows all of a `string`.
+      ["manager", "string", undefined],
+      ["floor_plan", "string", "bytes"],
+      ["notes", "any", "Value"],
+      ["delivery", "one of", undefined],
+    ]);
+    // A reference into another file links to what that file
+    // describes.
+    expect(properties[0].link).toBe("shop.v1.Part");
+  });
+
+  it("says a type on one line for the changelog", () => {
+    const [capacity] = protoApi.schemas["shop.v1.DepotFullError"].properties;
+    expect(formatType(capacity.type)).toBe("integer (uint32)");
+  });
+
+  it("lists a oneof's members beneath it, each linking for itself", () => {
+    const delivery = propertiesOfState({
+      apis: protoApis,
+      stateType: protoApi.stateTypes[0],
+    }).find((property) => property.name === "delivery");
+    expect(delivery?.link).toBeUndefined();
+    expect(delivery?.description).toBe("How the depot last received parts.");
+    expect(
+      delivery?.members?.map((member) => [
+        member.name,
+        member.type,
+        member.link,
+      ])
+    ).toEqual([
+      ["truck", "string", undefined],
+      ["courier", "Courier", "shop.v1.Depot.Courier"],
+    ]);
+  });
+
+  it("gives an enum a page, its values where properties would be", () => {
+    const size = linked.find(
+      (linkedDataType) => linkedDataType.id === "shop.v1.Part.Size"
+    );
+    expect(size?.kind).toBe("enum");
+    expect(size?.name).toBe("Part.Size");
+    // The package is the one the enum says, a proto message's name
+    // carrying no module to drop.
+    expect(size?.package).toBe("shop.v1");
+    expect(size?.properties.map((value) => [value.name, value.type])).toEqual([
+      ["SIZE_UNSPECIFIED", "0"],
+      ["SMALL", "1"],
+      ["LARGE", "2"],
+    ]);
+    expect(size?.referrers).toEqual([
+      { id: "shop.v1.Part", label: "Part.size" },
+    ]);
+  });
+
+  it("names a member of a oneof among what contains a data type", () => {
+    const courier = linked.find(
+      (linkedDataType) => linkedDataType.id === "shop.v1.Depot.Courier"
+    );
+    expect(courier?.kind).toBe("data type");
+    expect(courier?.referrers).toEqual([
+      { id: "shop.v1.Depot", label: "Depot.courier" },
+    ]);
   });
 });

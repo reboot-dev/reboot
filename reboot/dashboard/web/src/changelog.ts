@@ -4,7 +4,9 @@
 // an `OrderedMap` keyed by a uuidv7, so the keys are in the order
 // the changes happened and a reverse range is newest first.
 import type {
+  EnumValueChange,
   MethodChange,
+  OneOfChange,
   PropertyChange,
 } from "../../../../rbt/dashboard/v1/dashboard_pb";
 import {
@@ -15,7 +17,6 @@ import type { Kind } from "./link_properties_to_data_types";
 import {
   formatConstraints,
   formatType,
-  packageOfDataTypeName,
   packageOfStateTypeName,
 } from "./link_properties_to_data_types";
 
@@ -187,6 +188,77 @@ const partsOfProperties = (properties: PropertyChange[]): Part[] =>
     }
   });
 
+const partsOfEnumValues = (values: EnumValueChange[]): Part[] =>
+  values.map((value) => {
+    const noun = "value";
+    const name = value.name;
+    const c = value.change;
+    switch (c.case) {
+      case "added":
+        return { noun, name, difference: "added", verb: "added" };
+      case "removed":
+        return { noun, name, difference: "removed", verb: "removed" };
+      case "renamed":
+        return {
+          noun,
+          name: c.value.from,
+          difference: "changed",
+          verb: "renamed",
+          detail: `to ${c.value.to}`,
+        };
+      case "description":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: "description changed",
+        };
+      case "deprecated":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: c.value.deprecated ? "now deprecated" : "no longer deprecated",
+        };
+      case undefined:
+        return { noun, name, difference: "changed", verb: "changed" };
+    }
+  });
+
+// A `oneof`'s members, by tag, as the row says them.
+const tagsOf = (tags: number[]): string =>
+  tags.length === 0 ? "none" : tags.join(", ");
+
+const partsOfOneOfs = (oneOfs: OneOfChange[]): Part[] =>
+  oneOfs.map((oneOf) => {
+    const noun = "oneof";
+    const name = oneOf.name;
+    const c = oneOf.change;
+    switch (c.case) {
+      case "added":
+        return { noun, name, difference: "added", verb: "added" };
+      case "removed":
+        return { noun, name, difference: "removed", verb: "removed" };
+      case "members":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: "members changed",
+          detail: `from tags ${tagsOf(c.value.from)} to ${tagsOf(c.value.to)}`,
+        };
+      case "description":
+        return {
+          noun,
+          name,
+          difference: "changed",
+          verb: "description changed",
+        };
+      case undefined:
+        return { noun, name, difference: "changed", verb: "changed" };
+    }
+  });
+
 const partsOfMethods = (methods: MethodChange[]): Part[] =>
   methods.map((method) => {
     const noun = "method";
@@ -310,6 +382,7 @@ export const rowOfChange = (change: Change): Row => {
                 },
               ]),
           ...partsOfProperties(what.value.properties),
+          ...partsOfOneOfs(what.value.oneOfs),
           ...partsOfMethods(what.value.methods),
         ],
       };
@@ -349,9 +422,48 @@ export const rowOfChange = (change: Change): Row => {
                 },
               ]),
           ...partsOfProperties(what.value.properties),
+          ...partsOfOneOfs(what.value.oneOfs),
         ],
       };
     case "dataTypeRemoved":
+      return {
+        where: what.value.package,
+        kind: "data",
+        difference: "removed",
+        name: shortNameOf(what.value.name),
+        parts: [],
+      };
+    case "enumAdded":
+      return {
+        where: what.value.package,
+        kind: "data",
+        difference: "added",
+        name: shortNameOf(what.value.name),
+        link: { page: "data", id: what.value.name },
+        parts: [],
+      };
+    case "enumChanged":
+      return {
+        where: what.value.package,
+        kind: "data",
+        difference: "changed",
+        name: shortNameOf(what.value.name),
+        link: { page: "data", id: what.value.name },
+        parts: [
+          ...(what.value.description === undefined
+            ? []
+            : [
+                {
+                  noun: "",
+                  name: shortNameOf(what.value.name),
+                  difference: "changed" as const,
+                  verb: "description changed",
+                },
+              ]),
+          ...partsOfEnumValues(what.value.values),
+        ],
+      };
+    case "enumRemoved":
       return {
         where: what.value.package,
         kind: "data",

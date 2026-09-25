@@ -2972,6 +2972,22 @@ header .state-type-description {
   background: hsl(var(--surface-sunken));
 }
 
+/* What a property's type is where it was declared, beside what it is
+   in JSON. */
+.property-origin {
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+
+/* The members of a `oneof`, beneath the property they are one of. */
+.members {
+  margin-top: 8px;
+}
+
+.members .property {
+  background: hsl(var(--card));
+}
+
 .property-head {
   display: flex;
   align-items: baseline;

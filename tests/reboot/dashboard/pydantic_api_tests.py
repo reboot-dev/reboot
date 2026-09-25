@@ -81,7 +81,7 @@ class PydanticApiTest(unittest.TestCase):
 
         self.assertEqual(declared.filename, 'shop/v1/shop.py')
         self.assertEqual(declared.package, 'shop.v1')
-        self.assertEqual(declared.module, 'shop.v1.shop')
+        self.assertEqual(declared.pydantic.module, 'shop.v1.shop')
 
         [shop] = declared.state_types
         self.assertEqual(shop.name, 'Shop')

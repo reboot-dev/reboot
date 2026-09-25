@@ -33,15 +33,26 @@ message Dashboard {
   map<string, File> api_files = 3;
 
   // What each file declaring an `api` declares, keyed the way
-  // `api_files` is, which is also the `filename` inside.
+  // `api_files` is, which is also the `filename` inside; and, marked
+  // `external`, what each file outside the API directory that one of
+  // them refers to declares, keyed by the path `protoc` names it by.
   map<string, rbt.v1alpha1.api.API> apis = 4;
 
   // The digest of what each file declaring an `api` declares, as
   // it is now, keyed by the module `rbt generate` writes for the
   // file, relative to the generated directory the way `generated`
-  // is keyed: `shop/v1/shop_rbt.py` for `shop/v1/shop.py`. The
-  // module records the digest it was generated from.
+  // is keyed: `shop/v1/shop_rbt.py` for `shop/v1/shop.py` and for
+  // `shop/v1/shop.proto`. The module records the digest it was
+  // generated from.
   map<string, string> api_digests = 5;
+
+  // Represents the version of the reading that recorded `api_files`,
+  // `apis` and `api_digests`. A dashboard whose reader describes a
+  // file differently reads every file again rather than carrying
+  // forward what an earlier one described, which would never say it,
+  // and whose digest generated code written since would never match;
+  // see `API_READING_VERSION`.
+  uint32 api_reading_version = 20;
 
   // Every servicer found in the developer's application, sorted. A
   // state type with no entry here is one no servicer was found for.
@@ -174,6 +185,8 @@ message DashboardUpdateApiRequest {
   // The check that found what this records, recorded in the same
   // write, so that a page that sees the check sees what it found.
   Check check = 7;
+
+  uint32 api_reading_version = 8;
 }
 
 message DashboardUpdateApiResponse {}
@@ -216,6 +229,10 @@ message Change {
     CodeAdded code_added = 7;
     CodeChanged code_changed = 8;
     CodeRemoved code_removed = 9;
+
+    EnumAdded enum_added = 10;
+    EnumChanged enum_changed = 11;
+    EnumRemoved enum_removed = 12;
   }
 }
 
@@ -283,6 +300,32 @@ message PropertyChange {
     DescriptionChanged description = 9;
     ConstraintsChanged constraints = 10;
     DeprecatedChanged deprecated = 11;
+  }
+}
+
+message OneOfAdded {}
+
+message OneOfRemoved {}
+
+// The members of a `oneof` are not what they were: the tags of the
+// properties that exclude each other, before and after.
+message MembersChanged {
+  repeated uint32 from = 1;
+  repeated uint32 to = 2;
+}
+
+// One `oneof` of a state model or data type, and one thing that
+// happened to it. One entry per thing. A `oneof` is known by its
+// name, having no tag of its own; its members are properties, whose
+// own changes are `PropertyChange`s.
+message OneOfChange {
+  string name = 1;
+
+  oneof change {
+    OneOfAdded added = 2;
+    OneOfRemoved removed = 3;
+    MembersChanged members = 4;
+    DescriptionChanged description = 5;
   }
 }
 
@@ -373,8 +416,8 @@ message StateModelRenamed {
 }
 
 // Never without something that changed: every change to a state
-// type is one of its methods, one of its properties, its
-// description or its state model's name.
+// type is one of its methods, one of its properties, one of its
+// `oneof`s, its description or its state model's name.
 message StateTypeChanged {
   string name = 1;
   string filename = 2;
@@ -382,6 +425,7 @@ message StateTypeChanged {
   repeated PropertyChange properties = 4;
   optional DescriptionChanged description = 5;
   optional StateModelRenamed state_model_renamed = 6;
+  repeated OneOfChange one_ofs = 7;
 }
 
 message StateTypeRemoved {
@@ -405,12 +449,13 @@ message DataTypeAdded {
 }
 
 // Never without something that changed: every change to a data type
-// is one of its properties or its description.
+// is one of its properties, one of its `oneof`s or its description.
 message DataTypeChanged {
   string name = 1;
   string filename = 2;
   repeated PropertyChange properties = 3;
   optional DescriptionChanged description = 4;
+  repeated OneOfChange one_ofs = 6;
 
   // The package the data type belongs to. Recorded rather than
   // derived from `name`, whose spelling depends on what declared
@@ -427,6 +472,59 @@ message DataTypeRemoved {
   // derived from `name`, whose spelling depends on what declared
   // the type: a Pydantic model's name carries its module, a proto
   // message's its package.
+  string package = 3;
+}
+
+message EnumValueAdded {}
+
+message EnumValueRemoved {}
+
+// One value of an enum, and one thing that happened to it. One entry
+// per thing.
+message EnumValueChange {
+  // What identifies the value: its number, which is what it is
+  // shipped as, so a rename keeps it and a renumber does not.
+  int32 number = 1;
+
+  // Its name now; for a removed value, the name it had.
+  string name = 2;
+
+  oneof change {
+    EnumValueAdded added = 3;
+    EnumValueRemoved removed = 4;
+    Renamed renamed = 5;
+    DescriptionChanged description = 6;
+    DeprecatedChanged deprecated = 7;
+  }
+}
+
+// An enum the API files declare.
+message EnumAdded {
+  // The enum's full proto name, e.g. "shop.v1.Item.Size".
+  string name = 1;
+  string filename = 2;
+
+  // The package the enum belongs to.
+  string package = 3;
+}
+
+// Never without something that changed: every change to an enum is
+// one of its values or its description.
+message EnumChanged {
+  string name = 1;
+  string filename = 2;
+  repeated EnumValueChange values = 3;
+  optional DescriptionChanged description = 4;
+
+  // The package the enum belongs to.
+  string package = 5;
+}
+
+message EnumRemoved {
+  string name = 1;
+  string filename = 2;
+
+  // The package the enum belongs to.
   string package = 3;
 }
 
@@ -860,6 +958,14 @@ message File {
   // files. Recorded for the API's files; the implementation's are
   // not compared by time.
   google.protobuf.Timestamp modified = 5;
+
+  // Represents the files outside the API directory that reading this
+  // API file described, each keyed in `Dashboard.apis` by the path
+  // `protoc` names it by, e.g. "rbt/v1alpha1/api/api.proto", and
+  // marked `external` there. What a restarted dashboard carries
+  // forward for a file it need not read again, and what says which
+  // of those descriptions are still referred to.
+  repeated string imported = 6;
 }
 
 // Represents one file in the generated directory, as of the last
@@ -872,7 +978,7 @@ message Generated {
   // Represents the digest of what the API file declared when the
   // module was generated from it, as the module records it. Absent
   // for a module recording none: one generated before digests were
-  // recorded, or from a `.proto`.
+  // recorded, or from a `.proto` declaring no state.
   optional string api_digest = 2;
 }
 
@@ -1144,4 +1250,31 @@ service PreferencesMethods {
     option (rbt.v1alpha1.method).writer = {
     };
   }
+}
+// Represents what reading one of the developer's API files found:
+// what `reboot.dashboard.backend.api_reader` writes, as JSON, and
+// the API watcher reads back.
+message Reading {
+  // What the file declares. Absent for a file declaring no API, such
+  // as a Python file of shared code.
+  optional rbt.v1alpha1.api.API api = 1;
+
+  // What each file outside the API directory that the file refers
+  // to, however many references away, declares, keyed by the path
+  // `protoc` names the file by, e.g. "rbt/v1alpha1/api/api.proto":
+  // described so that what is referred to can be seen, and by that
+  // path so that every file referring to it lands on one
+  // description. Each is `external`. Empty for a Pydantic file, whose
+  // models from elsewhere are described inline.
+  map<string, rbt.v1alpha1.api.API> imported = 2;
+
+  // Represents the files outside the API directory that reading the
+  // file read, each with the digest it was read with: for a
+  // `.proto`, the files `protoc` read that an import led to; for a
+  // Python file, the modules it imports, resolved to their files;
+  // either way what the developer did not write, such as Reboot's
+  // own, or a shared package on the `PYTHONPATH`. The walk of the
+  // directory never finds these, so they are recorded so that a
+  // change to one, which upgrading Reboot is, reads the file again.
+  repeated File.Dependency external = 3;
 }

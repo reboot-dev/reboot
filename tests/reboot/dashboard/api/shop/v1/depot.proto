@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package shop.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "rbt/v1alpha1/options.proto";
+import "shop/v1/parts.proto";
+
+// Where parts wait to be shipped.
+message Depot {
+  option (rbt.v1alpha1.state) = {
+    description: "One building's worth of parts."
+  };
+
+  // The parts on each shelf, by shelf number.
+  map<uint32, Part> shelves = 1;
+
+  optional string manager = 2;
+
+  bytes floor_plan = 3;
+
+  google.protobuf.Value notes = 4;
+
+  // How the depot last received parts.
+  oneof delivery {
+    // The truck's plate.
+    string truck = 5;
+    Courier courier = 6;
+  }
+
+  message Courier {
+    string name = 1;
+  }
+}
+
+message StockRequest {
+  repeated Part parts = 1;
+}
+
+message StockResponse {}
+
+message DepotFullError {
+  uint32 capacity = 1;
+}
+
+service DepotMethods {
+  // Puts parts on the shelves.
+  rpc Stock(StockRequest) returns (StockResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {
+        constructor: {},
+        exclusive: {},
+      },
+      errors: [ "DepotFullError" ],
+    };
+  }
+
+  rpc Audit(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      description: "Counts what is on the shelves.",
+      mcp: {
+        tool: true,
+        title: "Audit a depot",
+      },
+    };
+  }
+}

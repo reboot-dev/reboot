@@ -46,6 +46,7 @@ from reboot.dashboard.backend.constants import (
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
     ENVVAR_RBT_GENERATED_DIRECTORY,
+    ENVVAR_RBT_PYTHON_PATH,
 )
 from reboot.dashboard.backend.needs_generate_reason import (
     needs_generate_reason,
@@ -79,7 +80,15 @@ class DashboardServicer(Dashboard.Servicer):
             tools=self.state.tools,
             hazards=self.state.hazards,
             generated=self.state.generated,
-            needs_generate_reason=needs_generate_reason(self.state),
+            needs_generate_reason=needs_generate_reason(
+                self.state,
+                # From the environment each time, for the reason the
+                # API directory is: what a restarted `rbt dashboard`
+                # was told is what counts.
+                generated_directory_named=(
+                    ENVVAR_RBT_GENERATED_DIRECTORY in os.environ
+                ),
+            ),
             features=self.state.features,
             api_check=(
                 self.state.api_check
@@ -196,6 +205,7 @@ class DashboardServicer(Dashboard.Servicer):
         """
         application = os.environ.get(ENVVAR_RBT_APPLICATION)
         generated_directory = os.environ.get(ENVVAR_RBT_GENERATED_DIRECTORY)
+        python_path = os.environ.get(ENVVAR_RBT_PYTHON_PATH)
 
         if application is not None:
             await code_watcher.watch(
@@ -205,6 +215,12 @@ class DashboardServicer(Dashboard.Servicer):
                     Path(generated_directory)
                     if generated_directory is not None else None
                 ),
+                python_path=[
+                    Path(directory)
+                    for directory in
+                    (python_path.split(os.pathsep) if python_path else [])
+                    if directory != ''
+                ],
             )
 
         return Dashboard.WatchCodeResponse()
@@ -252,6 +268,7 @@ class DashboardServicer(Dashboard.Servicer):
         self.state.apis.MergeFrom(request.apis)
         self.state.api_digests.clear()
         self.state.api_digests.MergeFrom(request.api_digests)
+        self.state.api_reading_version = request.api_reading_version
         self.state.api_check.CopyFrom(request.check)
         self.state.api_changed_at.CopyFrom(request.check.at)
 

@@ -428,9 +428,16 @@ def _pydantic_to_proto(
         )
 
     if input_type_or_origin is Literal:
+        # By index, and by a member of the same type: `True == 1` in
+        # Python, so `list.index` would find the `1` of
+        # `Literal[1, True]` for `True`.
         literal_args = get_args(input_type)
-        assert input in literal_args, f"Value `{input}` not in `Literal{literal_args}`"
-        return literal_args.index(input)
+        for index, literal in enumerate(literal_args):
+            if type(literal) is type(input) and literal == input:
+                return index
+        raise AssertionError(
+            f"Value `{input!r}` not in `Literal{literal_args}`"
+        )
 
     # Assert that we have a valid type after we check for `Union` and `Literal`,
     # since those are special typing constructs and not "real" types.
@@ -1130,15 +1137,17 @@ class Type(pydantic.BaseModel):
                     method_name,
                 )
             elif field_type_origin is Literal:
-                # We support only string literals for now.
-                literal_args = get_args(field_type)
-                for arg in literal_args:
-                    if not isinstance(arg, str):
+                # A member is a JSON value: a string, an integer, a
+                # boolean or `None`. Not bytes, nor an enum's members,
+                # which `Literal` also allows.
+                for arg in get_args(field_type):
+                    if not (arg is None or isinstance(arg, (str, int))):
                         state_or_method = "'state'" if method_name is None else f"method '{method_name}'"
                         raise UserPydanticError(
                             f"{state_or_method} has `Literal` field with "
-                            f"non-string value `{arg}`. Only string "
-                            "literals are supported."
+                            f"member `{arg!r}`, which is no JSON value. "
+                            "A `Literal` may hold strings, integers, "
+                            "booleans and `None`."
                         )
             elif field_type is Any:
                 # `dict[str, Any]` becomes a Protobuf `map<string,

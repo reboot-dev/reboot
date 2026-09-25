@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package shop.v1;
+
+// A part a depot stocks. Declares no state; `depot.proto` imports it.
+message Part {
+  // How big the part is.
+  enum Size {
+    SIZE_UNSPECIFIED = 0;
+    // Fits in a hand.
+    SMALL = 1;
+    LARGE = 2 [deprecated = true];
+  }
+
+  string name = 1;
+  Size size = 2;
+}

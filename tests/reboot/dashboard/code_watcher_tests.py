@@ -23,6 +23,7 @@ from reboot.dashboard.backend.constants import (
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
     ENVVAR_RBT_GENERATED_DIRECTORY,
+    ENVVAR_RBT_PYTHON_PATH,
 )
 from reboot.dashboard.backend.code_watcher import (
     CODE_ANALYSIS_VERSION,
@@ -702,6 +703,127 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
                     )
             },
         )
+
+
+class PythonPathTest(unittest.IsolatedAsyncioTestCase):
+    """An application whose imports are rooted somewhere other than
+    its own directory, the way a package's are: a repository holding
+    `store/backend/main.py`, which imports its servicer as
+    `store.backend.shop_servicer`, and whose generated code is built
+    somewhere `rbt generate` was never told about. The `PYTHONPATH`
+    the developer has `rbt dev run` give it says where both are."""
+
+    async def asyncSetUp(self) -> None:
+        self._api = tempfile.TemporaryDirectory()
+        self._repository = tempfile.TemporaryDirectory()
+        self._built = tempfile.TemporaryDirectory()
+        self.repository = Path(self._repository.name).resolve()
+        self.built = Path(self._built.name).resolve()
+
+        self.backend = self.repository / 'store' / 'backend'
+        self.backend.mkdir(parents=True)
+        (self.backend / 'shop_servicer.py').write_text(
+            SERVICER.format(state='Shop', module='shop')
+        )
+        (self.backend / 'main.py').write_text(
+            APPLICATION.replace(
+                'from shop_servicer import',
+                'from store.backend.shop_servicer import',
+            )
+        )
+        _write_generated(self.built)
+
+        self._environment = patch.dict(
+            os.environ,
+            {
+                ENVVAR_RBT_API_DIRECTORY:
+                    self._api.name,
+                ENVVAR_RBT_APPLICATION:
+                    str(self.backend / 'main.py'),
+                ENVVAR_RBT_PYTHON_PATH:
+                    os.pathsep.join([str(self.repository),
+                                     str(self.built)]),
+            },
+        )
+        self._environment.start()
+        # Whatever the environment these tests run in names.
+        self._generated_directory = os.environ.pop(
+            ENVVAR_RBT_GENERATED_DIRECTORY, None
+        )
+
+        self.rbt = Reboot()
+        await self.rbt.start()
+        await self.rbt.up(application(), local_envoy=True)
+
+    async def asyncTearDown(self) -> None:
+        await self.rbt.stop()
+        if self._generated_directory is not None:
+            os.environ[ENVVAR_RBT_GENERATED_DIRECTORY] = (
+                self._generated_directory
+            )
+        self._environment.stop()
+        self._built.cleanup()
+        self._repository.cleanup()
+        self._api.cleanup()
+
+    async def _get(self, *, satisfied):
+        context = self.rbt.create_external_context(name=self.id())
+
+        async for response in Dashboard.ref(DASHBOARD_ID
+                                           ).reactively().Get(context):
+            if satisfied(response):
+                return response
+
+        raise AssertionError('never satisfied')
+
+    async def test_a_servicer_imported_through_the_python_path_is_found(
+        self,
+    ) -> None:
+        response = await self._get(
+            satisfied=lambda response: len(response.servicers) == 1
+        )
+
+        [servicer] = response.servicers
+        self.assertEqual(servicer.state_type, 'shop.v1.Shop')
+        self.assertEqual(
+            servicer.filename, str(self.backend / 'shop_servicer.py')
+        )
+
+    async def test_a_save_under_the_python_path_is_noticed(self) -> None:
+        """A directory of the `PYTHONPATH` is not watched whole, since
+        it may be as large as a repository; each file reached under
+        one is watched, which is what a save of one takes."""
+        before = await self._get(
+            satisfied=lambda response: len(response.servicers) == 1
+        )
+        [look] = before.servicers[0].methods
+
+        servicer = self.backend / 'shop_servicer.py'
+        servicer.write_text(
+            servicer.read_text().replace('pass', 'return None')
+        )
+
+        await self._get(
+            satisfied=lambda response: [
+                method.digest for servicer in response.servicers for method in
+                servicer.methods
+            ] not in ([], [look.digest])
+        )
+
+    async def test_nothing_says_to_run_generate(self) -> None:
+        """With no directory `rbt generate` writes Python to, the code
+        is generated some other way: there is nowhere to find a
+        module missing from and nothing `rbt generate` would fix."""
+        path = Path(self._api.name) / 'shop' / 'v1' / 'shop.py'
+        path.parent.mkdir(parents=True)
+        path.write_text(API_FILE.format(state='Shop', description='None'))
+
+        response = await self._get(
+            satisfied=lambda response: len(response.api_digests) == 1
+        )
+
+        self.assertEqual(len(response.generated), 0)
+        self.assertFalse(response.HasField('needs_generate_reason'))
 
 
 class GeneratedListingTest(unittest.IsolatedAsyncioTestCase):
