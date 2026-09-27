@@ -917,3 +917,42 @@ def api_of(
             ),
         )
     return api
+
+
+def references(api: api_pb2.API) -> frozenset[str]:
+    """The qualified names every `Reference` of the `API` carries,
+    of this file's declarations and others': what says which other
+    files' declarations the file mentions."""
+    names: set[str] = set()
+
+    def of_type(type_: schema_pb2.Type) -> None:
+        form = type_.WhichOneof('type')
+        if form == 'reference':
+            names.add(type_.reference.name)
+        elif form == 'enum':
+            names.add(type_.enum.name)
+        elif form == 'array':
+            of_type(type_.array.item)
+        elif form == 'map':
+            of_type(type_.map.value)
+        elif form == 'optional':
+            of_type(type_.optional.inner)
+        elif form == 'discriminated_union':
+            for variant in type_.discriminated_union.variants:
+                names.add(variant.reference.name)
+
+    for schema in api.schemas.values():
+        for property_ in schema.properties:
+            of_type(property_.type)
+    for state_type in api.state_types:
+        names.add(state_type.reference.name)
+        for ui in state_type.uis:
+            if ui.HasField('request'):
+                names.add(ui.request.name)
+        for method in state_type.methods:
+            for field in ('request', 'response'):
+                if method.HasField(field):
+                    names.add(getattr(method, field).name)
+            for error in method.errors:
+                names.add(error.name)
+    return frozenset(names)

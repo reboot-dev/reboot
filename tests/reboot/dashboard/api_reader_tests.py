@@ -440,6 +440,47 @@ class ProtoAPIReaderTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(list(_declared(read).enums), ['shop.v1.Part.Size'])
 
+    async def test_an_external_file_referred_to_is_described_once(
+        self,
+    ) -> None:
+        """A file outside the API directory that the file refers to,
+        such as one of Reboot's own, is described as an `API` of its
+        own, `external`, keyed by the path `protoc` names it by, so
+        that what is referred to can be seen; one nothing refers to,
+        such as `descriptor.proto`, is not."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'shop' / 'v1' / 'depot.proto'
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                'syntax = "proto3";\n'
+                'package shop.v1;\n'
+                'import "rbt/v1alpha1/options.proto";\n'
+                'message Depot {\n'
+                '  option (rbt.v1alpha1.state) = {};\n'
+                '  rbt.v1alpha1.UI page = 1;\n'
+                '}\n'
+            )
+
+            read, error = await read_api_file(directory, 'shop/v1/depot.proto')
+
+        self.assertIsNone(error)
+        assert read is not None and len(read.apis) > 0
+        self.assertFalse(_declared(read).external)
+
+        self.assertEqual(
+            [path for path, api in read.apis.items() if api.external],
+            ['rbt/v1alpha1/options.proto']
+        )
+        options = read.apis['rbt/v1alpha1/options.proto']
+        self.assertTrue(options.external)
+        self.assertEqual(options.filename, 'rbt/v1alpha1/options.proto')
+        self.assertEqual(options.package, 'rbt.v1alpha1')
+        self.assertEqual(list(options.state_types), [])
+        self.assertIn('rbt.v1alpha1.UI', options.schemas)
+        # `descriptor.proto`, which `options.proto` imports and no
+        # field of either names.
+        self.assertNotIn('google/protobuf/descriptor.proto', read.apis)
+
     async def test_the_files_read_outside_the_directory_are_said(self) -> None:
         """What `protoc` read outside the API directory to read a
         `.proto`, which the developer did not write, such as Reboot's

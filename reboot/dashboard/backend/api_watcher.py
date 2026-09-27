@@ -56,7 +56,7 @@ from typing import Mapping, Optional
 # a file that has not changed is otherwise carried forward as an
 # earlier reading described it, which never says the new thing, and
 # whose digest no code generated since records.
-API_READING_VERSION = 4
+API_READING_VERSION = 5
 
 # What tells a Pydantic API file from a protobuf one.
 _PYDANTIC_SUFFIX = '.py'
@@ -87,9 +87,11 @@ class ReadFile:
     external: tuple[Dependency, ...]
 
     # What reading the file described, by path; see
-    # `APIReaderResponse.apis`: what the file declares, under its
-    # own path. Empty for a file declaring no API, or one that could
-    # not be read.
+    # `APIReaderResponse.apis`. What the file declares is under its
+    # own path, and what each file outside the API directory that it
+    # refers to declares is under that file's, marked `external`.
+    # Empty for a file declaring no API, or one that could not be
+    # read.
     apis: Mapping[str, api_pb2.API]
 
     # Why the file could not be read, when it could not be.
@@ -153,11 +155,19 @@ def _reconstitute_known(
             digest=file.digest if not stale else b'',
             dependencies=dict(file.dependencies),
             external=tuple(file.external),
-            apis=(
-                {
-                    relative: state.apis[relative]
-                } if relative in state.apis else {}
-            ),
+            # What the file declares, and what it refers to outside
+            # the application, each of a file its reading read, which
+            # is what says they are this file's to carry forward.
+            apis={
+                path: api
+                for path, api in state.apis.items()
+                if path == relative or (
+                    api.external and any(
+                        dependency.filename.endswith(os.sep + path)
+                        for dependency in file.external
+                    )
+                )
+            },
             error=file.error if file.HasField('error') else None,
             modified=file.modified,
         )
@@ -170,11 +180,20 @@ def _apis(
     api_directory: Path,
 ) -> dict[str, api_pb2.API]:
     """What each file declaring an API declares, keyed by the file
-    relative to the API directory, the way `Dashboard.apis` is keyed."""
-    return {
+    relative to the API directory, the way `Dashboard.apis` is keyed;
+    and what each file outside the directory that one of them refers
+    to declares, keyed by the path `protoc` names it by, once."""
+    external = {
         path: api for _, file in sorted(known.items())
         for path, api in file.apis.items()
+        if api.external
     }
+    own = {
+        path: api for _, file in sorted(known.items())
+        for path, api in file.apis.items()
+        if not api.external
+    }
+    return {**external, **own}
 
 
 def _api_digests(

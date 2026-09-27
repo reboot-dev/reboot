@@ -95,7 +95,7 @@ import {
   propertiesOfState,
   qualifiedName,
   shortNameOfTypeName,
-  sortedAPIs,
+  ownAPIs,
 } from "./link_properties_to_data_types";
 import type { Entry } from "./changelog";
 import {
@@ -181,6 +181,11 @@ const DEFINITIONS: Record<string, string> = {
     "A type the developer wrote that Reboot does not persist: what a " +
     "method takes, returns or raises, and anything those contain. It " +
     "exists while a call is in flight.",
+  external:
+    "From a file outside this application's API: one it imports but " +
+    "did not write, such as Reboot's own. Shown so that what the " +
+    "application refers to in it can be seen; nothing is generated " +
+    "for it here.",
   enum:
     "A closed set of named values the developer wrote in a .proto, " +
     "each shipped as its number. A property of this type holds " +
@@ -1012,7 +1017,7 @@ const stateTypeDeclarationsById = (
   apis: APIs
 ): Map<string, StateTypeDeclaration> =>
   new Map(
-    sortedAPIs(apis).flatMap((api) =>
+    ownAPIs(apis).flatMap((api) =>
       api.stateTypes.map(
         (stateType) =>
           [qualifiedName({ api, stateType }), { api, stateType }] as const
@@ -1464,6 +1469,13 @@ const DataType: FC<{
             label={linkedDataType.kind}
             meaning={DEFINITIONS[linkedDataType.kind]}
           />
+          {linkedDataType.external && (
+            <Pill
+              className="eyebrow"
+              label="external"
+              meaning={DEFINITIONS.external}
+            />
+          )}
         </div>
         <div className="state-type-head">
           <div className="state-type-heading">
@@ -1847,7 +1859,7 @@ const TypesPane: FC<{
   const stateTypeDeclaration =
     target.stateTypeId === undefined
       ? undefined
-      : sortedAPIs(apis)
+      : ownAPIs(apis)
           .flatMap((api) =>
             api.stateTypes.map((stateType) => ({ api, stateType }))
           )

@@ -27,6 +27,7 @@ import importlib
 import os
 import sys
 import tempfile
+from google.protobuf import descriptor_pool
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from google.protobuf.json_format import MessageToJson, Parse, ParseError
 from rbt.dashboard.v1.dashboard_pb2 import APIReaderResponse, File
@@ -138,6 +139,38 @@ async def _read_proto(
     apis: dict[str, api_pb2.API] = {
         filename: proto_api.api_of(file, filename=filename),
     }
+
+    # What the file refers to outside the application is described
+    # too, so that a reference resolves: the file declaring what a
+    # reference names, found among the files `protoc` compiled, is
+    # described as an `API` marked external when it is outside the
+    # directory, and its own references are followed the same way,
+    # to a fixed point. Never a file nothing refers to, such as
+    # `descriptor.proto`, which every option imports.
+    pool = descriptor_pool.DescriptorPool()
+    for file in files:
+        pool.AddSerializedFile(file.SerializeToString())
+
+    unresolved = list(apis.values())
+    while len(unresolved) > 0:
+        for name in proto_api.references(unresolved.pop()):
+            try:
+                filename = pool.FindMessageTypeByName(name).file.name
+            except KeyError:
+                filename = pool.FindEnumTypeByName(name).file.name
+            if filename in apis or os.path.isfile(
+                os.path.join(directory, filename),
+            ):
+                # Described already, or a file of the directory,
+                # which the walk reads.
+                continue
+            file = next(file for file in files if file.name == filename)
+            apis[filename] = proto_api.api_of(
+                file,
+                filename=filename,
+                external=True,
+            )
+            unresolved.append(apis[filename])
 
     return APIReaderResponse(
         apis=apis,
