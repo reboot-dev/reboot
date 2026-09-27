@@ -31,7 +31,7 @@ import apiJson from "./state_types";
 // method.
 const apis: APIs = {
   "shop/v1/shop.py": api_pb.API.fromJson(
-    apiJson as Parameters<typeof api_pb.API.fromJson>[0]
+    apiJson.apis["shop/v1/shop.py"] as Parameters<typeof api_pb.API.fromJson>[0]
   ),
 };
 const SHOP = "shop.v1.Shop";

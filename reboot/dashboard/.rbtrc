@@ -1,0 +1,20 @@
+# The dashboard is itself a Reboot application, so `rbt dashboard`
+# run from this directory shows the dashboard its own API.
+#
+# It is built by Bazel rather than by `rbt generate`, so nothing here
+# says where generated code goes; what is here is what `rbt dashboard`
+# reads.
+#
+# Nothing here is for `rbt dev run` either: `rbt dashboard` is what
+# runs the dashboard.
+
+# Find API definitions in 'rbt/dashboard/': 'v1/dashboard.proto'.
+generate ../../rbt/dashboard
+
+# The application whose servicers implement that API.
+dev run --application=backend/main.py
+
+# Where the application's imports are found: it is part of the `reboot`
+# package, so they are rooted at the repository, and the code Bazel
+# generates from the API is in 'bazel-bin/'.
+dev run --env=PYTHONPATH=../..:../../bazel-bin

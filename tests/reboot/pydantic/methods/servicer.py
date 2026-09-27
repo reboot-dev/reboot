@@ -137,6 +137,18 @@ class TestServicer(Test.Servicer):
             "b": "option1",
         }
 
+        # Exercise a `Literal` of integers, and one of every kind of
+        # JSON value: each round-trips through its `enum` by index.
+        assert self.state.literal_int_value == 10
+        self.state.literal_int_value = 30
+        assert self.state.literal_int_value == 30
+        for member in ("a", 1, True, None):
+            self.state.literal_mixed_value = member
+            read = self.state.literal_mixed_value
+            assert read == member and type(read) is type(member), (
+                read, member
+            )
+
         # Exercise `dict[str, Any]` (a `map<string,
         # google.protobuf.Value>`): set a heterogeneous JSON value that
         # `get_snapshot` reads back out of storage, proving the runtime

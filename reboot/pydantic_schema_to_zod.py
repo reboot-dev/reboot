@@ -2,6 +2,7 @@
 
 import aiofiles
 import importlib
+import json
 import os
 import pydantic_core
 import reboot.api
@@ -22,6 +23,7 @@ from reboot.api import (
     snake_to_camel,
 )
 from reboot.fail import fail
+from reboot.pydantic_schema import literal_of, literal_value
 from typing import (
     Any,
     Literal,
@@ -340,7 +342,9 @@ def pydantic_to_zod(
                             # For Literal types, the default is the first
                             # literal value.
                             first_literal = get_args(field_type)[0]
-                            zod_object_field += f'.default("{first_literal}")'
+                            zod_object_field += (
+                                f'.default({json.dumps(first_literal)})'
+                            )
                         else:
                             assert (
                                 field_origin is Union or
@@ -410,14 +414,11 @@ def pydantic_to_zod(
 
         return output
     elif origin is Literal:
-        for literal_value in args:
-            if not isinstance(literal_value, str):
-                fail(
-                    f"Unexpected literal `{literal_value}` at `{path}`; "
-                    f"only string literals are currently supported"
-                )
-
-        literal_values = ', '.join(f'"{v}"' for v in args)
+        # Each member as the JSON value it is, which is what
+        # `z.literal` takes: `"a"`, `1`, `true`, `null`.
+        literal_values = ', '.join(
+            json.dumps(literal_of(literal_value(v, path=path))) for v in args
+        )
         output = f'z.literal([{literal_values}])'
 
         # The 'tag' might be missing if it is a nested type inside a

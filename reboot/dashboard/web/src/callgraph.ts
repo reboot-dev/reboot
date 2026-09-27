@@ -17,7 +17,7 @@ import {
   packageOfStateTypeName,
   qualifiedName,
   shortNameOfTypeName,
-  sortedAPIs,
+  ownAPIs,
 } from "./link_properties_to_data_types";
 
 // One call a method's implementation makes, and how many times. The
@@ -433,7 +433,7 @@ export const joinStateTypes = (
   }
 
   const graphStateTypes = new Map<string, GraphStateType>(
-    sortedAPIs(apis).flatMap((api) =>
+    ownAPIs(apis).flatMap((api) =>
       api.stateTypes.map((stateType): [string, GraphStateType] => {
         const name = qualifiedName({ api, stateType });
         return [

@@ -8,7 +8,6 @@ import shutil
 import sys
 import tempfile
 from collections import defaultdict
-from importlib import resources
 from pathlib import Path
 from reboot.cli.common import terminal
 from reboot.cli.common.directories import (
@@ -20,6 +19,7 @@ from reboot.cli.common.directories import (
     is_on_path,
     use_working_directory,
 )
+from reboot.cli.common.proto_paths import google_proto_path, reboot_proto_paths
 from reboot.cli.common.rc import ArgumentParser
 from reboot.cli.common.subprocesses import Subprocesses
 from reboot.pydantic_schema_to_proto import generate_proto_file_from_api
@@ -473,54 +473,14 @@ async def generate_direct(
                 all_plugins_args[i] += args
                 return
 
-    # We want to find all Python `site-packages`/`dist-packages` directories
-    # that (may) contain a 'rbt/v1alpha1' directory, which is where we'll find
-    # our protos.
-    #
-    # We can look for Python packages like a 'rbt' folder via the `resources`
-    # module; the resulting path is a `MultiplexedPath`, since there may be
-    # multiple.
-    #
-    # HOWEVER, the `resources` module does NOT work well when all subpaths of
-    # one `rbt/` folder are ALSO present in another `rbt/` folder - e.g. if we
-    # have two `rbt/v1alpha1` folders in two separate locations (in two Bazel
-    # repos, say), we will get just one of those `rbt/v1alpha1` folders, and
-    # thereby maybe only ever see one of the `rbt/` folders too (if there's
-    # nothing unique inside it). So instead of looking for `rbt/` (which only
-    # contains `v1alpha1/`, which is not unique) we look for its sibling paths
-    # `reboot/` and `reboot/`, which contains a lot of unique names in every
-    # place it is present.
-    #
-    # The paths we get don't contain a `parent` attribute, since there isn't one
-    # answer. Instead we use `iterdir()` to get all of the children of all
-    # 'reboot' folders, and then dedupe parents-of-the-parents-of-those-children
-    # (via the `set`), which gives us the 'rbt' folders' parents' paths.
-    reboot_parent_paths: set[str] = set()
-    for resource in resources.files('reboot').iterdir():
-        with resources.as_file(resource) as path:
-            reboot_parent_paths.add(str(path.parent.parent))
-    for resource in resources.files('reboot').iterdir():
-        with resources.as_file(resource) as path:
-            reboot_parent_paths.add(str(path.parent.parent))
-
-    if len(reboot_parent_paths) == 0:
-        raise FileNotFoundError(
-            "Failed to find 'rbt' resource path. "
-            "Please report this bug to the maintainers."
-        )
-
-    # Now add these to '--proto_path', so that users don't need to provide
-    # their own Reboot protos.
-    for reboot_parent_path in reboot_parent_paths:
+    # Add Reboot's own protos to '--proto_path', so that users don't need
+    # to provide their own.
+    for reboot_parent_path in reboot_proto_paths():
         common_args.append(f"--proto_path={reboot_parent_path}")
 
-    # User protos may rely on `google.protobuf.*` protos. We
-    # conveniently have those files packaged in our Python
-    # package; make them available to users, so that users don't
-    # need to provide them.
-    common_args.append(
-        f"--proto_path={resources.files('grpc_tools').joinpath('_proto')}"
-    )
+    # User protos may rely on `google.protobuf.*` protos; make them
+    # available to users too.
+    common_args.append(f"--proto_path={google_proto_path()}")
 
     for flag, languages in PLUGINS_SUFFICIENT_FOR_EXPLICIT_OUT_FLAGS.items():
         if any(arg.startswith(flag) for arg in argv_after_dash_dash):

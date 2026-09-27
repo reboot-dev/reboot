@@ -60,7 +60,7 @@ _FILENAME = 'shop/v1/shop.py'
 def _schema(name: str, properties: list[dict], **rest) -> dict:
     return {
         'name': name,
-        'module': _MODULE,
+        'package': 'shop.v1',
         'properties': properties,
         **rest,
     }
@@ -140,7 +140,9 @@ _SCHEMAS = {
 _API = {
     'filename': _FILENAME,
     'package': 'shop.v1',
-    'module': _MODULE,
+    'pydantic': {
+        'module': _MODULE
+    },
     'stateTypes':
         [
             {

@@ -161,6 +161,16 @@ class State(Model):
     literal_list_value: list[LiteralType] = Field(tag=21)
     # `dict[str, <Literal>]` — a `map` with `enum` values.
     literal_dict_value: dict[str, LiteralType] = Field(tag=22)
+    # A `Literal` of what is not strings: each member is a JSON value,
+    # and generated code converts one by its index, so nothing about
+    # a member but its position matters to the round-trip.
+    literal_int_value: Literal[10, 20, 30] = Field(tag=26, default=10)
+    # `1` and `True` together, since `True == 1` in Python and each
+    # must round-trip as itself.
+    literal_mixed_value: Literal["a", 1, True, None] = Field(
+        tag=27,
+        default="a",
+    )
     # `dict[str, Any]` — a `map<string, google.protobuf.Value>`
     # carrying arbitrary, heterogeneous JSON values (strings, bools,
     # numbers, nested objects, lists, nulls). We want to ensure codegen

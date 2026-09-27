@@ -406,6 +406,27 @@ class GameState(Model):
 `list[str]`, `list[int]`, `list[float]`, `list[bool]`,
 `dict[str, str]`, `list[<Model>]`, and `dict[str, <Model>]` all work.
 
+## `Literal` Fields
+
+A `Literal[...]` field holds one of the values it lists. The values can
+be any combination of strings, ints, bools, or `None`. The default must
+be the first value listed.
+
+```python
+class Order(Model):
+    status: Literal["pending", "paid", "shipped"] = Field(
+        tag=1, default="pending",
+    )
+    priority: Literal[1, 2, 3] = Field(tag=2, default=1)
+    marker: Literal["a", 1, True, None] = Field(tag=3, default="a")
+    labels: list[Literal["red", "blue"]] = Field(
+        tag=4, default_factory=list,
+    )
+```
+
+`list[Literal[...]]` and `dict[str, Literal[...]]` work like any other
+collection.
+
 ## State Class Is a Separate `Model`
 
 State is a plain `Model` class. Bind it to its method set and a public

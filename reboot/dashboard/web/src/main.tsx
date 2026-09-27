@@ -95,7 +95,7 @@ import {
   propertiesOfState,
   qualifiedName,
   shortNameOfTypeName,
-  sortedAPIs,
+  ownAPIs,
 } from "./link_properties_to_data_types";
 import type { Entry } from "./changelog";
 import {
@@ -181,6 +181,15 @@ const DEFINITIONS: Record<string, string> = {
     "A type the developer wrote that Reboot does not persist: what a " +
     "method takes, returns or raises, and anything those contain. It " +
     "exists while a call is in flight.",
+  external:
+    "From a file outside this application's API: one it imports but " +
+    "did not write, such as Reboot's own. Shown so that what the " +
+    "application refers to in it can be seen; nothing is generated " +
+    "for it here.",
+  enum:
+    "A closed set of named values the developer wrote in a .proto, " +
+    "each shipped as its number. A property of this type holds " +
+    "exactly one of them.",
   feature:
     "One .feature file: scenarios written in Gherkin that describe " +
     "how the application behaves, and run as tests.",
@@ -678,6 +687,17 @@ const Properties: FC<{
               <span className="property-type">
                 <TypeName type={property.type} link={property.link} />
               </span>
+              {property.origin !== undefined && (
+                <span
+                  className="property-origin"
+                  title={
+                    `In JSON this is ${property.type}; where it is ` +
+                    `declared it is ${property.origin}.`
+                  }
+                >
+                  {property.origin}
+                </span>
+              )}
               {property.deprecated && (
                 <span className="property-deprecated">deprecated</span>
               )}
@@ -706,6 +726,14 @@ const Properties: FC<{
             )}
             {property.constraints !== undefined && (
               <div className="property-constraints">{property.constraints}</div>
+            )}
+            {property.members !== undefined && (
+              // At most one of which is set. Each is a row of its
+              // own, since a member's name is unique among the
+              // type's properties, which is what a link names.
+              <div className="members">
+                <Properties properties={property.members} typeId={typeId} />
+              </div>
             )}
           </div>
         );
@@ -753,18 +781,18 @@ const Keys: FC<{ properties: Property[] }> = ({ properties }) => (
 // What a method takes, returns and raises, one labelled row each, so
 // the three read apart and each wraps on its own line.
 const Signature: FC<{
-  api: api_pb.API;
+  apis: APIs;
   method: api_pb.Method;
   className?: string;
-}> = ({ api, method, className }) => {
+}> = ({ apis, method, className }) => {
   const takes =
     method.request === undefined
       ? []
-      : propertiesOfDataType({ api, name: method.request.name });
+      : propertiesOfDataType({ apis, name: method.request.name });
   const returns =
     method.response === undefined
       ? []
-      : propertiesOfDataType({ api, name: method.response.name });
+      : propertiesOfDataType({ apis, name: method.response.name });
   const nothing = <span className="nothing">nothing</span>;
 
   return (
@@ -782,7 +810,7 @@ const Signature: FC<{
                 {index > 0 && ", "}
                 <TypeName
                   type={shortNameOfTypeName(name)}
-                  link={dataTypeIdOfName({ api, name })}
+                  link={dataTypeIdOfName({ apis, name })}
                 />
               </Fragment>
             ))}
@@ -834,7 +862,7 @@ const QualifiedMethodName: FC<{
   );
 
 const Method: FC<{
-  api: api_pb.API;
+  apis: APIs;
   method: api_pb.Method;
   // The card's id in the pane, `/type/bank.v1.Account.deposit`,
   // which is what a link to the method scrolls to.
@@ -842,7 +870,7 @@ const Method: FC<{
   declaringStateType?: DeclaringStateType;
   // The method the pane is on, outlined for as long as it shows.
   chosen?: boolean;
-}> = ({ api, method, id, declaringStateType, chosen }) => {
+}> = ({ apis, method, id, declaringStateType, chosen }) => {
   // The kind names the card too, so the outline takes the kind's
   // colour.
   const kind = kindOfMethod(method);
@@ -891,7 +919,7 @@ const Method: FC<{
       {method.description !== undefined && (
         <Description className="method-description" text={method.description} />
       )}
-      <Signature api={api} method={method} />
+      <Signature apis={apis} method={method} />
     </div>
   );
 };
@@ -909,19 +937,20 @@ const countWithNoun = (n: number, noun: string): string =>
 
 const StateType: FC<{
   api: api_pb.API;
+  apis: APIs;
   stateType: api_pb.StateType;
   // The method a link named, outlined among the others.
   chosenMethod?: string;
   // The property a followed link named, with the history entry that
   // named it.
   flashProperty?: { id: string; key: string };
-}> = ({ api, stateType, chosenMethod, flashProperty }) => {
+}> = ({ api, apis, stateType, chosenMethod, flashProperty }) => {
   const name = qualifiedName({ api, stateType });
   const rows: PaneRows = useMemo(
     () => ({ typeId: name, flash: flashProperty }),
     [name, flashProperty]
   );
-  const properties = propertiesOfState({ api, stateType });
+  const properties = propertiesOfState({ apis, stateType });
 
   return (
     <PaneRowsContext.Provider value={rows}>
@@ -964,7 +993,7 @@ const StateType: FC<{
         <div className="methods">
           {stateType.methods.map((method) => (
             <Method
-              api={api}
+              apis={apis}
               method={method}
               id={idOfTypeInPane(`${name}.${method.name}`)}
               chosen={method.name === chosenMethod}
@@ -988,7 +1017,7 @@ const stateTypeDeclarationsById = (
   apis: APIs
 ): Map<string, StateTypeDeclaration> =>
   new Map(
-    sortedAPIs(apis).flatMap((api) =>
+    ownAPIs(apis).flatMap((api) =>
       api.stateTypes.map(
         (stateType) =>
           [qualifiedName({ api, stateType }), { api, stateType }] as const
@@ -1020,10 +1049,11 @@ const UndeclaredMethod: FC<{
 // One method's card in the method pane, named with its state type,
 // drawn from the API's declaration when there is one.
 const MethodCard: FC<{
+  apis: APIs;
   declarations: Map<string, StateTypeDeclaration>;
   stateType: GraphStateType;
   name: string;
-}> = ({ declarations, stateType, name }) => {
+}> = ({ apis, declarations, stateType, name }) => {
   const declaringStateType = { id: stateType.id, name: stateType.name };
   const declaration = declarations.get(stateType.id);
   const method = declaration?.stateType.methods.find(
@@ -1031,7 +1061,7 @@ const MethodCard: FC<{
   );
   return declaration !== undefined && method !== undefined ? (
     <Method
-      api={declaration.api}
+      apis={apis}
       method={method}
       declaringStateType={declaringStateType}
     />
@@ -1115,14 +1145,16 @@ const AgentsRun: FC<{ runs: GraphRun[] }> = ({ runs }) => (
 // The methods at each distance, one group per distance, in the
 // order given.
 const MethodsByDistance: FC<{
+  apis: APIs;
   declarations: Map<string, StateTypeDeclaration>;
   methodsByDistance: MethodInGraph[][];
-}> = ({ declarations, methodsByDistance }) => (
+}> = ({ apis, declarations, methodsByDistance }) => (
   <>
     {methodsByDistance.map((methodsAtDistance, index) => (
       <div className="method-group" key={index}>
         {methodsAtDistance.map(({ stateType, name }) => (
           <MethodCard
+            apis={apis}
             declarations={declarations}
             stateType={stateType}
             name={name}
@@ -1309,7 +1341,7 @@ const MethodPane: FC<{
             />
           )}
           <Signature
-            api={declaration.api}
+            apis={apis}
             method={declaredMethod}
             className="method-pane-signature"
           />
@@ -1321,6 +1353,7 @@ const MethodPane: FC<{
           <div className="method-group">
             {callers.map(({ stateType, name }) => (
               <MethodCard
+                apis={apis}
                 declarations={declarations}
                 stateType={stateType}
                 name={name}
@@ -1345,6 +1378,7 @@ const MethodPane: FC<{
             onToggleTransitiveCalls={onToggleTransitiveCalls}
           />
           <MethodsByDistance
+            apis={apis}
             declarations={declarations}
             methodsByDistance={calleesByDistance}
           />
@@ -1432,16 +1466,26 @@ const DataType: FC<{
         <div>
           <Pill
             className="eyebrow"
-            label="data type"
-            meaning={DEFINITIONS["data type"]}
+            label={linkedDataType.kind}
+            meaning={DEFINITIONS[linkedDataType.kind]}
           />
+          {linkedDataType.external && (
+            <Pill
+              className="eyebrow"
+              label="external"
+              meaning={DEFINITIONS.external}
+            />
+          )}
         </div>
         <div className="state-type-head">
           <div className="state-type-heading">
             <h2>{linkedDataType.name}</h2>
             <PaneAnchor id={linkedDataType.id} />
             <span className="summary-line">
-              {countWithNoun(linkedDataType.properties.length, "property")}
+              {countWithNoun(
+                linkedDataType.properties.length,
+                linkedDataType.kind === "enum" ? "value" : "property"
+              )}
             </span>
           </div>
         </div>
@@ -1453,9 +1497,13 @@ const DataType: FC<{
           />
         )}
 
-        <div className="eyebrow section">properties</div>
+        <div className="eyebrow section">
+          {linkedDataType.kind === "enum" ? "values" : "properties"}
+        </div>
         {linkedDataType.properties.length === 0 ? (
-          <div className="empty">No properties.</div>
+          <div className="empty">
+            {linkedDataType.kind === "enum" ? "No values." : "No properties."}
+          </div>
         ) : (
           <Properties
             properties={linkedDataType.properties}
@@ -1702,6 +1750,7 @@ const ToolPane: FC<{
                 onToggleTransitiveCalls={onToggleTransitiveCalls}
               />
               <MethodsByDistance
+                apis={apis}
                 declarations={declarations}
                 methodsByDistance={calleesByDistance}
               />
@@ -1810,7 +1859,7 @@ const TypesPane: FC<{
   const stateTypeDeclaration =
     target.stateTypeId === undefined
       ? undefined
-      : sortedAPIs(apis)
+      : ownAPIs(apis)
           .flatMap((api) =>
             api.stateTypes.map((stateType) => ({ api, stateType }))
           )
@@ -1889,6 +1938,7 @@ const TypesPane: FC<{
         ) : (
           <StateType
             api={stateTypeDeclaration.api}
+            apis={apis}
             stateType={stateTypeDeclaration.stateType}
             chosenMethod={target.method}
             flashProperty={flashProperty}

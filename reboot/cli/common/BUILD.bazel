@@ -78,6 +78,19 @@ py_library(
 )
 
 py_library(
+    name = "proto_paths_py",
+    srcs = ["proto_paths.py"],
+    data = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:protos",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio-tools"),
+    ],
+)
+
+py_library(
     name = "subprocesses_py",
     srcs = ["subprocesses.py"],
     srcs_version = "PY3",

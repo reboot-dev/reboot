@@ -21,13 +21,23 @@ from rbt.dashboard.v1.dashboard_pb2 import (
     DefaultChanged,
     DeprecatedChanged,
     DescriptionChanged,
+    EnumAdded,
+    EnumChanged,
+    EnumRemoved,
+    EnumValueAdded,
+    EnumValueChange,
+    EnumValueRemoved,
     ErrorsChanged,
     FactoryChanged,
     KindChanged,
     MCPChanged,
+    MembersChanged,
     MethodAdded,
     MethodChange,
     MethodRemoved,
+    OneOfAdded,
+    OneOfChange,
+    OneOfRemoved,
     PropertyAdded,
     PropertyChange,
     PropertyRemoved,
@@ -45,6 +55,8 @@ from rbt.dashboard.v1.dashboard_pb2 import (
 from rbt.v1alpha1.api.api_pb2 import API, MCP, Method, StateType
 from rbt.v1alpha1.api.schema_pb2 import (
     Constraints,
+    Enum,
+    OneOf,
     Property,
     Reference,
     Schema,
@@ -54,6 +66,13 @@ from typing import Iterator, Mapping, Optional, Sequence
 # What the API files declare, keyed by file relative to the API
 # directory: what `Dashboard.apis` records.
 APIs = Mapping[str, API]
+
+
+def _own(apis: APIs) -> list[API]:
+    """The APIs of the application's own files: what its history is
+    of. An `external` one, imported and not the developer's, changes
+    when Reboot is upgraded, which is nobody's edit."""
+    return [api for api in apis.values() if not api.external]
 
 
 def state_type_name(api: API, state_type: StateType) -> str:
@@ -68,7 +87,7 @@ def _state_types(apis: APIs) -> dict[str, tuple[API, StateType]]:
     the API of the file declaring it."""
     return {
         state_type_name(api, state_type): (api, state_type)
-        for api in apis.values() for state_type in api.state_types
+        for api in _own(apis) for state_type in api.state_types
     }
 
 
@@ -78,14 +97,17 @@ def _data_types(apis: APIs) -> dict[str, tuple[API, Schema]]:
     declaring it and its schema."""
     return {
         reference.name: (api, api.schemas[reference.name])
-        for api in apis.values() for reference in api.data_types
+        for api in _own(apis) for reference in api.data_types
     }
 
 
-def _package_of(schema: Schema) -> str:
-    """The package the model belongs to: its module without the last
-    segment."""
-    return schema.module.rsplit('.', 1)[0]
+def _enums(apis: APIs) -> dict[str, tuple[API, Enum]]:
+    """Every enum by the name a `Reference` carries, beside the API
+    of the file declaring it."""
+    return {
+        name: (api, enum) for api in _own(apis)
+        for name, enum in api.enums.items()
+    }
 
 
 def _properties_of(schema: Schema) -> dict[int, Property]:
@@ -93,6 +115,12 @@ def _properties_of(schema: Schema) -> dict[int, Property]:
     of a model is declared with `Field(tag=...)`, which is what makes
     the tag its identity."""
     return {property.tag: property for property in schema.properties}
+
+
+def _one_ofs_of(schema: Schema) -> dict[str, OneOf]:
+    """Every `oneof` a model's schema declares, by name: a `oneof`
+    has no tag of its own, so its name is its identity."""
+    return {one_of.name: one_of for one_of in schema.one_ofs}
 
 
 def _optional_string(message, field: str) -> Optional[str]:
@@ -216,6 +244,45 @@ def _property_changes(
     return changes
 
 
+def _one_of_changes(
+    before: Mapping[str, OneOf],
+    after: Mapping[str, OneOf],
+) -> list[OneOfChange]:
+    """Everything that happened to the `oneof`s, by name, one entry
+    per thing, in name order. A member's own changes are the
+    property's; what is recorded here is which properties exclude
+    each other."""
+    changes: list[OneOfChange] = []
+    for name in sorted(set(before) | set(after)):
+        old = before.get(name)
+        new = after.get(name)
+        if old is None:
+            changes.append(OneOfChange(name=name, added=OneOfAdded()))
+            continue
+        if new is None:
+            changes.append(OneOfChange(name=name, removed=OneOfRemoved()))
+            continue
+        if list(old.tags) != list(new.tags):
+            changes.append(
+                OneOfChange(
+                    name=name,
+                    members=MembersChanged(
+                        **{
+                            'from': old.tags,
+                            'to': new.tags,
+                        }
+                    ),
+                )
+            )
+        description = _description_changed(
+            _optional_string(old, 'description'),
+            _optional_string(new, 'description'),
+        )
+        if description is not None:
+            changes.append(OneOfChange(name=name, description=description))
+    return changes
+
+
 def _method_changes(
     before: Mapping[str, Method],
     after: Mapping[str, Method],
@@ -327,10 +394,69 @@ def _description_changed(
     return DescriptionChanged(**{'from': old, 'to': new})
 
 
+def _enum_value_changes(
+    before: Mapping[int, Enum.Value],
+    after: Mapping[int, Enum.Value],
+) -> list[EnumValueChange]:
+    """Everything that happened to an enum's values, by number, one
+    entry per thing, in number order."""
+    changes: list[EnumValueChange] = []
+    for number in sorted(set(before) | set(after)):
+        old = before.get(number)
+        new = after.get(number)
+        if old is None:
+            assert new is not None
+            changes.append(
+                EnumValueChange(
+                    number=number, name=new.name, added=EnumValueAdded()
+                )
+            )
+            continue
+        if new is None:
+            changes.append(
+                EnumValueChange(
+                    number=number, name=old.name, removed=EnumValueRemoved()
+                )
+            )
+            continue
+        if old.name != new.name:
+            changes.append(
+                EnumValueChange(
+                    number=number,
+                    name=new.name,
+                    renamed=Renamed(**{
+                        'from': old.name,
+                        'to': new.name,
+                    }),
+                )
+            )
+        description = _description_changed(
+            _optional_string(old, 'description'),
+            _optional_string(new, 'description'),
+        )
+        if description is not None:
+            changes.append(
+                EnumValueChange(
+                    number=number,
+                    name=new.name,
+                    description=description,
+                )
+            )
+        if old.deprecated != new.deprecated:
+            changes.append(
+                EnumValueChange(
+                    number=number,
+                    name=new.name,
+                    deprecated=DeprecatedChanged(deprecated=new.deprecated),
+                )
+            )
+    return changes
+
+
 def changes_between(before: APIs, after: APIs) -> Iterator[Change]:
-    """Ordered by name, state types before data types, so that a
-    retry of the `Update` call the watcher makes sends the same
-    list, which is what makes the write idempotent. A change names
+    """Ordered by name, state types before data types before enums,
+    so that a retry of the `Update` call the watcher makes sends the
+    same list, which is what makes the write idempotent. A change names
     its file the way `Dashboard.apis` is keyed: relative to the API
     directory.
     """
@@ -375,6 +501,10 @@ def changes_between(before: APIs, after: APIs) -> Iterator[Change]:
                 _properties_of(old_schema),
                 _properties_of(new_schema),
             ),
+            one_ofs=_one_of_changes(
+                _one_ofs_of(old_schema),
+                _one_ofs_of(new_schema),
+            ),
             # The state model's docstring, which is what a reader of
             # the state page sees as its description.
             description=_description_changed(
@@ -392,7 +522,7 @@ def changes_between(before: APIs, after: APIs) -> Iterator[Change]:
         )
         if (
             len(changed.methods) > 0 or len(changed.properties) > 0 or
-            changed.HasField('description') or
+            len(changed.one_ofs) > 0 or changed.HasField('description') or
             changed.HasField('state_model_renamed')
         ):
             yield Change(state_type_changed=changed)
@@ -411,7 +541,7 @@ def changes_between(before: APIs, after: APIs) -> Iterator[Change]:
                 data_type_added=DataTypeAdded(
                     name=name,
                     filename=added_api.filename,
-                    package=_package_of(added_schema),
+                    package=added_schema.package,
                 )
             )
             continue
@@ -421,7 +551,7 @@ def changes_between(before: APIs, after: APIs) -> Iterator[Change]:
                 data_type_removed=DataTypeRemoved(
                     name=name,
                     filename=removed_api.filename,
-                    package=_package_of(removed_schema),
+                    package=removed_schema.package,
                 )
             )
             continue
@@ -432,10 +562,14 @@ def changes_between(before: APIs, after: APIs) -> Iterator[Change]:
         changed_data_type = DataTypeChanged(
             name=name,
             filename=new_api.filename,
-            package=_package_of(new_schema),
+            package=new_schema.package,
             properties=_property_changes(
                 _properties_of(old_schema),
                 _properties_of(new_schema),
+            ),
+            one_ofs=_one_of_changes(
+                _one_ofs_of(old_schema),
+                _one_ofs_of(new_schema),
             ),
             description=_description_changed(
                 _optional_string(old_schema, 'description'),
@@ -444,9 +578,59 @@ def changes_between(before: APIs, after: APIs) -> Iterator[Change]:
         )
         if (
             len(changed_data_type.properties) > 0 or
+            len(changed_data_type.one_ofs) > 0 or
             changed_data_type.HasField('description')
         ):
             yield Change(data_type_changed=changed_data_type)
+
+    enums_before = _enums(before)
+    enums_after = _enums(after)
+
+    for name in sorted(set(enums_before) | set(enums_after)):
+        old_enum = enums_before.get(name)
+        new_enum = enums_after.get(name)
+
+        if old_enum is None:
+            assert new_enum is not None
+            added_api, added_enum = new_enum
+            yield Change(
+                enum_added=EnumAdded(
+                    name=name,
+                    filename=added_api.filename,
+                    package=added_enum.package,
+                )
+            )
+            continue
+        if new_enum is None:
+            removed_api, removed_enum = old_enum
+            yield Change(
+                enum_removed=EnumRemoved(
+                    name=name,
+                    filename=removed_api.filename,
+                    package=removed_enum.package,
+                )
+            )
+            continue
+
+        _, old_declared = old_enum
+        new_api, new_declared = new_enum
+
+        changed_enum = EnumChanged(
+            name=name,
+            filename=new_api.filename,
+            package=new_declared.package,
+            values=_enum_value_changes(
+                {value.number: value for value in old_declared.values},
+                {value.number: value for value in new_declared.values},
+            ),
+            description=_description_changed(
+                _optional_string(old_declared, 'description'),
+                _optional_string(new_declared, 'description'),
+            ),
+        )
+        if len(changed_enum.values
+              ) > 0 or changed_enum.HasField('description'):
+            yield Change(enum_changed=changed_enum)
 
 
 def code_changes_between(

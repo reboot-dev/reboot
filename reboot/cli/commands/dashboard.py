@@ -30,6 +30,7 @@ from reboot.dashboard.backend.constants import (
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
     ENVVAR_RBT_GENERATED_DIRECTORY,
+    ENVVAR_RBT_PYTHON_PATH,
 )
 from reboot.settings import (
     ENVVAR_RBT_DEV,
@@ -138,6 +139,28 @@ def _generated_directory(parser: ArgumentParser) -> Optional[str]:
     return None
 
 
+def _python_path(parser: ArgumentParser) -> Optional[str]:
+    """Returns the `PYTHONPATH` the developer has `rbt dev run` give
+    their application, with `--env=PYTHONPATH=`, and `None` when they
+    have it give none.
+
+    Read rather than asked for again, for the same reason as the
+    application. It is where the application's imports are found when
+    they are rooted somewhere other than its own directory, which is
+    what finding its servicers takes. `None` is what an application
+    whose imports are all beside it, or in its generated directory,
+    looks like.
+    """
+    for argument in parser.dot_rc_arguments('dev run'):
+        name, separator, value = argument.partition('=')
+        if name == '--env' and separator == '=':
+            variable, separator, python_path = value.partition('=')
+            if variable == 'PYTHONPATH' and separator == '=':
+                return python_path
+
+    return None
+
+
 def _dashboard_env(
     args,
     parser: ArgumentParser,
@@ -146,6 +169,7 @@ def _dashboard_env(
     api_directory: str,
     application: Optional[str],
     generated_directory: Optional[str],
+    python_path: Optional[str],
 ) -> dict[str, str]:
     """The environment for the dashboard application.
 
@@ -211,6 +235,14 @@ def _dashboard_env(
     composed.pop(ENVVAR_RBT_GENERATED_DIRECTORY, None)
     if generated_directory is not None:
         composed[ENVVAR_RBT_GENERATED_DIRECTORY] = generated_directory
+
+    # Where the application's imports are found, spelled the same
+    # way and for the same reason. Its own variable rather than the
+    # dashboard's `PYTHONPATH`: the dashboard reads the developer's
+    # code, and must not import it.
+    composed.pop(ENVVAR_RBT_PYTHON_PATH, None)
+    if python_path is not None:
+        composed[ENVVAR_RBT_PYTHON_PATH] = python_path
 
     composed[ENVVAR_RBT_NAME] = DASHBOARD_STATE_DIRECTORY_NAME
 
@@ -370,6 +402,7 @@ async def dashboard(
             api_directory=_api_directory(parser),
             application=_application(parser),
             generated_directory=_generated_directory(parser),
+            python_path=_python_path(parser),
         )
 
         terminal.info(f'Your dashboard is at http://127.0.0.1:{port}/\n')

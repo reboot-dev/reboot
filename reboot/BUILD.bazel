@@ -131,8 +131,10 @@ py_library(
         # first. See: https://github.com/reboot-dev/mono/issues/1165.
         requirement("protobuf"),
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_py_proto",
+        ":api_digest_py",
         ":helpers_py",
         ":options_py",
+        ":proto_api_py",
         ":settings_py",
         ":version_py",
         "@com_github_reboot_dev_pyprotoc_plugin//pyprotoc_plugin",
@@ -362,6 +364,27 @@ py_library(
 )
 
 py_library(
+    name = "api_digest_py",
+    srcs = ["api_digest.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:api_py_proto",
+    ],
+)
+
+py_library(
+    name = "proto_api_py",
+    srcs = ["proto_api.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("protobuf"),
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:api_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:schema_py_proto",
+    ],
+)
+
+py_library(
     name = "pydantic_api_py",
     srcs = ["pydantic_api.py"],
     visibility = ["//visibility:public"],
@@ -379,6 +402,7 @@ py_library(
     srcs = ["pydantic_schema_to_proto.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":api_digest_py",
         ":api_py",
         ":fail_py",
         ":pydantic_api_py",
@@ -396,6 +420,7 @@ py_library(
     deps = [
         ":api_py",
         ":fail_py",
+        ":pydantic_schema_py",
         requirement("pydantic"),
         requirement("aiofiles"),
     ],

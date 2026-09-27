@@ -85,6 +85,7 @@ py_library(
         requirement("grpcio-health-checking"),
         "//reboot:version_py",
         "//reboot/cli/common:directories_py",
+        "//reboot/cli/common:proto_paths_py",
         "//reboot/cli/common:rc_py",
         "//reboot/cli/common:subprocesses_py",
         "//reboot/cli/common:terminal_py",

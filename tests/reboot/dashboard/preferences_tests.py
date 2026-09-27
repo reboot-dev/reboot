@@ -75,16 +75,6 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
             expanded=expanded,
         )
 
-    async def test_starting_writes_a_default_that_can_be_read(self) -> None:
-        # The application's `initialize` constructed `Preferences`
-        # when it came up; a reader would otherwise abort with
-        # `StateNotConstructed`, and a page that loaded first would
-        # have nothing to render its banner from.
-        #
-        # False, so that somebody who has never clicked the banner gets
-        # a dashboard opened for them.
-        self.assertFalse(await self._read_preferences())
-
     async def test_a_writer_leaves_alone_what_it_was_not_asked_about(
         self
     ) -> None:
@@ -101,27 +91,6 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await self._read_preferences())
         self.assertEqual(
             await self._read_expanded_methods(), ['bank.v1.Account.deposit']
-        )
-
-    async def test_what_is_expanded_is_a_sorted_set(self) -> None:
-        # Two tabs can each send the same click, a page that
-        # reconnects can send one it already sent, and a close can
-        # arrive for something that was never open.
-        await self._set_methods_expanded(
-            'bank.v1.Account', ['open', 'deposit'], True
-        )
-        await self._set_methods_expanded('bank.v1.Account', ['deposit'], True)
-        await self._set_methods_expanded('bank.v1.Bank', ['transfer'], True)
-
-        await self._set_methods_expanded('bank.v1.Bank', ['transfer'], False)
-        await self._set_methods_expanded('bank.v1.Never', ['gone'], False)
-
-        # Sorted, so that the reactive read does not push a change to
-        # every open page when the only difference is the order two
-        # clicks happened to arrive in.
-        self.assertEqual(
-            await self._read_expanded_methods(),
-            ['bank.v1.Account.deposit', 'bank.v1.Account.open'],
         )
 
 

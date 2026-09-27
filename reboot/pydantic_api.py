@@ -7,7 +7,6 @@ and raise, and the schema of every model mentioned. What `rbt
 generate` prints proto from; what the dashboard describes an API
 with.
 """
-import hashlib
 import os
 from rbt.v1alpha1.api import api_pb2
 from rbt.v1alpha1.api.schema_pb2 import Reference
@@ -195,17 +194,8 @@ def api_of(api: API, *, filename: str) -> api_pb2.API:
     return api_pb2.API(
         filename=filename,
         package=package,
-        module=module,
         state_types=state_types,
         data_types=data_types,
         schemas=dict(schemas),
+        pydantic=api_pb2.API.Pydantic(module=module),
     )
-
-
-def api_digest(api: api_pb2.API) -> str:
-    """Returns the hex SHA-256 of what an API file declares, serialized
-    deterministically, which is what says whether generated code came
-    from the file as it is: `rbt generate` records it in what it
-    writes, and the dashboard compares."""
-    return hashlib.sha256(api.SerializeToString(deterministic=True)
-                         ).hexdigest()

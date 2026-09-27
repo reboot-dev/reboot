@@ -54,6 +54,14 @@ ENVVAR_RBT_APPLICATION = 'RBT_APPLICATION'
 # case nothing can be typed.
 ENVVAR_RBT_GENERATED_DIRECTORY = 'RBT_GENERATED_DIRECTORY'
 
+# The `PYTHONPATH` the developer has `rbt dev run` give the
+# application, as the `.rbtrc` spells it with
+# `--env=PYTHONPATH=`, its directories separated the way the
+# platform separates them. Where the application's imports are found
+# when they are rooted somewhere other than its own directory. Unset
+# when the developer named none.
+ENVVAR_RBT_PYTHON_PATH = 'RBT_PYTHON_PATH'
+
 # The `Presence` state the dashboard page subscribes to, recording who
 # is looking at a dashboard right now. `rbt dev run` reads it to decide
 # whether to open one.

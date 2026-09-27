@@ -3,12 +3,14 @@
 import aiofiles
 import importlib
 import os
+import re
 import typing
 from rbt.v1alpha1.api import api_pb2, schema_pb2
 from reboot.api import API, UserPydanticError, to_pascal_case, to_snake_case
+from reboot.api_digest import api_digest
 from reboot.fail import fail
-from reboot.pydantic_api import api_digest, api_of
-from reboot.pydantic_schema import Schemas
+from reboot.pydantic_api import api_of
+from reboot.pydantic_schema import Schemas, literal_of
 from types import MappingProxyType
 from typing import List, Optional
 
@@ -16,6 +18,15 @@ from typing import List, Optional
 # auto-construction. Must match the enum in
 # `rbt/v1alpha1/options.proto`.
 _PER_USER_ID = "PER_USER_ID"
+
+
+def _enum_value_name(literal: schema_pb2.Literal) -> str:
+    """What a member of a `Literal` is called in the `enum` generated
+    for the `Literal`, e.g. `option1`, `1`, `True` or `None`, with
+    anything an identifier cannot hold replaced by `_`. A name only:
+    generated code converts a member to its `enum` value by index, not
+    by name."""
+    return re.sub(r'[^0-9A-Za-z_]', '_', str(literal_of(literal)))
 
 
 def _escape_string_for_proto(string: str) -> str:
@@ -55,7 +66,9 @@ def _pydantic_field_type_string_from_type(field_type: schema_pb2.Type) -> str:
     elif kind == 'literals':
         # To avoid name conflicts in the generated code, we import the
         # 'typing' module as 'IMPORT_typing'.
-        values = ", ".join(repr(value) for value in field_type.literals.values)
+        values = ", ".join(
+            repr(literal_of(value)) for value in field_type.literals.values
+        )
         return f'IMPORT_typing.Literal[{values}]'
     elif kind == 'reference':
         # A reference's name is the model's module and class.
@@ -333,7 +346,8 @@ async def generate_from_schema(
                     # operate with the indexes of the literals, not
                     # their names.
                     await proto.write(
-                        f"    {type_name}_{literal_value} = {i};\n"
+                        f"    {type_name}_{_enum_value_name(literal_value)} "
+                        f"= {i};\n"
                     )
                 await proto.write("  }\n")
 
@@ -412,7 +426,10 @@ async def generate_from_schema(
             # name, since Protobuf `enum` values use C++ scoping.
             await proto.write(f"  enum {type_name} {{\n")
             for i, literal_value in enumerate(literals_type.literals.values):
-                await proto.write(f"    {type_name}_{literal_value} = {i};\n")
+                await proto.write(
+                    f"    {type_name}_{_enum_value_name(literal_value)} "
+                    f"= {i};\n"
+                )
             await proto.write("  }\n")
         else:
             raise AssertionError(
@@ -465,7 +482,10 @@ async def generate_from_schema(
             # name, since Protobuf `enum` values use C++ scoping.
             await proto.write(f"  enum {type_name} {{\n")
             for i, literal_value in enumerate(literals_type.literals.values):
-                await proto.write(f"    {type_name}_{literal_value} = {i};\n")
+                await proto.write(
+                    f"    {type_name}_{_enum_value_name(literal_value)} "
+                    f"= {i};\n"
+                )
             await proto.write("  }\n")
         else:
             raise AssertionError(
@@ -574,7 +594,7 @@ async def generate_from_api(
     await proto.write('import "rbt/v1alpha1/options.proto";\n')
     await proto.write('import "rbt/v1alpha1/tasks.proto";\n')
     await proto.write(
-        f"option (rbt.v1alpha1.file).pydantic = \"{api.module}\";\n"
+        f"option (rbt.v1alpha1.file).pydantic = \"{api.pydantic.module}\";\n"
     )
 
     await proto.write('\n')

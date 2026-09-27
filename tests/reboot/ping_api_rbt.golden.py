@@ -2,7 +2,7 @@
 # isort: skip_file
 # ruff: noqa
 # mypy: disable-error-code="func-returns-value"
-# Generated from an API digesting to 07f11c913717f77cda1dcb03a1598f12dbaf8a905b7e74113390afd4f9f2db7a.
+# Generated from an API digesting to 6ee5788acc04f0fdc6409ea50c2e019c5dbae61b0bd126cabc9e040e1af2968a.
 
 
 
