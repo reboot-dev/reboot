@@ -182,6 +182,28 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn('shop/v1/models.py', api.api_files)
 
+    async def test_a_module_imported_from_outside_is_a_dependency(
+        self,
+    ) -> None:
+        """A module a Python file imports from outside the API
+        directory, such as `reboot.api`, is a dependency of it, by
+        the file it was found at and the digest of its bytes, so
+        that a change to it, which upgrading Reboot is, reads the
+        file again."""
+        self._write_api_file(self.directory, 'shop', 'Shop')
+
+        await self._start_dashboard()
+        api = await self._wait_for_api(
+            lambda api: len(_state_types_in(api)) == 1
+        )
+
+        dependency = api.api_files['shop/v1/shop.py'].dependencies['reboot/api'
+                                                                  ]
+        self.assertTrue(
+            dependency.filename.endswith(os.path.join('reboot', 'api.py')),
+        )
+        self.assertEqual(len(dependency.digest), 32)
+
     async def test_a_proto_is_read_as_a_pydantic_file_is(self) -> None:
         """A `.proto` is read the way a Pydantic file is: what it
         declares is recorded under the module `rbt generate` writes
@@ -219,6 +241,14 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             sorted(api.api_digests),
             ['shop/v1/depot_rbt.py', 'shop/v1/parts_rbt.py'],
+        )
+        # Reboot's own options are outside the directory.
+        self.assertIn(
+            'options.proto',
+            [
+                os.path.basename(external.filename)
+                for external in api.api_files['shop/v1/depot.proto'].external
+            ],
         )
 
         # A second value, in the imported file only.

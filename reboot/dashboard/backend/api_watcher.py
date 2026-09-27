@@ -18,11 +18,14 @@ declares nothing but is imported by one that does reads the
 importer, and a burst of saves loses nothing however many events
 the watch failed to hear.
 """
+import os
+import sys
+import sysconfig
 from dataclasses import dataclass
 from functools import partial
 from google.protobuf.timestamp_pb2 import Timestamp
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_pb2 import Change
+from rbt.dashboard.v1.dashboard_pb2 import APIReaderResponse, Change
 from rbt.dashboard.v1.dashboard_pb2 import Dashboard as DashboardState
 from rbt.dashboard.v1.dashboard_pb2 import File
 from rbt.dashboard.v1.dashboard_rbt import Dashboard
@@ -53,7 +56,7 @@ from typing import Mapping, Optional
 # a file that has not changed is otherwise carried forward as an
 # earlier reading described it, which never says the new thing, and
 # whose digest no code generated since records.
-API_READING_VERSION = 3
+API_READING_VERSION = 4
 
 # What tells a Pydantic API file from a protobuf one.
 _PYDANTIC_SUFFIX = '.py'
@@ -78,14 +81,16 @@ class ReadFile:
     dependencies: Mapping[str, Dependency]
 
     # The files outside the API directory reading this file read:
-    # the `.proto` files an import led to that the developer did not
-    # write, such as Reboot's own. None for a Pydantic file, whose
-    # reader follows nothing beyond the directory.
+    # the `.proto` files an import led to, or the modules a Python
+    # file imports, that the developer did not write, such as
+    # Reboot's own; see `APIReaderResponse.external`.
     external: tuple[Dependency, ...]
 
-    # What the file declares, as `api_of` read it; `None` for a file
-    # declaring no API, or one that could not be read.
-    api: Optional[api_pb2.API]
+    # What reading the file described, by path; see
+    # `APIReaderResponse.apis`: what the file declares, under its
+    # own path. Empty for a file declaring no API, or one that could
+    # not be read.
+    apis: Mapping[str, api_pb2.API]
 
     # Why the file could not be read, when it could not be.
     error: Optional[str]
@@ -148,7 +153,11 @@ def _reconstitute_known(
             digest=file.digest if not stale else b'',
             dependencies=dict(file.dependencies),
             external=tuple(file.external),
-            api=state.apis[relative] if relative in state.apis else None,
+            apis=(
+                {
+                    relative: state.apis[relative]
+                } if relative in state.apis else {}
+            ),
             error=file.error if file.HasField('error') else None,
             modified=file.modified,
         )
@@ -160,12 +169,11 @@ def _apis(
     *,
     api_directory: Path,
 ) -> dict[str, api_pb2.API]:
-    """What each file declaring an `api` declares, keyed by the file
+    """What each file declaring an API declares, keyed by the file
     relative to the API directory, the way `Dashboard.apis` is keyed."""
     return {
-        _relative(filename, api_directory): file.api
-        for filename, file in sorted(known.items())
-        if file.api is not None
+        path: api for _, file in sorted(known.items())
+        for path, api in file.apis.items()
     }
 
 
@@ -178,10 +186,9 @@ def _api_digests(
     is the one code generated from it records, keyed by the module
     `rbt generate` writes for the file."""
     return {
-        _generated_module(_relative(filename, api_directory)):
-            api_digest(file.api)
-        for filename, file in known.items()
-        if file.api is not None
+        _generated_module(path): api_digest(api) for file in known.values()
+        for path, api in file.apis.items()
+        if not api.external
     }
 
 
@@ -248,13 +255,26 @@ async def _walk_and_read(
     unchanged, changed, unparseable, _ = await _walk(
         entries=_api_files(directory),
         roots=[directory],
+        # Where a Python file's import may lead outside the API
+        # directory: what the interpreter searches, which is the one
+        # the reader imports the file with, the standard library
+        # aside, which changes with Python and not with the
+        # application.
+        external_roots=[
+            Path(path)
+            for path in sys.path
+            if os.path.isdir(path) and path not in (
+                sysconfig.get_path('stdlib'),
+                sysconfig.get_path('platstdlib'),
+            ) and not path.endswith('lib-dynload')
+        ],
         known=known,
     )
 
     # Every parsed file is read, all at once: each read
     # is an interpreter importing the file, and none
     # waits on another.
-    reads: dict[Path, tuple[Optional[api_pb2.API], Optional[str]]] = {
+    reads: dict[Path, tuple[Optional[APIReaderResponse], Optional[str]]] = {
         filename: read async for filename, read in concurrently(
             lambda filename: read_api_file(
                 api_directory,
@@ -271,7 +291,7 @@ async def _walk_and_read(
     # candidate that is gone, or could not be read, is in none of
     # these.
     known_now: dict[Path, ReadFile] = dict(unchanged)
-    for filename, (api, error) in reads.items():
+    for filename, (read, error) in reads.items():
         known_now[filename] = ReadFile(
             filename=filename,
             digest=changed[filename].digest,
@@ -280,8 +300,14 @@ async def _walk_and_read(
             # change to one, which the walk never finds, reads this
             # file again. A file that could not be read records
             # none, and is read again when its own bytes change.
-            external=(),
-            api=api,
+            # What only reading a `.proto` finds; a Python file's
+            # imports are among its dependencies, which the walk
+            # followed.
+            external=(
+                tuple(read.proto.external)
+                if read is not None and read.HasField('proto') else ()
+            ),
+            apis=dict(read.apis) if read is not None else {},
             error=error,
             # The parsed bytes' time, from the open file they came
             # from, so a time and a digest always describe one file.
@@ -303,7 +329,7 @@ async def _walk_and_read(
             digest=unparseable_file.digest,
             dependencies={},
             external=(),
-            api=None,
+            apis={},
             error=(
                 f'{type(unparseable_file.error).__name__}: '
                 f'{unparseable_file.error}'

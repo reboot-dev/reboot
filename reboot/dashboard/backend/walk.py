@@ -358,6 +358,16 @@ class Files(Generic[KnownFile]):
     # directory. What an iteration is allowed to analyze.
     roots: tuple[Path, ...]
 
+    # Where an import may lead outside the roots, e.g. the directory
+    # installed packages are in. A possible module path with no file
+    # under any root is tried under each of these, and a file found
+    # is a dependency by its digest: never parsed, and nothing in it
+    # followed.
+    external_roots: tuple[Path, ...]
+
+    # The files found under `external_roots` this iteration.
+    external: frozenset[Path]
+
     # What the previous iteration analyzed, keyed by the spelling
     # `_standardized_path` returns, so that every route to a file finds
     # the same record. A file unchanged since is neither parsed nor
@@ -422,12 +432,15 @@ class Files(Generic[KnownFile]):
         cls,
         *,
         roots: Sequence[Path],
+        external_roots: Sequence[Path],
         known: Mapping[Path, KnownFile],
     ) -> 'Files[KnownFile]':
         """Returns the files an iteration starts from: nothing
         parsed, nothing analyzed."""
         return cls(
             roots=tuple(roots),
+            external_roots=tuple(external_roots),
+            external=frozenset(),
             known=MappingProxyType(
                 {file.filename: file for file in known.values()}
             ),
@@ -657,10 +670,13 @@ class Files(Generic[KnownFile]):
         or `./backend/db`, to its file, met the way this walk has
         it, recording what the import observed in `dependencies`,
         once per module path. Which file is at the module path joins
-        `resolutions`, which spares finding it again; there is no
-        file at a module path when no root has one, which is what
-        code outside the roots, such as the standard library, and
-        code that does not exist yet both look like.
+        `resolutions`, which spares finding it again. A module path
+        with no file under any root is tried under each of
+        `external_roots`, and a file found there is recorded by its
+        digest and nothing more: never parsed, and nothing in it
+        followed. There is no file at a module path when neither
+        has one, which is what the standard library and code that
+        does not exist yet both look like.
         """
         files = self
 
@@ -672,6 +688,14 @@ class Files(Generic[KnownFile]):
                 module_path,
                 roots=files.roots,
             )
+            external = files.external
+            if filename is None:
+                filename = await _try_resolve_module_path(
+                    module_path,
+                    roots=files.external_roots,
+                )
+                if filename is not None:
+                    external = external | {_standardized_path(filename)}
             if filename is not None:
                 filename = _standardized_path(filename)
             files = replace(
@@ -682,11 +706,21 @@ class Files(Generic[KnownFile]):
                         module_path: filename,
                     }
                 ),
+                external=external,
             )
 
         filename = files.resolutions[module_path]
         dependency = Dependency()
-        if filename is not None:
+        if filename is not None and filename in files.external:
+            # Found a file outside every root: digested, and nothing
+            # more.
+            dependency.filename = str(filename)
+            try:
+                source, _ = await _read(filename)
+                dependency.digest = hashlib.sha256(source).digest()
+            except OSError:
+                pass
+        elif filename is not None:
             # Found a file, recurse.
             digest, files = await files.lookup_or_parse_filename(filename)
             dependency.filename = str(filename)
@@ -760,6 +794,7 @@ async def _walk(
     entries: Sequence[Path],
     roots: Sequence[Path],
     known: Mapping[Path, KnownFile],
+    external_roots: Sequence[Path] = (),
 ) -> tuple[
     dict[Path, KnownFile],
     Mapping[Path, ParsedFile | ProtoFile],
@@ -797,9 +832,15 @@ async def _walk(
     both how a module name becomes a file and where the developer's
     code is taken to end.
 
+    `external_roots` are the directories an import may lead to
+    outside the roots, e.g. the one installed packages are in. A
+    module found under one is a dependency of the file importing it,
+    by its digest, so that a change to it reads the importer again;
+    it is never parsed, and nothing in it is followed.
     """
     files = Files.create(
         roots=roots,
+        external_roots=external_roots,
         known=known,
     )
 

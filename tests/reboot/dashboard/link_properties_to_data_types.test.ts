@@ -24,7 +24,7 @@ import apiJson from "./state_types";
 const apis: APIs = {
   // What the file declares, of everything reading it found.
   "shop/v1/shop.py": api_pb.API.fromJson(
-    apiJson as Parameters<typeof api_pb.API.fromJson>[0]
+    apiJson.apis["shop/v1/shop.py"] as Parameters<typeof api_pb.API.fromJson>[0]
   ),
 };
 const api = apis["shop/v1/shop.py"];
@@ -246,10 +246,14 @@ describe("what only a `.proto` declares", () => {
   // declares and so describes.
   const protoApis: APIs = {
     "shop/v1/depot.proto": api_pb.API.fromJson(
-      protoApiJson as Parameters<typeof api_pb.API.fromJson>[0]
+      protoApiJson.apis["shop/v1/depot.proto"] as Parameters<
+        typeof api_pb.API.fromJson
+      >[0]
     ),
     "shop/v1/parts.proto": api_pb.API.fromJson(
-      protoPartsApiJson as Parameters<typeof api_pb.API.fromJson>[0]
+      protoPartsApiJson.apis["shop/v1/parts.proto"] as Parameters<
+        typeof api_pb.API.fromJson
+      >[0]
     ),
   };
   const protoApi = protoApis["shop/v1/depot.proto"];

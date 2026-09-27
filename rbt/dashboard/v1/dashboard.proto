@@ -1156,3 +1156,26 @@ service PreferencesMethods {
     };
   }
 }
+// Represents what reading one of the developer's API files found:
+// what `reboot.dashboard.backend.api_reader` writes, as JSON, and
+// the API watcher reads back.
+message APIReaderResponse {
+  // What reading the file described, keyed by the path of the file
+  // each is of, the way `Dashboard.apis` is keyed: what the file
+  // itself declares, under its own path, and nothing for a file
+  // declaring no API, such as a Python file of shared code.
+  map<string, rbt.v1alpha1.api.API> apis = 1;
+
+  // Represents what reading a `.proto` found beyond what it
+  // declares, which `protoc` is the only one to know. Absent for a
+  // Python file, whose imports the walk follows itself.
+  message Proto {
+    // Represents the files outside the API directory that `protoc`
+    // read for the file, which the developer did not write, such as
+    // Reboot's own, each with the digest it was read with. Recorded
+    // so that a change to one, which upgrading Reboot is, reads the
+    // file again.
+    repeated File.Dependency external = 1;
+  }
+  optional Proto proto = 2;
+}
