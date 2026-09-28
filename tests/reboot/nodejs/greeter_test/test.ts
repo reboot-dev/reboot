@@ -37,7 +37,7 @@ test("constructors and readers", async (t) => {
     });
 
     // Test creating with ID.
-    await Greeter.create(context, "other greeter", {
+    await Greeter.factory().create(context, "other greeter", {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",
@@ -47,7 +47,7 @@ test("constructors and readers", async (t) => {
     //
     // Scoping here for snippet purposes.
     {
-      const [greeter, response] = await Greeter.create(context, {
+      const [greeter, response] = await Greeter.factory().create(context, {
         title: "Dr",
         name: "Jonathan",
         adjective: "Best",
@@ -55,39 +55,39 @@ test("constructors and readers", async (t) => {
     }
 
     // Test creating with generated ID idempotently.
-    await Greeter.idempotently().create(context, {
+    await Greeter.factory().idempotently().create(context, {
       title: "Mr",
       name: "John",
       adjective: "Dangerous",
     });
 
-    await Greeter.idempotently("generated").create(context, {
+    await Greeter.factory().idempotently("generated").create(context, {
       title: "Mr",
       name: "John",
       adjective: "Dangerous",
     });
 
-    await Greeter.idempotently("create").create(
-      context,
-      "greeter",
-      // Pass a whole object to test that we can take an object as a request.
-      new CreateRequest({
-        title: "Mr",
-        name: "John",
-        adjective: "Dangerous",
-      })
-    );
+    await Greeter.factory()
+      .idempotently("create")
+      .create(
+        context,
+        "greeter",
+        // Pass a whole object to test that we can take an object as a request.
+        new CreateRequest({
+          title: "Mr",
+          name: "John",
+          adjective: "Dangerous",
+        })
+      );
 
     // Call `idempotently()` with explicit alias to test "alias or options".
-    const [greeter] = await Greeter.idempotently({ alias: "create" }).create(
-      context,
-      "greeter",
-      {
+    const [greeter] = await Greeter.factory()
+      .idempotently({ alias: "create" })
+      .create(context, "greeter", {
         title: "Mr",
         name: "John",
         adjective: "Dangerous",
-      }
-    );
+      });
 
     // Pass a partial to test that we can take a partial as a request.
     let response = await greeter.greet(context, { name: "Jake" });
@@ -191,7 +191,7 @@ test("constructors and readers", async (t) => {
       idempotencySeed: uuid.v4(),
     });
 
-    const [greeter] = await Greeter.create(context, {
+    const [greeter] = await Greeter.factory().create(context, {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",
@@ -233,7 +233,7 @@ test("constructors and readers", async (t) => {
 
     const context = rbt.createExternalContext("test");
 
-    const [greeter] = await Greeter.create(context, {
+    const [greeter] = await Greeter.factory().create(context, {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",
@@ -262,7 +262,7 @@ test("constructors and readers", async (t) => {
 
     const context = rbt.createExternalContext("test");
 
-    const [greeter] = await Greeter.create(context, {
+    const [greeter] = await Greeter.factory().create(context, {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",
@@ -280,13 +280,13 @@ test("constructors and readers", async (t) => {
     const context = rbt.createExternalContext("test");
 
     // Creating some greeters.
-    await Greeter.create(context, "greeter-1", {
+    await Greeter.factory().create(context, "greeter-1", {
       title: "Mr",
       name: "Heinz",
       adjective: "Erhardt",
     });
 
-    await Greeter.create(context, "greeter-2", {
+    await Greeter.factory().create(context, "greeter-2", {
       title: "Mrs",
       name: "Heidi",
       adjective: "Kabel",
@@ -325,13 +325,13 @@ test("constructors and readers", async (t) => {
 
     const context = rbt.createExternalContext("test iterables");
 
-    await Greeter.create(context, "greeter-iter-1", {
+    await Greeter.factory().create(context, "greeter-iter-1", {
       title: "Mr",
       name: "Heinz",
       adjective: "Erhardt",
     });
 
-    await Greeter.create(context, "greeter-iter-2", {
+    await Greeter.factory().create(context, "greeter-iter-2", {
       title: "Mrs",
       name: "Heidi",
       adjective: "Kabel",

@@ -29,7 +29,7 @@ class BankServicer(Bank.Servicer):
         context: TransactionContext,
         request: Bank.SignUpRequest,
     ) -> None:
-        await Customer.sign_up(context, request.customer_id)
+        await Customer.factory().sign_up(context, request.customer_id)
 
         await OrderedMap.ref(self.state.customer_ids_map_id).Insert(
             context,

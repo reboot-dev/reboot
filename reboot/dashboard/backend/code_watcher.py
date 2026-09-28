@@ -277,9 +277,9 @@ class ServicerDefinition:
 class MethodDefinition:
     """A line defining a method stub of a state type: on its
     `WeakReference`, the class of a reference to it, or on the
-    state type's own class, where the generator writes the
-    constructors. What a call made through any reference, or a
-    construction, is defined by."""
+    `_Factory` inside the state type's own class, where the
+    generator writes the constructors. What a call made through any
+    reference, or a construction, is defined by."""
 
     # The state type, spelled as `__state_type_name__` spells it,
     # e.g. `shop.v1.Shop`.
@@ -302,11 +302,12 @@ GeneratedDefinition = (
 
 # How a call whose stub is defined in each class the generator
 # nests inside a `WeakReference` or the state type's class is
-# reached: through `.schedule(when=...)`, `.spawn(when=...)`, or
-# `.forall(ids)`; for `.idempotently(...)`, a plain call or a
-# construction made idempotent.
+# reached: through `.factory()`, `.schedule(when=...)`,
+# `.spawn(when=...)`, or `.forall(ids)`; for `.idempotently(...)`, a
+# plain call or a construction made idempotent.
 HOWS_BY_CLASS_NAME = {
     '_ConstructIdempotently': Servicer.Method.Call.How.CONSTRUCT,
+    '_Factory': Servicer.Method.Call.How.CONSTRUCT,
     '_Forall': Servicer.Method.Call.How.FORALL,
     '_Idempotently': Servicer.Method.Call.How.CALL,
     '_Schedule': Servicer.Method.Call.How.SCHEDULE,
@@ -417,29 +418,24 @@ def _generated_definitions(
                     state_type=state_type,
                 )
 
-                # The state type's class defines the constructor
+                # The `_Factory` inside the state type's class,
+                # reached as `.factory()`, defines the constructor
                 # stubs, e.g.
                 # `async def Create(__cls__, __context__, ...)`;
-                # its `WeakReference`, the class of a reference to
-                # it, defines the method stubs a reference is
-                # called with, one def per overload; and the
-                # classes inside the `WeakReference` named in
-                # `HOWS_BY_CLASS_NAME` define the same stubs as
-                # reached each way, `_ConstructIdempotently` the
-                # constructors made idempotent. Every stub
-                # is told apart from the machinery around it, such
-                # as `ref` and `schedule` themselves, by the
-                # `__context__` parameter only the generator's
-                # stubs take second. An alias written after a stub,
-                # `add_to_cart = AddToCart`, defines the same method
-                # under the name the developer calls.
-                definitions.update(
-                    _method_definitions_in(
-                        statement.body,
-                        state_type=state_type,
-                        how=Servicer.Method.Call.How.CONSTRUCT,
-                    )
-                )
+                # the `WeakReference`, the class of a reference to
+                # the state type, defines the method stubs a
+                # reference is called with, one def per overload;
+                # and the other classes named in
+                # `HOWS_BY_CLASS_NAME`, inside either, define the
+                # same stubs as reached each way,
+                # `_ConstructIdempotently` the constructors made
+                # idempotent. Every stub is told apart from the
+                # machinery around it, such as `ref` and `schedule`
+                # themselves, by the `__context__` parameter only
+                # the generator's stubs take second. An alias
+                # written after a stub, `add_to_cart = AddToCart`,
+                # defines the same method under the name the
+                # developer calls.
                 for inner in statement.body:
                     match inner:
                         case ast.ClassDef(

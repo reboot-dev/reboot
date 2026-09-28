@@ -288,9 +288,9 @@ class World:
         state_type: str,
         method: str,
     ) -> Callable[..., Any]:
-        """The named factory on the state type's generated client
-        class; raises if there is none."""
-        factory = getattr(self.client_type(state_type), method, None)
+        """The named factory in the `factory()` namespace of the state
+        type's generated client class; raises if there is none."""
+        factory = getattr(self.client_type(state_type).factory(), method, None)
         if not callable(factory):
             raise ValueError(f"`{state_type}` has no factory `{method}`")
         return factory
