@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import ast
 import os
 import re
 import reboot.aio.tracing
@@ -206,7 +207,12 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                 ) for client in file.clients
             ],
             reboot_version=file.reboot_version,
-            imports=self._analyze_imports(file.proto._descriptor),
+            # The generated code names modules of two kinds: the
+            # protobuf modules of the `.proto` dependency graph, and
+            # the Python modules defining the Pydantic models that
+            # `pydantic_type` options spell out.
+            imports=self._analyze_imports(file.proto._descriptor) |
+            self._analyze_pydantic_imports(file.proto._descriptor),
             pb2_name=self._pb2_module_name(file.proto._descriptor),
         )
 
@@ -427,8 +433,13 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
 
     @classmethod
     def _analyze_imports(cls, file: FileDescriptor) -> set[str]:
-        """Return set of python imports necessary for our generated code
-        based on the file descriptor.
+        """Return the set of protobuf modules our generated code needs:
+        the `_pb2` (and `_pb2_grpc`) modules of the file itself and,
+        transitively, of every `.proto` file it imports.
+
+        These are exactly the modules reachable through the `.proto`
+        dependency graph, which makes every protobuf message the
+        generated code names importable.
         """
         # Firstly, we need the standard gRPC modules, i.e., `_pb2` and
         # `_pb2_grpc`...
@@ -443,6 +454,52 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
             imports = imports.union(cls._analyze_imports(dependency))
 
         return imports
+
+    @classmethod
+    def _analyze_pydantic_imports(cls, file: FileDescriptor) -> set[str]:
+        """Return the set of modules that define the Pydantic models
+        which the file's `pydantic_type` field options name.
+
+        Those options spell a model by its module and class, e.g.,
+        `shared.errors.NotFoundError`, and the generated code uses them
+        verbatim as Python expressions. A model defined in a file other
+        than the API file, e.g., an error type shared between APIs, is
+        only reachable that way once its module is imported.
+
+        The `.proto` generated for a Pydantic API file carries its own
+        copy of every model the API uses, so the module defining a
+        shared model is named only by these options and is absent from
+        the `.proto` dependency graph that `_analyze_imports` walks.
+
+        Used only when generating from Pydantic APIs.
+        """
+        modules: set[str] = set()
+
+        def visit(message: Descriptor) -> None:
+            for field in message.fields:
+                pydantic_type = get_field_options(field).pydantic_type
+                if not pydantic_type:
+                    continue
+                # A `pydantic_type` is a type expression, e.g.,
+                # `IMPORT_typing.Optional[list[shared.errors.Money]]`,
+                # so we parse it to find each dotted name in it. For
+                # `shared.errors.Money` that yields `shared.errors` and
+                # its parent package `shared`; importing both is
+                # equivalent to importing `shared.errors` alone.
+                for node in ast.walk(ast.parse(pydantic_type, mode='eval')):
+                    if isinstance(node, ast.Attribute):
+                        module = ast.unparse(node.value)
+                        # Our own imports, e.g., `IMPORT_typing`, are
+                        # already in place.
+                        if not module.startswith('IMPORT_'):
+                            modules.add(module)
+            for nested_message in message.nested_types:
+                visit(nested_message)
+
+        for message in file.message_types_by_name.values():
+            visit(message)
+
+        return modules
 
     @classmethod
     def _analyze_has_non_none_request_or_response(
