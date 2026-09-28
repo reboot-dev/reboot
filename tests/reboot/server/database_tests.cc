@@ -1,8 +1,10 @@
 #include <openssl/sha.h>
 
 #include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <future>
+#include <mutex>
 #include <random>
 #include <set>
 #include <thread>
@@ -1199,6 +1201,97 @@ TEST_F(TwoShardDatabaseTest, TransactionParticipantAbortMissingTransaction) {
   EXPECT_NO_THROW(transaction_participant_abort(
       stout::copy(state_type),
       stout::copy(state_ref)));
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, TransactionParticipantConcurrentAborts) {
+  // Two aborts of the same unprepared transaction can overlap, e.g.,
+  // one from a server that was killed after sending it and one from
+  // the server that recovered the transaction in its place. Rolling
+  // back an unprepared transaction leaves it unprepared, so both
+  // aborts succeed and both go on to delete the transaction from
+  // memory. Neither may wedge the database for everyone else.
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("test_1234");
+
+  v1alpha1::Actor actor;
+  actor.set_state_type(state_type);
+  actor.set_state_ref(state_ref);
+  actor.set_state("hello world");
+
+  v1alpha1::Transaction transaction;
+  transaction.set_state_type(state_type);
+  transaction.set_state_ref(state_ref);
+  transaction.add_transaction_ids(UUID::random().toBytes());
+  transaction.set_coordinator_state_type("some.Coordinator");
+  transaction.set_coordinator_state_ref(make_state_ref("some_actor_1"));
+
+  store({actor}, {}, std::move(transaction));
+
+  // Hold each abort in `DeleteTransaction()` until both have arrived,
+  // i.e., until both have looked up the transaction and rolled it
+  // back.
+  std::mutex mutex;
+  std::condition_variable arrived_cv;
+  int arrived = 0;
+  SetTestOnlyHookForLongRunningRPC(
+      server->TestOnly_GetService(),
+      [&](TestOnlyLongRunningRPCHookSite site) {
+        if (site
+            != TestOnlyLongRunningRPCHookSite::DELETE_TRANSACTION_ENTERED) {
+          return;
+        }
+        std::unique_lock lock(mutex);
+        if (++arrived == 2) {
+          arrived_cv.notify_all();
+        }
+        arrived_cv.wait(lock, [&]() { return arrived == 2; });
+      });
+
+  // Bound every RPC below so that a wedged database fails this test
+  // rather than hanging it.
+  auto deadline = []() {
+    return std::chrono::system_clock::now() + std::chrono::seconds(10);
+  };
+
+  auto abort = [&]() {
+    v1alpha1::TransactionParticipantAbortRequest request;
+    request.set_state_type(state_type);
+    request.set_state_ref(state_ref);
+
+    v1alpha1::TransactionParticipantAbortResponse response;
+    grpc::ClientContext context;
+    context.set_deadline(deadline());
+
+    return stub->TransactionParticipantAbort(&context, request, &response);
+  };
+
+  std::future<grpc::Status> abort1 = std::async(std::launch::async, abort);
+  std::future<grpc::Status> abort2 = std::async(std::launch::async, abort);
+
+  grpc::Status status1 = abort1.get();
+  grpc::Status status2 = abort2.get();
+  EXPECT_TRUE(status1.ok()) << status1.error_message();
+  EXPECT_TRUE(status2.ok()) << status2.error_message();
+
+  SetTestOnlyHookForLongRunningRPC(server->TestOnly_GetService(), nullptr);
+
+  // A store outside of a transaction takes `txns_mutex_` to check
+  // that its actor is not in a transaction, and is refused if it is,
+  // so it succeeding shows the aborted transaction is gone and the
+  // mutex is free.
+  v1alpha1::StoreRequest request;
+  *request.add_actor_upserts() = actor;
+
+  v1alpha1::StoreResponse response;
+  grpc::ClientContext context;
+  context.set_deadline(deadline());
+
+  grpc::Status status = stub->Store(&context, request, &response);
+  ASSERT_TRUE(status.ok()) << status.error_message();
+
+  EXPECT_EQ(recover_all_shards().participant_transactions_size(), 0);
 }
 
 ////////////////////////////////////////////////////////////////////////

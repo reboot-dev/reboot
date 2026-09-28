@@ -1393,21 +1393,37 @@ void DatabaseService::DeleteTransaction(
         TestOnlyLongRunningRPCHookSite::DELETE_TRANSACTION_ENTERED);
   }
 
-  std::lock_guard lock(txns_mutex_);
-
-  auto iterator = [&]() {
+  const std::string state_ref = [&]() {
     std::lock_guard lock(**txn);
-    return txns_.find(GetStateRefFromTransaction(***txn));
+    return GetStateRefFromTransaction(***txn);
   }();
 
-  CHECK(iterator != std::end(txns_));
+  // Destroying a `Borrowable` waits for every other borrow of it to
+  // be relinquished, and another RPC may still hold one, e.g., a
+  // second `TransactionParticipantAbort` of this same transaction
+  // that is itself on its way into `DeleteTransaction()`. We
+  // therefore only detach the transaction from `txns_` while holding
+  // `txns_mutex_`, and destroy it after releasing the mutex.
+  //
+  // For the same reason the transaction may already be gone from
+  // `txns_`, or `txns_` may hold a newer transaction for this actor,
+  // in which case another call has already deleted ours.
+  decltype(txns_)::node_type node;
 
-  // Before we erase we need to release the borrow so that it can be
-  // deleted otherwise we'll hang forever! We accomplish that by
+  {
+    std::lock_guard lock(txns_mutex_);
+
+    auto iterator = txns_.find(state_ref);
+
+    if (iterator != std::end(txns_) && iterator->second.get() == &**txn) {
+      node = txns_.extract(iterator);
+    }
+  }
+
+  // Before `node` gets destroyed we need to release our borrow,
+  // otherwise we'll wait on ourselves forever! We accomplish that by
   // replacing 'txn' with an unexpected.
   txn = make_unexpected(std::string("Release the borrowed reference!"));
-
-  txns_.erase(iterator);
 }
 
 ////////////////////////////////////////////////////////////////////////
