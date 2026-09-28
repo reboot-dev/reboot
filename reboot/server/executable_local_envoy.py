@@ -7,6 +7,7 @@ from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from log.log import get_logger
 from pathlib import Path
 from reboot.aio.types import ApplicationId
+from reboot.server.envoy_nanny import envoy_nanny_command
 from reboot.server.local_envoy import LocalEnvoy
 from reboot.settings import LocalEnvoyMode
 from typing import Optional
@@ -80,6 +81,7 @@ class ExecutableLocalEnvoy(LocalEnvoy):
         )
 
         self._process: Optional[asyncio.subprocess.Process] = None
+        self._nanny_process: Optional[asyncio.subprocess.Process] = None
 
     @property
     def _mode(self) -> LocalEnvoyMode:
@@ -190,6 +192,13 @@ class ExecutableLocalEnvoy(LocalEnvoy):
             # let our Lua code find the libraries that we've copied into that
             # directory.
             cwd=self._tmp_envoy_dir.name,
+        )
+
+        self._nanny_process = await asyncio.create_subprocess_exec(
+            *envoy_nanny_command(self._process.pid),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
         )
 
         # We must now determine the admin port that Envoy has come up on
@@ -330,3 +339,11 @@ class ExecutableLocalEnvoy(LocalEnvoy):
         except ProcessLookupError:
             # The process already exited. That's fine.
             pass
+
+        if self._nanny_process is not None:
+            try:
+                self._nanny_process.kill()
+            except ProcessLookupError:
+                # The nanny already exited.
+                pass
+            await self._nanny_process.wait()
