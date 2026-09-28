@@ -192,6 +192,22 @@ def _collect_models_in_module(
     return models
 
 
+def defines_models(filename: str) -> bool:
+    """
+    Whether the given Pydantic schema file defines any `Model` of its
+    own, i.e., whether `generate_zod_file_from_api` has anything to
+    generate for it even without an `api`.
+    """
+    module_path = filename.rsplit('.py', 1)[0].replace(os.sep, '.')
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError as e:
+        fail(f"Failed to import module {module_path}: {e}")
+    except UserPydanticError as e:
+        fail(str(e))
+    return len(_collect_models_in_module(module, module_path)) > 0
+
+
 def pydantic_to_zod(
     input: (
         Type[Model] | type[str] | type[int] | type[float] | type[bool] |
@@ -560,14 +576,48 @@ async def generate_zod_file_from_api(
     zod_file_path = os.path.join(output_directory, zod_file_name)
     os.makedirs(os.path.dirname(zod_file_path), exist_ok=True)
 
+    # Track which `Model`s we've already generated to avoid duplicates.
+    generated_models: set[str] = set()
+
+    # Generate schemas for all local `Model`s.
+    model_schemas: list[str] = []
+    for model_type in models_in_module:
+        model_name = model_type.__name__
+        if model_name in generated_models:
+            continue
+        generated_models.add(model_name)
+
+        # Check if this model is used as an error (needs `type`
+        # discriminator field). Check both global pre-scan and current
+        # file's API.
+        is_error = (module_path, model_name) in global_error_models
+
+        model_zod = pydantic_to_zod(
+            model_type,
+            f"{model_name}",
+            external_refs=external_refs,
+            is_error=is_error,
+        )
+        model_schemas.append(
+            f'export const {model_name}Schema = {model_zod};\n\n'
+            f'export type {model_name} = '
+            f'z.infer<typeof {model_name}Schema>;\n\n'
+        )
+
     async with aiofiles.open(zod_file_path, 'w') as zod:
         await zod.write('import { z } from "zod/v4";\n')
-        # Import Reboot API even if no `api` is defined, since the
-        # default converters use `reboot_api.EMPTY_ARRAY` and
-        # `reboot_api.EMPTY_RECORD`.
-        await zod.write(
-            'import * as reboot_api from "@reboot-dev/reboot-api";\n'
-        )
+        # Import Reboot API only when the generated code refers to it:
+        # an unused import fails to compile under TypeScript's
+        # `noUnusedLocals`. The API schemas refer to it for their
+        # method kinds, and the `Model` schemas for their
+        # `reboot_api.EMPTY_ARRAY` and `reboot_api.EMPTY_RECORD`
+        # defaults.
+        if api is not None or any(
+            'reboot_api.' in model_schema for model_schema in model_schemas
+        ):
+            await zod.write(
+                'import * as reboot_api from "@reboot-dev/reboot-api";\n'
+            )
 
         # Write imports for external models first.
         for external_module in sorted(external_imports.keys()):
@@ -581,33 +631,8 @@ async def generate_zod_file_from_api(
 
         await zod.write('\n')
 
-        # Track which `Model`s we've already generated to avoid duplicates.
-        generated_models: set[str] = set()
-
-        # Generate schemas for all local `Model`s.
-        for model_type in models_in_module:
-            model_name = model_type.__name__
-            if model_name in generated_models:
-                continue
-            generated_models.add(model_name)
-
-            # Check if this model is used as an error (needs `type`
-            # discriminator field). Check both global pre-scan and current
-            # file's API.
-            is_error = (module_path, model_name) in global_error_models
-
-            await zod.write(f'export const {model_name}Schema = ')
-            model_zod = pydantic_to_zod(
-                model_type,
-                f"{model_name}",
-                external_refs=external_refs,
-                is_error=is_error,
-            )
-            await zod.write(f'{model_zod};\n\n')
-            await zod.write(
-                f'export type {model_name} = '
-                f'z.infer<typeof {model_name}Schema>;\n\n'
-            )
+        for model_schema in model_schemas:
+            await zod.write(model_schema)
 
         if api is not None:
             await _generate_api_schemas(
