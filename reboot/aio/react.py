@@ -1,7 +1,9 @@
 import asyncio
+import dataclasses
 import grpc
 import logging
 import reboot.aio.placement
+import time
 import traceback
 import uuid
 import websockets
@@ -29,6 +31,34 @@ from reboot.wait_for_tasks import wait_for_tasks
 from typing import AsyncIterable, Optional
 
 logger = get_logger(__name__)
+
+# How long a sequence of mutations is kept after its last mutation.
+# Forgetting a sequence that is still being used is safe because every
+# mutation tells us where to pick up its sequence, this only bounds
+# how many sequences we remember for clients that have gone away.
+SEQUENCE_IDLE_SECONDS = 10 * 60
+
+
+@dataclasses.dataclass(kw_only=True)
+class _Sequence:
+    """A sequence of mutations that called `React.Mutate`, which must be
+    performed in the order of their numbers, no matter what order they
+    arrive in."""
+    # Number of the mutation to perform next. A mutation with a lower
+    # number has been performed before, or at least the client told us
+    # so, and thus it does not need to wait for anything.
+    next_number: int
+
+    # Notified whenever `next_number` changes.
+    condition: asyncio.Condition = dataclasses.field(
+        default_factory=asyncio.Condition
+    )
+
+    # Number of mutations that are waiting or being performed.
+    mutations: int = 0
+
+    # When we last had a mutation, from `time.monotonic()`.
+    idle_since: float = dataclasses.field(default_factory=time.monotonic)
 
 
 class _SuppressInvalidHandshakeFilter(logging.Filter):
@@ -74,6 +104,9 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
             self._middleware_by_state_type[state_type_name] = middleware
 
         self._stop_websockets_serve = asyncio.Event()
+
+        # Sequences of mutations by state and `Sequence.id`.
+        self._sequences: dict[tuple[StateRef, str], _Sequence] = {}
 
     def _state_type_name_for_state_ref(
         self, state_ref: StateRef
@@ -516,6 +549,163 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
                 traceback.print_exc()
 
             raise exception
+
+    def _forget_idle_sequences(self) -> None:
+        now = time.monotonic()
+        for key, sequence in list(self._sequences.items()):
+            if (
+                sequence.mutations == 0 and
+                now - sequence.idle_since > SEQUENCE_IDLE_SECONDS
+            ):
+                del self._sequences[key]
+
+    async def _mutate(
+        self,
+        *,
+        request: react_pb2.MutateRequest,
+        headers: Headers,
+    ) -> react_pb2.MutateResponse:
+        """Performs the mutation in `request` and returns its response,
+        which is a status if the mutation failed."""
+        try:
+            state_type_name = self._state_type_name_for_state_ref(
+                headers.state_ref
+            )
+
+            if state_type_name is None:
+                log_at_most_once_per(
+                    seconds=60,
+                    log_method=logger.error,
+                    message=_unknown_query_or_mutation_error_message(
+                        is_query=False,
+                        state_type=headers.state_ref.state_type,
+                    ),
+                )
+                raise SystemAborted(UnknownService())
+
+            middleware = self._middleware_by_state_type[state_type_name]
+
+            response = await middleware.react_mutate(
+                headers,
+                request.method,
+                request.request,
+            )
+
+            return react_pb2.MutateResponse(
+                response=response.SerializeToString(),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Aborted as aborted:
+            return react_pb2.MutateResponse(
+                status=MessageToJson(aborted.to_status()),
+            )
+        except BaseException as exception:
+            # See the comment in `_serve()` for why we log the stack
+            # trace but don't send it.
+            error_message = (
+                'Failed to execute mutation; '
+                f'{type(exception).__name__}: {exception}'
+            )
+
+            if should_print_stacktrace():
+                error_message += f'\n{traceback.format_exc()}'
+
+            logger.error(error_message)
+
+            return react_pb2.MutateResponse(
+                status=MessageToJson(
+                    status_pb2.Status(
+                        code=code_pb2.Code.UNKNOWN,
+                        message=f'{type(exception).__name__}: {exception}',
+                    )
+                ),
+            )
+
+    async def Mutate(
+        self,
+        request: react_pb2.MutateRequest,
+        grpc_context: grpc.aio.ServicerContext,
+    ) -> react_pb2.MutateResponse:
+        """Implements the React.Mutate RPC, the alternative to sending
+        a mutation over a websocket."""
+        # Just like a websocket that gets closed, a client that is no
+        # longer waiting for this mutation should cancel it, see the
+        # comment in `Query()` for why we need to do this ourselves.
+        mutate_task = asyncio.current_task()
+        assert mutate_task is not None
+
+        def done_callback(_) -> None:
+            mutate_task.cancel()
+
+        grpc_context.add_done_callback(done_callback)
+
+        headers = dataclasses.replace(
+            Headers.from_grpc_context(grpc_context),
+            idempotency_key=uuid.UUID(request.idempotency_key),
+            # This request came from a frontend client calling, not
+            # another Reboot application. Therefore there is no caller
+            # ID.
+            caller_id=None,
+        )
+
+        if request.HasField('bearer_token'):
+            headers = dataclasses.replace(
+                headers,
+                bearer_token=request.bearer_token,
+            )
+
+        if not request.HasField('sequence'):
+            return await self._mutate(request=request, headers=headers)
+
+        self._forget_idle_sequences()
+
+        sequence = self._sequences.setdefault(
+            (headers.state_ref, request.sequence.id),
+            # We have not heard of this sequence, either because this
+            # is its first mutation to arrive, which need not be the
+            # first that was sent, or because we forgot about it,
+            # e.g., because we restarted.
+            _Sequence(next_number=request.sequence.first_outstanding_number),
+        )
+
+        sequence.mutations += 1
+
+        try:
+            async with sequence.condition:
+                # The client has the response of every mutation before
+                # its first outstanding one, so nothing should wait
+                # for those.
+                if (
+                    request.sequence.first_outstanding_number
+                    > sequence.next_number
+                ):
+                    sequence.next_number = (
+                        request.sequence.first_outstanding_number
+                    )
+                    sequence.condition.notify_all()
+
+                await sequence.condition.wait_for(
+                    lambda: request.sequence.number <= sequence.next_number
+                )
+
+            # NOTE: if we get cancelled then we have not performed this
+            # mutation as far as the client can tell, and it will
+            # retry it if it still wants it, so the mutations after it
+            # must keep waiting for it.
+            response = await self._mutate(request=request, headers=headers)
+
+            async with sequence.condition:
+                # A mutation with a lower number is a retry of a
+                # mutation that we are not waiting for anymore.
+                if request.sequence.number == sequence.next_number:
+                    sequence.next_number += 1
+                    sequence.condition.notify_all()
+
+            return response
+        finally:
+            sequence.mutations -= 1
+            sequence.idle_since = time.monotonic()
 
     async def WebSocketsConnection(
         self,
