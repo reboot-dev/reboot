@@ -21,6 +21,7 @@ DatabaseServer* database_server_create(
     const char* state_directory,
     const char* server_info_proto,
     size_t server_info_length,
+    const char* host,
     int port) {
   std::string state_directory_str(state_directory);
 
@@ -44,7 +45,7 @@ DatabaseServer* database_server_create(
   CHECK(server_info.shard_infos_size() > 0)
       << "Server info must contain at least one shard.";
 
-  std::string address = "0.0.0.0:" + std::to_string(port);
+  std::string address = std::string(host) + ":" + std::to_string(port);
   tl::expected<std::unique_ptr<DatabaseServer>, std::string> instantiate =
       DatabaseServer::Instantiate(state_directory_str, server_info, address);
 
@@ -121,6 +122,7 @@ int main(int argc, char* argv[]) {
       state_directory,
       server_info_proto.c_str(),
       server_info_proto.size(),
+      "0.0.0.0",
       port);
 
   if (!server) {

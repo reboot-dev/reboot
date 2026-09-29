@@ -1,4 +1,5 @@
 import enum
+import sys
 
 # The settings below must match their equivalents, if applicable, in:
 # * reboot/settings.h
@@ -216,6 +217,27 @@ ENVVAR_KUBERNETES_SERVICE_HOST = 'KUBERNETES_SERVICE_HOST'
 # have local Docker containers.
 EVERY_LOCAL_NETWORK_ADDRESS = '0.0.0.0'
 ONLY_LOCALHOST_NETWORK_ADDRESS = '127.0.0.1'
+
+# Where the servers we start on this machine listen: the gRPC servers
+# of a local application, the database they use, and the xDS server a
+# local Envoy reads its configuration from.
+#
+# Not every interface on macOS. gRPC (and the native database server)
+# turn a `0.0.0.0` wildcard into one dual-stack IPv6 socket, and XNU's
+# IPv6 ephemeral-port allocator (`in6_pcbsetport`) does not check ports
+# that IPv4 sockets hold, so a new server can be given the port of an
+# Envoy left behind by a killed run, and a client dialling `127.0.0.1`
+# reaches that Envoy instead. Apple's advice (FB12128351) is to let the
+# IPv4 allocator, which checks both families, choose the port; binding
+# the loopback does exactly that, with nothing to probe or race for.
+# Nothing is lost: Docker Desktop reaches a loopback-bound host port
+# through `host.docker.internal`, and everything else that dials these
+# servers runs on this machine. Linux keeps every interface, where the
+# Docker bridge needs it and the allocator has no such gap.
+LOCAL_LISTEN_ADDRESS = (
+    ONLY_LOCALHOST_NETWORK_ADDRESS
+    if sys.platform == 'darwin' else EVERY_LOCAL_NETWORK_ADDRESS
+)
 
 # Ports that Reboot is, by default, reachable on for gRPC and HTTP traffic
 # from clients running outside the Reboot cluster. These are the ports that
