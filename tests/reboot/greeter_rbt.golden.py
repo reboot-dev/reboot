@@ -22075,7 +22075,7 @@ class Greeter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.GreetRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.GreetResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.GreetResponse, None] | tuple[None, Greeter.GreetAborted]]:
                 ...
 
             @IMPORT_typing.overload
@@ -22086,7 +22086,7 @@ class Greeter:
                 *,
                 name: IMPORT_typing.Optional[str] | Unset = UNSET,
                 metadata: IMPORT_typing.Optional[dict[str, str]] | Unset = UNSET,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.GreetResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.GreetResponse, None] | tuple[None, Greeter.GreetAborted]]:
                 ...
 
             async def Greet( # type: ignore[misc]
@@ -22107,7 +22107,7 @@ class Greeter:
                 *,
                 name: IMPORT_typing.Optional[str] | Unset = UNSET,
                 metadata: IMPORT_typing.Optional[dict[str, str]] | Unset = UNSET,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.GreetResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.GreetResponse, None] | tuple[None, Greeter.GreetAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -22218,7 +22218,7 @@ class Greeter:
 
                                 __response__ = tests.reboot.greeter_pb2.GreetResponse()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield GreeterGreetResponseFromProto(__response__)
+                                yield (GreeterGreetResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -22233,18 +22233,35 @@ class Greeter:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise Greeter.GreetAborted.from_status(
-                                    status
-                                ) from None
-                            raise Greeter.GreetAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = Greeter.GreetAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = Greeter.GreetAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -22256,7 +22273,7 @@ class Greeter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.TryToConstructContextRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.TryToConstructContextResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.TryToConstructContextResponse, None] | tuple[None, Greeter.TryToConstructContextAborted]]:
                 ...
 
             @IMPORT_typing.overload
@@ -22264,7 +22281,7 @@ class Greeter:
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.TryToConstructContextResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.TryToConstructContextResponse, None] | tuple[None, Greeter.TryToConstructContextAborted]]:
                 ...
 
             async def TryToConstructContext( # type: ignore[misc]
@@ -22282,7 +22299,7 @@ class Greeter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.TryToConstructContextResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.TryToConstructContextResponse, None] | tuple[None, Greeter.TryToConstructContextAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -22389,7 +22406,7 @@ class Greeter:
 
                                 __response__ = google.protobuf.empty_pb2.Empty()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield GreeterTryToConstructContextResponseFromProto(__response__)
+                                yield (GreeterTryToConstructContextResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -22404,18 +22421,35 @@ class Greeter:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise Greeter.TryToConstructContextAborted.from_status(
-                                    status
-                                ) from None
-                            raise Greeter.TryToConstructContextAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = Greeter.TryToConstructContextAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = Greeter.TryToConstructContextAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -22427,7 +22461,7 @@ class Greeter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.TryToConstructExternalContextRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.TryToConstructExternalContextResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.TryToConstructExternalContextResponse, None] | tuple[None, Greeter.TryToConstructExternalContextAborted]]:
                 ...
 
             @IMPORT_typing.overload
@@ -22435,7 +22469,7 @@ class Greeter:
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.TryToConstructExternalContextResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.TryToConstructExternalContextResponse, None] | tuple[None, Greeter.TryToConstructExternalContextAborted]]:
                 ...
 
             async def TryToConstructExternalContext( # type: ignore[misc]
@@ -22453,7 +22487,7 @@ class Greeter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructExternalContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.TryToConstructExternalContextResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.TryToConstructExternalContextResponse, None] | tuple[None, Greeter.TryToConstructExternalContextAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -22560,7 +22594,7 @@ class Greeter:
 
                                 __response__ = google.protobuf.empty_pb2.Empty()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield GreeterTryToConstructExternalContextResponseFromProto(__response__)
+                                yield (GreeterTryToConstructExternalContextResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -22575,18 +22609,35 @@ class Greeter:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise Greeter.TryToConstructExternalContextAborted.from_status(
-                                    status
-                                ) from None
-                            raise Greeter.TryToConstructExternalContextAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = Greeter.TryToConstructExternalContextAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = Greeter.TryToConstructExternalContextAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -22598,7 +22649,7 @@ class Greeter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.TestLongRunningFetchRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.TestLongRunningFetchResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.TestLongRunningFetchResponse, None] | tuple[None, Greeter.TestLongRunningFetchAborted]]:
                 ...
 
             @IMPORT_typing.overload
@@ -22608,7 +22659,7 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 sleep_time_seconds: IMPORT_typing.Optional[int] | Unset = UNSET,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.TestLongRunningFetchResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.TestLongRunningFetchResponse, None] | tuple[None, Greeter.TestLongRunningFetchAborted]]:
                 ...
 
             async def TestLongRunningFetch( # type: ignore[misc]
@@ -22628,7 +22679,7 @@ class Greeter:
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 sleep_time_seconds: IMPORT_typing.Optional[int] | Unset = UNSET,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.TestLongRunningFetchResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.TestLongRunningFetchResponse, None] | tuple[None, Greeter.TestLongRunningFetchAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -22737,7 +22788,7 @@ class Greeter:
 
                                 __response__ = google.protobuf.empty_pb2.Empty()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield GreeterTestLongRunningFetchResponseFromProto(__response__)
+                                yield (GreeterTestLongRunningFetchResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -22752,18 +22803,35 @@ class Greeter:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise Greeter.TestLongRunningFetchAborted.from_status(
-                                    status
-                                ) from None
-                            raise Greeter.TestLongRunningFetchAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = Greeter.TestLongRunningFetchAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = Greeter.TestLongRunningFetchAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -22775,7 +22843,7 @@ class Greeter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.GetWholeStateRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.GetWholeStateResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.GetWholeStateResponse, None] | tuple[None, Greeter.GetWholeStateAborted]]:
                 ...
 
             @IMPORT_typing.overload
@@ -22783,7 +22851,7 @@ class Greeter:
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.GetWholeStateResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.GetWholeStateResponse, None] | tuple[None, Greeter.GetWholeStateAborted]]:
                 ...
 
             async def GetWholeState( # type: ignore[misc]
@@ -22801,7 +22869,7 @@ class Greeter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.GetWholeStateRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.GetWholeStateResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.GetWholeStateResponse, None] | tuple[None, Greeter.GetWholeStateAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -22908,7 +22976,7 @@ class Greeter:
 
                                 __response__ = tests.reboot.greeter_pb2.Greeter()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield GreeterGetWholeStateResponseFromProto(__response__)
+                                yield (GreeterGetWholeStateResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -22923,18 +22991,35 @@ class Greeter:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise Greeter.GetWholeStateAborted.from_status(
-                                    status
-                                ) from None
-                            raise Greeter.GetWholeStateAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = Greeter.GetWholeStateAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = Greeter.GetWholeStateAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -22946,7 +23031,7 @@ class Greeter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.FailWithExceptionRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.FailWithExceptionResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.FailWithExceptionResponse, None] | tuple[None, Greeter.FailWithExceptionAborted]]:
                 ...
 
             @IMPORT_typing.overload
@@ -22954,7 +23039,7 @@ class Greeter:
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.FailWithExceptionResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.FailWithExceptionResponse, None] | tuple[None, Greeter.FailWithExceptionAborted]]:
                 ...
 
             async def FailWithException( # type: ignore[misc]
@@ -22972,7 +23057,7 @@ class Greeter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithExceptionRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.FailWithExceptionResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.FailWithExceptionResponse, None] | tuple[None, Greeter.FailWithExceptionAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -23079,7 +23164,7 @@ class Greeter:
 
                                 __response__ = google.protobuf.empty_pb2.Empty()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield GreeterFailWithExceptionResponseFromProto(__response__)
+                                yield (GreeterFailWithExceptionResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -23094,18 +23179,35 @@ class Greeter:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise Greeter.FailWithExceptionAborted.from_status(
-                                    status
-                                ) from None
-                            raise Greeter.FailWithExceptionAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = Greeter.FailWithExceptionAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = Greeter.FailWithExceptionAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -23117,7 +23219,7 @@ class Greeter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.FailWithAbortedRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.FailWithAbortedResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.FailWithAbortedResponse, None] | tuple[None, Greeter.FailWithAbortedAborted]]:
                 ...
 
             @IMPORT_typing.overload
@@ -23125,7 +23227,7 @@ class Greeter:
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.FailWithAbortedResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.FailWithAbortedResponse, None] | tuple[None, Greeter.FailWithAbortedAborted]]:
                 ...
 
             async def FailWithAborted( # type: ignore[misc]
@@ -23143,7 +23245,7 @@ class Greeter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithAbortedRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.FailWithAbortedResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.FailWithAbortedResponse, None] | tuple[None, Greeter.FailWithAbortedAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -23250,7 +23352,7 @@ class Greeter:
 
                                 __response__ = google.protobuf.empty_pb2.Empty()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield GreeterFailWithAbortedResponseFromProto(__response__)
+                                yield (GreeterFailWithAbortedResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -23265,18 +23367,35 @@ class Greeter:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise Greeter.FailWithAbortedAborted.from_status(
-                                    status
-                                ) from None
-                            raise Greeter.FailWithAbortedAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = Greeter.FailWithAbortedAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = Greeter.FailWithAbortedAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -23288,7 +23407,7 @@ class Greeter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.ReadRecursiveMessageRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.ReadRecursiveMessageResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.ReadRecursiveMessageResponse, None] | tuple[None, Greeter.ReadRecursiveMessageAborted]]:
                 ...
 
             @IMPORT_typing.overload
@@ -23296,7 +23415,7 @@ class Greeter:
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.ReadRecursiveMessageResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.ReadRecursiveMessageResponse, None] | tuple[None, Greeter.ReadRecursiveMessageAborted]]:
                 ...
 
             async def ReadRecursiveMessage( # type: ignore[misc]
@@ -23314,7 +23433,7 @@ class Greeter:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.ReadRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Greeter.ReadRecursiveMessageResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.ReadRecursiveMessageResponse, None] | tuple[None, Greeter.ReadRecursiveMessageAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -23421,7 +23540,7 @@ class Greeter:
 
                                 __response__ = tests.reboot.greeter_pb2.ReadRecursiveMessageResponse()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield GreeterReadRecursiveMessageResponseFromProto(__response__)
+                                yield (GreeterReadRecursiveMessageResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -23436,18 +23555,35 @@ class Greeter:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise Greeter.ReadRecursiveMessageAborted.from_status(
-                                    status
-                                ) from None
-                            raise Greeter.ReadRecursiveMessageAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = Greeter.ReadRecursiveMessageAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = Greeter.ReadRecursiveMessageAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in

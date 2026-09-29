@@ -28,8 +28,11 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
     ):
 
         async def _do():
-            async for greeter_state in greeter.reactively(
+            async for greeter_state, aborted in greeter.reactively(
             ).GetWholeState(context):
+                if aborted is not None:
+                    raise aborted
+                assert greeter_state is not None
                 self._accumulated_adjectives.append(greeter_state.adjective)
                 self._accumulated_adjective.set()
 

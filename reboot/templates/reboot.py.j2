@@ -5201,7 +5201,7 @@ class {{ client.proto.state_name }}:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[{% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[{% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}, None] | tuple[None, {{ client.proto.state_name }}.{{ method.proto.name }}Aborted]]:
                 ...
 
             @IMPORT_typing.overload
@@ -5219,7 +5219,7 @@ class {{ client.proto.state_name }}:
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
-            ) -> IMPORT_typing.AsyncIterator[{% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[{% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}, None] | tuple[None, {{ client.proto.state_name }}.{{ method.proto.name }}Aborted]]:
                 ...
             {% endif %}
 
@@ -5250,7 +5250,7 @@ class {{ client.proto.state_name }}:
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
-            ) -> IMPORT_typing.AsyncIterator[{% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[{% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}, None] | tuple[None, {{ client.proto.state_name }}.{{ method.proto.name }}Aborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
@@ -5370,7 +5370,7 @@ class {{ client.proto.state_name }}:
 
                                 __response__ = {{ method.output_type }}()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(__response__)
+                                yield ({{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -5385,18 +5385,35 @@ class {{ client.proto.state_name }}:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise {{ client.proto.state_name }}.{{ method.proto.name }}Aborted.from_status(
-                                    status
-                                ) from None
-                            raise {{ client.proto.state_name }}.{{ method.proto.name }}Aborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = {{ client.proto.state_name }}.{{ method.proto.name }}Aborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = {{ client.proto.state_name }}.{{ method.proto.name }}Aborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in

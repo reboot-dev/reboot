@@ -968,7 +968,9 @@ class BankServicer(Bank.Servicer):
     ) -> Empty:
         # Call a method reactively, and see that we don't crash.
         account = Account.ref(self.state.account_ids[0])
-        async for _ in account.reactively().balance(context):
+        async for _, aborted in account.reactively().balance(context):
+            if aborted is not None:
+                raise aborted
             # Yay, that worked.
             break
 

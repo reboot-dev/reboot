@@ -21157,7 +21157,7 @@ class Echo:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Echo.ReplayRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Echo.ReplayResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Echo.ReplayResponse, None] | tuple[None, Echo.ReplayAborted]]:
                 ...
 
             @IMPORT_typing.overload
@@ -21165,7 +21165,7 @@ class Echo:
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Echo.ReplayResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Echo.ReplayResponse, None] | tuple[None, Echo.ReplayAborted]]:
                 ...
 
             async def Replay( # type: ignore[misc]
@@ -21183,7 +21183,7 @@ class Echo:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplayRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Echo.ReplayResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Echo.ReplayResponse, None] | tuple[None, Echo.ReplayAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -21290,7 +21290,7 @@ class Echo:
 
                                 __response__ = tests.reboot.echo_pb2.ReplayResponse()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield EchoReplayResponseFromProto(__response__)
+                                yield (EchoReplayResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -21305,18 +21305,35 @@ class Echo:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise Echo.ReplayAborted.from_status(
-                                    status
-                                ) from None
-                            raise Echo.ReplayAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = Echo.ReplayAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = Echo.ReplayAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -21328,7 +21345,7 @@ class Echo:
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Echo.WaitForRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Echo.WaitForResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Echo.WaitForResponse, None] | tuple[None, Echo.WaitForAborted]]:
                 ...
 
             @IMPORT_typing.overload
@@ -21338,7 +21355,7 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
-            ) -> IMPORT_typing.AsyncIterator[Echo.WaitForResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Echo.WaitForResponse, None] | tuple[None, Echo.WaitForAborted]]:
                 ...
 
             async def WaitFor( # type: ignore[misc]
@@ -21358,7 +21375,7 @@ class Echo:
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
-            ) -> IMPORT_typing.AsyncIterator[Echo.WaitForResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Echo.WaitForResponse, None] | tuple[None, Echo.WaitForAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -21467,7 +21484,7 @@ class Echo:
 
                                 __response__ = tests.reboot.echo_pb2.WaitForResponse()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield EchoWaitForResponseFromProto(__response__)
+                                yield (EchoWaitForResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -21482,18 +21499,35 @@ class Echo:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise Echo.WaitForAborted.from_status(
-                                    status
-                                ) from None
-                            raise Echo.WaitForAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = Echo.WaitForAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = Echo.WaitForAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in

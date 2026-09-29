@@ -392,8 +392,12 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         write is what the page sends after the click, so seeing it is
         how the test knows the choice reached the application."""
         context = self.rbt.create_external_context(name=self.id())
-        async for response in Preferences.ref(PREFERENCES_ID
-                                             ).reactively().Get(context):
+        async for response, aborted in Preferences.ref(
+            PREFERENCES_ID
+        ).reactively().Get(context):
+            if aborted is not None:
+                raise aborted
+            assert response is not None
             if response.suppress_open_on_restart == expected:
                 return
 

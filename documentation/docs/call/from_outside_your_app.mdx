@@ -96,18 +96,27 @@ const context = new ExternalContext({
 ## Calling readers reactively
 
 Using an `ExternalContext`, you can also call `reader` methods
-_reactively_: you receive a new response every time the state
-changes. For example:
+_reactively_: you receive a new answer every time the state changes.
+Each answer is a pair of a `response` and an `aborted`: the reader's
+response, or the error it answered with (a declared error, a denied
+`authorizer()`, a state that is not constructed yet). An error does
+not end the read; Reboot keeps the subscription open and yields again
+once the state changes, so you decide whether to keep waiting, to
+`break`, or to `raise aborted`. Failed connections are retried for
+you. For example:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/demos/fig/backend/src/many_readers.py&lines=20-22) -->
+(CODE:src=../../../reboot/demos/fig/backend/src/many_readers.py&lines=20-25) -->
 <!-- The below code snippet is automatically added from ../../../reboot/demos/fig/backend/src/many_readers.py -->
 
 ```py
 fig = Fig.ref(fig_id)
-async for response in fig.reactively().get_position(context):
+async for response, aborted in fig.reactively().get_position(context):
+    if aborted is not None:
+        print(f"{fig_id}: {aborted}")
+        continue
     print(f"{fig_id}: {response}")
 ```
 

@@ -144,14 +144,19 @@ with self.assertRaises(Aborted):
 A "another session sees the change without refreshing" story is
 tested with `reactively()`, the same push-based subscription the
 generated React hooks use. `Type.ref(id).reactively().<reader>(context)`
-returns an **async iterator** that yields a fresh response on every
-state change; `anext()` pulls the next one. Never poll in a loop
-with `asyncio.sleep` — that tests the sleep, not the reactivity.
+returns an **async iterator** that yields a `(response, aborted)`
+pair on every state change: the reader's response, or the error it
+answered with (a declared error, a denied `authorizer()`, a state
+that is not constructed yet). An error does not end the iterator; it
+yields again once the state changes. `anext()` pulls the next pair.
+Never poll in a loop with `asyncio.sleep` — that tests the sleep, not
+the reactivity.
 
 ```python
 # The "other browser session" subscribes...
 subscription = TaskList.ref(list_id).reactively().get(bob)
-first = await asyncio.wait_for(anext(subscription), timeout=10)
+first, aborted = await asyncio.wait_for(anext(subscription), timeout=10)
+self.assertIsNone(aborted)
 self.assertEqual(first.tasks, [])
 
 # ...another session writes...
@@ -159,7 +164,8 @@ await TaskList.ref(list_id).add_task(alice, title="Milk")
 
 # ...and the subscription is pushed the update.
 while True:
-    update = await asyncio.wait_for(anext(subscription), timeout=10)
+    update, aborted = await asyncio.wait_for(anext(subscription), timeout=10)
+    self.assertIsNone(aborted)
     if len(update.tasks) == 1:
         break
 self.assertEqual(update.tasks[0].title, "Milk")

@@ -45,10 +45,17 @@ async def test(context: ExternalContext, uri: str):
     await asyncio.to_thread(run_selenium_test)
 
     # Test that subscriber is not present after disconnect.
-    async for response in SUBSCRIBER_REF.reactively().Status(context):
+    async for response, aborted in SUBSCRIBER_REF.reactively(
+    ).Status(context):
+        if aborted is not None:
+            raise aborted
+        assert response is not None
         if not response.present:
             break
 
-    async for response in PRESENCE_REF.reactively().List(context):
+    async for response, aborted in PRESENCE_REF.reactively().List(context):
+        if aborted is not None:
+            raise aborted
+        assert response is not None
         if response.subscriber_ids == []:
             break

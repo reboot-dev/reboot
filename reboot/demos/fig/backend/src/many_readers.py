@@ -18,14 +18,21 @@ async def simulate_reactive_browser_reader(port: Optional[int]):
 
     async def reactively_print_fig_position(fig_id: str):
         fig = Fig.ref(fig_id)
-        async for response in fig.reactively().get_position(context):
+        async for response, aborted in fig.reactively().get_position(context):
+            if aborted is not None:
+                print(f"{fig_id}: {aborted}")
+                continue
             print(f"{fig_id}: {response}")
 
     fig_board = FigBoard.ref(FIG_BOARD_ID)
 
     fig_tasks = {}
 
-    async for response in fig_board.reactively().list(context):
+    async for response, aborted in fig_board.reactively().list(context):
+        if aborted is not None:
+            print(f"{FIG_BOARD_ID}: {aborted}")
+            continue
+        assert response is not None
 
         for fig_id in response.fig_ids:
             if fig_id not in fig_tasks:

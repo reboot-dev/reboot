@@ -1146,7 +1146,7 @@ async def _eventually_has(
                     )
                 )
             try:
-                response = await asyncio.wait_for(
+                response, aborted = await asyncio.wait_for(
                     anext(responses), timeout=remaining
                 )
             except asyncio.TimeoutError:
@@ -1160,6 +1160,16 @@ async def _eventually_has(
                     )
                 ) from None
             else:
+                if aborted is not None:
+                    # The read was answered with an error, e.g., the
+                    # state is not constructed yet. The reactive read
+                    # keeps going and is answered again once the state
+                    # changes, so keep waiting for a response.
+                    last_error = AssertionError(
+                        f"the last read was answered with {aborted}"
+                    )
+                    continue
+                assert response is not None
                 try:
                     _assert_properties(response, assertions)
                 except AssertionError as error:

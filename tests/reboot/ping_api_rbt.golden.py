@@ -21718,7 +21718,7 @@ class Ping:
                 # (B) methods that may reasonably run for a long time, which in Reboot means: readers or workflows.
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Ping.DescribeResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Ping.DescribeResponse, None] | tuple[None, Ping.DescribeAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -21806,7 +21806,7 @@ class Ping:
 
                                 __response__ = reboot.ping.ping_api_pb2.PingDescribeResponse()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield PingDescribeResponseFromProto(__response__)
+                                yield (PingDescribeResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -21821,18 +21821,35 @@ class Ping:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise Ping.DescribeAborted.from_status(
-                                    status
-                                ) from None
-                            raise Ping.DescribeAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = Ping.DescribeAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = Ping.DescribeAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -21853,7 +21870,7 @@ class Ping:
                 # (B) methods that may reasonably run for a long time, which in Reboot means: readers or workflows.
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Ping.NumPingsResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Ping.NumPingsResponse, None] | tuple[None, Ping.NumPingsAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -21941,7 +21958,7 @@ class Ping:
 
                                 __response__ = reboot.ping.ping_api_pb2.PingNumPingsResponse()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield PingNumPingsResponseFromProto(__response__)
+                                yield (PingNumPingsResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -21956,18 +21973,35 @@ class Ping:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise Ping.NumPingsAborted.from_status(
-                                    status
-                                ) from None
-                            raise Ping.NumPingsAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = Ping.NumPingsAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = Ping.NumPingsAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24503,7 +24537,7 @@ class Pong:
                 # (B) methods that may reasonably run for a long time, which in Reboot means: readers or workflows.
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Pong.NumPongsResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Pong.NumPongsResponse, None] | tuple[None, Pong.NumPongsAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -24591,7 +24625,7 @@ class Pong:
 
                                 __response__ = reboot.ping.ping_api_pb2.PongNumPongsResponse()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield PongNumPongsResponseFromProto(__response__)
+                                yield (PongNumPongsResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -24606,18 +24640,35 @@ class Pong:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise Pong.NumPongsAborted.from_status(
-                                    status
-                                ) from None
-                            raise Pong.NumPongsAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = Pong.NumPongsAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = Pong.NumPongsAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27239,7 +27290,7 @@ class User:
                 # (B) methods that may reasonably run for a long time, which in Reboot means: readers or workflows.
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[User.ListCountersResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[User.ListCountersResponse, None] | tuple[None, User.ListCountersAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -27327,7 +27378,7 @@ class User:
 
                                 __response__ = reboot.ping.ping_api_pb2.UserListCountersResponse()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield UserListCountersResponseFromProto(__response__)
+                                yield (UserListCountersResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -27342,18 +27393,35 @@ class User:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise User.ListCountersAborted.from_status(
-                                    status
-                                ) from None
-                            raise User.ListCountersAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = User.ListCountersAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = User.ListCountersAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27374,7 +27442,7 @@ class User:
                 # (B) methods that may reasonably run for a long time, which in Reboot means: readers or workflows.
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[User.WhoamiResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[User.WhoamiResponse, None] | tuple[None, User.WhoamiAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -27462,7 +27530,7 @@ class User:
 
                                 __response__ = reboot.ping.ping_api_pb2.UserWhoamiResponse()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield UserWhoamiResponseFromProto(__response__)
+                                yield (UserWhoamiResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -27477,18 +27545,35 @@ class User:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise User.WhoamiAborted.from_status(
-                                    status
-                                ) from None
-                            raise User.WhoamiAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = User.WhoamiAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = User.WhoamiAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -31019,7 +31104,7 @@ class Counter:
                 # (B) methods that may reasonably run for a long time, which in Reboot means: readers or workflows.
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Counter.ValueResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Counter.ValueResponse, None] | tuple[None, Counter.ValueAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -31107,7 +31192,7 @@ class Counter:
 
                                 __response__ = reboot.ping.ping_api_pb2.CounterValueResponse()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield CounterValueResponseFromProto(__response__)
+                                yield (CounterValueResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -31122,18 +31207,35 @@ class Counter:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise Counter.ValueAborted.from_status(
-                                    status
-                                ) from None
-                            raise Counter.ValueAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = Counter.ValueAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = Counter.ValueAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -31154,7 +31256,7 @@ class Counter:
                 # (B) methods that may reasonably run for a long time, which in Reboot means: readers or workflows.
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_typing.AsyncIterator[Counter.DescriptionResponse]:
+            ) -> IMPORT_typing.AsyncIterator[tuple[Counter.DescriptionResponse, None] | tuple[None, Counter.DescriptionAborted]]:
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -31242,7 +31344,7 @@ class Counter:
 
                                 __response__ = reboot.ping.ping_api_pb2.CounterDescriptionResponse()
                                 __response__.ParseFromString(__query_response__.response)
-                                yield CounterDescriptionResponseFromProto(__response__)
+                                yield (CounterDescriptionResponseFromProto(__response__), None)
 
                     except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
@@ -31257,18 +31359,35 @@ class Counter:
                             )
                             await __query_backoff__()
                             continue
-                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
-                            # Reconstitute the error that the server threw, if it was a declared error.
-                            status = await IMPORT_rpc_status_async.from_call(__call__)
-                            if status is not None:
-                                raise Counter.DescriptionAborted.from_status(
-                                    status
-                                ) from None
-                            raise Counter.DescriptionAborted.from_grpc_aio_rpc_error(
-                                error
-                            ) from None
 
-                        raise
+                        # The server answered the read with an error,
+                        # e.g., a declared error raised by the reader, a
+                        # denied authorizer, or a state that has not been
+                        # constructed (yet). That answer is a value to
+                        # the caller, not the end of the read: the state
+                        # may change so that the next read succeeds, so
+                        # we keep reading, and it is up to the caller to
+                        # stop iterating (or to raise) if the error is
+                        # final for them.
+                        #
+                        # Reconstitute the error that the server threw,
+                        # if it was a declared error.
+                        status = (
+                            await IMPORT_rpc_status_async.from_call(__call__)
+                            if __call__ is not None else None
+                        )
+                        if status is not None:
+                            __aborted__ = Counter.DescriptionAborted.from_status(
+                                status
+                            )
+                        else:
+                            __aborted__ = Counter.DescriptionAborted.from_grpc_aio_rpc_error(
+                                error
+                            )
+
+                        yield (None, __aborted__)
+
+                        await __query_backoff__()
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
