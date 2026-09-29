@@ -414,13 +414,11 @@ export function reactively<
 
     while (signal === undefined || !signal.aborted) {
       try {
-        // The reactive read path multiplexes many RPCs over one
-        // WebSocket and each call may carry a different bearer (a
-        // refresh between calls is valid), so auth rides in the
-        // request body, not the WS upgrade. The browser
-        // `WebSocket` API also disallows custom headers on the
-        // upgrade, ruling out `Authorization`/`Sec-WebSocket-Protocol`
-        // as transport here.
+        // Auth rides in the request body because a reactive read
+        // may use a WebSocket, and the browser `WebSocket` API
+        // disallows custom headers on the upgrade, ruling out
+        // `Authorization`/`Sec-WebSocket-Protocol` as transport
+        // here.
         const queryRequest = new react_pb.QueryRequest({
           method,
           request: request.toBinary(),

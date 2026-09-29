@@ -740,9 +740,8 @@ export const RebootClientProvider = ({
     };
   }, [rebootUrl, mcpTitle, authDriver, sessionToken]);
 
-  // Proactive bearer refresh. The reactive-reads + mutations
-  // path travels through the WebSocket multiplex carrying the
-  // bearer in the request payload, where it has no retry hook
+  // Proactive bearer refresh. Reactive reads and mutations
+  // carry the bearer in the request payload, where it has no retry hook
   // we could attach an `onUnauthenticated` to — once it 401s on
   // an expired JWT, the mutation just aborts. So we *prevent*
   // expiry by refreshing well before the deadline, off the
