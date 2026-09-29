@@ -81,12 +81,6 @@ message MutateResponse {
 
 ////////////////////////////////////////////////////////////////////////
 
-message WebSocketsConnectionRequest {}
-
-message WebSocketsConnectionResponse {}
-
-////////////////////////////////////////////////////////////////////////
-
 service React {
   // Allows users to "watch" the response of a unary reader method for
   // changes. The current response of the method is sent when the
@@ -98,25 +92,6 @@ service React {
   rpc Query(QueryRequest) returns (stream QueryResponse) {
     option (google.api.http) = {
       post: "/rbt.v1alpha1.React/Query"
-    };
-  }
-
-  // All connections must be HTTP/2 (h2), but the WebSocket protocol
-  // is inherently HTTP/1.1. RFC 8441
-  // (https://datatracker.ietf.org/doc/html/rfc8441) introduced
-  // support for running the WebSocket Protocol over a single stream
-  // of an HTTP/2 connection and all of the top browsers implement it.
-  //
-  // The caveat is that we need the HTTP/2 connection to exist in
-  // order for websockets to use the existing HTTP/2 connection, hence
-  // this method!
-  //
-  // For example usage, see corresponding code in the generated
-  // TypeScript for React.
-  rpc WebSocketsConnection(WebSocketsConnectionRequest)
-      returns (WebSocketsConnectionResponse) {
-    option (google.api.http) = {
-      post: "/rbt.v1alpha1.React/WebSocketsConnection"
     };
   }
 }

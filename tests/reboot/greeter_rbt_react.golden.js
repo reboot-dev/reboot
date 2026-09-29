@@ -1752,7 +1752,6 @@ class GreeterInstance {
         // caller while no default ID has resolved (e.g. signed out): it
         // opens no socket so there's nothing to connect to.
         if (id !== "") {
-            reboot_web.websockets.connect(this.url, this.stateRef);
             this.initializeWebSocket();
         }
     }
@@ -1764,7 +1763,6 @@ class GreeterInstance {
         this.refs -= 1;
         if (this.refs === 0 && this.websocket !== undefined) {
             this.websocket.close();
-            reboot_web.websockets.disconnect(this.url, this.stateRef);
         }
         return this.refs;
     }
