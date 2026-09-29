@@ -598,11 +598,18 @@ class {{ client.proto.state_name | to_camel }}Instance {
     this.stateRef = stateRef;
     this.url = url;
     this.refs = 1;
+  }
 
-    // An empty `id` marks the inert instance shared by every no-id
-    // caller while no default ID has resolved (e.g. signed out): it
-    // opens no socket so there's nothing to connect to.
-    if (id !== "") {
+  // Opens the websocket that mutations are sent over, if we have not
+  // done so already, which then stays open for as long as we are
+  // used.
+  //
+  // Browsers limit how many websockets can be open, so we only do
+  // this once a mutator might get called, rather than for every state
+  // that is only being read.
+  openWebSocket() {
+    if (!this.wantsWebSocket) {
+      this.wantsWebSocket = true;
       this.initializeWebSocket();
     }
   }
@@ -632,6 +639,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
   private queuedMutates: reboot_react.Mutate[] = [];
   private flushMutates?: reboot_api.Event = undefined;
   private websocket?: WebSocket = undefined;
+  private wantsWebSocket = false;
   private backoff: reboot_api.Backoff = new reboot_api.Backoff();
 
   private hasRunningMutations() {
@@ -652,6 +660,11 @@ class {{ client.proto.state_name | to_camel }}Instance {
       this.runningMutates = this.queuedMutates;
       this.queuedMutates = [];
 
+      // A mutator can be called without us having been told that it
+      // might be, in which case the mutations get sent once the
+      // websocket is open.
+      this.openWebSocket();
+
       if (this.websocket?.readyState === WebSocket.OPEN) {
         for (const { request, update } of this.runningMutates) {
           update({ isLoading: true });
@@ -666,6 +679,9 @@ class {{ client.proto.state_name | to_camel }}Instance {
   }
 
   private initializeWebSocket() {
+    // An empty `id` marks the inert instance shared by every no-id
+    // caller while no default ID has resolved (e.g. signed out): it
+    // opens no socket so there's nothing to connect to.
     if (this.websocket === undefined && this.refs > 0 && this.id !== "") {
       const url = new URL(`${this.url}/__/reboot/rpc/${this.stateRef}`);
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -756,6 +772,12 @@ class {{ client.proto.state_name | to_camel }}Instance {
     return new Promise((resolve, _) => {
       if (this.loadingReaders === 0) {
         this.runningMutates = this.runningMutates.concat({ request, resolve, update });
+
+        // A mutator can be called without us having been told that it
+        // might be, in which case the mutation gets sent once the
+        // websocket is open.
+        this.openWebSocket();
+
         if (this.websocket?.readyState === WebSocket.OPEN) {
           update({ isLoading: true });
           try {
@@ -1525,6 +1547,21 @@ export const use{{ client.proto.state_name | to_camel }} = (
     };
   }, [instance]);
 
+  // Whether or not a mutator has been bound, i.e., read from what we
+  // return, e.g., `const { myMutator } = useMyState()`. That is how we
+  // know that a mutator might get called, and thus that we should
+  // open the websocket for mutations now rather than make the first
+  // mutation wait for it.
+  //
+  // We open it in an effect because a render may never be committed.
+  const boundMutators = useRef(false);
+
+  useEffect(() => {
+    if (boundMutators.current) {
+      instance.openWebSocket();
+    }
+  });
+
   const headers = useMemo(() => {
     const headers = new Headers();
     headers.set("Content-Type", "application/json");
@@ -2084,16 +2121,20 @@ export const use{{ client.proto.state_name | to_camel }} = (
   // Don't re-render if `id` hasn't changed.
     const api: Use{{ client.proto.state_name | to_camel }}Api = useMemo(() => ({
       state_id: id,
-      mutators: {
-        {% for service in client.services %}
-        {% for method in service.methods %}
-        {% if method.options.proto.kind in ['writer', 'transaction'] %}
-        {{ method.proto.name | to_lower_camel }},
-        {% endif %}
-        {% endfor %}
-        {% endfor %}
+      get mutators() {
+        boundMutators.current = true;
+        return {
+          {% for service in client.services %}
+          {% for method in service.methods %}
+          {% if method.options.proto.kind in ['writer', 'transaction'] %}
+          {{ method.proto.name | to_lower_camel }},
+          {% endif %}
+          {% endfor %}
+          {% endfor %}
+        };
       },
       idempotently: ({ key }: { key: string }) => {
+      boundMutators.current = true;
       return {
         {% for service in client.services %}
         {% for method in service.methods %}
@@ -2110,7 +2151,10 @@ export const use{{ client.proto.state_name | to_camel }} = (
       {% for service in client.services %}
       {% for method in service.methods %}
       {% if method.options.proto.kind in ['writer', 'transaction'] %}
-      {{ method.proto.name | to_lower_camel }},
+      get {{ method.proto.name | to_lower_camel }}() {
+        boundMutators.current = true;
+        return {{ method.proto.name | to_lower_camel }};
+      },
       {% endif %}
       {% if method.options.proto.kind == 'reader' %}
       {% if not method.proto.server_streaming and not method.proto.client_streaming %}

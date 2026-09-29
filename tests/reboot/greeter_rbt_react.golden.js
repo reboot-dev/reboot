@@ -1665,6 +1665,7 @@ class GreeterInstance {
         this.queuedMutates = [];
         this.flushMutates = undefined;
         this.websocket = undefined;
+        this.wantsWebSocket = false;
         this.backoff = new reboot_api.Backoff();
         this.useCreateMutations = [];
         this.useCreateSetPendings = {};
@@ -1748,10 +1749,17 @@ class GreeterInstance {
         this.stateRef = stateRef;
         this.url = url;
         this.refs = 1;
-        // An empty `id` marks the inert instance shared by every no-id
-        // caller while no default ID has resolved (e.g. signed out): it
-        // opens no socket so there's nothing to connect to.
-        if (id !== "") {
+    }
+    // Opens the websocket that mutations are sent over, if we have not
+    // done so already, which then stays open for as long as we are
+    // used.
+    //
+    // Browsers limit how many websockets can be open, so we only do
+    // this once a mutator might get called, rather than for every state
+    // that is only being read.
+    openWebSocket() {
+        if (!this.wantsWebSocket) {
+            this.wantsWebSocket = true;
             this.initializeWebSocket();
         }
     }
@@ -1781,6 +1789,10 @@ class GreeterInstance {
         if (this.queuedMutates.length > 0) {
             this.runningMutates = this.queuedMutates;
             this.queuedMutates = [];
+            // A mutator can be called without us having been told that it
+            // might be, in which case the mutations get sent once the
+            // websocket is open.
+            this.openWebSocket();
             if (((_a = this.websocket) === null || _a === void 0 ? void 0 : _a.readyState) === WebSocket.OPEN) {
                 for (const { request, update } of this.runningMutates) {
                     update({ isLoading: true });
@@ -1795,6 +1807,9 @@ class GreeterInstance {
         }
     }
     initializeWebSocket() {
+        // An empty `id` marks the inert instance shared by every no-id
+        // caller while no default ID has resolved (e.g. signed out): it
+        // opens no socket so there's nothing to connect to.
         if (this.websocket === undefined && this.refs > 0 && this.id !== "") {
             const url = new URL(`${this.url}/__/reboot/rpc/${this.stateRef}`);
             url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -1861,6 +1876,10 @@ class GreeterInstance {
             var _a;
             if (this.loadingReaders === 0) {
                 this.runningMutates = this.runningMutates.concat({ request, resolve, update });
+                // A mutator can be called without us having been told that it
+                // might be, in which case the mutation gets sent once the
+                // websocket is open.
+                this.openWebSocket();
                 if (((_a = this.websocket) === null || _a === void 0 ? void 0 : _a.readyState) === WebSocket.OPEN) {
                     update({ isLoading: true });
                     try {
@@ -3949,6 +3968,19 @@ export function useGreeter({ id: providedId } = {}) {
             instance.unuse();
         };
     }, [instance]);
+    // Whether or not a mutator has been bound, i.e., read from what we
+    // return, e.g., `const { myMutator } = useMyState()`. That is how we
+    // know that a mutator might get called, and thus that we should
+    // open the websocket for mutations now rather than make the first
+    // mutation wait for it.
+    //
+    // We open it in an effect because a render may never be committed.
+    const boundMutators = useRef(false);
+    useEffect(() => {
+        if (boundMutators.current) {
+            instance.openWebSocket();
+        }
+    });
     const headers = useMemo(() => {
         const headers = new Headers();
         headers.set("Content-Type", "application/json");
@@ -7004,16 +7036,20 @@ export function useGreeter({ id: providedId } = {}) {
     // Don't re-render if `id` hasn't changed.
     const api = useMemo(() => ({
         state_id: id,
-        mutators: {
-            create,
-            setAdjective,
-            transactionSetAdjective,
-            testLongRunningWriter,
-            dangerousFields,
-            storeRecursiveMessage,
-            constructAndStoreRecursiveMessage,
+        get mutators() {
+            boundMutators.current = true;
+            return {
+                create,
+                setAdjective,
+                transactionSetAdjective,
+                testLongRunningWriter,
+                dangerousFields,
+                storeRecursiveMessage,
+                constructAndStoreRecursiveMessage,
+            };
         },
         idempotently: ({ key }) => {
+            boundMutators.current = true;
             return {
                 create: (partialRequest, options) => create(partialRequest, { ...options, key }),
                 setAdjective: (partialRequest, options) => setAdjective(partialRequest, { ...options, key }),
@@ -7024,29 +7060,50 @@ export function useGreeter({ id: providedId } = {}) {
                 constructAndStoreRecursiveMessage: (partialRequest, options) => constructAndStoreRecursiveMessage(partialRequest, { ...options, key }),
             };
         },
-        create,
+        get create() {
+            boundMutators.current = true;
+            return create;
+        },
         greet,
         useGreet,
-        setAdjective,
-        transactionSetAdjective,
+        get setAdjective() {
+            boundMutators.current = true;
+            return setAdjective;
+        },
+        get transactionSetAdjective() {
+            boundMutators.current = true;
+            return transactionSetAdjective;
+        },
         tryToConstructContext,
         useTryToConstructContext,
         tryToConstructExternalContext,
         useTryToConstructExternalContext,
         testLongRunningFetch,
         useTestLongRunningFetch,
-        testLongRunningWriter,
+        get testLongRunningWriter() {
+            boundMutators.current = true;
+            return testLongRunningWriter;
+        },
         getWholeState,
         useGetWholeState,
         failWithException,
         useFailWithException,
         failWithAborted,
         useFailWithAborted,
-        dangerousFields,
-        storeRecursiveMessage,
+        get dangerousFields() {
+            boundMutators.current = true;
+            return dangerousFields;
+        },
+        get storeRecursiveMessage() {
+            boundMutators.current = true;
+            return storeRecursiveMessage;
+        },
         readRecursiveMessage,
         useReadRecursiveMessage,
-        constructAndStoreRecursiveMessage,
+        get constructAndStoreRecursiveMessage() {
+            boundMutators.current = true;
+            return constructAndStoreRecursiveMessage;
+        },
     }), [id, instance, bearerToken, refreshBearerToken]);
     // An explicit `id` caller gets the handle directly; a no-id caller
     // gets the `{ greeter, isLoading }`

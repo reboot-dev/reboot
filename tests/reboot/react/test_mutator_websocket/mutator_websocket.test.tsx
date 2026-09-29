@@ -115,6 +115,157 @@ describe("The websocket for mutations", () => {
     vi.unstubAllGlobals();
   });
 
+  it("is not opened for a state that is only read", async () => {
+    use = ({ useGreet }) => {
+      useGreet({ name: "World" });
+    };
+
+    render(
+      <RebootClientProvider url={URL}>
+        <Greeter id="greeter-read" />
+      </RebootClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(
+        fetched.filter((url) => url.endsWith("/rbt.v1alpha1.React/Query"))
+          .length
+      ).toBe(1);
+    });
+
+    expect(FakeWebSocket.instances.length).toBe(0);
+  });
+
+  it.each([
+    ["bound", ({ setAdjective }: UseGreeterApi) => {}],
+    ["bound from `mutators`", ({ mutators }: UseGreeterApi) => {}],
+    [
+      "bound from `idempotently()`",
+      ({ idempotently }: UseGreeterApi) => {
+        idempotently({ key: "key" });
+      },
+    ],
+  ])("is opened once a mutator is %s", async (_, bind) => {
+    use = bind;
+
+    render(
+      <RebootClientProvider url={URL}>
+        <Greeter id="greeter-bound" />
+      </RebootClientProvider>
+    );
+
+    // We have not called a mutator.
+    await waitFor(() => {
+      expect(FakeWebSocket.instances.length).toBe(1);
+    });
+  });
+
+  it("is opened once a mutator is called", async () => {
+    render(
+      <RebootClientProvider url={URL}>
+        <Greeter id="greeter-called" />
+      </RebootClientProvider>
+    );
+
+    // Give an effect that should not be there the time to run.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(FakeWebSocket.instances.length).toBe(0);
+
+    let resolved = false;
+
+    act(() => {
+      greeter.setAdjective({ adjective: "friendly" }).then(() => {
+        resolved = true;
+      });
+    });
+
+    await waitFor(() => {
+      expect(FakeWebSocket.instances.length).toBe(1);
+    });
+
+    const [websocket] = FakeWebSocket.instances;
+
+    // The mutation is waiting for the websocket.
+    expect(websocket.sent.length).toBe(0);
+
+    act(() => {
+      websocket.open();
+    });
+
+    expect(websocket.sent.length).toBe(1);
+
+    expect(
+      SetAdjectiveRequest.fromBinary(websocket.sent[0].request).adjective
+    ).toBe("friendly");
+
+    act(() => {
+      websocket.respond();
+    });
+
+    await waitFor(() => {
+      expect(resolved).toBe(true);
+    });
+  });
+
+  it("stays open until the state is not used anymore", async () => {
+    use = ({ setAdjective }) => {};
+
+    const { rerender, unmount } = render(
+      <RebootClientProvider url={URL}>
+        <Greeter id="greeter-open" />
+      </RebootClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(FakeWebSocket.instances.length).toBe(1);
+    });
+
+    const [websocket] = FakeWebSocket.instances;
+
+    act(() => {
+      websocket.open();
+    });
+
+    let resolved = 0;
+
+    for (const adjective of ["first", "second"]) {
+      act(() => {
+        greeter.setAdjective({ adjective }).then(() => {
+          resolved += 1;
+        });
+      });
+
+      await waitFor(() => {
+        expect(websocket.sent.length).toBe(resolved + 1);
+      });
+
+      act(() => {
+        websocket.respond();
+      });
+
+      const expected = resolved + 1;
+
+      await waitFor(() => {
+        expect(resolved).toBe(expected);
+      });
+
+      rerender(
+        <RebootClientProvider url={URL}>
+          <Greeter id="greeter-open" />
+        </RebootClientProvider>
+      );
+    }
+
+    // Every mutation used the same websocket, which is still open.
+    expect(FakeWebSocket.instances.length).toBe(1);
+    expect(websocket.readyState).toBe(FakeWebSocket.OPEN);
+
+    unmount();
+
+    expect(websocket.readyState).toBe(FakeWebSocket.CLOSED);
+  });
+
   it("does not need a request of its own", async () => {
     use = ({ setAdjective }) => {};
 
