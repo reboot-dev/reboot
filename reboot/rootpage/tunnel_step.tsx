@@ -102,7 +102,9 @@ export const TunnelStep = ({
 };
 
 interface MCPJamLaunchStepProps {
-  appPort: number;
+  // Use the visible origin rather than assuming a direct localhost server.
+  // This covers reverse proxies, tunnels, and custom local hostnames.
+  appUrl: string;
   connections: readonly HostConnection[];
 }
 
@@ -123,16 +125,12 @@ const MCPJAM_VERSION = "2.23.3";
 // below — pointed straight at this app's `/mcp` endpoint, with
 // OAuth — and then we wait for the first request to come in.
 export const MCPJamLaunchStep = ({
-  appPort,
+  appUrl,
   connections,
 }: MCPJamLaunchStepProps) => {
-  // "Connected" — we've ever observed an inbound request that
-  // looks like it came from MCPJam: arriving on `localhost:<our
-  // port>` (no tunnel — MCPJam runs alongside the app) with a
-  // user-agent of `node` (the MCP SDK's default when called from
-  // MCPJam's local backend). MCPJam doesn't put "mcpjam" in its
-  // UA, so the host + UA pair is our most reliable signal.
-  const expectedHost = `localhost:${appPort}`;
+  // MCPJam's connection goes to the same browser-visible origin as the
+  // root page. `Host` therefore stays correct behind a reverse proxy.
+  const expectedHost = new URL(appUrl).host;
   const connected = connections.some(
     (connection) =>
       connection.forwardedHost === expectedHost &&
@@ -140,11 +138,11 @@ export const MCPJamLaunchStep = ({
   );
 
   // Self-contained launch command — no config file or server name
-  // to look up. `--url` points MCPJam straight at this app's MCP
-  // endpoint and `--oauth` runs the handshake on connect.
+  // to look up. It follows the origin the developer is currently using,
+  // whether that is localhost, a reverse proxy, or a tunnel.
   const launchCommand =
     `npx @mcpjam/inspector@${MCPJAM_VERSION} ` +
-    `--url http://localhost:${appPort}/mcp --oauth`;
+    `--url ${new URL("/mcp", appUrl).href} --oauth`;
 
   // Wrap in an `aria-live` region so the flip to "connected!" gets
   // announced to screen-reader users — same pattern as the chat-
