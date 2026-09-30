@@ -1,0 +1,17 @@
+# Directory created from using the 'rbt' CLI tool.
+/.rbt/
+
+# The recommended virtualenv directory.
+/.venv/
+/uv.lock
+
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+
+node_modules/
+/frontend/package-lock.json
+
+# Generated code.
+/backend/api/
+/frontend/api/
