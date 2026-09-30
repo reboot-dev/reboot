@@ -1,3 +1,4 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
@@ -96,5 +97,23 @@ py_test(
         "//reboot/aio:contexts_py",
         "//reboot/aio:headers_py",
         "//reboot/aio:types_py",
+    ],
+)
+
+py_test(
+    name = "react_websocket_mutate_test_py",
+    srcs = [":react_websocket_mutate_test.py"],
+    main = "react_websocket_mutate_test.py",
+    deps = [
+        requirement("protobuf"),
+        requirement("websockets"),
+        "//rbt/v1alpha1:react_py_proto",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:headers_py",
+        "//reboot/aio:react_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio:types_py",
+        "//tests/reboot:greeter_servicers_py",
     ],
 )

@@ -63,9 +63,23 @@ message MutateRequest {
 
   // Authorization bearer token.
   optional string bearer_token = 4;
+
+  // The state to mutate, as found in the path of a request, e.g.,
+  // `my.package.MyState:my-id`.
+  //
+  // Only expected when sent over the websocket for the mutations of
+  // all states, since a websocket for the mutations of a single state
+  // has the state in its path.
+  optional string state_ref = 5;
 }
 
 message MutateResponse {
+  // The `state_ref` of the request that this is the response to, if
+  // it had one. Mutations of the same state are performed, and
+  // responded to, in the order that they were sent, but mutations of
+  // different states are performed concurrently.
+  optional string state_ref = 3;
+
   oneof response_or_status {
     // Serialized response from the method specified in the request.
     bytes response = 1;
