@@ -13,33 +13,22 @@ def main():
         import platform
         import reboot.aio.signals
         import reboot.aio.tracing
-        import signal
         import sys
         from reboot.cli.common.cli import cli
 
-        # Before anything installs a cleanup handler, tracing included.
-        reboot.aio.signals.initialize()
+        # Every signal that would terminate us instead cancels `cli()`
+        # (see below), so that its cleanup context managers terminate
+        # the subprocesses that it started, and only once it has
+        # finished do we let the signal terminate us.
+        #
+        # NOTE: we do this before anything installs a cleanup handler,
+        # tracing included, and before `asyncio.run()`, which from
+        # Python 3.11 installs a SIGINT handler of its own unless it
+        # finds that somebody else already has.
+        reboot.aio.signals.initialize(reboot.aio.signals.TERMINATING_SIGNALS)
 
         reboot.aio.tracing.start("reboot cli")
 
-        handling_keyboard_interrupt = False
-
-        def signal_handler(sig, frame):
-            nonlocal handling_keyboard_interrupt
-            if handling_keyboard_interrupt:
-                try:
-                    # Don't print an exception and stack trace if the user does
-                    # another Ctrl-C.
-                    sys.exit(sig)
-                except SystemExit:
-                    pass
-            else:
-                handling_keyboard_interrupt = True
-                asyncio.get_event_loop().stop()
-
-                raise KeyboardInterrupt
-
-        signal.signal(signal.SIGINT, signal_handler)
         # We ignore _known_ warnings from
         # `multiprocessing.resource_tracker` that we know are harmless so
         # that we don't spam stdout. See #2793.
@@ -67,11 +56,18 @@ def main():
                 "is important for you!"
             )
             sys.exit(1)
-        returncode = asyncio.run(cli())
-        sys.exit(returncode)
+
+        async def cancellable_cli() -> int:
+            # A signal cancels `cli()`, and once it has finished, and
+            # we have exited, terminates us.
+            async with reboot.aio.signals.cancel_on_signal():
+                return await cli()
+
+        sys.exit(asyncio.run(cancellable_cli()))
     except KeyboardInterrupt:
         # Don't print an exception and stack trace if the user does a
-        # Ctrl-C.
+        # Ctrl-C before we have initialized signals, i.e., during the
+        # imports above.
         import sys
         sys.exit(2)
 

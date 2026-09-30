@@ -145,7 +145,12 @@ def _start(process_name: str):
 
     # Servers while being shut down (e.g. at the end of tests)
     # should flush their traces.
-    install_cleanup([signal.SIGTERM], force_flush_and_shutdown)
+    #
+    # NOTE: we only flush, rather than also shutting down, because
+    # not every process terminates right after its cleanup handlers:
+    # `rbt` first finishes what it is doing, and every span that ends
+    # after a shutdown is dropped, with a warning.
+    install_cleanup([signal.SIGTERM], force_flush)
 
 
 # We're using a global here because we only want to initialize the
