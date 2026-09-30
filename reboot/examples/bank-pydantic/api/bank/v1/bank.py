@@ -1,4 +1,3 @@
-from bank.v1.account import OverdraftError
 from reboot.api import (
     API,
     UI,
@@ -12,6 +11,7 @@ from reboot.api import (
     Transaction,
     Type,
 )
+from shared.errors import OverdraftError
 
 
 class BankState(Model):
