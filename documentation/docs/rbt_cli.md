@@ -47,7 +47,7 @@ warning. Other calls share a handful of HTTP/1.1 connections per
 host, so many outstanding calls queue behind each other, which the
 client also warns about. Over HTTPS reactive readers and other calls
 are all streams of one HTTP/2 connection. A WebSocket is then only
-used for the mutators of a state, and only once one of them is used.
+used for mutations, a single one for the mutations of all states.
 To enable HTTPS you must provide your own TLS certificate when running
 `rbt dev run`.
 

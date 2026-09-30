@@ -15,6 +15,12 @@ import { UseGreeterApi, useGreeter } from "../../greeter_rbt_react.js";
 // the only websockets are the ones for mutations.
 const URL = "https://reboot.test";
 
+// A backend from before there was a websocket for the mutations of
+// all states.
+const OLD_URL = "https://old.reboot.test";
+
+const stateRef = (id: string) => `tests.reboot.Greeter:${id}`;
+
 class FakeWebSocket {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
@@ -34,6 +40,9 @@ class FakeWebSocket {
   // Everything that was sent to the backend.
   sent: react_pb.MutateRequest[] = [];
 
+  // How many of those we have responded to.
+  private responded = 0;
+
   readonly url: string;
 
   constructor(url: string | URL) {
@@ -52,13 +61,44 @@ class FakeWebSocket {
     this.onopen?.();
   }
 
-  respond() {
-    const bytes = new react_pb.MutateResponse({
-      responseOrStatus: {
-        case: "response",
-        value: new SetAdjectiveResponse().toBinary(),
-      },
-    }).toBinary();
+  // Responds to the first mutation that we have not responded to
+  // yet, or to `request` if there is one.
+  respond(request?: react_pb.MutateRequest) {
+    if (request === undefined) {
+      request = this.sent[this.responded];
+      this.responded += 1;
+    }
+    this.receive(
+      new react_pb.MutateResponse({
+        stateRef: request.stateRef,
+        responseOrStatus: {
+          case: "response",
+          value: new SetAdjectiveResponse().toBinary(),
+        },
+      })
+    );
+  }
+
+  // Responds like a backend from before there was a websocket for the
+  // mutations of all states does, because it is missing the state
+  // that it expects to find in the path.
+  respondWithoutState() {
+    this.receive(
+      new react_pb.MutateResponse({
+        responseOrStatus: { case: "status", value: "{}" },
+      })
+    );
+    this.close();
+  }
+
+  fail() {
+    this.readyState = FakeWebSocket.CLOSED;
+    this.onerror?.();
+    this.onclose?.();
+  }
+
+  private receive(response: react_pb.MutateResponse) {
+    const bytes = response.toBinary();
     this.onmessage?.({
       data: bytes.buffer.slice(
         bytes.byteOffset,
@@ -92,19 +132,40 @@ const fakeFetch = (url: string) => {
 let use: (greeter: UseGreeterApi) => void = () => {};
 
 // The `greeter` from the last render, so that the test can call
-// mutators without having to go through the DOM.
+// mutators without having to go through the DOM, and the one from the
+// last render for each ID.
 let greeter: UseGreeterApi;
+let greeters: { [id: string]: UseGreeterApi } = {};
 
 const Greeter: React.FC<{ id: string }> = ({ id }) => {
   greeter = useGreeter({ id });
+  greeters[id] = greeter;
   use(greeter);
   return <div />;
 };
+
+// What has been resolved, in the order that it was.
+let resolved: string[] = [];
+
+const setAdjective = (id: string, adjective: string) => {
+  act(() => {
+    greeters[id].setAdjective({ adjective }).then(() => {
+      resolved = [...resolved, adjective];
+    });
+  });
+};
+
+const adjectives = (websocket: FakeWebSocket) =>
+  websocket.sent.map(
+    ({ request }) => SetAdjectiveRequest.fromBinary(request).adjective
+  );
 
 describe("The websocket for mutations", () => {
   beforeEach(() => {
     fetched = [];
     use = () => {};
+    greeters = {};
+    resolved = [];
     FakeWebSocket.instances = [];
     vi.stubGlobal("WebSocket", FakeWebSocket);
     vi.stubGlobal("fetch", fakeFetch);
@@ -265,6 +326,289 @@ describe("The websocket for mutations", () => {
 
     expect(websocket.readyState).toBe(FakeWebSocket.CLOSED);
   });
+
+  it("is for the mutations of all states", async () => {
+    use = ({ setAdjective }) => {};
+
+    render(
+      <RebootClientProvider url={URL}>
+        <Greeter id="first" />
+        <Greeter id="second" />
+      </RebootClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(FakeWebSocket.instances.length).toBe(1);
+    });
+
+    const [websocket] = FakeWebSocket.instances;
+
+    expect(websocket.url).toBe("wss://reboot.test/__/reboot/websocket/mutate");
+
+    act(() => {
+      websocket.open();
+    });
+
+    setAdjective("first", "first");
+    setAdjective("second", "second");
+    setAdjective("first", "first again");
+
+    await waitFor(() => {
+      expect(websocket.sent.length).toBe(3);
+    });
+
+    expect(adjectives(websocket)).toEqual(["first", "second", "first again"]);
+
+    expect(websocket.sent.map(({ stateRef }) => stateRef)).toEqual([
+      stateRef("first"),
+      stateRef("second"),
+      stateRef("first"),
+    ]);
+
+    // A response is for the first mutation of its state that does
+    // not have one yet, no matter what other states have been up to.
+    act(() => {
+      websocket.respond(websocket.sent[1]);
+    });
+
+    await waitFor(() => {
+      expect(resolved).toEqual(["second"]);
+    });
+
+    act(() => {
+      websocket.respond(websocket.sent[0]);
+    });
+
+    await waitFor(() => {
+      expect(resolved).toEqual(["second", "first"]);
+    });
+
+    act(() => {
+      websocket.respond(websocket.sent[2]);
+    });
+
+    await waitFor(() => {
+      expect(resolved).toEqual(["second", "first", "first again"]);
+    });
+
+    expect(FakeWebSocket.instances.length).toBe(1);
+  });
+
+  it("is also used by a state that is used later", async () => {
+    use = ({ setAdjective }) => {};
+
+    const { rerender } = render(
+      <RebootClientProvider url={URL}>
+        <Greeter id="sooner" />
+      </RebootClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(FakeWebSocket.instances.length).toBe(1);
+    });
+
+    const [websocket] = FakeWebSocket.instances;
+
+    act(() => {
+      websocket.open();
+    });
+
+    rerender(
+      <RebootClientProvider url={URL}>
+        <Greeter id="sooner" />
+        <Greeter id="later" />
+      </RebootClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(greeters["later"]).toBeDefined();
+    });
+
+    setAdjective("later", "later");
+
+    await waitFor(() => {
+      expect(websocket.sent.length).toBe(1);
+    });
+
+    act(() => {
+      websocket.respond();
+    });
+
+    await waitFor(() => {
+      expect(resolved).toEqual(["later"]);
+    });
+
+    expect(FakeWebSocket.instances.length).toBe(1);
+  });
+
+  it("stays open until no state is used anymore", async () => {
+    use = ({ setAdjective }) => {};
+
+    const { rerender, unmount } = render(
+      <RebootClientProvider url={URL}>
+        <Greeter id="first" />
+        <Greeter id="second" />
+      </RebootClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(FakeWebSocket.instances.length).toBe(1);
+    });
+
+    const [websocket] = FakeWebSocket.instances;
+
+    act(() => {
+      websocket.open();
+    });
+
+    rerender(
+      <RebootClientProvider url={URL}>
+        <Greeter id="second" />
+      </RebootClientProvider>
+    );
+
+    expect(websocket.readyState).toBe(FakeWebSocket.OPEN);
+
+    setAdjective("second", "second");
+
+    await waitFor(() => {
+      expect(websocket.sent.length).toBe(1);
+    });
+
+    unmount();
+
+    expect(websocket.readyState).toBe(FakeWebSocket.CLOSED);
+  });
+
+  it("is opened again if it gets closed", async () => {
+    use = ({ setAdjective }) => {};
+
+    render(
+      <RebootClientProvider url={URL}>
+        <Greeter id="first" />
+        <Greeter id="second" />
+      </RebootClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(FakeWebSocket.instances.length).toBe(1);
+    });
+
+    act(() => {
+      FakeWebSocket.instances[0].open();
+    });
+
+    setAdjective("first", "first");
+    setAdjective("second", "second");
+
+    await waitFor(() => {
+      expect(FakeWebSocket.instances[0].sent.length).toBe(2);
+    });
+
+    act(() => {
+      FakeWebSocket.instances[0].fail();
+    });
+
+    await waitFor(
+      () => {
+        expect(FakeWebSocket.instances.length).toBe(2);
+      },
+      { timeout: 10000 }
+    );
+
+    const websocket = FakeWebSocket.instances[1];
+
+    expect(websocket.url).toBe("wss://reboot.test/__/reboot/websocket/mutate");
+
+    // Every state waits for a while of its own before it tries again.
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+
+    expect(FakeWebSocket.instances.length).toBe(2);
+
+    act(() => {
+      websocket.open();
+    });
+
+    // The mutations that did not get a response are sent again.
+    expect([...adjectives(websocket)].sort()).toEqual(["first", "second"]);
+
+    act(() => {
+      websocket.respond();
+      websocket.respond();
+    });
+
+    await waitFor(() => {
+      expect([...resolved].sort()).toEqual(["first", "second"]);
+    });
+  }, 30000);
+
+  it("is a websocket for every state if the backend requires it", async () => {
+    use = ({ setAdjective }) => {};
+
+    render(
+      <RebootClientProvider url={OLD_URL}>
+        <Greeter id="first" />
+        <Greeter id="second" />
+      </RebootClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(FakeWebSocket.instances.length).toBe(1);
+    });
+
+    expect(FakeWebSocket.instances[0].url).toBe(
+      "wss://old.reboot.test/__/reboot/websocket/mutate"
+    );
+
+    act(() => {
+      FakeWebSocket.instances[0].open();
+    });
+
+    setAdjective("first", "first");
+    setAdjective("second", "second");
+
+    await waitFor(() => {
+      expect(FakeWebSocket.instances[0].sent.length).toBe(2);
+    });
+
+    act(() => {
+      FakeWebSocket.instances[0].respondWithoutState();
+    });
+
+    // Neither mutation has been resolved with that response.
+    expect(resolved).toEqual([]);
+
+    await waitFor(
+      () => {
+        expect(FakeWebSocket.instances.length).toBe(3);
+      },
+      { timeout: 10000 }
+    );
+
+    const websockets = FakeWebSocket.instances.slice(1);
+
+    expect(websockets.map(({ url }) => url).sort()).toEqual([
+      `wss://old.reboot.test/__/reboot/rpc/${stateRef("first")}`,
+      `wss://old.reboot.test/__/reboot/rpc/${stateRef("second")}`,
+    ]);
+
+    for (const websocket of websockets) {
+      act(() => {
+        websocket.open();
+      });
+
+      // The mutation that did not get a response is sent again.
+      expect(websocket.sent.length).toBe(1);
+
+      act(() => {
+        websocket.respond();
+      });
+    }
+
+    await waitFor(() => {
+      expect([...resolved].sort()).toEqual(["first", "second"]);
+    });
+  }, 30000);
 
   it("does not need a request of its own", async () => {
     use = ({ setAdjective }) => {};

@@ -3,8 +3,10 @@ import grpc
 import logging
 import reboot.aio.placement
 import traceback
+import urllib.parse
 import uuid
 import websockets
+from collections import deque
 from google.protobuf.json_format import MessageToJson
 from google.rpc import code_pb2, status_pb2
 from grpc_health.v1 import health_pb2
@@ -29,6 +31,10 @@ from reboot.wait_for_tasks import wait_for_tasks
 from typing import AsyncIterable, Optional
 
 logger = get_logger(__name__)
+
+# Path of the websocket for the mutations of all states, rather than
+# of the single state that is in the path.
+MUTATE_WEBSOCKET_PATH = '/__/reboot/websocket/mutate'
 
 
 class _SuppressInvalidHandshakeFilter(logging.Filter):
@@ -155,14 +161,20 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
 
         with use_application_id(self._application_id):
             try:
-                application_id, state_ref = (
-                    websocket.request.headers[APPLICATION_ID_HEADER],
-                    StateRef.from_maybe_readable(
-                        websocket.request.headers[STATE_REF_HEADER]
-                    ),
-                )
+                application_id = websocket.request.headers[
+                    APPLICATION_ID_HEADER]
 
                 assert self._application_id == application_id
+
+                if websocket.request.path == MUTATE_WEBSOCKET_PATH:
+                    return await self._websocket_mutate_states(
+                        websocket,
+                        application_id=application_id,
+                    )
+
+                state_ref = StateRef.from_maybe_readable(
+                    websocket.request.headers[STATE_REF_HEADER]
+                )
 
                 state_type_name = self._state_type_name_for_state_ref(
                     state_ref
@@ -302,6 +314,145 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
                         response=response.SerializeToString(),
                     ).SerializeToString()
                 )
+
+    async def _mutate_state(
+        self,
+        request: react_pb2.MutateRequest,
+        *,
+        application_id: ApplicationId,
+    ) -> react_pb2.MutateResponse:
+        """Performs the mutation in `request`, of the state in `request`,
+        and returns its response, which is a status if it failed."""
+        try:
+            # The state is what would otherwise be in the path, see
+            # `mangled_http_path.lua`.
+            state_ref = StateRef.from_maybe_readable(
+                urllib.parse.unquote(request.state_ref)
+            )
+
+            state_type_name = self._state_type_name_for_state_ref(state_ref)
+
+            if state_type_name is None:
+                log_at_most_once_per(
+                    seconds=60,
+                    log_method=logger.error,
+                    message=_unknown_query_or_mutation_error_message(
+                        is_query=False,
+                        state_type=state_ref.state_type,
+                    ),
+                )
+                raise SystemAborted(UnknownService())
+
+            middleware = self._middleware_by_state_type[state_type_name]
+
+            # NOTE: we might not be the server that is authoritative
+            # for this state, which is fine because `react_mutate()`
+            # calls the server that is.
+            response = await middleware.react_mutate(
+                Headers(
+                    application_id=application_id,
+                    state_ref=state_ref,
+                    idempotency_key=uuid.UUID(request.idempotency_key),
+                    bearer_token=request.bearer_token,
+                    # This request came in over a websocket, so this is
+                    # a frontend client calling, not another Reboot
+                    # application. Therefore there is no caller ID.
+                    caller_id=None,
+                ),
+                request.method,
+                request.request,
+            )
+
+            return react_pb2.MutateResponse(
+                response=response.SerializeToString(),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Aborted as aborted:
+            return react_pb2.MutateResponse(
+                status=MessageToJson(aborted.to_status()),
+            )
+        except BaseException as exception:
+            # See the comment in `_serve()` for why we log the stack
+            # trace but don't send it.
+            error_message = (
+                'Failed to execute mutation via websocket; '
+                f'{type(exception).__name__}: {exception}'
+            )
+
+            if should_print_stacktrace():
+                error_message += f'\n{traceback.format_exc()}'
+
+            logger.error(error_message)
+
+            return react_pb2.MutateResponse(
+                status=MessageToJson(
+                    status_pb2.Status(
+                        code=code_pb2.Code.UNKNOWN,
+                        message=f'{type(exception).__name__}: {exception}',
+                    )
+                ),
+            )
+
+    async def _websocket_mutate_states(
+        self,
+        websocket,
+        *,
+        application_id: ApplicationId,
+    ):
+        """Performs the mutations of any state that are sent over
+        `websocket`: those of the same state in the order that they
+        were sent, and those of different states concurrently, so that
+        a mutation only ever waits for mutations of the same state."""
+        # The mutations of each state that we have yet to respond to,
+        # by `state_ref`. A state is in here for as long as it has a
+        # task performing its mutations.
+        requests_by_state_ref: dict[str, deque[react_pb2.MutateRequest]] = {}
+
+        tasks: set[asyncio.Task] = set()
+
+        async def mutate_state(state_ref: str):
+            requests = requests_by_state_ref[state_ref]
+            while len(requests) > 0:
+                response = await self._mutate_state(
+                    requests[0],
+                    application_id=application_id,
+                )
+                response.state_ref = state_ref
+                await websocket.send(response.SerializeToString())
+                requests.popleft()
+            del requests_by_state_ref[state_ref]
+
+        def done(task: asyncio.Task):
+            tasks.discard(task)
+            if not task.cancelled():
+                # Retrieve the exception, if any, which is what we
+                # expect when the websocket gets closed.
+                task.exception()
+
+        try:
+            async for request_bytes in websocket:
+                request = react_pb2.MutateRequest()
+                request.ParseFromString(request_bytes)
+
+                requests = requests_by_state_ref.get(request.state_ref)
+
+                if requests is not None:
+                    requests.append(request)
+                    continue
+
+                requests_by_state_ref[request.state_ref] = deque([request])
+
+                task = asyncio.create_task(
+                    mutate_state(request.state_ref),
+                    name=f'mutate_state({request.state_ref}) in {__name__}',
+                )
+                tasks.add(task)
+                task.add_done_callback(done)
+        finally:
+            # Just like a websocket for the mutations of a single
+            # state, once the websocket is closed we are done.
+            await wait_for_tasks(list(tasks), cancel=True)
 
     async def _websocket_health_check(self, websocket):
         """
