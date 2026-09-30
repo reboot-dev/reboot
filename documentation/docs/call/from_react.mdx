@@ -601,4 +601,13 @@ outage. These retries are _idempotent_, so this is perfectly safe to do.
 An error is considered unretryable if it originates from the application. All
 other errors are retried with an exponential backoff.
 
+A reader hook never stops retrying. If the connection drops, the hook
+reconnects with backoff; while it reconnects, `isLoading` is `true` and
+`response` and `aborted` keep their last values. If the reader raises an
+error (a declared error, a denied `authorizer()`, `StateNotConstructed`),
+the hook sets `aborted` to that error, clears `response`, and reconnects
+with backoff. When the reader later returns a response, the hook sets
+`response` and clears `aborted`. If the error means the read should not
+continue, stop rendering the hook.
+
 <!-- See the section on [errors](#errors) for more details. -->
