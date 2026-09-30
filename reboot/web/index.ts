@@ -4,6 +4,7 @@ import {
   Backoff,
   Event,
   Status,
+  StatusCode,
   TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF,
   assert,
   check_bufbuild_protobuf_library,
@@ -511,6 +512,90 @@ export async function* reactiveReader({
       yield response;
     }
   }
+}
+
+// URLs that we have learned don't support `React.Mutate`,
+// because they are running a version of Reboot from before it
+// existed.
+const urlsWithoutReactMutate = new Set<string>();
+
+// Returns whether or not mutations to `url` should call
+// `React.Mutate` rather than be sent over a websocket.
+//
+// We only do so when using TLS because that is what gets us HTTP/2,
+// where every mutation is a stream on the connection we already have.
+// Without it every mutation that is waiting for its response needs a
+// connection of its own, and browsers only allow a handful of those.
+export function reactMutateOverHttp(url: string): boolean {
+  return new URL(url).protocol === "https:" && !urlsWithoutReactMutate.has(url);
+}
+
+// Calls `React.Mutate` once, i.e., without retrying.
+//
+// Returns `undefined` if `url` doesn't support `React.Mutate`,
+// in which case `reactMutateOverHttp()` no longer returns true for
+// it, and throws if the call should be retried.
+export async function reactMutate({
+  url,
+  stateRef,
+  request,
+  signal,
+}: {
+  url: string;
+  stateRef: string;
+  request: react_pb.MutateRequest;
+  signal: AbortSignal;
+}): Promise<react_pb.MutateResponse | undefined> {
+  const headers = new Headers();
+
+  headers.set("Content-Type", "application/json");
+
+  if (request.bearerToken !== undefined) {
+    headers.set("Authorization", `Bearer ${request.bearerToken}`);
+  }
+
+  const response = await guardedFetch(
+    `${url}/__/reboot/rpc/${stateRef}/rbt.v1alpha1.React/Mutate`,
+    {
+      method: "POST",
+      headers,
+      body: request.toJsonString(),
+      signal,
+    }
+  );
+
+  if (response.ok) {
+    return react_pb.MutateResponse.fromJson(await response.json());
+  }
+
+  // `React.Mutate` itself never responds with a 404, a mutation that
+  // fails has a response that is a status, so this must be a backend
+  // that doesn't have `React.Mutate`.
+  if (response.status === 404) {
+    urlsWithoutReactMutate.add(url);
+    return undefined;
+  }
+
+  // See the comment in `httpCall()` for what these are.
+  if (
+    response.status === 502 ||
+    response.status === 503 ||
+    response.status === 499
+  ) {
+    throw new Error(`HTTP status ${response.status}`);
+  }
+
+  const status =
+    response.headers.get("content-type") === "application/json"
+      ? Status.fromJson(await response.json())
+      : new Status({
+          code: StatusCode.UNKNOWN,
+          message: `Unknown error with HTTP status ${response.status}`,
+        });
+
+  return new react_pb.MutateResponse({
+    responseOrStatus: { case: "status", value: status.toJsonString() },
+  });
 }
 
 // While it is hard to find specific documentation for concrete

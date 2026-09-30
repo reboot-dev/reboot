@@ -63,6 +63,34 @@ message MutateRequest {
 
   // Authorization bearer token.
   optional string bearer_token = 4;
+
+  // Where this mutation is in a sequence of mutations, all of which
+  // must be performed in order.
+  //
+  // Mutations sent over a websocket are performed in the order that
+  // they were sent, but mutations that call `React.Mutate` are each a
+  // request of their own which may arrive in any order, and yet we
+  // still want to be able to send a mutation before we have the
+  // response of the one before it.
+  message Sequence {
+    // Identifies the sequence, e.g., a UUID.
+    string id = 1;
+
+    // The number of this mutation in the sequence. The first mutation
+    // may have any number, and every mutation after it has a number
+    // that is one more than the mutation before it.
+    uint64 number = 2;
+
+    // The number of the first mutation in the sequence that the
+    // sender does not have a response for yet, which is at most
+    // `number`. Every mutation before it has been performed, which
+    // is what lets a server that has not heard of this sequence,
+    // e.g., because it restarted, know where to pick it up.
+    uint64 first_outstanding_number = 3;
+  }
+
+  // Only expected when calling `React.Mutate`.
+  optional Sequence sequence = 5;
 }
 
 message MutateResponse {
@@ -98,6 +126,21 @@ service React {
   rpc Query(QueryRequest) returns (stream QueryResponse) {
     option (google.api.http) = {
       post: "/rbt.v1alpha1.React/Query"
+    };
+  }
+
+  // Performs a mutation (a writer or transaction), as an alternative
+  // to sending it over a websocket.
+  //
+  // Mutations that are part of the same `MutateRequest.Sequence` are
+  // performed in the order of their numbers, no matter what order
+  // they arrive in.
+  //
+  // NOTE: the service name and state ID is expected to be part of the
+  // gRPC metadata, exactly like any other reboot requests.
+  rpc Mutate(MutateRequest) returns (MutateResponse) {
+    option (google.api.http) = {
+      post: "/rbt.v1alpha1.React/Mutate"
     };
   }
 

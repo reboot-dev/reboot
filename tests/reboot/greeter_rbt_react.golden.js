@@ -1666,6 +1666,15 @@ class GreeterInstance {
         this.flushMutates = undefined;
         this.websocket = undefined;
         this.backoff = new reboot_api.Backoff();
+        // Identifies our sequence of mutations that call `React.Mutate`,
+        // and the number of the next mutation in it. The backend performs
+        // the mutations of a sequence in the order of their numbers, which
+        // is what lets us send a mutation before we have the response of
+        // the one before it, as we also do over the websocket.
+        this.sequenceId = uuidv4();
+        this.sequenceNumber = 0;
+        // Aborts any calls to `React.Mutate`.
+        this.abortController = new AbortController();
         this.useCreateMutations = [];
         this.useCreateSetPendings = {};
         this.useGreetReaders = {};
@@ -1748,10 +1757,14 @@ class GreeterInstance {
         this.stateRef = stateRef;
         this.url = url;
         this.refs = 1;
+        this.mutateOverHttp = reboot_web.reactMutateOverHttp(this.url);
         // An empty `id` marks the inert instance shared by every no-id
         // caller while no default ID has resolved (e.g. signed out): it
         // opens no socket so there's nothing to connect to.
-        if (id !== "") {
+        //
+        // We also have nothing to connect to if our mutations call
+        // `React.Mutate` rather than get sent over a websocket.
+        if (id !== "" && !this.mutateOverHttp) {
             reboot_web.websockets.connect(this.url, this.stateRef);
             this.initializeWebSocket();
         }
@@ -1762,6 +1775,11 @@ class GreeterInstance {
     }
     unref() {
         this.refs -= 1;
+        if (this.refs === 0) {
+            // Just like closing the websocket does for the mutations that
+            // were sent over it.
+            this.abortController.abort();
+        }
         if (this.refs === 0 && this.websocket !== undefined) {
             this.websocket.close();
             reboot_web.websockets.disconnect(this.url, this.stateRef);
@@ -1783,7 +1801,12 @@ class GreeterInstance {
         if (this.queuedMutates.length > 0) {
             this.runningMutates = this.queuedMutates;
             this.queuedMutates = [];
-            if (((_a = this.websocket) === null || _a === void 0 ? void 0 : _a.readyState) === WebSocket.OPEN) {
+            if (this.mutateOverHttp) {
+                for (const mutate of this.runningMutates) {
+                    this.reactMutate(mutate);
+                }
+            }
+            else if (((_a = this.websocket) === null || _a === void 0 ? void 0 : _a.readyState) === WebSocket.OPEN) {
                 for (const { request, update } of this.runningMutates) {
                     update({ isLoading: true });
                     try {
@@ -1794,6 +1817,85 @@ class GreeterInstance {
                     }
                 }
             }
+        }
+    }
+    async reactMutate(mutate) {
+        const { request, resolve, update } = mutate;
+        const sequence = new reboot_api.react_pb.MutateRequest_Sequence({
+            id: this.sequenceId,
+            number: protobuf_es.protoInt64.uParse(this.sequenceNumber++),
+        });
+        request.sequence = sequence;
+        const backoff = new reboot_api.Backoff();
+        while (!this.abortController.signal.aborted) {
+            // We might have learned that the backend doesn't have
+            // `React.Mutate` since we last tried, possibly from a
+            // different state.
+            if (!reboot_web.reactMutateOverHttp(this.url)) {
+                this.mutateOverWebSocket();
+                return;
+            }
+            // We have the response of every mutation before the first one
+            // that is still running, and they are in the order that we
+            // made them. Note that this may be a different mutation every
+            // time that we retry.
+            for (const runningMutate of this.runningMutates) {
+                if (runningMutate.request.sequence !== undefined) {
+                    sequence.firstOutstandingNumber =
+                        runningMutate.request.sequence.number;
+                    break;
+                }
+            }
+            update({ isLoading: true });
+            try {
+                const response = await reboot_web.reactMutate({
+                    url: this.url,
+                    stateRef: this.stateRef,
+                    request,
+                    signal: this.abortController.signal,
+                });
+                if (response === undefined) {
+                    this.mutateOverWebSocket();
+                    return;
+                }
+                // NOTE: we can't assume that this is the first running
+                // mutation like we do for a websocket because while the
+                // mutations are performed in order each response is a
+                // response to a request of its own.
+                this.runningMutates = this.runningMutates.filter((runningMutate) => runningMutate !== mutate);
+                resolve(response);
+                if (this.flushMutates !== undefined &&
+                    this.runningMutates.length === 0) {
+                    this.flushMutates.set();
+                }
+                return;
+            }
+            catch (e) {
+                if (this.abortController.signal.aborted) {
+                    return;
+                }
+                // We'll retry since we've stored in `*Mutates`.
+                update({
+                    isLoading: false,
+                    error: e instanceof Error ? e.message : JSON.stringify(e),
+                });
+            }
+            await backoff.wait();
+        }
+    }
+    // Invoked when we learn that the backend doesn't have
+    // `React.Mutate`, because it is running a version of Reboot from
+    // before it existed.
+    mutateOverWebSocket() {
+        if (this.mutateOverHttp) {
+            this.mutateOverHttp = false;
+            for (const { request } of this.runningMutates) {
+                request.sequence = undefined;
+            }
+            // All of the running mutations get sent once the websocket
+            // is open.
+            reboot_web.websockets.connect(this.url, this.stateRef);
+            this.initializeWebSocket();
         }
     }
     initializeWebSocket() {
@@ -1862,8 +1964,12 @@ class GreeterInstance {
         return new Promise((resolve, _) => {
             var _a;
             if (this.loadingReaders === 0) {
-                this.runningMutates = this.runningMutates.concat({ request, resolve, update });
-                if (((_a = this.websocket) === null || _a === void 0 ? void 0 : _a.readyState) === WebSocket.OPEN) {
+                const mutate = { request, resolve, update };
+                this.runningMutates = this.runningMutates.concat(mutate);
+                if (this.mutateOverHttp) {
+                    this.reactMutate(mutate);
+                }
+                else if (((_a = this.websocket) === null || _a === void 0 ? void 0 : _a.readyState) === WebSocket.OPEN) {
                     update({ isLoading: true });
                     try {
                         this.websocket.send(request.toBinary());
