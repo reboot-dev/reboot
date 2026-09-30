@@ -21,6 +21,17 @@ const TOKEN_FOR_TEST = "S3CR3T!";
 // retry, which we can't do yet to the best of our knowledge with the
 // tests in 'tests/reboot/react'.
 
+// The next item of a reactive read, which must not be done.
+async function nextItem<Item>(
+  items: AsyncGenerator<Item, void, unknown>
+): Promise<Item> {
+  const result = await items.next();
+  if (result.done === true) {
+    assert.fail("Expected another item");
+  }
+  return result.value;
+}
+
 class StaticTokenVerifier extends TokenVerifier {
   async verifyToken(
     context: ReaderContext,
@@ -195,6 +206,61 @@ test("Reboot", async (t) => {
     const response = await greeter.greet(context, {});
 
     assert(response.message == "Hi , I am Dr Jonathan the Friendly");
+  });
+
+  await t.test("Reactive reader retries a restarting server", async (t) => {
+    const application = new Application({
+      servicers: [GreeterServicer],
+    });
+
+    const rbt = new Reboot();
+    await rbt.start();
+
+    t.after(async () => {
+      await rbt.stop();
+    });
+
+    await rbt.up(application, { localEnvoy: true });
+
+    const context = new WebContext({
+      url: rbt.url(),
+    });
+
+    const [greeter] = await Greeter.create(context, {
+      title: "Dr",
+      name: "Jonathan",
+      adjective: "Best",
+    });
+
+    const abortController = new AbortController();
+
+    const [responses] = await greeter
+      .reactively()
+      .greet(context, {}, { signal: abortController.signal });
+
+    const first = await nextItem(responses);
+    assert(first.message == "Hi , I am Dr Jonathan the Best");
+
+    // Restarting the server disconnects the reactive read, which
+    // reconnects rather than surface the disconnect, and then
+    // observes the mutation made after the restart.
+    await rbt.down();
+    await rbt.up(application, { localEnvoy: true });
+
+    await greeter.setAdjective(context, {
+      adjective: "Friendly",
+    });
+
+    while (true) {
+      const response = await nextItem(responses);
+      if (response.message == "Hi , I am Dr Jonathan the Friendly") {
+        break;
+      }
+    }
+
+    // Aborting the read ends the generator.
+    abortController.abort();
+    assert((await responses.next()).done);
   });
 
   await t.test("Transaction", async (t) => {

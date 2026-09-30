@@ -34,5 +34,9 @@ js_reboot_test(
         ":test_ts",
     ],
     entry_point = "test.js",
+    # A reactive read over plain HTTP goes over a websocket, and the
+    # global `WebSocket` a browser provides is only behind this flag in
+    # Node.js 20.
+    env = {"NODE_OPTIONS": "--experimental-websocket"},
     visibility = ["//visibility:public"],
 )
