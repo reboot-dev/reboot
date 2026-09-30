@@ -517,15 +517,6 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
 
             raise exception
 
-    async def WebSocketsConnection(
-        self,
-        request: react_pb2.WebSocketsConnectionRequest,
-        grpc_context: grpc.aio.ServicerContext,
-    ) -> react_pb2.WebSocketsConnectionResponse:
-        await asyncio.Event().wait()
-        # TODO(benh): use `assert_never` in Python > 3.11.
-        assert False, 'Unreachable'
-
 
 def _unknown_query_or_mutation_error_message(
     is_query: bool,

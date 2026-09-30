@@ -10,7 +10,6 @@ import {
   errorFromGoogleRpcStatusDetails,
   errors_pb,
   react_pb,
-  retryForever,
   stateIdToRef,
 } from "@reboot-dev/reboot-api";
 import { v7 as uuidv7 } from "uuid";
@@ -415,13 +414,11 @@ export function reactively<
 
     while (signal === undefined || !signal.aborted) {
       try {
-        // The reactive read path multiplexes many RPCs over one
-        // WebSocket and each call may carry a different bearer (a
-        // refresh between calls is valid), so auth rides in the
-        // request body, not the WS upgrade. The browser
-        // `WebSocket` API also disallows custom headers on the
-        // upgrade, ruling out `Authorization`/`Sec-WebSocket-Protocol`
-        // as transport here.
+        // Auth rides in the request body because a reactive read
+        // may use a WebSocket, and the browser `WebSocket` API
+        // disallows custom headers on the upgrade, ruling out
+        // `Authorization`/`Sec-WebSocket-Protocol` as transport
+        // here.
         const queryRequest = new react_pb.QueryRequest({
           method,
           request: request.toBinary(),
@@ -529,95 +526,38 @@ export class WebSockets {
   // Count of all websockets that have been created.
   count: number;
 
-  connectionAbortControllers: { [key: string]: AbortController };
-
   constructor() {
     this.count = 0;
-    this.connectionAbortControllers = {};
-  }
-
-  // Helper for setting up a long-lived HTTP/2 connection that
-  // websockets can use as defined by RFC 8441
-  // (https://datatracker.ietf.org/doc/html/rfc8441) and implemented
-  // by all of the top browsers.
-  //
-  connect(endpoint: string, stateRef: string) {
-    // HTTP/2 requires TLS so if we're not connecting with `https:` then we're
-    // not using HTTP/2 so there is no need to create this long-lived connection.
-    const url = new URL(endpoint);
-    if (url.protocol !== "https:") {
-      return;
-    }
-
-    const abortController = new AbortController();
-
-    this.connectionAbortControllers[endpoint + stateRef] = abortController;
-
-    retryForever(async () => {
-      const headers = new Headers();
-      headers.set("Content-Type", "application/json");
-      headers.append("Connection", "keep-alive");
-
-      // NOTE: we use `fetch()` not `guardedFetch()`
-      // because if there are only mutations than a disconnect will
-      // cause us to show a warning when using `rbt dev` but we won't
-      // ever remove the warning because the fetch to
-      // `WebSocketsConnection` waits indefinitely.
-      await fetch(
-        `${endpoint}/__/reboot/rpc/${stateRef}/rbt.v1alpha1.React/WebSocketsConnection`,
-        {
-          method: "POST",
-          headers,
-          body: new react_pb.WebSocketsConnectionRequest().toJsonString(),
-          signal: abortController.signal,
-        }
-      ).catch((error: unknown) => {
-        // Retry forever unless we were aborted.
-        if (!abortController.signal.aborted) {
-          throw error;
-        }
-      });
-    });
-  }
-
-  disconnect(endpoint: string, stateRef: string) {
-    // No need to do anything if we never made a connection in `connect()` because
-    // we're not using TLS.
-    const url = new URL(endpoint);
-    if (url.protocol !== "https:") {
-      return;
-    }
-
-    this.connectionAbortControllers[endpoint + stateRef].abort();
   }
 
   create(url: URL) {
-    // NOTE: if we're using TLS then all of our websockets should use
-    // the existing HTTP/2 connection set up by calling
-    // `rbt.v1alpha1.React/WebSocketsConnection` in `connect()`.
-    if (url.protocol === "wss:") {
-      return new WebSocket(url.toString());
-    }
-
     const websocket = new WebSocket(url.toString());
 
     this.count += 1;
 
     websocket.addEventListener("error", () => {
       if (this.count > WEBSOCKET_LIMIT) {
+        // NOTE: a websocket is a connection of its own even when
+        // using TLS, because neither Envoy nor Istio are set up for a
+        // websocket to be a stream of an HTTP/2 connection (RFC
+        // 8441), and browsers limit websockets even when they are.
         console.warn(
           `You have over ${WEBSOCKET_LIMIT} websockets, which is more ` +
             "than supported on some browsers. This may be the reason one " +
             "of the websockets we created had an error, and thus some your " +
             "calls (specifically reactive readers or mutations) will never " +
             "make it to your Reboot application (even though we keep retrying). " +
-            "You can solve this by using HTTP/2 which allows an unlimited " +
-            "number of concurrent streams. Reboot uses HTTP/2 by default " +
-            "when you use TLS. You should definitely use TLS when you deploy " +
-            "your application in the cloud, but you can also use TLS when " +
-            "running `rbt dev`. See " +
-            "https://docs.reboot.dev/rbt_cli#bring-your-own-certificate-with-rbt-dev-run " +
-            "for how to do so."
+            (url.protocol === "wss:"
+              ? "When you use TLS a websocket is only used for the mutators " +
+                "of a state, so you are using the mutators of too many " +
+                "states at the same time."
+              : "You can solve this for reactive readers by using HTTP/2 " +
+                "which allows an unlimited number of concurrent streams. " +
+                "Reboot uses HTTP/2 by default when you use TLS. You should " +
+                "definitely use TLS when you deploy your application in the " +
+                "cloud, but you can also use TLS when running `rbt dev`. See " +
+                "https://docs.reboot.dev/rbt_cli#bring-your-own-certificate-with-rbt-dev-run " +
+                "for how to do so.")
         );
       }
     });
