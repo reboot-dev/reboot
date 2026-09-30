@@ -4,6 +4,7 @@ import {
   Backoff,
   Event,
   Status,
+  StatusCode,
   TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF,
   assert,
   check_bufbuild_protobuf_library,
@@ -86,9 +87,13 @@ export class Deferred<T> {
   }
 }
 
-interface AbortedType<A extends Aborted> {
-  new (...args: any[]): A;
-  fromStatus(status: Status): A;
+// The type of an `Aborted` class, e.g., `typeof GreeterGreetAborted`:
+// a constructor with a static `fromStatus`. Its type parameter,
+// `AbortedType`, is the type of the instances it makes, e.g.,
+// `GreeterGreetAborted`. Mirrors bufbuild's `MessageType<ResponseType>`.
+interface AbortedMessageType<AbortedType extends Aborted> {
+  new (...args: any[]): AbortedType;
+  fromStatus(status: Status): AbortedType;
 }
 
 // A hook the SPA's provider plugs into `httpCall` so a 401 from a
@@ -101,8 +106,7 @@ export type OnUnauthenticated = () => Promise<boolean>;
 export async function httpCall<
   RequestType extends Message<RequestType>,
   ResponseType extends Message<ResponseType>,
-  A extends Aborted,
-  AT extends AbortedType<A>
+  AbortedType extends Aborted
 >({
   url,
   method,
@@ -121,7 +125,7 @@ export async function httpCall<
   stateRef: string;
   requestType: MessageType<RequestType>;
   responseType: MessageType<ResponseType>;
-  abortedType: AT;
+  abortedType: AbortedMessageType<AbortedType>;
   request: RequestType;
   idempotencyKey: string;
   options?: {
@@ -153,7 +157,7 @@ export async function httpCall<
   // `/__/oauth/refresh`. The retry happens at most once.
   let didRefresh = false;
   let response: Response | undefined;
-  let aborted: A | undefined;
+  let aborted: AbortedType | undefined;
 
   // The age of the transaction this call started, once an error has
   // told us: the root transaction id of its first attempt. A retry
@@ -168,7 +172,7 @@ export async function httpCall<
     const headers = await buildHeaders();
     const result = await (async (): Promise<{
       response?: Response;
-      aborted?: A;
+      aborted?: AbortedType;
     }> => {
       const backoff = new Backoff();
       // A `TransactionShouldRetry` may ask us to retry immediately,
@@ -324,9 +328,26 @@ export async function httpCall<
   }
 }
 
+// Reads `method` reactively. The returned generator yields an item for
+// every result the server sends, until the caller stops iterating or
+// `signal` aborts:
+//
+// - `{ response }` when the reader returned a response.
+// - `{ aborted }` when the reader raised an error, e.g., a declared
+//   error, a denied authorization, or `StateNotConstructed`.
+//
+// An error does not end the generator. After yielding `{ aborted }` it
+// waits with backoff, reconnects, and yields the next result. The
+// caller decides whether to keep iterating, `break`, or `throw
+// aborted`. A dropped connection is retried with backoff and yields
+// nothing. When the error is `Unauthenticated` and `onUnauthenticated`
+// is set, the hook is called once to renew the session before
+// `{ aborted }` is yielded; if it returns `true` the generator
+// reconnects immediately instead.
 export function reactively<
   RequestType extends Message<RequestType>,
-  ResponseType extends Message<ResponseType>
+  ResponseType extends Message<ResponseType>,
+  AbortedType extends Aborted
 >({
   url,
   state,
@@ -334,9 +355,11 @@ export function reactively<
   id,
   requestType,
   responseType,
+  abortedType,
   request,
   signal,
   bearerToken,
+  onUnauthenticated,
   websockets = false,
 }: {
   url: string;
@@ -345,12 +368,17 @@ export function reactively<
   id: string;
   requestType: MessageType<RequestType>;
   responseType: MessageType<ResponseType>;
+  // Typed by the instance it makes (rather than by a second type
+  // parameter for the class) so that `AbortedType` is inferred as the
+  // method's `Aborted` and not as the base class.
+  abortedType: AbortedMessageType<AbortedType>;
   request?: RequestType;
   signal?: AbortSignal;
   bearerToken?: () => Promise<string | undefined>;
+  onUnauthenticated?: OnUnauthenticated;
   websockets: boolean;
 }): [
-  AsyncGenerator<ResponseType, void, unknown>,
+  AsyncGenerator<ResponseOrAborted<ResponseType, AbortedType>, void, unknown>,
   (newRequest: PartialMessage<RequestType>) => void
 ] {
   if (request !== undefined) {
@@ -396,7 +424,11 @@ export function reactively<
     }
   };
 
-  async function* responses(): AsyncGenerator<ResponseType, void, unknown> {
+  async function* responses(): AsyncGenerator<
+    ResponseOrAborted<ResponseType, AbortedType>,
+    void,
+    unknown
+  > {
     // Wait for either the first request or an abort.
     await Promise.race([
       firstRequest.wait(),
@@ -410,6 +442,14 @@ export function reactively<
     ]);
 
     const backoff = new Backoff();
+
+    // Whether `onUnauthenticated` has been asked to renew the session
+    // since the stream last delivered a response. A renewal is
+    // followed by one more attempt, at most, so that a session it does
+    // not fix is surfaced rather than renewed on every attempt, while
+    // a session that goes stale again later in the life of the read is
+    // renewed again.
+    let didRefresh = false;
 
     assert(request !== undefined);
 
@@ -449,11 +489,12 @@ export function reactively<
 
         for await (const queryResponse of queryResponses) {
           backoff.reset({ log: `[Reboot] Call to \`${method}\` succeeded` });
+          didRefresh = false;
           if (queryResponse.responseOrStatus.case === "response") {
             const response = responseType.fromBinary(
               queryResponse.responseOrStatus.value
             );
-            yield response;
+            yield { response };
           }
         }
 
@@ -477,6 +518,45 @@ export function reactively<
           continue;
         }
 
+        if (e instanceof Status) {
+          // The reader raised an error. If it is `Unauthenticated`, the
+          // session may be stale: ask `onUnauthenticated` to renew it
+          // once before yielding the error, as `httpCall` does.
+          if (
+            e.code === StatusCode.UNAUTHENTICATED &&
+            onUnauthenticated !== undefined &&
+            !didRefresh
+          ) {
+            didRefresh = true;
+            let refreshed = false;
+            try {
+              refreshed = await onUnauthenticated();
+            } catch {
+              // Ignore refresh failures; surface the original error.
+            }
+            if (refreshed) {
+              // Reconnect right away; the next attempt reads the
+              // renewed bearer token.
+              continue;
+            }
+          }
+
+          // Yield the error. It does not end the read: the state may
+          // change so that the next read returns a response.
+          yield { aborted: abortedType.fromStatus(e) };
+
+          if (signal !== undefined && signal.aborted) {
+            return;
+          }
+
+          await backoff.wait({
+            log: `[Reboot] Reactive call to \`${method}\` failed with ${e.message}; retrying with backoff ...`,
+          });
+          continue;
+        }
+
+        // A transport failure, e.g., a disconnect or a server that is
+        // restarting: reconnect with backoff.
         await backoff.wait({
           log: `[Reboot] Retrying call to \`${method}\` with backoff ...`,
         });

@@ -1,5 +1,9 @@
+import type { ResponseOrAborted } from "@reboot-dev/reboot-web";
 import { WebContext } from "@reboot-dev/reboot-web";
-import { ChatRoom } from "../../api/chat_room/v1/chat_room_rbt_web";
+import {
+  ChatRoom,
+  ChatRoomMessagesAborted,
+} from "../../api/chat_room/v1/chat_room_rbt_web";
 
 const root = document.getElementById("messages");
 const button = document.getElementById("button");
@@ -29,9 +33,18 @@ async function handleClick(element: HTMLInputElement) {
 
 async function bindToElement(
   element: HTMLElement,
-  generator: AsyncGenerator<ChatRoom.MessagesResponse>
+  generator: AsyncGenerator<
+    ResponseOrAborted<ChatRoom.MessagesResponse, ChatRoomMessagesAborted>
+  >
 ) {
-  for await (const response of generator) {
+  for await (const { response, aborted } of generator) {
+    if (aborted !== undefined) {
+      // The reader raised an error, e.g., the chat room has not been
+      // created yet. The read keeps going and yields again once the
+      // state changes.
+      element.innerHTML = `<div class="message">${aborted.message}</div>`;
+      continue;
+    }
     element.innerHTML = `${response.messages
       .map((msg: string) => `<div class="message">${msg}</div>`)
       .join("")}`;

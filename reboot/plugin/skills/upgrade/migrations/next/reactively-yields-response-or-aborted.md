@@ -43,3 +43,43 @@ Also:
   `response, aborted = await anext(subscription)`.
 - A reader whose response type is empty yields `(None, None)` on
   success, so check `aborted`, not `response`, for those.
+
+## Web `reactively()` reads yield `{ response, aborted }` objects
+
+The non-React web client's `Type.ref(id).reactively().<reader>(context)`
+generator (`@reboot-dev/reboot-web`) used to yield bare responses and
+to swallow every error the reader raised, silently reconnecting
+forever, so a `for await` over it simply went quiet on a declared
+error, a denied `authorizer()`, or `StateNotConstructed`. It now
+yields a `ResponseOrAborted` object for every result: `{ response }`
+for a response, `{ aborted }` (the method's `<Type><Method>Aborted`)
+for an error. An error does not end the read: the generator keeps going
+and yields again once the state changes. It never throws.
+
+Find every use of such a read, matching only the opening parenthesis
+since a formatter may have split the call across lines:
+
+    grep -rn "\.reactively(" --include=*.ts --include=*.tsx --include=*.js
+
+Destructure the item in every `for await` over one. Before:
+
+```ts
+for await (const response of responses) {
+  render(response);
+}
+```
+
+After:
+
+```ts
+for await (const { response, aborted } of responses) {
+  if (aborted !== undefined) {
+    // Decide: `continue` to wait for the state to change, `break` to
+    // stop reading, or `throw aborted`.
+    continue;
+  }
+  render(response);
+}
+```
+
+Code that pulls items with `responses.next()` gets the object too.

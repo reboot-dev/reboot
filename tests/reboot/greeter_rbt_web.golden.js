@@ -1664,9 +1664,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: greeter_pb.GreetRequest,
             responseType: greeter_pb.GreetResponse,
+            abortedType: GreeterGreetAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {
@@ -1674,9 +1676,12 @@ class _Reactively {
             setRequest(typedRequest);
         };
         async function* typedGenerator() {
-            for await (const response of generator) {
-                const typedResponse = GreeterGreetResponseFromProtobufShape(response);
-                yield typedResponse;
+            for await (const { response, aborted } of generator) {
+                if (aborted !== undefined) {
+                    yield { aborted };
+                    continue;
+                }
+                yield { response: GreeterGreetResponseFromProtobufShape(response) };
             }
         }
         ;
@@ -1691,9 +1696,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: Empty,
             responseType: Empty,
+            abortedType: GreeterTryToConstructContextAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {
@@ -1701,9 +1708,12 @@ class _Reactively {
             setRequest(typedRequest);
         };
         async function* typedGenerator() {
-            for await (const response of generator) {
-                const typedResponse = GreeterTryToConstructContextResponseFromProtobufShape(response);
-                yield typedResponse;
+            for await (const { response, aborted } of generator) {
+                if (aborted !== undefined) {
+                    yield { aborted };
+                    continue;
+                }
+                yield { response: GreeterTryToConstructContextResponseFromProtobufShape(response) };
             }
         }
         ;
@@ -1718,9 +1728,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: Empty,
             responseType: Empty,
+            abortedType: GreeterTryToConstructExternalContextAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {
@@ -1728,9 +1740,12 @@ class _Reactively {
             setRequest(typedRequest);
         };
         async function* typedGenerator() {
-            for await (const response of generator) {
-                const typedResponse = GreeterTryToConstructExternalContextResponseFromProtobufShape(response);
-                yield typedResponse;
+            for await (const { response, aborted } of generator) {
+                if (aborted !== undefined) {
+                    yield { aborted };
+                    continue;
+                }
+                yield { response: GreeterTryToConstructExternalContextResponseFromProtobufShape(response) };
             }
         }
         ;
@@ -1745,9 +1760,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: greeter_pb.TestLongRunningFetchRequest,
             responseType: Empty,
+            abortedType: GreeterTestLongRunningFetchAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {
@@ -1755,9 +1772,12 @@ class _Reactively {
             setRequest(typedRequest);
         };
         async function* typedGenerator() {
-            for await (const response of generator) {
-                const typedResponse = GreeterTestLongRunningFetchResponseFromProtobufShape(response);
-                yield typedResponse;
+            for await (const { response, aborted } of generator) {
+                if (aborted !== undefined) {
+                    yield { aborted };
+                    continue;
+                }
+                yield { response: GreeterTestLongRunningFetchResponseFromProtobufShape(response) };
             }
         }
         ;
@@ -1772,9 +1792,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: greeter_pb.GetWholeStateRequest,
             responseType: GreeterProto,
+            abortedType: GreeterGetWholeStateAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {
@@ -1782,9 +1804,12 @@ class _Reactively {
             setRequest(typedRequest);
         };
         async function* typedGenerator() {
-            for await (const response of generator) {
-                const typedResponse = GreeterGetWholeStateResponseFromProtobufShape(response);
-                yield typedResponse;
+            for await (const { response, aborted } of generator) {
+                if (aborted !== undefined) {
+                    yield { aborted };
+                    continue;
+                }
+                yield { response: GreeterGetWholeStateResponseFromProtobufShape(response) };
             }
         }
         ;
@@ -1799,9 +1824,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: Empty,
             responseType: Empty,
+            abortedType: GreeterFailWithExceptionAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {
@@ -1809,9 +1836,12 @@ class _Reactively {
             setRequest(typedRequest);
         };
         async function* typedGenerator() {
-            for await (const response of generator) {
-                const typedResponse = GreeterFailWithExceptionResponseFromProtobufShape(response);
-                yield typedResponse;
+            for await (const { response, aborted } of generator) {
+                if (aborted !== undefined) {
+                    yield { aborted };
+                    continue;
+                }
+                yield { response: GreeterFailWithExceptionResponseFromProtobufShape(response) };
             }
         }
         ;
@@ -1826,9 +1856,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: Empty,
             responseType: Empty,
+            abortedType: GreeterFailWithAbortedAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {
@@ -1836,9 +1868,12 @@ class _Reactively {
             setRequest(typedRequest);
         };
         async function* typedGenerator() {
-            for await (const response of generator) {
-                const typedResponse = GreeterFailWithAbortedResponseFromProtobufShape(response);
-                yield typedResponse;
+            for await (const { response, aborted } of generator) {
+                if (aborted !== undefined) {
+                    yield { aborted };
+                    continue;
+                }
+                yield { response: GreeterFailWithAbortedResponseFromProtobufShape(response) };
             }
         }
         ;
@@ -1853,9 +1888,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: greeter_pb.ReadRecursiveMessageRequest,
             responseType: greeter_pb.ReadRecursiveMessageResponse,
+            abortedType: GreeterReadRecursiveMessageAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {
@@ -1863,9 +1900,12 @@ class _Reactively {
             setRequest(typedRequest);
         };
         async function* typedGenerator() {
-            for await (const response of generator) {
-                const typedResponse = GreeterReadRecursiveMessageResponseFromProtobufShape(response);
-                yield typedResponse;
+            for await (const { response, aborted } of generator) {
+                if (aborted !== undefined) {
+                    yield { aborted };
+                    continue;
+                }
+                yield { response: GreeterReadRecursiveMessageResponseFromProtobufShape(response) };
             }
         }
         ;

@@ -10,7 +10,11 @@ import { fork } from "child_process";
 import { strict as assert } from "node:assert";
 import test from "node:test";
 import { v4 as uuidv4 } from "uuid";
-import { Greeter } from "../../greeter_rbt_web.js";
+import {
+  ErrorWithValue,
+  Greeter,
+  GreeterFailWithAbortedAborted,
+} from "../../greeter_rbt_web.js";
 import { GreeterServicer } from "../greeter.js";
 const TOKEN_FOR_TEST = "S3CR3T!";
 
@@ -208,6 +212,99 @@ test("Reboot", async (t) => {
     assert(response.message == "Hi , I am Dr Jonathan the Friendly");
   });
 
+  await t.test("Reactive reader", async (t) => {
+    const application = new Application({
+      servicers: [GreeterServicer],
+    });
+
+    const rbt = new Reboot();
+    await rbt.start();
+
+    t.after(async () => {
+      await rbt.stop();
+    });
+
+    await rbt.up(application, { localEnvoy: true });
+
+    const context = new WebContext({
+      url: rbt.url(),
+    });
+
+    const [greeter] = await Greeter.create(context, {
+      title: "Dr",
+      name: "Jonathan",
+      adjective: "Best",
+    });
+
+    const abortController = new AbortController();
+
+    const [items] = await greeter
+      .reactively()
+      .greet(context, {}, { signal: abortController.signal });
+
+    const first = await nextItem(items);
+    assert(first.response?.message == "Hi , I am Dr Jonathan the Best");
+
+    await greeter.setAdjective(context, {
+      adjective: "Friendly",
+    });
+
+    // The generator yields a response for each change to the state.
+    const second = await nextItem(items);
+    assert(second.response?.message == "Hi , I am Dr Jonathan the Friendly");
+
+    abortController.abort();
+    assert((await items.next()).done);
+  });
+
+  await t.test(
+    "Reactive reader yields a declared error and keeps reading",
+    async (t) => {
+      const application = new Application({
+        servicers: [GreeterServicer],
+      });
+
+      const rbt = new Reboot();
+      await rbt.start();
+
+      t.after(async () => {
+        await rbt.stop();
+      });
+
+      await rbt.up(application, { localEnvoy: true });
+
+      const context = new WebContext({
+        url: rbt.url(),
+      });
+
+      const [greeter] = await Greeter.create(context, {
+        title: "Dr",
+        name: "Jonathan",
+        adjective: "Best",
+      });
+
+      const abortController = new AbortController();
+
+      const [items] = await greeter
+        .reactively()
+        .failWithAborted(context, {}, { signal: abortController.signal });
+
+      // A declared error is yielded rather than thrown, and it does not
+      // end the read: the next attempt, after a backoff, yields it
+      // again.
+      for (let i = 0; i < 2; i++) {
+        const { response, aborted } = await nextItem(items);
+        assert(response === undefined);
+        assert(aborted instanceof GreeterFailWithAbortedAborted);
+        assert(aborted.error instanceof ErrorWithValue);
+        assert(aborted.error.value == "Hi!");
+      }
+
+      abortController.abort();
+      assert((await items.next()).done);
+    }
+  );
+
   await t.test("Reactive reader retries a restarting server", async (t) => {
     const application = new Application({
       servicers: [GreeterServicer],
@@ -239,7 +336,7 @@ test("Reboot", async (t) => {
       .greet(context, {}, { signal: abortController.signal });
 
     const first = await nextItem(responses);
-    assert(first.message == "Hi , I am Dr Jonathan the Best");
+    assert(first.response?.message == "Hi , I am Dr Jonathan the Best");
 
     // Restarting the server disconnects the reactive read, which
     // reconnects rather than surface the disconnect, and then
@@ -252,8 +349,9 @@ test("Reboot", async (t) => {
     });
 
     while (true) {
-      const response = await nextItem(responses);
-      if (response.message == "Hi , I am Dr Jonathan the Friendly") {
+      const { response, aborted } = await nextItem(responses);
+      assert(aborted === undefined);
+      if (response?.message == "Hi , I am Dr Jonathan the Friendly") {
         break;
       }
     }
