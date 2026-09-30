@@ -1,9 +1,12 @@
+import asyncio
+import atexit
 import os
 import signal
 from collections import defaultdict
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
+from dataclasses import dataclass
 from reboot.settings import ENVVAR_SIGNALS_AVAILABLE
-from typing import Any, Callable, Optional
+from typing import Any, AsyncIterator, Callable, Optional
 
 # Helpers for creating a safe(r) mechanism for being able to run
 # handlers when signals have been raised and before their default
@@ -19,13 +22,18 @@ from typing import Any, Callable, Optional
 # 'signal.signal()' directly or through an event loop's
 # 'add_signal_handler()'.
 #
-# NOTE: this is not a generic signal handler mechanism as after all of
-# the handlers are executed the default signal handler will be
-# re-installed and the signal will be raised again. We can extend the
-# functionality to that in the future if necessary, but it needs to be
-# considered carefully because it can lead to brittle usage due to not
-# every handler knowing whether or not one of the handlers will induce
-# a program exit.
+# NOTE: this is not a generic signal handler mechanism. After all of
+# the cleanup handlers are executed one of two things happens:
+#
+# - Within 'cancel_on_signal()' the task that entered it gets
+#   cancelled, so that the process can finish what it is doing, e.g.,
+#   terminate its subprocesses, after which the process exits, and
+#   at exit the signal is raised again, terminating the process.
+#
+# - Otherwise the default signal handler will be re-installed and the
+#   signal will be raised again, terminating the process, so a cleanup
+#   handler must tolerate that. This is what a process that has no
+#   task of ours to cancel gets, e.g., a test.
 
 # Collection of cleanup handlers that have been installed.
 #
@@ -38,6 +46,18 @@ _cleanup_handlers: defaultdict[
 # The signals that 'initialize()' was called with, or None if it has
 # not been called yet.
 _signums: Optional[list[int]] = None
+
+
+# The task that a signal cancels, instead of terminating the process,
+# while 'cancel_on_signal()' is entered, with the event loop it runs
+# on, which is the only safe way to cancel it from a signal handler.
+@dataclass(frozen=True, kw_only=True)
+class _TaskToCancel:
+    loop: asyncio.AbstractEventLoop
+    task: asyncio.Task
+
+
+_task_to_cancel: Optional[_TaskToCancel] = None
 
 # Global to indicate whether or not a signal has been raised.
 #
@@ -63,20 +83,99 @@ def raised_signal() -> Optional[int]:
     return _raised_signal
 
 
+def _raise_with_default_handler(signum: int):
+    """Raises the signal again but with the default handler."""
+    _signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+
+
 def _signal_handler(signum, frame):
     """Global signal handler function. Executes signal handlers installed
-    via 'install_cleanup()'."""
+    via 'install_cleanup()', and then cancels the task that entered
+    'cancel_on_signal()', if any, or raises the signal again."""
     global _cleanup_handlers
     global _raised_signal
+    global _task_to_cancel
 
     _raised_signal = signum
 
     for handler in _cleanup_handlers[signum]:
         handler()
 
-    # Raise the signal again but with the default handler.
-    _signal(signum, signal.SIG_DFL)
-    os.kill(os.getpid(), signum)
+    if _task_to_cancel is None:
+        _raise_with_default_handler(signum)
+    else:
+        _task_to_cancel.loop.call_soon_threadsafe(_task_to_cancel.task.cancel)
+
+
+def _terminate_at_exit():
+    """Terminates the process with the signal that has been raised, if
+    any, and if it is one of 'TERMINATING_SIGNALS', so that whoever
+    is waiting for the process sees it terminated by that signal
+    rather than exiting.
+
+    Registered with 'atexit' by 'initialize()', so that it runs after
+    everything else, 'asyncio.run()' shutting down its event loop
+    included."""
+    global _raised_signal
+
+    if _raised_signal is not None and _raised_signal in TERMINATING_SIGNALS:
+        _raise_with_default_handler(_raised_signal)
+        raise AssertionError(
+            f'{signal.Signals(_raised_signal).name} did not terminate '
+            'the process'
+        )
+
+
+@asynccontextmanager
+async def cancel_on_signal() -> AsyncIterator[None]:
+    """While entered, a signal cancels the current task, after executing
+    the cleanup handlers, instead of terminating the process, so that
+    the process can finish what it is doing. The cancellation then
+    exits the process, quietly, rather than propagating, and at exit
+    the signal is raised again, so that whoever is waiting for the
+    process sees it terminated by the signal.
+
+    A signal raised before entering, or after exiting, terminates the
+    process right away. Can not be entered while already entered."""
+    global _signums
+    global _task_to_cancel
+    global _raised_signal
+
+    if _signums is None:
+        raise RuntimeError(
+            'Signals are not initialized; call '
+            '`reboot.aio.signals.initialize()` before '
+            '`reboot.aio.signals.cancel_on_signal()`'
+        )
+
+    if _task_to_cancel is not None:
+        raise RuntimeError(
+            '`reboot.aio.signals.cancel_on_signal()` is already entered, '
+            'and can only be entered once at a time'
+        )
+
+    task = asyncio.current_task()
+    assert task is not None, 'Must be called from within a task'
+
+    _task_to_cancel = _TaskToCancel(
+        loop=asyncio.get_running_loop(),
+        task=task,
+    )
+
+    try:
+        yield
+    except asyncio.CancelledError:
+        # A cancellation without a signal behind it is somebody else's.
+        if _raised_signal is None:
+            raise
+        # NOTE: `SystemExit` still gets `asyncio.run()` to shut down
+        # its event loop on the way out, but exits quietly, and with
+        # the status a shell gives a process the signal terminated,
+        # for the signals whose default handler does not.
+        raise SystemExit(128 + _raised_signal)
+    finally:
+        _task_to_cancel = None
 
 
 # The signals whose default action terminates the process: Ctrl-C
@@ -186,12 +285,19 @@ def initialize(signums: Optional[list[int]] = None):
     for signum in _signums:
         _signal(signum, _signal_handler)
 
+    atexit.register(_terminate_at_exit)
+
     setattr(signal, 'signal', _signal_unless_initialized)
 
 
 def install_cleanup(signums: list[int], handler: Callable[[], None]):
     """Installs a callable to be executed when the specified signal is
-    raised."""
+    raised.
+
+    NOTE: the callable is executed by the signal handler, i.e., on the
+    main thread, in the middle of whatever that thread was doing when
+    the signal was raised. To do anything with an event loop from it
+    use 'loop.call_soon_threadsafe()', which also wakes up the loop."""
     global _signals_available
     global _signums
     global _cleanup_handlers

@@ -4,6 +4,7 @@ import sys
 import textwrap
 import unittest
 from reboot.aio import signals
+from typing import Optional
 
 
 def _custom_signal_handler_error(name: str, error: str) -> str:
@@ -16,7 +17,7 @@ def _custom_signal_handler_error(name: str, error: str) -> str:
 
 
 _PRELUDE = '''
-import asyncio, os, signal, time
+import asyncio, os, signal, threading, time
 from reboot.aio import signals
 '''
 
@@ -31,6 +32,7 @@ class SignalsTest(unittest.TestCase):
         *,
         stdout: str,
         returncode: int = 0,
+        stderr: Optional[str] = None,
     ) -> None:
         process = subprocess.run(
             [sys.executable, '-c', _PRELUDE + textwrap.dedent(code)],
@@ -39,6 +41,8 @@ class SignalsTest(unittest.TestCase):
         )
         self.assertEqual(process.stdout, stdout, process.stderr)
         self.assertEqual(process.returncode, returncode, process.stderr)
+        if stderr is not None:
+            self.assertEqual(process.stderr, stderr)
 
     def test_install_cleanup_before_initialize_fails(self) -> None:
         self._assert_run(
@@ -123,7 +127,10 @@ class SignalsTest(unittest.TestCase):
             async def main():
                 loop = asyncio.get_running_loop()
                 try:
-                    loop.add_signal_handler(signal.SIGTERM, lambda: None)
+                    loop.add_signal_handler(
+                        signal.SIGTERM,
+                        lambda: print("SIGTERM handler ran", flush=True),
+                    )
                 except OSError as error:
                     print(f"{type(error).__name__}: {error}")
 
@@ -133,16 +140,23 @@ class SignalsTest(unittest.TestCase):
                 await received.wait()
                 print("SIGUSR1", flush=True)
 
+                # The loop must not have kept the handler it was
+                # refused, so nothing but ours runs.
+                async with signals.cancel_on_signal():
+                    os.kill(os.getpid(), signal.SIGTERM)
+                    await asyncio.sleep(60)
+
             # Closing the loop removes the handlers it installed, which
-            # must not include the one it was refused.
+            # must not include the one it was refused, or it would
+            # fail, and print a stack trace.
             asyncio.run(main())
-            print("closed", flush=True)
             ''',
             stdout=(
                 _custom_signal_handler_error("SIGTERM", "OSError") +
                 "SIGUSR1\n"
-                "closed\n"
             ),
+            returncode=-signal.SIGTERM,
+            stderr="",
         )
 
     def test_install_cleanup_for_uninitialized_signal_fails(self) -> None:
@@ -218,6 +232,135 @@ class SignalsTest(unittest.TestCase):
             ''',
             stdout="cleanup\n",
             returncode=-signal.SIGTERM,
+        )
+
+    def test_signal_cancels_task_within_cancel_on_signal(self) -> None:
+        # What `rbt` does.
+        for signum in signals.TERMINATING_SIGNALS:
+            name = signal.Signals(signum).name
+            with self.subTest(name):
+                self._assert_run(
+                    f'''
+                    signals.initialize(signals.TERMINATING_SIGNALS)
+                    signals.install_cleanup(
+                        signals.TERMINATING_SIGNALS,
+                        lambda: print("cleanup", flush=True),
+                    )
+
+                    async def main():
+                        async with signals.cancel_on_signal():
+                            # While the event loop has nothing to do.
+                            threading.Timer(
+                                0.2,
+                                os.kill,
+                                (os.getpid(), signal.{name}),
+                            ).start()
+                            try:
+                                await asyncio.sleep(60)
+                            finally:
+                                await asyncio.sleep(0.1)
+                                print("unwound", flush=True)
+
+                    asyncio.run(main())
+                    print("not reached", flush=True)
+                    ''',
+                    stdout="cleanup\nunwound\n",
+                    returncode=-signum,
+                    # Quietly: no `CancelledError` stack trace.
+                    stderr="",
+                )
+
+    def test_signal_outside_cancel_on_signal_terminates(self) -> None:
+        self._assert_run(
+            '''
+            signals.initialize()
+            signals.install_cleanup(
+                [signal.SIGTERM],
+                lambda: print("cleanup", flush=True),
+            )
+
+            async def main():
+                async with signals.cancel_on_signal():
+                    pass
+                os.kill(os.getpid(), signal.SIGTERM)
+                await asyncio.sleep(60)
+                print("not reached", flush=True)
+
+            asyncio.run(main())
+            ''',
+            stdout="cleanup\n",
+            returncode=-signal.SIGTERM,
+        )
+
+    def test_cancel_on_signal_fails_when_misused(self) -> None:
+        self._assert_run(
+            '''
+            async def main():
+                try:
+                    async with signals.cancel_on_signal():
+                        pass
+                except RuntimeError as error:
+                    print(f"{type(error).__name__}: {error}")
+
+                signals.initialize()
+
+                try:
+                    async with signals.cancel_on_signal():
+                        async with signals.cancel_on_signal():
+                            pass
+                except RuntimeError as error:
+                    print(f"{type(error).__name__}: {error}")
+
+            asyncio.run(main())
+            ''',
+            stdout=(
+                "RuntimeError: Signals are not initialized; call "
+                "`reboot.aio.signals.initialize()` before "
+                "`reboot.aio.signals.cancel_on_signal()`\n"
+                "RuntimeError: `reboot.aio.signals.cancel_on_signal()` is "
+                "already entered, and can only be entered once at a time\n"
+            ),
+        )
+
+    def test_cancel_on_signal_exits_but_only_terminates_if_terminating(
+        self,
+    ) -> None:
+        self._assert_run(
+            '''
+            signals.initialize([signal.SIGTERM, signal.SIGUSR1])
+
+            async def main():
+                async with signals.cancel_on_signal():
+                    os.kill(os.getpid(), signal.SIGUSR1)
+                    await asyncio.sleep(60)
+
+            try:
+                asyncio.run(main())
+            except SystemExit as exit:
+                print(f"SystemExit: {exit.code}", flush=True)
+                raise
+            ''',
+            stdout="SystemExit: 138\n",
+            returncode=138,
+            stderr="",
+        )
+
+    def test_cancellation_without_signal_propagates(self) -> None:
+        self._assert_run(
+            '''
+            signals.initialize()
+
+            async def main():
+                async with signals.cancel_on_signal():
+                    asyncio.current_task().cancel()
+                    await asyncio.sleep(60)
+
+            try:
+                asyncio.run(main())
+            except asyncio.CancelledError:
+                print("CancelledError", flush=True)
+            ''',
+            stdout="CancelledError\n",
         )
 
 
