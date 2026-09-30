@@ -134,7 +134,7 @@ class SignalsTest(unittest.TestCase):
             def uninstalled():
                 print("uninstalled", flush=True)
 
-            with signals.cleanup_on_raise(
+            with signals.cleanup_on_signal(
                 [signal.SIGTERM],
                 handler=uninstalled,
             ):
