@@ -53,6 +53,8 @@ interface WizardProps {
   // MCPJam (local-inspector) client, and go straight to install.
   devMode: boolean;
   appPort: number;
+  // The browser-visible origin. This may be a reverse-proxy or tunnel URL.
+  appUrl: string;
   connectionState: ConnectionState;
 }
 
@@ -93,6 +95,7 @@ export const Wizard = ({
   hasMcpTools,
   devMode,
   appPort,
+  appUrl,
   connectionState,
 }: WizardProps) => {
   const [clientName, setClientName] = useStoredState(
@@ -177,7 +180,7 @@ export const Wizard = ({
               // MCPJam runs locally alongside the app, so it needs
               // neither a tunnel nor a separate install step —
               // opening the local inspector *is* the install.
-              <MCPJamLaunchStep appPort={appPort} connections={connections} />
+              <MCPJamLaunchStep appUrl={appUrl} connections={connections} />
             ) : (
               <>
                 <TunnelStep
