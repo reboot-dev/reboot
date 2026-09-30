@@ -88,9 +88,12 @@ class TestCiphertext(unittest.IsolatedAsyncioTestCase):
         # The `Watch` control loop rotates in the background; react to
         # `status` updates until the active version reaches the expected
         # one and the rotation has settled (the test times out otherwise).
-        async for response in KeyManager.ref(
+        async for response, aborted in KeyManager.ref(
             APP_SHARED_KEY_MANAGER_ID,
         ).reactively().status(self.context):
+            if aborted is not None:
+                raise aborted
+            assert response is not None
             if response.active_version >= version and not response.rotating:
                 break
 

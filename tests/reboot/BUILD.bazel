@@ -385,6 +385,16 @@ py_test(
 )
 
 py_test(
+    name = "reactive_reader_tests_py",
+    srcs = [":reactive_reader_tests.py"],
+    main = "reactive_reader_tests.py",
+    deps = [
+        ":greeter_servicers_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+py_test(
     name = "external_context_tests_py",
     srcs = [":external_context_tests.py"],
     env = {

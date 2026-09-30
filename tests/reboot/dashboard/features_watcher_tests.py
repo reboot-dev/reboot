@@ -88,8 +88,11 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
         again whenever they change."""
         context = self.rbt.create_external_context(name=self.id())
 
-        async for response in Dashboard.ref(DASHBOARD_ID
-                                           ).reactively().Get(context):
+        async for response, aborted in Dashboard.ref(DASHBOARD_ID).reactively(
+        ).Get(context):
+            if aborted is not None:
+                raise aborted
+            assert response is not None
             if satisfied(response.features):
                 return response.features
 

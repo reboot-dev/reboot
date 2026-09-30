@@ -236,9 +236,11 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(get_response.HasField('value'))
 
         # Test `reactively().range`.
-        async for range_response in sorted_map.reactively().range(
+        async for range_response, aborted in sorted_map.reactively().range(
             context, limit=1
         ):
+            self.assertIsNone(aborted)
+            assert range_response is not None
             self.assert_range_response(full, range_response)
             break
         else:
@@ -292,16 +294,16 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             "Range requires a non-zero `limit` value.", str(aborted.exception)
         )
-        # The same error should also appear when using the reactive API.
-        with self.assertRaises(SortedMap.RangeAborted) as aborted:
-            async for range_response in sorted_map.reactively().range(
-                context,
-                limit=0,
-            ):
-                break
-        self.assertEqual(type(aborted.exception.error), InvalidRangeError)
+        # The same error should also appear when using the reactive API,
+        # which yields it (and keeps reading) rather than raising it.
+        responses = sorted_map.reactively().range(context, limit=0)
+        range_response, reactive_aborted = await anext(responses)
+        await responses.aclose()
+        self.assertIsNone(range_response)
+        assert reactive_aborted is not None
+        self.assertEqual(type(reactive_aborted.error), InvalidRangeError)
         self.assertIn(
-            "Range requires a non-zero `limit` value.", str(aborted.exception)
+            "Range requires a non-zero `limit` value.", str(reactive_aborted)
         )
 
     async def test_limit_zero_reverse(self) -> None:

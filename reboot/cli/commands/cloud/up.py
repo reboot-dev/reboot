@@ -222,9 +222,13 @@ async def cloud_up(args: argparse.Namespace) -> int:
             traceback.print_exc()
             terminal.fail("Please report this bug to the maintainers")
 
-    async for status_response in application.reactively().RevisionStatus(
-        context, revision_number=up_response.revision_number
-    ):
+    async for status_response, status_aborted in application.reactively(
+    ).RevisionStatus(context, revision_number=up_response.revision_number):
+        if status_aborted is not None:
+            print(f"🛑 unexpected error: {status_aborted}")
+            terminal.fail("Please report this bug to the maintainers")
+        assert status_response is not None
+
         revision = status_response.revision
         if revision.status == Status.UPPING:
             # Keep waiting.

@@ -342,7 +342,9 @@ class EffectValidationTestCase(unittest.IsolatedAsyncioTestCase):
         general, context = await self.create(EffectValidation.ENABLED)
 
         # Receive one message response.
-        async for response in general.reactively().Reader(context):
+        async for _, aborted in general.reactively().Reader(context):
+            if aborted is not None:
+                raise aborted
             break
         else:
             raise AssertionError("No responses returned by Query.")

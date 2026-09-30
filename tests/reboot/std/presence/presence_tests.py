@@ -220,11 +220,18 @@ class TestPresence(unittest.IsolatedAsyncioTestCase):
         # update things based on the cancelled connection. We use reactively
         # to do so, and let the test timeout if we never get the response we
         # are expecting.
-        async for response in subscriber.reactively().Status(context):
+        async for response, aborted in subscriber.reactively(
+        ).Status(context):
+            if aborted is not None:
+                raise aborted
+            assert response is not None
             if not response.present:
                 break
 
-        async for response in presence.reactively().List(context):
+        async for response, aborted in presence.reactively().List(context):
+            if aborted is not None:
+                raise aborted
+            assert response is not None
             if response.subscriber_ids == []:
                 break
 

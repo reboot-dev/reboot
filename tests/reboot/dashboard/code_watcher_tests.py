@@ -415,8 +415,11 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         """The code's entries in the changelog once they satisfy,
         newest first, reading again whenever the changelog changes."""
         context = self.rbt.create_external_context(name=self.id())
-        async for response in OrderedMap.ref(CHANGELOG_ID).reactively(
+        async for response, aborted in OrderedMap.ref(CHANGELOG_ID).reactively(
         ).ReverseRange(context, limit=100):
+            if aborted is not None:
+                raise aborted
+            assert response is not None
             changes = [
                 Change.FromString(entry.bytes) for entry in response.entries
             ]
@@ -438,8 +441,11 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         """
         context = self.rbt.create_external_context(name=self.id())
 
-        async for response in Dashboard.ref(DASHBOARD_ID
-                                           ).reactively().Get(context):
+        async for response, aborted in Dashboard.ref(DASHBOARD_ID).reactively(
+        ).Get(context):
+            if aborted is not None:
+                raise aborted
+            assert response is not None
             found: dict[str, list[Servicer]] = {}
 
             for servicer in response.servicers:
@@ -455,8 +461,11 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         reading again whenever it changes."""
         context = self.rbt.create_external_context(name=self.id())
 
-        async for response in Dashboard.ref(DASHBOARD_ID
-                                           ).reactively().Get(context):
+        async for response, aborted in Dashboard.ref(DASHBOARD_ID).reactively(
+        ).Get(context):
+            if aborted is not None:
+                raise aborted
+            assert response is not None
             if satisfied(response):
                 return response
 
@@ -569,8 +578,11 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        async for response in Dashboard.ref(DASHBOARD_ID
-                                           ).reactively().Get(context):
+        async for response, aborted in Dashboard.ref(DASHBOARD_ID).reactively(
+        ).Get(context):
+            if aborted is not None:
+                raise aborted
+            assert response is not None
             if any(
                 f'{api.package}.{state_type.name}' == 'shop.v1.Shop'
                 for api in response.apis.values()

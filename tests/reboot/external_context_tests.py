@@ -362,7 +362,9 @@ class ExternalContextTestCase(unittest.IsolatedAsyncioTestCase):
         async def call(
             context: ExternalContext, general: General.WeakReference
         ) -> None:
-            async for _ in general.reactively().Reader(context):
+            async for _, aborted in general.reactively().Reader(context):
+                if aborted is not None:
+                    raise aborted
                 # As soon as we receive a response, we consider the call
                 # done.
                 break
