@@ -5,8 +5,18 @@ import textwrap
 import unittest
 from reboot.aio import signals
 
+
+def _custom_signal_handler_error(name: str, error: str) -> str:
+    return (
+        f"{error}: Reboot handles {name} itself, so custom signal "
+        "handlers for it are not supported; install a cleanup handler "
+        "with `reboot.aio.signals.install_cleanup()` or "
+        "`reboot.aio.signals.cleanup_on_signal()` instead\n"
+    )
+
+
 _PRELUDE = '''
-import os, signal, time
+import asyncio, os, signal, time
 from reboot.aio import signals
 '''
 
@@ -70,9 +80,68 @@ class SignalsTest(unittest.TestCase):
             except RuntimeError as error:
                 print(f"{type(error).__name__}: {error}")
             ''',
+            stdout=_custom_signal_handler_error("SIGTERM", "RuntimeError"),
+        )
+
+    def test_signal_fails_for_initialized_signals_only(self) -> None:
+        self._assert_run(
+            '''
+            signals.initialize()
+            try:
+                signal.signal(signal.SIGTERM, lambda signum, frame: None)
+            except OSError as error:
+                print(f"{type(error).__name__}: {error}")
+
+            signal.signal(
+                signal.SIGUSR1,
+                lambda signum, frame: print("SIGUSR1", flush=True),
+            )
+            os.kill(os.getpid(), signal.SIGUSR1)
+
+            signals.install_cleanup(
+                [signal.SIGTERM],
+                lambda: print("cleanup", flush=True),
+            )
+            os.kill(os.getpid(), signal.SIGTERM)
+            time.sleep(60)
+            ''',
             stdout=(
-                "RuntimeError: Custom signal handlers are not (yet) "
-                "supported; please remove your SIGTERM signal handler\n"
+                _custom_signal_handler_error("SIGTERM", "OSError") +
+                "SIGUSR1\n"
+                "cleanup\n"
+            ),
+            returncode=-signal.SIGTERM,
+        )
+
+    def test_add_signal_handler_fails_for_initialized_signals_only(
+        self,
+    ) -> None:
+        self._assert_run(
+            '''
+            signals.initialize()
+
+            async def main():
+                loop = asyncio.get_running_loop()
+                try:
+                    loop.add_signal_handler(signal.SIGTERM, lambda: None)
+                except OSError as error:
+                    print(f"{type(error).__name__}: {error}")
+
+                received = asyncio.Event()
+                loop.add_signal_handler(signal.SIGUSR1, received.set)
+                os.kill(os.getpid(), signal.SIGUSR1)
+                await received.wait()
+                print("SIGUSR1", flush=True)
+
+            # Closing the loop removes the handlers it installed, which
+            # must not include the one it was refused.
+            asyncio.run(main())
+            print("closed", flush=True)
+            ''',
+            stdout=(
+                _custom_signal_handler_error("SIGTERM", "OSError") +
+                "SIGUSR1\n"
+                "closed\n"
             ),
         )
 

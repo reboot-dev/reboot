@@ -3,7 +3,7 @@ import signal
 from collections import defaultdict
 from contextlib import contextmanager
 from reboot.settings import ENVVAR_SIGNALS_AVAILABLE
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 # Helpers for creating a safe(r) mechanism for being able to run
 # handlers when signals have been raised and before their default
@@ -12,7 +12,12 @@ from typing import Callable, Optional
 # A process must call 'initialize()' from its main thread before it
 # installs any cleanup handlers, with the signals that it wants to be
 # able to install cleanup handlers for. Calling it again does nothing,
-# but must ask for the same signals.
+# but must ask for the same signals. From then on those signals are
+# ours: anybody else trying to install a signal handler for one of
+# them gets an error that points them to cleanup handlers, rather than
+# silently replacing our signal handler, whether they use
+# 'signal.signal()' directly or through an event loop's
+# 'add_signal_handler()'.
 #
 # NOTE: this is not a generic signal handler mechanism as after all of
 # the handlers are executed the default signal handler will be
@@ -38,6 +43,10 @@ _signums: Optional[list[int]] = None
 #
 # Do not use directly, instead call 'raised_signal()'.
 _raised_signal: Optional[int] = None
+
+# The real 'signal.signal()', which 'initialize()' replaces with
+# '_signal_unless_initialized()'.
+_signal = signal.signal
 
 # Whether or not signals are available, e.g., because Python might be
 # embedded within a Node process.
@@ -66,7 +75,7 @@ def _signal_handler(signum, frame):
         handler()
 
     # Raise the signal again but with the default handler.
-    signal.signal(signum, signal.SIG_DFL)
+    _signal(signum, signal.SIG_DFL)
     os.kill(os.getpid(), signum)
 
 
@@ -104,12 +113,44 @@ def _uninitialized_signal_error(signum: int) -> ValueError:
     )
 
 
+def _custom_signal_handler_message(signum: int) -> str:
+    return (
+        f'Reboot handles {signal.Signals(signum).name} itself, so '
+        'custom signal handlers for it are not supported; install a '
+        'cleanup handler with `reboot.aio.signals.install_cleanup()` '
+        'or `reboot.aio.signals.cleanup_on_signal()` instead'
+    )
+
+
+def _signal_unless_initialized(signum: int, handler: Any) -> Any:
+    """Replacement for 'signal.signal()' that fails for the signals
+    that 'initialize()' was called with."""
+    global _signums
+
+    if _signums is not None and signum in _signums:
+        # NOTE: an `OSError` because that is what `signal.signal()`
+        # raises for a signal that can not be handled, and what an
+        # event loop's `add_signal_handler()` therefore expects: it
+        # then forgets the handler it was about to install and
+        # re-raises, while any other exception leaves it believing
+        # that it installed the handler, so that it would run the
+        # handler on our signal after all and fail when the loop is
+        # closed. Without an `errno`, or asyncio would replace our
+        # message for `EINVAL`.
+        raise OSError(_custom_signal_handler_message(signum))
+
+    return _signal(signum, handler)
+
+
 def initialize(signums: Optional[list[int]] = None):
     """Initializes the process signal handlers for 'signums', or for
     'DEFAULT_SIGNALS' if not given. Must be called from the main
     thread, before installing any cleanup handlers. Only the first call
     does anything, and every later call must ask for the same
-    signals."""
+    signals.
+
+    Fails if any of the signals has a custom signal handler, and makes
+    'signal.signal()' fail for them afterwards."""
     global _signals_available
     global _signums
 
@@ -137,17 +178,15 @@ def initialize(signums: Optional[list[int]] = None):
             signal.SIG_IGN,
             signal.default_int_handler,
         ):
-            raise RuntimeError(
-                'Custom signal handlers are not (yet) supported; '
-                f'please remove your {signal.Signals(signum).name} '
-                'signal handler'
-            )
+            raise RuntimeError(_custom_signal_handler_message(signum))
 
     # Only now, so that a failure above leaves us not initialized.
     _signums = signums
 
     for signum in _signums:
-        signal.signal(signum, _signal_handler)
+        _signal(signum, _signal_handler)
+
+    setattr(signal, 'signal', _signal_unless_initialized)
 
 
 def install_cleanup(signums: list[int], handler: Callable[[], None]):
