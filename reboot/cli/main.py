@@ -11,10 +11,14 @@ def main():
         import asyncio
         import os
         import platform
+        import reboot.aio.signals
         import reboot.aio.tracing
         import signal
         import sys
         from reboot.cli.common.cli import cli
+
+        # Before anything installs a cleanup handler, tracing included.
+        reboot.aio.signals.initialize()
 
         reboot.aio.tracing.start("reboot cli")
 

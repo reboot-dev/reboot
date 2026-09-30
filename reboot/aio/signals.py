@@ -2,13 +2,17 @@ import os
 import signal
 from collections import defaultdict
 from contextlib import contextmanager
-from reboot.aio.once import Once
 from reboot.settings import ENVVAR_SIGNALS_AVAILABLE
 from typing import Callable, Optional
 
 # Helpers for creating a safe(r) mechanism for being able to run
 # handlers when signals have been raised and before their default
 # handling occurs.
+#
+# A process must call 'initialize()' from its main thread before it
+# installs any cleanup handlers, with the signals that it wants to be
+# able to install cleanup handlers for. Calling it again does nothing,
+# but must ask for the same signals.
 #
 # NOTE: this is not a generic signal handler mechanism as after all of
 # the handlers are executed the default signal handler will be
@@ -25,6 +29,10 @@ _cleanup_handlers: defaultdict[
     int,
     list[Callable[[], None]],
 ] = defaultdict(lambda: [])
+
+# The signals that 'initialize()' was called with, or None if it has
+# not been called yet.
+_signums: Optional[list[int]] = None
 
 # Global to indicate whether or not a signal has been raised.
 #
@@ -62,77 +70,106 @@ def _signal_handler(signum, frame):
     os.kill(os.getpid(), signum)
 
 
-# Signals that are supported for installing cleanup handlers.
+# The signals whose default action terminates the process: Ctrl-C
+# (SIGINT), Ctrl-\ (SIGQUIT), the parent terminal going away (SIGHUP),
+# a reader like `head` closing our output pipe early (SIGPIPE), and
+# whatever runs a process in the background (IDEs, agents, process
+# managers, Kubernetes) stopping it (SIGTERM).
+TERMINATING_SIGNALS: list[int] = [
+    signal.SIGINT,
+    signal.SIGQUIT,
+    signal.SIGHUP,
+    signal.SIGPIPE,
+    signal.SIGTERM,
+]
+
+# The signals that 'initialize()' initializes when it is not given any,
+# which is what an application and its servers get.
 #
-# NOTE: we deliberately DO NOT support SIGINT because that behavior is
-# currently handled cleanly by Python by raising `KeyboardInterrupt`
-# which when using `asyncio.run()` will cancel outstanding tasks for
-# you.
+# NOTE: we deliberately DO NOT include SIGINT because that behavior is
+# handled cleanly by Python by raising `KeyboardInterrupt` which when
+# using `asyncio.run()` will cancel outstanding tasks for you.
 #
-# TODO(benh): investigate how to install a global signal handler that
-# works similar to SIGINT and cancels all outstanding tasks.
-supported_signals = [signal.SIGTERM, signal.SIGQUIT]
+# NOTE: we deliberately DO NOT include SIGPIPE because Python ignores
+# it so that writing to a socket or pipe whose reader has gone raises
+# `BrokenPipeError`; handling it would instead terminate a server every
+# time a client disconnects in the middle of a response.
+DEFAULT_SIGNALS: list[int] = [signal.SIGTERM, signal.SIGQUIT]
 
 
-def _initialize_signals():
-    """Helper for initializing the process signal handlers."""
+def _uninitialized_signal_error(signum: int) -> ValueError:
+    return ValueError(
+        f'{signal.Signals(signum).name} was not initialized; pass it to '
+        '`reboot.aio.signals.initialize()`'
+    )
+
+
+def initialize(signums: Optional[list[int]] = None):
+    """Initializes the process signal handlers for 'signums', or for
+    'DEFAULT_SIGNALS' if not given. Must be called from the main
+    thread, before installing any cleanup handlers. Only the first call
+    does anything, and every later call must ask for the same
+    signals."""
     global _signals_available
+    global _signums
 
-    if not _signals_available:
+    signums = list(signums or DEFAULT_SIGNALS)
+
+    if _signums is not None:
+        if set(signums) != set(_signums):
+            raise RuntimeError(
+                'Signals are already initialized with '
+                f'{[signal.Signals(signum).name for signum in _signums]}, '
+                'and can not be initialized with '
+                f'{[signal.Signals(signum).name for signum in signums]}'
+            )
         return
 
-    assert signal.SIGTERM in supported_signals
-
-    handler = signal.signal(signal.SIGTERM, _signal_handler)
-
-    if handler not in (signal.SIG_DFL, signal.SIG_IGN):
-        raise RuntimeError(
-            'Custom signal handlers are not (yet) supported; '
-            'please remove your signal handler'
-        )
-
-    assert signal.SIGQUIT in supported_signals
-
-    handler = signal.signal(signal.SIGQUIT, _signal_handler)
-
-    if handler not in (signal.SIG_DFL, signal.SIG_IGN):
-        raise RuntimeError(
-            'Custom signal handlers are not (yet) supported; '
-            'please remove your signal handler'
-        )
-
-
-# Once for initializing signals.
-#
-# Do not use, instead call 'initialize_signals_once()'.
-_initialize_signals_once = Once(_initialize_signals)
-
-
-def initialize_signals_once():
-    """Initializes signals once."""
-    global _signals_available
-    global _initialize_signals_once
-
     if not _signals_available:
+        _signums = signums
         return
 
-    _initialize_signals_once()
+    for signum in signums:
+        # NOTE: Python itself installs `signal.default_int_handler`
+        # for SIGINT, which is what raises `KeyboardInterrupt`.
+        if signal.getsignal(signum) not in (
+            signal.SIG_DFL,
+            signal.SIG_IGN,
+            signal.default_int_handler,
+        ):
+            raise RuntimeError(
+                'Custom signal handlers are not (yet) supported; '
+                f'please remove your {signal.Signals(signum).name} '
+                'signal handler'
+            )
+
+    # Only now, so that a failure above leaves us not initialized.
+    _signums = signums
+
+    for signum in _signums:
+        signal.signal(signum, _signal_handler)
 
 
 def install_cleanup(signums: list[int], handler: Callable[[], None]):
     """Installs a callable to be executed when the specified signal is
     raised."""
     global _signals_available
+    global _signums
     global _cleanup_handlers
 
     if not _signals_available:
         return
 
-    initialize_signals_once()
+    if _signums is None:
+        raise RuntimeError(
+            'Signals are not initialized; call '
+            '`reboot.aio.signals.initialize()` before installing a '
+            'cleanup handler'
+        )
 
     for signum in signums:
-        if signum not in supported_signals:
-            raise ValueError(f'Signal {signum} is not supported')
+        if signum not in _signums:
+            raise _uninitialized_signal_error(signum)
         elif handler in _cleanup_handlers[signum]:
             raise ValueError('Handler already installed')
         _cleanup_handlers[signum].append(handler)
@@ -146,8 +183,6 @@ def uninstall_cleanup(signums: list[int], handler: Callable[[], None]):
 
     if not _signals_available:
         return
-
-    initialize_signals_once()
 
     for signum in signums:
         if handler not in _cleanup_handlers[signum]:

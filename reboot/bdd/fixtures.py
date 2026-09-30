@@ -8,9 +8,9 @@ from google.protobuf import json_format
 from google.protobuf.message import Message
 from jsonpath_ng.exceptions import JSONPathError
 from pydantic import ValidationError
+from reboot.aio import signals
 from reboot.aio.aborted import Aborted
 from reboot.aio.external import ExternalContext
-from reboot.aio.signals import initialize_signals_once
 from reboot.aio.tests import Reboot
 from reboot.api import Model
 from reboot.bdd.loop import EventLoopThread, start_event_loop, stop_event_loop
@@ -27,7 +27,7 @@ def reboot_event_loop() -> Iterator[EventLoopThread]:
     # thread, which pytest runs fixtures on; a scenario's steps run on
     # the loop's thread, where starting an Envoy in Docker would
     # otherwise install them and fail.
-    initialize_signals_once()
+    signals.initialize()
     event_loop = start_event_loop()
     try:
         yield event_loop
