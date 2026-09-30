@@ -1,0 +1,72 @@
+load("//reboot:versions.bzl", "REBOOT_VERSION")
+load("//tests:sh_test_in_working_directory.bzl", "sh_test_in_working_directory")
+
+# The locally built Reboot packages that the application is tested
+# against, instead of the published releases.
+test_packages = [
+    "//rbt/std:reboot-dev-reboot-std-api",
+    "//rbt/v1alpha1:reboot-dev-reboot-api",
+    "//reboot:reboot.dev",
+    "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+    "//reboot/react:reboot-dev-reboot-react",
+    "//reboot/std:reboot-dev-reboot-std",
+    "//reboot/web:reboot-dev-reboot-web",
+]
+
+# The following package paths are relative to the working directory of
+# the test script.
+general_env = {
+    "REBOOT_API_NPM_PACKAGE": "$(location //rbt/v1alpha1:reboot-dev-reboot-api)",
+    "REBOOT_NPM_PACKAGE": "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
+    "REBOOT_REACT_NPM_PACKAGE": "$(location //reboot/react:reboot-dev-reboot-react)",
+    "REBOOT_STD_API_PACKAGE": "$(location //rbt/std:reboot-dev-reboot-std-api)",
+    "REBOOT_STD_NPM_PACKAGE": "$(location //reboot/std:reboot-dev-reboot-std)",
+    "REBOOT_WEB_NPM_PACKAGE": "$(location //reboot/web:reboot-dev-reboot-web)",
+    "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+}
+
+osx_env = dict(general_env)
+
+osx_env.update({
+    # Our OSX CI machines don't have Docker.
+    "REBOOT_LOCAL_ENVOY_MODE": "executable",
+})
+
+filegroup(
+    name = "everything",
+    srcs = glob(
+        ["**/*"],
+        exclude = [
+            # Files created by running the application in this
+            # directory, which are not part of its source code.
+            ".venv/**/*",
+            ".rbt/**/*",
+            "uv.lock",
+            "backend/api/**/*",
+            "frontend/api/**/*",
+            "frontend/node_modules/**/*",
+            "frontend/package-lock.json",
+            "**/__pycache__/**/*",
+            "**/.pytest_cache/**/*",
+            "**/.mypy_cache/**/*",
+        ],
+    ),
+)
+
+sh_test_in_working_directory(
+    name = "test",
+    size = "large",
+    data = test_packages + [
+        ":everything",
+    ],
+    env = select({
+        "@platforms//os:linux": general_env,
+        "@platforms//os:osx": osx_env,
+    }),
+    # The following path is relative to the working directory.
+    script = ".tests/test.sh",
+    # `rbt dev run` starts a local Envoy on the default port 9991, so
+    # this test can't run concurrently with others that do the same.
+    tags = ["exclusive"],
+    working_directory = "tests/reboot/pydantic/shared_models_app",
+)

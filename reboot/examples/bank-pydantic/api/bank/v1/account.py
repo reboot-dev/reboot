@@ -1,4 +1,5 @@
 from reboot.api import API, Field, Methods, Model, Reader, Tool, Type, Writer
+from shared.errors import OverdraftError
 
 
 class AccountState(Model):
@@ -19,10 +20,6 @@ class DepositRequest(Model):
 
 
 class WithdrawRequest(Model):
-    amount: float = Field(tag=1)
-
-
-class OverdraftError(Model):
     amount: float = Field(tag=1)
 
 

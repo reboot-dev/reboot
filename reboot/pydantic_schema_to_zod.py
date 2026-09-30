@@ -192,6 +192,22 @@ def _collect_models_in_module(
     return models
 
 
+def defines_models(filename: str) -> bool:
+    """
+    Whether the given Pydantic schema file defines any `Model` of its
+    own, i.e., whether `generate_zod_file_from_api` has anything to
+    generate for it even without an `api`.
+    """
+    module_path = filename.rsplit('.py', 1)[0].replace(os.sep, '.')
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError as e:
+        fail(f"Failed to import module {module_path}: {e}")
+    except UserPydanticError as e:
+        fail(str(e))
+    return len(_collect_models_in_module(module, module_path)) > 0
+
+
 def pydantic_to_zod(
     input: (
         Type[Model] | type[str] | type[int] | type[float] | type[bool] |

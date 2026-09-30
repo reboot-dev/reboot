@@ -25,6 +25,7 @@ from reboot.cli.common.subprocesses import Subprocesses
 from reboot.pydantic_schema_to_proto import generate_proto_file_from_api
 from reboot.pydantic_schema_to_zod import (
     collect_all_error_models,
+    defines_models,
     generate_zod_file_from_api,
 )
 from reboot.settings import (
@@ -1085,7 +1086,34 @@ async def generate_direct(
                     file_path,
                     output_proto_temp_directory_by_plugin['python'],
                 )
+                frontend_args_by_type = {
+                    'react': (args.react, args.react_extensions),
+                    'web': (args.web, args.web_extensions),
+                }
+
                 if proto_file is None:
+                    # A file without an `api` can still define models
+                    # that API files share, e.g., a common error type.
+                    # Such a file needs no `.proto`: each API file's
+                    # `.proto` carries its own copy of every model it
+                    # uses. The generated TypeScript shares the model
+                    # instead of copying it: an API file that uses a
+                    # model from `shared/errors.py` gets a
+                    # `_rbt_types.ts` that imports the model from
+                    # `shared/errors_rbt_types.ts`. We generate that
+                    # file here so the import resolves.
+                    if defines_models(file_path):
+                        for output_directory, js_extension in set(
+                            frontend_args_by_type.values()
+                        ):
+                            if output_directory is None:
+                                continue
+                            await generate_zod_file_from_api(
+                                file_path,
+                                output_directory,
+                                js_extension,
+                                global_error_models,
+                            )
                     continue
 
                 # We add the relative path of the generated proto file,
@@ -1093,11 +1121,6 @@ async def generate_direct(
                 # different temporary directories and we control that
                 # via '--proto_path' argument added above.
                 proto_files.append(proto_file)
-
-                frontend_args_by_type = {
-                    'react': (args.react, args.react_extensions),
-                    'web': (args.web, args.web_extensions),
-                }
 
                 # Track which `(output_directory, js_extension)` pairs we've
                 # already generated Zod files for to avoid duplicates.
