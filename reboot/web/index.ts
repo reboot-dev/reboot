@@ -414,6 +414,13 @@ export function reactively<
     assert(request !== undefined);
 
     while (signal === undefined || !signal.aborted) {
+      // `setRequest()` aborts `responsesAbortController` and then
+      // replaces it with a new controller. Keep this attempt's signal:
+      // after the stream ends, `attemptSignal.aborted` is true only if
+      // `setRequest()` ended it, in which case the loop reads the new
+      // request immediately instead of waiting on the backoff.
+      const attemptSignal = responsesAbortController.signal;
+
       try {
         // The reactive read path multiplexes many RPCs over one
         // WebSocket and each call may carry a different bearer (a
@@ -436,7 +443,7 @@ export function reactively<
         const queryResponses = reactiveReader({
           endpoint: `${url}/__/reboot/rpc/${stateRef}`,
           request: queryRequest,
-          signal: responsesAbortController.signal,
+          signal: attemptSignal,
           websockets,
         });
 
@@ -449,12 +456,30 @@ export function reactively<
             yield response;
           }
         }
-      } catch (e) {
-        if (signal === undefined || !signal.aborted) {
-          await backoff.wait({
-            log: `[Reboot] Retrying call to \`${method}\` with backoff ...`,
-          });
+
+        if (attemptSignal.aborted) {
+          // `setRequest()` closed the stream; read the new request.
+          continue;
         }
+
+        // The server closed the stream, e.g., because it is shutting
+        // down. Wait with backoff, then reconnect.
+        await backoff.wait({
+          log: `[Reboot] Reactive call to \`${method}\` ended; retrying with backoff ...`,
+        });
+      } catch (e) {
+        if (signal !== undefined && signal.aborted) {
+          return;
+        }
+
+        if (attemptSignal.aborted) {
+          // `setRequest()` closed the stream; read the new request.
+          continue;
+        }
+
+        await backoff.wait({
+          log: `[Reboot] Retrying call to \`${method}\` with backoff ...`,
+        });
       }
     }
   }
