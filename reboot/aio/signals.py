@@ -77,8 +77,8 @@ _signals_available: bool = os.environ.get(
 
 
 def raised_signal() -> Optional[int]:
-    """Returns the currently raised signal or None if no signal has been
-    raised."""
+    """Returns the first signal that has been raised, which is the only
+    one that gets handled, or None if no signal has been raised."""
     global _raised_signal
     return _raised_signal
 
@@ -96,6 +96,14 @@ def _signal_handler(signum, frame):
     global _cleanup_handlers
     global _raised_signal
     global _task_to_cancel
+
+    # Only the first signal is handled. Any further signal, e.g., a
+    # second Ctrl-C from a user who is tired of waiting, would
+    # otherwise execute the cleanup handlers again, and cancel the
+    # task again, interrupting the cleanup that the first signal
+    # started.
+    if _raised_signal is not None:
+        return
 
     _raised_signal = signum
 
