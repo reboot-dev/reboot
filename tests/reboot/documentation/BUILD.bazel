@@ -12,6 +12,7 @@ load(
     "//reboot:rules.bzl",
     "js_proto_library",
     "js_reboot_library",
+    "js_reboot_web_library",
     "py_reboot_library",
 )
 load("//reboot/nodejs:rules.bzl", "js_reboot_test")
@@ -254,6 +255,17 @@ js_reboot_library_from_zod(
     name = "chat_room_zod_js_reboot",
     package_json = ":package.json",
     zod = "chat_room_zod.ts",
+)
+
+# The browser client for the same Zod `ChatRoom`, from the proto the
+# macro above generates. `chat_room.ts` reads the chat room reactively
+# through it, which the Node.js client cannot do.
+js_reboot_web_library(
+    name = "chat_room_zod_web_ts_reboot",
+    srcs = [":chat_room_zod_js_reboot_proto"],
+    proto = ":chat_room_zod_js_reboot_proto_file",
+    proto_deps = [":chat_room_zod_js_reboot_proto"],
+    deps = [":chat_room_zod_js_reboot_js_proto"],
 )
 
 ts_project(
@@ -599,4 +611,62 @@ ts_project(
         "//:node_modules/react-dom",
         "//:node_modules/zod",
     ],
+)
+
+py_reboot_library_from_pydantic(
+    name = "chat_room_py_reboot",
+    py_deps = [":chat_room_pydantic_py"],
+    pydantic = ":chat_room_pydantic.py",
+)
+
+py_test(
+    name = "test_chat_room_py",
+    srcs = ["chat_room.py"],
+    main = "chat_room.py",
+    deps = [
+        ":chat_room_py_reboot",
+        ":chat_room_pydantic_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+ts_project(
+    name = "chat_room_ts",
+    srcs = [
+        "chat_room.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    deps = [
+        ":chat_room_zod_js_reboot",
+        ":chat_room_zod_ts",
+        ":chat_room_zod_web_ts_reboot",
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@reboot-dev/reboot-web",
+        "//:node_modules/@types/node",
+        "//:node_modules/zod",
+    ],
+)
+
+js_reboot_test(
+    name = "test_chat_room_ts",
+    data = [
+        ":chat_room_ts",
+    ],
+    entry_point = "chat_room.js",
+    # A reactive read over plain HTTP goes over a websocket, and the
+    # global `WebSocket` a browser provides is only behind this flag in
+    # Node.js 20.
+    env = {"NODE_OPTIONS": "--experimental-websocket"},
+    visibility = ["//visibility:public"],
 )
