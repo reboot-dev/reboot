@@ -1811,10 +1811,7 @@ class GreeterInstance {
         // caller while no default ID has resolved (e.g. signed out): it
         // opens no socket so there's nothing to connect to.
         if (this.websocket === undefined && this.refs > 0 && this.id !== "") {
-            const url = new URL(`${this.url}/__/reboot/rpc/${this.stateRef}`);
-            url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-            this.websocket = reboot_web.websockets.create(url);
-            this.websocket.binaryType = "arraybuffer";
+            this.websocket = reboot_web.websockets.mutate(this.url, this.stateRef);
             this.websocket.onopen = () => {
                 var _a;
                 if (((_a = this.websocket) === null || _a === void 0 ? void 0 : _a.readyState) === WebSocket.OPEN) {
@@ -1872,6 +1869,8 @@ class GreeterInstance {
         const request = partialRequest instanceof reboot_api.react_pb.MutateRequest
             ? partialRequest
             : new reboot_api.react_pb.MutateRequest(partialRequest);
+        // The websocket might be for the mutations of all states.
+        request.stateRef = this.stateRef;
         return new Promise((resolve, _) => {
             var _a;
             if (this.loadingReaders === 0) {

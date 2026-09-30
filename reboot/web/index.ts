@@ -548,9 +548,11 @@ export class WebSockets {
             "calls (specifically reactive readers or mutations) will never " +
             "make it to your Reboot application (even though we keep retrying). " +
             (url.protocol === "wss:"
-              ? "When you use TLS a websocket is only used for the mutators " +
-                "of a state, so you are using the mutators of too many " +
-                "states at the same time."
+              ? "When you use TLS websockets are only used for mutations, " +
+                "and there is only a websocket for the mutators of every " +
+                "state if your backend is running a version of Reboot " +
+                "from before there was one for the mutations of all " +
+                "states. You can solve this by upgrading your backend."
               : "You can solve this for reactive readers by using HTTP/2 " +
                 "which allows an unlimited number of concurrent streams. " +
                 "Reboot uses HTTP/2 by default when you use TLS. You should " +
@@ -567,6 +569,240 @@ export class WebSockets {
     });
 
     return websocket;
+  }
+
+  // The `MutateWebSocket` for each URL that has one.
+  private mutateWebSockets = new Map<string, MutateWebSocket>();
+
+  // URLs that we have learned don't have a websocket for the
+  // mutations of all states, because they are running a version of
+  // Reboot from before it existed.
+  private urlsWithoutMutateWebSocket = new Set<string>();
+
+  // Returns what to send the mutations of the state over, which the
+  // caller should `close()` once it has no more mutations to send.
+  mutate(url: string, stateRef: string): StateWebSocket {
+    if (this.urlsWithoutMutateWebSocket.has(url)) {
+      return this.mutateState(url, stateRef);
+    }
+
+    let mutateWebSocket = this.mutateWebSockets.get(url);
+
+    if (mutateWebSocket === undefined) {
+      mutateWebSocket = new MutateWebSocket(url, () => {
+        this.urlsWithoutMutateWebSocket.add(url);
+      });
+      this.mutateWebSockets.set(url, mutateWebSocket);
+    }
+
+    return mutateWebSocket.open(stateRef);
+  }
+
+  // Returns a websocket for the mutations of only this state.
+  private mutateState(url: string, stateRef: string): StateWebSocket {
+    const websocketUrl = new URL(`${url}/__/reboot/rpc/${stateRef}`);
+    websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+
+    const websocket = this.create(websocketUrl);
+
+    websocket.binaryType = "arraybuffer";
+
+    const stateWebSocket = new StateWebSocket({
+      send: (data) => websocket.send(data),
+      close: () => websocket.close(),
+    });
+
+    websocket.onopen = () => stateWebSocket.opened();
+    websocket.onerror = () => stateWebSocket.onerror?.();
+    websocket.onclose = () => stateWebSocket.closed();
+    websocket.onmessage = (event) => stateWebSocket.onmessage?.(event);
+
+    return stateWebSocket;
+  }
+}
+
+// What the mutations of a state are sent over, which as far as the
+// state can tell is a websocket of its own.
+//
+// Browsers limit how many websockets can be open, so what it really
+// is, if the backend has one, is a part of the one websocket that the
+// mutations of all states are sent over.
+export class StateWebSocket {
+  // NOTE: we can't use, e.g., `WebSocket.CONNECTING`, because there
+  // is no `WebSocket` when we are on the server, e.g., in Next.js.
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 3;
+
+  readyState: number = StateWebSocket.CONNECTING;
+
+  onopen?: () => void;
+  onerror?: () => void;
+  onclose?: () => void;
+  onmessage?: (event: { data: ArrayBuffer }) => void;
+
+  constructor(
+    private readonly websocket: {
+      send: (data: Uint8Array) => void;
+      close: () => void;
+    }
+  ) {}
+
+  send(data: Uint8Array) {
+    this.websocket.send(data);
+  }
+
+  close() {
+    this.websocket.close();
+  }
+
+  opened() {
+    if (this.readyState === StateWebSocket.CONNECTING) {
+      this.readyState = StateWebSocket.OPEN;
+      this.onopen?.();
+    }
+  }
+
+  closed() {
+    if (this.readyState !== StateWebSocket.CLOSED) {
+      this.readyState = StateWebSocket.CLOSED;
+      this.onclose?.();
+    }
+  }
+}
+
+// The websocket that the mutations of all states of a backend are
+// sent over, which is open for as long as any state has mutations to
+// send.
+//
+// Every mutation says what state it is a mutation of, and so does
+// every response. The backend responds to the mutations of a state in
+// the order that they were sent, so a state can tell what mutation a
+// response is for just like it can when it has a websocket of its
+// own.
+class MutateWebSocket {
+  private websocket?: WebSocket;
+
+  private stateWebSockets = new Map<string, StateWebSocket>();
+
+  constructor(
+    private readonly url: string,
+    // Invoked if the backend turns out not to have a websocket for
+    // the mutations of all states.
+    private readonly unsupported: () => void
+  ) {}
+
+  open(stateRef: string): StateWebSocket {
+    const stateWebSocket: StateWebSocket = new StateWebSocket({
+      send: (data) => {
+        if (this.websocket?.readyState === StateWebSocket.OPEN) {
+          this.websocket.send(data);
+        }
+      },
+      close: () => {
+        if (this.stateWebSockets.get(stateRef) === stateWebSocket) {
+          this.stateWebSockets.delete(stateRef);
+        }
+
+        // Nobody has any mutations to send anymore.
+        if (this.stateWebSockets.size === 0 && this.websocket !== undefined) {
+          const websocket = this.websocket;
+          this.websocket = undefined;
+          websocket.close();
+        }
+
+        // A websocket closes asynchronously.
+        queueMicrotask(() => stateWebSocket.closed());
+      },
+    });
+
+    this.stateWebSockets.set(stateRef, stateWebSocket);
+
+    if (this.websocket === undefined) {
+      this.connect();
+    } else if (this.websocket.readyState === StateWebSocket.OPEN) {
+      // A websocket opens asynchronously, which is what gives the
+      // caller the chance to set `onopen`.
+      queueMicrotask(() => {
+        if (
+          this.stateWebSockets.get(stateRef) === stateWebSocket &&
+          this.websocket?.readyState === StateWebSocket.OPEN
+        ) {
+          stateWebSocket.opened();
+        }
+      });
+    }
+
+    return stateWebSocket;
+  }
+
+  private connect() {
+    const url = new URL(`${this.url}/__/reboot/websocket/mutate`);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+
+    const websocket = websockets.create(url);
+
+    this.websocket = websocket;
+
+    websocket.binaryType = "arraybuffer";
+
+    // NOTE: every one of these needs to check that `websocket` is
+    // still what we are using because we might have closed it, and
+    // even opened another one, by the time that they are invoked.
+
+    websocket.onopen = () => {
+      if (this.websocket === websocket) {
+        for (const stateWebSocket of this.stateWebSockets.values()) {
+          stateWebSocket.opened();
+        }
+      }
+    };
+
+    websocket.onmessage = (event) => {
+      if (this.websocket !== websocket) {
+        return;
+      }
+
+      const { stateRef } = react_pb.MutateResponse.fromBinary(
+        new Uint8Array(event.data)
+      );
+
+      if (stateRef === undefined) {
+        // This is from a backend that does not know about the
+        // websocket for the mutations of all states, and thus assumed
+        // that this was one for the mutations of a single state.
+        //
+        // Every state will try to open a websocket again once this
+        // one is closed, which will then be one of its own.
+        this.unsupported();
+        websocket.close();
+        return;
+      }
+
+      this.stateWebSockets.get(stateRef)?.onmessage?.(event);
+    };
+
+    websocket.onerror = () => {
+      if (this.websocket === websocket) {
+        for (const stateWebSocket of this.stateWebSockets.values()) {
+          stateWebSocket.onerror?.();
+        }
+      }
+    };
+
+    websocket.onclose = () => {
+      if (this.websocket === websocket) {
+        this.websocket = undefined;
+
+        const stateWebSockets = [...this.stateWebSockets.values()];
+
+        this.stateWebSockets.clear();
+
+        for (const stateWebSocket of stateWebSockets) {
+          stateWebSocket.closed();
+        }
+      }
+    };
   }
 }
 

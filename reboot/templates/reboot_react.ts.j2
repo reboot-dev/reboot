@@ -638,7 +638,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
   private runningMutates: reboot_react.Mutate[] = [];
   private queuedMutates: reboot_react.Mutate[] = [];
   private flushMutates?: reboot_api.Event = undefined;
-  private websocket?: WebSocket = undefined;
+  private websocket?: reboot_web.StateWebSocket = undefined;
   private wantsWebSocket = false;
   private backoff: reboot_api.Backoff = new reboot_api.Backoff();
 
@@ -683,12 +683,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
     // caller while no default ID has resolved (e.g. signed out): it
     // opens no socket so there's nothing to connect to.
     if (this.websocket === undefined && this.refs > 0 && this.id !== "") {
-      const url = new URL(`${this.url}/__/reboot/rpc/${this.stateRef}`);
-      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-
-      this.websocket = reboot_web.websockets.create(url);
-
-      this.websocket.binaryType = "arraybuffer";
+      this.websocket = reboot_web.websockets.mutate(this.url, this.stateRef);
 
       this.websocket.onopen = () => {
         if (this.websocket?.readyState === WebSocket.OPEN) {
@@ -768,6 +763,9 @@ class {{ client.proto.state_name | to_camel }}Instance {
     const request = partialRequest instanceof reboot_api.react_pb.MutateRequest
       ? partialRequest
       : new reboot_api.react_pb.MutateRequest(partialRequest);
+
+    // The websocket might be for the mutations of all states.
+    request.stateRef = this.stateRef;
 
     return new Promise((resolve, _) => {
       if (this.loadingReaders === 0) {
