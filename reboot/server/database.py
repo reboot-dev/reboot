@@ -17,7 +17,10 @@ from reboot.aio.types import StateRef, StateTypeName
 # TODO(benh): move this into a top-level 'grpc' module to be shared by
 # both 'respect' and 'reboot'.
 from reboot.grpc.options import make_retry_channel_options
-from reboot.settings import MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES
+from reboot.settings import (
+    EVERY_LOCAL_NETWORK_ADDRESS,
+    MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES,
+)
 from typing import AsyncIterator, Mapping, Optional, cast, overload
 
 _ffi = FFI()
@@ -32,6 +35,7 @@ _ffi.cdef(
     const char* state_directory,
     const char* server_info_proto,
     size_t server_info_length,
+    const char* host,
     int port
   );
 
@@ -82,6 +86,7 @@ class DatabaseServer:
         self,
         state_directory: str,
         server_info: database_pb2.ServerInfo,
+        host: str = EVERY_LOCAL_NETWORK_ADDRESS,
         port: int = 0,
     ):
         assert len(server_info.shard_infos
@@ -94,7 +99,11 @@ class DatabaseServer:
         # explicitly to avoid truncation when CFFI treats it as a C
         # string.
         self._ptr = _lib.database_server_create(
-            state_directory.encode(), serialized, len(serialized), port
+            state_directory.encode(),
+            serialized,
+            len(serialized),
+            host.encode(),
+            port,
         )
         if self._ptr == _ffi.NULL:
             raise DatabaseServerFailed("Failed to create DatabaseServer")

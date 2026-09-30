@@ -892,6 +892,17 @@ js_reboot_react_library(
 )
 
 py_test(
+    name = "listen_address_test_py",
+    timeout = "short",
+    srcs = [":listen_address_test.py"],
+    main = "listen_address_test.py",
+    deps = [
+        requirement("grpcio"),
+        "//reboot:settings_py",
+    ],
+)
+
+py_test(
     name = "log_test_py",
     srcs = ["log_test.py"],
     main = "log_test.py",

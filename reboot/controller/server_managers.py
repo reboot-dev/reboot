@@ -46,7 +46,7 @@ from reboot.settings import (
     ENVVAR_PYTHON_SERVER_BASE64_ARGS,
     ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_NODEJS,
-    EVERY_LOCAL_NETWORK_ADDRESS,
+    LOCAL_LISTEN_ADDRESS,
 )
 from typing import Awaitable, Callable, Optional, Sequence
 
@@ -794,7 +794,7 @@ class LocalServerManager(ServerManager):
         async def launch():
             assert self._revision is not None
 
-            host = EVERY_LOCAL_NETWORK_ADDRESS
+            host = LOCAL_LISTEN_ADDRESS
 
             if not self._revision.in_process:
                 return await self._launch_subprocess_server(

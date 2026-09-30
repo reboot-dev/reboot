@@ -39,6 +39,7 @@ from reboot.server.database import DatabaseServer, DatabaseServerFailed
 from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
+    LOCAL_LISTEN_ADDRESS,
 )
 from reboot.wait_for_tasks import wait_for_tasks
 from typing import Awaitable, Callable, Optional, Sequence, overload
@@ -153,6 +154,7 @@ class Reboot:
                 self._database_server = DatabaseServer(
                     sidecar_directory,
                     database_pb2.ServerInfo(shard_infos=make_shard_infos()),
+                    host=LOCAL_LISTEN_ADDRESS,
                 )
                 database_address = self._database_server.address
             except DatabaseServerFailed as e:
