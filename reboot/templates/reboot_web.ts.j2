@@ -445,7 +445,7 @@ class _Reactively {
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
     options?: { signal?: AbortSignal },
   ): Promise<[
-      AsyncGenerator<{{ client.proto.state_name }}.{{ method.proto.name }}Response, void, unknown>,
+      AsyncGenerator<reboot_web.ResponseOrAborted<{{ client.proto.state_name }}.{{ method.proto.name }}Response, {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted>, void, unknown>,
       (newRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request) => void
     ]> {
     const request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
@@ -458,9 +458,11 @@ class _Reactively {
         id: this.#id,
         requestType: {{ method.input_type }},
         responseType: {{ method.output_type }},
+        abortedType: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted,
         request: request,
         signal: options?.signal,
         bearerToken: context.bearerToken,
+        onUnauthenticated: context.onUnauthenticated,
         websockets: context.websockets,
       }
     );
@@ -470,10 +472,13 @@ class _Reactively {
       setRequest(typedRequest);
     };
 
-    async function* typedGenerator(): AsyncGenerator<{{ client.proto.state_name }}.{{ method.proto.name }}Response, void, unknown> {
-     for await (const response of generator) {
-      const typedResponse = {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(response);
-      yield typedResponse;
+    async function* typedGenerator(): AsyncGenerator<reboot_web.ResponseOrAborted<{{ client.proto.state_name }}.{{ method.proto.name }}Response, {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted>, void, unknown> {
+      for await (const { response, aborted } of generator) {
+        if (aborted !== undefined) {
+          yield { aborted };
+          continue;
+        }
+        yield { response: {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(response) };
       }
     };
 
