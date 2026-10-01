@@ -208,6 +208,7 @@ py_library(
     srcs = ["main.py"],
     data = [
         ":dashboard_dist",
+        "//rbt/dashboard/v1:ui",
     ],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
@@ -231,6 +232,7 @@ py_binary(
     srcs = ["main.py"],
     data = [
         ":dashboard_dist",
+        "//rbt/dashboard/v1:ui",
     ],
     main = "main.py",
     visibility = ["//visibility:public"],

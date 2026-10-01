@@ -26,6 +26,7 @@ import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
 import {
   HashRouter,
   Link,
+  MemoryRouter,
   NavLink,
   Navigate,
   Route,
@@ -38,8 +39,10 @@ import {
 } from "react-router";
 import { v4 as uuidv4 } from "uuid";
 import {
+  APPLICATION_URL,
   DASHBOARD_ID,
   CHANGELOG_ID,
+  IN_MCP_HOST,
   PREFERENCES_ID,
   PRESENCE_ID,
 } from "./constants";
@@ -633,9 +636,16 @@ const Checks: FC<{
   </div>
 );
 
+// The logo is a file beside the page in a browser. An MCP host is
+// given the page alone, so there the logo comes from where the
+// application serves the page to browsers.
+const LOGO_URL = IN_MCP_HOST
+  ? `${APPLICATION_URL}/dashboard/reboot-logo.svg`
+  : "./reboot-logo.svg";
+
 const RebootBrand: FC<{ live: boolean }> = ({ live }) => (
   <div className="brand">
-    <img className="brand-logo" src="./reboot-logo.svg" alt="Reboot logo" />
+    <img className="brand-logo" src={LOGO_URL} alt="Reboot logo" />
     <Connection live={live} />
   </div>
 );
@@ -4095,6 +4105,11 @@ const StateTypeRedirect: FC = () => {
   );
 };
 
+// In a browser the route is the URL's hash, so a page can be linked to
+// and reloaded. An MCP host shows the page in a frame with no URL of
+// its own to keep a route in, so there the route is kept in memory.
+const Router = IN_MCP_HOST ? MemoryRouter : HashRouter;
+
 // The preferences are the dashboard application's state: every tab
 // reads the same ones, and they persist after the tab that set them
 // closes.
@@ -4176,7 +4191,7 @@ const App: FC = () => {
           onClose={() => setOpenedNotice(false)}
         />
       )}
-      <HashRouter>
+      <Router>
         <Routes>
           {PAGES.map((page) => (
             <Route
@@ -4219,12 +4234,17 @@ const App: FC = () => {
               application's model. */}
           <Route path="*" element={<Navigate to="/models" replace />} />
         </Routes>
-      </HashRouter>
+      </Router>
     </div>
   );
 };
 
 const root = document.getElementById("root");
+
+// What `dashboard.css` sizes the page by in an MCP host.
+if (IN_MCP_HOST) {
+  document.documentElement.classList.add("mcp-host");
+}
 
 if (root !== null) {
   createRoot(root).render(
