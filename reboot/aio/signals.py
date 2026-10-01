@@ -156,7 +156,7 @@ def uninstall_cleanup(signums: list[int], handler: Callable[[], None]):
 
 
 @contextmanager
-def cleanup_on_raise(signums: list[int], *, handler: Callable[[], None]):
+def cleanup_on_signal(signums: list[int], *, handler: Callable[[], None]):
     """Helper context manager that installs and uninstalls cleanup
     handlers on the callers behalf."""
     install_cleanup(signums, handler)
