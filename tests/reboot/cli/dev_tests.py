@@ -153,6 +153,26 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
             "--application-name\n"
         )
 
+    async def test_read_line_does_not_block_event_loop(self) -> None:
+        # Create a pipe to emulate stdin.
+        reader_fd, writer_fd = os.pipe()
+        with os.fdopen(reader_fd, 'r') as reader:
+            async with aiofiles.open(writer_fd, 'w') as writer:
+                read_line_task = asyncio.create_task(dev._read_line(reader))
+
+                # The event loop keeps running while there is no line to
+                # read, which is what lets a signal cancel the read.
+                await asyncio.sleep(0.1)
+                assert not read_line_task.done()
+
+                await writer.write("yes\n")
+                await writer.flush()
+
+                self.assertEqual(await read_line_task, "yes\n")
+
+            # The input is closed.
+            self.assertEqual(await dev._read_line(reader), "")
+
     async def test_dev_run_await_maybe_expunge(self) -> None:
         parser: ArgumentParser = cli.create_parser(
             argv=[
