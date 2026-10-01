@@ -3,12 +3,11 @@ from __future__ import annotations
 import asyncio
 import os
 import psutil
-import signal
 import subprocess
 import weakref
 from contextlib import asynccontextmanager
 from reboot.cli.common.terminal import fail
-from typing import Any, AsyncIterator, Optional
+from typing import AsyncIterator, Optional
 
 _subprocesses: Optional[weakref.ReferenceType[Subprocesses]] = None
 
@@ -42,42 +41,6 @@ class Subprocesses:
                 "At most one `Subprocesses` instance may be active in a process."
             )
         _subprocesses = weakref.ref(self)
-
-    @staticmethod
-    def install_terminal_app_signal_handlers() -> None:
-        # We know that this is the main task/thread, because `add_signal_handler` may only
-        # be called from the main task.
-        maybe_main_task = asyncio.current_task()
-        if maybe_main_task is None:
-            raise AssertionError("May only be called from within asyncio.")
-        main_task: asyncio.Task[Any] = maybe_main_task
-
-        # When our parent terminal goes away, we receive SIGHUP. It seems that by default,
-        # Python will not raise an exception for SIGHUP and will instead immediately exit,
-        # possibly because since the terminal will no longer be usable, any attempt to
-        # render the error will fail. But we _do_ want an exception, as otherwise our cleanup
-        # context managers cannot run.
-        def cancel_main_task() -> None:
-            main_task.cancel()
-
-        loop = asyncio.get_running_loop()
-        # TODO: Consider merging with
-        # https://github.com/reboot-dev/mono/blob/f692f60f4c6dc1dd6dca9b9624835d718310a787/resemble/aio/signals.py#L69
-        previous = loop.add_signal_handler(signal.SIGHUP, cancel_main_task)
-        if previous not in (signal.SIG_IGN, signal.SIG_DFL, None):
-            raise RuntimeError(
-                f"Only one SIGHUP signal handler may be installed: replaced {previous}"
-            )
-
-        # Another way our terminal may go away is if the user uses e.g.
-        # `head` to read the output of our command; it may close our
-        # output pipe before our command has finished. That raises a
-        # SIGPIPE.
-        previous = loop.add_signal_handler(signal.SIGPIPE, cancel_main_task)
-        if previous not in (signal.SIG_IGN, signal.SIG_DFL, None):
-            raise RuntimeError(
-                f"Only one SIGPIPE signal handler may be installed: replaced {previous}"
-            )
 
     @asynccontextmanager
     async def shell(
