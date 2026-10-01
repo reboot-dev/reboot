@@ -37,18 +37,14 @@ makes the app fail fast at boot:
 
 ```python
 from reboot.std.oauth.v1.oauth import oauth_library
-from reboot.std.ciphertext.v1.ciphertext import ciphertext_library
-from reboot.std.collections.ordered_map.v1.ordered_map import (
-    ordered_map_library,
-)
 
 
 async def main():
     await Application(
         servicers=[...],
-        libraries=[
-            oauth_library(), ciphertext_library(), ordered_map_library(),
-        ],
+        # The `ciphertext` and `ordered_map` libraries `oauth` builds on
+        # come along automatically.
+        libraries=[oauth_library()],
     ).run()
 ```
 
