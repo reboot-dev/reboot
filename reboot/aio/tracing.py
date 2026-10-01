@@ -81,6 +81,34 @@ def force_flush(*args, **kwargs):
         provider.force_flush()
 
 
+def _force_flush_on_signal():
+    """Cleanup handler that force-flushes the providers once it is safe
+    to: from the event loop that is running on this thread, if any, and
+    right away otherwise."""
+    # Reboot's signal handler calls us on the main thread, on top of
+    # whatever code the signal interrupted. If that code is
+    # OpenTelemetry holding the lock of its span processor, which it
+    # takes when a span ends, then calling `force_flush()` here would
+    # wait for that lock forever: the code that holds it can not
+    # continue until we return.
+    #
+    # So when an event loop is running on this thread we ask it to call
+    # `force_flush()` instead. It does that once the code that was
+    # interrupted has finished, and so has released the lock.
+    #
+    # The process has to still be alive by then. Within
+    # `reboot.aio.signals.cancel_on_signal_and_raise_system_exit()` it
+    # is: the cancellation is queued on the loop after our flush.
+    # Otherwise the signal terminates the process as soon as the cleanup
+    # handlers return, and nothing gets flushed.
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        force_flush()
+    else:
+        loop.call_soon_threadsafe(force_flush)
+
+
 def force_flush_and_shutdown(*args, **kwargs):
     # Before shutting down this process we must force-flush the
     # providers, to make sure all spans are recorded. If there are
@@ -145,7 +173,12 @@ def _start(process_name: str):
 
     # Servers while being shut down (e.g. at the end of tests)
     # should flush their traces.
-    install_cleanup([signal.SIGTERM], force_flush_and_shutdown)
+    #
+    # NOTE: we only flush, rather than also shutting down, because
+    # not every process terminates right after its cleanup handlers:
+    # `rbt` first finishes what it is doing, and every span that ends
+    # after a shutdown is dropped, with a warning.
+    install_cleanup([signal.SIGTERM], _force_flush_on_signal)
 
 
 # We're using a global here because we only want to initialize the
