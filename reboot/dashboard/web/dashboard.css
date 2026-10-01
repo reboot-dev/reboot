@@ -47,6 +47,12 @@ html.mcp-host body {
   min-height: 800px;
 }
 
+/* In fullscreen the host gives the frame its height, which the page
+   fills, however short the host's window is. */
+html.mcp-host.mcp-fullscreen body {
+  min-height: 0;
+}
+
 body {
   font-family: ui-sans-serif, system-ui, sans-serif;
   background: hsl(var(--background));
@@ -239,6 +245,31 @@ nav {
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+/* The button that asks an MCP host for fullscreen, above the checks. */
+.display-mode {
+  background: hsl(var(--sidebar));
+  border-right: 1px solid hsl(var(--border));
+  padding: 8px 18px;
+}
+
+.display-mode-button {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: none;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+
+.display-mode-button:hover {
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--border-strong));
 }
 
 .check {

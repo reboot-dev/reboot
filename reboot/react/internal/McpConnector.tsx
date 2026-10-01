@@ -109,7 +109,11 @@ export default function McpConnector({
       name: appName,
       version: "1.0.0",
     },
-    capabilities: {},
+    // The display modes a UI can be shown in: in the conversation,
+    // which is where a host puts it, and over the host's whole window,
+    // which a UI asks the host for with
+    // `useMcpApp().requestDisplayMode({ mode: "fullscreen" })`.
+    capabilities: { availableDisplayModes: ["inline", "fullscreen"] },
 
     // To open this UI, the MCP client was required to call an MCP tool.
     // Store required information about that tool (see the comment on

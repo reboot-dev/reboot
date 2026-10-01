@@ -3,7 +3,7 @@ import {
   usePreferences,
 } from "../../../../rbt/dashboard/v1/dashboard_rbt_react";
 import { useOrderedMap } from "@reboot-dev/reboot-std-api/collections/ordered_map/v1/ordered_map_rbt_react";
-import { RebootClientProvider } from "@reboot-dev/reboot-react";
+import { RebootClientProvider, useMcpApp } from "@reboot-dev/reboot-react";
 import { Presence } from "@reboot-dev/reboot-std-react/presence";
 import {
   type CSSProperties,
@@ -642,6 +642,124 @@ const Checks: FC<{
 const LOGO_URL = IN_MCP_HOST
   ? `${APPLICATION_URL}/dashboard/reboot-logo.svg`
   : "./reboot-logo.svg";
+
+// How an MCP host shows the page: in the conversation, or over the
+// host's whole window, with a way to ask the host for the other.
+// Undefined in a browser, and in a host that says it has no
+// fullscreen.
+interface DisplayMode {
+  fullscreen: boolean;
+  // What the host says it can show a page in, for whoever wonders why
+  // asking changed nothing. Undefined when the host does not say.
+  offered: string[] | undefined;
+  toggle: () => void;
+}
+
+const DisplayModeContext = createContext<DisplayMode | undefined>(undefined);
+
+// Returns how the host shows the page, and asks the host for
+// fullscreen once, when the page connects to it: the dashboard is a
+// whole page, which a frame in a conversation is small for. A host
+// that does not say what it offers is asked all the same.
+const useDisplayMode = (): DisplayMode | undefined => {
+  const mcpApp = useMcpApp();
+  const [fullscreen, setFullscreen] = useState(false);
+  const [offered, setOffered] = useState<string[] | undefined>(undefined);
+  // Whether what the host says has been read, before which nothing
+  // is known of what it offers.
+  const [hostRead, setHostRead] = useState(false);
+
+  useEffect(() => {
+    if (mcpApp === null) {
+      return;
+    }
+    // Called with the whole context when the page connects and with
+    // only what changed afterwards.
+    const read = (context: {
+      displayMode?: string;
+      availableDisplayModes?: string[];
+    }): void => {
+      if (context.displayMode !== undefined) {
+        setFullscreen(context.displayMode === "fullscreen");
+      }
+      if (context.availableDisplayModes !== undefined) {
+        setOffered(context.availableDisplayModes);
+      }
+    };
+    read(mcpApp.getHostContext() ?? {});
+    setHostRead(true);
+    mcpApp.addEventListener("hostcontextchanged", read);
+    return () => mcpApp.removeEventListener("hostcontextchanged", read);
+  }, [mcpApp]);
+
+  const request = useCallback(
+    async (mode: "inline" | "fullscreen"): Promise<void> => {
+      if (mcpApp === null) {
+        return;
+      }
+      try {
+        // The host returns the mode it set, which is the one asked
+        // for only when the host allows it.
+        const result = await mcpApp.requestDisplayMode({ mode });
+        setFullscreen(result.mode === "fullscreen");
+      } catch {
+        // A host that refuses leaves the page as it is.
+      }
+    },
+    [mcpApp]
+  );
+
+  const available =
+    hostRead && (offered === undefined || offered.includes("fullscreen"));
+
+  const asked = useRef(false);
+  useEffect(() => {
+    if (available && !asked.current) {
+      asked.current = true;
+      void request("fullscreen");
+    }
+  }, [available, request]);
+
+  // What `dashboard.css` sizes the page by in fullscreen.
+  useEffect(() => {
+    document.documentElement.classList.toggle("mcp-fullscreen", fullscreen);
+  }, [fullscreen]);
+
+  const toggle = useCallback((): void => {
+    void request(fullscreen ? "inline" : "fullscreen");
+  }, [fullscreen, request]);
+
+  return useMemo(
+    () => (available ? { fullscreen, offered, toggle } : undefined),
+    [available, fullscreen, offered, toggle]
+  );
+};
+
+// The button at the foot of the sidebar that asks the host for
+// fullscreen, or to leave it. Asking on connecting is not always
+// enough: a host may only change how it shows a page on a click.
+const DisplayModeButton: FC = () => {
+  const displayMode = useContext(DisplayModeContext);
+  if (displayMode === undefined) {
+    return null;
+  }
+  return (
+    <div className="display-mode">
+      <button
+        type="button"
+        className="display-mode-button"
+        onClick={displayMode.toggle}
+        title={
+          displayMode.offered === undefined
+            ? "The host does not say which display modes it offers"
+            : `The host offers ${displayMode.offered.join(", ")}`
+        }
+      >
+        {displayMode.fullscreen ? "exit fullscreen" : "fullscreen"}
+      </button>
+    </div>
+  );
+};
 
 const RebootBrand: FC<{ live: boolean }> = ({ live }) => (
   <div className="brand">
@@ -3900,6 +4018,7 @@ const Overview: FC<{
                   />
                 )}
               </nav>
+              <DisplayModeButton />
               <Checks response={response} />
             </>
           )}
@@ -4126,6 +4245,8 @@ const App: FC = () => {
   });
   const { response } = useGet();
 
+  const displayMode = useDisplayMode();
+
   const onSeen = useCallback(
     (seen: Seen): void => {
       setSeen({
@@ -4181,61 +4302,63 @@ const App: FC = () => {
   }, [setPaneWidth]);
 
   return (
-    <div className="app">
-      {openedNotice && (
-        <OpenedNotice
-          onSuppress={() => {
-            setSuppressOpenOnRestart({ suppressOpenOnRestart: true });
-            setOpenedNotice(false);
-          }}
-          onClose={() => setOpenedNotice(false)}
-        />
-      )}
-      <Router>
-        <Routes>
-          {PAGES.map((page) => (
-            <Route
-              // A feature file's path has slashes, which a `:id`
-              // segment cannot hold, so the features page matches
-              // the rest of the URL as a splat.
-              path={page === "features" ? `/${page}/*` : `/${page}/:id?`}
-              element={
-                <Overview
-                  page={page}
-                  navWidth={navWidth}
-                  onNavResizing={onNavResizing}
-                  onNavResized={onNavResized}
-                  paneWidth={paneWidth}
-                  onPaneResizing={onPaneResizing}
-                  onPaneResized={onPaneResized}
-                  preferencesLoaded={response !== undefined}
-                  seen={{
-                    changelogKey: response?.changelogSeenKey,
-                    modelsAt: response?.modelsSeenAt,
-                    featuresAt: response?.featuresSeenAt,
-                  }}
-                  onSeen={onSeen}
-                  callGraphLayout={callGraphLayout}
-                  onCallGraphLayoutChange={onCallGraphLayoutChange}
-                />
-              }
-              key={page}
-            />
-          ))}
-          {/* The state page is the types pane now; its old URLs land
-              on the models page with the pane open on what they
-              named. A data type has no URL of its own anymore. */}
-          <Route path="/state/:id?" element={<StateTypeRedirect />} />
-          <Route
-            path="/data/:id?"
-            element={<Navigate to="/models" replace />}
+    <DisplayModeContext.Provider value={displayMode}>
+      <div className="app">
+        {openedNotice && (
+          <OpenedNotice
+            onSuppress={() => {
+              setSuppressOpenOnRestart({ suppressOpenOnRestart: true });
+              setOpenedNotice(false);
+            }}
+            onClose={() => setOpenedNotice(false)}
           />
-          {/* A developer returning to the dashboard starts at the
-              application's model. */}
-          <Route path="*" element={<Navigate to="/models" replace />} />
-        </Routes>
-      </Router>
-    </div>
+        )}
+        <Router>
+          <Routes>
+            {PAGES.map((page) => (
+              <Route
+                // A feature file's path has slashes, which a `:id`
+                // segment cannot hold, so the features page matches
+                // the rest of the URL as a splat.
+                path={page === "features" ? `/${page}/*` : `/${page}/:id?`}
+                element={
+                  <Overview
+                    page={page}
+                    navWidth={navWidth}
+                    onNavResizing={onNavResizing}
+                    onNavResized={onNavResized}
+                    paneWidth={paneWidth}
+                    onPaneResizing={onPaneResizing}
+                    onPaneResized={onPaneResized}
+                    preferencesLoaded={response !== undefined}
+                    seen={{
+                      changelogKey: response?.changelogSeenKey,
+                      modelsAt: response?.modelsSeenAt,
+                      featuresAt: response?.featuresSeenAt,
+                    }}
+                    onSeen={onSeen}
+                    callGraphLayout={callGraphLayout}
+                    onCallGraphLayoutChange={onCallGraphLayoutChange}
+                  />
+                }
+                key={page}
+              />
+            ))}
+            {/* The state page is the types pane now; its old URLs land
+                on the models page with the pane open on what they
+                named. A data type has no URL of its own anymore. */}
+            <Route path="/state/:id?" element={<StateTypeRedirect />} />
+            <Route
+              path="/data/:id?"
+              element={<Navigate to="/models" replace />}
+            />
+            {/* A developer returning to the dashboard starts at the
+                application's model. */}
+            <Route path="*" element={<Navigate to="/models" replace />} />
+          </Routes>
+        </Router>
+      </div>
+    </DisplayModeContext.Provider>
   );
 };
 
