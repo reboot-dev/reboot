@@ -392,6 +392,40 @@ class SignalsTest(unittest.TestCase):
             ),
         )
 
+    def test_only_first_signal_is_handled(self) -> None:
+        self._assert_run(
+            '''
+            signals.initialize()
+
+            def cleanup():
+                print("cleanup", flush=True)
+                # A further signal while cleaning up.
+                os.kill(os.getpid(), signal.SIGINT)
+
+            signals.install_cleanup([signal.SIGTERM, signal.SIGINT], cleanup)
+
+            async def main():
+                async with cancel_on_signal_and_raise_system_exit(
+                    [signal.SIGTERM, signal.SIGINT]
+                ):
+                    os.kill(os.getpid(), signal.SIGTERM)
+                    os.kill(os.getpid(), signal.SIGTERM)
+                    try:
+                        await asyncio.sleep(60)
+                    finally:
+                        # Further signals while unwinding must not
+                        # interrupt this.
+                        os.kill(os.getpid(), signal.SIGINT)
+                        await asyncio.sleep(0.1)
+                        print("unwound", flush=True)
+
+            asyncio.run(main())
+            ''',
+            stdout="cleanup\nunwound\n",
+            returncode=-signal.SIGTERM,
+            stderr="",
+        )
+
     def test_cancel_on_signal_exits_if_signal_does_not_terminate(
         self,
     ) -> None:
