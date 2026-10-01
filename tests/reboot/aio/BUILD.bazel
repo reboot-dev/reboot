@@ -108,3 +108,13 @@ py_test(
         "//reboot/aio:signals_py",
     ],
 )
+
+py_test(
+    name = "tracing_test_py",
+    timeout = "short",
+    srcs = [":tracing_test.py"],
+    main = "tracing_test.py",
+    deps = [
+        "//reboot/aio:tracing_py",
+    ],
+)
