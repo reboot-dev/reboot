@@ -1122,6 +1122,16 @@ class Application:
         # cleanup handler.
         reboot.aio.signals.initialize()
 
+        # A signal that would terminate us instead cancels us, so that
+        # everything we started gets stopped, rather than terminating
+        # us right after the cleanup handlers; once we have exited it
+        # terminates us.
+        async with reboot.aio.signals.cancel_on_signal_and_raise_system_exit(
+            reboot.aio.signals.DEFAULT_SIGNALS
+        ):
+            await self._run()
+
+    async def _run(self) -> NoReturn:
         # Before running, do any pre-run library set up.
         for library in self.libraries:
             await library.pre_run(self)
