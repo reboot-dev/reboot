@@ -1981,20 +1981,31 @@ class GreeterInstance {
                         // orphans list with a length greater than 0. In this case, we don't
                         // want to skip checking the expecteds list just because we have
                         // already checked the orphans list.
-                        if (expecteds.length > 0 &&
+                        //
+                        // A single response may carry the idempotency keys of several
+                        // expected mutations, so we observe each of them, in order.
+                        // Mutations commit in order, so a key later in `expecteds` only
+                        // shows up once each earlier one has.
+                        let observedExpected = false;
+                        while (expecteds.length > 0 &&
                             queryResponse.idempotencyKeys.includes(expecteds[0].idempotencyKey)) {
-                            await expecteds[0].observed(() => {
+                            const expected = expecteds[0];
+                            observedExpected = true;
+                            await expected.observed(() => {
                                 if (response !== undefined) {
                                     reader.setResponse(response);
                                 }
-                                expecteds.shift();
+                                expecteds = expecteds.filter(e => e !== expected);
                             });
                         }
-                        // If we don't have any orphans to observe and we don't have any expecteds to observe,
-                        // or at least, the first expecteds _is not observed_ by this response, then go ahead and
-                        // pass on the response because it might contain new data that should get shown to the
-                        // user (e.g., in a chat room this could be a new message from a different user).
-                        else if (response !== undefined && !haveOrphans) {
+                        // Observing an orphan or an expected mutation above passed the
+                        // response on from within that mutation's `observed` callback,
+                        // so that every reader updates only once all of them have
+                        // observed it. Otherwise nothing has passed it on yet, so we do
+                        // so here: it may still carry new data that should get shown to
+                        // the user (e.g., in a chat room this could be a new message
+                        // from a different user).
+                        if (!observedExpected && response !== undefined && !haveOrphans) {
                             reader.setResponse(response);
                         }
                     }

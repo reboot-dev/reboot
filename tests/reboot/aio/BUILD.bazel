@@ -98,3 +98,18 @@ py_test(
         "//reboot/aio:types_py",
     ],
 )
+
+py_test(
+    name = "react_querier_test_py",
+    timeout = "short",
+    srcs = [":react_querier_test.py"],
+    main = "react_querier_test.py",
+    deps = [
+        "//rbt/v1alpha1:react_py_grpc",
+        "//rbt/v1alpha1:react_py_proto",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:types_py",
+        "//reboot/aio/internals:channel_manager_py",
+        "//tests/reboot:greeter_py_reboot",
+    ],
+)

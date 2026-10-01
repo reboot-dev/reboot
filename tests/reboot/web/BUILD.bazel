@@ -1,0 +1,38 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@fremtind_rules_vitest//vitest:defs.bzl", "vitest_test")
+
+ts_project(
+    name = "coalesce_query_responses_test_ts",
+    srcs = [
+        "coalesce_query_responses.test.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "skipLibCheck": True,
+            "target": "es2020",
+        },
+    },
+    deps = [
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@reboot-dev/reboot-web",
+        "//reboot/std/vitest:vitest_ts",
+    ],
+)
+
+vitest_test(
+    name = "test",
+    config = "vitest.config.mjs",
+    data = [
+        "package.json",
+        ":coalesce_query_responses_test_ts",
+    ],
+    node_modules = "//:node_modules",
+    visibility = ["//visibility:public"],
+)
+
+exports_files(["package.json"])
