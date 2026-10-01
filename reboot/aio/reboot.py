@@ -1,5 +1,6 @@
 import asyncio
 import os
+import reboot.aio.signals
 import reboot.aio.tracing
 import tempfile
 import uuid
@@ -102,6 +103,9 @@ class Reboot:
             )
         else:
             self._application_id = ApplicationId(application_id)
+
+        # Before anything installs a cleanup handler, tracing included.
+        reboot.aio.signals.initialize()
 
         if initialize_tracing:
             reboot.aio.tracing.start(process_name=self._application_name)

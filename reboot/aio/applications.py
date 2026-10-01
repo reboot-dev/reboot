@@ -5,6 +5,7 @@ import colorama
 import inspect
 import os
 import reboot.aio.memoize
+import reboot.aio.signals
 import reboot.aio.workflows
 import reboot.application
 import sys
@@ -1114,6 +1115,12 @@ class Application:
         # Refuse to run with a `reboot` library that doesn't match the
         # `rbt` CLI that spawned us.
         check_expected_version()
+
+        # A server process constructs no `Reboot`, which is what
+        # otherwise initializes signals, but `_run_server_process()`
+        # in `server_managers.py` starts tracing, which installs a
+        # cleanup handler.
+        reboot.aio.signals.initialize()
 
         # Before running, do any pre-run library set up.
         for library in self.libraries:
