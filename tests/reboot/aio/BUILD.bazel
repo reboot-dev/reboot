@@ -1,3 +1,4 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
@@ -58,6 +59,21 @@ py_test(
         "//reboot/aio:external_py",
         "//reboot/aio:tests_py",
         "//tests/reboot:greeter_servicers_py",
+    ],
+)
+
+py_test(
+    name = "http_app_internal_test_py",
+    timeout = "short",
+    srcs = [":http_app_internal_test.py"],
+    main = "http_app_internal_test.py",
+    deps = [
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:http_py",
+        "//reboot/aio:tests_py",
+        "//tests/reboot:greeter_servicers_py",
+        requirement("httpx"),
     ],
 )
 
