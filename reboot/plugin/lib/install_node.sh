@@ -9,7 +9,7 @@ set -eu
 
 # Pinned Node.js version. To bump, change here and update the
 # README.
-NODE_VERSION="22.11.0"
+NODE_VERSION="22.23.2"
 
 # `PLUGIN_DATA` is hardcoded rather than read from `$CLAUDE_PLUGIN_DATA`.
 # Claude Code only sets that env var when it runs something from a

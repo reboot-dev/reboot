@@ -264,14 +264,15 @@ nav > .eyebrow {
 }
 
 /* The whole sidebar is one two-column grid: what a row names, and
-   how much of something it holds. Every row is `display: contents`,
-   so its two cells are the grid's own items rather than a row's, and
-   the count column is therefore sized once across the sidebar. That
-   is what lets `1 property` and `12 state types` begin at the same x,
-   so the column reads down instead of each row being read across.
+   how much of something it holds. Every row is a `subgrid` of it
+   spanning both columns, so the count column is sized once across
+   the sidebar. That is what lets `1 property` and `12 state types`
+   begin at the same x, so the column reads down instead of each row
+   being read across.
 
-   Not `subgrid`, which would say this more directly but which the
-   browsers this has to run in do not all have yet.
+   Not `display: contents` on the rows, which lays them out the same
+   but takes a link out of the accessibility tree and the tab order,
+   so the sidebar reads as plain text.
 
    The columns touch, and the gap between them is padding on the
    cells, so that a row's hover fill is continuous across both rather
@@ -283,12 +284,11 @@ nav {
   gap: 1px 0;
 }
 
-.package,
-.package-types,
-.package-head,
 .page-link,
 nav a {
-  display: contents;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
 }
 
 /* Its own grid rather than the sidebar's. Sharing one would size the

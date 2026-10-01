@@ -27,7 +27,7 @@ my-app/
     api.py
 ```
 
-**Correct (canonical layout, matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example):**
+**Correct (canonical layout, the one the `web-app` and `mcp-ui` skills build on):**
 
 ```
 my-app/
@@ -41,9 +41,11 @@ my-app/
     api/                 # rbt generate --python output
     src/
       main.py            # application entry
-      <name>_servicer.py # one Servicer per state machine
-    tests/
-      <name>_servicer_test.py
+      servicers/
+        <name>.py        # one Servicer per state machine
+  tests/                 # see `testing-project-setup.md`
+    <capability>.feature
+    <name>_test.py
 ```
 
 ## `pyproject.toml`
@@ -108,9 +110,11 @@ tests records every browser scenario (see `testing-web-app.md`).
 # Reboot dev-server state.
 .rbt/
 
-# Generated code; recreated by `rbt generate`.
+# Generated code; recreated by `rbt generate`. `frontend/api/` is
+# an MCP UI's React client, `web/src/api/` a web app's.
 backend/api/
 frontend/api/
+web/src/api/
 
 # Secrets; see `lifecycle-secrets.md`.
 .env
@@ -128,9 +132,10 @@ __pycache__/
 # Frontend dependencies and build output (projects with a frontend).
 node_modules/
 frontend/dist/
+web/dist/
 ```
 
-Because the generated `backend/api/` (and `frontend/api/`) is
+Because the generated `backend/api/` (and the React client) is
 git-ignored, a fresh clone must run `rbt generate` before anything
 imports or type-checks. `rbt dev run` regenerates automatically; CI
 must run `rbt generate` explicitly.
@@ -171,6 +176,12 @@ ignore_missing_imports = True
 [mypy-grpc.*]
 ignore_missing_imports = True
 [mypy-grpc_status.*]
+ignore_missing_imports = True
+
+# `from uuid7 import create as uuid7` (time-ordered keys) comes from
+# the `uuid7-standard` package, which `reboot` depends on; it ships
+# no type information.
+[mypy-uuid7]
 ignore_missing_imports = True
 
 # The generated `*_rbt.py` for your API package is not hand-written;

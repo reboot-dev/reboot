@@ -117,6 +117,7 @@ Single-key inserts take `key=` plus one of `value=` / `bytes=` /
 ```python
 from reboot.std.collections.ordered_map.v1.ordered_map import OrderedMap
 from uuid import uuid4
+# From the `uuid7-standard` package, which `reboot` depends on.
 from uuid7 import create as uuid7
 
 

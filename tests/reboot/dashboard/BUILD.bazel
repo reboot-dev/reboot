@@ -101,6 +101,7 @@ py_web_test_suite_env(
         "//reboot/dashboard/backend:main_py",
         "//reboot/std/presence/v1:presence_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:schema_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/bdd:feature_py_proto",
         "@io_bazel_rules_webtesting//testing/web",
     ],
 )
@@ -306,6 +307,37 @@ vitest_test(
     data = [
         "package.json",
         ":graph_test_ts",
+    ],
+    node_modules = "//:node_modules",
+    visibility = ["//visibility:public"],
+)
+
+ts_project(
+    name = "features_test_ts",
+    srcs = ["features.test.ts"],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "esnext",
+            "moduleResolution": "bundler",
+            "skipLibCheck": True,
+            "target": "es2020",
+        },
+    },
+    deps = [
+        "//rbt/v1alpha1/api:api_js_proto",
+        "//reboot/dashboard/web:dashboard_ts",
+        "//reboot/std/vitest:vitest_ts",
+    ],
+)
+
+vitest_test(
+    name = "features_test",
+    config = "vitest.config.mjs",
+    data = [
+        "package.json",
+        ":features_test_ts",
     ],
     node_modules = "//:node_modules",
     visibility = ["//visibility:public"],

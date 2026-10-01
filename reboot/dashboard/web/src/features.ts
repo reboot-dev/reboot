@@ -135,7 +135,9 @@ export const methodLabel = (stateTypeId: string, method: string): string =>
 
 // The methods the API declares that no feature exercises or reaches,
 // by state type, for the state types with any: the behavior nobody
-// has described yet.
+// has described yet. The methods Reboot injects into an
+// auto-constructed state type run as a user signs in, not as
+// behavior a feature describes, so they are not among them.
 export const undescribedMethods = (
   features: FeatureEntry[],
   graph: GraphStateType[]
@@ -158,6 +160,7 @@ export const undescribedMethods = (
       // Only a method the API declares counts; one known from a call
       // alone belongs to another package.
       .filter((method) => method.kind !== undefined)
+      .filter((method) => !method.injected)
       .filter((method) => !described.has(`${stateType.id}.${method.name}`))
       .map((method) => method.name);
     return methods.length === 0 ? [] : [{ stateType, methods }];

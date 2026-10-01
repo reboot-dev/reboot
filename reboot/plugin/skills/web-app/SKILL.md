@@ -105,20 +105,20 @@ Recommended sequence:
    `Development()` is a built-in fake account picker that lets
    you sign in as any identity at `/__/oauth/start`; `prod=None`
    fails fast at startup if you accidentally `rbt serve` without
-   choosing a real provider. **Omit `authorizer()`** on
-   Servicers; `rbt dev` allows the calls and logs a 60-second
-   warning naming every unauthorized method — that warning is
-   your TODO list. Do **not** paper this over with `allow()`;
-   `allow()` means "public, unauthenticated internet endpoint"
-   and survives into production.
+   choosing a real provider. Because every caller already has a
+   verified `context.auth.user_id` under `Development()`, **write
+   `authorizer()` on every Servicer from day one**, with
+   `allow_if(...)` rules that run in dev exactly as in production
+   (see `python/references/servicer-authorizer.md`,
+   `python/references/auth-allow-if.md`, and
+   `python/references/auth-built-in-predicates.md`). Do **not**
+   paper over a missing rule with `allow()`; `allow()` means
+   "public, unauthenticated internet endpoint" and survives into
+   production.
 2. **Before `rbt serve` / Reboot Cloud:** set `prod=Google(...)`
    (or `GitHub(...)`, `Auth0(...)`, your own `OAuthProvider`
-   subclass), then add `allow_if(...)` rules to every Servicer
-   that should be externally reachable. See
-   `python/references/servicer-authorizer.md`,
-   `python/references/auth-allow-if.md`, and
-   `python/references/auth-built-in-predicates.md`. The
-   The providers and what each needs:
+   subclass). The authorizers need no second pass. The providers
+   and what each needs:
 
    All arguments are keyword-only.
 
@@ -144,12 +144,17 @@ Recommended sequence:
    existing user's state. Only reach for
    [mcp-ui/references/auth-oauth-providers.md](../mcp-ui/references/auth-oauth-providers.md)
    if you need to write a custom provider or debug a specific
-   provider's flow. In unit tests, keep
-   `token_verifier=<your IdP verifier>` exactly as in production —
-   the test harness's OAuth server verifies the impersonation token
-   minted by `await rbt.create_external_context_as(name, user_id)`,
-   and a custom bearer a test constructs by hand still hits your IdP
-   verifier; the authorizer rules run for real either way.
+   provider's flow.
+
+   Tests build their own `Application(...)` rather than running
+   `main.py`'s, whose `prod=None` arm and missing `allowed_origins`
+   refuse to start anywhere but `rbt dev run`. List the same
+   servicers, with the same authorizers, and wire identity per
+   `python/references/testing-harness.md` ("Identity Wiring in
+   Tests"): omit `oauth=` for backend scenarios, and for scenarios
+   that open the web app use `Development()` for both arms plus
+   `allowed_origins=[frontend.origin]`, as
+   `python/references/testing-web-app.md` shows.
 
 3. **Public, unauthenticated endpoints** (health checks, public
    sign-up, public catalog reads): mark these explicitly with
@@ -206,8 +211,8 @@ exactly one of them — the step that needs it.
 > the MCP frontend — `UI()` artifacts, the MCPJam inspector, the
 > nested `frontend/mcp/<name>/` Vite output, `mcp=Tool()` markers,
 > popping a widget out into a web app. Reaching into them costs
-> context and produces MCP-UI-shaped code (`mcp=None` on every
-> method of an app with no MCP frontend). The web equivalents are
+> context and produces MCP-UI-shaped code (`mcp=Tool()` markers and
+> `UI()` methods in an app with no MCP frontend). The web equivalents are
 > [`references/react-client.md`](references/react-client.md) and the
 > `python` references named below. The single exception is
 > [mcp-ui/references/auth-oauth-providers.md](../mcp-ui/references/auth-oauth-providers.md),
@@ -261,9 +266,9 @@ exactly one of them — the step that needs it.
 above for the dev-vs-prod sequence):
 
 - `python/references/servicer-authorizer.md` — **start here**.
-  Explains `oauth=` (the default) vs. `token_verifier=` (the
-  escape hatch for custom IdPs) and when to defer writing
-  `authorizer()` vs. write rules from day one.
+  Explains `oauth=` (the default, with rules from day one) vs.
+  `token_verifier=` (the escape hatch for custom IdPs, where rules
+  may wait until the verifier is wired).
 - `python/references/auth-allow-if.md`,
   `python/references/auth-built-in-predicates.md`,
   `python/references/auth-custom-predicates.md` — the predicate
@@ -542,8 +547,10 @@ Key differences from a `mcp-ui` layout:
 4. Write the API definition (`api/<pkg>/v1/<name>.py`). Pydantic
    rules live in `python/references/api-pydantic.md`; method
    marker → context-type rules in
-   `python/references/api-methods.md`. Do **not** add `mcp=Tool()`
-   or `UI()` — those are MCP-UI only.
+   `python/references/api-methods.md`. Every `Reader`, `Writer`,
+   `Transaction` and `Workflow` still requires the `mcp=` argument:
+   write `mcp=None` on each one. Do **not** add `mcp=Tool()` or
+   `UI()`; those are MCP-UI only.
 5. `uv run rbt generate`. Don't read what it wrote: the signature
    your servicer must match is in `python/references/api-methods.md`
    ("The Servicer Signature Each Declaration Obliges").
@@ -568,6 +575,20 @@ Key differences from a `mcp-ui` layout:
     there. Write the calls from that reference and do **not** open
     `web/src/api/**/*_rbt_react.ts` to check them — it is tens of
     thousands of lines that then ride along on every later turn.
+
+    How the app **looks** is not Reboot's concern and this skill
+    says nothing about it. Before writing any page, load Anthropic's
+    `frontend-design` skill and follow it: it picks a visual
+    direction for this app and holds the page to a modern quality
+    bar. If the skill is not available, say so once and suggest the
+    user install it with
+    `/plugin install frontend-design@claude-plugins-official`, then
+    carry on. Keep the accessible markup the scenarios need
+    (`python/references/testing-web-app.md`) whatever the design:
+    paired labels, buttons named by what they do. Don't pick a
+    `<table>` to make something testable:
+    `sees "..." in the web app` needs no container, and only real
+    tabular data (a ledger, a comparison) belongs in a table.
 12. `cd web && npm run build` (sanity check the bundle).
 13. **Write and run the scenarios of every feature before handing
     the app off.** Each feature file from the design phase gets its
