@@ -98,3 +98,13 @@ py_test(
         "//reboot/aio:types_py",
     ],
 )
+
+py_test(
+    name = "signals_test_py",
+    timeout = "short",
+    srcs = [":signals_test.py"],
+    main = "signals_test.py",
+    deps = [
+        "//reboot/aio:signals_py",
+    ],
+)
