@@ -37,6 +37,7 @@ import {
   useSearchParams,
 } from "react-router";
 import { v4 as uuidv4 } from "uuid";
+import { AgentChat } from "./agent_chat";
 import {
   DASHBOARD_ID,
   CHANGELOG_ID,
@@ -4220,6 +4221,7 @@ const App: FC = () => {
           <Route path="*" element={<Navigate to="/models" replace />} />
         </Routes>
       </HashRouter>
+      <AgentChat />
     </div>
   );
 };

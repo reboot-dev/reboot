@@ -54,6 +54,11 @@ ENVVAR_RBT_APPLICATION = 'RBT_APPLICATION'
 # case nothing can be typed.
 ENVVAR_RBT_GENERATED_DIRECTORY = 'RBT_GENERATED_DIRECTORY'
 
+# Optional browser-facing endpoint for an external agent-session relay. The
+# relay owns credentials and provider-specific protocol; this is only its
+# public WebSocket URL.
+ENVVAR_RBT_DASHBOARD_AGENT_RELAY_URL = 'RBT_DASHBOARD_AGENT_RELAY_URL'
+
 # The `Presence` state the dashboard page subscribes to, recording who
 # is looking at a dashboard right now. `rbt dev run` reads it to decide
 # whether to open one.
