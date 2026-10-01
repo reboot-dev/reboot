@@ -48,7 +48,6 @@ from reboot.cli.commands.task import (
     task_subcommands,
 )
 from reboot.cli.common.rc import ArgumentParser
-from reboot.cli.common.subprocesses import Subprocesses
 from reboot.cli.common.update_check import check_for_newer_version
 from typing import Optional
 
@@ -120,9 +119,6 @@ async def cli() -> int:
     # Best-effort notice (to stderr) when a newer Reboot release is
     # available; throttled and silent on any failure.
     check_for_newer_version()
-
-    # Install signal handlers to help ensure that Subprocesses get cleaned up.
-    Subprocesses.install_terminal_app_signal_handlers()
 
     parser = create_parser(argv=argv)
 
