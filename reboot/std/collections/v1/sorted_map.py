@@ -18,7 +18,11 @@ from rbt.std.collections.v1.sorted_map_rbt import (
     SortedMap,
 )
 from reboot.aio.applications import Library
-from reboot.aio.auth.authorizers import allow_if, is_app_internal
+from reboot.aio.auth.authorizers import (
+    AuthorizerRule,
+    allow_if,
+    is_app_internal,
+)
 from reboot.aio.contexts import ReaderContext, WriterContext
 from typing import Optional
 
@@ -30,7 +34,7 @@ class SortedMapServicer(SortedMap.singleton.Servicer):
     # Singleton authorizer as class variable.
     # Discussion here for singleton authorizer vs subclassing the servicer:
     # https://github.com/reboot-dev/mono/pull/5140#issuecomment-3667592432
-    _authorizer: Optional[SortedMap.Authorizer] = None
+    _authorizer: Optional[SortedMap.Authorizer | AuthorizerRule] = None
 
     def authorizer(self):
         if self._authorizer:
@@ -176,7 +180,7 @@ class SortedMapLibrary(Library):
 
     def __init__(
         self,
-        authorizer: Optional[SortedMap.Authorizer] = None,
+        authorizer: Optional[SortedMap.Authorizer | AuthorizerRule] = None,
     ):
         SortedMapServicer._authorizer = authorizer
 
@@ -188,5 +192,7 @@ def servicers():
     return [SortedMapServicer]
 
 
-def sorted_map_library(authorizer: Optional[SortedMap.Authorizer] = None):
+def sorted_map_library(
+    authorizer: Optional[SortedMap.Authorizer | AuthorizerRule] = None
+):
     return SortedMapLibrary(authorizer)

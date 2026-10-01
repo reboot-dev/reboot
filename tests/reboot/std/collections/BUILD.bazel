@@ -41,13 +41,9 @@ ts_project(
     visibility = ["//visibility:public"],
     deps = [
         "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-api",
         "//:node_modules/@reboot-dev/reboot-std",
         "//:node_modules/@types/node",
-        # TODO: Although these dependencies are not used, the test will fail to
-        # build without them, claiming that something hasn't been declared a
-        # module.
-        "//tests/reboot:greeter_js_proto",
-        "//tests/reboot:greeter_js_reboot",
     ],
 )
 

@@ -8,6 +8,7 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//reboot/aio:applications_py",
         "//reboot/aio:contexts_py",
         "//reboot/aio:memoize_py",
         "@com_github_reboot_dev_reboot//rbt/std/presence/mouse_tracker/v1:mouse_position_py_reboot",
