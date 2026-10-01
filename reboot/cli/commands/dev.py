@@ -1017,6 +1017,36 @@ async def _read_until(
         loop.remove_reader(fd)
 
 
+async def _read_line(file_handle: TextIO) -> str:
+    """Reads a line from the given file handle, newline included, without
+    blocking the event loop while waiting for it, so that a signal can
+    still cancel us. Returns an empty string once the input is closed.
+    """
+    loop = asyncio.get_running_loop()
+    line: asyncio.Future[str] = loop.create_future()
+
+    def read() -> None:
+        loop.remove_reader(fd)
+        try:
+            line.set_result(file_handle.readline())
+        except (OSError, ValueError) as error:
+            line.set_exception(error)
+
+    # The file handle may be unpollable: e.g., redirected from a regular
+    # file (Linux `epoll` rejects those with `PermissionError`), which
+    # never blocks, so we can just read it.
+    try:
+        fd = file_handle.fileno()
+        loop.add_reader(fd, read)
+    except (OSError, ValueError):
+        return file_handle.readline()
+
+    try:
+        return await line
+    finally:
+        loop.remove_reader(fd)
+
+
 async def induce_chaos() -> Optional[int]:
     """Helper that allows inducing chaos via pressing keys 0-9."""
 
@@ -2089,12 +2119,16 @@ async def _expunge(
     parser: ArgumentParser,
     *,
     confirm: bool,
+    stdin: TextIO = sys.stdin,
 ) -> None:
 
-    def ask_for_confirmation(question: str) -> bool:
+    async def ask_for_confirmation(question: str) -> bool:
         yes_answers = ['y', 'yes']
         terminal.info(question)
-        answer = input()
+        # NOTE: not `input()`, which blocks the event loop, and with it
+        # everything that a signal does: Ctrl-C at this prompt would do
+        # nothing at all.
+        answer = (await _read_line(stdin)).strip()
         return answer.lower() in yes_answers
 
     dot_rbt_dev = dot_rbt_dev_directory(args, parser)
@@ -2102,7 +2136,7 @@ async def _expunge(
         terminal.info(
             f"About to expunge '{args.application_name}' from '{dot_rbt_dev}'"
         )
-        if not ask_for_confirmation(
+        if not await ask_for_confirmation(
             "Do you want to continue? [y/n] (Tip: Use the --yes flag to skip this prompt):"
         ):
             terminal.fail("Expunge cancelled")
