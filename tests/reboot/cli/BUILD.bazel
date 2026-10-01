@@ -74,6 +74,17 @@ py_test(
 )
 
 py_test(
+    name = "skills_tests_py",
+    srcs = [
+        "skills_tests.py",
+    ],
+    main = "skills_tests.py",
+    deps = [
+        "//reboot/cli/common:cli_py",
+    ],
+)
+
+py_test(
     name = "subcommand_run_tests_py",
     srcs = [
         "subcommand_run_tests.py",

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Upgrade Reboot App"
+  short_description: "Upgrade the Reboot plugin and app to the latest Reboot"
+  default_prompt: "Upgrade this application to the latest Reboot version."

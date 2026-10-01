@@ -1,0 +1,4 @@
+interface:
+  display_name: "Inspect Reboot App State"
+  short_description: "Inspect a running Reboot app's state from the CLI (state types, state IDs, single-actor JSON)"
+  default_prompt: "Use Inspect Reboot App State to see what a running Reboot app has stored."
