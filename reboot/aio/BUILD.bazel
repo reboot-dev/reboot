@@ -30,6 +30,7 @@ py_library(
         ":memoize_py",
         ":reboot_py",
         ":servicers_py",
+        ":signals_py",
         ":tracing_py",
         ":workflows_py",
         "//rbt/v1alpha1/application:application_py_reboot",
@@ -340,6 +341,7 @@ py_library(
         ":monitoring_py",
         ":resolvers_py",
         ":servicers_py",
+        ":signals_py",
         ":state_managers_py",
         ":tracing_py",
         "//reboot:naming_py",
@@ -436,7 +438,6 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
-        ":once_py",
         "//reboot:settings_py",
     ],
 )

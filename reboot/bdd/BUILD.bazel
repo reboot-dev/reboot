@@ -137,6 +137,7 @@ py_library(
         "//reboot/aio:aborted_py",
         "//reboot/aio:applications_py",
         "//reboot/aio:external_py",
+        "//reboot/aio:signals_py",
         "//reboot/aio:tests_py",
     ],
 )

@@ -5,6 +5,7 @@ import colorama
 import inspect
 import os
 import reboot.aio.memoize
+import reboot.aio.signals
 import reboot.aio.workflows
 import reboot.application
 import sys
@@ -1115,6 +1116,22 @@ class Application:
         # `rbt` CLI that spawned us.
         check_expected_version()
 
+        # A server process constructs no `Reboot`, which is what
+        # otherwise initializes signals, but `_run_server_process()`
+        # in `server_managers.py` starts tracing, which installs a
+        # cleanup handler.
+        reboot.aio.signals.initialize()
+
+        # A signal that would terminate us instead cancels us, so that
+        # everything we started gets stopped, rather than terminating
+        # us right after the cleanup handlers; once we have exited it
+        # terminates us.
+        async with reboot.aio.signals.cancel_on_signal_and_raise_system_exit(
+            reboot.aio.signals.DEFAULT_SIGNALS
+        ):
+            await self._run()
+
+    async def _run(self) -> NoReturn:
         # Before running, do any pre-run library set up.
         for library in self.libraries:
             await library.pre_run(self)
