@@ -30,7 +30,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from reboot.aio.headers import TRACEPARENT_HEADER, TRACESTATE_HEADER, Headers
 from reboot.aio.once import Once
-from reboot.aio.signals import install_cleanup
+from reboot.aio.signals import initialize, install_cleanup
 from reboot.run_environments import application_name
 from reboot.settings import ENVVAR_REBOOT_NODEJS, ENVVAR_REBOOT_TRACE_LEVEL
 from typing import Any, AsyncIterator, Callable, Optional
@@ -321,6 +321,10 @@ def main_span(name: Optional[str] = None, **span_kwargs) -> Callable:
     def decorator(func: Callable) -> Callable:
 
         def wrapper(*args, **kwargs):
+            # We are the entry point of a process, so nothing else has
+            # initialized signals yet, which starting tracing requires
+            # in order to install its cleanup handler.
+            initialize()
             start(name)
             global _process_name
             assert _process_name is not None
