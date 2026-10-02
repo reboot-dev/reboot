@@ -4,7 +4,7 @@
 //! The executable plugin uses `generate_from_wire`, which decodes the real
 //! descriptor option extension bytes rather than inferring Reboot semantics.
 
-use heck::ToSnakeCase;
+use heck::{ToSnakeCase, ToUpperCamelCase};
 use prost::Message;
 use prost_types::compiler::{CodeGeneratorRequest, CodeGeneratorResponse, code_generator_response};
 use prost_types::{
@@ -391,18 +391,20 @@ fn emit_durable(
         .state
         .strip_prefix('.')
         .unwrap_or(&annotation.state);
-    let state = same_package_type(
+    let state_reference = Some(format!(
+        ".{package}.{}",
+        state_reference.trim_start_matches(&format!("{package}."))
+    ));
+    let state_name = same_package_proto_type(
         file,
         package,
         service_name,
         "<service>",
         "state",
-        &Some(format!(
-            ".{package}.{}",
-            state_reference.trim_start_matches(&format!("{package}."))
-        )),
+        &state_reference,
     )?;
-    let state_type = format!("{package}.{state}");
+    let state = state_name.to_upper_camel_case();
+    let state_type = format!("{package}.{state_name}");
     let declaration = format!("{state}DurableState");
     let mut methods = Vec::new();
     for method in &service.method {
@@ -511,6 +513,17 @@ fn same_package_type(
     kind: &str,
     value: &Option<String>,
 ) -> Result<String, String> {
+    Ok(same_package_proto_type(file, package, service, method, kind, value)?.to_upper_camel_case())
+}
+
+fn same_package_proto_type<'a>(
+    file: &str,
+    package: &str,
+    service: &str,
+    method: &str,
+    kind: &str,
+    value: &'a Option<String>,
+) -> Result<&'a str, String> {
     let type_name = required(value, "method type")?;
     let prefix = format!(".{package}.");
     let Some(name) = type_name.strip_prefix(&prefix) else {
@@ -523,7 +536,7 @@ fn same_package_type(
             "{file}: service `{service}` method `{method}` has unsupported {kind} type `{type_name}`; nested or invalid types are not supported"
         ));
     }
-    Ok(name.to_owned())
+    Ok(name)
 }
 fn output_name(file: &str) -> Result<String, String> {
     file.strip_suffix(".proto")
@@ -790,6 +803,20 @@ mod tests {
     fn snake_case_matches_protobuf_acronyms() {
         assert_eq!(snake_case("APIService"), "api_service");
         assert_eq!(snake_case("GetURL"), "get_url");
+    }
+
+    #[test]
+    fn renders_snake_case_protobuf_types_as_prost_type_names() {
+        let mut value = request();
+        value.proto_file[0].service[0].method[0].input_type =
+            Some(".tests.reboot.protoc.get_widget_request".into());
+        value.proto_file[0].service[0].method[0].output_type =
+            Some(".tests.reboot.protoc.get_widget_response".into());
+        let content = generate(value).file.remove(0).content.unwrap();
+        assert!(content.contains("proto::GetWidgetRequest"));
+        assert!(content.contains("proto::GetWidgetResponse"));
+        assert!(!content.contains("proto::get_widget_request"));
+        assert!(!content.contains("proto::get_widget_response"));
     }
 
     #[test]

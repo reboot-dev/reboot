@@ -386,7 +386,7 @@ fn default_cargo_build_helper_executes_a_durable_adapter_in_a_downstream_fixture
     std::fs::write(
         fixture.join("build.rs"),
         format!(
-            "fn main() {{\n    let repository = std::path::Path::new(\"{}\");\n    reboot_rust_schema::build::compile_protos(\n        &[repository.join(\"tests/reboot/protoc/counter.proto\")],\n        &[repository],\n        \"crate::proto\",\n    ).unwrap();\n}}\n",
+            "fn main() {{\n    let repository = std::path::Path::new(\"{}\");\n    reboot_rust_schema::build::compile_protos(\n        &[\n            repository.join(\"tests/reboot/protoc/counter.proto\"),\n            repository.join(\"tests/reboot/protoc/snake_case_types.proto\"),\n        ],\n        &[repository],\n        \"crate::proto\",\n    ).unwrap();\n}}\n",
             repository.display()
         ),
     )
@@ -409,6 +409,11 @@ fn default_cargo_build_helper_executes_a_durable_adapter_in_a_downstream_fixture
 #[allow(dead_code)]
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/counter.reboot.rs"));
+}
+
+#[allow(dead_code)]
+mod snake_generated {
+    include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/snake_case_types.reboot.rs"));
 }
 
 #[cfg(test)]
