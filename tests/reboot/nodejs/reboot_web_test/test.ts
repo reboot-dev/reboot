@@ -407,6 +407,67 @@ test("Reboot", async (t) => {
     }
   );
 
+  await t.test(
+    "Reactive reader sends the token that `setBearerToken` set after it started",
+    async (t) => {
+      const application = new Application({
+        servicers: [AuthenticatedGreeterServicer],
+        tokenVerifier: new OnlyTokenForTestVerifier(),
+      });
+
+      const rbt = new Reboot();
+      await rbt.start();
+
+      t.after(async () => {
+        await rbt.stop();
+      });
+
+      await rbt.up(application, { localEnvoy: true });
+
+      const [greeter] = await Greeter.create(
+        new WebContext({
+          url: rbt.url(),
+          bearerToken: TOKEN_FOR_TEST,
+        }),
+        {
+          title: "Dr",
+          name: "Jonathan",
+          adjective: "Best",
+        }
+      );
+
+      // The read starts with a token that the verifier rejects, and
+      // `onUnauthenticated` renews it with `setBearerToken`.
+      let calls = 0;
+
+      const context: WebContext = new WebContext({
+        url: rbt.url(),
+        bearerToken: "expired",
+        onUnauthenticated: async () => {
+          calls += 1;
+          context.setBearerToken(TOKEN_FOR_TEST);
+          return true;
+        },
+      });
+
+      const abortController = new AbortController();
+
+      const [items] = await greeter
+        .reactively()
+        .greet(context, {}, { signal: abortController.signal });
+
+      // The attempt after the renewal sends the new token, so the
+      // first item is a response and not the `Unauthenticated` error.
+      const first = await nextItem(items);
+      assert(first.aborted === undefined);
+      assert(first.response?.message == "Hi , I am Dr Jonathan the Best");
+      assert.equal(calls, 1);
+
+      abortController.abort();
+      assert((await items.next()).done);
+    }
+  );
+
   await t.test("Reactive reader retries a restarting server", async (t) => {
     const application = new Application({
       servicers: [GreeterServicer],

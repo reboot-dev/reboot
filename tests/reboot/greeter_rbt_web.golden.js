@@ -1667,7 +1667,10 @@ class _Reactively {
             abortedType: GreeterGreetAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
-            bearerToken: context.bearerToken,
+            // Read the token from `context` on every attempt, so that a
+            // token set with `context.setBearerToken()` after the read
+            // started is sent on the next attempt.
+            bearerToken: async () => { var _a; return await ((_a = context.bearerToken) === null || _a === void 0 ? void 0 : _a.call(context)); },
             onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
@@ -1699,7 +1702,10 @@ class _Reactively {
             abortedType: GreeterTryToConstructContextAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
-            bearerToken: context.bearerToken,
+            // Read the token from `context` on every attempt, so that a
+            // token set with `context.setBearerToken()` after the read
+            // started is sent on the next attempt.
+            bearerToken: async () => { var _a; return await ((_a = context.bearerToken) === null || _a === void 0 ? void 0 : _a.call(context)); },
             onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
@@ -1731,7 +1737,10 @@ class _Reactively {
             abortedType: GreeterTryToConstructExternalContextAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
-            bearerToken: context.bearerToken,
+            // Read the token from `context` on every attempt, so that a
+            // token set with `context.setBearerToken()` after the read
+            // started is sent on the next attempt.
+            bearerToken: async () => { var _a; return await ((_a = context.bearerToken) === null || _a === void 0 ? void 0 : _a.call(context)); },
             onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
@@ -1763,7 +1772,10 @@ class _Reactively {
             abortedType: GreeterTestLongRunningFetchAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
-            bearerToken: context.bearerToken,
+            // Read the token from `context` on every attempt, so that a
+            // token set with `context.setBearerToken()` after the read
+            // started is sent on the next attempt.
+            bearerToken: async () => { var _a; return await ((_a = context.bearerToken) === null || _a === void 0 ? void 0 : _a.call(context)); },
             onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
@@ -1795,7 +1807,10 @@ class _Reactively {
             abortedType: GreeterGetWholeStateAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
-            bearerToken: context.bearerToken,
+            // Read the token from `context` on every attempt, so that a
+            // token set with `context.setBearerToken()` after the read
+            // started is sent on the next attempt.
+            bearerToken: async () => { var _a; return await ((_a = context.bearerToken) === null || _a === void 0 ? void 0 : _a.call(context)); },
             onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
@@ -1827,7 +1842,10 @@ class _Reactively {
             abortedType: GreeterFailWithExceptionAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
-            bearerToken: context.bearerToken,
+            // Read the token from `context` on every attempt, so that a
+            // token set with `context.setBearerToken()` after the read
+            // started is sent on the next attempt.
+            bearerToken: async () => { var _a; return await ((_a = context.bearerToken) === null || _a === void 0 ? void 0 : _a.call(context)); },
             onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
@@ -1859,7 +1877,10 @@ class _Reactively {
             abortedType: GreeterFailWithAbortedAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
-            bearerToken: context.bearerToken,
+            // Read the token from `context` on every attempt, so that a
+            // token set with `context.setBearerToken()` after the read
+            // started is sent on the next attempt.
+            bearerToken: async () => { var _a; return await ((_a = context.bearerToken) === null || _a === void 0 ? void 0 : _a.call(context)); },
             onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
@@ -1891,7 +1912,10 @@ class _Reactively {
             abortedType: GreeterReadRecursiveMessageAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
-            bearerToken: context.bearerToken,
+            // Read the token from `context` on every attempt, so that a
+            // token set with `context.setBearerToken()` after the read
+            // started is sent on the next attempt.
+            bearerToken: async () => { var _a; return await ((_a = context.bearerToken) === null || _a === void 0 ? void 0 : _a.call(context)); },
             onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
