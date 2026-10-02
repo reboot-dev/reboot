@@ -11,6 +11,7 @@ use std::sync::Mutex;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FieldType {
     Bool,
+    Bytes,
     F64,
     I64,
     String,
@@ -50,6 +51,7 @@ impl FieldType {
     fn proto(self) -> String {
         match self {
             Self::Bool => "bool".into(),
+            Self::Bytes => "bytes".into(),
             Self::F64 => "double".into(),
             Self::I64 => "int64".into(),
             Self::String => "string".into(),
@@ -1165,6 +1167,11 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bytes_fields_emit_as_protobuf_bytes() {
+        assert_eq!(FieldType::Bytes.proto(), "bytes");
+    }
 
     #[test]
     fn clinic_emits_reboot_compatible_proto() {
