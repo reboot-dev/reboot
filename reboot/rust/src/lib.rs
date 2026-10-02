@@ -1536,6 +1536,29 @@ mod tests {
     }
 
     #[test]
+    fn rejects_malformed_state_and_service_identifiers() {
+        let mut invalid = CLINIC;
+        invalid.state.name = "Clinic-State";
+        assert_eq!(
+            invalid.validate(),
+            Err(SchemaError::InvalidIdentifier {
+                kind: "state",
+                name: "Clinic-State",
+            })
+        );
+
+        invalid = CLINIC;
+        invalid.service.name = "Clinic Methods";
+        assert_eq!(
+            invalid.validate(),
+            Err(SchemaError::InvalidIdentifier {
+                kind: "service",
+                name: "Clinic Methods",
+            })
+        );
+    }
+
+    #[test]
     fn rejects_malformed_protobuf_packages() {
         for package in ["clinic..v1", "clinic-v1", "1clinic.v1", ".clinic"] {
             let mut invalid = CLINIC;
