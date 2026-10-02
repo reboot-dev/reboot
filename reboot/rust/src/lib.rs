@@ -116,9 +116,18 @@ pub struct MethodSpec {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReservedFields {
+    /// Tags that must never be reused after their fields are removed.
+    pub tags: &'static [u32],
+    /// Names that must never be reused after their fields are removed.
+    pub names: &'static [&'static str],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StateSpec {
     pub name: &'static str,
     pub fields: &'static [FieldSpec],
+    pub reserved: ReservedFields,
 }
 
 /// One stable numeric member of an emitted protobuf enum.
@@ -149,6 +158,7 @@ pub struct MessageSpec {
     pub name: &'static str,
     pub fields: &'static [FieldSpec],
     pub oneofs: &'static [OneOfSpec],
+    pub reserved: ReservedFields,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -177,6 +187,7 @@ pub enum SchemaError {
         field: &'static str,
         tag: u32,
     },
+    InvalidReservation,
     DuplicateTag(u32),
     DuplicateMessage(&'static str),
     DuplicateEnum(&'static str),
@@ -199,6 +210,10 @@ impl std::fmt::Display for SchemaError {
             Self::InvalidTag { field, tag } => {
                 write!(f, "field `{field}` has invalid protobuf tag {tag}")
             }
+            Self::InvalidReservation => write!(
+                f,
+                "reserved field tags/names must be valid, unique, and unused by active fields"
+            ),
             Self::DuplicateTag(tag) => write!(f, "protobuf tag {tag} is used more than once"),
             Self::DuplicateMessage(name) => {
                 write!(f, "message `{name}` is declared more than once")
@@ -303,10 +318,16 @@ fn check_model_compatibility(
     previous_oneofs: &[OneOfSpec],
     current_fields: &[FieldSpec],
     current_oneofs: &[OneOfSpec],
+    current_reserved: ReservedFields,
 ) -> Result<(), CompatibilityError> {
     let current = fields_by_tag(current_fields, current_oneofs);
     for previous in fields_by_tag(previous_fields, previous_oneofs).into_values() {
         let Some(next) = current.get(&previous.tag) else {
+            if current_reserved.tags.contains(&previous.tag)
+                && current_reserved.names.contains(&previous.name)
+            {
+                continue;
+            }
             return Err(CompatibilityError::MissingField {
                 model,
                 tag: previous.tag,
@@ -532,6 +553,65 @@ where
     }
 }
 
+fn validate_reservations(
+    reserved: ReservedFields,
+    fields: &[FieldSpec],
+    oneofs: &[OneOfSpec],
+) -> Result<(), SchemaError> {
+    let active_tags = fields_by_tag(fields, oneofs);
+    let active_names: std::collections::BTreeSet<_> = fields
+        .iter()
+        .chain(oneofs.iter().flat_map(|oneof| oneof.fields.iter()))
+        .map(|field| field.name)
+        .collect();
+    let mut tags = std::collections::BTreeSet::new();
+    for tag in reserved.tags {
+        if *tag == 0
+            || (19000..=19999).contains(tag)
+            || !tags.insert(*tag)
+            || active_tags.contains_key(tag)
+        {
+            return Err(SchemaError::InvalidReservation);
+        }
+    }
+    let mut names = std::collections::BTreeSet::new();
+    for name in reserved.names {
+        if name.is_empty() || !names.insert(*name) || active_names.contains(name) {
+            return Err(SchemaError::InvalidReservation);
+        }
+    }
+    Ok(())
+}
+
+fn emit_reservations(proto: &mut String, reserved: ReservedFields, indent: &str) {
+    if !reserved.tags.is_empty() {
+        proto.push_str(indent);
+        proto.push_str("reserved ");
+        proto.push_str(
+            &reserved
+                .tags
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        proto.push_str(";\n");
+    }
+    if !reserved.names.is_empty() {
+        proto.push_str(indent);
+        proto.push_str("reserved ");
+        proto.push_str(
+            &reserved
+                .names
+                .iter()
+                .map(|name| format!("\"{name}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        proto.push_str(";\n");
+    }
+}
+
 impl ApplicationSpec {
     pub fn validate(&self) -> Result<(), SchemaError> {
         if self.package.is_empty() {
@@ -565,6 +645,7 @@ impl ApplicationSpec {
                 return Err(SchemaError::DuplicateTag(field.tag));
             }
         }
+        validate_reservations(self.state.reserved, self.state.fields, &[])?;
         let mut enum_names = std::collections::BTreeSet::new();
         for enum_spec in self.enums {
             if enum_spec.name.is_empty() {
@@ -636,6 +717,7 @@ impl ApplicationSpec {
                     }
                 }
             }
+            validate_reservations(message.reserved, message.fields, message.oneofs)?;
         }
 
         let mut method_names = std::collections::BTreeSet::new();
@@ -696,6 +778,7 @@ impl ApplicationSpec {
             &[],
             self.state.fields,
             &[],
+            self.state.reserved,
         )?;
 
         for previous_enum in previous.enums {
@@ -723,6 +806,7 @@ impl ApplicationSpec {
                 previous_message.oneofs,
                 current_message.fields,
                 current_message.oneofs,
+                current_message.reserved,
             )?;
         }
 
@@ -769,6 +853,7 @@ impl ApplicationSpec {
             proto.push_str(if field.required { "true" } else { "false" });
             proto.push_str("];\n");
         }
+        emit_reservations(&mut proto, self.state.reserved, "  ");
         proto.push_str("}\n\n");
 
         for enum_spec in self.enums {
@@ -818,6 +903,7 @@ impl ApplicationSpec {
                 }
                 proto.push_str("  }\n");
             }
+            emit_reservations(&mut proto, message.reserved, "  ");
             proto.push_str("}\n\n");
         }
 
@@ -868,6 +954,10 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
                 required: false,
             },
         ],
+        reserved: ReservedFields {
+            tags: &[],
+            names: &[],
+        },
     },
     enums: &[EnumSpec {
         name: "ClinicStatus",
@@ -896,16 +986,28 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
                 required: true,
             }],
             oneofs: &[],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
         },
         MessageSpec {
             name: "RenameResponse",
             fields: &[],
             oneofs: &[],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
         },
         MessageSpec {
             name: "DetailsRequest",
             fields: &[],
             oneofs: &[],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
         },
         MessageSpec {
             name: "PhoneNumber",
@@ -916,6 +1018,10 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
                 required: true,
             }],
             oneofs: &[],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
         },
         MessageSpec {
             name: "DetailsResponse",
@@ -971,6 +1077,10 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
                     },
                 ],
             }],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
         },
     ],
     service: ServiceSpec {
@@ -1253,6 +1363,26 @@ mod tests {
     }
 
     #[test]
+    fn compatibility_allows_deleting_a_field_only_when_its_tag_and_name_are_reserved() {
+        let mut changed = CLINIC;
+        changed.state.fields = &[FieldSpec {
+            name: "name",
+            tag: 1,
+            field_type: FieldType::String,
+            required: true,
+        }];
+        changed.state.reserved = ReservedFields {
+            tags: &[2],
+            names: &["phone_number"],
+        };
+        assert_eq!(changed.validate(), Ok(()));
+        assert_eq!(changed.check_backward_compatible_with(&CLINIC), Ok(()));
+        let proto = changed.to_proto().unwrap();
+        assert!(proto.contains("reserved 2;"));
+        assert!(proto.contains("reserved \"phone_number\";"));
+    }
+
+    #[test]
     fn compatibility_rejects_reassigning_a_published_enum_variant() {
         let mut changed = CLINIC;
         changed.enums = &[EnumSpec {
@@ -1328,6 +1458,10 @@ mod tests {
                     required: false,
                 }],
             }],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
         }];
         assert_eq!(invalid.validate(), Err(SchemaError::DuplicateTag(1)));
     }
