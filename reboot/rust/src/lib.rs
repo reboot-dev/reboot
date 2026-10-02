@@ -602,7 +602,17 @@ pub struct InMemoryActor<State, Response> {
 
 struct InMemoryActorState<State, Response> {
     state: State,
-    completed_writes: HashMap<uuid::Uuid, Response>,
+    completed_writes: HashMap<uuid::Uuid, CompletedWrite<Response>>,
+}
+
+struct CompletedWrite<Response> {
+    request_fingerprint: Option<Vec<u8>>,
+    response: Response,
+}
+
+#[derive(Debug)]
+pub(crate) enum IdempotencyCollision {
+    DifferentRequest,
 }
 
 impl<State, Response> InMemoryActor<State, Response>
@@ -632,14 +642,48 @@ where
         write: impl FnOnce(&mut State) -> Response,
     ) -> Response {
         let mut guard = self.inner.lock().expect("actor state mutex poisoned");
-        if let Some(response) = guard.completed_writes.get(&idempotency_key) {
-            return response.clone();
+        if let Some(write) = guard.completed_writes.get(&idempotency_key) {
+            return write.response.clone();
         }
         let response = write(&mut guard.state);
-        guard
-            .completed_writes
-            .insert(idempotency_key, response.clone());
+        guard.completed_writes.insert(
+            idempotency_key,
+            CompletedWrite {
+                request_fingerprint: None,
+                response: response.clone(),
+            },
+        );
         response
+    }
+
+    /// Runs a write once for a canonical request fingerprint. Reusing the key
+    /// with a different request fails without invoking the write callback.
+    pub(crate) fn writer_with_fingerprint(
+        &self,
+        idempotency_key: uuid::Uuid,
+        request_fingerprint: Vec<u8>,
+        write: impl FnOnce(&mut State) -> Response,
+    ) -> Result<Response, IdempotencyCollision> {
+        let mut guard = self.inner.lock().expect("actor state mutex poisoned");
+        if let Some(completed) = guard.completed_writes.get(&idempotency_key) {
+            if completed
+                .request_fingerprint
+                .as_deref()
+                .is_some_and(|stored| stored != request_fingerprint)
+            {
+                return Err(IdempotencyCollision::DifferentRequest);
+            }
+            return Ok(completed.response.clone());
+        }
+        let response = write(&mut guard.state);
+        guard.completed_writes.insert(
+            idempotency_key,
+            CompletedWrite {
+                request_fingerprint: Some(request_fingerprint),
+                response: response.clone(),
+            },
+        );
+        Ok(response)
     }
 }
 
@@ -657,15 +701,19 @@ where
         write: impl FnOnce(&mut State) -> Result<Response, Error>,
     ) -> Result<Response, Error> {
         let mut guard = self.inner.lock().expect("actor state mutex poisoned");
-        if let Some(response) = guard.completed_writes.get(&idempotency_key) {
-            return Ok(response.clone());
+        if let Some(write) = guard.completed_writes.get(&idempotency_key) {
+            return Ok(write.response.clone());
         }
         let checkpoint = guard.state.clone();
         match write(&mut guard.state) {
             Ok(response) => {
-                guard
-                    .completed_writes
-                    .insert(idempotency_key, response.clone());
+                guard.completed_writes.insert(
+                    idempotency_key,
+                    CompletedWrite {
+                        request_fingerprint: None,
+                        response: response.clone(),
+                    },
+                );
                 Ok(response)
             }
             Err(error) => {
@@ -1513,6 +1561,38 @@ mod tests {
             }),
             1
         );
+        assert_eq!(actor.reader(|state| *state), 1);
+    }
+
+    #[test]
+    fn in_memory_actor_rejects_fingerprinted_idempotency_collisions() {
+        let actor = InMemoryActor::<i64, i64>::new(0);
+        let key = uuid::Uuid::new_v4();
+        assert_eq!(
+            actor
+                .writer_with_fingerprint(key, vec![1], |state| {
+                    *state += 1;
+                    *state
+                })
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            actor
+                .writer_with_fingerprint(key, vec![1], |state| {
+                    *state += 1;
+                    *state
+                })
+                .unwrap(),
+            1
+        );
+        let collision = actor
+            .writer_with_fingerprint(key, vec![2], |state| {
+                *state += 1;
+                *state
+            })
+            .unwrap_err();
+        assert!(matches!(collision, IdempotencyCollision::DifferentRequest));
         assert_eq!(actor.reader(|state| *state), 1);
     }
 

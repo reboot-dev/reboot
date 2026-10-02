@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::{InMemoryActor, database_proto as database, proto};
+use crate::{IdempotencyCollision, InMemoryActor, database_proto as database, proto};
 
 const STATE_REF_HEADER: &str = "x-reboot-state-ref";
 const IDEMPOTENCY_KEY_HEADER: &str = "x-reboot-idempotency-key";
@@ -42,6 +42,11 @@ pub fn request_fingerprint(method_identity: &str, request: &impl Message) -> Vec
 }
 
 type EchoActor = InMemoryActor<proto::Echo, proto::Text>;
+const ECHO_REPLY_METHOD_IDENTITY: &str = "tests.reboot.protoc.EchoMethods.Reply";
+
+fn idempotency_collision_status(_: IdempotencyCollision) -> Status {
+    Status::failed_precondition("idempotency key was reused with a different request")
+}
 
 #[derive(Clone, Eq, Hash, PartialEq)]
 struct ActorLockKey {
@@ -125,7 +130,13 @@ struct FileBackedEchoActor {
 #[derive(Clone)]
 struct FileBackedEchoActorState {
     state: proto::Echo,
-    completed_writes: HashMap<Uuid, proto::Text>,
+    completed_writes: HashMap<Uuid, PersistedCompletedWrite>,
+}
+
+#[derive(Clone)]
+struct PersistedCompletedWrite {
+    request_fingerprint: Option<Vec<u8>>,
+    response: proto::Text,
 }
 
 #[derive(Clone, Message)]
@@ -142,6 +153,8 @@ struct PersistedWrite {
     idempotency_key: String,
     #[prost(message, optional, tag = "2")]
     response: Option<proto::Text>,
+    #[prost(bytes = "vec", optional, tag = "3")]
+    request_fingerprint: Option<Vec<u8>>,
 }
 
 impl FileBackedEchoActor {
@@ -165,20 +178,40 @@ impl FileBackedEchoActor {
         read(&guard.state)
     }
 
-    fn writer(&self, idempotency_key: Uuid, message: proto::Text) -> io::Result<proto::Text> {
+    fn writer(
+        &self,
+        idempotency_key: Uuid,
+        request_fingerprint: Vec<u8>,
+        message: proto::Text,
+    ) -> Result<proto::Text, Status> {
         let mut guard = self.inner.lock().expect("actor state mutex poisoned");
-        if let Some(response) = guard.completed_writes.get(&idempotency_key) {
-            return Ok(response.clone());
+        if let Some(completed) = guard.completed_writes.get(&idempotency_key) {
+            if completed
+                .request_fingerprint
+                .as_deref()
+                .is_some_and(|stored| stored != request_fingerprint)
+            {
+                return Err(Status::failed_precondition(
+                    "idempotency key was reused with a different request",
+                ));
+            }
+            return Ok(completed.response.clone());
         }
 
         let checkpoint = guard.clone();
         guard.state.last_message = Some(message.clone());
-        guard
-            .completed_writes
-            .insert(idempotency_key, message.clone());
+        guard.completed_writes.insert(
+            idempotency_key,
+            PersistedCompletedWrite {
+                request_fingerprint: Some(request_fingerprint),
+                response: message.clone(),
+            },
+        );
         if let Err(error) = persist_actor(&self.path, &guard) {
             *guard = checkpoint;
-            return Err(error);
+            return Err(Status::internal(format!(
+                "failed to persist actor state: {error}"
+            )));
         }
         Ok(message)
     }
@@ -206,7 +239,16 @@ fn decode_actor(bytes: &[u8]) -> io::Result<FileBackedEchoActorState> {
                 "persisted write has no response",
             )
         })?;
-        if completed_writes.insert(key, response).is_some() {
+        if completed_writes
+            .insert(
+                key,
+                PersistedCompletedWrite {
+                    request_fingerprint: write.request_fingerprint,
+                    response,
+                },
+            )
+            .is_some()
+        {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "persisted idempotency key is duplicated",
@@ -225,9 +267,10 @@ fn persist_actor(path: &Path, state: &FileBackedEchoActorState) -> io::Result<()
         completed_writes: state
             .completed_writes
             .iter()
-            .map(|(key, response)| PersistedWrite {
+            .map(|(key, completed)| PersistedWrite {
                 idempotency_key: key.to_string(),
-                response: Some(response.clone()),
+                response: Some(completed.response.clone()),
+                request_fingerprint: completed.request_fingerprint.clone(),
             })
             .collect(),
     };
@@ -790,11 +833,14 @@ impl proto::echo_methods_server::EchoMethods for InMemoryHost {
     async fn reply(&self, request: Request<proto::Text>) -> Result<Response<proto::Text>, Status> {
         let actor = self.actor_for(&request)?;
         let key = idempotency_key(&request)?;
+        let fingerprint = request_fingerprint(ECHO_REPLY_METHOD_IDENTITY, request.get_ref());
         let message = request.into_inner();
-        let response = actor.writer(key, |state| {
-            state.last_message = Some(message.clone());
-            message
-        });
+        let response = actor
+            .writer_with_fingerprint(key, fingerprint, |state| {
+                state.last_message = Some(message.clone());
+                message
+            })
+            .map_err(idempotency_collision_status)?;
         Ok(Response::new(response))
     }
 
@@ -813,10 +859,9 @@ impl proto::echo_methods_server::EchoMethods for FileBackedHost {
     async fn reply(&self, request: Request<proto::Text>) -> Result<Response<proto::Text>, Status> {
         let actor = self.actor_for(&request)?;
         let key = idempotency_key(&request)?;
+        let fingerprint = request_fingerprint(ECHO_REPLY_METHOD_IDENTITY, request.get_ref());
         let message = request.into_inner();
-        let response = actor
-            .writer(key, message)
-            .map_err(|error| Status::internal(format!("failed to persist actor state: {error}")))?;
+        let response = actor.writer(key, fingerprint, message)?;
         Ok(Response::new(response))
     }
 
@@ -836,7 +881,7 @@ impl proto::echo_methods_server::EchoMethods for EchoMethodsAdapter {
         self.store
             .writer_async_with_method::<proto::Echo, _, _, _>(
                 "tests.reboot.protoc.Echo",
-                "tests.reboot.protoc.EchoMethods.Reply",
+                ECHO_REPLY_METHOD_IDENTITY,
                 request,
                 |state, request| {
                     Box::pin(async move {
@@ -1739,7 +1784,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn file_backed_host_survives_restart_and_replays_writes() {
+    async fn file_backed_host_survives_restart_and_rejects_collisions() {
         let directory = tempfile::tempdir().unwrap();
         let context = ExternalContext::new("durable-echo");
         let key = Uuid::from_u128(7);
@@ -1772,6 +1817,12 @@ mod tests {
             .await
             .unwrap();
         let replay = client
+            .reply(context.writer_with_key(first.clone(), key).unwrap())
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(replay.content, "persisted");
+        let collision = client
             .reply(
                 context
                     .writer_with_key(
@@ -1783,9 +1834,8 @@ mod tests {
                     .unwrap(),
             )
             .await
-            .unwrap()
-            .into_inner();
-        assert_eq!(replay.content, "persisted");
+            .unwrap_err();
+        assert_eq!(collision.code(), tonic::Code::FailedPrecondition);
         let last = client
             .last_message(context.reader(proto::Empty {}).unwrap())
             .await
@@ -1796,7 +1846,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reply_persists_and_replays_by_idempotency_key() {
+    async fn reply_replays_matching_requests_and_rejects_collisions() {
         let (address, server) = start_host().await;
         let mut client = proto::echo_methods_client::EchoMethodsClient::connect(address)
             .await
@@ -1821,20 +1871,26 @@ mod tests {
         assert_eq!(first.content, "first");
 
         let replay = client
+            .reply(context.writer_with_key(first.clone(), key).unwrap())
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(replay.content, "first");
+
+        let collision = client
             .reply(
                 context
                     .writer_with_key(
                         proto::Text {
-                            content: "ignored".into(),
+                            content: "must not replace first".into(),
                         },
                         key,
                     )
                     .unwrap(),
             )
             .await
-            .unwrap()
-            .into_inner();
-        assert_eq!(replay.content, "first");
+            .unwrap_err();
+        assert_eq!(collision.code(), tonic::Code::FailedPrecondition);
 
         let last = client
             .last_message(context.reader(proto::Empty {}).unwrap())
@@ -1843,6 +1899,54 @@ mod tests {
             .into_inner();
         assert_eq!(last.content, "first");
         server.abort();
+    }
+
+    #[test]
+    fn file_backed_actor_legacy_writes_without_fingerprints_replay() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("legacy.rbt");
+        let key = Uuid::from_u128(8);
+        let legacy = PersistedEchoActor {
+            state: Some(proto::Echo {
+                last_message: Some(proto::Text {
+                    content: "legacy state".into(),
+                }),
+            }),
+            completed_writes: vec![PersistedWrite {
+                idempotency_key: key.to_string(),
+                response: Some(proto::Text {
+                    content: "legacy response".into(),
+                }),
+                request_fingerprint: None,
+            }],
+        };
+        std::fs::write(&path, legacy.encode_to_vec()).unwrap();
+
+        let actor = FileBackedEchoActor::open(path).unwrap();
+        assert_eq!(
+            actor
+                .writer(
+                    key,
+                    request_fingerprint(
+                        ECHO_REPLY_METHOD_IDENTITY,
+                        &proto::Text {
+                            content: "new request".into(),
+                        },
+                    ),
+                    proto::Text {
+                        content: "must not replace legacy response".into(),
+                    },
+                )
+                .unwrap()
+                .content,
+            "legacy response"
+        );
+        assert_eq!(
+            actor
+                .reader(|state| state.last_message.clone().unwrap())
+                .content,
+            "legacy state"
+        );
     }
 
     #[tokio::test]

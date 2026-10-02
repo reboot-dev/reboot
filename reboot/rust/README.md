@@ -62,7 +62,8 @@ The generated Rust client compiles against the same Echo service surface that
 Python and TypeScript integration tests use. The crate also exports a small,
 executable `runtime::InMemoryHost` Tonic `EchoMethods` implementation. It keys
 process-local actors by `x-reboot-state-ref`, requires a UUID
-`x-reboot-idempotency-key` for `Reply`, replays completed writes, and serves
+`x-reboot-idempotency-key` for `Reply`, replays completed writes only for the
+same canonical request, rejects same-key request collisions, and serves
 `LastMessage` from the matching actor. Its integration tests use generated
 clients against a real Tonic server to verify state persistence, replay, actor
 isolation, and invalid metadata handling. This does **not** prove that Reboot
@@ -83,7 +84,8 @@ one:
    pre-existing protobuf bindings.
 3. The crate has executable process-local runtime slices: the default
    `InMemoryActor` host has serialized state reads/writes, idempotent
-   write-response caching, and rollback of failed transactional writes.
+   write-response caching with same-key collision detection, and rollback of
+   failed transactional writes.
    `REBOOT_RUST_DATABASE_ENDPOINT` selects a reusable `DatabaseActorStore`
    plus the concrete `EchoMethodsAdapter`. The store uses Reboot's existing
    Database sidecar to atomically persist state and a completed writer response
@@ -93,7 +95,8 @@ one:
    storage boundary is not Echo-specific. Concrete Tonic service adapters still
    must be generated per service; this is not a generic dispatcher or complete
    sidecar lifecycle. `REBOOT_RUST_STATE_DIR` instead selects `FileBackedHost`
-   for local restart testing; that file store remains single-process and has no
+   for local restart testing, including persisted same-key collision detection;
+   that file store remains single-process and has no
    inter-process locks, compaction, encryption, or distributed coordination.
 4. Python and Node generated servicer libraries own context propagation,
    retries, persistent state reads/writes, task/workflow semantics, and gRPC
