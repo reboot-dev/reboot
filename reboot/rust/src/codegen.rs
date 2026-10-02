@@ -387,6 +387,10 @@ fn emit_durable(
     durable_states: &mut std::collections::HashSet<String>,
 ) -> Result<(), String> {
     let service_name = required(&service.name, "service name")?;
+    let state_reference = annotation
+        .state
+        .strip_prefix('.')
+        .unwrap_or(&annotation.state);
     let state = same_package_type(
         file,
         package,
@@ -395,7 +399,7 @@ fn emit_durable(
         "state",
         &Some(format!(
             ".{package}.{}",
-            annotation.state.trim_start_matches(&format!("{package}."))
+            state_reference.trim_start_matches(&format!("{package}."))
         )),
     )?;
     let state_type = format!("{package}.{state}");
@@ -724,7 +728,11 @@ mod tests {
 
     #[test]
     fn durable_state_type_is_canonical_for_relative_and_qualified_annotations() {
-        for annotation_state in ["Counter", "tests.reboot.protoc.Counter"] {
+        for annotation_state in [
+            "Counter",
+            "tests.reboot.protoc.Counter",
+            ".tests.reboot.protoc.Counter",
+        ] {
             let annotations = HashMap::from([(
                 "counter.proto".to_owned(),
                 HashMap::from([(
