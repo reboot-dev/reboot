@@ -11,8 +11,10 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
+use std::future::Future;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use prost::Message;
@@ -431,6 +433,46 @@ impl DatabaseActorStore {
         Ok(Response::new(response))
     }
 
+    /// Runs an asynchronous writer callback inside the durable actor envelope.
+    ///
+    /// Writers for the same state type and reference serialize only across
+    /// clones of this `DatabaseActorStore` instance. The final state and
+    /// idempotent response are persisted atomically, but awaited callback side
+    /// effects are not transactional or exactly-once.
+    pub async fn writer_async<State, RequestBody, ResponseBody, F>(
+        &self,
+        state_type: &'static str,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        State: Message + Default + Clone + Send + Sync + 'static,
+        RequestBody: Send + 'static,
+        ResponseBody: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut State,
+            RequestBody,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
+        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
+        let key = idempotency_key(&request)?;
+        let lock = self.lock_for_type(state_type, &state_ref);
+        let _guard = lock.lock().await;
+        if let Some(response) = self.replay_type(state_type, &state_ref, key).await? {
+            return Ok(Response::new(response));
+        }
+        let mut state = self
+            .load_type(state_type, &state_ref)
+            .await?
+            .unwrap_or_default();
+        let response = invoke(&mut state, request.into_inner()).await?;
+        self.store_type(state_type, &state_ref, key, state, response.clone())
+            .await?;
+        Ok(Response::new(response))
+    }
+
     /// Runs a synchronous reader callback after loading the actor state.
     pub async fn reader<State, RequestBody, ResponseBody, F>(
         &self,
@@ -450,6 +492,32 @@ impl DatabaseActorStore {
             .await?
             .unwrap_or_default();
         Ok(Response::new(invoke(&state, request.into_inner())?))
+    }
+
+    /// Runs an asynchronous reader callback after loading the actor state.
+    pub async fn reader_async<State, RequestBody, ResponseBody, F>(
+        &self,
+        state_type: &'static str,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        State: Message + Default + Clone + Send + Sync + 'static,
+        RequestBody: Send + 'static,
+        ResponseBody: Message + Default + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a State,
+            RequestBody,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
+        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
+        let state = self
+            .load_type(state_type, &state_ref)
+            .await?
+            .unwrap_or_default();
+        Ok(Response::new(invoke(&state, request.into_inner()).await?))
     }
 }
 
@@ -607,14 +675,17 @@ impl proto::counter_writes_server::CounterWrites for CounterAdapter {
         request: Request<proto::IncrementRequest>,
     ) -> Result<Response<proto::CounterValue>, Status> {
         self.store
-            .writer::<proto::Counter, _, _, _>(
+            .writer_async::<proto::Counter, _, _, _>(
                 "tests.reboot.protoc.Counter",
                 request,
                 |state, request| {
-                    state.value = state.value.checked_add(request.amount).ok_or_else(|| {
-                        Status::invalid_argument("counter increment overflows int64")
-                    })?;
-                    Ok(proto::CounterValue { value: state.value })
+                    Box::pin(async move {
+                        tokio::task::yield_now().await;
+                        state.value = state.value.checked_add(request.amount).ok_or_else(|| {
+                            Status::invalid_argument("counter increment overflows int64")
+                        })?;
+                        Ok(proto::CounterValue { value: state.value })
+                    })
                 },
             )
             .await
@@ -628,10 +699,15 @@ impl proto::counter_reads_server::CounterReads for CounterAdapter {
         request: Request<proto::Empty>,
     ) -> Result<Response<proto::CounterValue>, Status> {
         self.store
-            .reader::<proto::Counter, _, _, _>(
+            .reader_async::<proto::Counter, _, _, _>(
                 "tests.reboot.protoc.Counter",
                 request,
-                |state, _| Ok(proto::CounterValue { value: state.value }),
+                |state, _| {
+                    Box::pin(async move {
+                        tokio::task::yield_now().await;
+                        Ok(proto::CounterValue { value: state.value })
+                    })
+                },
             )
             .await
     }
@@ -1181,6 +1257,105 @@ mod tests {
             first
         );
         server.abort();
+        database_server.abort();
+    }
+
+    #[tokio::test]
+    async fn database_actor_store_async_callbacks_serialize_across_clones_and_read_loaded_state() {
+        let (database_address, _, database_server) = start_database().await;
+        let store = DatabaseActorStore::connect(&database_address)
+            .await
+            .unwrap();
+        let first_store = store.clone();
+        let second_store = store.clone();
+        let context = ExternalContext::new("one-store-async-lock");
+        let first_entered = Arc::new(tokio::sync::Notify::new());
+        let release_first = Arc::new(tokio::sync::Notify::new());
+        let second_callback_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let first = tokio::spawn({
+            let first_entered = first_entered.clone();
+            let release_first = release_first.clone();
+            let request = context
+                .writer_with_key(proto::IncrementRequest { amount: 1 }, Uuid::from_u128(101))
+                .unwrap();
+            async move {
+                first_store
+                    .writer_async::<proto::Counter, _, _, _>(
+                        "tests.reboot.protoc.Counter",
+                        request,
+                        move |state, request| {
+                            let first_entered = first_entered.clone();
+                            let release_first = release_first.clone();
+                            Box::pin(async move {
+                                first_entered.notify_one();
+                                release_first.notified().await;
+                                state.value += request.amount;
+                                Ok(proto::CounterValue { value: state.value })
+                            })
+                        },
+                    )
+                    .await
+            }
+        });
+        first_entered.notified().await;
+
+        let second = tokio::spawn({
+            let second_callback_started = second_callback_started.clone();
+            let request = context
+                .writer_with_key(proto::IncrementRequest { amount: 2 }, Uuid::from_u128(102))
+                .unwrap();
+            async move {
+                second_store
+                    .writer_async::<proto::Counter, _, _, _>(
+                        "tests.reboot.protoc.Counter",
+                        request,
+                        move |state, request| {
+                            let second_callback_started = second_callback_started.clone();
+                            Box::pin(async move {
+                                second_callback_started
+                                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                                state.value += request.amount;
+                                Ok(proto::CounterValue { value: state.value })
+                            })
+                        },
+                    )
+                    .await
+            }
+        });
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            !second_callback_started.load(std::sync::atomic::Ordering::SeqCst),
+            "a clone of the same store must not enter a same-actor writer while it awaits"
+        );
+        release_first.notify_one();
+        assert_eq!(first.await.unwrap().unwrap().into_inner().value, 1);
+        assert_eq!(second.await.unwrap().unwrap().into_inner().value, 3);
+
+        let reader_yielded = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let value = store
+            .reader_async::<proto::Counter, _, _, _>(
+                "tests.reboot.protoc.Counter",
+                context.reader(proto::Empty {}).unwrap(),
+                {
+                    let reader_yielded = reader_yielded.clone();
+                    move |state, _| {
+                        let reader_yielded = reader_yielded.clone();
+                        Box::pin(async move {
+                            tokio::task::yield_now().await;
+                            reader_yielded.store(true, std::sync::atomic::Ordering::SeqCst);
+                            Ok(proto::CounterValue { value: state.value })
+                        })
+                    }
+                },
+            )
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(reader_yielded.load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(value.value, 3);
         database_server.abort();
     }
 

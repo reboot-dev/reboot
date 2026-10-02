@@ -30,8 +30,14 @@ fn protoc_plugin_emits_durable_counter_adapters() {
         std::fs::read_to_string(generated.join("tests/reboot/protoc/counter.reboot.rs")).unwrap();
     assert!(content.contains("pub trait CounterWritesDatabaseHandler"));
     assert!(content.contains("pub trait CounterReadsDatabaseHandler"));
-    assert!(content.contains("store.writer::<proto::Counter"));
-    assert!(content.contains("store.reader::<proto::Counter"));
+    assert!(content.contains("#[tonic::async_trait]\npub trait CounterWritesDatabaseHandler"));
+    assert!(content.contains("async fn increment"));
+    assert!(content.contains("handler: std::sync::Arc<H>"));
+    assert!(content.contains("impl<H> Clone for CounterWritesDatabaseAdapter<H>"));
+    assert!(content.contains("store.writer_async::<proto::Counter"));
+    assert!(content.contains("store.reader_async::<proto::Counter"));
+    assert!(content.contains("let handler = self.handler.clone();"));
+    assert!(content.contains("Box::pin(async move"));
     assert!(content.contains("reboot::runtime::DatabaseActorStore"));
 }
 
@@ -65,8 +71,8 @@ fn protoc_plugin_canonicalizes_relative_durable_state_annotation() {
         generated.join("tests/reboot/protoc/explicit_state_annotations_relative.reboot.rs"),
     )
     .unwrap();
-    assert!(content.contains("store.writer::<proto::Echo"));
-    assert!(content.contains("store.reader::<proto::Echo"));
+    assert!(content.contains("store.writer_async::<proto::Echo"));
+    assert!(content.contains("store.reader_async::<proto::Echo"));
     assert!(content.contains("\"tests.reboot.protoc.Echo\""));
     assert!(!content.contains("\"Echo\", request"));
 }
@@ -118,26 +124,29 @@ mod tests {
     };
 use uuid::Uuid;
 
-#[derive(Clone)]
 struct Counter;
 
+#[tonic::async_trait]
 impl generated::CounterWritesDatabaseHandler for Counter {
-    fn increment(
+    async fn increment(
         &self,
         state: &mut proto::Counter,
         request: proto::IncrementRequest,
     ) -> Result<proto::CounterValue, tonic::Status> {
+        tokio::task::yield_now().await;
         state.value += request.amount;
         Ok(proto::CounterValue { value: state.value })
     }
 }
 
+#[tonic::async_trait]
 impl generated::CounterReadsDatabaseHandler for Counter {
-    fn get(
+    async fn get(
         &self,
         state: &proto::Counter,
         _: proto::Empty,
     ) -> Result<proto::CounterValue, tonic::Status> {
+        tokio::task::yield_now().await;
         Ok(proto::CounterValue { value: state.value })
     }
 }

@@ -365,22 +365,23 @@ fn emit_durable(
     let handler = format!("{service_name}DatabaseHandler");
     let adapter = format!("{service_name}DatabaseAdapter");
     let server = format!("{}_server", snake_case(service_name));
+    output.push_str("#[tonic::async_trait]\n");
     output.push_str(&format!("pub trait {handler}: Send + Sync + 'static {{\n"));
     for (kind, method, request, response) in &methods {
-        output.push_str(&format!("    fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n", if **kind == DurableKind::Writer { "&mut " } else { "&" }));
+        output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n", if **kind == DurableKind::Writer { "&mut " } else { "&" }));
     }
     output.push_str("}\n\n");
-    output.push_str(&format!("#[derive(Clone)]\npub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: H }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler }} }} }}\n\n"));
+    output.push_str(&format!("pub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: std::sync::Arc<H> }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ store: self.store.clone(), handler: self.handler.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler: std::sync::Arc::new(handler) }} }} }}\n\n"));
     output.push_str("#[tonic::async_trait]\n");
     output.push_str(&format!(
         "impl<H: {handler}> proto::{server}::{service_name} for {adapter}<H> {{\n"
     ));
     for (kind, method, request, response) in methods {
         let envelope = match kind {
-            DurableKind::Reader => "reader",
-            DurableKind::Writer => "writer",
+            DurableKind::Reader => "reader_async",
+            DurableKind::Writer => "writer_async",
         };
-        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        self.store.{envelope}::<proto::{state}, _, _, _>(\n            \"{state_type}\", request, |state, request| self.handler.{method}(state, request),\n        ).await\n    }}\n"));
+        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let handler = self.handler.clone();\n        self.store.{envelope}::<proto::{state}, _, _, _>(\n            \"{state_type}\", request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await }})\n            }},\n        ).await\n    }}\n"));
     }
     output.push_str("}\n\n");
     Ok(())
@@ -590,7 +591,7 @@ mod tests {
                 .remove(0)
                 .content
                 .unwrap();
-            assert!(content.contains("store.writer::<proto::Counter"));
+            assert!(content.contains("store.writer_async::<proto::Counter"));
             assert!(content.contains("\"tests.reboot.protoc.Counter\""));
             assert!(!content.contains("\"Counter\", request"));
         }

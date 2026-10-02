@@ -206,14 +206,20 @@ dependency is renamed, add `runtime_module=<Rust path>` to
 For every selected service, the plugin preserves the concrete unary forwarding
 `ServiceHandler`/`ServiceAdapter<H>` output. When `protoc` supplies a genuine
 `rbt.v1alpha1.service` state option and a unary `rbt.v1alpha1.method` reader or
-writer option, it additionally emits a synchronous `ServiceDatabaseHandler`
-and a `ServiceDatabaseAdapter<H>` backed by `DatabaseActorStore`. The adapter
-passes the annotated state type string explicitly, so downstream generated
-protobuf types do not need an impossible orphan-rule `RebootState` impl.
+writer option, it additionally emits an async `ServiceDatabaseHandler`
+(using `#[tonic::async_trait]`) and a `ServiceDatabaseAdapter<H>` backed by
+`DatabaseActorStore`. Handlers may await while borrowing loaded state. The
+adapter passes the annotated state type string explicitly, so downstream
+generated protobuf types do not need an impossible orphan-rule `RebootState`
+impl.
 
 The durable adapter owns metadata validation, state-reference isolation,
-idempotent writer replay, state load, and atomic `Store(sync=true)`; application
-handlers retain their domain behavior. Streaming methods, unsupported Reboot
-method kinds, missing annotated state, cross-package message types, and nested
-types are rejected rather than guessed. This remains concrete per-service code:
-there is no dynamic dispatcher, macro system, or generic domain mutation.
+idempotent writer replay, state load, and atomic `Store(sync=true)` of the final
+state and idempotency response; application handlers retain their domain
+behavior. Writer serialization is local only to clones of one
+`DatabaseActorStore` instance, not independently connected stores. `Store` does
+not make side effects awaited by a handler transactional or exactly-once.
+Streaming methods, unsupported Reboot method kinds, missing annotated state,
+cross-package message types, and nested types are rejected rather than guessed.
+This remains concrete per-service code: there is no dynamic dispatcher, macro
+system, or generic domain mutation.
