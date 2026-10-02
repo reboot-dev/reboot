@@ -302,26 +302,39 @@ fn emit_durable(
             annotation.state.trim_start_matches(&format!("{package}."))
         )),
     )?;
+    let mut methods = Vec::new();
     for method in &service.method {
         let method_name = required(&method.name, "method name")?;
         let Some(kind) = annotation.methods.get(method_name) else {
             continue;
         };
-        let (rust_method, request, response) = method_types(file, package, service_name, method)?;
-        let suffix = match kind {
-            DurableKind::Reader => "Reads",
-            DurableKind::Writer => "Writes",
-        };
-        // The service name remains the source of the public trait name; the kind is from its option.
-        let handler = format!("{service_name}DatabaseHandler");
-        let adapter = format!("{service_name}DatabaseAdapter");
-        let server = format!("{}_server", snake_case(service_name));
-        output.push_str(&format!("pub trait {handler}: Send + Sync + 'static {{\n    fn {rust_method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n}}\n\n", if *kind == DurableKind::Writer { "&mut " } else { "&" }));
-        output.push_str(&format!("#[derive(Clone)]\npub struct {adapter}<H> {{ store: reboot_rust_schema::runtime::DatabaseActorStore, handler: H }}\nimpl<H> {adapter}<H> {{ pub fn new(store: reboot_rust_schema::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler }} }} }}\n\n"));
-        output.push_str("#[tonic::async_trait]\n");
-        output.push_str(&format!("impl<H: {handler}> proto::{server}::{service_name} for {adapter}<H> {{\n    async fn {rust_method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        self.store.{}::<proto::{state}, _, _, _>(\n            \"{}\", request, |state, request| self.handler.{rust_method}(state, request),\n        ).await\n    }}\n}}\n\n", match kind { DurableKind::Reader => "reader", DurableKind::Writer => "writer" }, annotation.state));
-        let _ = suffix;
+        let (method, request, response) = method_types(file, package, service_name, method)?;
+        methods.push((kind, method, request, response));
     }
+    if methods.is_empty() {
+        return Ok(());
+    }
+    let handler = format!("{service_name}DatabaseHandler");
+    let adapter = format!("{service_name}DatabaseAdapter");
+    let server = format!("{}_server", snake_case(service_name));
+    output.push_str(&format!("pub trait {handler}: Send + Sync + 'static {{\n"));
+    for (kind, method, request, response) in &methods {
+        output.push_str(&format!("    fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n", if **kind == DurableKind::Writer { "&mut " } else { "&" }));
+    }
+    output.push_str("}\n\n");
+    output.push_str(&format!("#[derive(Clone)]\npub struct {adapter}<H> {{ store: reboot_rust_schema::runtime::DatabaseActorStore, handler: H }}\nimpl<H> {adapter}<H> {{ pub fn new(store: reboot_rust_schema::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler }} }} }}\n\n"));
+    output.push_str("#[tonic::async_trait]\n");
+    output.push_str(&format!(
+        "impl<H: {handler}> proto::{server}::{service_name} for {adapter}<H> {{\n"
+    ));
+    for (kind, method, request, response) in methods {
+        let envelope = match kind {
+            DurableKind::Reader => "reader",
+            DurableKind::Writer => "writer",
+        };
+        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        self.store.{envelope}::<proto::{state}, _, _, _>(\n            \"{}\", request, |state, request| self.handler.{method}(state, request),\n        ).await\n    }}\n", annotation.state));
+    }
+    output.push_str("}\n\n");
     Ok(())
 }
 
@@ -427,6 +440,44 @@ mod tests {
         assert!(content.contains("CounterWritesHandler"));
         assert!(content.contains("self.handler.increment(request).await"));
     }
+    #[test]
+    fn rejects_missing_or_invalid_module_parameter() {
+        for parameter in [
+            None,
+            Some("module=other::9invalid".to_owned()),
+            Some("not-module=downstream::wire".to_owned()),
+        ] {
+            let mut value = request();
+            value.parameter = parameter;
+            assert!(
+                generate(value)
+                    .error
+                    .unwrap()
+                    .contains("module=<Rust path>")
+            );
+        }
+    }
+
+    #[test]
+    fn module_parameter_controls_generated_import() {
+        let mut value = request();
+        value.parameter = Some("module=downstream::wire".into());
+        assert!(
+            generate(value)
+                .file
+                .remove(0)
+                .content
+                .unwrap()
+                .contains("use downstream::wire as proto;")
+        );
+    }
+
+    #[test]
+    fn snake_case_matches_protobuf_acronyms() {
+        assert_eq!(snake_case("APIService"), "api_service");
+        assert_eq!(snake_case("GetURL"), "get_url");
+    }
+
     #[test]
     fn rejects_streaming() {
         let mut value = request();
