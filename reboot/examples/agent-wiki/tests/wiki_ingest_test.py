@@ -125,10 +125,8 @@ def script(world: World) -> Iterator[ScriptedLibrarian]:
     the scripted one, which saves the created page's ID as
     `page_id`."""
     scripted = ScriptedLibrarian(world)
-    original = wiki_module.librarian.wrapped.model
-    wiki_module.librarian.wrapped.model = FunctionModel(scripted.step)
-    yield scripted
-    wiki_module.librarian.wrapped.model = original
+    with wiki_module.librarian.override(model=FunctionModel(scripted.step)):
+        yield scripted
 
 
 scenarios('wiki_ingest.feature')

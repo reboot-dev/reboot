@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import pydantic_ai
 from agent_wiki.v1.wiki import (
     UserCreateWikiRequest,
     UserCreateWikiResponse,
@@ -11,7 +10,14 @@ from agent_wiki.v1.wiki import (
 )
 from agent_wiki.v1.wiki_rbt import Page, Transcript, User, Wiki
 from dataclasses import dataclass
-from pydantic_ai import RunContext
+from pydantic_ai import (
+    CallToolsNode,
+    ModelRequestNode,
+    RunContext,
+    UserPromptNode,
+)
+from pydantic_ai.messages import TextPart, ToolCallPart, ToolReturnPart
+from pydantic_graph import End
 from rbt.v1alpha1.errors_pb2 import Ok, PermissionDenied, Unauthenticated
 from reboot.agents.pydantic_ai import Agent
 from reboot.aio.auth.authorizers import allow_if, is_app_internal
@@ -67,39 +73,38 @@ def _log_librarian_node(prefix: str, node: object) -> None:
     for every node yielded by the iterator so the backend
     log shows the model's thoughts, its tool calls, and
     each tool's return value as the ingest happens."""
-    if pydantic_ai.Agent.is_user_prompt_node(node):
+    if isinstance(node, UserPromptNode):
         logger.info("%s prompt submitted", prefix)
-    elif pydantic_ai.Agent.is_model_request_node(node):
+    elif isinstance(node, ModelRequestNode):
         # `node.request.parts` holds the tool results (and
         # any user prompts) being fed back to the model.
-        for part in node.request.parts:
-            if getattr(part, "part_kind", None) == "tool-return":
+        for request_part in node.request.parts:
+            if isinstance(request_part, ToolReturnPart):
                 logger.info(
                     "%s tool return %s -> %s",
                     prefix,
-                    part.tool_name,
-                    _truncate(part.content),
+                    request_part.tool_name,
+                    _truncate(request_part.content),
                 )
-    elif pydantic_ai.Agent.is_call_tools_node(node):
+    elif isinstance(node, CallToolsNode):
         # `node.model_response.parts` is the model's latest
         # reply: free-form text (its "thinking") and the
         # tool calls it wants us to execute.
-        for part in node.model_response.parts:
-            kind = getattr(part, "part_kind", None)
-            if kind == "text":
+        for response_part in node.model_response.parts:
+            if isinstance(response_part, TextPart):
                 logger.info(
                     "%s thinking: %s",
                     prefix,
-                    _truncate(part.content),
+                    _truncate(response_part.content),
                 )
-            elif kind == "tool-call":
+            elif isinstance(response_part, ToolCallPart):
                 logger.info(
                     "%s tool call %s(%s)",
                     prefix,
-                    part.tool_name,
-                    _truncate(part.args),
+                    response_part.tool_name,
+                    _truncate(response_part.args),
                 )
-    elif pydantic_ai.Agent.is_end_node(node):
+    elif isinstance(node, End):
         logger.info("%s done", prefix)
     else:
         logger.debug("%s unknown node: %r", prefix, node)

@@ -44,10 +44,8 @@ def librarian_model() -> Iterator[None]:
             "ingestion."
         )
 
-    original = wiki_module.librarian.wrapped.model
-    wiki_module.librarian.wrapped.model = FunctionModel(refuse)
-    yield
-    wiki_module.librarian.wrapped.model = original
+    with wiki_module.librarian.override(model=FunctionModel(refuse)):
+        yield
 
 
 scenarios('wiki_crud.feature')

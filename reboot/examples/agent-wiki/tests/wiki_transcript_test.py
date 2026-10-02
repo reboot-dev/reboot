@@ -40,10 +40,8 @@ def librarian_model() -> Iterator[None]:
     ) -> ModelResponse:
         return ModelResponse(parts=[TextPart(content="Librarian response")])
 
-    original = wiki_module.librarian.wrapped.model
-    wiki_module.librarian.wrapped.model = FunctionModel(respond)
-    yield
-    wiki_module.librarian.wrapped.model = original
+    with wiki_module.librarian.override(model=FunctionModel(respond)):
+        yield
 
 
 scenarios('wiki_transcript.feature')
