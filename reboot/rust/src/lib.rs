@@ -43,16 +43,34 @@ pub enum FieldType {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MapKeyType {
     Bool,
+    Fixed32,
+    Fixed64,
+    I32,
     I64,
+    SFixed32,
+    SFixed64,
+    SInt32,
+    SInt64,
     String,
+    U32,
+    U64,
 }
 
 impl MapKeyType {
     fn proto(self) -> &'static str {
         match self {
             Self::Bool => "bool",
+            Self::Fixed32 => "fixed32",
+            Self::Fixed64 => "fixed64",
+            Self::I32 => "int32",
             Self::I64 => "int64",
+            Self::SFixed32 => "sfixed32",
+            Self::SFixed64 => "sfixed64",
+            Self::SInt32 => "sint32",
+            Self::SInt64 => "sint64",
             Self::String => "string",
+            Self::U32 => "uint32",
+            Self::U64 => "uint64",
         }
     }
 }
@@ -1239,6 +1257,26 @@ mod tests {
             (FieldType::U64, "uint64"),
         ] {
             assert_eq!(field_type.proto(), proto);
+        }
+    }
+
+    #[test]
+    fn map_key_types_emit_protobuf_eligible_key_names() {
+        for (key_type, proto) in [
+            (MapKeyType::Bool, "bool"),
+            (MapKeyType::Fixed32, "fixed32"),
+            (MapKeyType::Fixed64, "fixed64"),
+            (MapKeyType::I32, "int32"),
+            (MapKeyType::I64, "int64"),
+            (MapKeyType::SFixed32, "sfixed32"),
+            (MapKeyType::SFixed64, "sfixed64"),
+            (MapKeyType::SInt32, "sint32"),
+            (MapKeyType::SInt64, "sint64"),
+            (MapKeyType::String, "string"),
+            (MapKeyType::U32, "uint32"),
+            (MapKeyType::U64, "uint64"),
+        ] {
+            assert_eq!(key_type.proto(), proto);
         }
     }
 
