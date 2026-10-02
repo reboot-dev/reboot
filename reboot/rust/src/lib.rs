@@ -181,6 +181,8 @@ pub enum SchemaError {
     DuplicateMessage(&'static str),
     DuplicateEnum(&'static str),
     DuplicateOneOf(&'static str),
+    DuplicateMethod(&'static str),
+    UnknownMethodMessage(&'static str),
     InvalidEnum(&'static str),
     UnknownMessage(&'static str),
     ServiceStateMismatch {
@@ -203,6 +205,13 @@ impl std::fmt::Display for SchemaError {
             }
             Self::DuplicateEnum(name) => write!(f, "enum `{name}` is declared more than once"),
             Self::DuplicateOneOf(name) => write!(f, "oneof `{name}` is declared more than once"),
+            Self::DuplicateMethod(name) => write!(f, "method `{name}` is declared more than once"),
+            Self::UnknownMethodMessage(name) => {
+                write!(
+                    f,
+                    "method request/response message `{name}` is not declared"
+                )
+            }
             Self::InvalidEnum(name) => write!(
                 f,
                 "enum `{name}` must have a named zero-valued first variant and unique variant numbers"
@@ -459,6 +468,27 @@ impl ApplicationSpec {
                 }
             }
         }
+
+        let mut method_names = std::collections::BTreeSet::new();
+        for method in self.service.methods {
+            if method.name.is_empty() {
+                return Err(SchemaError::EmptyName("method"));
+            }
+            if !method_names.insert(method.name) {
+                return Err(SchemaError::DuplicateMethod(method.name));
+            }
+            for message in [method.request, method.response] {
+                if message.is_empty()
+                    || !self
+                        .messages
+                        .iter()
+                        .any(|declared| declared.name == message)
+                {
+                    return Err(SchemaError::UnknownMethodMessage(message));
+                }
+            }
+        }
+
         for field in self.state.fields.iter().chain(
             self.messages
                 .iter()
@@ -906,6 +936,22 @@ mod tests {
         assert_eq!(
             invalid.validate(),
             Err(SchemaError::UnknownMessage("Address"))
+        );
+    }
+
+    #[test]
+    fn rejects_methods_with_undeclared_messages() {
+        let mut invalid = CLINIC;
+        invalid.service.methods = &[MethodSpec {
+            name: "Broken",
+            request: "MissingRequest",
+            response: "RenameResponse",
+            kind: MethodKind::Reader,
+            description: None,
+        }];
+        assert_eq!(
+            invalid.validate(),
+            Err(SchemaError::UnknownMethodMessage("MissingRequest"))
         );
     }
 
