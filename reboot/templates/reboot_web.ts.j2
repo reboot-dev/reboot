@@ -461,7 +461,10 @@ class _Reactively {
         abortedType: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted,
         request: request,
         signal: options?.signal,
-        bearerToken: context.bearerToken,
+        // Read the token from `context` on every attempt, so that a
+        // token set with `context.setBearerToken()` after the read
+        // started is sent on the next attempt.
+        bearerToken: async () => await context.bearerToken?.(),
         onUnauthenticated: context.onUnauthenticated,
         websockets: context.websockets,
       }
