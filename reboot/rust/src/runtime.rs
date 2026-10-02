@@ -15,7 +15,7 @@ use std::future::Future;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 
 use prost::Message;
 use tonic::{Request, Response, Status};
@@ -27,6 +27,16 @@ const STATE_REF_HEADER: &str = "x-reboot-state-ref";
 const IDEMPOTENCY_KEY_HEADER: &str = "x-reboot-idempotency-key";
 
 type EchoActor = InMemoryActor<proto::Echo, proto::Text>;
+
+#[derive(Clone, Eq, Hash, PartialEq)]
+struct ActorLockKey {
+    endpoint: String,
+    state_type: String,
+    state_ref: String,
+}
+
+static DATABASE_ACTOR_LOCKS: LazyLock<Mutex<HashMap<ActorLockKey, Weak<tokio::sync::Mutex<()>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// An in-memory host for the generated `EchoMethods` Tonic service.
 ///
@@ -257,34 +267,55 @@ impl RebootState for proto::Counter {
 /// Reusable durable actor storage backed by Reboot's Database sidecar.
 ///
 /// A `Store(sync=true)` atomically persists actor state and a writer's
-/// idempotent response. Locks are scoped by state type and state reference.
+/// idempotent response. Locks are scoped by normalized endpoint, state type,
+/// and state reference within this process.
 #[derive(Clone)]
 pub struct DatabaseActorStore {
     database: database::database_client::DatabaseClient<tonic::transport::Channel>,
-    actor_locks: Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
+    endpoint: String,
+    actor_locks: Arc<Mutex<HashMap<ActorLockKey, Arc<tokio::sync::Mutex<()>>>>>,
 }
 
 impl DatabaseActorStore {
     /// Connects to an existing Reboot Database sidecar.
     pub async fn connect(endpoint: impl AsRef<str>) -> Result<Self, tonic::transport::Error> {
+        let endpoint = tonic::transport::Endpoint::from_shared(endpoint.as_ref().to_owned())?;
+        let endpoint_uri = endpoint.uri().to_string();
         Ok(Self {
-            database: database::database_client::DatabaseClient::connect(
-                endpoint.as_ref().to_owned(),
-            )
-            .await?,
+            database: database::database_client::DatabaseClient::connect(endpoint).await?,
+            endpoint: endpoint_uri,
             actor_locks: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
     fn lock_for_type(&self, state_type: &str, state_ref: &str) -> Arc<tokio::sync::Mutex<()>> {
+        let key = ActorLockKey {
+            endpoint: self.endpoint.clone(),
+            state_type: state_type.to_owned(),
+            state_ref: state_ref.to_owned(),
+        };
         let mut locks = self
             .actor_locks
             .lock()
             .expect("actor-lock map mutex poisoned");
-        locks
-            .entry(format!("{state_type}:{state_ref}"))
-            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
-            .clone()
+        if let Some(lock) = locks.get(&key) {
+            return lock.clone();
+        }
+
+        let mut registry = DATABASE_ACTOR_LOCKS
+            .lock()
+            .expect("database actor-lock registry mutex poisoned");
+        registry.retain(|_, lock| lock.strong_count() > 0);
+        let lock = match registry.get(&key).and_then(Weak::upgrade) {
+            Some(lock) => lock,
+            None => {
+                let lock = Arc::new(tokio::sync::Mutex::new(()));
+                registry.insert(key.clone(), Arc::downgrade(&lock));
+                lock
+            }
+        };
+        locks.insert(key, lock.clone());
+        lock
     }
 
     fn lock_for<State: RebootState>(&self, state_ref: &str) -> Arc<tokio::sync::Mutex<()>> {
@@ -448,10 +479,12 @@ impl DatabaseActorStore {
 
     /// Runs an asynchronous writer callback inside the durable actor envelope.
     ///
-    /// Writers for the same state type and reference serialize only across
-    /// clones of this `DatabaseActorStore` instance. The final state and
-    /// idempotent response are persisted atomically, but awaited callback side
-    /// effects are not transactional or exactly-once.
+    /// Writers for the same normalized Tonic endpoint, state type, and state
+    /// reference serialize within this process. Endpoint aliases, proxies, and
+    /// alternative spellings are not guaranteed to share a lock, and this does
+    /// not coordinate across processes, hosts, or a distributed deployment.
+    /// The final state and idempotent response are persisted atomically, but
+    /// awaited callback side effects are not transactional or exactly-once.
     pub async fn writer_async<State, RequestBody, ResponseBody, F>(
         &self,
         state_type: &'static str,
@@ -1432,6 +1465,100 @@ mod tests {
             .into_inner();
         assert!(reader_yielded.load(std::sync::atomic::Ordering::SeqCst));
         assert_eq!(value.value, 3);
+        database_server.abort();
+    }
+
+    #[tokio::test]
+    async fn database_actor_store_async_callbacks_serialize_across_independent_connections() {
+        let (database_address, database, database_server) = start_database().await;
+        let first_store = DatabaseActorStore::connect(&database_address)
+            .await
+            .unwrap();
+        let second_store = DatabaseActorStore::connect(&database_address)
+            .await
+            .unwrap();
+        let context = ExternalContext::new("independent-store-async-lock");
+        let first_entered = Arc::new(tokio::sync::Notify::new());
+        let release_first = Arc::new(tokio::sync::Notify::new());
+        let start_second = Arc::new(tokio::sync::Barrier::new(2));
+        let second_attempted = Arc::new(tokio::sync::Notify::new());
+        let second_callback_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let first = tokio::spawn({
+            let store = first_store.clone();
+            let first_entered = first_entered.clone();
+            let release_first = release_first.clone();
+            let request = context
+                .writer_with_key(proto::IncrementRequest { amount: 1 }, Uuid::from_u128(201))
+                .unwrap();
+            async move {
+                store
+                    .writer_async::<proto::Counter, _, _, _>(
+                        "tests.reboot.protoc.Counter",
+                        request,
+                        move |state, request| {
+                            let first_entered = first_entered.clone();
+                            let release_first = release_first.clone();
+                            Box::pin(async move {
+                                first_entered.notify_one();
+                                release_first.notified().await;
+                                state.value += request.amount;
+                                Ok(proto::CounterValue { value: state.value })
+                            })
+                        },
+                    )
+                    .await
+            }
+        });
+        first_entered.notified().await;
+
+        let second = tokio::spawn({
+            let store = second_store.clone();
+            let start_second = start_second.clone();
+            let second_attempted = second_attempted.clone();
+            let second_callback_started = second_callback_started.clone();
+            let request = context
+                .writer_with_key(proto::IncrementRequest { amount: 2 }, Uuid::from_u128(202))
+                .unwrap();
+            async move {
+                start_second.wait().await;
+                second_attempted.notify_one();
+                store
+                    .writer_async::<proto::Counter, _, _, _>(
+                        "tests.reboot.protoc.Counter",
+                        request,
+                        move |state, request| {
+                            let second_callback_started = second_callback_started.clone();
+                            Box::pin(async move {
+                                second_callback_started
+                                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                                state.value += request.amount;
+                                Ok(proto::CounterValue { value: state.value })
+                            })
+                        },
+                    )
+                    .await
+            }
+        });
+        start_second.wait().await;
+        second_attempted.notified().await;
+        assert!(
+            !second_callback_started.load(std::sync::atomic::Ordering::SeqCst),
+            "an independently connected store must not enter a same-actor writer while it awaits"
+        );
+
+        release_first.notify_one();
+        assert_eq!(first.await.unwrap().unwrap().into_inner().value, 1);
+        assert_eq!(second.await.unwrap().unwrap().into_inner().value, 3);
+        assert_eq!(
+            first_store
+                .load::<proto::Counter>("independent-store-async-lock")
+                .await
+                .unwrap(),
+            Some(proto::Counter { value: 3 }),
+            "both serialized updates must be durably stored"
+        );
+        assert_eq!(database.store_requests().len(), 2);
         database_server.abort();
     }
 

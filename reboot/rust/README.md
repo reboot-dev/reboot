@@ -218,9 +218,12 @@ a type-safe local binding, not generic dispatch or distributed coordination.
 The durable adapter owns metadata validation, state-reference isolation,
 idempotent writer replay, state load, and atomic `Store(sync=true)` of the final
 state and idempotency response; application handlers retain their domain
-behavior. Writer serialization is local only to clones of one
-`DatabaseActorStore` instance, not independently connected stores. `Store` does
-not make side effects awaited by a handler transactional or exactly-once.
+behavior. Writer serialization is process-local for stores using the same
+normalized Tonic endpoint, state type, and state reference, including
+independently connected stores. It is not guaranteed across endpoint aliases,
+proxies, or alternative spellings, and never coordinates across processes,
+hosts, or a distributed deployment. `Store` does not make side effects awaited
+by a handler transactional or exactly-once.
 Streaming methods, unsupported Reboot method kinds, missing annotated state,
 cross-package message types, and nested types are rejected rather than guessed.
 This remains concrete per-service code: there is no dynamic dispatcher, macro
