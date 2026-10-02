@@ -13,6 +13,8 @@ use prost_types::{
 use std::collections::{BTreeMap, HashMap};
 
 const MODULE_PARAMETER_PREFIX: &str = "module=";
+const RUNTIME_MODULE_PARAMETER_PREFIX: &str = "runtime_module=";
+const DEFAULT_RUNTIME_MODULE: &str = "reboot_rust_schema";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DurableKind {
     Reader,
@@ -76,7 +78,7 @@ struct RebootMethodOptions {
 #[derive(Message)]
 struct Empty {}
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct DurableService {
     state: String,
     methods: HashMap<String, DurableKind>,
@@ -114,6 +116,7 @@ pub fn generate_from_descriptor_set_wire(
     input: &[u8],
     file_to_generate: &[String],
     module: &str,
+    runtime_module: &str,
 ) -> CodeGeneratorResponse {
     let descriptor_set = match FileDescriptorSet::decode(input) {
         Ok(value) => value,
@@ -129,7 +132,9 @@ pub fn generate_from_descriptor_set_wire(
     };
     respond(generate_inner(
         CodeGeneratorRequest {
-            parameter: Some(format!("{MODULE_PARAMETER_PREFIX}{module}")),
+            parameter: Some(format!(
+                "{MODULE_PARAMETER_PREFIX}{module},{RUNTIME_MODULE_PARAMETER_PREFIX}{runtime_module}"
+            )),
             file_to_generate: file_to_generate.to_vec(),
             proto_file: descriptor_set.file,
             ..Default::default()
@@ -240,14 +245,7 @@ fn generate_inner(
     request: CodeGeneratorRequest,
     annotations: HashMap<String, HashMap<String, DurableService>>,
 ) -> Result<Vec<code_generator_response::File>, String> {
-    let module = request
-        .parameter
-        .as_deref()
-        .and_then(|value| value.strip_prefix(MODULE_PARAMETER_PREFIX))
-        .filter(|value| is_module_path(value))
-        .ok_or_else(|| {
-            "protoc-gen-reboot_rust requires a valid `module=<Rust path>` parameter".to_owned()
-        })?;
+    let (module, runtime_module) = parse_modules(request.parameter.as_deref())?;
     let descriptors: BTreeMap<_, _> = request
         .proto_file
         .iter()
@@ -260,7 +258,7 @@ fn generate_inner(
             let file = descriptors
                 .get(name.as_str())
                 .ok_or_else(|| format!("missing descriptor for file_to_generate `{name}`"))?;
-            generate_file(file, module, annotations.get(name))
+            generate_file(file, module, runtime_module, annotations.get(name))
         })
         .collect()
 }
@@ -268,6 +266,7 @@ fn generate_inner(
 fn generate_file(
     file: &FileDescriptorProto,
     module: &str,
+    runtime_module: &str,
     annotations: Option<&HashMap<String, DurableService>>,
 ) -> Result<code_generator_response::File, String> {
     let file_name = required(&file.name, "file name")?;
@@ -283,7 +282,14 @@ fn generate_file(
         if let Some(annotation) =
             annotations.and_then(|value| service.name.as_ref().and_then(|name| value.get(name)))
         {
-            emit_durable(&mut content, file_name, package, service, annotation)?;
+            emit_durable(
+                &mut content,
+                file_name,
+                package,
+                service,
+                annotation,
+                runtime_module,
+            )?;
         }
     }
     Ok(code_generator_response::File {
@@ -329,6 +335,7 @@ fn emit_durable(
     package: &str,
     service: &ServiceDescriptorProto,
     annotation: &DurableService,
+    runtime_module: &str,
 ) -> Result<(), String> {
     let service_name = required(&service.name, "service name")?;
     let state = same_package_type(
@@ -362,7 +369,7 @@ fn emit_durable(
         output.push_str(&format!("    fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n", if **kind == DurableKind::Writer { "&mut " } else { "&" }));
     }
     output.push_str("}\n\n");
-    output.push_str(&format!("#[derive(Clone)]\npub struct {adapter}<H> {{ store: reboot_rust_schema::runtime::DatabaseActorStore, handler: H }}\nimpl<H> {adapter}<H> {{ pub fn new(store: reboot_rust_schema::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler }} }} }}\n\n"));
+    output.push_str(&format!("#[derive(Clone)]\npub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: H }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler }} }} }}\n\n"));
     output.push_str("#[tonic::async_trait]\n");
     output.push_str(&format!(
         "impl<H: {handler}> proto::{server}::{service_name} for {adapter}<H> {{\n"
@@ -444,6 +451,40 @@ fn is_identifier(value: &str) -> bool {
 pub(crate) fn is_module_path(value: &str) -> bool {
     !value.is_empty() && value.split("::").all(is_identifier)
 }
+fn parse_modules(parameter: Option<&str>) -> Result<(&str, &str), String> {
+    let parameter = parameter.unwrap_or_default();
+    let mut module = None;
+    let mut runtime_module = None;
+    let mut unsupported = None;
+    for option in parameter.split(',') {
+        if let Some(value) = option.strip_prefix(MODULE_PARAMETER_PREFIX) {
+            if module.replace(value).is_some() || !is_module_path(value) {
+                return Err(
+                    "protoc-gen-reboot_rust requires a valid `module=<Rust path>` parameter"
+                        .to_owned(),
+                );
+            }
+        } else if let Some(value) = option.strip_prefix(RUNTIME_MODULE_PARAMETER_PREFIX) {
+            if runtime_module.replace(value).is_some() || !is_module_path(value) {
+                return Err(
+                    "protoc-gen-reboot_rust requires a valid `runtime_module=<Rust path>` parameter"
+                        .to_owned(),
+                );
+            }
+        } else {
+            unsupported = Some(option);
+        }
+    }
+    let module = module.ok_or_else(|| {
+        "protoc-gen-reboot_rust requires a valid `module=<Rust path>` parameter".to_owned()
+    })?;
+    if let Some(option) = unsupported {
+        return Err(format!(
+            "protoc-gen-reboot_rust received unsupported parameter `{option}`"
+        ));
+    }
+    Ok((module, runtime_module.unwrap_or(DEFAULT_RUNTIME_MODULE)))
+}
 fn snake_case(value: &str) -> String {
     value.to_snake_case()
 }
@@ -496,6 +537,50 @@ mod tests {
                     .contains("module=<Rust path>")
             );
         }
+    }
+
+    #[test]
+    fn runtime_module_parameter_controls_durable_import_and_defaults() {
+        let annotations = HashMap::from([(
+            "counter.proto".to_owned(),
+            HashMap::from([(
+                "CounterWrites".to_owned(),
+                DurableService {
+                    state: "Counter".to_owned(),
+                    methods: HashMap::from([("Increment".to_owned(), DurableKind::Writer)]),
+                },
+            )]),
+        )]);
+        let mut custom = request();
+        custom.parameter = Some("module=crate::proto,runtime_module=reboot".into());
+        assert!(
+            generate_inner(custom, annotations.clone())
+                .unwrap()
+                .remove(0)
+                .content
+                .unwrap()
+                .contains("store: reboot::runtime::DatabaseActorStore")
+        );
+        assert!(
+            generate_inner(request(), annotations)
+                .unwrap()
+                .remove(0)
+                .content
+                .unwrap()
+                .contains("store: reboot_rust_schema::runtime::DatabaseActorStore")
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_runtime_module_parameter() {
+        let mut value = request();
+        value.parameter = Some("module=crate::proto,runtime_module=reboot::9invalid".into());
+        assert!(
+            generate(value)
+                .error
+                .unwrap()
+                .contains("runtime_module=<Rust path>")
+        );
     }
 
     #[test]

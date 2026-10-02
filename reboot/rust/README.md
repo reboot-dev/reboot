@@ -140,9 +140,34 @@ mod adapters {
 ```
 
 `proto_module` must be a Rust path matching that module (for example
-`crate::proto`). Unsupported inputs fail exactly as the executable plugin:
-only unary reader/writer methods, same-package top-level request/response/state
-types, and annotated service state are supported.
+`crate::proto`). By default, generated durable adapters import the runtime as
+`reboot_rust_schema::runtime`. If the Cargo dependency is renamed, pass that
+crate path to `compile_protos_with_runtime`:
+
+```toml
+[build-dependencies]
+reboot = { package = "reboot-rust-schema", path = "../reboot/rust", features = ["build"] }
+
+[dependencies]
+reboot = { package = "reboot-rust-schema", path = "../reboot/rust" }
+```
+
+```rust
+// build.rs
+fn main() {
+    reboot::build::compile_protos_with_runtime(
+        &["proto/counter.proto"],
+        &["proto", "../reboot"],
+        "crate::proto",
+        "reboot",
+    ).unwrap();
+}
+```
+
+`proto_module` and `runtime_module` must be valid Rust paths. Unsupported
+inputs fail exactly as the executable plugin: only unary reader/writer methods,
+same-package top-level request/response/state types, and annotated service
+state are supported.
 
 ## Concrete Tonic forwarding plugin
 
@@ -172,7 +197,11 @@ rbt generate \
 
 This invokes only `protoc-gen-reboot_rust` with the supplied module path. It
 does not build the plugin or generate Prost/Tonic protobuf bindings; provide
-those bindings in the module named by `--rust-module` first.
+those bindings in the module named by `--rust-module` first. Durable adapters
+import `reboot_rust_schema::runtime` by default. When the runtime Cargo
+dependency is renamed, add `runtime_module=<Rust path>` to
+`--reboot_rust_opt`, for example
+`--reboot_rust_opt=module=crate::proto,runtime_module=reboot`.
 
 For every selected service, the plugin preserves the concrete unary forwarding
 `ServiceHandler`/`ServiceAdapter<H>` output. When `protoc` supplies a genuine

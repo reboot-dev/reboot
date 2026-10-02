@@ -1,7 +1,8 @@
 //! Cargo build-script support for concrete Reboot Tonic adapters.
 //!
 //! Enable the crate's `build` feature in a downstream package's
-//! `[build-dependencies]`, then call [`compile_protos`] from `build.rs`.
+//! `[build-dependencies]`, then call [`compile_protos`] or
+//! [`compile_protos_with_runtime`] from `build.rs`.
 
 use crate::codegen;
 use std::env;
@@ -40,9 +41,32 @@ where
     P: AsRef<Path>,
     I: AsRef<Path>,
 {
+    compile_protos_with_runtime(protos, includes, proto_module, "reboot_rust_schema")
+}
+
+/// Compiles protobuf bindings and emits matching `*.reboot.rs` adapters using
+/// the supplied Rust path for the Reboot runtime dependency.
+///
+/// Use this when the downstream Cargo package renames `reboot-rust-schema`.
+/// `proto_module` and `runtime_module` must both be valid Rust paths.
+pub fn compile_protos_with_runtime<P, I>(
+    protos: &[P],
+    includes: &[I],
+    proto_module: &str,
+    runtime_module: &str,
+) -> Result<(), BuildError>
+where
+    P: AsRef<Path>,
+    I: AsRef<Path>,
+{
     if !codegen::is_module_path(proto_module) {
         return Err(BuildError::new(
             "protoc-gen-reboot_rust requires a valid `module=<Rust path>` parameter",
+        ));
+    }
+    if !codegen::is_module_path(runtime_module) {
+        return Err(BuildError::new(
+            "protoc-gen-reboot_rust requires a valid `runtime_module=<Rust path>` parameter",
         ));
     }
     if protos.is_empty() {
@@ -85,8 +109,12 @@ where
         .iter()
         .map(|proto| proto_relative_name(proto.as_ref(), includes))
         .collect::<Result<Vec<_>, _>>()?;
-    let response =
-        codegen::generate_from_descriptor_set_wire(&descriptor_bytes, &files, proto_module);
+    let response = codegen::generate_from_descriptor_set_wire(
+        &descriptor_bytes,
+        &files,
+        proto_module,
+        runtime_module,
+    );
     if let Some(error) = response.error {
         return Err(BuildError::new(error));
     }

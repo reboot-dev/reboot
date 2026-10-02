@@ -19,7 +19,7 @@ fn protoc_plugin_emits_durable_counter_adapters() {
             "--plugin=protoc-gen-reboot_rust={}",
             env!("CARGO_BIN_EXE_protoc-gen-reboot_rust")
         ))
-        .arg("--reboot_rust_opt=module=reboot_rust_schema::proto")
+        .arg("--reboot_rust_opt=module=reboot_rust_schema::proto,runtime_module=reboot")
         .arg(format!("--reboot_rust_out={}", generated.display()))
         .arg(repository.join("tests/reboot/protoc/counter.proto"))
         .status()
@@ -32,6 +32,7 @@ fn protoc_plugin_emits_durable_counter_adapters() {
     assert!(content.contains("pub trait CounterReadsDatabaseHandler"));
     assert!(content.contains("store.writer::<proto::Counter"));
     assert!(content.contains("store.reader::<proto::Counter"));
+    assert!(content.contains("reboot::runtime::DatabaseActorStore"));
 }
 
 #[test]
@@ -46,7 +47,7 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     std::fs::write(
         fixture.join("build.rs"),
         format!(
-            "fn main() {{\n    let repository = std::path::Path::new(\"{}\");\n    reboot_rust_schema::build::compile_protos(\n        &[repository.join(\"tests/reboot/protoc/counter.proto\")],\n        &[repository],\n        \"crate::proto\",\n    ).unwrap();\n}}\n",
+            "fn main() {{\n    let repository = std::path::Path::new(\"{}\");\n    reboot::build::compile_protos_with_runtime(\n        &[repository.join(\"tests/reboot/protoc/counter.proto\")],\n        &[repository],\n        \"crate::proto\",\n        \"reboot\",\n    ).unwrap();\n}}\n",
             repository.display()
         ),
     )
@@ -54,7 +55,7 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     std::fs::write(
         fixture.join("Cargo.toml"),
         format!(
-            "[package]\nname = \"reboot-rust-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot-rust-schema = {{ path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\nprost = \"0.13\"\nreboot-rust-schema = {{ path = \"{}\", features = [\"test-support\"] }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
+            "[package]\nname = \"reboot-rust-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\nprost = \"0.13\"\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"test-support\"] }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
             env!("CARGO_MANIFEST_DIR"),
             env!("CARGO_MANIFEST_DIR")
         ),
@@ -75,7 +76,7 @@ mod generated {
 mod tests {
     use super::{generated, proto};
     use prost::Message;
-    use reboot_rust_schema::{
+    use reboot::{
         runtime::{test_support::start_database, DatabaseActorStore},
         ExternalContext,
     };
