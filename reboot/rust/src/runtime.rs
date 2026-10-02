@@ -1,5 +1,10 @@
 //! Process-local Tonic host for the generated EchoMethods test service.
 //!
+//! Tonic service traits require `tonic::Status` as their error type. Boxing it
+//! only to satisfy a size lint would break those concrete generated trait
+//! signatures, so this module intentionally keeps that public transport error.
+#![allow(clippy::result_large_err)]
+//!
 //! This is deliberately a small executable runtime slice: actor state is keyed
 //! by `x-reboot-state-ref`, writes require a UUID idempotency key, and reads
 //! return the actor's last successfully written message.
