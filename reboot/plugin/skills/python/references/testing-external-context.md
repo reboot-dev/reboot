@@ -260,39 +260,43 @@ location. Same rule as any `unittest.mock.patch`.
 
 **3. A scripted `FunctionModel` for pydantic-AI agents.** When a
 servicer runs an LLM agent, replace the agent's model with a
-deterministic `FunctionModel`. The pattern is a stateful
-`ScriptedLibrarian` that walks the agent through a fixed
-sequence of tool calls and uses `asyncio.Event` to signal
-completion. Sketch:
+deterministic `FunctionModel`, using the agent's
+`override(model=...)`. The pattern is a stateful `ScriptedAgent`
+that walks the agent through a fixed sequence of tool calls, put in
+place by an autouse fixture of the test module. Sketch:
 
 ```python
-import asyncio
+import pytest
+from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models.function import AgentInfo, FunctionModel
-from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
+from servicers import wiki as wiki_module
+from typing import Iterator
 
 
 class ScriptedAgent:
-    def __init__(self) -> None:
-        self.done = asyncio.Event()
 
-    async def step(self, messages, info: AgentInfo) -> ModelResponse:
-        # Inspect tool-returns in `messages`, pick the next
-        # `ToolCallPart` to emit, and `self.done.set()` on the
-        # terminal response.
+    async def step(
+        self,
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> ModelResponse:
+        # Inspect tool-returns in `messages` and pick the next
+        # `ToolCallPart` to emit, or the final `TextPart`.
         ...
 
 
-# In asyncSetUp:
-self.script = ScriptedAgent()
-wiki_module.librarian.wrapped.model = FunctionModel(self.script.step)
-
-# In the test:
-await Wiki.ref(WIKI_ID).ingest(self.context, transcript_id=...)
-await self.script.done.wait()  # Workflow has reached the end.
+@pytest.fixture(autouse=True)
+def script() -> Iterator[ScriptedAgent]:
+    scripted = ScriptedAgent()
+    with wiki_module.librarian.override(model=FunctionModel(scripted.step)):
+        yield scripted
 ```
 
-Always **restore** the original model in `asyncTearDown` so a
-test failure doesn't bleed into the next test.
+An autouse fixture replaces the model before the application
+starts, and `override()` puts the original model back when the
+scenario ends, a failing one included. Do not assign to
+`librarian.wrapped.model` instead: mypy rejects it, because `wrapped`
+is declared as an abstract agent whose `model` is read-only.
 
 ## Environment Variables in Tests
 
