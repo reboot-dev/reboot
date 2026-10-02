@@ -717,6 +717,7 @@ dependencies = [
 name = "reboot-rust-schema"
 version = "0.0.0"
 dependencies = [
+ "heck",
  "prost",
  "prost-types",
  "protoc-bin-vendored",

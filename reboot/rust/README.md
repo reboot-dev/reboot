@@ -79,7 +79,8 @@ one:
 1. `reboot/cli/commands/dev.py` accepts only `--python` or `--nodejs` and
    chooses `sys.executable` or `node` as the launcher.
 2. `reboot/cli/commands/generate.py` exposes only Python/Node.js codegen and
-   boilerplate plugins; there is no `protoc-gen-reboot_rust`.
+   boilerplate plugins; `rbt generate --rust` does not invoke this crate's
+   standalone `protoc-gen-reboot_rust` yet.
 3. The crate has executable process-local runtime slices: the default
    `InMemoryActor` host has serialized state reads/writes, idempotent
    write-response caching, and rollback of failed transactional writes.
@@ -121,8 +122,8 @@ For every selected service, the plugin emits a concrete `ServiceHandler` trait
 and `ServiceAdapter<H>` implementing that service's tonic-build server trait.
 The generated adapter forwards only unary requests and responses whose types
 are top-level messages in the same protobuf package. Streaming methods,
-cross-package message types, nested types, and any other module parameter are
-rejected by the plugin rather than generating unusable Rust.
+cross-package message types, nested types, and invalid `module=<Rust path>`
+parameters are rejected by the plugin rather than generating unusable Rust.
 
 The plugin has no durable semantics: it does not inspect Reboot options, map
 reader/writer methods to storage, or replace `DatabaseActorStore`. Application

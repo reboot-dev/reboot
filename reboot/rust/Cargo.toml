@@ -18,6 +18,7 @@ name = "protoc-gen-reboot_rust"
 path = "src/bin/protoc-gen-reboot_rust.rs"
 
 [dependencies]
+heck = "0.5"
 prost = "0.13"
 prost-types = "0.13"
 tonic = "0.12"
