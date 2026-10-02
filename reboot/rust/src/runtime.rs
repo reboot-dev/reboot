@@ -442,12 +442,12 @@ impl DatabaseActorStore {
         while let Some(response) = stream.message().await.map_err(database_status)? {
             for mutation in response.idempotent_mutations {
                 if mutation.key == key.as_bytes() {
-                    if mutation
-                        .request_fingerprint
-                        .as_deref()
-                        .is_some_and(|stored| !stored.is_empty())
-                        && request_fingerprint != mutation.request_fingerprint.as_deref()
-                    {
+                    if request_fingerprint.is_some_and(|expected| {
+                        mutation
+                            .request_fingerprint
+                            .as_deref()
+                            .is_some_and(|stored| !stored.is_empty() && stored != expected)
+                    }) {
                         return Err(Status::failed_precondition(
                             "idempotency key was reused with a different request",
                         ));
@@ -1302,6 +1302,44 @@ mod tests {
             request_fingerprint("tests.reboot.protoc.MapCounterWrites.Increment", &first),
             request_fingerprint("tests.reboot.protoc.MapCounterWrites.Increment", &second),
         );
+    }
+
+    #[tokio::test]
+    async fn public_replay_returns_fingerprinted_completed_writes() {
+        let (database_address, _, database_server) = start_database().await;
+        let store = DatabaseActorStore::connect(&database_address)
+            .await
+            .unwrap();
+        let key = Uuid::from_u128(601);
+        let request = proto::Text {
+            content: "fingerprinted request".into(),
+        };
+        store
+            .store_type(
+                <proto::Echo as RebootState>::STATE_TYPE,
+                "public-fingerprinted-replay",
+                key,
+                proto::Echo::default(),
+                proto::Text {
+                    content: "fingerprinted response".into(),
+                },
+                Some(request_fingerprint(
+                    "tests.reboot.protoc.EchoMethods.Reply",
+                    &request,
+                )),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            store
+                .replay::<proto::Echo, proto::Text>("public-fingerprinted-replay", key)
+                .await
+                .unwrap(),
+            Some(proto::Text {
+                content: "fingerprinted response".into(),
+            })
+        );
+        database_server.abort();
     }
 
     #[tokio::test]
