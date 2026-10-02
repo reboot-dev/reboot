@@ -1339,6 +1339,117 @@ TEST_F(TwoShardDatabaseTest, RecoverIdempotentMutations) {
 
 ////////////////////////////////////////////////////////////////////////
 
+TEST_F(TwoShardDatabaseTest, StoreRejectsIdempotencyFingerprintCollision) {
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("fingerprint_collision");
+  const std::string key = UUID::random().toBytes();
+
+  v1alpha1::StoreRequest first;
+  v1alpha1::Actor* first_actor = first.add_actor_upserts();
+  first_actor->set_state_type(state_type);
+  first_actor->set_state_ref(state_ref);
+  first_actor->set_state("first state");
+  v1alpha1::IdempotentMutation* first_mutation =
+      first.mutable_idempotent_mutation();
+  first_mutation->set_state_type(state_type);
+  first_mutation->set_state_ref(state_ref);
+  first_mutation->set_key(key);
+  first_mutation->set_response("first response");
+  first_mutation->set_request_fingerprint("fingerprint A");
+
+  v1alpha1::StoreResponse first_response;
+  grpc::ClientContext first_context;
+  grpc::Status first_status =
+      stub->Store(&first_context, first, &first_response);
+  ASSERT_TRUE(first_status.ok()) << first_status.error_message();
+
+  v1alpha1::StoreRequest collision = first;
+  collision.mutable_actor_upserts(0)->set_state("second state");
+  collision.mutable_idempotent_mutation()->set_response("second response");
+  collision.mutable_idempotent_mutation()->set_request_fingerprint(
+      "fingerprint B");
+
+  v1alpha1::StoreResponse collision_response;
+  grpc::ClientContext collision_context;
+  grpc::Status collision_status =
+      stub->Store(&collision_context, collision, &collision_response);
+  EXPECT_EQ(grpc::StatusCode::FAILED_PRECONDITION, collision_status.error_code());
+  EXPECT_THAT(
+      collision_status.error_message(),
+      HasSubstr("Idempotency key was reused with a different request"));
+
+  // An older caller that reached Store concurrently cannot erase a newer
+  // fingerprinted record either.
+  v1alpha1::StoreRequest legacy_collision = first;
+  legacy_collision.mutable_actor_upserts(0)->set_state("legacy state");
+  legacy_collision.mutable_idempotent_mutation()->clear_request_fingerprint();
+  grpc::ClientContext legacy_collision_context;
+  v1alpha1::StoreResponse legacy_collision_response;
+  grpc::Status legacy_collision_status = stub->Store(
+      &legacy_collision_context, legacy_collision, &legacy_collision_response);
+  EXPECT_EQ(
+      grpc::StatusCode::FAILED_PRECONDITION,
+      legacy_collision_status.error_code());
+
+  EXPECT_EQ(std::optional<std::string>("first state"), load(state_type, state_ref));
+
+  v1alpha1::RecoverIdempotentMutationsRequest recover_request;
+  recover_request.set_state_type(state_type);
+  recover_request.set_state_ref(state_ref);
+  recover_request.set_idempotency_key(key);
+  grpc::ClientContext recover_context;
+  std::unique_ptr<
+      grpc::ClientReader<v1alpha1::RecoverIdempotentMutationsResponse>>
+      reader(stub->RecoverIdempotentMutations(&recover_context, recover_request));
+  v1alpha1::RecoverIdempotentMutationsResponse recover_response;
+  while (reader->Read(&recover_response)) {}
+  grpc::Status recover_status = reader->Finish();
+  ASSERT_TRUE(recover_status.ok()) << recover_status.error_message();
+  ASSERT_EQ(1, recover_response.idempotent_mutations_size());
+  EXPECT_EQ(
+      "first response", recover_response.idempotent_mutations(0).response());
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, StoreAcceptsFingerprintForLegacyIdempotentMutation) {
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("legacy_fingerprint");
+  const std::string key = UUID::random().toBytes();
+
+  v1alpha1::StoreRequest legacy;
+  v1alpha1::Actor* legacy_actor = legacy.add_actor_upserts();
+  legacy_actor->set_state_type(state_type);
+  legacy_actor->set_state_ref(state_ref);
+  legacy_actor->set_state("legacy state");
+  v1alpha1::IdempotentMutation* legacy_mutation =
+      legacy.mutable_idempotent_mutation();
+  legacy_mutation->set_state_type(state_type);
+  legacy_mutation->set_state_ref(state_ref);
+  legacy_mutation->set_key(key);
+  legacy_mutation->set_response("legacy response");
+
+  v1alpha1::StoreResponse legacy_response;
+  grpc::ClientContext legacy_context;
+  grpc::Status legacy_status =
+      stub->Store(&legacy_context, legacy, &legacy_response);
+  ASSERT_TRUE(legacy_status.ok()) << legacy_status.error_message();
+
+  v1alpha1::StoreRequest current = legacy;
+  current.mutable_actor_upserts(0)->set_state("current state");
+  current.mutable_idempotent_mutation()->set_response("current response");
+  current.mutable_idempotent_mutation()->set_request_fingerprint("fingerprint");
+
+  v1alpha1::StoreResponse current_response;
+  grpc::ClientContext current_context;
+  grpc::Status current_status =
+      stub->Store(&current_context, current, &current_response);
+  ASSERT_TRUE(current_status.ok()) << current_status.error_message();
+  EXPECT_EQ(std::optional<std::string>("current state"), load(state_type, state_ref));
+}
+
+////////////////////////////////////////////////////////////////////////
+
 TEST_F(TwoShardDatabaseTest, RecoverIdempotentMutationsWithUuidV7) {
   // Test that UUIDv7 idempotency keys (expiring) are stored and recovered
   // correctly when they have not yet expired.

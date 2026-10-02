@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import bitarray  # type: ignore[import]
 import enum
 import grpc
-import hashlib
 import inspect
 import itertools
 import log.log
@@ -310,6 +310,17 @@ def presumed_deadlocked_nested_transaction(
             return transaction_id
         return None
     return None
+
+
+_REQUEST_FINGERPRINT_DOMAIN_V1 = b"reboot.idempotency.request-fingerprint.v1\0"
+
+
+def request_fingerprint(method_identity: str, request: Message) -> bytes:
+    """Canonical v1 SHA-256 idempotency request fingerprint."""
+    return hashlib.sha256(
+        _REQUEST_FINGERPRINT_DOMAIN_V1 + method_identity.encode("utf-8") + b"\0" +
+        request.SerializeToString(deterministic=True)
+    ).digest()
 
 
 class StateManager(ABC):
@@ -1542,6 +1553,7 @@ class StateManager(ABC):
     async def check_for_idempotent_mutation(
         self,
         context: WriterContext | WorkflowContext | TransactionContext,
+        request_fingerprint: Optional[bytes] = None,
     ) -> Optional[database_pb2.IdempotentMutation]:
         """Helper for code generated writers and transactions that returns the
         serialized response if the mutation has been performed or None
@@ -3734,6 +3746,7 @@ class SidecarStateManager(
         transaction_ids: Optional[list[uuid.UUID]] = None,
         task: Optional[database_pb2.Task] = None,
         idempotency_key: Optional[uuid.UUID] = None,
+        request_fingerprint: Optional[bytes] = None,
         idempotent_mutation: Optional[database_pb2.IdempotentMutation] = None,
         workflow_id: Optional[uuid.UUID] = None,
         workflow_iteration: Optional[int] = None,
@@ -3825,6 +3838,7 @@ class SidecarStateManager(
                 state_type=state_type,
                 state_ref=state_ref.to_str(),
                 key=idempotency_key.bytes,
+                request_fingerprint=request_fingerprint,
                 response=response.SerializeToString(),
                 task_ids=[
                     task_effect.task_id for task_effect in
@@ -4688,6 +4702,7 @@ class SidecarStateManager(
                         state_ref=state_ref,
                         effects=effects,
                         idempotency_key=context.idempotency_key,
+                        request_fingerprint=getattr(context, "request_fingerprint", None),
                         workflow_id=context.workflow_id,
                         workflow_iteration=context.workflow_iteration,
                         constructor=context.constructor,
@@ -4710,6 +4725,7 @@ class SidecarStateManager(
                             transaction=transaction,
                             transaction_ids=context.transaction_ids,
                             idempotency_key=context.idempotency_key,
+                            request_fingerprint=getattr(context, "request_fingerprint", None),
                             workflow_id=context.workflow_id,
                             workflow_iteration=context.workflow_iteration,
                             constructor=context.constructor,
@@ -5201,6 +5217,7 @@ class SidecarStateManager(
     async def check_for_idempotent_mutation(
         self,
         context: WriterContext | WorkflowContext | TransactionContext,
+        request_fingerprint: Optional[bytes] = None,
     ) -> Optional[database_pb2.IdempotentMutation]:
         """Override of StateManager.check_for_idempotent_mutation(...)
         for SidecarStateManager.
@@ -5371,6 +5388,17 @@ class SidecarStateManager(
                 idempotent_mutation = transaction.idempotent_mutations.get(
                     context.idempotency_key
                 )
+
+        # Legacy mutations without a fingerprint remain replay-compatible.
+        if (
+            idempotent_mutation is not None and request_fingerprint and
+            idempotent_mutation.request_fingerprint and
+            idempotent_mutation.request_fingerprint != request_fingerprint
+        ):
+            raise SystemAborted(
+                FailedPrecondition(),
+                message="Idempotency key was reused with a different request",
+            )
 
         # Trigger reactive readers in the React generated code to
         # observe the idempotent mutation.  While they might have

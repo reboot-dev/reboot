@@ -18,6 +18,7 @@ use std::pin::Pin;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 
 use prost::Message;
+use sha2::{Digest, Sha256};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
@@ -25,6 +26,20 @@ use crate::{InMemoryActor, database_proto as database, proto};
 
 const STATE_REF_HEADER: &str = "x-reboot-state-ref";
 const IDEMPOTENCY_KEY_HEADER: &str = "x-reboot-idempotency-key";
+const REQUEST_FINGERPRINT_DOMAIN_V1: &[u8] = b"reboot.idempotency.request-fingerprint.v1\0";
+
+/// Returns the canonical v1 idempotency fingerprint used by every SDK.
+///
+/// `method_identity` is the fully-qualified protobuf RPC name for generated
+/// adapters (for example, `package.Service.Method`).
+pub fn request_fingerprint(method_identity: &str, request: &impl Message) -> Vec<u8> {
+    let mut hash = Sha256::new();
+    hash.update(REQUEST_FINGERPRINT_DOMAIN_V1);
+    hash.update(method_identity.as_bytes());
+    hash.update(b"\0");
+    hash.update(request.encode_to_vec());
+    hash.finalize().to_vec()
+}
 
 type EchoActor = InMemoryActor<proto::Echo, proto::Text>;
 
@@ -318,10 +333,6 @@ impl DatabaseActorStore {
         lock
     }
 
-    fn lock_for<State: RebootState>(&self, state_ref: &str) -> Arc<tokio::sync::Mutex<()>> {
-        self.lock_for_type(State::STATE_TYPE, state_ref)
-    }
-
     /// Loads the current state for an actor, if it has been stored.
     pub async fn load<State: RebootState>(&self, state_ref: &str) -> Result<Option<State>, Status> {
         self.load_type(State::STATE_TYPE, state_ref).await
@@ -362,7 +373,8 @@ impl DatabaseActorStore {
         state_ref: &str,
         key: Uuid,
     ) -> Result<Option<Response>, Status> {
-        self.replay_type(State::STATE_TYPE, state_ref, key).await
+        self.replay_type(State::STATE_TYPE, state_ref, key, None)
+            .await
     }
 
     async fn replay_type<Response: Message + Default>(
@@ -370,6 +382,7 @@ impl DatabaseActorStore {
         state_type: &str,
         state_ref: &str,
         key: Uuid,
+        request_fingerprint: Option<&[u8]>,
     ) -> Result<Option<Response>, Status> {
         let mut database = self.database.clone();
         let mut stream = database
@@ -386,6 +399,16 @@ impl DatabaseActorStore {
         while let Some(response) = stream.message().await.map_err(database_status)? {
             for mutation in response.idempotent_mutations {
                 if mutation.key == key.as_bytes() {
+                    if mutation
+                        .request_fingerprint
+                        .as_deref()
+                        .is_some_and(|stored| !stored.is_empty())
+                        && request_fingerprint != mutation.request_fingerprint.as_deref()
+                    {
+                        return Err(Status::failed_precondition(
+                            "idempotency key was reused with a different request",
+                        ));
+                    }
                     return Response::decode(mutation.response.as_slice())
                         .map(Some)
                         .map_err(|error| {
@@ -407,7 +430,7 @@ impl DatabaseActorStore {
         state: State,
         response: Response,
     ) -> Result<(), Status> {
-        self.store_type(State::STATE_TYPE, state_ref, key, state, response)
+        self.store_type(State::STATE_TYPE, state_ref, key, state, response, None)
             .await
     }
 
@@ -418,6 +441,7 @@ impl DatabaseActorStore {
         key: Uuid,
         state: State,
         response: Response,
+        request_fingerprint: Option<Vec<u8>>,
     ) -> Result<(), Status> {
         let mut database = self.database.clone();
         database
@@ -438,6 +462,7 @@ impl DatabaseActorStore {
                     task_ids: vec![],
                     workflow_id: None,
                     workflow_iteration: None,
+                    request_fingerprint,
                 }),
                 ensure_state_types_created: vec![],
                 sync: true,
@@ -448,6 +473,11 @@ impl DatabaseActorStore {
     }
 
     /// Runs a synchronous writer callback inside the durable actor envelope.
+    ///
+    /// This compatibility API fingerprints protobuf requests with the stable
+    /// synthetic identity `reboot.runtime.writer.v1/<state_type>`. Generated
+    /// adapters should use [`Self::writer_async_for_method`] so fingerprints
+    /// include the fully-qualified protobuf RPC name.
     pub async fn writer<State, RequestBody, ResponseBody, F>(
         &self,
         state_type: &'static str,
@@ -456,15 +486,20 @@ impl DatabaseActorStore {
     ) -> Result<Response<ResponseBody>, Status>
     where
         State: Message + Default + Clone + Send + Sync + 'static,
-        RequestBody: Send + 'static,
+        RequestBody: Message + Send + 'static,
         ResponseBody: Message + Default + Clone + Send + 'static,
         F: FnOnce(&mut State, RequestBody) -> Result<ResponseBody, Status>,
     {
+        let method_identity = format!("reboot.runtime.writer.v1/{state_type}");
+        let fingerprint = request_fingerprint(&method_identity, request.get_ref());
         let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
         let key = idempotency_key(&request)?;
         let lock = self.lock_for_type(state_type, &state_ref);
         let _guard = lock.lock().await;
-        if let Some(response) = self.replay_type(state_type, &state_ref, key).await? {
+        if let Some(response) = self
+            .replay_type(state_type, &state_ref, key, Some(&fingerprint))
+            .await?
+        {
             return Ok(Response::new(response));
         }
         let mut state = self
@@ -472,19 +507,22 @@ impl DatabaseActorStore {
             .await?
             .unwrap_or_default();
         let response = invoke(&mut state, request.into_inner())?;
-        self.store_type(state_type, &state_ref, key, state, response.clone())
-            .await?;
+        self.store_type(
+            state_type,
+            &state_ref,
+            key,
+            state,
+            response.clone(),
+            Some(fingerprint),
+        )
+        .await?;
         Ok(Response::new(response))
     }
 
     /// Runs an asynchronous writer callback inside the durable actor envelope.
     ///
-    /// Writers for the same normalized Tonic endpoint, state type, and state
-    /// reference serialize within this process. Endpoint aliases, proxies, and
-    /// alternative spellings are not guaranteed to share a lock, and this does
-    /// not coordinate across processes, hosts, or a distributed deployment.
-    /// The final state and idempotent response are persisted atomically, but
-    /// awaited callback side effects are not transactional or exactly-once.
+    /// This compatibility API uses the deterministic synthetic method identity
+    /// documented on [`Self::writer`].
     pub async fn writer_async<State, RequestBody, ResponseBody, F>(
         &self,
         state_type: &'static str,
@@ -493,7 +531,7 @@ impl DatabaseActorStore {
     ) -> Result<Response<ResponseBody>, Status>
     where
         State: Message + Default + Clone + Send + Sync + 'static,
-        RequestBody: Send + 'static,
+        RequestBody: Message + Send + 'static,
         ResponseBody: Message + Default + Clone + Send + 'static,
         F: for<'a> FnOnce(
             &'a mut State,
@@ -502,11 +540,42 @@ impl DatabaseActorStore {
             Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
         >,
     {
+        let method_identity = format!("reboot.runtime.writer.v1/{state_type}");
+        self.writer_async_with_method(state_type, &method_identity, request, invoke)
+            .await
+    }
+
+    /// Runs an asynchronous writer using an explicit method identity.
+    ///
+    /// `method_identity` must be the fully-qualified protobuf RPC name when
+    /// one exists, such as `package.Service.Method`.
+    pub async fn writer_async_with_method<State, RequestBody, ResponseBody, F>(
+        &self,
+        state_type: &'static str,
+        method_identity: &str,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        State: Message + Default + Clone + Send + Sync + 'static,
+        RequestBody: Message + Send + 'static,
+        ResponseBody: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut State,
+            RequestBody,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
+        let fingerprint = request_fingerprint(method_identity, request.get_ref());
         let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
         let key = idempotency_key(&request)?;
         let lock = self.lock_for_type(state_type, &state_ref);
         let _guard = lock.lock().await;
-        if let Some(response) = self.replay_type(state_type, &state_ref, key).await? {
+        if let Some(response) = self
+            .replay_type(state_type, &state_ref, key, Some(&fingerprint))
+            .await?
+        {
             return Ok(Response::new(response));
         }
         let mut state = self
@@ -514,15 +583,23 @@ impl DatabaseActorStore {
             .await?
             .unwrap_or_default();
         let response = invoke(&mut state, request.into_inner()).await?;
-        self.store_type(state_type, &state_ref, key, state, response.clone())
-            .await?;
+        self.store_type(
+            state_type,
+            &state_ref,
+            key,
+            state,
+            response.clone(),
+            Some(fingerprint),
+        )
+        .await?;
         Ok(Response::new(response))
     }
 
     /// Runs an asynchronous writer callback using a durable state declaration.
     ///
-    /// This is equivalent to [`Self::writer_async`] with the declaration's
-    /// state type and canonical Database protocol state-type identifier.
+    /// This compatibility API uses the deterministic synthetic method identity
+    /// documented on [`Self::writer`]. Generated adapters use
+    /// [`Self::writer_async_for_method`] instead.
     pub async fn writer_async_for<Declaration, RequestBody, ResponseBody, F>(
         &self,
         request: Request<RequestBody>,
@@ -530,7 +607,7 @@ impl DatabaseActorStore {
     ) -> Result<Response<ResponseBody>, Status>
     where
         Declaration: DurableStateDeclaration,
-        RequestBody: Send + 'static,
+        RequestBody: Message + Send + 'static,
         ResponseBody: Message + Default + Clone + Send + 'static,
         F: for<'a> FnOnce(
             &'a mut Declaration::State,
@@ -541,6 +618,33 @@ impl DatabaseActorStore {
     {
         self.writer_async::<Declaration::State, _, _, _>(Declaration::STATE_TYPE, request, invoke)
             .await
+    }
+
+    /// Runs a generated writer with its fully-qualified protobuf RPC name.
+    pub async fn writer_async_for_method<Declaration, RequestBody, ResponseBody, F>(
+        &self,
+        method_identity: &str,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        Declaration: DurableStateDeclaration,
+        RequestBody: Message + Send + 'static,
+        ResponseBody: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut Declaration::State,
+            RequestBody,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
+        self.writer_async_with_method::<Declaration::State, _, _, _>(
+            Declaration::STATE_TYPE,
+            method_identity,
+            request,
+            invoke,
+        )
+        .await
     }
 
     /// Runs a synchronous reader callback after loading the actor state.
@@ -729,28 +833,19 @@ impl proto::echo_methods_server::EchoMethods for FileBackedHost {
 #[tonic::async_trait]
 impl proto::echo_methods_server::EchoMethods for EchoMethodsAdapter {
     async fn reply(&self, request: Request<proto::Text>) -> Result<Response<proto::Text>, Status> {
-        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
-        let key = idempotency_key(&request)?;
-        let lock = self.store.lock_for::<proto::Echo>(&state_ref);
-        let _guard = lock.lock().await;
-        if let Some(response) = self
-            .store
-            .replay::<proto::Echo, proto::Text>(&state_ref, key)
-            .await?
-        {
-            return Ok(Response::new(response));
-        }
-        let response = request.into_inner();
-        let mut state = self
-            .store
-            .load::<proto::Echo>(&state_ref)
-            .await?
-            .unwrap_or_default();
-        state.last_message = Some(response.clone());
         self.store
-            .store(&state_ref, key, state, response.clone())
-            .await?;
-        Ok(Response::new(response))
+            .writer_async_with_method::<proto::Echo, _, _, _>(
+                "tests.reboot.protoc.Echo",
+                "tests.reboot.protoc.EchoMethods.Reply",
+                request,
+                |state, request| {
+                    Box::pin(async move {
+                        state.last_message = Some(request.clone());
+                        Ok(request)
+                    })
+                },
+            )
+            .await
     }
 
     async fn last_message(
@@ -774,8 +869,9 @@ impl proto::counter_writes_server::CounterWrites for CounterAdapter {
         request: Request<proto::IncrementRequest>,
     ) -> Result<Response<proto::CounterValue>, Status> {
         self.store
-            .writer_async::<proto::Counter, _, _, _>(
+            .writer_async_with_method::<proto::Counter, _, _, _>(
                 "tests.reboot.protoc.Counter",
+                "tests.reboot.protoc.CounterWrites.Increment",
                 request,
                 |state, request| {
                     Box::pin(async move {
@@ -1129,6 +1225,54 @@ mod tests {
         (format!("http://{address}"), server)
     }
 
+    #[test]
+    fn request_fingerprint_matches_cross_language_v1_vector() {
+        let fingerprint = request_fingerprint(
+            "tests.reboot.protoc.EchoMethods.Reply",
+            &proto::Text {
+                content: "hello".into(),
+            },
+        );
+        assert_eq!(
+            fingerprint,
+            vec![
+                0xc7, 0xf3, 0x39, 0x49, 0x26, 0x9c, 0x37, 0xa7, 0x53, 0x46, 0xd7, 0x59, 0x7d, 0xce,
+                0x05, 0xaf, 0xe4, 0x61, 0x53, 0x5b, 0x94, 0x1d, 0x04, 0xc2, 0xf7, 0x09, 0xcc, 0xab,
+                0xa5, 0x0c, 0x2b, 0xa8,
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_mutation_without_fingerprint_remains_replay_compatible() {
+        let (database_address, _, database_server) = start_database().await;
+        let store = DatabaseActorStore::connect(&database_address)
+            .await
+            .unwrap();
+        let key = Uuid::from_u128(600);
+        store
+            .store(
+                "legacy-fingerprint",
+                key,
+                proto::Echo::default(),
+                proto::Text {
+                    content: "legacy response".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            store
+                .replay::<proto::Echo, proto::Text>("legacy-fingerprint", key)
+                .await
+                .unwrap(),
+            Some(proto::Text {
+                content: "legacy response".into(),
+            })
+        );
+        database_server.abort();
+    }
+
     #[tokio::test]
     async fn echo_adapter_recreation_replays_persisted_reply_and_stores_atomically() {
         let (database_address, database, database_server) = start_database().await;
@@ -1171,6 +1315,12 @@ mod tests {
             .await
             .unwrap();
         let replay = client
+            .reply(context.writer_with_key(first.clone(), key).unwrap())
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(replay, first);
+        let collision = client
             .reply(
                 context
                     .writer_with_key(
@@ -1182,9 +1332,8 @@ mod tests {
                     .unwrap(),
             )
             .await
-            .unwrap()
-            .into_inner();
-        assert_eq!(replay.content, "persisted through generated database");
+            .unwrap_err();
+        assert_eq!(collision.code(), tonic::Code::FailedPrecondition);
         let last = client
             .last_message(context.reader(proto::Empty {}).unwrap())
             .await
@@ -1321,13 +1470,22 @@ mod tests {
         let replay = writes
             .increment(
                 context
-                    .writer_with_key(proto::IncrementRequest { amount: 100 }, first_key)
+                    .writer_with_key(proto::IncrementRequest { amount: 5 }, first_key)
                     .unwrap(),
             )
             .await
             .unwrap()
             .into_inner();
         assert_eq!(replay.value, 5);
+        let collision = writes
+            .increment(
+                context
+                    .writer_with_key(proto::IncrementRequest { amount: 100 }, first_key)
+                    .unwrap(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(collision.code(), tonic::Code::FailedPrecondition);
         assert_eq!(
             reads
                 .get(context.reader(proto::Empty {}).unwrap())

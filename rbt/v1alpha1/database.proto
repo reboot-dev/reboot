@@ -174,6 +174,18 @@ message IdempotentMutation {
 
   bytes response = 2;
 
+  // Optional canonical request fingerprint for collision detection.
+  //
+  // v1 is SHA-256 over:
+  //   "reboot.idempotency.request-fingerprint.v1\0" +
+  //   UTF-8 fully-qualified method identity + "\0" +
+  //   deterministic protobuf serialization of the request.
+  //
+  // An absent fingerprint is legacy data and remains replay-compatible.
+  // A nonempty stored fingerprint must equal a nonempty incoming fingerprint
+  // for the same idempotency storage key.
+  optional bytes request_fingerprint = 8;
+
   // Any tasks that were scheduled as part of this mutation.
   repeated TaskId task_ids = 3;
 

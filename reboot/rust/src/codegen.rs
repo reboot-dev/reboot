@@ -360,8 +360,12 @@ fn emit_durable(
         let Some(kind) = annotation.methods.get(method_name) else {
             continue;
         };
+        let method_identity = format!(
+            "{package}.{service_name}.{}",
+            required(&method.name, "method name")?
+        );
         let (method, request, response) = method_types(file, package, service_name, method)?;
-        methods.push((kind, method, request, response));
+        methods.push((kind, method, request, response, method_identity));
     }
     if methods.is_empty() {
         return Ok(());
@@ -376,7 +380,7 @@ fn emit_durable(
     let server = format!("{}_server", snake_case(service_name));
     output.push_str("#[tonic::async_trait]\n");
     output.push_str(&format!("pub trait {handler}: Send + Sync + 'static {{\n"));
-    for (kind, method, request, response) in &methods {
+    for (kind, method, request, response, _) in &methods {
         output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n", if **kind == DurableKind::Writer { "&mut " } else { "&" }));
     }
     output.push_str("}\n\n");
@@ -385,12 +389,17 @@ fn emit_durable(
     output.push_str(&format!(
         "impl<H: {handler}> proto::{server}::{service_name} for {adapter}<H> {{\n"
     ));
-    for (kind, method, request, response) in methods {
+    for (kind, method, request, response, method_identity) in methods {
         let envelope = match kind {
-            DurableKind::Reader => "reader_async",
-            DurableKind::Writer => "writer_async",
+            DurableKind::Reader => "reader_async_for",
+            DurableKind::Writer => "writer_async_for_method",
         };
-        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let handler = self.handler.clone();\n        self.store.{envelope}_for::<{declaration}, _, _, _>(\n            request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await }})\n            }},\n        ).await\n    }}\n"));
+        let method_identity = if *kind == DurableKind::Writer {
+            format!("\"{method_identity}\", ")
+        } else {
+            String::new()
+        };
+        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {method_identity}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await }})\n            }},\n        ).await\n    }}\n"));
     }
     output.push_str("}\n\n");
     Ok(())
@@ -606,7 +615,8 @@ mod tests {
                 content
                     .contains("const STATE_TYPE: &'static str = \"tests.reboot.protoc.Counter\";")
             );
-            assert!(content.contains("store.writer_async_for::<CounterDurableState"));
+            assert!(content.contains("store.writer_async_for_method::<CounterDurableState"));
+            assert!(content.contains("\"tests.reboot.protoc.CounterWrites.Increment\", request"));
             assert!(!content.contains("\"Counter\", request"));
         }
     }

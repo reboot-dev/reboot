@@ -610,6 +610,11 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
 
   stout::Borrowable<std::unique_ptr<rocksdb::TransactionDB>> db_;
 
+  // Serializes check-and-store of idempotent mutations. Store() otherwise
+  // uses a WriteBatch, which cannot atomically read an existing value before
+  // writing; keep this lock through the final database write.
+  std::mutex idempotency_collision_mutex_;
+
   // Server info containing shard information.
   ServerInfo server_info_;
 
@@ -2382,6 +2387,62 @@ grpc::Status DatabaseService::Store(
 
   // Piggyback the current timestamp for refresh.
   *response->mutable_timestamp() = monotonic_clock_->Now();
+
+  // A WriteBatch does not provide a conditional read/write primitive. Hold
+  // this sidecar-wide lock from the collision check through its final write so
+  // concurrent Store RPCs cannot overwrite a different request's response.
+  std::unique_lock<std::mutex> idempotency_collision_lock(
+      idempotency_collision_mutex_, std::defer_lock);
+  if (request->has_idempotent_mutation()) {
+    idempotency_collision_lock.lock();
+    const IdempotentMutation& incoming = request->idempotent_mutation();
+    if (incoming.has_request_fingerprint()
+        && !incoming.request_fingerprint().empty()) {
+      std::optional<std::string> workflow_id;
+      if (incoming.has_workflow_id()) workflow_id = incoming.workflow_id();
+      std::optional<uint64_t> workflow_iteration;
+      if (incoming.has_workflow_iteration()) {
+        workflow_iteration = incoming.workflow_iteration();
+      }
+      expected<std::string> key = MakeIdempotentMutationKey(
+          incoming.state_ref(), incoming.key(), workflow_id, workflow_iteration);
+      if (!key.has_value()) {
+        return grpc::Status(grpc::UNKNOWN, key.error());
+      }
+      expected<rocksdb::ColumnFamilyHandle*> column_family =
+          LookupColumnFamilyHandle(incoming.state_type());
+      if (column_family.has_value()) {
+        std::string stored_bytes;
+        rocksdb::Status get = db_->Get(
+            rocksdb::ReadOptions(), *column_family, *key, &stored_bytes);
+        if (get.ok()) {
+          IdempotentMutation stored;
+          if (!stored.ParseFromString(stored_bytes)) {
+            return grpc::Status(
+                grpc::UNKNOWN, "Failed to parse stored IdempotentMutation");
+          }
+          // A legacy record has no evidence to distinguish a retry from a
+          // collision, so it remains replay-compatible. Once a fingerprinted
+          // record exists, however, an un-fingerprinted concurrent Store must
+          // not be allowed to erase that protection.
+          if (stored.has_request_fingerprint()
+              && !stored.request_fingerprint().empty()
+              && (!incoming.has_request_fingerprint()
+                  || incoming.request_fingerprint().empty()
+                  || stored.request_fingerprint()
+                      != incoming.request_fingerprint())) {
+            return grpc::Status(
+                grpc::FAILED_PRECONDITION,
+                "Idempotency key was reused with a different request");
+          }
+        } else if (!get.IsNotFound()) {
+          return grpc::Status(
+              grpc::UNKNOWN,
+              fmt::format("Failed to read idempotent mutation: {}", get.ToString()));
+        }
+      }
+    }
+  }
 
   // Wrap the single optional idempotent mutation from the
   // `StoreRequest` into a `RepeatedPtrField` so that it can

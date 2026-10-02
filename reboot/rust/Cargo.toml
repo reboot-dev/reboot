@@ -25,6 +25,7 @@ test-support = ["dep:tokio-stream"]
 heck = "0.5"
 prost = "0.13"
 prost-types = "0.13"
+sha2 = "0.10"
 protoc-bin-vendored = { version = "3", optional = true }
 tonic = "0.12"
 tonic-build = { version = "0.12", optional = true }

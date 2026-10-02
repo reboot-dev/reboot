@@ -37,8 +37,9 @@ fn protoc_plugin_emits_durable_counter_adapters() {
     assert!(content.contains("pub struct CounterDurableState;"));
     assert!(content.contains("type State = proto::Counter;"));
     assert!(content.contains("const STATE_TYPE: &'static str = \"tests.reboot.protoc.Counter\";"));
-    assert!(content.contains("store.writer_async_for::<CounterDurableState"));
+    assert!(content.contains("store.writer_async_for_method::<CounterDurableState"));
     assert!(content.contains("store.reader_async_for::<CounterDurableState"));
+    assert!(content.contains("\"tests.reboot.protoc.CounterWrites.Increment\", request"));
     assert!(content.contains("let handler = self.handler.clone();"));
     assert!(content.contains("Box::pin(async move"));
     assert!(content.contains("reboot::runtime::DatabaseActorStore"));
@@ -75,7 +76,7 @@ fn protoc_plugin_canonicalizes_relative_durable_state_annotation() {
     )
     .unwrap();
     assert!(content.contains("pub struct EchoDurableState;"));
-    assert!(content.contains("store.writer_async_for::<EchoDurableState"));
+    assert!(content.contains("store.writer_async_for_method::<EchoDurableState"));
     assert!(content.contains("store.reader_async_for::<EchoDurableState"));
     assert!(content.contains("const STATE_TYPE: &'static str = \"tests.reboot.protoc.Echo\";"));
     assert!(!content.contains("\"Echo\", request"));
@@ -215,7 +216,7 @@ async fn generated_durable_counter_replays_after_service_recreation() {
         writes
             .increment(
                 context
-                    .writer_with_key(proto::IncrementRequest { amount: 100 }, first_key)
+                    .writer_with_key(proto::IncrementRequest { amount: 5 }, first_key)
                     .unwrap(),
             )
             .await
@@ -224,6 +225,15 @@ async fn generated_durable_counter_replays_after_service_recreation() {
             .value,
         5
     );
+    let collision = writes
+        .increment(
+            context
+                .writer_with_key(proto::IncrementRequest { amount: 100 }, first_key)
+                .unwrap(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(collision.code(), tonic::Code::FailedPrecondition);
     assert_eq!(
         reads
             .get(context.reader(proto::Empty {}).unwrap())
