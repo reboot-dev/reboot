@@ -79,6 +79,11 @@ pub struct ServiceSpec {
 pub struct ApplicationSpec {
     pub package: &'static str,
     pub state: StateSpec,
+    /// Request and response message names used by this service. The first
+    /// working slice emits empty declarations for these so the generated
+    /// proto is valid input to `protoc`; field-bearing API models are the
+    /// next layer of the Rust schema DSL.
+    pub message_names: &'static [&'static str],
     pub service: ServiceSpec,
 }
 
@@ -263,6 +268,12 @@ impl ApplicationSpec {
         }
         proto.push_str("}\n\n");
 
+        for message_name in self.message_names {
+            proto.push_str("message ");
+            proto.push_str(message_name);
+            proto.push_str(" {}\n\n");
+        }
+
         proto.push_str("service ");
         proto.push_str(self.service.name);
         proto.push_str(" {\n  option (rbt.v1alpha1.service) = { state: \"");
@@ -308,6 +319,12 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
             },
         ],
     },
+    message_names: &[
+        "RenameRequest",
+        "RenameResponse",
+        "DetailsRequest",
+        "DetailsResponse",
+    ],
     service: ServiceSpec {
         name: "ClinicMethods",
         state: "Clinic",
@@ -344,9 +361,32 @@ mod tests {
                 "optional string phone_number = 2 [(rbt.v1alpha1.field).required = false];"
             )
         );
+        assert!(proto.contains("message RenameRequest {}"));
         assert!(proto.contains(
             "option (rbt.v1alpha1.method) = { writer: {}, description: \"Renames the clinic.\" };"
         ));
+    }
+
+    #[test]
+    fn emitted_proto_compiles_against_reboots_options() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("clinic.proto");
+        let descriptor = directory.path().join("clinic.pb");
+        std::fs::write(&source, CLINIC.to_proto().unwrap()).unwrap();
+
+        let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .unwrap();
+        let status = std::process::Command::new(protoc_bin_vendored::protoc_bin_path().unwrap())
+            .arg(format!("--proto_path={}", repository.display()))
+            .arg(format!("--proto_path={}", directory.path().display()))
+            .arg(format!("--descriptor_set_out={}", descriptor.display()))
+            .arg(&source)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert!(descriptor.is_file());
     }
 
     #[test]

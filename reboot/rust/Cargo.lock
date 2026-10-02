@@ -719,6 +719,7 @@ version = "0.0.0"
 dependencies = [
  "prost",
  "protoc-bin-vendored",
+ "tempfile",
  "tonic",
  "tonic-build",
  "uuid",

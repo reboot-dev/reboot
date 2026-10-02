@@ -29,6 +29,12 @@ The emitted schema uses Reboot's current `rbt/v1alpha1/options.proto`:
 - service → state mapping;
 - reader/writer/transaction/workflow method kinds.
 
+The Rust test suite writes the emitted Clinic schema to disk and invokes the
+vendored `protoc` against the repository's actual Reboot options. That matters:
+string assertions alone can happily bless a proto that cannot compile. The
+current small DSL emits empty request/response messages; typed fields for those
+models are the next implementation slice.
+
 ## What this proves
 
 The Reboot **proto and external-client** boundary is viable across languages.
