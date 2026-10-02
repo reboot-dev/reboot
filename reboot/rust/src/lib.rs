@@ -16,16 +16,61 @@ pub enum FieldType {
     String,
     /// A named model emitted elsewhere in this application's proto contract.
     Message(&'static str),
+    /// A protobuf `repeated` field. The element descriptor is shared so schema
+    /// declarations remain `const`-friendly.
+    Repeated(&'static FieldType),
+    /// A protobuf map. Proto only permits scalar keys, so this cannot produce
+    /// an invalid `map<Message, Value>` declaration.
+    Map {
+        key: MapKeyType,
+        value: &'static FieldType,
+    },
 }
 
-impl FieldType {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MapKeyType {
+    Bool,
+    I64,
+    String,
+}
+
+impl MapKeyType {
     fn proto(self) -> &'static str {
         match self {
             Self::Bool => "bool",
-            Self::F64 => "double",
             Self::I64 => "int64",
             Self::String => "string",
-            Self::Message(name) => name,
+        }
+    }
+}
+
+impl FieldType {
+    fn proto(self) -> String {
+        match self {
+            Self::Bool => "bool".into(),
+            Self::F64 => "double".into(),
+            Self::I64 => "int64".into(),
+            Self::String => "string".into(),
+            Self::Message(name) => name.into(),
+            Self::Repeated(element) => element.proto(),
+            Self::Map { key, value } => format!("map<{}, {}>", key.proto(), value.proto()),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Repeated(_) => "repeated ",
+            Self::Map { .. } => "",
+            _ => "optional ",
+        }
+    }
+
+    fn referenced_message(self) -> Option<&'static str> {
+        match self {
+            Self::Message(name) => Some(name),
+            Self::Repeated(element) => element.referenced_message(),
+            Self::Map { value, .. } => value.referenced_message(),
+            _ => None,
         }
     }
 }
@@ -335,7 +380,7 @@ impl ApplicationSpec {
                 .iter()
                 .flat_map(|message| message.fields.iter()),
         ) {
-            if let FieldType::Message(name) = field.field_type {
+            if let Some(name) = field.field_type.referenced_message() {
                 let declared = name == self.state.name
                     || self.messages.iter().any(|message| message.name == name);
                 if !declared {
@@ -359,8 +404,9 @@ impl ApplicationSpec {
         proto.push_str(self.state.name);
         proto.push_str(" {\n  option (rbt.v1alpha1.state) = {};\n");
         for field in self.state.fields {
-            proto.push_str("  optional ");
-            proto.push_str(field.field_type.proto());
+            proto.push_str("  ");
+            proto.push_str(field.field_type.label());
+            proto.push_str(&field.field_type.proto());
             proto.push(' ');
             proto.push_str(field.name);
             proto.push_str(" = ");
@@ -376,8 +422,9 @@ impl ApplicationSpec {
             proto.push_str(message.name);
             proto.push_str(" {\n");
             for field in message.fields {
-                proto.push_str("  optional ");
-                proto.push_str(field.field_type.proto());
+                proto.push_str("  ");
+                proto.push_str(field.field_type.label());
+                proto.push_str(&field.field_type.proto());
                 proto.push(' ');
                 proto.push_str(field.name);
                 proto.push_str(" = ");
@@ -414,6 +461,9 @@ impl ApplicationSpec {
         Ok(proto)
     }
 }
+
+const STRING_FIELD: FieldType = FieldType::String;
+const PHONE_NUMBER_FIELD: FieldType = FieldType::Message("PhoneNumber");
 
 pub const CLINIC: ApplicationSpec = ApplicationSpec {
     package: "clinic.v1",
@@ -476,6 +526,21 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
                     field_type: FieldType::Message("PhoneNumber"),
                     required: false,
                 },
+                FieldSpec {
+                    name: "aliases",
+                    tag: 3,
+                    field_type: FieldType::Repeated(&STRING_FIELD),
+                    required: false,
+                },
+                FieldSpec {
+                    name: "phone_book",
+                    tag: 4,
+                    field_type: FieldType::Map {
+                        key: MapKeyType::String,
+                        value: &PHONE_NUMBER_FIELD,
+                    },
+                    required: false,
+                },
             ],
         },
     ],
@@ -517,6 +582,8 @@ mod tests {
         );
         assert!(proto.contains("message RenameRequest {\n  optional string name = 1"));
         assert!(proto.contains("optional PhoneNumber phone = 2"));
+        assert!(proto.contains("repeated string aliases = 3"));
+        assert!(proto.contains("map<string, PhoneNumber> phone_book = 4"));
         assert!(proto.contains(
             "option (rbt.v1alpha1.method) = { writer: {}, description: \"Renames the clinic.\" };"
         ));
