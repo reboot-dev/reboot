@@ -136,11 +136,19 @@ pub struct EnumSpec {
     pub variants: &'static [EnumVariantSpec],
 }
 
+/// Mutually exclusive protobuf fields. Each member keeps its own stable tag.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OneOfSpec {
+    pub name: &'static str,
+    pub fields: &'static [FieldSpec],
+}
+
 /// A request or response model in the emitted API contract.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MessageSpec {
     pub name: &'static str,
     pub fields: &'static [FieldSpec],
+    pub oneofs: &'static [OneOfSpec],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -172,6 +180,7 @@ pub enum SchemaError {
     DuplicateTag(u32),
     DuplicateMessage(&'static str),
     DuplicateEnum(&'static str),
+    DuplicateOneOf(&'static str),
     InvalidEnum(&'static str),
     UnknownMessage(&'static str),
     ServiceStateMismatch {
@@ -193,6 +202,7 @@ impl std::fmt::Display for SchemaError {
                 write!(f, "message `{name}` is declared more than once")
             }
             Self::DuplicateEnum(name) => write!(f, "enum `{name}` is declared more than once"),
+            Self::DuplicateOneOf(name) => write!(f, "oneof `{name}` is declared more than once"),
             Self::InvalidEnum(name) => write!(
                 f,
                 "enum `{name}` must have a named zero-valued first variant and unique variant numbers"
@@ -422,11 +432,40 @@ impl ApplicationSpec {
                     return Err(SchemaError::DuplicateTag(field.tag));
                 }
             }
+            let mut oneof_names = std::collections::BTreeSet::new();
+            for oneof in message.oneofs {
+                if oneof.name.is_empty() {
+                    return Err(SchemaError::EmptyName("oneof"));
+                }
+                if !oneof_names.insert(oneof.name) {
+                    return Err(SchemaError::DuplicateOneOf(oneof.name));
+                }
+                if oneof.fields.is_empty() {
+                    return Err(SchemaError::EmptyName("oneof field"));
+                }
+                for field in oneof.fields {
+                    if field.name.is_empty() {
+                        return Err(SchemaError::EmptyName("field"));
+                    }
+                    if field.tag == 0 || (19000..=19999).contains(&field.tag) {
+                        return Err(SchemaError::InvalidTag {
+                            field: field.name,
+                            tag: field.tag,
+                        });
+                    }
+                    if !tags.insert(field.tag) {
+                        return Err(SchemaError::DuplicateTag(field.tag));
+                    }
+                }
+            }
         }
         for field in self.state.fields.iter().chain(
             self.messages
                 .iter()
-                .flat_map(|message| message.fields.iter()),
+                .flat_map(|message| message.fields.iter())
+                .chain(self.messages.iter().flat_map(|message| {
+                    message.oneofs.iter().flat_map(|oneof| oneof.fields.iter())
+                })),
         ) {
             if let Some(name) = field.field_type.referenced_type() {
                 let declared = name == self.state.name
@@ -495,6 +534,23 @@ impl ApplicationSpec {
                 proto.push_str(" [(rbt.v1alpha1.field).required = ");
                 proto.push_str(if field.required { "true" } else { "false" });
                 proto.push_str("];\n");
+            }
+            for oneof in message.oneofs {
+                proto.push_str("  oneof ");
+                proto.push_str(oneof.name);
+                proto.push_str(" {\n");
+                for field in oneof.fields {
+                    proto.push_str("    ");
+                    proto.push_str(&field.field_type.proto());
+                    proto.push(' ');
+                    proto.push_str(field.name);
+                    proto.push_str(" = ");
+                    proto.push_str(&field.tag.to_string());
+                    proto.push_str(" [(rbt.v1alpha1.field).required = ");
+                    proto.push_str(if field.required { "true" } else { "false" });
+                    proto.push_str("];\n");
+                }
+                proto.push_str("  }\n");
             }
             proto.push_str("}\n\n");
         }
@@ -573,14 +629,17 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
                 field_type: FieldType::String,
                 required: true,
             }],
+            oneofs: &[],
         },
         MessageSpec {
             name: "RenameResponse",
             fields: &[],
+            oneofs: &[],
         },
         MessageSpec {
             name: "DetailsRequest",
             fields: &[],
+            oneofs: &[],
         },
         MessageSpec {
             name: "PhoneNumber",
@@ -590,6 +649,7 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
                 field_type: FieldType::String,
                 required: true,
             }],
+            oneofs: &[],
         },
         MessageSpec {
             name: "DetailsResponse",
@@ -628,6 +688,23 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
                     required: false,
                 },
             ],
+            oneofs: &[OneOfSpec {
+                name: "preferred_contact",
+                fields: &[
+                    FieldSpec {
+                        name: "email",
+                        tag: 6,
+                        field_type: FieldType::String,
+                        required: false,
+                    },
+                    FieldSpec {
+                        name: "pager",
+                        tag: 7,
+                        field_type: FieldType::String,
+                        required: false,
+                    },
+                ],
+            }],
         },
     ],
     service: ServiceSpec {
@@ -672,6 +749,7 @@ mod tests {
         assert!(proto.contains("map<string, PhoneNumber> phone_book = 4"));
         assert!(proto.contains("enum ClinicStatus {\n  CLINIC_STATUS_UNSPECIFIED = 0;"));
         assert!(proto.contains("optional ClinicStatus status = 5"));
+        assert!(proto.contains("oneof preferred_contact {\n    string email = 6"));
         assert!(proto.contains(
             "option (rbt.v1alpha1.method) = { writer: {}, description: \"Renames the clinic.\" };"
         ));
@@ -829,6 +907,30 @@ mod tests {
             invalid.validate(),
             Err(SchemaError::UnknownMessage("Address"))
         );
+    }
+
+    #[test]
+    fn rejects_oneof_tags_that_collide_with_ordinary_fields() {
+        let mut invalid = CLINIC;
+        invalid.messages = &[MessageSpec {
+            name: "Message",
+            fields: &[FieldSpec {
+                name: "ordinary",
+                tag: 1,
+                field_type: FieldType::String,
+                required: false,
+            }],
+            oneofs: &[OneOfSpec {
+                name: "choice",
+                fields: &[FieldSpec {
+                    name: "alternative",
+                    tag: 1,
+                    field_type: FieldType::String,
+                    required: false,
+                }],
+            }],
+        }];
+        assert_eq!(invalid.validate(), Err(SchemaError::DuplicateTag(1)));
     }
 
     #[test]
