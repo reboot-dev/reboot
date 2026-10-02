@@ -75,6 +75,14 @@ impl FieldType {
             _ => None,
         }
     }
+
+    fn has_valid_shape(self) -> bool {
+        match self {
+            Self::Repeated(element) => !matches!(*element, Self::Repeated(_) | Self::Map { .. }),
+            Self::Map { value, .. } => !matches!(*value, Self::Repeated(_) | Self::Map { .. }),
+            _ => true,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -188,6 +196,7 @@ pub enum SchemaError {
         tag: u32,
     },
     InvalidReservation,
+    InvalidFieldShape(&'static str),
     DuplicateTag(u32),
     DuplicateMessage(&'static str),
     DuplicateEnum(&'static str),
@@ -213,6 +222,10 @@ impl std::fmt::Display for SchemaError {
             Self::InvalidReservation => write!(
                 f,
                 "reserved field tags/names must be valid, unique, and unused by active fields"
+            ),
+            Self::InvalidFieldShape(field) => write!(
+                f,
+                "field `{field}` nests repeated or map collections in an invalid protobuf shape"
             ),
             Self::DuplicateTag(tag) => write!(f, "protobuf tag {tag} is used more than once"),
             Self::DuplicateMessage(name) => {
@@ -773,6 +786,9 @@ impl ApplicationSpec {
                     message.oneofs.iter().flat_map(|oneof| oneof.fields.iter())
                 })),
         ) {
+            if !field.field_type.has_valid_shape() {
+                return Err(SchemaError::InvalidFieldShape(field.name));
+            }
             if let Some(name) = field.field_type.referenced_type() {
                 let declared = name == self.state.name
                     || self.messages.iter().any(|message| message.name == name)
@@ -1517,6 +1533,25 @@ mod tests {
             }],
         }];
         assert_eq!(invalid.validate(), Err(SchemaError::InvalidEnum("Broken")));
+    }
+
+    #[test]
+    fn rejects_nested_protobuf_collection_shapes() {
+        const NESTED_MAP: FieldType = FieldType::Map {
+            key: MapKeyType::String,
+            value: &STRING_FIELD,
+        };
+        let mut invalid = CLINIC;
+        invalid.state.fields = &[FieldSpec {
+            name: "invalid_collection",
+            tag: 3,
+            field_type: FieldType::Repeated(&NESTED_MAP),
+            required: false,
+        }];
+        assert_eq!(
+            invalid.validate(),
+            Err(SchemaError::InvalidFieldShape("invalid_collection"))
+        );
     }
 
     #[test]
