@@ -554,7 +554,10 @@ impl CounterAdapter {
 }
 
 fn database_status(error: tonic::Status) -> Status {
-    Status::unavailable(format!("Reboot database sidecar request failed: {error}"))
+    Status::new(
+        error.code(),
+        format!("Reboot database sidecar request failed: {error}"),
+    )
 }
 
 fn required_metadata(request: &Request<impl Sized>, name: &'static str) -> Result<String, Status> {
@@ -1004,6 +1007,18 @@ mod tests {
     }
 
     use super::test_support::start_database;
+
+    #[test]
+    fn database_status_preserves_sidecar_status_code() {
+        let status = database_status(Status::invalid_argument("corrupt persisted state"));
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert!(
+            status
+                .message()
+                .contains("Reboot database sidecar request failed")
+        );
+        assert!(status.message().contains("corrupt persisted state"));
+    }
 
     async fn start_echo_adapter(host: EchoMethodsAdapter) -> (String, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
