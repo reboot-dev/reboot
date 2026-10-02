@@ -249,6 +249,14 @@ impl std::error::Error for SchemaError {}
 pub enum CompatibilityError {
     PackageChanged,
     StateChanged,
+    MissingReservedTag {
+        model: &'static str,
+        tag: u32,
+    },
+    MissingReservedName {
+        model: &'static str,
+        name: &'static str,
+    },
     MissingEnum(&'static str),
     MissingEnumVariant {
         enum_name: &'static str,
@@ -276,6 +284,12 @@ impl std::fmt::Display for CompatibilityError {
         match self {
             Self::PackageChanged => write!(f, "protobuf package changed"),
             Self::StateChanged => write!(f, "service state type changed"),
+            Self::MissingReservedTag { model, tag } => {
+                write!(f, "reserved tag {tag} was removed from `{model}`")
+            }
+            Self::MissingReservedName { model, name } => {
+                write!(f, "reserved field name `{name}` was removed from `{model}`")
+            }
             Self::MissingEnum(name) => write!(f, "enum `{name}` was removed"),
             Self::MissingEnumVariant { enum_name, variant } => {
                 write!(f, "enum variant `{enum_name}.{variant}` was removed")
@@ -318,8 +332,19 @@ fn check_model_compatibility(
     previous_oneofs: &[OneOfSpec],
     current_fields: &[FieldSpec],
     current_oneofs: &[OneOfSpec],
+    previous_reserved: ReservedFields,
     current_reserved: ReservedFields,
 ) -> Result<(), CompatibilityError> {
+    for tag in previous_reserved.tags {
+        if !current_reserved.tags.contains(tag) {
+            return Err(CompatibilityError::MissingReservedTag { model, tag: *tag });
+        }
+    }
+    for name in previous_reserved.names {
+        if !current_reserved.names.contains(name) {
+            return Err(CompatibilityError::MissingReservedName { model, name });
+        }
+    }
     let current = fields_by_tag(current_fields, current_oneofs);
     for previous in fields_by_tag(previous_fields, previous_oneofs).into_values() {
         let Some(next) = current.get(&previous.tag) else {
@@ -778,6 +803,7 @@ impl ApplicationSpec {
             &[],
             self.state.fields,
             &[],
+            previous.state.reserved,
             self.state.reserved,
         )?;
 
@@ -806,6 +832,7 @@ impl ApplicationSpec {
                 previous_message.oneofs,
                 current_message.fields,
                 current_message.oneofs,
+                previous_message.reserved,
                 current_message.reserved,
             )?;
         }
@@ -1380,6 +1407,19 @@ mod tests {
         let proto = changed.to_proto().unwrap();
         assert!(proto.contains("reserved 2;"));
         assert!(proto.contains("reserved \"phone_number\";"));
+
+        let mut later = changed;
+        later.state.reserved = ReservedFields {
+            tags: &[],
+            names: &[],
+        };
+        assert_eq!(
+            later.check_backward_compatible_with(&changed),
+            Err(CompatibilityError::MissingReservedTag {
+                model: "Clinic",
+                tag: 2,
+            })
+        );
     }
 
     #[test]
