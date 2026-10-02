@@ -16,6 +16,8 @@ pub enum FieldType {
     String,
     /// A named model emitted elsewhere in this application's proto contract.
     Message(&'static str),
+    /// A named enum emitted elsewhere in this application's proto contract.
+    Enum(&'static str),
     /// A protobuf `repeated` field. The element descriptor is shared so schema
     /// declarations remain `const`-friendly.
     Repeated(&'static FieldType),
@@ -51,7 +53,7 @@ impl FieldType {
             Self::F64 => "double".into(),
             Self::I64 => "int64".into(),
             Self::String => "string".into(),
-            Self::Message(name) => name.into(),
+            Self::Message(name) | Self::Enum(name) => name.into(),
             Self::Repeated(element) => element.proto(),
             Self::Map { key, value } => format!("map<{}, {}>", key.proto(), value.proto()),
         }
@@ -65,11 +67,11 @@ impl FieldType {
         }
     }
 
-    fn referenced_message(self) -> Option<&'static str> {
+    fn referenced_type(self) -> Option<&'static str> {
         match self {
-            Self::Message(name) => Some(name),
-            Self::Repeated(element) => element.referenced_message(),
-            Self::Map { value, .. } => value.referenced_message(),
+            Self::Message(name) | Self::Enum(name) => Some(name),
+            Self::Repeated(element) => element.referenced_type(),
+            Self::Map { value, .. } => value.referenced_type(),
             _ => None,
         }
     }
@@ -119,6 +121,21 @@ pub struct StateSpec {
     pub fields: &'static [FieldSpec],
 }
 
+/// One stable numeric member of an emitted protobuf enum.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EnumVariantSpec {
+    pub name: &'static str,
+    pub number: i32,
+}
+
+/// A protobuf enum. The first variant must be the zero/default value required
+/// by proto3; its number remains part of the wire contract.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EnumSpec {
+    pub name: &'static str,
+    pub variants: &'static [EnumVariantSpec],
+}
+
 /// A request or response model in the emitted API contract.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MessageSpec {
@@ -137,6 +154,8 @@ pub struct ServiceSpec {
 pub struct ApplicationSpec {
     pub package: &'static str,
     pub state: StateSpec,
+    /// Enums used by state, request, and response models.
+    pub enums: &'static [EnumSpec],
     /// Request and response models used by this service.
     pub messages: &'static [MessageSpec],
     pub service: ServiceSpec,
@@ -152,6 +171,8 @@ pub enum SchemaError {
     },
     DuplicateTag(u32),
     DuplicateMessage(&'static str),
+    DuplicateEnum(&'static str),
+    InvalidEnum(&'static str),
     UnknownMessage(&'static str),
     ServiceStateMismatch {
         service: &'static str,
@@ -171,6 +192,11 @@ impl std::fmt::Display for SchemaError {
             Self::DuplicateMessage(name) => {
                 write!(f, "message `{name}` is declared more than once")
             }
+            Self::DuplicateEnum(name) => write!(f, "enum `{name}` is declared more than once"),
+            Self::InvalidEnum(name) => write!(
+                f,
+                "enum `{name}` must have a named zero-valued first variant and unique variant numbers"
+            ),
             Self::UnknownMessage(name) => write!(f, "message `{name}` is not declared"),
             Self::ServiceStateMismatch { service, state } => {
                 write!(f, "service `{service}` does not target state `{state}`")
@@ -351,6 +377,28 @@ impl ApplicationSpec {
                 return Err(SchemaError::DuplicateTag(field.tag));
             }
         }
+        let mut enum_names = std::collections::BTreeSet::new();
+        for enum_spec in self.enums {
+            if enum_spec.name.is_empty() {
+                return Err(SchemaError::EmptyName("enum"));
+            }
+            if !enum_names.insert(enum_spec.name) {
+                return Err(SchemaError::DuplicateEnum(enum_spec.name));
+            }
+            let Some(first) = enum_spec.variants.first() else {
+                return Err(SchemaError::InvalidEnum(enum_spec.name));
+            };
+            if first.name.is_empty() || first.number != 0 {
+                return Err(SchemaError::InvalidEnum(enum_spec.name));
+            }
+            let mut numbers = std::collections::BTreeSet::new();
+            for variant in enum_spec.variants {
+                if variant.name.is_empty() || !numbers.insert(variant.number) {
+                    return Err(SchemaError::InvalidEnum(enum_spec.name));
+                }
+            }
+        }
+
         let mut message_names = std::collections::BTreeSet::new();
         for message in self.messages {
             if message.name.is_empty() {
@@ -380,9 +428,10 @@ impl ApplicationSpec {
                 .iter()
                 .flat_map(|message| message.fields.iter()),
         ) {
-            if let Some(name) = field.field_type.referenced_message() {
+            if let Some(name) = field.field_type.referenced_type() {
                 let declared = name == self.state.name
-                    || self.messages.iter().any(|message| message.name == name);
+                    || self.messages.iter().any(|message| message.name == name)
+                    || self.enums.iter().any(|enum_spec| enum_spec.name == name);
                 if !declared {
                     return Err(SchemaError::UnknownMessage(name));
                 }
@@ -416,6 +465,20 @@ impl ApplicationSpec {
             proto.push_str("];\n");
         }
         proto.push_str("}\n\n");
+
+        for enum_spec in self.enums {
+            proto.push_str("enum ");
+            proto.push_str(enum_spec.name);
+            proto.push_str(" {\n");
+            for variant in enum_spec.variants {
+                proto.push_str("  ");
+                proto.push_str(variant.name);
+                proto.push_str(" = ");
+                proto.push_str(&variant.number.to_string());
+                proto.push_str(";\n");
+            }
+            proto.push_str("}\n\n");
+        }
 
         for message in self.messages {
             proto.push_str("message ");
@@ -484,6 +547,23 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
             },
         ],
     },
+    enums: &[EnumSpec {
+        name: "ClinicStatus",
+        variants: &[
+            EnumVariantSpec {
+                name: "CLINIC_STATUS_UNSPECIFIED",
+                number: 0,
+            },
+            EnumVariantSpec {
+                name: "CLINIC_STATUS_OPEN",
+                number: 1,
+            },
+            EnumVariantSpec {
+                name: "CLINIC_STATUS_CLOSED",
+                number: 2,
+            },
+        ],
+    }],
     messages: &[
         MessageSpec {
             name: "RenameRequest",
@@ -541,6 +621,12 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
                     },
                     required: false,
                 },
+                FieldSpec {
+                    name: "status",
+                    tag: 5,
+                    field_type: FieldType::Enum("ClinicStatus"),
+                    required: false,
+                },
             ],
         },
     ],
@@ -584,6 +670,8 @@ mod tests {
         assert!(proto.contains("optional PhoneNumber phone = 2"));
         assert!(proto.contains("repeated string aliases = 3"));
         assert!(proto.contains("map<string, PhoneNumber> phone_book = 4"));
+        assert!(proto.contains("enum ClinicStatus {\n  CLINIC_STATUS_UNSPECIFIED = 0;"));
+        assert!(proto.contains("optional ClinicStatus status = 5"));
         assert!(proto.contains(
             "option (rbt.v1alpha1.method) = { writer: {}, description: \"Renames the clinic.\" };"
         ));
@@ -741,6 +829,19 @@ mod tests {
             invalid.validate(),
             Err(SchemaError::UnknownMessage("Address"))
         );
+    }
+
+    #[test]
+    fn rejects_enums_without_a_zero_default() {
+        let mut invalid = CLINIC;
+        invalid.enums = &[EnumSpec {
+            name: "Broken",
+            variants: &[EnumVariantSpec {
+                name: "BROKEN_ONE",
+                number: 1,
+            }],
+        }];
+        assert_eq!(invalid.validate(), Err(SchemaError::InvalidEnum("Broken")));
     }
 
     #[test]

@@ -32,9 +32,9 @@ The emitted schema uses Reboot's current `rbt/v1alpha1/options.proto`:
 The Rust test suite writes the emitted Clinic schema to disk and invokes the
 vendored `protoc` against the repository's actual Reboot options. That matters:
 string assertions alone can happily bless a proto that cannot compile. The
-current DSL emits typed scalar, named nested, `repeated`, and `map` request/
-response models with the same stable tags and requiredness metadata as state.
-Unions/enums and broader compatibility rules are the next schema slice.
+current DSL emits typed scalar, named nested, enum, `repeated`, and `map`
+request/response models with the same stable tags and requiredness metadata as
+state. `oneof` unions and broader compatibility rules are the next schema slice.
 
 ## What this proves
 
