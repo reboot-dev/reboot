@@ -349,6 +349,7 @@ fn emit_durable(
             annotation.state.trim_start_matches(&format!("{package}."))
         )),
     )?;
+    let state_type = format!("{package}.{state}");
     let mut methods = Vec::new();
     for method in &service.method {
         let method_name = required(&method.name, "method name")?;
@@ -379,7 +380,7 @@ fn emit_durable(
             DurableKind::Reader => "reader",
             DurableKind::Writer => "writer",
         };
-        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        self.store.{envelope}::<proto::{state}, _, _, _>(\n            \"{}\", request, |state, request| self.handler.{method}(state, request),\n        ).await\n    }}\n", annotation.state));
+        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        self.store.{envelope}::<proto::{state}, _, _, _>(\n            \"{state_type}\", request, |state, request| self.handler.{method}(state, request),\n        ).await\n    }}\n"));
     }
     output.push_str("}\n\n");
     Ok(())
@@ -569,6 +570,30 @@ mod tests {
                 .unwrap()
                 .contains("store: reboot_rust_schema::runtime::DatabaseActorStore")
         );
+    }
+
+    #[test]
+    fn durable_state_type_is_canonical_for_relative_and_qualified_annotations() {
+        for annotation_state in ["Counter", "tests.reboot.protoc.Counter"] {
+            let annotations = HashMap::from([(
+                "counter.proto".to_owned(),
+                HashMap::from([(
+                    "CounterWrites".to_owned(),
+                    DurableService {
+                        state: annotation_state.to_owned(),
+                        methods: HashMap::from([("Increment".to_owned(), DurableKind::Writer)]),
+                    },
+                )]),
+            )]);
+            let content = generate_inner(request(), annotations)
+                .unwrap()
+                .remove(0)
+                .content
+                .unwrap();
+            assert!(content.contains("store.writer::<proto::Counter"));
+            assert!(content.contains("\"tests.reboot.protoc.Counter\""));
+            assert!(!content.contains("\"Counter\", request"));
+        }
     }
 
     #[test]

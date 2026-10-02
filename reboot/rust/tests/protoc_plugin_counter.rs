@@ -36,6 +36,42 @@ fn protoc_plugin_emits_durable_counter_adapters() {
 }
 
 #[test]
+fn protoc_plugin_canonicalizes_relative_durable_state_annotation() {
+    let directory = tempfile::tempdir().unwrap();
+    let generated = directory.path().join("generated");
+    std::fs::create_dir_all(&generated).unwrap();
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .unwrap();
+    let status = Command::new(protoc_bin_vendored::protoc_bin_path().unwrap())
+        .arg(format!("--proto_path={}", repository.display()))
+        .arg(format!(
+            "--proto_path={}",
+            protoc_bin_vendored::include_path().unwrap().display()
+        ))
+        .arg(format!(
+            "--plugin=protoc-gen-reboot_rust={}",
+            env!("CARGO_BIN_EXE_protoc-gen-reboot_rust")
+        ))
+        .arg("--reboot_rust_opt=module=reboot_rust_schema::proto,runtime_module=reboot")
+        .arg(format!("--reboot_rust_out={}", generated.display()))
+        .arg(repository.join("tests/reboot/protoc/explicit_state_annotations_relative.proto"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let content = std::fs::read_to_string(
+        generated.join("tests/reboot/protoc/explicit_state_annotations_relative.reboot.rs"),
+    )
+    .unwrap();
+    assert!(content.contains("store.writer::<proto::Echo"));
+    assert!(content.contains("store.reader::<proto::Echo"));
+    assert!(content.contains("\"tests.reboot.protoc.Echo\""));
+    assert!(!content.contains("\"Echo\", request"));
+}
+
+#[test]
 fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture() {
     let directory = tempfile::tempdir().unwrap();
     let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
