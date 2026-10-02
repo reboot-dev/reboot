@@ -148,7 +148,7 @@ pub struct EnumVariantSpec {
 }
 
 /// A protobuf enum. The first variant must be the zero/default value required
-/// by proto3; its number remains part of the wire contract.
+/// by proto3; variant names and numbers remain part of the wire contract.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EnumSpec {
     pub name: &'static str,
@@ -721,8 +721,12 @@ impl ApplicationSpec {
                 return Err(SchemaError::InvalidEnum(enum_spec.name));
             }
             let mut numbers = std::collections::BTreeSet::new();
+            let mut variant_names = std::collections::BTreeSet::new();
             for variant in enum_spec.variants {
-                if variant.name.is_empty() || !numbers.insert(variant.number) {
+                if variant.name.is_empty()
+                    || !variant_names.insert(variant.name)
+                    || !numbers.insert(variant.number)
+                {
                     return Err(SchemaError::InvalidEnum(enum_spec.name));
                 }
             }
@@ -1652,7 +1656,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_enums_without_a_zero_default() {
+    fn rejects_invalid_enums() {
         let mut invalid = CLINIC;
         invalid.enums = &[EnumSpec {
             name: "Broken",
@@ -1662,6 +1666,24 @@ mod tests {
             }],
         }];
         assert_eq!(invalid.validate(), Err(SchemaError::InvalidEnum("Broken")));
+
+        invalid.enums = &[EnumSpec {
+            name: "DuplicateVariant",
+            variants: &[
+                EnumVariantSpec {
+                    name: "DUPLICATE_UNSPECIFIED",
+                    number: 0,
+                },
+                EnumVariantSpec {
+                    name: "DUPLICATE_UNSPECIFIED",
+                    number: 1,
+                },
+            ],
+        }];
+        assert_eq!(
+            invalid.validate(),
+            Err(SchemaError::InvalidEnum("DuplicateVariant"))
+        );
     }
 
     #[test]
