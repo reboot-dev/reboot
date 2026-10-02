@@ -308,6 +308,11 @@ fn emit_forwarding(
     service: &ServiceDescriptorProto,
 ) -> Result<(), String> {
     let name = required(&service.name, "service name")?;
+    if !is_generated_rust_identifier(name) {
+        return Err(format!(
+            "{file}: service `{name}` is not a valid generated Rust identifier"
+        ));
+    }
     reject_method_name_collisions(file, name, &service.method)?;
     let handler = format!("{name}Handler");
     let adapter = format!("{name}Adapter");
@@ -487,6 +492,68 @@ fn is_identifier(value: &str) -> bool {
     matches!(characters.next(), Some(character) if character == '_' || character.is_ascii_alphabetic())
         && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
 }
+fn is_generated_rust_identifier(value: &str) -> bool {
+    is_identifier(value) && !is_rust_keyword(value)
+}
+
+fn is_rust_keyword(value: &str) -> bool {
+    matches!(
+        value,
+        "as" | "async"
+            | "await"
+            | "break"
+            | "const"
+            | "continue"
+            | "crate"
+            | "dyn"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "fn"
+            | "for"
+            | "if"
+            | "impl"
+            | "in"
+            | "let"
+            | "loop"
+            | "match"
+            | "mod"
+            | "move"
+            | "mut"
+            | "pub"
+            | "ref"
+            | "return"
+            | "self"
+            | "Self"
+            | "static"
+            | "struct"
+            | "super"
+            | "trait"
+            | "true"
+            | "try"
+            | "type"
+            | "union"
+            | "unsafe"
+            | "use"
+            | "where"
+            | "while"
+            | "gen"
+            | "abstract"
+            | "become"
+            | "box"
+            | "do"
+            | "final"
+            | "macro"
+            | "override"
+            | "priv"
+            | "typeof"
+            | "unsized"
+            | "virtual"
+            | "yield"
+    )
+}
+
 pub(crate) fn is_module_path(value: &str) -> bool {
     !value.is_empty() && value.split("::").all(is_identifier)
 }
@@ -670,6 +737,16 @@ mod tests {
     fn snake_case_matches_protobuf_acronyms() {
         assert_eq!(snake_case("APIService"), "api_service");
         assert_eq!(snake_case("GetURL"), "get_url");
+    }
+
+    #[test]
+    fn rejects_rust_keyword_service_names() {
+        let mut value = request();
+        value.proto_file[0].service[0].name = Some("Self".into());
+        let error = generate(value).error.unwrap();
+        assert!(error.contains("counter.proto"));
+        assert!(error.contains("Self"));
+        assert!(error.contains("valid generated Rust identifier"));
     }
 
     #[test]
