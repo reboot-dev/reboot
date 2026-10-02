@@ -89,6 +89,7 @@ py_library(
         "//reboot/cli/common:subprocesses_py",
         "//reboot/cli/common:terminal_py",
         "//reboot/cli/common:watch_py",
+        "//reboot/cli:rust_generate_py",
         "@com_github_reboot_dev_reboot//reboot:pydantic_schema_to_proto_py",
         "@com_github_reboot_dev_reboot//reboot:pydantic_schema_to_zod_py",
         "@com_github_reboot_dev_reboot//reboot:settings_py",
