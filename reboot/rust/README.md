@@ -61,8 +61,9 @@ one:
 2. `reboot/cli/commands/generate.py` exposes only Python/Node.js codegen and
    boilerplate plugins; there is no `protoc-gen-reboot_rust`.
 3. The crate now has an executable, process-local `InMemoryActor` slice:
-   serialized state reads/writes and idempotent write-response caching. It is
-   intentionally not durable and cannot coordinate multiple actors yet.
+   serialized state reads/writes, idempotent write-response caching, and
+   rollback of failed transactional writes. It is intentionally not durable and
+   cannot coordinate multiple actors yet.
 4. Python and Node generated servicer libraries own context propagation,
    retries, persistent state reads/writes, task/workflow semantics, and gRPC
    registration. Rust still needs the corresponding durable runtime crate.

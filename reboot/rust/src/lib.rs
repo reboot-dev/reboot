@@ -437,6 +437,39 @@ where
     }
 }
 
+impl<State, Response> InMemoryActor<State, Response>
+where
+    State: Clone,
+    Response: Clone,
+{
+    /// Runs a fallible write atomically. A returned error restores the complete
+    /// pre-write state and is deliberately not cached: a retry with the same
+    /// idempotency key gets another execution attempt.
+    pub fn writer_transactional<Error>(
+        &self,
+        idempotency_key: uuid::Uuid,
+        write: impl FnOnce(&mut State) -> Result<Response, Error>,
+    ) -> Result<Response, Error> {
+        let mut guard = self.inner.lock().expect("actor state mutex poisoned");
+        if let Some(response) = guard.completed_writes.get(&idempotency_key) {
+            return Ok(response.clone());
+        }
+        let checkpoint = guard.state.clone();
+        match write(&mut guard.state) {
+            Ok(response) => {
+                guard
+                    .completed_writes
+                    .insert(idempotency_key, response.clone());
+                Ok(response)
+            }
+            Err(error) => {
+                guard.state = checkpoint;
+                Err(error)
+            }
+        }
+    }
+}
+
 impl ApplicationSpec {
     pub fn validate(&self) -> Result<(), SchemaError> {
         if self.package.is_empty() {
@@ -1050,6 +1083,36 @@ mod tests {
                 *state
             }),
             1
+        );
+        assert_eq!(actor.reader(|state| *state), 1);
+    }
+
+    #[test]
+    fn in_memory_actor_rolls_back_failed_transactional_writes() {
+        let actor = InMemoryActor::<i64, i64>::new(0);
+        let key = uuid::Uuid::new_v4();
+        assert_eq!(
+            actor.writer_transactional(key, |state| {
+                *state += 1;
+                Err::<i64, _>("rollback")
+            }),
+            Err("rollback")
+        );
+        assert_eq!(actor.reader(|state| *state), 0);
+
+        assert_eq!(
+            actor.writer_transactional(key, |state| {
+                *state += 1;
+                Ok::<i64, &str>(*state)
+            }),
+            Ok(1)
+        );
+        assert_eq!(
+            actor.writer_transactional(key, |state| {
+                *state += 1;
+                Ok::<i64, &str>(*state)
+            }),
+            Ok(1)
         );
         assert_eq!(actor.reader(|state| *state), 1);
     }
