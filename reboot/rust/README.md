@@ -69,7 +69,7 @@ native Node↔Python bridge.
 
 ## Current limits exposed by the spike
 
-This is **not** a runnable Rust backend yet. Current source has hard-coded
+This is **not** a runnable generic Rust Reboot backend yet. Current source has hard-coded
 Python/Node assumptions that must be generalized before `rbt dev run` can host
 one:
 
