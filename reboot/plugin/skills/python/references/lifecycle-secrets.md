@@ -146,15 +146,24 @@ read them from `os.environ` and pass them in:
 
 ```python
 from reboot.aio.auth.oauth import OAuth
-from reboot.aio.auth.oauth_providers import Google
+from reboot.aio.auth.oauth_providers import (
+    Development,
+    Google,
+    OAuthProviderByEnvironment,
+)
 
 async def main():
     await Application(
         servicers=[UserServicer, CounterServicer],
         oauth=OAuth(
-            provider=Google(
-                client_id=os.environ["GOOGLE_OAUTH_CLIENT_ID"],
-                client_secret=os.environ["GOOGLE_OAUTH_CLIENT_SECRET"],
+            provider=OAuthProviderByEnvironment(
+                dev=Development(),
+                prod=Google(
+                    client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
+                    client_secret=os.environ.get(
+                        "GOOGLE_OAUTH_CLIENT_SECRET"
+                    ),
+                ),
             ),
         ),
     ).run()
