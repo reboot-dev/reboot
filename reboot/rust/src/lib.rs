@@ -200,6 +200,7 @@ pub enum SchemaError {
     InvalidReservation,
     InvalidFieldShape(&'static str),
     DuplicateTag(u32),
+    DuplicateField(&'static str),
     DuplicateMessage(&'static str),
     DuplicateEnum(&'static str),
     DuplicateOneOf(&'static str),
@@ -230,6 +231,7 @@ impl std::fmt::Display for SchemaError {
                 "field `{field}` nests repeated or map collections in an invalid protobuf shape"
             ),
             Self::DuplicateTag(tag) => write!(f, "protobuf tag {tag} is used more than once"),
+            Self::DuplicateField(name) => write!(f, "field `{name}` is declared more than once"),
             Self::DuplicateMessage(name) => {
                 write!(f, "message `{name}` is declared more than once")
             }
@@ -685,9 +687,13 @@ impl ApplicationSpec {
         }
 
         let mut tags = std::collections::BTreeSet::new();
+        let mut field_names = std::collections::BTreeSet::new();
         for field in self.state.fields {
             if field.name.is_empty() {
                 return Err(SchemaError::EmptyName("field"));
+            }
+            if !field_names.insert(field.name) {
+                return Err(SchemaError::DuplicateField(field.name));
             }
             if field.tag == 0 || (19000..=19999).contains(&field.tag) {
                 return Err(SchemaError::InvalidTag {
@@ -731,9 +737,13 @@ impl ApplicationSpec {
                 return Err(SchemaError::DuplicateMessage(message.name));
             }
             let mut tags = std::collections::BTreeSet::new();
+            let mut field_names = std::collections::BTreeSet::new();
             for field in message.fields {
                 if field.name.is_empty() {
                     return Err(SchemaError::EmptyName("field"));
+                }
+                if !field_names.insert(field.name) {
+                    return Err(SchemaError::DuplicateField(field.name));
                 }
                 if field.tag == 0 || (19000..=19999).contains(&field.tag) {
                     return Err(SchemaError::InvalidTag {
@@ -759,6 +769,9 @@ impl ApplicationSpec {
                 for field in oneof.fields {
                     if field.name.is_empty() {
                         return Err(SchemaError::EmptyName("field"));
+                    }
+                    if !field_names.insert(field.name) {
+                        return Err(SchemaError::DuplicateField(field.name));
                     }
                     if field.tag == 0 || (19000..=19999).contains(&field.tag) {
                         return Err(SchemaError::InvalidTag {
@@ -1389,6 +1402,57 @@ mod tests {
             Ok(1)
         );
         assert_eq!(actor.reader(|state| *state), 1);
+    }
+
+    #[test]
+    fn rejects_duplicate_field_names_across_model_members() {
+        let mut duplicate_state_field = CLINIC;
+        duplicate_state_field.state.fields = &[
+            FieldSpec {
+                name: "name",
+                tag: 1,
+                field_type: FieldType::String,
+                required: false,
+            },
+            FieldSpec {
+                name: "name",
+                tag: 2,
+                field_type: FieldType::String,
+                required: false,
+            },
+        ];
+        assert_eq!(
+            duplicate_state_field.validate(),
+            Err(SchemaError::DuplicateField("name"))
+        );
+
+        let mut duplicate_oneof_field = CLINIC;
+        duplicate_oneof_field.messages = &[MessageSpec {
+            name: "DuplicateFieldName",
+            fields: &[FieldSpec {
+                name: "contact",
+                tag: 1,
+                field_type: FieldType::String,
+                required: false,
+            }],
+            oneofs: &[OneOfSpec {
+                name: "choice",
+                fields: &[FieldSpec {
+                    name: "contact",
+                    tag: 2,
+                    field_type: FieldType::String,
+                    required: false,
+                }],
+            }],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
+        }];
+        assert_eq!(
+            duplicate_oneof_field.validate(),
+            Err(SchemaError::DuplicateField("contact"))
+        );
     }
 
     #[test]
