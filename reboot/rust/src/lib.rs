@@ -6,6 +6,7 @@
 //! supports only `--python` and `--nodejs`. The [`runtime`] module provides a
 //! deliberately scoped Tonic service adapters for executable testing.
 
+pub mod codegen;
 pub mod runtime;
 
 use std::collections::HashMap;

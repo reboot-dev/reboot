@@ -13,6 +13,10 @@ path = "src/lib.rs"
 name = "reboot-rust-schema"
 path = "src/main.rs"
 
+[[bin]]
+name = "protoc-gen-reboot_rust"
+path = "src/bin/protoc-gen-reboot_rust.rs"
+
 [dependencies]
 prost = "0.13"
 prost-types = "0.13"

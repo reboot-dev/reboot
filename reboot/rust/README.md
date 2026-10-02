@@ -101,6 +101,30 @@ one:
    needs a `#[derive(RebootState)]` procedural macro or an explicit schema DSL
    to retain stable tags and compatibility checks.
 
-The next honest slice is a Rust `protoc` plugin that generates servicer traits
-and a Rust runtime crate implementing the existing gRPC/state protocol. Adding
-`--rust` to the CLI before those exist would be decorative plumbing.
+## Concrete Tonic forwarding plugin
+
+This crate also provides `protoc-gen-reboot_rust`, a narrow `protoc` plugin for
+authoring concrete Tonic handlers against the schema bindings already exported
+as `reboot_rust_schema::proto`. Build it with Cargo, make the binary available
+on `PATH`, then invoke `protoc` with the required deterministic parameter:
+
+```sh
+cd reboot/rust
+cargo build --locked --bin protoc-gen-reboot_rust
+PATH="$PWD/target/debug:$PATH" protoc \
+  --reboot_rust_opt=module=reboot_rust_schema::proto \
+  --reboot_rust_out=generated \
+  --proto_path=../.. ../../tests/reboot/protoc/counter.proto
+```
+
+For every selected service, the plugin emits a concrete `ServiceHandler` trait
+and `ServiceAdapter<H>` implementing that service's tonic-build server trait.
+The generated adapter forwards only unary requests and responses whose types
+are top-level messages in the same protobuf package. Streaming methods,
+cross-package message types, nested types, and any other module parameter are
+rejected by the plugin rather than generating unusable Rust.
+
+The plugin has no durable semantics: it does not inspect Reboot options, map
+reader/writer methods to storage, or replace `DatabaseActorStore`. Application
+code still explicitly registers each generated adapter with its corresponding
+Tonic server.
