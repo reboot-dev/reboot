@@ -632,37 +632,10 @@ impl proto::counter_reads_server::CounterReads for CounterAdapter {
     }
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod test_support {
     use super::*;
-    use crate::ExternalContext;
-
-    async fn start_host() -> (String, tokio::task::JoinHandle<()>) {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let host = InMemoryHost::new();
-        let server = tokio::spawn(async move {
-            tonic::transport::Server::builder()
-                .add_service(proto::echo_methods_server::EchoMethodsServer::new(host))
-                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
-                .await
-                .unwrap();
-        });
-        (format!("http://{address}"), server)
-    }
-
-    async fn start_file_host(host: FileBackedHost) -> (String, tokio::task::JoinHandle<()>) {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move {
-            tonic::transport::Server::builder()
-                .add_service(proto::echo_methods_server::EchoMethodsServer::new(host))
-                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
-                .await
-                .unwrap();
-        });
-        (format!("http://{address}"), server)
-    }
 
     type DatabaseStream<T> = tokio_stream::Iter<std::vec::IntoIter<Result<T, Status>>>;
 
@@ -670,7 +643,7 @@ mod tests {
     /// It implements only the storage semantics this runtime needs, while every
     /// unused generated RPC remains deliberately well-formed and inert.
     #[derive(Clone, Default)]
-    struct FakeDatabase {
+    pub struct FakeDatabase {
         state: Arc<Mutex<FakeDatabaseState>>,
     }
 
@@ -682,7 +655,7 @@ mod tests {
     }
 
     impl FakeDatabase {
-        fn store_requests(&self) -> Vec<database::StoreRequest> {
+        pub fn store_requests(&self) -> Vec<database::StoreRequest> {
             self.state
                 .lock()
                 .expect("fake database mutex poisoned")
@@ -899,7 +872,7 @@ mod tests {
         }
     }
 
-    async fn start_database() -> (String, FakeDatabase, tokio::task::JoinHandle<()>) {
+    pub async fn start_database() -> (String, FakeDatabase, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let database = FakeDatabase::default();
@@ -915,6 +888,41 @@ mod tests {
         });
         (format!("http://{address}"), database, server)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ExternalContext;
+
+    async fn start_host() -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let host = InMemoryHost::new();
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(proto::echo_methods_server::EchoMethodsServer::new(host))
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+        (format!("http://{address}"), server)
+    }
+
+    async fn start_file_host(host: FileBackedHost) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(proto::echo_methods_server::EchoMethodsServer::new(host))
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+        (format!("http://{address}"), server)
+    }
+
+    use super::test_support::start_database;
 
     async fn start_echo_adapter(host: EchoMethodsAdapter) -> (String, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
