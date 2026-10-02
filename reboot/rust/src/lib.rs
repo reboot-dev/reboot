@@ -11,6 +11,8 @@ pub enum FieldType {
     F64,
     I64,
     String,
+    /// A named model emitted elsewhere in this application's proto contract.
+    Message(&'static str),
 }
 
 impl FieldType {
@@ -20,6 +22,7 @@ impl FieldType {
             Self::F64 => "double",
             Self::I64 => "int64",
             Self::String => "string",
+            Self::Message(name) => name,
         }
     }
 }
@@ -101,6 +104,7 @@ pub enum SchemaError {
     },
     DuplicateTag(u32),
     DuplicateMessage(&'static str),
+    UnknownMessage(&'static str),
     ServiceStateMismatch {
         service: &'static str,
         state: &'static str,
@@ -119,6 +123,7 @@ impl std::fmt::Display for SchemaError {
             Self::DuplicateMessage(name) => {
                 write!(f, "message `{name}` is declared more than once")
             }
+            Self::UnknownMessage(name) => write!(f, "message `{name}` is not declared"),
             Self::ServiceStateMismatch { service, state } => {
                 write!(f, "service `{service}` does not target state `{state}`")
             }
@@ -272,6 +277,19 @@ impl ApplicationSpec {
                 }
             }
         }
+        for field in self.state.fields.iter().chain(
+            self.messages
+                .iter()
+                .flat_map(|message| message.fields.iter()),
+        ) {
+            if let FieldType::Message(name) = field.field_type {
+                let declared = name == self.state.name
+                    || self.messages.iter().any(|message| message.name == name);
+                if !declared {
+                    return Err(SchemaError::UnknownMessage(name));
+                }
+            }
+        }
         Ok(())
     }
 
@@ -382,6 +400,15 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
             fields: &[],
         },
         MessageSpec {
+            name: "PhoneNumber",
+            fields: &[FieldSpec {
+                name: "value",
+                tag: 1,
+                field_type: FieldType::String,
+                required: true,
+            }],
+        },
+        MessageSpec {
             name: "DetailsResponse",
             fields: &[
                 FieldSpec {
@@ -391,9 +418,9 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
                     required: true,
                 },
                 FieldSpec {
-                    name: "phone_number",
+                    name: "phone",
                     tag: 2,
-                    field_type: FieldType::String,
+                    field_type: FieldType::Message("PhoneNumber"),
                     required: false,
                 },
             ],
@@ -436,6 +463,7 @@ mod tests {
             )
         );
         assert!(proto.contains("message RenameRequest {\n  optional string name = 1"));
+        assert!(proto.contains("optional PhoneNumber phone = 2"));
         assert!(proto.contains(
             "option (rbt.v1alpha1.method) = { writer: {}, description: \"Renames the clinic.\" };"
         ));
@@ -490,6 +518,21 @@ mod tests {
 
         let reader = context.reader(proto::Empty {}).unwrap();
         assert!(reader.metadata().get("x-reboot-idempotency-key").is_none());
+    }
+
+    #[test]
+    fn rejects_an_undeclared_nested_model() {
+        let mut invalid = CLINIC;
+        invalid.state.fields = &[FieldSpec {
+            name: "address",
+            tag: 1,
+            field_type: FieldType::Message("Address"),
+            required: false,
+        }];
+        assert_eq!(
+            invalid.validate(),
+            Err(SchemaError::UnknownMessage("Address"))
+        );
     }
 
     #[test]
