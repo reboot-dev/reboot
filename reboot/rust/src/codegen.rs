@@ -308,6 +308,7 @@ fn emit_forwarding(
     service: &ServiceDescriptorProto,
 ) -> Result<(), String> {
     let name = required(&service.name, "service name")?;
+    reject_method_name_collisions(file, name, &service.method)?;
     let handler = format!("{name}Handler");
     let adapter = format!("{name}Adapter");
     let server = format!("{}_server", snake_case(name));
@@ -402,6 +403,24 @@ fn emit_durable(
         output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {method_identity}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await }})\n            }},\n        ).await\n    }}\n"));
     }
     output.push_str("}\n\n");
+    Ok(())
+}
+
+fn reject_method_name_collisions(
+    file: &str,
+    service: &str,
+    methods: &[MethodDescriptorProto],
+) -> Result<(), String> {
+    let mut rendered = std::collections::HashMap::new();
+    for method in methods {
+        let protobuf_name = required(&method.name, "method name")?;
+        let rust_name = snake_case(protobuf_name);
+        if let Some(previous) = rendered.insert(rust_name.clone(), protobuf_name) {
+            return Err(format!(
+                "{file}: service `{service}` methods `{previous}` and `{protobuf_name}` both render as Rust method `{rust_name}`"
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -651,6 +670,30 @@ mod tests {
     fn snake_case_matches_protobuf_acronyms() {
         assert_eq!(snake_case("APIService"), "api_service");
         assert_eq!(snake_case("GetURL"), "get_url");
+    }
+
+    #[test]
+    fn rejects_rust_method_name_collisions() {
+        let mut value = request();
+        value.proto_file[0].service[0].method = vec![
+            MethodDescriptorProto {
+                name: Some("GetURL".into()),
+                input_type: Some(".tests.reboot.protoc.IncrementRequest".into()),
+                output_type: Some(".tests.reboot.protoc.CounterValue".into()),
+                ..Default::default()
+            },
+            MethodDescriptorProto {
+                name: Some("GetUrl".into()),
+                input_type: Some(".tests.reboot.protoc.IncrementRequest".into()),
+                output_type: Some(".tests.reboot.protoc.CounterValue".into()),
+                ..Default::default()
+            },
+        ];
+        let error = generate(value).error.unwrap();
+        assert!(error.contains("CounterWrites"));
+        assert!(error.contains("GetURL"));
+        assert!(error.contains("GetUrl"));
+        assert!(error.contains("get_url"));
     }
 
     #[test]
