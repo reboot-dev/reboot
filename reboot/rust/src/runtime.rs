@@ -220,21 +220,31 @@ fn persist_actor(path: &Path, state: &FileBackedEchoActorState) -> io::Result<()
     result
 }
 
-const ECHO_STATE_TYPE: &str = "tests.reboot.protoc.Echo";
+/// State that can be durably stored through Reboot's Database sidecar.
+pub trait RebootState: Message + Default + Clone + Send + Sync + 'static {
+    /// Fully-qualified protobuf state type used by the Database protocol.
+    const STATE_TYPE: &'static str;
+}
 
-/// A durable single-actor Echo host backed by Reboot's existing Database
-/// sidecar protocol.
+impl RebootState for proto::Echo {
+    const STATE_TYPE: &'static str = "tests.reboot.protoc.Echo";
+}
+
+impl RebootState for proto::Counter {
+    const STATE_TYPE: &'static str = "tests.reboot.protoc.Counter";
+}
+
+/// Reusable durable actor storage backed by Reboot's Database sidecar.
 ///
-/// The sidecar atomically stores actor state and the idempotent response in one
-/// `Store(sync=true)` request. This host deliberately does not implement
-/// transactions, workflows, tasks, placement, or generic service adaptation.
+/// A `Store(sync=true)` atomically persists actor state and a writer's
+/// idempotent response. Locks are scoped by state type and state reference.
 #[derive(Clone)]
-pub struct DatabaseBackedHost {
+pub struct DatabaseActorStore {
     database: database::database_client::DatabaseClient<tonic::transport::Channel>,
     actor_locks: Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
 }
 
-impl DatabaseBackedHost {
+impl DatabaseActorStore {
     /// Connects to an existing Reboot Database sidecar.
     pub async fn connect(endpoint: impl AsRef<str>) -> Result<Self, tonic::transport::Error> {
         Ok(Self {
@@ -246,23 +256,24 @@ impl DatabaseBackedHost {
         })
     }
 
-    fn lock_for(&self, state_ref: &str) -> Arc<tokio::sync::Mutex<()>> {
+    fn lock_for<State: RebootState>(&self, state_ref: &str) -> Arc<tokio::sync::Mutex<()>> {
         let mut locks = self
             .actor_locks
             .lock()
-            .expect("host actor-lock map mutex poisoned");
+            .expect("actor-lock map mutex poisoned");
         locks
-            .entry(state_ref.to_owned())
+            .entry(format!("{}:{state_ref}", State::STATE_TYPE))
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
             .clone()
     }
 
-    async fn load_echo(&self, state_ref: &str) -> Result<Option<proto::Echo>, Status> {
+    /// Loads the current state for an actor, if it has been stored.
+    pub async fn load<State: RebootState>(&self, state_ref: &str) -> Result<Option<State>, Status> {
         let mut database = self.database.clone();
         let response = database
             .load(database::LoadRequest {
                 actors: vec![database::Actor {
-                    state_type: ECHO_STATE_TYPE.to_owned(),
+                    state_type: State::STATE_TYPE.to_owned(),
                     state_ref: state_ref.to_owned(),
                     state: None,
                 }],
@@ -277,20 +288,24 @@ impl DatabaseBackedHost {
         let Some(state) = actor.state else {
             return Ok(None);
         };
-        proto::Echo::decode(state.as_slice())
-            .map(Some)
-            .map_err(|error| Status::internal(format!("invalid persisted Echo state: {error}")))
+        State::decode(state.as_slice()).map(Some).map_err(|error| {
+            Status::internal(format!(
+                "invalid persisted {} state: {error}",
+                State::STATE_TYPE
+            ))
+        })
     }
 
-    async fn load_completed_reply(
+    /// Returns a completed response for a writer idempotency key, if present.
+    pub async fn replay<State: RebootState, Response: Message + Default>(
         &self,
         state_ref: &str,
         key: Uuid,
-    ) -> Result<Option<proto::Text>, Status> {
+    ) -> Result<Option<Response>, Status> {
         let mut database = self.database.clone();
         let mut stream = database
             .recover_idempotent_mutations(database::RecoverIdempotentMutationsRequest {
-                state_type: ECHO_STATE_TYPE.to_owned(),
+                state_type: State::STATE_TYPE.to_owned(),
                 state_ref: state_ref.to_owned(),
                 idempotency_key: Some(key.as_bytes().to_vec()),
                 workflow_id: None,
@@ -302,11 +317,12 @@ impl DatabaseBackedHost {
         while let Some(response) = stream.message().await.map_err(database_status)? {
             for mutation in response.idempotent_mutations {
                 if mutation.key == key.as_bytes() {
-                    return proto::Text::decode(mutation.response.as_slice())
+                    return Response::decode(mutation.response.as_slice())
                         .map(Some)
                         .map_err(|error| {
                             Status::internal(format!(
-                                "invalid persisted idempotent reply response: {error}"
+                                "invalid persisted idempotent response for {}: {error}",
+                                State::STATE_TYPE
                             ))
                         });
                 }
@@ -315,18 +331,19 @@ impl DatabaseBackedHost {
         Ok(None)
     }
 
-    async fn store_reply(
+    /// Atomically stores state and its idempotent writer response.
+    pub async fn store<State: RebootState, Response: Message>(
         &self,
         state_ref: &str,
         key: Uuid,
-        state: proto::Echo,
-        response: proto::Text,
+        state: State,
+        response: Response,
     ) -> Result<(), Status> {
         let mut database = self.database.clone();
         database
             .store(database::StoreRequest {
                 actor_upserts: vec![database::Actor {
-                    state_type: ECHO_STATE_TYPE.to_owned(),
+                    state_type: State::STATE_TYPE.to_owned(),
                     state_ref: state_ref.to_owned(),
                     state: Some(state.encode_to_vec()),
                 }],
@@ -334,7 +351,7 @@ impl DatabaseBackedHost {
                 colocated_upserts: vec![],
                 transaction: None,
                 idempotent_mutation: Some(database::IdempotentMutation {
-                    state_type: ECHO_STATE_TYPE.to_owned(),
+                    state_type: State::STATE_TYPE.to_owned(),
                     state_ref: state_ref.to_owned(),
                     key: key.as_bytes().to_vec(),
                     response: response.encode_to_vec(),
@@ -348,6 +365,38 @@ impl DatabaseBackedHost {
             .await
             .map_err(database_status)?;
         Ok(())
+    }
+}
+
+/// Concrete generated-style adapter for the `EchoMethods` service.
+#[derive(Clone)]
+pub struct EchoMethodsAdapter {
+    store: DatabaseActorStore,
+}
+
+impl EchoMethodsAdapter {
+    pub fn new(store: DatabaseActorStore) -> Self {
+        Self { store }
+    }
+
+    pub async fn connect(endpoint: impl AsRef<str>) -> Result<Self, tonic::transport::Error> {
+        Ok(Self::new(DatabaseActorStore::connect(endpoint).await?))
+    }
+}
+
+/// Concrete generated-style adapter shared by Counter's writer and reader services.
+#[derive(Clone)]
+pub struct CounterAdapter {
+    store: DatabaseActorStore,
+}
+
+impl CounterAdapter {
+    pub fn new(store: DatabaseActorStore) -> Self {
+        Self { store }
+    }
+
+    pub async fn connect(endpoint: impl AsRef<str>) -> Result<Self, tonic::transport::Error> {
+        Ok(Self::new(DatabaseActorStore::connect(endpoint).await?))
     }
 }
 
@@ -371,7 +420,7 @@ fn required_metadata(request: &Request<impl Sized>, name: &'static str) -> Resul
     Ok(value.to_owned())
 }
 
-fn idempotency_key(request: &Request<proto::Text>) -> Result<Uuid, Status> {
+fn idempotency_key<T>(request: &Request<T>) -> Result<Uuid, Status> {
     let value = required_metadata(request, IDEMPOTENCY_KEY_HEADER)?;
     Uuid::parse_str(&value).map_err(|_| {
         Status::invalid_argument(format!(
@@ -426,21 +475,28 @@ impl proto::echo_methods_server::EchoMethods for FileBackedHost {
 }
 
 #[tonic::async_trait]
-impl proto::echo_methods_server::EchoMethods for DatabaseBackedHost {
+impl proto::echo_methods_server::EchoMethods for EchoMethodsAdapter {
     async fn reply(&self, request: Request<proto::Text>) -> Result<Response<proto::Text>, Status> {
         let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
         let key = idempotency_key(&request)?;
-        let lock = self.lock_for(&state_ref);
+        let lock = self.store.lock_for::<proto::Echo>(&state_ref);
         let _guard = lock.lock().await;
-
-        if let Some(response) = self.load_completed_reply(&state_ref, key).await? {
+        if let Some(response) = self
+            .store
+            .replay::<proto::Echo, proto::Text>(&state_ref, key)
+            .await?
+        {
             return Ok(Response::new(response));
         }
-
         let response = request.into_inner();
-        let mut state = self.load_echo(&state_ref).await?.unwrap_or_default();
+        let mut state = self
+            .store
+            .load::<proto::Echo>(&state_ref)
+            .await?
+            .unwrap_or_default();
         state.last_message = Some(response.clone());
-        self.store_reply(&state_ref, key, state, response.clone())
+        self.store
+            .store(&state_ref, key, state, response.clone())
             .await?;
         Ok(Response::new(response))
     }
@@ -450,12 +506,61 @@ impl proto::echo_methods_server::EchoMethods for DatabaseBackedHost {
         request: Request<proto::Empty>,
     ) -> Result<Response<proto::Text>, Status> {
         let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
-        let state = self.load_echo(&state_ref).await?;
+        let state = self.store.load::<proto::Echo>(&state_ref).await?;
         Ok(Response::new(
             state
                 .and_then(|state| state.last_message)
                 .unwrap_or_default(),
         ))
+    }
+}
+
+#[tonic::async_trait]
+impl proto::counter_writes_server::CounterWrites for CounterAdapter {
+    async fn increment(
+        &self,
+        request: Request<proto::IncrementRequest>,
+    ) -> Result<Response<proto::CounterValue>, Status> {
+        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
+        let key = idempotency_key(&request)?;
+        let lock = self.store.lock_for::<proto::Counter>(&state_ref);
+        let _guard = lock.lock().await;
+        if let Some(response) = self
+            .store
+            .replay::<proto::Counter, proto::CounterValue>(&state_ref, key)
+            .await?
+        {
+            return Ok(Response::new(response));
+        }
+        let increment = request.into_inner().amount;
+        let mut state = self
+            .store
+            .load::<proto::Counter>(&state_ref)
+            .await?
+            .unwrap_or_default();
+        state.value = state
+            .value
+            .checked_add(increment)
+            .ok_or_else(|| Status::invalid_argument("counter increment overflows int64"))?;
+        let response = proto::CounterValue { value: state.value };
+        self.store
+            .store(&state_ref, key, state, response.clone())
+            .await?;
+        Ok(Response::new(response))
+    }
+}
+
+#[tonic::async_trait]
+impl proto::counter_reads_server::CounterReads for CounterAdapter {
+    async fn get(
+        &self,
+        request: Request<proto::Empty>,
+    ) -> Result<Response<proto::CounterValue>, Status> {
+        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
+        let state = self.store.load::<proto::Counter>(&state_ref).await?;
+        Ok(Response::new(proto::CounterValue {
+            value: state.unwrap_or_default().value,
+        }))
     }
 }
 
@@ -743,9 +848,7 @@ mod tests {
         (format!("http://{address}"), database, server)
     }
 
-    async fn start_database_host(
-        host: DatabaseBackedHost,
-    ) -> (String, tokio::task::JoinHandle<()>) {
+    async fn start_echo_adapter(host: EchoMethodsAdapter) -> (String, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
@@ -759,13 +862,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn database_host_recreation_replays_persisted_reply_and_stores_atomically() {
+    async fn echo_adapter_recreation_replays_persisted_reply_and_stores_atomically() {
         let (database_address, database, database_server) = start_database().await;
         let context = ExternalContext::new("database-durable-echo");
         let key = Uuid::from_u128(17);
 
-        let (address, host_server) = start_database_host(
-            DatabaseBackedHost::connect(&database_address)
+        let (address, host_server) = start_echo_adapter(
+            EchoMethodsAdapter::connect(&database_address)
                 .await
                 .unwrap(),
         )
@@ -790,8 +893,8 @@ mod tests {
         assert_eq!(first.content, "persisted through generated database");
         host_server.abort();
 
-        let (address, host_server) = start_database_host(
-            DatabaseBackedHost::connect(&database_address)
+        let (address, host_server) = start_echo_adapter(
+            EchoMethodsAdapter::connect(&database_address)
                 .await
                 .unwrap(),
         )
@@ -828,7 +931,7 @@ mod tests {
         assert_eq!(store.actor_upserts.len(), 1);
         let actor = &store.actor_upserts[0];
         let mutation = store.idempotent_mutation.as_ref().unwrap();
-        assert_eq!(actor.state_type, ECHO_STATE_TYPE);
+        assert_eq!(actor.state_type, <proto::Echo as RebootState>::STATE_TYPE);
         assert_eq!(actor.state_ref, "database-durable-echo");
         assert_eq!(mutation.state_type, actor.state_type);
         assert_eq!(mutation.state_ref, actor.state_ref);
@@ -848,10 +951,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn database_host_keeps_state_references_isolated() {
+    async fn echo_adapter_keeps_state_references_isolated() {
         let (database_address, database, database_server) = start_database().await;
-        let (address, host_server) = start_database_host(
-            DatabaseBackedHost::connect(&database_address)
+        let (address, host_server) = start_echo_adapter(
+            EchoMethodsAdapter::connect(&database_address)
                 .await
                 .unwrap(),
         )
@@ -892,6 +995,111 @@ mod tests {
         assert_eq!(second_last.content, "two");
         assert_eq!(database.store_requests().len(), 2);
         host_server.abort();
+        database_server.abort();
+    }
+
+    async fn start_counter_adapter(
+        adapter: CounterAdapter,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(proto::counter_writes_server::CounterWritesServer::new(
+                    adapter.clone(),
+                ))
+                .add_service(proto::counter_reads_server::CounterReadsServer::new(
+                    adapter,
+                ))
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+        (format!("http://{address}"), server)
+    }
+
+    #[tokio::test]
+    async fn counter_adapter_recreates_replays_and_persists_across_services() {
+        let (database_address, database, database_server) = start_database().await;
+        let context = ExternalContext::new("database-durable-counter");
+        let first_key = Uuid::from_u128(19);
+
+        let (address, server) =
+            start_counter_adapter(CounterAdapter::connect(&database_address).await.unwrap()).await;
+        let mut writes = proto::counter_writes_client::CounterWritesClient::connect(address)
+            .await
+            .unwrap();
+        let first = writes
+            .increment(
+                context
+                    .writer_with_key(proto::IncrementRequest { amount: 5 }, first_key)
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(first.value, 5);
+        server.abort();
+
+        let (address, server) =
+            start_counter_adapter(CounterAdapter::connect(&database_address).await.unwrap()).await;
+        let mut writes =
+            proto::counter_writes_client::CounterWritesClient::connect(address.clone())
+                .await
+                .unwrap();
+        let mut reads = proto::counter_reads_client::CounterReadsClient::connect(address)
+            .await
+            .unwrap();
+        let replay = writes
+            .increment(
+                context
+                    .writer_with_key(proto::IncrementRequest { amount: 100 }, first_key)
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(replay.value, 5);
+        assert_eq!(
+            reads
+                .get(context.reader(proto::Empty {}).unwrap())
+                .await
+                .unwrap()
+                .into_inner()
+                .value,
+            5
+        );
+        let second = writes
+            .increment(
+                context
+                    .writer_with_key(proto::IncrementRequest { amount: 2 }, Uuid::from_u128(20))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(second.value, 7);
+
+        let store_requests = database.store_requests();
+        assert_eq!(store_requests.len(), 2, "replay must not issue Store");
+        let first_store = &store_requests[0];
+        let actor = first_store.actor_upserts.first().unwrap();
+        let mutation = first_store.idempotent_mutation.as_ref().unwrap();
+        assert!(first_store.sync);
+        assert_eq!(
+            actor.state_type,
+            <proto::Counter as RebootState>::STATE_TYPE
+        );
+        assert_eq!(actor.state_ref, "database-durable-counter");
+        assert_eq!(
+            proto::Counter::decode(actor.state.as_deref().unwrap()).unwrap(),
+            proto::Counter { value: 5 }
+        );
+        assert_eq!(
+            proto::CounterValue::decode(mutation.response.as_slice()).unwrap(),
+            first
+        );
+        server.abort();
         database_server.abort();
     }
 

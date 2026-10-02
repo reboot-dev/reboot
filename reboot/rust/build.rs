@@ -9,6 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure().build_server(true).compile_protos(
         &[
             repository.join("tests/reboot/protoc/explicit_state_annotations_full.proto"),
+            repository.join("tests/reboot/protoc/counter.proto"),
             repository.join("tests/reboot/protoc/shared.proto"),
             repository.join("rbt/v1alpha1/database.proto"),
         ],

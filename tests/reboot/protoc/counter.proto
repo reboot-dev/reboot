@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+
+package tests.reboot.protoc;
+
+message Counter {
+  option (rbt.v1alpha1.state) = {
+    implements: [
+      "tests.reboot.protoc.CounterWrites",
+      "tests.reboot.protoc.CounterReads"
+    ]
+  };
+  int64 value = 1;
+}
+
+message IncrementRequest {
+  int64 amount = 1;
+}
+
+message CounterValue {
+  int64 value = 1;
+}
+
+service CounterWrites {
+  option (rbt.v1alpha1.service) = {
+    state: "tests.reboot.protoc.Counter"
+  };
+
+  rpc Increment(IncrementRequest) returns (CounterValue) {
+    option (rbt.v1alpha1.method).writer = {};
+  }
+}
+
+service CounterReads {
+  option (rbt.v1alpha1.service) = {
+    state: "tests.reboot.protoc.Counter"
+  };
+
+  rpc Get(Empty) returns (CounterValue) {
+    option (rbt.v1alpha1.method).reader = {};
+  }
+}

@@ -4,7 +4,7 @@
 //! existing Reboot descriptor format without Python or Node.js. It does not
 //! claim to host a production Rust servicer: the current `rbt dev run` launcher
 //! supports only `--python` and `--nodejs`. The [`runtime`] module provides a
-//! deliberately process-local Tonic EchoMethods host for executable testing.
+//! deliberately scoped Tonic service adapters for executable testing.
 
 pub mod runtime;
 

@@ -83,13 +83,16 @@ one:
 3. The crate has executable process-local runtime slices: the default
    `InMemoryActor` host has serialized state reads/writes, idempotent
    write-response caching, and rollback of failed transactional writes.
-   `REBOOT_RUST_DATABASE_ENDPOINT` selects `DatabaseBackedHost`, which uses
-   Reboot's existing Database sidecar to atomically persist an Echo snapshot
-   and its completed writer response in one `Store(sync=true)` request, then
-   recovers a response by UUID before running a retry. It is a durable
-   **single-actor Echo adapter**, not a complete sidecar lifecycle or generic
-   Rust runtime. `REBOOT_RUST_STATE_DIR` instead selects `FileBackedHost` for
-   local restart testing; that file store remains single-process and has no
+   `REBOOT_RUST_DATABASE_ENDPOINT` selects a reusable `DatabaseActorStore`
+   plus the concrete `EchoMethodsAdapter`. The store uses Reboot's existing
+   Database sidecar to atomically persist state and a completed writer response
+   in one `Store(sync=true)` request, then the adapter recovers a response by
+   UUID before running a retry. The same store is exercised by a separate
+   generated-style Counter reader/writer adapter fixture, proving that the
+   storage boundary is not Echo-specific. Concrete Tonic service adapters still
+   must be generated per service; this is not a generic dispatcher or complete
+   sidecar lifecycle. `REBOOT_RUST_STATE_DIR` instead selects `FileBackedHost`
+   for local restart testing; that file store remains single-process and has no
    inter-process locks, compaction, encryption, or distributed coordination.
 4. Python and Node generated servicer libraries own context propagation,
    retries, persistent state reads/writes, task/workflow semantics, and gRPC
