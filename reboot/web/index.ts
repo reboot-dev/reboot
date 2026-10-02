@@ -341,9 +341,11 @@ export async function httpCall<
 // caller decides whether to keep iterating, `break`, or `throw
 // aborted`. A dropped connection is retried with backoff and yields
 // nothing. When the error is `Unauthenticated` and `onUnauthenticated`
-// is set, the hook is called once to renew the session before
-// `{ aborted }` is yielded; if it returns `true` the generator
-// reconnects immediately instead.
+// is set, the hook is called to renew the session before `{ aborted }`
+// is yielded; if it returns `true` the generator reconnects immediately
+// instead. If the hook does not renew the session, `{ aborted }` is
+// yielded and the hook is called again on the next attempt, after the
+// backoff.
 export function reactively<
   RequestType extends Message<RequestType>,
   ResponseType extends Message<ResponseType>,
@@ -443,12 +445,12 @@ export function reactively<
 
     const backoff = new Backoff();
 
-    // Whether `onUnauthenticated` has been asked to renew the session
-    // since the stream last delivered a response. A renewal is
-    // followed by one more attempt, at most, so that a session it does
-    // not fix is surfaced rather than renewed on every attempt, while
-    // a session that goes stale again later in the life of the read is
-    // renewed again.
+    // True after `onUnauthenticated` returned `true`, until the attempt
+    // that follows delivers a response or raises an error. If that
+    // attempt is `Unauthenticated` too, the hook is not called again
+    // right away: the error is yielded, and the hook is called on the
+    // attempt after the backoff. This keeps a hook that returns `true`
+    // without renewing the session from reconnecting in a tight loop.
     let didRefresh = false;
 
     assert(request !== undefined);
@@ -521,25 +523,30 @@ export function reactively<
         if (e instanceof Status) {
           // The reader raised an error. If it is `Unauthenticated`, the
           // session may be stale: ask `onUnauthenticated` to renew it
-          // once before yielding the error, as `httpCall` does.
+          // before yielding the error.
           if (
             e.code === StatusCode.UNAUTHENTICATED &&
             onUnauthenticated !== undefined &&
             !didRefresh
           ) {
-            didRefresh = true;
             let refreshed = false;
             try {
               refreshed = await onUnauthenticated();
             } catch {
-              // Ignore refresh failures; surface the original error.
+              // The hook failed, e.g., because the backend is
+              // restarting; yield the original error.
             }
             if (refreshed) {
               // Reconnect right away; the next attempt reads the
               // renewed bearer token.
+              didRefresh = true;
               continue;
             }
           }
+
+          // The hook is called again on the next `Unauthenticated`
+          // attempt, which comes after the backoff below.
+          didRefresh = false;
 
           // Yield the error. It does not end the read: the state may
           // change so that the next read returns a response.
@@ -1325,7 +1332,9 @@ export class WebContext {
   // retries if it resolves `true`. Wire it to whatever renews the
   // session — e.g. a `refreshBearer(...)`-based function in a
   // browser app, or a custom refresh flow elsewhere. Without it,
-  // unary 401s surface immediately to the caller.
+  // unary 401s surface immediately to the caller. A reactive read
+  // calls it on each `Unauthenticated` attempt and reconnects right
+  // away if it resolves `true`.
   onUnauthenticated?: OnUnauthenticated;
 
   constructor(
