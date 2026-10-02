@@ -339,6 +339,13 @@ fn fields_by_tag<'a>(
         .collect()
 }
 
+fn oneof_for_tag(oneofs: &[OneOfSpec], tag: u32) -> Option<&'static str> {
+    oneofs
+        .iter()
+        .find(|oneof| oneof.fields.iter().any(|field| field.tag == tag))
+        .map(|oneof| oneof.name)
+}
+
 fn check_model_compatibility(
     model: &'static str,
     previous_fields: &[FieldSpec],
@@ -374,6 +381,8 @@ fn check_model_compatibility(
         if previous.name != next.name
             || previous.field_type != next.field_type
             || previous.required != next.required
+            || oneof_for_tag(previous_oneofs, previous.tag)
+                != oneof_for_tag(current_oneofs, previous.tag)
         {
             return Err(CompatibilityError::ChangedField {
                 model,
@@ -1400,6 +1409,42 @@ mod tests {
             changed.check_backward_compatible_with(&CLINIC),
             Err(CompatibilityError::ChangedField {
                 model: "Clinic",
+                tag: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn compatibility_rejects_moving_a_field_into_a_oneof() {
+        const FIELD: FieldSpec = FieldSpec {
+            name: "contact",
+            tag: 1,
+            field_type: FieldType::String,
+            required: false,
+        };
+        const FIELDS: &[FieldSpec] = &[FIELD];
+        const ONEOFS: &[OneOfSpec] = &[OneOfSpec {
+            name: "choice",
+            fields: FIELDS,
+        }];
+        assert_eq!(
+            check_model_compatibility(
+                "Message",
+                FIELDS,
+                &[],
+                &[],
+                ONEOFS,
+                ReservedFields {
+                    tags: &[],
+                    names: &[]
+                },
+                ReservedFields {
+                    tags: &[],
+                    names: &[]
+                },
+            ),
+            Err(CompatibilityError::ChangedField {
+                model: "Message",
                 tag: 1,
             })
         );
