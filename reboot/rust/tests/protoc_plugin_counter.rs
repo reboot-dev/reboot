@@ -34,8 +34,11 @@ fn protoc_plugin_emits_durable_counter_adapters() {
     assert!(content.contains("async fn increment"));
     assert!(content.contains("handler: std::sync::Arc<H>"));
     assert!(content.contains("impl<H> Clone for CounterWritesDatabaseAdapter<H>"));
-    assert!(content.contains("store.writer_async::<proto::Counter"));
-    assert!(content.contains("store.reader_async::<proto::Counter"));
+    assert!(content.contains("pub struct CounterDurableState;"));
+    assert!(content.contains("type State = proto::Counter;"));
+    assert!(content.contains("const STATE_TYPE: &'static str = \"tests.reboot.protoc.Counter\";"));
+    assert!(content.contains("store.writer_async_for::<CounterDurableState"));
+    assert!(content.contains("store.reader_async_for::<CounterDurableState"));
     assert!(content.contains("let handler = self.handler.clone();"));
     assert!(content.contains("Box::pin(async move"));
     assert!(content.contains("reboot::runtime::DatabaseActorStore"));
@@ -71,9 +74,10 @@ fn protoc_plugin_canonicalizes_relative_durable_state_annotation() {
         generated.join("tests/reboot/protoc/explicit_state_annotations_relative.reboot.rs"),
     )
     .unwrap();
-    assert!(content.contains("store.writer_async::<proto::Echo"));
-    assert!(content.contains("store.reader_async::<proto::Echo"));
-    assert!(content.contains("\"tests.reboot.protoc.Echo\""));
+    assert!(content.contains("pub struct EchoDurableState;"));
+    assert!(content.contains("store.writer_async_for::<EchoDurableState"));
+    assert!(content.contains("store.reader_async_for::<EchoDurableState"));
+    assert!(content.contains("const STATE_TYPE: &'static str = \"tests.reboot.protoc.Echo\";"));
     assert!(!content.contains("\"Echo\", request"));
 }
 

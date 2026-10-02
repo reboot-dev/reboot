@@ -209,9 +209,11 @@ For every selected service, the plugin preserves the concrete unary forwarding
 writer option, it additionally emits an async `ServiceDatabaseHandler`
 (using `#[tonic::async_trait]`) and a `ServiceDatabaseAdapter<H>` backed by
 `DatabaseActorStore`. Handlers may await while borrowing loaded state. The
-adapter passes the annotated state type string explicitly, so downstream
-generated protobuf types do not need an impossible orphan-rule `RebootState`
-impl.
+adapter also emits a public `StateDurableState` marker implementing
+`runtime::DurableStateDeclaration`, binding its Prost state to the canonical
+Database state-type string without an impossible orphan-rule implementation on
+the downstream protobuf type. Generated adapter calls use that marker; this is
+a type-safe local binding, not generic dispatch or distributed coordination.
 
 The durable adapter owns metadata validation, state-reference isolation,
 idempotent writer replay, state load, and atomic `Store(sync=true)` of the final

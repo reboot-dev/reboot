@@ -233,6 +233,19 @@ pub trait RebootState: Message + Default + Clone + Send + Sync + 'static {
     const STATE_TYPE: &'static str;
 }
 
+/// A generated declaration binding one durable state type to its Database
+/// protocol state-type identifier.
+///
+/// Generated durable adapters use a local marker type implementing this trait
+/// so downstream protobuf types do not require a trait implementation.
+pub trait DurableStateDeclaration {
+    /// Prost message stored for this declaration.
+    type State: Message + Default + Clone + Send + Sync + 'static;
+
+    /// Fully-qualified protobuf state type used by the Database protocol.
+    const STATE_TYPE: &'static str;
+}
+
 impl RebootState for proto::Echo {
     const STATE_TYPE: &'static str = "tests.reboot.protoc.Echo";
 }
@@ -473,6 +486,30 @@ impl DatabaseActorStore {
         Ok(Response::new(response))
     }
 
+    /// Runs an asynchronous writer callback using a durable state declaration.
+    ///
+    /// This is equivalent to [`Self::writer_async`] with the declaration's
+    /// state type and canonical Database protocol state-type identifier.
+    pub async fn writer_async_for<Declaration, RequestBody, ResponseBody, F>(
+        &self,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        Declaration: DurableStateDeclaration,
+        RequestBody: Send + 'static,
+        ResponseBody: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut Declaration::State,
+            RequestBody,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
+        self.writer_async::<Declaration::State, _, _, _>(Declaration::STATE_TYPE, request, invoke)
+            .await
+    }
+
     /// Runs a synchronous reader callback after loading the actor state.
     pub async fn reader<State, RequestBody, ResponseBody, F>(
         &self,
@@ -518,6 +555,30 @@ impl DatabaseActorStore {
             .await?
             .unwrap_or_default();
         Ok(Response::new(invoke(&state, request.into_inner()).await?))
+    }
+
+    /// Runs an asynchronous reader callback using a durable state declaration.
+    ///
+    /// This is equivalent to [`Self::reader_async`] with the declaration's
+    /// state type and canonical Database protocol state-type identifier.
+    pub async fn reader_async_for<Declaration, RequestBody, ResponseBody, F>(
+        &self,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        Declaration: DurableStateDeclaration,
+        RequestBody: Send + 'static,
+        ResponseBody: Message + Default + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a Declaration::State,
+            RequestBody,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
+        self.reader_async::<Declaration::State, _, _, _>(Declaration::STATE_TYPE, request, invoke)
+            .await
     }
 }
 
