@@ -428,12 +428,14 @@ pub mod proto {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum ContextError {
+    EmptyStateRef,
     InvalidMetadata,
 }
 
 impl std::fmt::Display for ContextError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::EmptyStateRef => write!(f, "Reboot state reference must not be empty"),
             Self::InvalidMetadata => write!(f, "Reboot metadata value is invalid"),
         }
     }
@@ -490,6 +492,9 @@ impl ExternalContext {
         message: T,
         idempotency_key: Option<uuid::Uuid>,
     ) -> Result<tonic::Request<T>, ContextError> {
+        if self.state_ref.is_empty() {
+            return Err(ContextError::EmptyStateRef);
+        }
         let mut request = tonic::Request::new(message);
         request.metadata_mut().insert(
             "x-reboot-state-ref",
@@ -1251,6 +1256,14 @@ mod tests {
 
         let reader = context.reader(proto::Empty {}).unwrap();
         assert!(reader.metadata().get("x-reboot-idempotency-key").is_none());
+    }
+
+    #[test]
+    fn external_context_rejects_empty_state_references() {
+        assert!(matches!(
+            ExternalContext::new("").reader(proto::Empty {}),
+            Err(ContextError::EmptyStateRef)
+        ));
     }
 
     #[tokio::test]
