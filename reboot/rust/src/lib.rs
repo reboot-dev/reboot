@@ -5,6 +5,9 @@
 //! claim to host a Rust servicer: the current `rbt dev run` launcher supports
 //! only `--python` and `--nodejs`.
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FieldType {
     Bool,
@@ -217,6 +220,56 @@ impl ExternalContext {
             );
         }
         Ok(request)
+    }
+}
+
+/// Small, executable runtime slice: serialized actor state plus write
+/// idempotency. It intentionally uses process-local memory; durable storage,
+/// distributed locks, and multi-actor transactions remain separate layers.
+pub struct InMemoryActor<State, Response> {
+    inner: Mutex<InMemoryActorState<State, Response>>,
+}
+
+struct InMemoryActorState<State, Response> {
+    state: State,
+    completed_writes: HashMap<uuid::Uuid, Response>,
+}
+
+impl<State, Response> InMemoryActor<State, Response>
+where
+    Response: Clone,
+{
+    pub fn new(state: State) -> Self {
+        Self {
+            inner: Mutex::new(InMemoryActorState {
+                state,
+                completed_writes: HashMap::new(),
+            }),
+        }
+    }
+
+    /// Reads one consistent state snapshot while excluding concurrent writers.
+    pub fn reader<Value>(&self, read: impl FnOnce(&State) -> Value) -> Value {
+        let guard = self.inner.lock().expect("actor state mutex poisoned");
+        read(&guard.state)
+    }
+
+    /// Runs a write exactly once for one idempotency key and returns the cached
+    /// response on replay. State and cached response become visible together.
+    pub fn writer(
+        &self,
+        idempotency_key: uuid::Uuid,
+        write: impl FnOnce(&mut State) -> Response,
+    ) -> Response {
+        let mut guard = self.inner.lock().expect("actor state mutex poisoned");
+        if let Some(response) = guard.completed_writes.get(&idempotency_key) {
+            return response.clone();
+        }
+        let response = write(&mut guard.state);
+        guard
+            .completed_writes
+            .insert(idempotency_key, response.clone());
+        response
     }
 }
 
@@ -585,6 +638,27 @@ mod tests {
             .into_inner();
         assert_eq!(reply.content, "hello from rust");
         server.abort();
+    }
+
+    #[test]
+    fn in_memory_actor_serializes_and_deduplicates_writes() {
+        let actor = InMemoryActor::<i64, i64>::new(0);
+        let key = uuid::Uuid::new_v4();
+        assert_eq!(
+            actor.writer(key, |state| {
+                *state += 1;
+                *state
+            }),
+            1
+        );
+        assert_eq!(
+            actor.writer(key, |state| {
+                *state += 1;
+                *state
+            }),
+            1
+        );
+        assert_eq!(actor.reader(|state| *state), 1);
     }
 
     #[test]

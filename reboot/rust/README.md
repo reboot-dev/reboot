@@ -57,11 +57,13 @@ one:
    chooses `sys.executable` or `node` as the launcher.
 2. `reboot/cli/commands/generate.py` exposes only Python/Node.js codegen and
    boilerplate plugins; there is no `protoc-gen-reboot_rust`.
-3. Python and Node generated servicer libraries own context propagation,
-   idempotency, retries, state reads/writes, task/workflow semantics, and
-   gRPC registration. Rust needs an equivalent runtime crate, not merely
-   `prost`-generated messages.
-4. Rust has no built-in reflection for struct fields/tags. A production SDK
+3. The crate now has an executable, process-local `InMemoryActor` slice:
+   serialized state reads/writes and idempotent write-response caching. It is
+   intentionally not durable and cannot coordinate multiple actors yet.
+4. Python and Node generated servicer libraries own context propagation,
+   retries, persistent state reads/writes, task/workflow semantics, and gRPC
+   registration. Rust still needs the corresponding durable runtime crate.
+5. Rust has no built-in reflection for struct fields/tags. A production SDK
    needs a `#[derive(RebootState)]` procedural macro or an explicit schema DSL
    to retain stable tags and compatibility checks.
 
