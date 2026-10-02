@@ -7,8 +7,8 @@ two real boundaries without importing Python or Node.js:
    language-neutral Reboot `.proto` contract.
 2. Rust can compile Reboot's existing cross-language Echo proto with `tonic`,
    build typed gRPC clients, and attach the external-call metadata Reboot
-   requires (`x-reboot-state-ref`, write idempotency UUID, optional Bearer
-   token).
+   requires (`x-reboot-state-ref`, caller-supplied or generated write
+   idempotency UUID, optional Bearer token).
 
 ```sh
 cd reboot/rust

@@ -351,8 +351,20 @@ impl ExternalContext {
         self.request(message, None)
     }
 
+    /// Starts a new idempotent writer call. Persist the returned metadata key
+    /// before retrying across a process boundary; use `writer_with_key` for
+    /// subsequent attempts.
     pub fn writer<T>(&self, message: T) -> Result<tonic::Request<T>, ContextError> {
-        self.request(message, Some(uuid::Uuid::new_v4()))
+        self.writer_with_key(message, uuid::Uuid::new_v4())
+    }
+
+    /// Builds a retry-safe writer call using a caller-owned idempotency key.
+    pub fn writer_with_key<T>(
+        &self,
+        message: T,
+        idempotency_key: uuid::Uuid,
+    ) -> Result<tonic::Request<T>, ContextError> {
+        self.request(message, Some(idempotency_key))
     }
 
     fn request<T>(
@@ -994,6 +1006,25 @@ mod tests {
             .is_ok()
         );
         assert_eq!(metadata.get("authorization").unwrap(), "Bearer test-token");
+
+        let retry_key = uuid::Uuid::from_u128(42);
+        let retry = context
+            .writer_with_key(
+                proto::Text {
+                    content: "retry".to_owned(),
+                },
+                retry_key,
+            )
+            .unwrap();
+        assert_eq!(
+            retry
+                .metadata()
+                .get("x-reboot-idempotency-key")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            retry_key.to_string()
+        );
 
         let reader = context.reader(proto::Empty {}).unwrap();
         assert!(reader.metadata().get("x-reboot-idempotency-key").is_none());
