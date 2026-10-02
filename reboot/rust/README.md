@@ -15,6 +15,9 @@ cd reboot/rust
 cargo test --locked
 # Serves the in-memory EchoMethods host on 127.0.0.1:50051.
 cargo run --locked
+# Use a local, restart-safe state directory for the Echo host. This remains a
+# single-process development store, not distributed Reboot durability.
+REBOOT_RUST_STATE_DIR=./reboot-rust-state cargo run --locked
 # Override explicitly when running more than one local host.
 REBOOT_RUST_LISTEN_ADDR=127.0.0.1:50052 cargo run --locked
 ```
@@ -74,10 +77,14 @@ one:
    chooses `sys.executable` or `node` as the launcher.
 2. `reboot/cli/commands/generate.py` exposes only Python/Node.js codegen and
    boilerplate plugins; there is no `protoc-gen-reboot_rust`.
-3. The crate now has an executable, process-local `InMemoryActor` slice:
-   serialized state reads/writes, idempotent write-response caching, and
-   rollback of failed transactional writes. It is intentionally not durable and
-   cannot coordinate multiple actors yet.
+3. The crate has executable process-local runtime slices: the default
+   `InMemoryActor` host has serialized state reads/writes, idempotent
+   write-response caching, and rollback of failed transactional writes.
+   `REBOOT_RUST_STATE_DIR` switches the Echo host to `FileBackedHost`, which
+   atomically persists one actor snapshot plus completed writer responses and
+   recovers both across process restart. The file store remains explicitly
+   single-process and has no inter-process locks, compaction, encryption, or
+   distributed coordination.
 4. Python and Node generated servicer libraries own context propagation,
    retries, persistent state reads/writes, task/workflow semantics, and gRPC
    registration. Rust still needs the corresponding durable runtime crate.
