@@ -648,9 +648,11 @@ impl CounterAdapter {
 }
 
 fn database_status(error: tonic::Status) -> Status {
-    Status::new(
+    Status::with_details_and_metadata(
         error.code(),
         format!("Reboot database sidecar request failed: {error}"),
+        error.details().to_vec().into(),
+        error.metadata().clone(),
     )
 }
 
