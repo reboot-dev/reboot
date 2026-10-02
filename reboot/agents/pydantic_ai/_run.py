@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import anyio
+import asyncio
 import dataclasses
 import hashlib
 import logging
@@ -484,6 +486,34 @@ async def _agent_run(
                         "reflect the current configuration."
                     )
 
-            yield
+            try:
+                yield
+            except anyio.ClosedResourceError as error:
+                # Cancelling a run can surface as this instead of
+                # `asyncio.CancelledError`: pydantic_graph's tracked
+                # tasks send their results into a stream the
+                # cancelled run has already closed, and only
+                # `anyio.BrokenResourceError` is ignored there
+                # (fixed in later releases). A workflow that catches
+                # everything but cancellation, as ones stopped at
+                # shutdown must, would otherwise swallow the
+                # cancellation and keep running.
+                if not _raised_while_cancelling(error):
+                    raise
+                raise asyncio.CancelledError() from error
     finally:
         _workflow_context.set(None)
+
+
+def _raised_while_cancelling(exception: BaseException) -> bool:
+    """Whether the exception was raised while an
+    `asyncio.CancelledError` was being handled, which Python records
+    in its chain of `__context__`s."""
+    seen: set[int] = set()
+    context = exception.__context__
+    while context is not None and id(context) not in seen:
+        if isinstance(context, asyncio.CancelledError):
+            return True
+        seen.add(id(context))
+        context = context.__context__
+    return False
