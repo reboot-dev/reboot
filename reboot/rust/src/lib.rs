@@ -226,6 +226,80 @@ impl std::fmt::Display for SchemaError {
 
 impl std::error::Error for SchemaError {}
 
+/// A backward-incompatible edit to Reboot's language-neutral wire contract.
+///
+/// This intentionally errs on the safe side: removing an old field is rejected
+/// until a future SDK can emit an explicit protobuf `reserved` declaration.
+#[derive(Debug, Eq, PartialEq)]
+pub enum CompatibilityError {
+    PackageChanged,
+    StateChanged,
+    MissingMessage(&'static str),
+    MissingField { model: &'static str, tag: u32 },
+    ChangedField { model: &'static str, tag: u32 },
+    MissingMethod(&'static str),
+    ChangedMethod(&'static str),
+}
+
+impl std::fmt::Display for CompatibilityError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PackageChanged => write!(f, "protobuf package changed"),
+            Self::StateChanged => write!(f, "service state type changed"),
+            Self::MissingMessage(name) => write!(f, "message `{name}` was removed"),
+            Self::MissingField { model, tag } => {
+                write!(f, "field tag {tag} was removed from `{model}`")
+            }
+            Self::ChangedField { model, tag } => {
+                write!(f, "field tag {tag} changed in `{model}`")
+            }
+            Self::MissingMethod(name) => write!(f, "method `{name}` was removed"),
+            Self::ChangedMethod(name) => write!(f, "method `{name}` changed its wire contract"),
+        }
+    }
+}
+
+impl std::error::Error for CompatibilityError {}
+
+fn fields_by_tag<'a>(
+    fields: &'a [FieldSpec],
+    oneofs: &'a [OneOfSpec],
+) -> std::collections::BTreeMap<u32, &'a FieldSpec> {
+    fields
+        .iter()
+        .chain(oneofs.iter().flat_map(|oneof| oneof.fields.iter()))
+        .map(|field| (field.tag, field))
+        .collect()
+}
+
+fn check_model_compatibility(
+    model: &'static str,
+    previous_fields: &[FieldSpec],
+    previous_oneofs: &[OneOfSpec],
+    current_fields: &[FieldSpec],
+    current_oneofs: &[OneOfSpec],
+) -> Result<(), CompatibilityError> {
+    let current = fields_by_tag(current_fields, current_oneofs);
+    for previous in fields_by_tag(previous_fields, previous_oneofs).into_values() {
+        let Some(next) = current.get(&previous.tag) else {
+            return Err(CompatibilityError::MissingField {
+                model,
+                tag: previous.tag,
+            });
+        };
+        if previous.name != next.name
+            || previous.field_type != next.field_type
+            || previous.required != next.required
+        {
+            return Err(CompatibilityError::ChangedField {
+                model,
+                tag: previous.tag,
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Generated directly from Reboot's existing cross-language test protocol.
 ///
 /// This intentionally bypasses schema reflection and generated Reboot servicer
@@ -504,6 +578,62 @@ impl ApplicationSpec {
                 if !declared {
                     return Err(SchemaError::UnknownMessage(name));
                 }
+            }
+        }
+        Ok(())
+    }
+
+    /// Rejects edits that would change the already-published Reboot wire API.
+    /// Both specs should pass [`Self::validate`] before this comparison.
+    pub fn check_backward_compatible_with(
+        &self,
+        previous: &ApplicationSpec,
+    ) -> Result<(), CompatibilityError> {
+        if self.package != previous.package {
+            return Err(CompatibilityError::PackageChanged);
+        }
+        if self.state.name != previous.state.name || self.service.state != previous.service.state {
+            return Err(CompatibilityError::StateChanged);
+        }
+        check_model_compatibility(
+            previous.state.name,
+            previous.state.fields,
+            &[],
+            self.state.fields,
+            &[],
+        )?;
+
+        for previous_message in previous.messages {
+            let Some(current_message) = self
+                .messages
+                .iter()
+                .find(|message| message.name == previous_message.name)
+            else {
+                return Err(CompatibilityError::MissingMessage(previous_message.name));
+            };
+            check_model_compatibility(
+                previous_message.name,
+                previous_message.fields,
+                previous_message.oneofs,
+                current_message.fields,
+                current_message.oneofs,
+            )?;
+        }
+
+        for previous_method in previous.service.methods {
+            let Some(current_method) = self
+                .service
+                .methods
+                .iter()
+                .find(|method| method.name == previous_method.name)
+            else {
+                return Err(CompatibilityError::MissingMethod(previous_method.name));
+            };
+            if current_method.request != previous_method.request
+                || current_method.response != previous_method.response
+                || current_method.kind != previous_method.kind
+            {
+                return Err(CompatibilityError::ChangedMethod(previous_method.name));
             }
         }
         Ok(())
@@ -936,6 +1066,34 @@ mod tests {
         assert_eq!(
             invalid.validate(),
             Err(SchemaError::UnknownMessage("Address"))
+        );
+    }
+
+    #[test]
+    fn compatibility_rejects_reusing_a_published_field_tag() {
+        assert_eq!(CLINIC.check_backward_compatible_with(&CLINIC), Ok(()));
+
+        let mut changed = CLINIC;
+        changed.state.fields = &[
+            FieldSpec {
+                name: "renamed",
+                tag: 1,
+                field_type: FieldType::String,
+                required: true,
+            },
+            FieldSpec {
+                name: "phone_number",
+                tag: 2,
+                field_type: FieldType::String,
+                required: false,
+            },
+        ];
+        assert_eq!(
+            changed.check_backward_compatible_with(&CLINIC),
+            Err(CompatibilityError::ChangedField {
+                model: "Clinic",
+                tag: 1,
+            })
         );
     }
 

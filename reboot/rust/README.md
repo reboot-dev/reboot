@@ -35,7 +35,9 @@ string assertions alone can happily bless a proto that cannot compile. The
 current DSL emits typed scalar, named nested, enum, `repeated`, `map`, and
 `oneof` request/response models with the same stable tags and requiredness
 metadata as state. It also rejects undeclared/duplicate method request-response
-models before emission. Broader compatibility rules are the next schema slice.
+models before emission. `check_backward_compatible_with` also rejects a
+published field tag being removed, repurposed, or otherwise changed. Broader
+compatibility rules are the next schema slice.
 
 ## What this proves
 
