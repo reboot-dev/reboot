@@ -2,8 +2,11 @@
 //!
 //! This is intentionally a schema-only spike. It proves that Rust can emit the
 //! existing Reboot descriptor format without Python or Node.js. It does not
-//! claim to host a Rust servicer: the current `rbt dev run` launcher supports
-//! only `--python` and `--nodejs`.
+//! claim to host a production Rust servicer: the current `rbt dev run` launcher
+//! supports only `--python` and `--nodejs`. The [`runtime`] module provides a
+//! deliberately process-local Tonic EchoMethods host for executable testing.
+
+pub mod runtime;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
