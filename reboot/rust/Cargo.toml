@@ -25,3 +25,5 @@ tonic-build = "0.12"
 [dev-dependencies]
 protoc-bin-vendored = "3"
 tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio-stream = { version = "0.1", features = ["net"] }

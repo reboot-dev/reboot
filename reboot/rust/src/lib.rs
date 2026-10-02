@@ -520,6 +520,73 @@ mod tests {
         assert!(reader.metadata().get("x-reboot-idempotency-key").is_none());
     }
 
+    #[tokio::test]
+    async fn generated_client_reaches_a_tonic_service_with_reboot_context() {
+        #[derive(Default)]
+        struct Echo;
+
+        #[tonic::async_trait]
+        impl proto::echo_methods_server::EchoMethods for Echo {
+            async fn reply(
+                &self,
+                request: tonic::Request<proto::Text>,
+            ) -> Result<tonic::Response<proto::Text>, tonic::Status> {
+                let metadata = request.metadata();
+                if metadata
+                    .get("x-reboot-state-ref")
+                    .and_then(|value| value.to_str().ok())
+                    != Some("echo-42")
+                    || metadata.get("x-reboot-idempotency-key").is_none()
+                    || metadata
+                        .get("authorization")
+                        .and_then(|value| value.to_str().ok())
+                        != Some("Bearer integration-token")
+                {
+                    return Err(tonic::Status::unauthenticated("missing Reboot context"));
+                }
+                Ok(tonic::Response::new(request.into_inner()))
+            }
+
+            async fn last_message(
+                &self,
+                _request: tonic::Request<proto::Empty>,
+            ) -> Result<tonic::Response<proto::Text>, tonic::Status> {
+                Ok(tonic::Response::new(proto::Text {
+                    content: "last message".to_owned(),
+                }))
+            }
+        }
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(proto::echo_methods_server::EchoMethodsServer::new(Echo))
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+
+        let mut client =
+            proto::echo_methods_client::EchoMethodsClient::connect(format!("http://{address}"))
+                .await
+                .unwrap();
+        let context = ExternalContext::new("echo-42").with_bearer_token("integration-token");
+        let reply = client
+            .reply(
+                context
+                    .writer(proto::Text {
+                        content: "hello from rust".to_owned(),
+                    })
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(reply.content, "hello from rust");
+        server.abort();
+    }
+
     #[test]
     fn rejects_an_undeclared_nested_model() {
         let mut invalid = CLINIC;

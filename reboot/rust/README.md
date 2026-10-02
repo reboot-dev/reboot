@@ -40,10 +40,12 @@ the next implementation slice.
 
 The Reboot **proto and external-client** boundary is viable across languages.
 The generated Rust client compiles against the same Echo service surface that
-Python and TypeScript integration tests use. This does **not** prove that Reboot
-servicers are language-neutral: today the server lifecycle and service adapter
-are Python-owned, and the Node implementation embeds/generated Python plus a
-native Node↔Python bridge.
+Python and TypeScript integration tests use. Its integration test runs a real
+Tonic Echo server, calls it through the generated client, and verifies the
+state reference, idempotency key, and Bearer token reach the server. This does
+**not** prove that Reboot servicers are language-neutral: today the server
+lifecycle and service adapter are Python-owned, and the Node implementation
+embeds/generated Python plus a native Node↔Python bridge.
 
 ## Current limits exposed by the spike
 

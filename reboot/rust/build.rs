@@ -6,14 +6,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let repository = std::path::PathBuf::from("../..");
     let vendored_include = protoc_bin_vendored::include_path()?;
-    tonic_build::configure()
-        .build_server(false)
-        .compile_protos(
-            &[
-                repository.join("tests/reboot/protoc/explicit_state_annotations_full.proto"),
-                repository.join("tests/reboot/protoc/shared.proto"),
-            ],
-            &[repository, vendored_include],
-        )?;
+    tonic_build::configure().build_server(true).compile_protos(
+        &[
+            repository.join("tests/reboot/protoc/explicit_state_annotations_full.proto"),
+            repository.join("tests/reboot/protoc/shared.proto"),
+        ],
+        &[repository, vendored_include],
+    )?;
     Ok(())
 }

@@ -720,6 +720,8 @@ dependencies = [
  "prost",
  "protoc-bin-vendored",
  "tempfile",
+ "tokio",
+ "tokio-stream",
  "tonic",
  "tonic-build",
  "uuid",
