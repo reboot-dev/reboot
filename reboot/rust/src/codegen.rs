@@ -7,7 +7,9 @@
 use heck::ToSnakeCase;
 use prost::Message;
 use prost_types::compiler::{CodeGeneratorRequest, CodeGeneratorResponse, code_generator_response};
-use prost_types::{FileDescriptorProto, MethodDescriptorProto, ServiceDescriptorProto};
+use prost_types::{
+    FileDescriptorProto, FileDescriptorSet, MethodDescriptorProto, ServiceDescriptorProto,
+};
 use std::collections::{BTreeMap, HashMap};
 
 const MODULE_PARAMETER_PREFIX: &str = "module=";
@@ -20,6 +22,11 @@ enum DurableKind {
 #[derive(Message)]
 struct RawRequest {
     #[prost(message, repeated, tag = "15")]
+    files: Vec<RawFile>,
+}
+#[derive(Message)]
+struct RawDescriptorSet {
+    #[prost(message, repeated, tag = "1")]
     files: Vec<RawFile>,
 }
 #[derive(Message)]
@@ -91,11 +98,44 @@ pub fn generate_from_wire(input: &[u8]) -> CodeGeneratorResponse {
         Ok(value) => value,
         Err(error) => return error_response(error.to_string()),
     };
-    let annotations = match annotations(raw) {
+    let annotations = match annotations(raw.files) {
         Ok(value) => value,
         Err(error) => return error_response(error),
     };
     respond(generate_inner(request, annotations))
+}
+
+/// Generates adapter files from a `FileDescriptorSet` emitted by `protoc`.
+///
+/// `prost_types` intentionally does not retain unknown extension fields. The
+/// second raw decode preserves Reboot option field 50000, so this path has the
+/// same durable-adapter semantics as the executable plugin.
+pub fn generate_from_descriptor_set_wire(
+    input: &[u8],
+    file_to_generate: &[String],
+    module: &str,
+) -> CodeGeneratorResponse {
+    let descriptor_set = match FileDescriptorSet::decode(input) {
+        Ok(value) => value,
+        Err(error) => return error_response(error.to_string()),
+    };
+    let raw = match RawDescriptorSet::decode(input) {
+        Ok(value) => value,
+        Err(error) => return error_response(error.to_string()),
+    };
+    let annotations = match annotations(raw.files) {
+        Ok(value) => value,
+        Err(error) => return error_response(error),
+    };
+    respond(generate_inner(
+        CodeGeneratorRequest {
+            parameter: Some(format!("{MODULE_PARAMETER_PREFIX}{module}")),
+            file_to_generate: file_to_generate.to_vec(),
+            proto_file: descriptor_set.file,
+            ..Default::default()
+        },
+        annotations,
+    ))
 }
 
 fn respond(result: Result<Vec<code_generator_response::File>, String>) -> CodeGeneratorResponse {
@@ -115,10 +155,10 @@ fn error_response(error: String) -> CodeGeneratorResponse {
 }
 
 fn annotations(
-    raw: RawRequest,
+    raw_files: Vec<RawFile>,
 ) -> Result<HashMap<String, HashMap<String, DurableService>>, String> {
     let mut output = HashMap::new();
-    for file in raw.files {
+    for file in raw_files {
         let Some(file_name) = file.name else { continue };
         let mut services = HashMap::new();
         for service in file.services {
@@ -401,7 +441,7 @@ fn is_identifier(value: &str) -> bool {
     matches!(characters.next(), Some(character) if character == '_' || character.is_ascii_alphabetic())
         && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
 }
-fn is_module_path(value: &str) -> bool {
+pub(crate) fn is_module_path(value: &str) -> bool {
     !value.is_empty() && value.split("::").all(is_identifier)
 }
 fn snake_case(value: &str) -> String {

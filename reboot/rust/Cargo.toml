@@ -18,13 +18,16 @@ name = "protoc-gen-reboot_rust"
 path = "src/bin/protoc-gen-reboot_rust.rs"
 
 [features]
+build = ["dep:protoc-bin-vendored", "dep:tonic-build"]
 test-support = ["dep:tokio-stream"]
 
 [dependencies]
 heck = "0.5"
 prost = "0.13"
 prost-types = "0.13"
+protoc-bin-vendored = { version = "3", optional = true }
 tonic = "0.12"
+tonic-build = { version = "0.12", optional = true }
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 tokio-stream = { version = "0.1", features = ["net"], optional = true }

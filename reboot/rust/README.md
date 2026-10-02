@@ -102,6 +102,48 @@ one:
    needs a `#[derive(RebootState)]` procedural macro or an explicit schema DSL
    to retain stable tags and compatibility checks.
 
+## Cargo-native adapter generation
+
+Downstream Cargo consumers can generate Prost/Tonic bindings and Reboot adapters
+from their own `build.rs`; no installed `protoc` or `protoc-gen-reboot_rust` is
+needed. Add the feature only to build dependencies:
+
+```toml
+[build-dependencies]
+reboot-rust-schema = { path = "../reboot/rust", features = ["build"] }
+```
+
+```rust
+// build.rs
+fn main() {
+    reboot_rust_schema::build::compile_protos(
+        &["proto/counter.proto"],
+        &["proto", "../reboot"],
+        "crate::proto",
+    ).unwrap();
+}
+```
+
+The helper uses a vendored `protoc` for that build-script invocation, invokes
+`tonic-build` with `build_server(true)`, writes
+`$OUT_DIR/reboot-rust-descriptor-set.bin`, and emits a proto-relative adapter
+such as `$OUT_DIR/counter.reboot.rs`. The consumer owns the protobuf module and
+includes both outputs:
+
+```rust
+pub mod proto {
+    tonic::include_proto!("my.package");
+}
+mod adapters {
+    include!(concat!(env!("OUT_DIR"), "/counter.reboot.rs"));
+}
+```
+
+`proto_module` must be a Rust path matching that module (for example
+`crate::proto`). Unsupported inputs fail exactly as the executable plugin:
+only unary reader/writer methods, same-package top-level request/response/state
+types, and annotated service state are supported.
+
 ## Concrete Tonic forwarding plugin
 
 This crate also provides `protoc-gen-reboot_rust`, a narrow `protoc` plugin for

@@ -1,11 +1,10 @@
 use std::process::Command;
 
 #[test]
-fn counter_plugin_output_executes_durable_adapters_in_a_downstream_fixture() {
+fn protoc_plugin_emits_durable_counter_adapters() {
     let directory = tempfile::tempdir().unwrap();
     let generated = directory.path().join("generated");
     std::fs::create_dir_all(&generated).unwrap();
-
     let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(2)
@@ -27,41 +26,59 @@ fn counter_plugin_output_executes_durable_adapters_in_a_downstream_fixture() {
         .unwrap();
     assert!(status.success());
 
-    let generated_source = generated.join("tests/reboot/protoc/counter.reboot.rs");
-    assert!(generated_source.is_file());
-    let content = std::fs::read_to_string(&generated_source).unwrap();
+    let content =
+        std::fs::read_to_string(generated.join("tests/reboot/protoc/counter.reboot.rs")).unwrap();
     assert!(content.contains("pub trait CounterWritesDatabaseHandler"));
     assert!(content.contains("pub trait CounterReadsDatabaseHandler"));
     assert!(content.contains("store.writer::<proto::Counter"));
     assert!(content.contains("store.reader::<proto::Counter"));
+}
 
+#[test]
+fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture() {
+    let directory = tempfile::tempdir().unwrap();
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .unwrap();
     let fixture = directory.path().join("downstream");
     std::fs::create_dir_all(fixture.join("src")).unwrap();
-    std::fs::copy(&generated_source, fixture.join("src/generated.rs")).unwrap();
+    std::fs::write(
+        fixture.join("build.rs"),
+        format!(
+            "fn main() {{\n    let repository = std::path::Path::new(\"{}\");\n    reboot_rust_schema::build::compile_protos(\n        &[repository.join(\"tests/reboot/protoc/counter.proto\")],\n        &[repository],\n        \"crate::proto\",\n    ).unwrap();\n}}\n",
+            repository.display()
+        ),
+    )
+    .unwrap();
     std::fs::write(
         fixture.join("Cargo.toml"),
         format!(
-            "[package]\nname = \"reboot-rust-plugin-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[dependencies]\nprost = \"0.13\"\nreboot-rust-schema = {{ path = \"{}\", features = [\"test-support\"] }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
+            "[package]\nname = \"reboot-rust-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot-rust-schema = {{ path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\nprost = \"0.13\"\nreboot-rust-schema = {{ path = \"{}\", features = [\"test-support\"] }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
+            env!("CARGO_MANIFEST_DIR"),
             env!("CARGO_MANIFEST_DIR")
         ),
     )
     .unwrap();
     std::fs::write(
         fixture.join("src/lib.rs"),
-        r#"#[allow(dead_code)]
+        r#"pub mod proto {
+    tonic::include_proto!("tests.reboot.protoc");
+}
+
+#[allow(dead_code)]
 mod generated {
-    include!("generated.rs");
+    include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/counter.reboot.rs"));
 }
 
 #[cfg(test)]
 mod tests {
-    use super::generated;
+    use super::{generated, proto};
     use prost::Message;
-use reboot_rust_schema::{
-    proto,
-    runtime::{test_support::start_database, DatabaseActorStore, RebootState},
-    ExternalContext,
-};
+    use reboot_rust_schema::{
+        runtime::{test_support::start_database, DatabaseActorStore},
+        ExternalContext,
+    };
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -187,7 +204,7 @@ async fn generated_durable_counter_replays_after_service_recreation() {
     assert_eq!(first.actor_upserts.len(), 1);
     let actor = &first.actor_upserts[0];
     let mutation = first.idempotent_mutation.as_ref().unwrap();
-    assert_eq!(actor.state_type, <proto::Counter as RebootState>::STATE_TYPE);
+    assert_eq!(actor.state_type, "tests.reboot.protoc.Counter");
     assert_eq!(actor.state_ref, "database-durable-counter");
     assert_eq!(mutation.state_type, actor.state_type);
     assert_eq!(mutation.state_ref, actor.state_ref);

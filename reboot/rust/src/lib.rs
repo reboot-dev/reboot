@@ -6,6 +6,8 @@
 //! supports only `--python` and `--nodejs`. The [`runtime`] module provides a
 //! deliberately scoped Tonic service adapters for executable testing.
 
+#[cfg(feature = "build")]
+pub mod build;
 pub mod codegen;
 pub mod runtime;
 
