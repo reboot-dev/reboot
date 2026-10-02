@@ -1664,9 +1664,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: greeter_pb.GreetRequest,
             responseType: greeter_pb.GreetResponse,
+            abortedType: GreeterGreetAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {
@@ -1691,9 +1693,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: Empty,
             responseType: Empty,
+            abortedType: GreeterTryToConstructContextAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {
@@ -1718,9 +1722,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: Empty,
             responseType: Empty,
+            abortedType: GreeterTryToConstructExternalContextAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {
@@ -1745,9 +1751,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: greeter_pb.TestLongRunningFetchRequest,
             responseType: Empty,
+            abortedType: GreeterTestLongRunningFetchAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {
@@ -1772,9 +1780,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: greeter_pb.GetWholeStateRequest,
             responseType: GreeterProto,
+            abortedType: GreeterGetWholeStateAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {
@@ -1799,9 +1809,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: Empty,
             responseType: Empty,
+            abortedType: GreeterFailWithExceptionAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {
@@ -1826,9 +1838,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: Empty,
             responseType: Empty,
+            abortedType: GreeterFailWithAbortedAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {
@@ -1853,9 +1867,11 @@ class _Reactively {
             id: __classPrivateFieldGet(this, __Reactively_id, "f"),
             requestType: greeter_pb.ReadRecursiveMessageRequest,
             responseType: greeter_pb.ReadRecursiveMessageResponse,
+            abortedType: GreeterReadRecursiveMessageAborted,
             request: request,
             signal: options === null || options === void 0 ? void 0 : options.signal,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             websockets: context.websockets,
         });
         const setTypedRequest = (newRequest) => {

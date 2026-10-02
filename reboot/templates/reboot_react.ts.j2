@@ -633,11 +633,21 @@ class {{ client.proto.state_name | to_camel }}Instance {
   private runningMutates: reboot_react.Mutate[] = [];
   private queuedMutates: reboot_react.Mutate[] = [];
   private flushMutates?: reboot_api.Event = undefined;
+  // Set, and replaced, each time a mutation completes, so that anyone
+  // waiting on it is woken by the next completion.
+  private mutationCompleted: reboot_api.Event = new reboot_api.Event();
   private websocket?: WebSocket = undefined;
   private backoff: reboot_api.Backoff = new reboot_api.Backoff();
 
   private hasRunningMutations() {
     return this.runningMutates.length > 0;
+  }
+
+  // Whether a mutation made through this instance has yet to
+  // complete, whether it is in flight or still queued behind a
+  // loading reader.
+  private hasPendingMutations() {
+    return this.queuedMutates.length > 0 || this.hasRunningMutations();
   }
 
   private async flushMutations() {
@@ -737,6 +747,10 @@ class {{ client.proto.state_name | to_camel }}Instance {
 
         resolve(response);
 
+        const mutationCompleted = this.mutationCompleted;
+        this.mutationCompleted = new reboot_api.Event();
+        mutationCompleted.set();
+
         if (
           this.flushMutates !== undefined &&
           this.runningMutates.length === 0
@@ -811,6 +825,15 @@ class {{ client.proto.state_name | to_camel }}Instance {
     // call `observed()` on them.
     let orphans: Expected[] = [];
 
+    // Whether a mutation has been made on this state since the
+    // current attempt to read started, and the event set by the next
+    // mutation on this state, which a reader that settled on an error
+    // waits on. A mutation may change the state such that the reader
+    // now succeeds, e.g., a constructor after `StateNotConstructed`,
+    // so it is what makes reading again worthwhile.
+    let mutated = false;
+    let nextMutation: reboot_api.Event | undefined = undefined;
+
     const id = `${uuidv4()}`;
 
     this.observers[id] = {
@@ -820,6 +843,8 @@ class {{ client.proto.state_name | to_camel }}Instance {
         aborted: () => void
       ) => {
         expecteds = expecteds.concat({ idempotencyKey, observed, aborted })
+        mutated = true;
+        nextMutation?.set();
       },
       unobserve: (idempotencyKey: string) => {
         expecteds = expecteds.filter(
@@ -832,9 +857,36 @@ class {{ client.proto.state_name | to_camel }}Instance {
       }
     };
 
+    // Releases every mutation waiting to be observed by this reader,
+    // for when it stops reading: nothing would observe them otherwise
+    // and their callers would be stuck.
+    const release = () => {
+      for (const { aborted } of [...orphans, ...expecteds]) {
+        aborted();
+      }
+      orphans = [];
+      expecteds = [];
+    };
+
+    // Wake a reader waiting on a mutation so that it notices the
+    // abort and finishes.
+    const abortedEvent = new reboot_api.Event();
+    reader.abortController.signal.addEventListener("abort", () => {
+      abortedEvent.set();
+      nextMutation?.set();
+    });
+
+    const backoff = new reboot_api.Backoff();
+
     try {
-      await reboot_api.retryForever(async () => {
+      while (true) {
+        if (reader.abortController.signal.aborted) {
+          release();
+          return;
+        }
+
         let loaded = false;
+        mutated = false;
         this.loadingReaders += 1;
 
         // Any mutations started after we've incremented
@@ -877,6 +929,9 @@ class {{ client.proto.state_name | to_camel }}Instance {
                 this.readersLoadedOrFailed();
               }
               loaded = true;
+              backoff.reset({
+                log: `[Reboot] Reactive reader '{{ client.proto.state_name | to_camel }}.${method}' connected`
+              });
             }
 
             reader.setIsLoading(false);
@@ -952,32 +1007,73 @@ class {{ client.proto.state_name | to_camel }}Instance {
           loaded = false;
 
           if (reader.abortController.signal.aborted) {
-            for (const { aborted } of [...orphans, ...expecteds]) {
-              aborted();
-            }
+            release();
             return;
           }
 
-          // Intentionally leave `isLoading: true` here. The outer
-          // `retryForever(...)` will run another attempt and call
-          // `reader.setIsLoading(true)` again at the top of the
-          // try block, but if we cleared it to `false` here first
-          // consumers would observe a brief `false → true → false
-          // → true ...` flip-flop on every retry while we're
-          // actually still trying to (re)connect. Once a response
-          // finally arrives the success path sets it to `false`.
-
-          if (e instanceof reboot_api.Status) {
+          if (
+            e instanceof reboot_api.Status &&
+            !reboot_api.isRetryableStatusCode(e.code)
+          ) {
+            // The server answered, and its answer is an error, e.g.,
+            // a declared error raised by the reader or a denied
+            // authorization. Reading again would get the same answer
+            // until the state changes, so surface it and read again
+            // only once a mutation made through this instance has
+            // completed, rather than retry.
             reader.setStatus(e);
-          } else {
-            console.warn(
-              `[Reboot] Caught unknown exception: ${e instanceof Error ? e.message : JSON.stringify(e)}`
-            );
+            reader.setIsLoading(false);
+
+            if (!mutated && !this.hasPendingMutations()) {
+              release();
+
+              nextMutation = new reboot_api.Event();
+              if (!reader.abortController.signal.aborted) {
+                await nextMutation.wait();
+              }
+              nextMutation = undefined;
+            }
+
+            // A mutation stays queued while any reader on this state
+            // is loading, so wait for the pending ones to complete
+            // before counting as loading again; reading before they
+            // complete would get the same answer, and holding them
+            // back would leave them queued.
+            while (
+              !reader.abortController.signal.aborted &&
+              this.hasPendingMutations()
+            ) {
+              await Promise.race([
+                this.mutationCompleted.wait(),
+                abortedEvent.wait(),
+              ]);
+            }
+
+            if (reader.abortController.signal.aborted) {
+              release();
+              return;
+            }
+
+            backoff.reset();
+            continue;
           }
 
-          throw e; // This just retries!
+          // A transport failure, e.g., a disconnect or a server that
+          // is restarting: reconnect with backoff. We intentionally
+          // leave `isLoading: true` here since we are still trying to
+          // (re)connect; clearing it first would make consumers
+          // observe a brief `false → true → false → true ...`
+          // flip-flop on every retry. Once a response finally
+          // arrives the success path sets it to `false`.
+          const message = e instanceof reboot_api.Status || e instanceof Error
+            ? e.message
+            : JSON.stringify(e);
+
+          await backoff.wait({
+            log: `[Reboot] Reactive reader '{{ client.proto.state_name | to_camel }}.${method}' failed with ${message}; retrying with backoff...`
+          });
         }
-      });
+      }
     } finally {
       delete this.observers[id];
     }
@@ -1169,6 +1265,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
       reader = {
         abortController: new AbortController(),
         event,
+        isLoading: true,
         promise,
         used: false,
         scheduledUnusedTimeoutsCount: 0,
@@ -1207,6 +1304,8 @@ class {{ client.proto.state_name | to_camel }}Instance {
         },
 
         setIsLoading(isLoading: boolean) {
+          this.isLoading = isLoading;
+
           for (const setIsLoading of Object.values(this.setIsLoadings)) {
             setIsLoading(isLoading);
           }
@@ -1275,9 +1374,9 @@ class {{ client.proto.state_name | to_camel }}Instance {
         reboot_web.offlineCache().get(cacheKey).then((cachedResponse) => {
           if (cachedResponse !== null) {
             // We only want to set the response if we haven't already
-            // gotten a response from the server as it is the authority
-            // and should take precedence.
-            if (reader.response === undefined) {
+            // gotten a response, or an error, from the server as it
+            // is the authority and should take precedence.
+            if (reader.response === undefined && reader.status === undefined) {
               reader.setResponse(
                 {{ method.output_type }}.fromJsonString(cachedResponse),
                 { cache: false } // Don't re-cache the value!
@@ -1333,10 +1432,11 @@ class {{ client.proto.state_name | to_camel }}Instance {
     // If we already have a `response` or `status` need to set it.
     if (reader.response) {
       setResponse(reader.response);
-      setIsLoading(false);
     } else if (reader.status) {
       setStatus(reader.status);
     }
+
+    setIsLoading(reader.isLoading);
   }
 
   unuse{{ method.proto.name | to_camel }}(

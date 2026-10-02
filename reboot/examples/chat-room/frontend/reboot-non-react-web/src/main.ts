@@ -31,10 +31,16 @@ async function bindToElement(
   element: HTMLElement,
   generator: AsyncGenerator<ChatRoom.MessagesResponse>
 ) {
-  for await (const response of generator) {
-    element.innerHTML = `${response.messages
-      .map((msg: string) => `<div class="message">${msg}</div>`)
-      .join("")}`;
+  try {
+    for await (const response of generator) {
+      element.innerHTML = `${response.messages
+        .map((msg: string) => `<div class="message">${msg}</div>`)
+        .join("")}`;
+    }
+  } catch (e) {
+    // The backend answered the read with an error, which a reactive
+    // read surfaces by throwing rather than retrying.
+    element.innerHTML = `<div class="message">${e}</div>`;
   }
 }
 

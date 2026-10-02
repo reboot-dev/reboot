@@ -715,6 +715,16 @@ export const TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF: ReadonlySet<error
     errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK,
   ]);
 
+// Whether a call that failed with `code` is worth retrying as is:
+// the failure came from the transport or from a server that could not
+// take the call at that moment, e.g., a disconnect while a server
+// restarts (`UNAVAILABLE`) or a server shutting down mid-call
+// (`CANCELLED`), rather than being the application's answer to the
+// call. A proxy renders these two codes as HTTP 503 and 499.
+export function isRetryableStatusCode(code: number): boolean {
+  return code === StatusCode.UNAVAILABLE || code === StatusCode.CANCELLED;
+}
+
 export type GrpcError = InstanceTypeForErrorTypes<
   typeof GRPC_ERROR_TYPES
 >[number];

@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package tests.reboot.react.test_reactive_reader_final_error;
+
+import "rbt/v1alpha1/options.proto";
+
+message Test {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  string message = 1;
+}
+
+message CreateRequest {}
+
+message CreateResponse {}
+
+message GetRequest {}
+
+message GetResponse {
+  string message = 1;
+}
+
+message NoMessageYet {}
+
+message SetMessageRequest {
+  string message = 1;
+}
+
+message SetMessageResponse {}
+
+message AttemptsRequest {}
+
+message AttemptsResponse {
+  int32 attempts = 1;
+}
+
+message SlowRequest {}
+
+message SlowResponse {}
+
+service TestMethods {
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {}
+    };
+  }
+
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "NoMessageYet" ],
+    };
+  }
+
+  rpc SetMessage(SetMessageRequest) returns (SetMessageResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc Attempts(AttemptsRequest) returns (AttemptsResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc Slow(SlowRequest) returns (SlowResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}

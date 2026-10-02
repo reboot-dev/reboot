@@ -10,7 +10,11 @@ import { fork } from "child_process";
 import { strict as assert } from "node:assert";
 import test from "node:test";
 import { v4 as uuidv4 } from "uuid";
-import { Greeter } from "../../greeter_rbt_web.js";
+import {
+  ErrorWithValue,
+  Greeter,
+  GreeterFailWithAbortedAborted,
+} from "../../greeter_rbt_web.js";
 import { GreeterServicer } from "../greeter.js";
 const TOKEN_FOR_TEST = "S3CR3T!";
 
@@ -20,6 +24,17 @@ const TOKEN_FOR_TEST = "S3CR3T!";
 // 'window' or 'document'. We are doing that because we want to test
 // retry, which we can't do yet to the best of our knowledge with the
 // tests in 'tests/reboot/react'.
+
+// The next response of a reactive read, which must not be done.
+async function nextResponse<ResponseType>(
+  responses: AsyncGenerator<ResponseType, void, unknown>
+): Promise<ResponseType> {
+  const result = await responses.next();
+  if (result.done === true) {
+    assert.fail("Expected another response");
+  }
+  return result.value;
+}
 
 class StaticTokenVerifier extends TokenVerifier {
   async verifyToken(
@@ -195,6 +210,142 @@ test("Reboot", async (t) => {
     const response = await greeter.greet(context, {});
 
     assert(response.message == "Hi , I am Dr Jonathan the Friendly");
+  });
+
+  await t.test("Reactive reader", async (t) => {
+    const application = new Application({
+      servicers: [GreeterServicer],
+    });
+
+    const rbt = new Reboot();
+    await rbt.start();
+
+    t.after(async () => {
+      await rbt.stop();
+    });
+
+    await rbt.up(application, { localEnvoy: true });
+
+    const context = new WebContext({
+      url: rbt.url(),
+    });
+
+    const [greeter] = await Greeter.create(context, {
+      title: "Dr",
+      name: "Jonathan",
+      adjective: "Best",
+    });
+
+    const abortController = new AbortController();
+
+    const [responses] = await greeter
+      .reactively()
+      .greet(context, {}, { signal: abortController.signal });
+
+    const first = await nextResponse(responses);
+    assert(first.message == "Hi , I am Dr Jonathan the Best");
+
+    await greeter.setAdjective(context, {
+      adjective: "Friendly",
+    });
+
+    // The generator yields a response for each change to the state.
+    const second = await nextResponse(responses);
+    assert(second.message == "Hi , I am Dr Jonathan the Friendly");
+
+    abortController.abort();
+    assert((await responses.next()).done);
+  });
+
+  await t.test("Reactive reader retries a restarting server", async (t) => {
+    const application = new Application({
+      servicers: [GreeterServicer],
+    });
+
+    const rbt = new Reboot();
+    await rbt.start();
+
+    t.after(async () => {
+      await rbt.stop();
+    });
+
+    await rbt.up(application, { localEnvoy: true });
+
+    const context = new WebContext({
+      url: rbt.url(),
+    });
+
+    const [greeter] = await Greeter.create(context, {
+      title: "Dr",
+      name: "Jonathan",
+      adjective: "Best",
+    });
+
+    const [responses] = await greeter.reactively().greet(context, {});
+
+    const first = await nextResponse(responses);
+    assert(first.message == "Hi , I am Dr Jonathan the Best");
+
+    // Restarting the server disconnects the reactive read, which
+    // reconnects rather than surface the disconnect, and then
+    // observes the mutation made after the restart.
+    await rbt.down();
+    await rbt.up(application, { localEnvoy: true });
+
+    await greeter.setAdjective(context, {
+      adjective: "Friendly",
+    });
+
+    while (true) {
+      const response = await nextResponse(responses);
+      if (response.message == "Hi , I am Dr Jonathan the Friendly") {
+        break;
+      }
+    }
+  });
+
+  await t.test("Reactive reader surfaces a declared error", async (t) => {
+    const application = new Application({
+      servicers: [GreeterServicer],
+    });
+
+    const rbt = new Reboot();
+    await rbt.start();
+
+    t.after(async () => {
+      await rbt.stop();
+    });
+
+    await rbt.up(application, { localEnvoy: true });
+
+    const context = new WebContext({
+      url: rbt.url(),
+    });
+
+    const [greeter] = await Greeter.create(context, {
+      title: "Dr",
+      name: "Jonathan",
+      adjective: "Best",
+    });
+
+    const [responses] = await greeter.reactively().failWithAborted(context, {});
+
+    // A declared error ends the generator by throwing it, the same
+    // way a unary call throws it, rather than being retried.
+    await assert.rejects(
+      async () => {
+        for await (const _ of responses) {
+        }
+      },
+      (error: unknown) => {
+        assert(error instanceof GreeterFailWithAbortedAborted);
+        assert(error.error instanceof ErrorWithValue);
+        assert(error.error.value == "Hi!");
+        return true;
+      }
+    );
+
+    assert((await responses.next()).done);
   });
 
   await t.test("Transaction", async (t) => {

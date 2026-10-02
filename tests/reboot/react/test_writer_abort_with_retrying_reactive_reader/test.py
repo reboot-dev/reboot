@@ -20,10 +20,11 @@ async def test(context: ExternalContext, uri: str):
     while a writer simultaneously aborts.
 
     In the frontend, we run a reactive reader while calling a writer.
-    The reactive reader will receive an initial response (an error) from
-    the backend due to the first render. Until the writer we are calling
-    indicates to the reader that it has aborted once, the reactive
-    reader will continuously receive errors and be forced to retry.
+    The reactive reader will receive an initial response (an
+    `Unavailable` error, which it retries) from the backend due to the
+    first render. Until the writer we are calling indicates to the
+    reader that it has aborted once, the reactive reader will
+    continuously receive errors and be forced to retry.
     Eventually, the writer will run, immediately abort, and notify the
     reader that it has aborted. The backend can then begin sending
     valid responses to the reactive reader, which will be displayed

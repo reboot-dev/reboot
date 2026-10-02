@@ -888,6 +888,11 @@ export interface Mutate {
 export interface Reader<ResponseType> {
   abortController: AbortController;
   event: Event;
+  // Whether the reader is (re)connecting to the server. It is `false`
+  // while a stream of responses is open, and once the reader has
+  // settled on a `status`, i.e., an error the server answered with
+  // that the reader will not retry.
+  isLoading: boolean;
   promise?: Promise<void>;
   response?: ResponseType;
   scheduledUnusedTimeoutsCount: number;
