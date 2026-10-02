@@ -420,6 +420,11 @@ fn reject_method_name_collisions(
     for method in methods {
         let protobuf_name = required(&method.name, "method name")?;
         let rust_name = snake_case(protobuf_name);
+        if !is_generated_rust_identifier(&rust_name) {
+            return Err(format!(
+                "{file}: service `{service}` method `{protobuf_name}` renders as Rust keyword `{rust_name}`"
+            ));
+        }
         if let Some(previous) = rendered.insert(rust_name.clone(), protobuf_name) {
             return Err(format!(
                 "{file}: service `{service}` methods `{previous}` and `{protobuf_name}` both render as Rust method `{rust_name}`"
@@ -737,6 +742,17 @@ mod tests {
     fn snake_case_matches_protobuf_acronyms() {
         assert_eq!(snake_case("APIService"), "api_service");
         assert_eq!(snake_case("GetURL"), "get_url");
+    }
+
+    #[test]
+    fn rejects_methods_that_render_as_rust_keywords() {
+        let mut value = request();
+        value.proto_file[0].service[0].method[0].name = Some("Type".into());
+        let error = generate(value).error.unwrap();
+        assert!(error.contains("CounterWrites"));
+        assert!(error.contains("Type"));
+        assert!(error.contains("type"));
+        assert!(error.contains("Rust keyword"));
     }
 
     #[test]
