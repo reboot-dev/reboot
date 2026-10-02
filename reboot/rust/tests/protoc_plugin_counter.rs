@@ -373,3 +373,113 @@ async fn generated_durable_counter_replays_after_service_recreation() {
         .unwrap();
     assert!(status.success());
 }
+
+#[test]
+fn default_cargo_build_helper_executes_a_durable_adapter_in_a_downstream_fixture() {
+    let directory = tempfile::tempdir().unwrap();
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .unwrap();
+    let fixture = directory.path().join("default-downstream");
+    std::fs::create_dir_all(fixture.join("src")).unwrap();
+    std::fs::write(
+        fixture.join("build.rs"),
+        format!(
+            "fn main() {{\n    let repository = std::path::Path::new(\"{}\");\n    reboot_rust_schema::build::compile_protos(\n        &[repository.join(\"tests/reboot/protoc/counter.proto\")],\n        &[repository],\n        \"crate::proto\",\n    ).unwrap();\n}}\n",
+            repository.display()
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        fixture.join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"reboot-rust-default-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot-rust-schema = {{ path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\nprost = \"0.13\"\nreboot-rust-schema = {{ path = \"{}\", features = [\"test-support\"] }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
+            env!("CARGO_MANIFEST_DIR"),
+            env!("CARGO_MANIFEST_DIR")
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        fixture.join("src/lib.rs"),
+        r#"pub mod proto {
+    tonic::include_proto!("tests.reboot.protoc");
+}
+
+#[allow(dead_code)]
+mod generated {
+    include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/counter.reboot.rs"));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{generated, proto};
+    use reboot_rust_schema::{
+        runtime::{test_support::start_database, DatabaseActorStore},
+        ExternalContext,
+    };
+    use uuid::Uuid;
+
+    struct Counter;
+
+    #[tonic::async_trait]
+    impl generated::CounterWritesDatabaseHandler for Counter {
+        async fn increment(
+            &self,
+            state: &mut proto::Counter,
+            request: proto::IncrementRequest,
+        ) -> Result<proto::CounterValue, tonic::Status> {
+            state.value += request.amount;
+            Ok(proto::CounterValue { value: state.value })
+        }
+    }
+
+    #[tokio::test]
+    async fn default_helper_generated_writer_executes() {
+        let (database_endpoint, _, database_server) = start_database().await;
+        let adapter = generated::CounterWritesDatabaseAdapter::new(
+            DatabaseActorStore::connect(&database_endpoint).await.unwrap(),
+            Counter,
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(proto::counter_writes_server::CounterWritesServer::new(adapter))
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+        let context = ExternalContext::new("default-cargo-helper");
+        let mut client = proto::counter_writes_client::CounterWritesClient::connect(format!("http://{address}"))
+            .await
+            .unwrap();
+        assert_eq!(
+            client
+                .increment(
+                    context
+                        .writer_with_key(proto::IncrementRequest { amount: 7 }, Uuid::from_u128(101))
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+                .into_inner()
+                .value,
+            7
+        );
+        server.abort();
+        database_server.abort();
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let status = Command::new("cargo")
+        .arg("test")
+        .arg("--offline")
+        .current_dir(&fixture)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
