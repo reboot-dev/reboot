@@ -13,7 +13,10 @@ two real boundaries without importing Python or Node.js:
 ```sh
 cd reboot/rust
 cargo test --locked
+# Serves the in-memory EchoMethods host on 127.0.0.1:50051.
 cargo run --locked
+# Override explicitly when running more than one local host.
+REBOOT_RUST_LISTEN_ADDR=127.0.0.1:50052 cargo run --locked
 ```
 
 The `build.rs` compilation input is Reboot's existing
