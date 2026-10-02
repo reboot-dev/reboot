@@ -56,6 +56,19 @@ py_test(
 )
 
 py_test(
+    name = "database_client_deadline_test_py",
+    timeout = "short",
+    srcs = ["database_client_deadline_test.py"],
+    main = "database_client_deadline_test.py",
+    deps = [
+        requirement("grpcio"),
+        "//reboot/server:database_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:application_metadata_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_grpc",
+    ],
+)
+
+py_test(
     name = "executable_local_envoy_test_py",
     # Envoy startup makes this too slow for a "short" (60s) budget on
     # slower CI runners, where it times out (observed at 61.3s on a
