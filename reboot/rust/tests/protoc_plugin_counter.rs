@@ -30,8 +30,10 @@ fn counter_plugin_output_compiles_in_a_downstream_fixture() {
     let generated_source = generated.join("tests/reboot/protoc/counter.reboot.rs");
     assert!(generated_source.is_file());
     let content = std::fs::read_to_string(&generated_source).unwrap();
-    assert!(content.contains("pub trait CounterWritesHandler"));
-    assert!(content.contains("pub trait CounterReadsHandler"));
+    assert!(content.contains("pub trait CounterWritesDatabaseHandler"));
+    assert!(content.contains("pub trait CounterReadsDatabaseHandler"));
+    assert!(content.contains("store.writer::<proto::Counter"));
+    assert!(content.contains("store.reader::<proto::Counter"));
 
     let fixture = directory.path().join("downstream");
     std::fs::create_dir_all(fixture.join("src")).unwrap();
@@ -77,11 +79,34 @@ impl generated::CounterReadsHandler for Counter {
     }
 }
 
+impl generated::CounterWritesDatabaseHandler for Counter {
+    fn increment(
+        &self,
+        state: &mut proto::Counter,
+        request: proto::IncrementRequest,
+    ) -> Result<proto::CounterValue, tonic::Status> {
+        state.value += request.amount;
+        Ok(proto::CounterValue { value: state.value })
+    }
+}
+
+impl generated::CounterReadsDatabaseHandler for Counter {
+    fn get(
+        &self,
+        state: &proto::Counter,
+        _: proto::Empty,
+    ) -> Result<proto::CounterValue, tonic::Status> {
+        Ok(proto::CounterValue { value: state.value })
+    }
+}
+
 fn adapters_are_concrete() {
     let writes = generated::CounterWritesAdapter::new(Counter);
     let reads = generated::CounterReadsAdapter::new(Counter);
     let _ = proto::counter_writes_server::CounterWritesServer::new(writes);
     let _ = proto::counter_reads_server::CounterReadsServer::new(reads);
+    let _: Option<generated::CounterWritesDatabaseAdapter<Counter>> = None;
+    let _: Option<generated::CounterReadsDatabaseAdapter<Counter>> = None;
 }
 "#,
     )

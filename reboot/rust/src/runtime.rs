@@ -256,24 +256,36 @@ impl DatabaseActorStore {
         })
     }
 
-    fn lock_for<State: RebootState>(&self, state_ref: &str) -> Arc<tokio::sync::Mutex<()>> {
+    fn lock_for_type(&self, state_type: &str, state_ref: &str) -> Arc<tokio::sync::Mutex<()>> {
         let mut locks = self
             .actor_locks
             .lock()
             .expect("actor-lock map mutex poisoned");
         locks
-            .entry(format!("{}:{state_ref}", State::STATE_TYPE))
+            .entry(format!("{state_type}:{state_ref}"))
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
             .clone()
     }
 
+    fn lock_for<State: RebootState>(&self, state_ref: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.lock_for_type(State::STATE_TYPE, state_ref)
+    }
+
     /// Loads the current state for an actor, if it has been stored.
     pub async fn load<State: RebootState>(&self, state_ref: &str) -> Result<Option<State>, Status> {
+        self.load_type(State::STATE_TYPE, state_ref).await
+    }
+
+    async fn load_type<State: Message + Default>(
+        &self,
+        state_type: &str,
+        state_ref: &str,
+    ) -> Result<Option<State>, Status> {
         let mut database = self.database.clone();
         let response = database
             .load(database::LoadRequest {
                 actors: vec![database::Actor {
-                    state_type: State::STATE_TYPE.to_owned(),
+                    state_type: state_type.to_owned(),
                     state_ref: state_ref.to_owned(),
                     state: None,
                 }],
@@ -289,10 +301,7 @@ impl DatabaseActorStore {
             return Ok(None);
         };
         State::decode(state.as_slice()).map(Some).map_err(|error| {
-            Status::internal(format!(
-                "invalid persisted {} state: {error}",
-                State::STATE_TYPE
-            ))
+            Status::internal(format!("invalid persisted {state_type} state: {error}"))
         })
     }
 
@@ -302,10 +311,19 @@ impl DatabaseActorStore {
         state_ref: &str,
         key: Uuid,
     ) -> Result<Option<Response>, Status> {
+        self.replay_type(State::STATE_TYPE, state_ref, key).await
+    }
+
+    async fn replay_type<Response: Message + Default>(
+        &self,
+        state_type: &str,
+        state_ref: &str,
+        key: Uuid,
+    ) -> Result<Option<Response>, Status> {
         let mut database = self.database.clone();
         let mut stream = database
             .recover_idempotent_mutations(database::RecoverIdempotentMutationsRequest {
-                state_type: State::STATE_TYPE.to_owned(),
+                state_type: state_type.to_owned(),
                 state_ref: state_ref.to_owned(),
                 idempotency_key: Some(key.as_bytes().to_vec()),
                 workflow_id: None,
@@ -321,8 +339,7 @@ impl DatabaseActorStore {
                         .map(Some)
                         .map_err(|error| {
                             Status::internal(format!(
-                                "invalid persisted idempotent response for {}: {error}",
-                                State::STATE_TYPE
+                                "invalid persisted idempotent response for {state_type}: {error}"
                             ))
                         });
                 }
@@ -339,11 +356,23 @@ impl DatabaseActorStore {
         state: State,
         response: Response,
     ) -> Result<(), Status> {
+        self.store_type(State::STATE_TYPE, state_ref, key, state, response)
+            .await
+    }
+
+    async fn store_type<State: Message, Response: Message>(
+        &self,
+        state_type: &str,
+        state_ref: &str,
+        key: Uuid,
+        state: State,
+        response: Response,
+    ) -> Result<(), Status> {
         let mut database = self.database.clone();
         database
             .store(database::StoreRequest {
                 actor_upserts: vec![database::Actor {
-                    state_type: State::STATE_TYPE.to_owned(),
+                    state_type: state_type.to_owned(),
                     state_ref: state_ref.to_owned(),
                     state: Some(state.encode_to_vec()),
                 }],
@@ -351,7 +380,7 @@ impl DatabaseActorStore {
                 colocated_upserts: vec![],
                 transaction: None,
                 idempotent_mutation: Some(database::IdempotentMutation {
-                    state_type: State::STATE_TYPE.to_owned(),
+                    state_type: state_type.to_owned(),
                     state_ref: state_ref.to_owned(),
                     key: key.as_bytes().to_vec(),
                     response: response.encode_to_vec(),
@@ -365,6 +394,57 @@ impl DatabaseActorStore {
             .await
             .map_err(database_status)?;
         Ok(())
+    }
+
+    /// Runs a synchronous writer callback inside the durable actor envelope.
+    pub async fn writer<State, RequestBody, ResponseBody, F>(
+        &self,
+        state_type: &'static str,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        State: Message + Default + Clone + Send + Sync + 'static,
+        RequestBody: Send + 'static,
+        ResponseBody: Message + Default + Clone + Send + 'static,
+        F: FnOnce(&mut State, RequestBody) -> Result<ResponseBody, Status>,
+    {
+        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
+        let key = idempotency_key(&request)?;
+        let lock = self.lock_for_type(state_type, &state_ref);
+        let _guard = lock.lock().await;
+        if let Some(response) = self.replay_type(state_type, &state_ref, key).await? {
+            return Ok(Response::new(response));
+        }
+        let mut state = self
+            .load_type(state_type, &state_ref)
+            .await?
+            .unwrap_or_default();
+        let response = invoke(&mut state, request.into_inner())?;
+        self.store_type(state_type, &state_ref, key, state, response.clone())
+            .await?;
+        Ok(Response::new(response))
+    }
+
+    /// Runs a synchronous reader callback after loading the actor state.
+    pub async fn reader<State, RequestBody, ResponseBody, F>(
+        &self,
+        state_type: &'static str,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        State: Message + Default + Clone + Send + Sync + 'static,
+        RequestBody: Send + 'static,
+        ResponseBody: Message + Default + Send + 'static,
+        F: FnOnce(&State, RequestBody) -> Result<ResponseBody, Status>,
+    {
+        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
+        let state = self
+            .load_type(state_type, &state_ref)
+            .await?
+            .unwrap_or_default();
+        Ok(Response::new(invoke(&state, request.into_inner())?))
     }
 }
 
@@ -521,32 +601,18 @@ impl proto::counter_writes_server::CounterWrites for CounterAdapter {
         &self,
         request: Request<proto::IncrementRequest>,
     ) -> Result<Response<proto::CounterValue>, Status> {
-        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
-        let key = idempotency_key(&request)?;
-        let lock = self.store.lock_for::<proto::Counter>(&state_ref);
-        let _guard = lock.lock().await;
-        if let Some(response) = self
-            .store
-            .replay::<proto::Counter, proto::CounterValue>(&state_ref, key)
-            .await?
-        {
-            return Ok(Response::new(response));
-        }
-        let increment = request.into_inner().amount;
-        let mut state = self
-            .store
-            .load::<proto::Counter>(&state_ref)
-            .await?
-            .unwrap_or_default();
-        state.value = state
-            .value
-            .checked_add(increment)
-            .ok_or_else(|| Status::invalid_argument("counter increment overflows int64"))?;
-        let response = proto::CounterValue { value: state.value };
         self.store
-            .store(&state_ref, key, state, response.clone())
-            .await?;
-        Ok(Response::new(response))
+            .writer::<proto::Counter, _, _, _>(
+                "tests.reboot.protoc.Counter",
+                request,
+                |state, request| {
+                    state.value = state.value.checked_add(request.amount).ok_or_else(|| {
+                        Status::invalid_argument("counter increment overflows int64")
+                    })?;
+                    Ok(proto::CounterValue { value: state.value })
+                },
+            )
+            .await
     }
 }
 
@@ -556,11 +622,13 @@ impl proto::counter_reads_server::CounterReads for CounterAdapter {
         &self,
         request: Request<proto::Empty>,
     ) -> Result<Response<proto::CounterValue>, Status> {
-        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
-        let state = self.store.load::<proto::Counter>(&state_ref).await?;
-        Ok(Response::new(proto::CounterValue {
-            value: state.unwrap_or_default().value,
-        }))
+        self.store
+            .reader::<proto::Counter, _, _, _>(
+                "tests.reboot.protoc.Counter",
+                request,
+                |state, _| Ok(proto::CounterValue { value: state.value }),
+            )
+            .await
     }
 }
 

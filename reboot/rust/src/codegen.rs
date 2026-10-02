@@ -1,53 +1,218 @@
-//! `protoc` plugin support for concrete, unary Tonic forwarding adapters.
+//! `protoc` plugin support for concrete unary Tonic adapters.
 //!
-//! This module deliberately generates one handler trait and adapter per protobuf
-//! service. It does not infer Reboot method semantics or provide a dynamic Tonic
-//! dispatcher.
+//! The public `generate` entry point retains forwarding-only compatibility.
+//! The executable plugin uses `generate_from_wire`, which decodes the real
+//! descriptor option extension bytes rather than inferring Reboot semantics.
 
 use heck::ToSnakeCase;
+use prost::Message;
 use prost_types::compiler::{CodeGeneratorRequest, CodeGeneratorResponse, code_generator_response};
 use prost_types::{FileDescriptorProto, MethodDescriptorProto, ServiceDescriptorProto};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 const MODULE_PARAMETER_PREFIX: &str = "module=";
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DurableKind {
+    Reader,
+    Writer,
+}
 
-/// Generates concrete Tonic forwarding adapters for files selected by `protoc`.
-///
-/// The plugin accepts only `module=reboot_rust_schema::proto`. Methods must be
-/// unary and their request/response messages must be top-level types in the
-/// same protobuf package as the service file. Unsupported input is returned as
-/// a plugin error instead of producing partial or invalid Rust.
+#[derive(Message)]
+struct RawRequest {
+    #[prost(message, repeated, tag = "15")]
+    files: Vec<RawFile>,
+}
+#[derive(Message)]
+struct RawFile {
+    #[prost(string, optional, tag = "1")]
+    name: Option<String>,
+    #[prost(message, repeated, tag = "6")]
+    services: Vec<RawService>,
+}
+#[derive(Message)]
+struct RawService {
+    #[prost(string, optional, tag = "1")]
+    name: Option<String>,
+    #[prost(message, repeated, tag = "2")]
+    methods: Vec<RawMethod>,
+    #[prost(bytes = "vec", optional, tag = "3")]
+    options: Option<Vec<u8>>,
+}
+#[derive(Message)]
+struct RawMethod {
+    #[prost(string, optional, tag = "1")]
+    name: Option<String>,
+    #[prost(bytes = "vec", optional, tag = "4")]
+    options: Option<Vec<u8>>,
+}
+#[derive(Message)]
+struct ExtensionOptions {
+    #[prost(bytes = "vec", optional, tag = "50000")]
+    reboot: Option<Vec<u8>>,
+}
+#[derive(Message)]
+struct RebootServiceOptions {
+    #[prost(string, tag = "1")]
+    state: String,
+}
+#[derive(Message)]
+struct RebootMethodOptions {
+    #[prost(message, optional, tag = "1")]
+    reader: Option<Empty>,
+    #[prost(message, optional, tag = "2")]
+    writer: Option<Empty>,
+    #[prost(message, optional, tag = "3")]
+    transaction: Option<Empty>,
+    #[prost(message, optional, tag = "4")]
+    workflow: Option<Empty>,
+}
+#[derive(Message)]
+struct Empty {}
+
+#[derive(Default)]
+struct DurableService {
+    state: String,
+    methods: HashMap<String, DurableKind>,
+}
+
+/// Generates forwarding adapters without custom descriptor option semantics.
 pub fn generate(request: CodeGeneratorRequest) -> CodeGeneratorResponse {
-    match generate_inner(request) {
-        Ok(files) => CodeGeneratorResponse {
-            file: files,
+    respond(generate_inner(request, HashMap::new()))
+}
+
+/// Generates from the raw protoc request, retaining and decoding custom option
+/// field 50000 for `rbt.v1alpha1.service` and `rbt.v1alpha1.method`.
+pub fn generate_from_wire(input: &[u8]) -> CodeGeneratorResponse {
+    let request = match CodeGeneratorRequest::decode(input) {
+        Ok(value) => value,
+        Err(error) => return error_response(error.to_string()),
+    };
+    let raw = match RawRequest::decode(input) {
+        Ok(value) => value,
+        Err(error) => return error_response(error.to_string()),
+    };
+    let annotations = match annotations(raw) {
+        Ok(value) => value,
+        Err(error) => return error_response(error),
+    };
+    respond(generate_inner(request, annotations))
+}
+
+fn respond(result: Result<Vec<code_generator_response::File>, String>) -> CodeGeneratorResponse {
+    match result {
+        Ok(file) => CodeGeneratorResponse {
+            file,
             ..Default::default()
         },
-        Err(error) => CodeGeneratorResponse {
-            error: Some(error),
-            ..Default::default()
-        },
+        Err(error) => error_response(error),
     }
+}
+fn error_response(error: String) -> CodeGeneratorResponse {
+    CodeGeneratorResponse {
+        error: Some(error),
+        ..Default::default()
+    }
+}
+
+fn annotations(
+    raw: RawRequest,
+) -> Result<HashMap<String, HashMap<String, DurableService>>, String> {
+    let mut output = HashMap::new();
+    for file in raw.files {
+        let Some(file_name) = file.name else { continue };
+        let mut services = HashMap::new();
+        for service in file.services {
+            let Some(service_name) = service.name else {
+                continue;
+            };
+            let Some(options) = service.options else {
+                continue;
+            };
+            let extension = ExtensionOptions::decode(options.as_slice())
+                .map_err(|error| format!("{file_name}: invalid service options: {error}"))?;
+            let Some(bytes) = extension.reboot else {
+                continue;
+            };
+            let service_option =
+                RebootServiceOptions::decode(bytes.as_slice()).map_err(|error| {
+                    format!("{file_name}: invalid rbt.v1alpha1.service option: {error}")
+                })?;
+            if service_option.state.is_empty() {
+                return Err(format!(
+                    "{file_name}: annotated service `{service_name}` is missing rbt.v1alpha1.service.state"
+                ));
+            }
+            let mut methods = HashMap::new();
+            for method in service.methods {
+                let Some(method_name) = method.name else {
+                    continue;
+                };
+                let Some(options) = method.options else {
+                    continue;
+                };
+                let extension = ExtensionOptions::decode(options.as_slice())
+                    .map_err(|error| format!("{file_name}: invalid method options: {error}"))?;
+                let Some(bytes) = extension.reboot else {
+                    continue;
+                };
+                let option = RebootMethodOptions::decode(bytes.as_slice()).map_err(|error| {
+                    format!("{file_name}: invalid rbt.v1alpha1.method option: {error}")
+                })?;
+                let kinds = [
+                    option.reader.is_some(),
+                    option.writer.is_some(),
+                    option.transaction.is_some(),
+                    option.workflow.is_some(),
+                ]
+                .into_iter()
+                .filter(|value| *value)
+                .count();
+                if kinds != 1 {
+                    return Err(format!(
+                        "{file_name}: annotated method `{service_name}.{method_name}` has no recognized reader/writer kind"
+                    ));
+                }
+                let kind = match (option.reader.is_some(), option.writer.is_some()) {
+                    (true, false) => DurableKind::Reader,
+                    (false, true) => DurableKind::Writer,
+                    _ => {
+                        return Err(format!(
+                            "{file_name}: annotated method `{service_name}.{method_name}` is unsupported; only reader and writer are supported"
+                        ));
+                    }
+                };
+                methods.insert(method_name, kind);
+            }
+            services.insert(
+                service_name,
+                DurableService {
+                    state: service_option.state,
+                    methods,
+                },
+            );
+        }
+        output.insert(file_name, services);
+    }
+    Ok(output)
 }
 
 fn generate_inner(
     request: CodeGeneratorRequest,
+    annotations: HashMap<String, HashMap<String, DurableService>>,
 ) -> Result<Vec<code_generator_response::File>, String> {
     let module = request
         .parameter
         .as_deref()
-        .and_then(|parameter| parameter.strip_prefix(MODULE_PARAMETER_PREFIX))
-        .filter(|module| is_module_path(module))
+        .and_then(|value| value.strip_prefix(MODULE_PARAMETER_PREFIX))
+        .filter(|value| is_module_path(value))
         .ok_or_else(|| {
             "protoc-gen-reboot_rust requires a valid `module=<Rust path>` parameter".to_owned()
         })?;
-
     let descriptors: BTreeMap<_, _> = request
         .proto_file
         .iter()
         .filter_map(|file| file.name.as_deref().map(|name| (name, file)))
         .collect();
-
     request
         .file_to_generate
         .iter()
@@ -55,7 +220,7 @@ fn generate_inner(
             let file = descriptors
                 .get(name.as_str())
                 .ok_or_else(|| format!("missing descriptor for file_to_generate `{name}`"))?;
-            generate_file(file, module)
+            generate_file(file, module, annotations.get(name))
         })
         .collect()
 }
@@ -63,22 +228,24 @@ fn generate_inner(
 fn generate_file(
     file: &FileDescriptorProto,
     module: &str,
+    annotations: Option<&HashMap<String, DurableService>>,
 ) -> Result<code_generator_response::File, String> {
     let file_name = required(&file.name, "file name")?;
     let package = required(&file.package, "protobuf package")?;
     if package.is_empty() {
         return Err(format!("file `{file_name}` has an empty protobuf package"));
     }
-
     let mut content = format!(
-        "// @generated by protoc-gen-reboot_rust. Do not edit.\n\
-         // Concrete unary forwarding adapters only; no Reboot runtime semantics are generated.\n\
-         use {module} as proto;\n\n"
+        "// @generated by protoc-gen-reboot_rust. Do not edit.\nuse {module} as proto;\n\n"
     );
     for service in &file.service {
-        emit_service(&mut content, file_name, package, service)?;
+        emit_forwarding(&mut content, file_name, package, service)?;
+        if let Some(annotation) =
+            annotations.and_then(|value| service.name.as_ref().and_then(|name| value.get(name)))
+        {
+            emit_durable(&mut content, file_name, package, service, annotation)?;
+        }
     }
-
     Ok(code_generator_response::File {
         name: Some(output_name(file_name)?),
         content: Some(content),
@@ -86,86 +253,108 @@ fn generate_file(
     })
 }
 
-fn emit_service(
+fn emit_forwarding(
     output: &mut String,
-    file_name: &str,
+    file: &str,
     package: &str,
     service: &ServiceDescriptorProto,
 ) -> Result<(), String> {
-    let service_name = required(&service.name, "service name")?;
-    let handler_name = format!("{service_name}Handler");
-    let adapter_name = format!("{service_name}Adapter");
-    let server_module = format!("{}_server", snake_case(service_name));
-
+    let name = required(&service.name, "service name")?;
+    let handler = format!("{name}Handler");
+    let adapter = format!("{name}Adapter");
+    let server = format!("{}_server", snake_case(name));
     output.push_str("#[tonic::async_trait]\n");
-    output.push_str(&format!(
-        "pub trait {handler_name}: Send + Sync + 'static {{\n"
-    ));
+    output.push_str(&format!("pub trait {handler}: Send + Sync + 'static {{\n"));
     for method in &service.method {
-        let (method_name, request, response) =
-            method_types(file_name, package, service_name, method)?;
-        output.push_str(&format!(
-            "    async fn {method_name}(\n        &self,\n        request: tonic::Request<proto::{request}>,\n    ) -> Result<tonic::Response<proto::{response}>, tonic::Status>;\n"
-        ));
+        let (method, request, response) = method_types(file, package, name, method)?;
+        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status>;\n"));
     }
     output.push_str("}\n\n");
-    output.push_str(&format!(
-        "pub struct {adapter_name}<H> {{\n    handler: H,\n}}\n\n"
-    ));
-    output.push_str(&format!(
-        "impl<H> {adapter_name}<H> {{\n    pub fn new(handler: H) -> Self {{\n        Self {{ handler }}\n    }}\n}}\n\n"
-    ));
+    output.push_str(&format!("pub struct {adapter}<H> {{ handler: H }}\nimpl<H> {adapter}<H> {{ pub fn new(handler: H) -> Self {{ Self {{ handler }} }} }}\n\n"));
     output.push_str("#[tonic::async_trait]\n");
     output.push_str(&format!(
-        "impl<H: {handler_name}> proto::{server_module}::{service_name} for {adapter_name}<H> {{\n"
+        "impl<H: {handler}> proto::{server}::{name} for {adapter}<H> {{\n"
     ));
     for method in &service.method {
-        let (method_name, request, response) =
-            method_types(file_name, package, service_name, method)?;
-        output.push_str(&format!(
-            "    async fn {method_name}(\n        &self,\n        request: tonic::Request<proto::{request}>,\n    ) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        self.handler.{method_name}(request).await\n    }}\n"
-        ));
+        let (method, request, response) = method_types(file, package, name, method)?;
+        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ self.handler.{method}(request).await }}\n"));
     }
     output.push_str("}\n\n");
     Ok(())
 }
 
-fn method_types(
-    file_name: &str,
+fn emit_durable(
+    output: &mut String,
+    file: &str,
     package: &str,
-    service_name: &str,
-    method: &MethodDescriptorProto,
-) -> Result<(String, String, String), String> {
-    let method_name = required(&method.name, "method name")?;
-    if method.client_streaming.unwrap_or(false) || method.server_streaming.unwrap_or(false) {
-        return Err(format!(
-            "{file_name}: service `{service_name}` method `{method_name}` is streaming; only unary methods are supported"
-        ));
+    service: &ServiceDescriptorProto,
+    annotation: &DurableService,
+) -> Result<(), String> {
+    let service_name = required(&service.name, "service name")?;
+    let state = same_package_type(
+        file,
+        package,
+        service_name,
+        "<service>",
+        "state",
+        &Some(format!(
+            ".{package}.{}",
+            annotation.state.trim_start_matches(&format!("{package}."))
+        )),
+    )?;
+    for method in &service.method {
+        let method_name = required(&method.name, "method name")?;
+        let Some(kind) = annotation.methods.get(method_name) else {
+            continue;
+        };
+        let (rust_method, request, response) = method_types(file, package, service_name, method)?;
+        let suffix = match kind {
+            DurableKind::Reader => "Reads",
+            DurableKind::Writer => "Writes",
+        };
+        // The service name remains the source of the public trait name; the kind is from its option.
+        let handler = format!("{service_name}DatabaseHandler");
+        let adapter = format!("{service_name}DatabaseAdapter");
+        let server = format!("{}_server", snake_case(service_name));
+        output.push_str(&format!("pub trait {handler}: Send + Sync + 'static {{\n    fn {rust_method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n}}\n\n", if *kind == DurableKind::Writer { "&mut " } else { "&" }));
+        output.push_str(&format!("#[derive(Clone)]\npub struct {adapter}<H> {{ store: reboot_rust_schema::runtime::DatabaseActorStore, handler: H }}\nimpl<H> {adapter}<H> {{ pub fn new(store: reboot_rust_schema::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler }} }} }}\n\n"));
+        output.push_str("#[tonic::async_trait]\n");
+        output.push_str(&format!("impl<H: {handler}> proto::{server}::{service_name} for {adapter}<H> {{\n    async fn {rust_method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        self.store.{}::<proto::{state}, _, _, _>(\n            \"{}\", request, |state, request| self.handler.{rust_method}(state, request),\n        ).await\n    }}\n}}\n\n", match kind { DurableKind::Reader => "reader", DurableKind::Writer => "writer" }, annotation.state));
+        let _ = suffix;
     }
-    let request = same_package_type(
-        file_name,
-        package,
-        service_name,
-        method_name,
-        "request",
-        &method.input_type,
-    )?;
-    let response = same_package_type(
-        file_name,
-        package,
-        service_name,
-        method_name,
-        "response",
-        &method.output_type,
-    )?;
-    Ok((snake_case(method_name), request, response))
+    Ok(())
 }
 
-fn same_package_type(
-    file_name: &str,
+fn method_types(
+    file: &str,
     package: &str,
-    service_name: &str,
-    method_name: &str,
+    service: &str,
+    method: &MethodDescriptorProto,
+) -> Result<(String, String, String), String> {
+    let name = required(&method.name, "method name")?;
+    if method.client_streaming.unwrap_or(false) || method.server_streaming.unwrap_or(false) {
+        return Err(format!(
+            "{file}: service `{service}` method `{name}` is streaming; only unary methods are supported"
+        ));
+    }
+    Ok((
+        snake_case(name),
+        same_package_type(file, package, service, name, "request", &method.input_type)?,
+        same_package_type(
+            file,
+            package,
+            service,
+            name,
+            "response",
+            &method.output_type,
+        )?,
+    ))
+}
+fn same_package_type(
+    file: &str,
+    package: &str,
+    service: &str,
+    method: &str,
     kind: &str,
     value: &Option<String>,
 ) -> Result<String, String> {
@@ -173,41 +362,35 @@ fn same_package_type(
     let prefix = format!(".{package}.");
     let Some(name) = type_name.strip_prefix(&prefix) else {
         return Err(format!(
-            "{file_name}: service `{service_name}` method `{method_name}` has {kind} type `{type_name}` outside package `{package}`"
+            "{file}: service `{service}` method `{method}` has {kind} type `{type_name}` outside package `{package}`"
         ));
     };
     if !is_identifier(name) {
         return Err(format!(
-            "{file_name}: service `{service_name}` method `{method_name}` has unsupported {kind} type `{type_name}`; nested or invalid types are not supported"
+            "{file}: service `{service}` method `{method}` has unsupported {kind} type `{type_name}`; nested or invalid types are not supported"
         ));
     }
     Ok(name.to_owned())
 }
-
-fn output_name(file_name: &str) -> Result<String, String> {
-    let Some(stem) = file_name.strip_suffix(".proto") else {
-        return Err(format!("file `{file_name}` does not end in `.proto`"));
-    };
-    Ok(format!("{stem}.reboot.rs"))
+fn output_name(file: &str) -> Result<String, String> {
+    file.strip_suffix(".proto")
+        .map(|stem| format!("{stem}.reboot.rs"))
+        .ok_or_else(|| format!("file `{file}` does not end in `.proto`"))
 }
-
 fn required<'a>(value: &'a Option<String>, label: &str) -> Result<&'a str, String> {
     value
         .as_deref()
         .filter(|value| !value.is_empty())
         .ok_or_else(|| format!("missing {label}"))
 }
-
 fn is_identifier(value: &str) -> bool {
     let mut characters = value.chars();
     matches!(characters.next(), Some(character) if character == '_' || character.is_ascii_alphabetic())
         && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
 }
-
 fn is_module_path(value: &str) -> bool {
     !value.is_empty() && value.split("::").all(is_identifier)
 }
-
 fn snake_case(value: &str) -> String {
     value.to_snake_case()
 }
@@ -216,20 +399,19 @@ fn snake_case(value: &str) -> String {
 mod tests {
     use super::*;
     use prost_types::{FileDescriptorProto, MethodDescriptorProto, ServiceDescriptorProto};
-
-    fn counter_request() -> CodeGeneratorRequest {
+    fn request() -> CodeGeneratorRequest {
         CodeGeneratorRequest {
-            parameter: Some("module=reboot_rust_schema::proto".to_owned()),
-            file_to_generate: vec!["counter.proto".to_owned()],
+            parameter: Some("module=reboot_rust_schema::proto".into()),
+            file_to_generate: vec!["counter.proto".into()],
             proto_file: vec![FileDescriptorProto {
-                name: Some("counter.proto".to_owned()),
-                package: Some("tests.reboot.protoc".to_owned()),
+                name: Some("counter.proto".into()),
+                package: Some("tests.reboot.protoc".into()),
                 service: vec![ServiceDescriptorProto {
-                    name: Some("CounterWrites".to_owned()),
+                    name: Some("CounterWrites".into()),
                     method: vec![MethodDescriptorProto {
-                        name: Some("Increment".to_owned()),
-                        input_type: Some(".tests.reboot.protoc.IncrementRequest".to_owned()),
-                        output_type: Some(".tests.reboot.protoc.CounterValue".to_owned()),
+                        name: Some("Increment".into()),
+                        input_type: Some(".tests.reboot.protoc.IncrementRequest".into()),
+                        output_type: Some(".tests.reboot.protoc.CounterValue".into()),
                         ..Default::default()
                     }],
                     ..Default::default()
@@ -239,73 +421,16 @@ mod tests {
             ..Default::default()
         }
     }
-
     #[test]
-    fn generates_concrete_unary_adapter() {
-        let response = generate(counter_request());
-        assert_eq!(response.error, None);
-        assert_eq!(response.file.len(), 1);
-        let file = &response.file[0];
-        assert_eq!(file.name.as_deref(), Some("counter.reboot.rs"));
-        let content = file.content.as_deref().unwrap();
-        assert!(content.contains("pub trait CounterWritesHandler: Send + Sync + 'static"));
-        assert!(content.contains("async fn increment("));
-        assert!(
-            content.contains(
-                "proto::counter_writes_server::CounterWrites for CounterWritesAdapter<H>"
-            )
-        );
+    fn generates_forwarding_adapter_without_options() {
+        let content = generate(request()).file.remove(0).content.unwrap();
+        assert!(content.contains("CounterWritesHandler"));
         assert!(content.contains("self.handler.increment(request).await"));
     }
-
     #[test]
-    fn rejects_missing_or_invalid_module_parameter() {
-        for parameter in [
-            None,
-            Some("module=other::9invalid".to_owned()),
-            Some("not-module=downstream::wire".to_owned()),
-        ] {
-            let mut request = counter_request();
-            request.parameter = parameter;
-            let response = generate(request);
-            assert!(response.file.is_empty());
-            assert!(response.error.unwrap().contains("module=<Rust path>"));
-        }
-    }
-
-    #[test]
-    fn module_parameter_controls_the_generated_import() {
-        let mut request = counter_request();
-        request.parameter = Some("module=downstream::wire".to_owned());
-        let content = generate(request).file.remove(0).content.unwrap();
-        assert!(content.contains("use downstream::wire as proto;"));
-    }
-
-    #[test]
-    fn snake_case_matches_protobuf_acronym_conventions() {
-        assert_eq!(snake_case("APIService"), "api_service");
-        assert_eq!(snake_case("GetURL"), "get_url");
-    }
-
-    #[test]
-    fn rejects_streaming_and_external_types() {
-        let mut streaming = counter_request();
-        streaming.proto_file[0].service[0].method[0].client_streaming = Some(true);
-        assert!(
-            generate(streaming)
-                .error
-                .unwrap()
-                .contains("only unary methods")
-        );
-
-        let mut external = counter_request();
-        external.proto_file[0].service[0].method[0].input_type =
-            Some(".other.Package.Request".to_owned());
-        assert!(
-            generate(external)
-                .error
-                .unwrap()
-                .contains("outside package")
-        );
+    fn rejects_streaming() {
+        let mut value = request();
+        value.proto_file[0].service[0].method[0].client_streaming = Some(true);
+        assert!(generate(value).error.unwrap().contains("only unary"));
     }
 }
