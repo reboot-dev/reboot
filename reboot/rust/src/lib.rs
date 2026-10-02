@@ -201,6 +201,7 @@ pub enum SchemaError {
     InvalidFieldShape(&'static str),
     DuplicateTag(u32),
     DuplicateField(&'static str),
+    DuplicateType(&'static str),
     DuplicateMessage(&'static str),
     DuplicateEnum(&'static str),
     DuplicateOneOf(&'static str),
@@ -232,6 +233,12 @@ impl std::fmt::Display for SchemaError {
             ),
             Self::DuplicateTag(tag) => write!(f, "protobuf tag {tag} is used more than once"),
             Self::DuplicateField(name) => write!(f, "field `{name}` is declared more than once"),
+            Self::DuplicateType(name) => {
+                write!(
+                    f,
+                    "top-level protobuf type `{name}` is declared more than once"
+                )
+            }
             Self::DuplicateMessage(name) => {
                 write!(f, "message `{name}` is declared more than once")
             }
@@ -706,6 +713,7 @@ impl ApplicationSpec {
             }
         }
         validate_reservations(self.state.reserved, self.state.fields, &[])?;
+        let mut type_names = std::collections::BTreeSet::from([self.state.name]);
         let mut enum_names = std::collections::BTreeSet::new();
         for enum_spec in self.enums {
             if enum_spec.name.is_empty() {
@@ -713,6 +721,9 @@ impl ApplicationSpec {
             }
             if !enum_names.insert(enum_spec.name) {
                 return Err(SchemaError::DuplicateEnum(enum_spec.name));
+            }
+            if !type_names.insert(enum_spec.name) {
+                return Err(SchemaError::DuplicateType(enum_spec.name));
             }
             let Some(first) = enum_spec.variants.first() else {
                 return Err(SchemaError::InvalidEnum(enum_spec.name));
@@ -739,6 +750,9 @@ impl ApplicationSpec {
             }
             if !message_names.insert(message.name) {
                 return Err(SchemaError::DuplicateMessage(message.name));
+            }
+            if !type_names.insert(message.name) {
+                return Err(SchemaError::DuplicateType(message.name));
             }
             let mut tags = std::collections::BTreeSet::new();
             let mut field_names = std::collections::BTreeSet::new();
@@ -1406,6 +1420,37 @@ mod tests {
             Ok(1)
         );
         assert_eq!(actor.reader(|state| *state), 1);
+    }
+
+    #[test]
+    fn rejects_duplicate_top_level_type_names() {
+        let mut duplicate_state_name = CLINIC;
+        duplicate_state_name.enums = &[EnumSpec {
+            name: "Clinic",
+            variants: &[EnumVariantSpec {
+                name: "CLINIC_UNSPECIFIED",
+                number: 0,
+            }],
+        }];
+        assert_eq!(
+            duplicate_state_name.validate(),
+            Err(SchemaError::DuplicateType("Clinic"))
+        );
+
+        let mut duplicate_enum_name = CLINIC;
+        duplicate_enum_name.messages = &[MessageSpec {
+            name: "ClinicStatus",
+            fields: &[],
+            oneofs: &[],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
+        }];
+        assert_eq!(
+            duplicate_enum_name.validate(),
+            Err(SchemaError::DuplicateType("ClinicStatus"))
+        );
     }
 
     #[test]

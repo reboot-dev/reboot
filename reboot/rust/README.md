@@ -35,8 +35,9 @@ string assertions alone can happily bless a proto that cannot compile. The
 current DSL emits typed scalar, named nested, enum, `repeated`, `map`, and
 `oneof` request/response models with the same stable tags and requiredness
 metadata as state; enum declarations require a zero/default first variant plus unique
-variant names/numbers, while impossible nested `repeated`/`map` shapes and duplicate
-field names (including fields shared with a `oneof`) are rejected before emission.
+variant names/numbers; top-level state/message/enum names are unique. Impossible nested
+`repeated`/`map` shapes and duplicate field names (including fields shared with a
+`oneof`) are rejected before emission.
 Undeclared/duplicate method request-response models are rejected too.
 `check_backward_compatible_with` also rejects a
 published field tag or enum variant being removed, repurposed, or otherwise
