@@ -12,9 +12,19 @@ use std::sync::Mutex;
 pub enum FieldType {
     Bool,
     Bytes,
+    F32,
     F64,
+    Fixed32,
+    Fixed64,
+    I32,
     I64,
+    SFixed32,
+    SFixed64,
+    SInt32,
+    SInt64,
     String,
+    U32,
+    U64,
     /// A named model emitted elsewhere in this application's proto contract.
     Message(&'static str),
     /// A named enum emitted elsewhere in this application's proto contract.
@@ -52,9 +62,19 @@ impl FieldType {
         match self {
             Self::Bool => "bool".into(),
             Self::Bytes => "bytes".into(),
+            Self::F32 => "float".into(),
             Self::F64 => "double".into(),
+            Self::Fixed32 => "fixed32".into(),
+            Self::Fixed64 => "fixed64".into(),
+            Self::I32 => "int32".into(),
             Self::I64 => "int64".into(),
+            Self::SFixed32 => "sfixed32".into(),
+            Self::SFixed64 => "sfixed64".into(),
+            Self::SInt32 => "sint32".into(),
+            Self::SInt64 => "sint64".into(),
             Self::String => "string".into(),
+            Self::U32 => "uint32".into(),
+            Self::U64 => "uint64".into(),
             Self::Message(name) | Self::Enum(name) => name.into(),
             Self::Repeated(element) => element.proto(),
             Self::Map { key, value } => format!("map<{}, {}>", key.proto(), value.proto()),
@@ -1200,8 +1220,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bytes_fields_emit_as_protobuf_bytes() {
-        assert_eq!(FieldType::Bytes.proto(), "bytes");
+    fn scalar_field_types_emit_protobuf_scalar_names() {
+        for (field_type, proto) in [
+            (FieldType::Bool, "bool"),
+            (FieldType::Bytes, "bytes"),
+            (FieldType::F32, "float"),
+            (FieldType::F64, "double"),
+            (FieldType::Fixed32, "fixed32"),
+            (FieldType::Fixed64, "fixed64"),
+            (FieldType::I32, "int32"),
+            (FieldType::I64, "int64"),
+            (FieldType::SFixed32, "sfixed32"),
+            (FieldType::SFixed64, "sfixed64"),
+            (FieldType::SInt32, "sint32"),
+            (FieldType::SInt64, "sint64"),
+            (FieldType::String, "string"),
+            (FieldType::U32, "uint32"),
+            (FieldType::U64, "uint64"),
+        ] {
+            assert_eq!(field_type.proto(), proto);
+        }
     }
 
     #[test]
