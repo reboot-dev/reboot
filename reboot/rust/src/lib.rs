@@ -230,6 +230,7 @@ pub struct ApplicationSpec {
 #[derive(Debug, Eq, PartialEq)]
 pub enum SchemaError {
     EmptyPackage,
+    InvalidPackage(&'static str),
     EmptyName(&'static str),
     InvalidTag {
         field: &'static str,
@@ -257,6 +258,9 @@ impl std::fmt::Display for SchemaError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::EmptyPackage => write!(f, "package must not be empty"),
+            Self::InvalidPackage(package) => {
+                write!(f, "package `{package}` is not a valid protobuf package")
+            }
             Self::EmptyName(kind) => write!(f, "{kind} name must not be empty"),
             Self::InvalidTag { field, tag } => {
                 write!(f, "field `{field}` has invalid protobuf tag {tag}")
@@ -713,10 +717,24 @@ fn emit_reservations(proto: &mut String, reserved: ReservedFields, indent: &str)
     }
 }
 
+fn is_protobuf_identifier(value: &str) -> bool {
+    let mut characters = value.bytes();
+    matches!(characters.next(), Some(b'a'..=b'z' | b'A'..=b'Z' | b'_'))
+        && characters
+            .all(|character| matches!(character, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_'))
+}
+
+fn is_protobuf_package(value: &str) -> bool {
+    value.split('.').all(is_protobuf_identifier)
+}
+
 impl ApplicationSpec {
     pub fn validate(&self) -> Result<(), SchemaError> {
         if self.package.is_empty() {
             return Err(SchemaError::EmptyPackage);
+        }
+        if !is_protobuf_package(self.package) {
+            return Err(SchemaError::InvalidPackage(self.package));
         }
         if self.state.name.is_empty() {
             return Err(SchemaError::EmptyName("state"));
@@ -1496,6 +1514,18 @@ mod tests {
             Ok(1)
         );
         assert_eq!(actor.reader(|state| *state), 1);
+    }
+
+    #[test]
+    fn rejects_malformed_protobuf_packages() {
+        for package in ["clinic..v1", "clinic-v1", "1clinic.v1", ".clinic"] {
+            let mut invalid = CLINIC;
+            invalid.package = package;
+            assert_eq!(
+                invalid.validate(),
+                Err(SchemaError::InvalidPackage(package))
+            );
+        }
     }
 
     #[test]

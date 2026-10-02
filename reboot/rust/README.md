@@ -36,9 +36,9 @@ current DSL emits all proto3 scalar types plus named nested, enum, `repeated`, `
 `oneof` request/response models; maps accept every protobuf-eligible scalar key type. All
 models retain the same stable tags and requiredness
 metadata as state; enum declarations require a zero/default first variant plus unique
-variant names/numbers; top-level state/message/enum names are unique. Impossible nested
-`repeated`/`map` shapes and duplicate field names (including fields shared with a
-`oneof`) are rejected before emission.
+variant names/numbers; package segments and top-level state/message/enum names are valid and
+unique. Impossible nested `repeated`/`map` shapes and duplicate field names (including
+fields shared with a `oneof`) are rejected before emission.
 Undeclared/duplicate method request-response models are rejected too.
 `check_backward_compatible_with` also rejects a
 published field tag or enum variant being removed, repurposed, or otherwise
