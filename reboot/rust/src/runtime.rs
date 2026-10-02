@@ -14,7 +14,7 @@ use prost::Message;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::{InMemoryActor, proto};
+use crate::{InMemoryActor, database_proto as database, proto};
 
 const STATE_REF_HEADER: &str = "x-reboot-state-ref";
 const IDEMPOTENCY_KEY_HEADER: &str = "x-reboot-idempotency-key";
@@ -220,6 +220,141 @@ fn persist_actor(path: &Path, state: &FileBackedEchoActorState) -> io::Result<()
     result
 }
 
+const ECHO_STATE_TYPE: &str = "tests.reboot.protoc.Echo";
+
+/// A durable single-actor Echo host backed by Reboot's existing Database
+/// sidecar protocol.
+///
+/// The sidecar atomically stores actor state and the idempotent response in one
+/// `Store(sync=true)` request. This host deliberately does not implement
+/// transactions, workflows, tasks, placement, or generic service adaptation.
+#[derive(Clone)]
+pub struct DatabaseBackedHost {
+    database: database::database_client::DatabaseClient<tonic::transport::Channel>,
+    actor_locks: Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
+}
+
+impl DatabaseBackedHost {
+    /// Connects to an existing Reboot Database sidecar.
+    pub async fn connect(endpoint: impl AsRef<str>) -> Result<Self, tonic::transport::Error> {
+        Ok(Self {
+            database: database::database_client::DatabaseClient::connect(
+                endpoint.as_ref().to_owned(),
+            )
+            .await?,
+            actor_locks: Arc::new(Mutex::new(HashMap::new())),
+        })
+    }
+
+    fn lock_for(&self, state_ref: &str) -> Arc<tokio::sync::Mutex<()>> {
+        let mut locks = self
+            .actor_locks
+            .lock()
+            .expect("host actor-lock map mutex poisoned");
+        locks
+            .entry(state_ref.to_owned())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    }
+
+    async fn load_echo(&self, state_ref: &str) -> Result<Option<proto::Echo>, Status> {
+        let mut database = self.database.clone();
+        let response = database
+            .load(database::LoadRequest {
+                actors: vec![database::Actor {
+                    state_type: ECHO_STATE_TYPE.to_owned(),
+                    state_ref: state_ref.to_owned(),
+                    state: None,
+                }],
+                task_ids: vec![],
+            })
+            .await
+            .map_err(database_status)?
+            .into_inner();
+        let Some(actor) = response.actors.into_iter().next() else {
+            return Ok(None);
+        };
+        let Some(state) = actor.state else {
+            return Ok(None);
+        };
+        proto::Echo::decode(state.as_slice())
+            .map(Some)
+            .map_err(|error| Status::internal(format!("invalid persisted Echo state: {error}")))
+    }
+
+    async fn load_completed_reply(
+        &self,
+        state_ref: &str,
+        key: Uuid,
+    ) -> Result<Option<proto::Text>, Status> {
+        let mut database = self.database.clone();
+        let mut stream = database
+            .recover_idempotent_mutations(database::RecoverIdempotentMutationsRequest {
+                state_type: ECHO_STATE_TYPE.to_owned(),
+                state_ref: state_ref.to_owned(),
+                idempotency_key: Some(key.as_bytes().to_vec()),
+                workflow_id: None,
+                workflow_iteration: None,
+            })
+            .await
+            .map_err(database_status)?
+            .into_inner();
+        while let Some(response) = stream.message().await.map_err(database_status)? {
+            for mutation in response.idempotent_mutations {
+                if mutation.key == key.as_bytes() {
+                    return proto::Text::decode(mutation.response.as_slice())
+                        .map(Some)
+                        .map_err(|error| {
+                            Status::internal(format!(
+                                "invalid persisted idempotent reply response: {error}"
+                            ))
+                        });
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    async fn store_reply(
+        &self,
+        state_ref: &str,
+        key: Uuid,
+        state: proto::Echo,
+        response: proto::Text,
+    ) -> Result<(), Status> {
+        let mut database = self.database.clone();
+        database
+            .store(database::StoreRequest {
+                actor_upserts: vec![database::Actor {
+                    state_type: ECHO_STATE_TYPE.to_owned(),
+                    state_ref: state_ref.to_owned(),
+                    state: Some(state.encode_to_vec()),
+                }],
+                task_upserts: vec![],
+                colocated_upserts: vec![],
+                transaction: None,
+                idempotent_mutation: Some(database::IdempotentMutation {
+                    state_type: ECHO_STATE_TYPE.to_owned(),
+                    state_ref: state_ref.to_owned(),
+                    key: key.as_bytes().to_vec(),
+                    response: response.encode_to_vec(),
+                    task_ids: vec![],
+                    workflow_id: None,
+                    workflow_iteration: None,
+                }),
+                ensure_state_types_created: vec![],
+                sync: true,
+            })
+            .await
+            .map_err(database_status)?;
+        Ok(())
+    }
+}
+
+fn database_status(error: tonic::Status) -> Status {
+    Status::unavailable(format!("Reboot database sidecar request failed: {error}"))
+}
+
 fn required_metadata(request: &Request<impl Sized>, name: &'static str) -> Result<String, Status> {
     let value = request
         .metadata()
@@ -287,6 +422,40 @@ impl proto::echo_methods_server::EchoMethods for FileBackedHost {
         let actor = self.actor_for(&request)?;
         let message = actor.reader(|state| state.last_message.clone().unwrap_or_default());
         Ok(Response::new(message))
+    }
+}
+
+#[tonic::async_trait]
+impl proto::echo_methods_server::EchoMethods for DatabaseBackedHost {
+    async fn reply(&self, request: Request<proto::Text>) -> Result<Response<proto::Text>, Status> {
+        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
+        let key = idempotency_key(&request)?;
+        let lock = self.lock_for(&state_ref);
+        let _guard = lock.lock().await;
+
+        if let Some(response) = self.load_completed_reply(&state_ref, key).await? {
+            return Ok(Response::new(response));
+        }
+
+        let response = request.into_inner();
+        let mut state = self.load_echo(&state_ref).await?.unwrap_or_default();
+        state.last_message = Some(response.clone());
+        self.store_reply(&state_ref, key, state, response.clone())
+            .await?;
+        Ok(Response::new(response))
+    }
+
+    async fn last_message(
+        &self,
+        request: Request<proto::Empty>,
+    ) -> Result<Response<proto::Text>, Status> {
+        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
+        let state = self.load_echo(&state_ref).await?;
+        Ok(Response::new(
+            state
+                .and_then(|state| state.last_message)
+                .unwrap_or_default(),
+        ))
     }
 }
 

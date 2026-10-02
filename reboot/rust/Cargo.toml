@@ -15,9 +15,10 @@ path = "src/main.rs"
 
 [dependencies]
 prost = "0.13"
+prost-types = "0.13"
 tonic = "0.12"
 uuid = { version = "1", features = ["v4"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 
 [build-dependencies]
 protoc-bin-vendored = "3"

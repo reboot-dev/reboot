@@ -10,6 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &[
             repository.join("tests/reboot/protoc/explicit_state_annotations_full.proto"),
             repository.join("tests/reboot/protoc/shared.proto"),
+            repository.join("rbt/v1alpha1/database.proto"),
         ],
         &[repository, vendored_include],
     )?;

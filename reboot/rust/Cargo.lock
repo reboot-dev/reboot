@@ -718,6 +718,7 @@ name = "reboot-rust-schema"
 version = "0.0.0"
 dependencies = [
  "prost",
+ "prost-types",
  "protoc-bin-vendored",
  "tempfile",
  "tokio",

@@ -15,6 +15,9 @@ cd reboot/rust
 cargo test --locked
 # Serves the in-memory EchoMethods host on 127.0.0.1:50051.
 cargo run --locked
+# Use Reboot's durable Database sidecar for the single-actor Echo adapter.
+# The endpoint must include its scheme, for example http://127.0.0.1:50053.
+REBOOT_RUST_DATABASE_ENDPOINT=http://127.0.0.1:50053 cargo run --locked
 # Use a local, restart-safe state directory for the Echo host. This remains a
 # single-process development store, not distributed Reboot durability.
 REBOOT_RUST_STATE_DIR=./reboot-rust-state cargo run --locked
@@ -80,11 +83,14 @@ one:
 3. The crate has executable process-local runtime slices: the default
    `InMemoryActor` host has serialized state reads/writes, idempotent
    write-response caching, and rollback of failed transactional writes.
-   `REBOOT_RUST_STATE_DIR` switches the Echo host to `FileBackedHost`, which
-   atomically persists one actor snapshot plus completed writer responses and
-   recovers both across process restart. The file store remains explicitly
-   single-process and has no inter-process locks, compaction, encryption, or
-   distributed coordination.
+   `REBOOT_RUST_DATABASE_ENDPOINT` selects `DatabaseBackedHost`, which uses
+   Reboot's existing Database sidecar to atomically persist an Echo snapshot
+   and its completed writer response in one `Store(sync=true)` request, then
+   recovers a response by UUID before running a retry. It is a durable
+   **single-actor Echo adapter**, not a complete sidecar lifecycle or generic
+   Rust runtime. `REBOOT_RUST_STATE_DIR` instead selects `FileBackedHost` for
+   local restart testing; that file store remains single-process and has no
+   inter-process locks, compaction, encryption, or distributed coordination.
 4. Python and Node generated servicer libraries own context propagation,
    retries, persistent state reads/writes, task/workflow semantics, and gRPC
    registration. Rust still needs the corresponding durable runtime crate.

@@ -489,6 +489,11 @@ pub mod proto {
     tonic::include_proto!("tests.reboot.protoc");
 }
 
+/// Bindings for Reboot's durable database-sidecar protocol.
+pub mod database_proto {
+    tonic::include_proto!("rbt.v1alpha1");
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum ContextError {
     EmptyStateRef,
