@@ -4,7 +4,10 @@ import {
   ReaderContext,
   Reboot,
   TokenVerifier,
+  allowIf,
+  hasVerifiedToken,
 } from "@reboot-dev/reboot";
+import { errors_pb } from "@reboot-dev/reboot-api";
 import { WebContext } from "@reboot-dev/reboot-web";
 import { fork } from "child_process";
 import { strict as assert } from "node:assert";
@@ -43,6 +46,23 @@ class StaticTokenVerifier extends TokenVerifier {
   ): Promise<Auth | null> {
     assert(token === TOKEN_FOR_TEST);
     return null;
+  }
+}
+
+// Verifies `TOKEN_FOR_TEST` and no other token.
+class OnlyTokenForTestVerifier extends TokenVerifier {
+  async verifyToken(
+    context: ReaderContext,
+    token?: string
+  ): Promise<Auth | null> {
+    return token === TOKEN_FOR_TEST ? new Auth({ userId: "test" }) : null;
+  }
+}
+
+// A `GreeterServicer` whose methods require a verified token.
+class AuthenticatedGreeterServicer extends GreeterServicer {
+  authorizer() {
+    return allowIf({ all: [hasVerifiedToken] });
   }
 }
 
@@ -299,6 +319,88 @@ test("Reboot", async (t) => {
         assert(aborted.error instanceof ErrorWithValue);
         assert(aborted.error.value == "Hi!");
       }
+
+      abortController.abort();
+      assert((await items.next()).done);
+    }
+  );
+
+  await t.test(
+    "Reactive reader calls `onUnauthenticated` until the session is renewed",
+    async (t) => {
+      const application = new Application({
+        servicers: [AuthenticatedGreeterServicer],
+        tokenVerifier: new OnlyTokenForTestVerifier(),
+      });
+
+      const rbt = new Reboot();
+      await rbt.start();
+
+      t.after(async () => {
+        await rbt.stop();
+      });
+
+      await rbt.up(application, { localEnvoy: true });
+
+      const [greeter] = await Greeter.create(
+        new WebContext({
+          url: rbt.url(),
+          bearerToken: TOKEN_FOR_TEST,
+        }),
+        {
+          title: "Dr",
+          name: "Jonathan",
+          adjective: "Best",
+        }
+      );
+
+      // The read starts with a token that the verifier rejects.
+      let token = "expired";
+      let calls = 0;
+
+      const context = new WebContext({
+        url: rbt.url(),
+        bearerToken: async () => token,
+        onUnauthenticated: async () => {
+          calls += 1;
+          if (calls === 1) {
+            // The renewal fails, e.g., because the backend is
+            // restarting.
+            return false;
+          }
+          if (calls === 2) {
+            // The renewal reports success, but the token is still the
+            // rejected one.
+            return true;
+          }
+          token = TOKEN_FOR_TEST;
+          return true;
+        },
+      });
+
+      const abortController = new AbortController();
+
+      const [items] = await greeter
+        .reactively()
+        .greet(context, {}, { signal: abortController.signal });
+
+      // The failed renewal yields the error.
+      const first = await nextItem(items);
+      assert(first.aborted?.error instanceof errors_pb.Unauthenticated);
+      assert.equal(calls, 1);
+
+      // The next attempt calls the hook again. It returns `true`, so
+      // the read reconnects right away, and because the token is still
+      // rejected the error is yielded without a third call.
+      const second = await nextItem(items);
+      assert(second.aborted?.error instanceof errors_pb.Unauthenticated);
+      assert.equal(calls, 2);
+
+      // The attempt after the backoff calls the hook a third time,
+      // which renews the token.
+      const third = await nextItem(items);
+      assert(third.response?.message == "Hi , I am Dr Jonathan the Best");
+      assert.equal(calls, 3);
 
       abortController.abort();
       assert((await items.next()).done);
