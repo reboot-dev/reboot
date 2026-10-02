@@ -68,6 +68,13 @@ pub struct StateSpec {
     pub fields: &'static [FieldSpec],
 }
 
+/// A request or response model in the emitted API contract.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MessageSpec {
+    pub name: &'static str,
+    pub fields: &'static [FieldSpec],
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ServiceSpec {
     pub name: &'static str,
@@ -79,11 +86,8 @@ pub struct ServiceSpec {
 pub struct ApplicationSpec {
     pub package: &'static str,
     pub state: StateSpec,
-    /// Request and response message names used by this service. The first
-    /// working slice emits empty declarations for these so the generated
-    /// proto is valid input to `protoc`; field-bearing API models are the
-    /// next layer of the Rust schema DSL.
-    pub message_names: &'static [&'static str],
+    /// Request and response models used by this service.
+    pub messages: &'static [MessageSpec],
     pub service: ServiceSpec,
 }
 
@@ -96,6 +100,7 @@ pub enum SchemaError {
         tag: u32,
     },
     DuplicateTag(u32),
+    DuplicateMessage(&'static str),
     ServiceStateMismatch {
         service: &'static str,
         state: &'static str,
@@ -111,6 +116,9 @@ impl std::fmt::Display for SchemaError {
                 write!(f, "field `{field}` has invalid protobuf tag {tag}")
             }
             Self::DuplicateTag(tag) => write!(f, "protobuf tag {tag} is used more than once"),
+            Self::DuplicateMessage(name) => {
+                write!(f, "message `{name}` is declared more than once")
+            }
             Self::ServiceStateMismatch { service, state } => {
                 write!(f, "service `{service}` does not target state `{state}`")
             }
@@ -240,6 +248,30 @@ impl ApplicationSpec {
                 return Err(SchemaError::DuplicateTag(field.tag));
             }
         }
+        let mut message_names = std::collections::BTreeSet::new();
+        for message in self.messages {
+            if message.name.is_empty() {
+                return Err(SchemaError::EmptyName("message"));
+            }
+            if !message_names.insert(message.name) {
+                return Err(SchemaError::DuplicateMessage(message.name));
+            }
+            let mut tags = std::collections::BTreeSet::new();
+            for field in message.fields {
+                if field.name.is_empty() {
+                    return Err(SchemaError::EmptyName("field"));
+                }
+                if field.tag == 0 || (19000..=19999).contains(&field.tag) {
+                    return Err(SchemaError::InvalidTag {
+                        field: field.name,
+                        tag: field.tag,
+                    });
+                }
+                if !tags.insert(field.tag) {
+                    return Err(SchemaError::DuplicateTag(field.tag));
+                }
+            }
+        }
         Ok(())
     }
 
@@ -268,10 +300,22 @@ impl ApplicationSpec {
         }
         proto.push_str("}\n\n");
 
-        for message_name in self.message_names {
+        for message in self.messages {
             proto.push_str("message ");
-            proto.push_str(message_name);
-            proto.push_str(" {}\n\n");
+            proto.push_str(message.name);
+            proto.push_str(" {\n");
+            for field in message.fields {
+                proto.push_str("  optional ");
+                proto.push_str(field.field_type.proto());
+                proto.push(' ');
+                proto.push_str(field.name);
+                proto.push_str(" = ");
+                proto.push_str(&field.tag.to_string());
+                proto.push_str(" [(rbt.v1alpha1.field).required = ");
+                proto.push_str(if field.required { "true" } else { "false" });
+                proto.push_str("];\n");
+            }
+            proto.push_str("}\n\n");
         }
 
         proto.push_str("service ");
@@ -319,11 +363,41 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
             },
         ],
     },
-    message_names: &[
-        "RenameRequest",
-        "RenameResponse",
-        "DetailsRequest",
-        "DetailsResponse",
+    messages: &[
+        MessageSpec {
+            name: "RenameRequest",
+            fields: &[FieldSpec {
+                name: "name",
+                tag: 1,
+                field_type: FieldType::String,
+                required: true,
+            }],
+        },
+        MessageSpec {
+            name: "RenameResponse",
+            fields: &[],
+        },
+        MessageSpec {
+            name: "DetailsRequest",
+            fields: &[],
+        },
+        MessageSpec {
+            name: "DetailsResponse",
+            fields: &[
+                FieldSpec {
+                    name: "name",
+                    tag: 1,
+                    field_type: FieldType::String,
+                    required: true,
+                },
+                FieldSpec {
+                    name: "phone_number",
+                    tag: 2,
+                    field_type: FieldType::String,
+                    required: false,
+                },
+            ],
+        },
     ],
     service: ServiceSpec {
         name: "ClinicMethods",
@@ -361,7 +435,7 @@ mod tests {
                 "optional string phone_number = 2 [(rbt.v1alpha1.field).required = false];"
             )
         );
-        assert!(proto.contains("message RenameRequest {}"));
+        assert!(proto.contains("message RenameRequest {\n  optional string name = 1"));
         assert!(proto.contains(
             "option (rbt.v1alpha1.method) = { writer: {}, description: \"Renames the clinic.\" };"
         ));
