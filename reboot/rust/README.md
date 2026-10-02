@@ -125,8 +125,8 @@ fn main() {
 ```
 
 The helper uses a vendored `protoc` for that build-script invocation, invokes
-`tonic-build` with `build_server(true)`, writes
-`$OUT_DIR/reboot-rust-descriptor-set.bin`, and emits a proto-relative adapter
+`tonic-build` with `build_server(true)` and `btree_map(["."])`, writes
+$OUT_DIR/reboot-rust-descriptor-set.bin`, and emits a proto-relative adapter
 such as `$OUT_DIR/counter.reboot.rs`. The consumer owns the protobuf module and
 includes both outputs:
 
@@ -202,6 +202,13 @@ import `reboot_rust_schema::runtime` by default. When the runtime Cargo
 dependency is renamed, add `runtime_module=<Rust path>` to
 `--reboot_rust_opt`, for example
 `--reboot_rust_opt=module=crate::proto,runtime_module=reboot`.
+
+The direct plugin cannot choose the map container in consumer-owned Prost
+bindings. For fingerprinted writer requests containing protobuf maps, direct
+plugin consumers must generate deterministic bindings (for example with
+`tonic_build::configure().btree_map(["."])`) so those fields use `BTreeMap`.
+The Cargo-native helper does this automatically; raw direct-plugin generation
+is not changed by it.
 
 For every selected service, the plugin preserves the concrete unary forwarding
 `ServiceHandler`/`ServiceAdapter<H>` output. When `protoc` supplies a genuine

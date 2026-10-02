@@ -1170,6 +1170,7 @@ pub mod test_support {
 mod tests {
     use super::*;
     use crate::ExternalContext;
+    use std::collections::BTreeMap;
 
     async fn start_host() -> (String, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1240,6 +1241,21 @@ mod tests {
                 0x05, 0xaf, 0xe4, 0x61, 0x53, 0x5b, 0x94, 0x1d, 0x04, 0xc2, 0xf7, 0x09, 0xcc, 0xab,
                 0xa5, 0x0c, 0x2b, 0xa8,
             ]
+        );
+    }
+
+    #[test]
+    fn request_fingerprint_is_stable_for_cargo_generated_map_bindings() {
+        let first = proto::MapIncrementRequest {
+            amounts: BTreeMap::from([("alpha".into(), 2), ("beta".into(), 3)]),
+        };
+        let second = proto::MapIncrementRequest {
+            amounts: BTreeMap::from([("beta".into(), 3), ("alpha".into(), 2)]),
+        };
+        let _: &BTreeMap<String, i64> = &first.amounts;
+        assert_eq!(
+            request_fingerprint("tests.reboot.protoc.MapCounterWrites.Increment", &first),
+            request_fingerprint("tests.reboot.protoc.MapCounterWrites.Increment", &second),
         );
     }
 

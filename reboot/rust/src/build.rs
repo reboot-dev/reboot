@@ -91,6 +91,7 @@ where
     unsafe { env::set_var("PROTOC", protoc) };
     let compile = tonic_build::configure()
         .build_server(true)
+        .btree_map(["."])
         .file_descriptor_set_path(&descriptor_set)
         .compile_protos(protos, &includes_with_vendored(includes, &vendored_include));
     match old_protoc {

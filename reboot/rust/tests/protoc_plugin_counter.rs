@@ -94,7 +94,7 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     std::fs::write(
         fixture.join("build.rs"),
         format!(
-            "fn main() {{\n    let repository = std::path::Path::new(\"{}\");\n    reboot::build::compile_protos_with_runtime(\n        &[repository.join(\"tests/reboot/protoc/counter.proto\")],\n        &[repository],\n        \"crate::proto\",\n        \"reboot\",\n    ).unwrap();\n}}\n",
+            "fn main() {{\n    let repository = std::path::Path::new(\"{}\");\n    reboot::build::compile_protos_with_runtime(\n        &[\n            repository.join(\"tests/reboot/protoc/counter.proto\"),\n            repository.join(\"tests/reboot/protoc/map_counter.proto\"),\n        ],\n        &[repository],\n        \"crate::proto\",\n        \"reboot\",\n    ).unwrap();\n}}\n",
             repository.display()
         ),
     )
@@ -119,14 +119,20 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/counter.reboot.rs"));
 }
 
+#[allow(dead_code)]
+mod map_generated {
+    include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/map_counter.reboot.rs"));
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{generated, proto};
+    use super::{generated, map_generated, proto};
     use prost::Message;
     use reboot::{
         runtime::{test_support::start_database, DatabaseActorStore},
         ExternalContext,
     };
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 struct Counter;
@@ -156,6 +162,20 @@ impl generated::CounterReadsDatabaseHandler for Counter {
     }
 }
 
+struct MapCounter;
+
+#[tonic::async_trait]
+impl map_generated::MapCounterWritesDatabaseHandler for MapCounter {
+    async fn increment(
+        &self,
+        state: &mut proto::MapCounter,
+        request: proto::MapIncrementRequest,
+    ) -> Result<proto::MapCounterValue, tonic::Status> {
+        state.value += request.amounts.values().sum::<i64>();
+        Ok(proto::MapCounterValue { value: state.value })
+    }
+}
+
 async fn start_counter_adapters(
     database_endpoint: &str,
 ) -> (String, tokio::task::JoinHandle<()>) {
@@ -178,6 +198,66 @@ async fn start_counter_adapters(
             .unwrap();
     });
     (format!("http://{address}"), server)
+}
+
+async fn start_map_counter_adapters(
+    database_endpoint: &str,
+) -> (String, tokio::task::JoinHandle<()>) {
+    let writes = map_generated::MapCounterWritesDatabaseAdapter::new(
+        DatabaseActorStore::connect(database_endpoint).await.unwrap(),
+        MapCounter,
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(
+                proto::map_counter_writes_server::MapCounterWritesServer::new(writes),
+            )
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+    (format!("http://{address}"), server)
+}
+
+#[tokio::test]
+async fn generated_map_writer_replays_for_equivalent_map_insertion_orders() {
+    let (database_endpoint, database, database_server) = start_database().await;
+    let context = ExternalContext::new("database-durable-map-counter");
+    let key = Uuid::from_u128(21);
+    let (address, server) = start_map_counter_adapters(&database_endpoint).await;
+    let mut writes = proto::map_counter_writes_client::MapCounterWritesClient::connect(address)
+        .await
+        .unwrap();
+
+    let first = proto::MapIncrementRequest {
+        amounts: BTreeMap::from([("alpha".into(), 2), ("beta".into(), 3)]),
+    };
+    let second = proto::MapIncrementRequest {
+        amounts: BTreeMap::from([("beta".into(), 3), ("alpha".into(), 2)]),
+    };
+    assert_eq!(
+        writes
+            .increment(context.writer_with_key(first, key).unwrap())
+            .await
+            .unwrap()
+            .into_inner()
+            .value,
+        5
+    );
+    assert_eq!(
+        writes
+            .increment(context.writer_with_key(second, key).unwrap())
+            .await
+            .unwrap()
+            .into_inner()
+            .value,
+        5
+    );
+    assert_eq!(database.store_requests().len(), 1, "replay must not issue Store");
+    server.abort();
+    database_server.abort();
 }
 
 #[tokio::test]

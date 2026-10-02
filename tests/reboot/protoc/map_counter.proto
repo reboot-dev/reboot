@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+
+package tests.reboot.protoc;
+
+message MapCounter {
+  option (rbt.v1alpha1.state) = {
+    implements: ["tests.reboot.protoc.MapCounterWrites"]
+  };
+  int64 value = 1;
+}
+
+message MapIncrementRequest {
+  map<string, int64> amounts = 1;
+}
+
+message MapCounterValue {
+  int64 value = 1;
+}
+
+service MapCounterWrites {
+  option (rbt.v1alpha1.service) = {
+    state: "tests.reboot.protoc.MapCounter"
+  };
+
+  rpc Increment(MapIncrementRequest) returns (MapCounterValue) {
+    option (rbt.v1alpha1.method).writer = {};
+  }
+}
