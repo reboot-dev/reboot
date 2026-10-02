@@ -20,6 +20,11 @@ from reboot.grpc.options import make_retry_channel_options
 from reboot.settings import MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES
 from typing import AsyncIterator, Mapping, Optional, cast, overload
 
+# Deadline for reading or writing the application metadata. Both calls
+# only read or write one small file, so a call that takes anywhere
+# near this long is never going to answer.
+APPLICATION_METADATA_TIMEOUT_SECONDS = 60
+
 _ffi = FFI()
 _ffi.cdef(
     """
@@ -64,6 +69,11 @@ class DatabaseError(Exception):
 
 class DatabaseServerFailed(DatabaseError):
     """Raised when the database server fails to start."""
+
+
+class DatabaseDeadlineExceeded(DatabaseError):
+    """Raised when the database does not answer a call within its
+    deadline."""
 
 
 class LoadError(DatabaseError):
@@ -686,9 +696,19 @@ class DatabaseClient:
     ) -> Optional[application_metadata_pb2.ApplicationMetadata]:
         """Get application metadata from persistent storage."""
         stub = await self._get_database_stub()
-        response = await stub.GetApplicationMetadata(
-            database_pb2.GetApplicationMetadataRequest()
-        )
+        try:
+            response = await stub.GetApplicationMetadata(
+                database_pb2.GetApplicationMetadataRequest(),
+                timeout=APPLICATION_METADATA_TIMEOUT_SECONDS,
+            )
+        except grpc.aio.AioRpcError as error:
+            if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                raise DatabaseDeadlineExceeded(
+                    f"The database at '{self._target}' did not answer "
+                    "`GetApplicationMetadata` within "
+                    f"{APPLICATION_METADATA_TIMEOUT_SECONDS} seconds"
+                ) from error
+            raise
         return response.metadata if response.HasField('metadata') else None
 
     async def store_application_metadata(
@@ -697,9 +717,21 @@ class DatabaseClient:
     ) -> None:
         """Store application metadata to persistent storage."""
         stub = await self._get_database_stub()
-        await stub.StoreApplicationMetadata(
-            database_pb2.StoreApplicationMetadataRequest(metadata=metadata)
-        )
+        try:
+            await stub.StoreApplicationMetadata(
+                database_pb2.StoreApplicationMetadataRequest(
+                    metadata=metadata
+                ),
+                timeout=APPLICATION_METADATA_TIMEOUT_SECONDS,
+            )
+        except grpc.aio.AioRpcError as error:
+            if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                raise DatabaseDeadlineExceeded(
+                    f"The database at '{self._target}' did not answer "
+                    "`StoreApplicationMetadata` within "
+                    f"{APPLICATION_METADATA_TIMEOUT_SECONDS} seconds"
+                ) from error
+            raise
 
     async def refresh_timestamp(self) -> Timestamp:
         """Get the current timestamp from the database's clock."""
