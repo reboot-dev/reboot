@@ -491,6 +491,410 @@ mod tests {
         (format!("http://{address}"), server)
     }
 
+    type DatabaseStream<T> = tokio_stream::Iter<std::vec::IntoIter<Result<T, Status>>>;
+
+    /// Minimal durable fake exposed through the generated Database Tonic server.
+    /// It implements only the storage semantics this runtime needs, while every
+    /// unused generated RPC remains deliberately well-formed and inert.
+    #[derive(Clone, Default)]
+    struct FakeDatabase {
+        state: Arc<Mutex<FakeDatabaseState>>,
+    }
+
+    #[derive(Default)]
+    struct FakeDatabaseState {
+        actors: HashMap<(String, String), Vec<u8>>,
+        mutations: HashMap<(String, String, Vec<u8>), database::IdempotentMutation>,
+        store_requests: Vec<database::StoreRequest>,
+    }
+
+    impl FakeDatabase {
+        fn store_requests(&self) -> Vec<database::StoreRequest> {
+            self.state
+                .lock()
+                .expect("fake database mutex poisoned")
+                .store_requests
+                .clone()
+        }
+    }
+
+    #[tonic::async_trait]
+    impl database::database_server::Database for FakeDatabase {
+        type PreloadStream = DatabaseStream<database::PreloadResponse>;
+        type RecoverStream = DatabaseStream<database::RecoverResponse>;
+        type RecoverIdempotentMutationsStream =
+            DatabaseStream<database::RecoverIdempotentMutationsResponse>;
+        type ExportStreamedStream = DatabaseStream<database::ExportResponse>;
+
+        async fn colocated_range(
+            &self,
+            _: Request<database::ColocatedRangeRequest>,
+        ) -> Result<Response<database::ColocatedRangeResponse>, Status> {
+            Ok(Response::new(database::ColocatedRangeResponse::default()))
+        }
+
+        async fn colocated_reverse_range(
+            &self,
+            _: Request<database::ColocatedReverseRangeRequest>,
+        ) -> Result<Response<database::ColocatedReverseRangeResponse>, Status> {
+            Ok(Response::new(
+                database::ColocatedReverseRangeResponse::default(),
+            ))
+        }
+
+        async fn find(
+            &self,
+            _: Request<database::FindRequest>,
+        ) -> Result<Response<database::FindResponse>, Status> {
+            Ok(Response::new(database::FindResponse::default()))
+        }
+
+        async fn load(
+            &self,
+            request: Request<database::LoadRequest>,
+        ) -> Result<Response<database::LoadResponse>, Status> {
+            let state = self.state.lock().expect("fake database mutex poisoned");
+            let actors = request
+                .into_inner()
+                .actors
+                .into_iter()
+                .map(|actor| database::Actor {
+                    state: state
+                        .actors
+                        .get(&(actor.state_type.clone(), actor.state_ref.clone()))
+                        .cloned(),
+                    ..actor
+                })
+                .collect();
+            Ok(Response::new(database::LoadResponse {
+                actors,
+                tasks: vec![],
+                timestamp: None,
+            }))
+        }
+
+        async fn preload(
+            &self,
+            _: Request<database::PreloadRequest>,
+        ) -> Result<Response<Self::PreloadStream>, Status> {
+            Ok(Response::new(tokio_stream::iter(vec![])))
+        }
+
+        async fn store(
+            &self,
+            request: Request<database::StoreRequest>,
+        ) -> Result<Response<database::StoreResponse>, Status> {
+            let request = request.into_inner();
+            let [actor] = request.actor_upserts.as_slice() else {
+                return Err(Status::failed_precondition(
+                    "expected exactly one actor upsert",
+                ));
+            };
+            let Some(actor_state) = actor.state.clone() else {
+                return Err(Status::failed_precondition("actor upsert has no state"));
+            };
+            let Some(mutation) = request.idempotent_mutation.clone() else {
+                return Err(Status::failed_precondition(
+                    "expected idempotent mutation in the same Store request",
+                ));
+            };
+            if !request.sync
+                || mutation.state_type != actor.state_type
+                || mutation.state_ref != actor.state_ref
+            {
+                return Err(Status::failed_precondition(
+                    "Store must synchronously atomically contain matching state and mutation",
+                ));
+            }
+
+            // Validate the full request before making either durable value visible.
+            let mut state = self.state.lock().expect("fake database mutex poisoned");
+            state.actors.insert(
+                (actor.state_type.clone(), actor.state_ref.clone()),
+                actor_state,
+            );
+            state.mutations.insert(
+                (
+                    mutation.state_type.clone(),
+                    mutation.state_ref.clone(),
+                    mutation.key.clone(),
+                ),
+                mutation,
+            );
+            state.store_requests.push(request);
+            Ok(Response::new(database::StoreResponse::default()))
+        }
+
+        async fn recover(
+            &self,
+            _: Request<database::RecoverRequest>,
+        ) -> Result<Response<Self::RecoverStream>, Status> {
+            Ok(Response::new(tokio_stream::iter(vec![])))
+        }
+
+        async fn recover_idempotent_mutations(
+            &self,
+            request: Request<database::RecoverIdempotentMutationsRequest>,
+        ) -> Result<Response<Self::RecoverIdempotentMutationsStream>, Status> {
+            let request = request.into_inner();
+            let state = self.state.lock().expect("fake database mutex poisoned");
+            let idempotent_mutations = state
+                .mutations
+                .iter()
+                .filter(|((state_type, state_ref, key), _)| {
+                    state_type == &request.state_type
+                        && state_ref == &request.state_ref
+                        && request
+                            .idempotency_key
+                            .as_ref()
+                            .is_none_or(|wanted| wanted == key)
+                })
+                .map(|(_, mutation)| mutation.clone())
+                .collect();
+            Ok(Response::new(tokio_stream::iter(vec![Ok(
+                database::RecoverIdempotentMutationsResponse {
+                    idempotent_mutations,
+                },
+            )])))
+        }
+
+        async fn transaction_participant_prepare(
+            &self,
+            _: Request<database::TransactionParticipantPrepareRequest>,
+        ) -> Result<Response<database::TransactionParticipantPrepareResponse>, Status> {
+            Ok(Response::new(Default::default()))
+        }
+        async fn transaction_participant_commit(
+            &self,
+            _: Request<database::TransactionParticipantCommitRequest>,
+        ) -> Result<Response<database::TransactionParticipantCommitResponse>, Status> {
+            Ok(Response::new(Default::default()))
+        }
+        async fn transaction_participant_abort(
+            &self,
+            _: Request<database::TransactionParticipantAbortRequest>,
+        ) -> Result<Response<database::TransactionParticipantAbortResponse>, Status> {
+            Ok(Response::new(Default::default()))
+        }
+        async fn transaction_coordinator_prepared(
+            &self,
+            _: Request<database::TransactionCoordinatorPreparedRequest>,
+        ) -> Result<Response<database::TransactionCoordinatorPreparedResponse>, Status> {
+            Ok(Response::new(Default::default()))
+        }
+        async fn transaction_coordinator_prepare(
+            &self,
+            _: Request<database::TransactionCoordinatorPrepareRequest>,
+        ) -> Result<Response<database::TransactionCoordinatorPrepareResponse>, Status> {
+            Ok(Response::new(Default::default()))
+        }
+        async fn transaction_coordinator_cleanup(
+            &self,
+            _: Request<database::TransactionCoordinatorCleanupRequest>,
+        ) -> Result<Response<database::TransactionCoordinatorCleanupResponse>, Status> {
+            Ok(Response::new(Default::default()))
+        }
+        async fn export(
+            &self,
+            _: Request<database::ExportRequest>,
+        ) -> Result<Response<database::ExportResponse>, Status> {
+            Ok(Response::new(Default::default()))
+        }
+        async fn export_streamed(
+            &self,
+            _: Request<database::ExportRequest>,
+        ) -> Result<Response<Self::ExportStreamedStream>, Status> {
+            Ok(Response::new(tokio_stream::iter(vec![])))
+        }
+        async fn get_application_metadata(
+            &self,
+            _: Request<database::GetApplicationMetadataRequest>,
+        ) -> Result<Response<database::GetApplicationMetadataResponse>, Status> {
+            Ok(Response::new(Default::default()))
+        }
+        async fn store_application_metadata(
+            &self,
+            _: Request<database::StoreApplicationMetadataRequest>,
+        ) -> Result<Response<database::StoreApplicationMetadataResponse>, Status> {
+            Ok(Response::new(Default::default()))
+        }
+        async fn refresh_timestamp(
+            &self,
+            _: Request<database::RefreshTimestampRequest>,
+        ) -> Result<Response<database::RefreshTimestampResponse>, Status> {
+            Ok(Response::new(Default::default()))
+        }
+    }
+
+    async fn start_database() -> (String, FakeDatabase, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let database = FakeDatabase::default();
+        let server_database = database.clone();
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(database::database_server::DatabaseServer::new(
+                    server_database,
+                ))
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+        (format!("http://{address}"), database, server)
+    }
+
+    async fn start_database_host(
+        host: DatabaseBackedHost,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(proto::echo_methods_server::EchoMethodsServer::new(host))
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+        (format!("http://{address}"), server)
+    }
+
+    #[tokio::test]
+    async fn database_host_recreation_replays_persisted_reply_and_stores_atomically() {
+        let (database_address, database, database_server) = start_database().await;
+        let context = ExternalContext::new("database-durable-echo");
+        let key = Uuid::from_u128(17);
+
+        let (address, host_server) = start_database_host(
+            DatabaseBackedHost::connect(&database_address)
+                .await
+                .unwrap(),
+        )
+        .await;
+        let mut client = proto::echo_methods_client::EchoMethodsClient::connect(address)
+            .await
+            .unwrap();
+        let first = client
+            .reply(
+                context
+                    .writer_with_key(
+                        proto::Text {
+                            content: "persisted through generated database".into(),
+                        },
+                        key,
+                    )
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(first.content, "persisted through generated database");
+        host_server.abort();
+
+        let (address, host_server) = start_database_host(
+            DatabaseBackedHost::connect(&database_address)
+                .await
+                .unwrap(),
+        )
+        .await;
+        let mut client = proto::echo_methods_client::EchoMethodsClient::connect(address)
+            .await
+            .unwrap();
+        let replay = client
+            .reply(
+                context
+                    .writer_with_key(
+                        proto::Text {
+                            content: "must not overwrite cached reply".into(),
+                        },
+                        key,
+                    )
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(replay.content, "persisted through generated database");
+        let last = client
+            .last_message(context.reader(proto::Empty {}).unwrap())
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(last.content, "persisted through generated database");
+
+        let store_requests = database.store_requests();
+        assert_eq!(store_requests.len(), 1, "replay must not issue Store");
+        let store = &store_requests[0];
+        assert!(store.sync);
+        assert_eq!(store.actor_upserts.len(), 1);
+        let actor = &store.actor_upserts[0];
+        let mutation = store.idempotent_mutation.as_ref().unwrap();
+        assert_eq!(actor.state_type, ECHO_STATE_TYPE);
+        assert_eq!(actor.state_ref, "database-durable-echo");
+        assert_eq!(mutation.state_type, actor.state_type);
+        assert_eq!(mutation.state_ref, actor.state_ref);
+        assert_eq!(mutation.key, key.as_bytes());
+        assert_eq!(
+            proto::Echo::decode(actor.state.as_deref().unwrap()).unwrap(),
+            proto::Echo {
+                last_message: Some(first.clone()),
+            }
+        );
+        assert_eq!(
+            proto::Text::decode(mutation.response.as_slice()).unwrap(),
+            first
+        );
+        host_server.abort();
+        database_server.abort();
+    }
+
+    #[tokio::test]
+    async fn database_host_keeps_state_references_isolated() {
+        let (database_address, database, database_server) = start_database().await;
+        let (address, host_server) = start_database_host(
+            DatabaseBackedHost::connect(&database_address)
+                .await
+                .unwrap(),
+        )
+        .await;
+        let mut client = proto::echo_methods_client::EchoMethodsClient::connect(address)
+            .await
+            .unwrap();
+        let first = ExternalContext::new("database-first");
+        let second = ExternalContext::new("database-second");
+        let shared_key = Uuid::from_u128(18);
+
+        for (context, content) in [(&first, "one"), (&second, "two")] {
+            client
+                .reply(
+                    context
+                        .writer_with_key(
+                            proto::Text {
+                                content: content.into(),
+                            },
+                            shared_key,
+                        )
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+        }
+        let first_last = client
+            .last_message(first.reader(proto::Empty {}).unwrap())
+            .await
+            .unwrap()
+            .into_inner();
+        let second_last = client
+            .last_message(second.reader(proto::Empty {}).unwrap())
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(first_last.content, "one");
+        assert_eq!(second_last.content, "two");
+        assert_eq!(database.store_requests().len(), 2);
+        host_server.abort();
+        database_server.abort();
+    }
+
     #[tokio::test]
     async fn file_backed_host_survives_restart_and_replays_writes() {
         let directory = tempfile::tempdir().unwrap();
