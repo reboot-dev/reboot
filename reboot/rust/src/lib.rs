@@ -234,9 +234,24 @@ impl std::error::Error for SchemaError {}
 pub enum CompatibilityError {
     PackageChanged,
     StateChanged,
+    MissingEnum(&'static str),
+    MissingEnumVariant {
+        enum_name: &'static str,
+        variant: &'static str,
+    },
+    ChangedEnumVariant {
+        enum_name: &'static str,
+        variant: &'static str,
+    },
     MissingMessage(&'static str),
-    MissingField { model: &'static str, tag: u32 },
-    ChangedField { model: &'static str, tag: u32 },
+    MissingField {
+        model: &'static str,
+        tag: u32,
+    },
+    ChangedField {
+        model: &'static str,
+        tag: u32,
+    },
     MissingMethod(&'static str),
     ChangedMethod(&'static str),
 }
@@ -246,6 +261,16 @@ impl std::fmt::Display for CompatibilityError {
         match self {
             Self::PackageChanged => write!(f, "protobuf package changed"),
             Self::StateChanged => write!(f, "service state type changed"),
+            Self::MissingEnum(name) => write!(f, "enum `{name}` was removed"),
+            Self::MissingEnumVariant { enum_name, variant } => {
+                write!(f, "enum variant `{enum_name}.{variant}` was removed")
+            }
+            Self::ChangedEnumVariant { enum_name, variant } => {
+                write!(
+                    f,
+                    "enum variant `{enum_name}.{variant}` changed its numeric value"
+                )
+            }
             Self::MissingMessage(name) => write!(f, "message `{name}` was removed"),
             Self::MissingField { model, tag } => {
                 write!(f, "field tag {tag} was removed from `{model}`")
@@ -294,6 +319,31 @@ fn check_model_compatibility(
             return Err(CompatibilityError::ChangedField {
                 model,
                 tag: previous.tag,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn check_enum_compatibility(
+    previous: &EnumSpec,
+    current: &EnumSpec,
+) -> Result<(), CompatibilityError> {
+    for previous_variant in previous.variants {
+        let Some(next) = current
+            .variants
+            .iter()
+            .find(|variant| variant.name == previous_variant.name)
+        else {
+            return Err(CompatibilityError::MissingEnumVariant {
+                enum_name: previous.name,
+                variant: previous_variant.name,
+            });
+        };
+        if next.number != previous_variant.number {
+            return Err(CompatibilityError::ChangedEnumVariant {
+                enum_name: previous.name,
+                variant: previous_variant.name,
             });
         }
     }
@@ -647,6 +697,17 @@ impl ApplicationSpec {
             self.state.fields,
             &[],
         )?;
+
+        for previous_enum in previous.enums {
+            let Some(current_enum) = self
+                .enums
+                .iter()
+                .find(|enum_spec| enum_spec.name == previous_enum.name)
+            else {
+                return Err(CompatibilityError::MissingEnum(previous_enum.name));
+            };
+            check_enum_compatibility(previous_enum, current_enum)?;
+        }
 
         for previous_message in previous.messages {
             let Some(current_message) = self
@@ -1188,6 +1249,46 @@ mod tests {
                 model: "Clinic",
                 tag: 1,
             })
+        );
+    }
+
+    #[test]
+    fn compatibility_rejects_reassigning_a_published_enum_variant() {
+        let mut changed = CLINIC;
+        changed.enums = &[EnumSpec {
+            name: "ClinicStatus",
+            variants: &[
+                EnumVariantSpec {
+                    name: "CLINIC_STATUS_UNSPECIFIED",
+                    number: 0,
+                },
+                EnumVariantSpec {
+                    name: "CLINIC_STATUS_OPEN",
+                    number: 3,
+                },
+                EnumVariantSpec {
+                    name: "CLINIC_STATUS_CLOSED",
+                    number: 2,
+                },
+            ],
+        }];
+        assert_eq!(changed.validate(), Ok(()));
+        assert_eq!(
+            changed.check_backward_compatible_with(&CLINIC),
+            Err(CompatibilityError::ChangedEnumVariant {
+                enum_name: "ClinicStatus",
+                variant: "CLINIC_STATUS_OPEN",
+            })
+        );
+    }
+
+    #[test]
+    fn compatibility_rejects_removing_a_published_enum() {
+        let mut changed = CLINIC;
+        changed.enums = &[];
+        assert_eq!(
+            changed.check_backward_compatible_with(&CLINIC),
+            Err(CompatibilityError::MissingEnum("ClinicStatus"))
         );
     }
 
