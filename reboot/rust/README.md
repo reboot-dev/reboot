@@ -78,9 +78,9 @@ one:
 
 1. `reboot/cli/commands/dev.py` accepts only `--python` or `--nodejs` and
    chooses `sys.executable` or `node` as the launcher.
-2. `reboot/cli/commands/generate.py` exposes only Python/Node.js codegen and
-   boilerplate plugins; `rbt generate --rust` does not invoke this crate's
-   standalone `protoc-gen-reboot_rust` yet.
+2. `rbt generate` can invoke this crate's prebuilt plugin, but it does not
+   build or install it. Rust generation remains adapter-only and requires
+   pre-existing protobuf bindings.
 3. The crate has executable process-local runtime slices: the default
    `InMemoryActor` host has serialized state reads/writes, idempotent
    write-response caching, and rollback of failed transactional writes.
@@ -117,6 +117,20 @@ PATH="$PWD/target/debug:$PATH" protoc \
   --reboot_rust_out=generated \
   --proto_path=../.. ../../tests/reboot/protoc/counter.proto
 ```
+
+After installing that prebuilt binary on `PATH`, the equivalent Reboot CLI
+invocation is:
+
+```sh
+rbt generate \
+  --rust=generated \
+  --rust-module=reboot_rust_schema::proto \
+  api
+```
+
+This invokes only `protoc-gen-reboot_rust` with the supplied module path. It
+does not build the plugin or generate Prost/Tonic protobuf bindings; provide
+those bindings in the module named by `--rust-module` first.
 
 For every selected service, the plugin preserves the concrete unary forwarding
 `ServiceHandler`/`ServiceAdapter<H>` output. When `protoc` supplies a genuine
