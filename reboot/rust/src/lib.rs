@@ -231,6 +231,10 @@ pub struct ApplicationSpec {
 pub enum SchemaError {
     EmptyPackage,
     InvalidPackage(&'static str),
+    InvalidIdentifier {
+        kind: &'static str,
+        name: &'static str,
+    },
     EmptyName(&'static str),
     InvalidTag {
         field: &'static str,
@@ -260,6 +264,9 @@ impl std::fmt::Display for SchemaError {
             Self::EmptyPackage => write!(f, "package must not be empty"),
             Self::InvalidPackage(package) => {
                 write!(f, "package `{package}` is not a valid protobuf package")
+            }
+            Self::InvalidIdentifier { kind, name } => {
+                write!(f, "{kind} `{name}` is not a valid protobuf identifier")
             }
             Self::EmptyName(kind) => write!(f, "{kind} name must not be empty"),
             Self::InvalidTag { field, tag } => {
@@ -739,8 +746,20 @@ impl ApplicationSpec {
         if self.state.name.is_empty() {
             return Err(SchemaError::EmptyName("state"));
         }
+        if !is_protobuf_identifier(self.state.name) {
+            return Err(SchemaError::InvalidIdentifier {
+                kind: "state",
+                name: self.state.name,
+            });
+        }
         if self.service.name.is_empty() {
             return Err(SchemaError::EmptyName("service"));
+        }
+        if !is_protobuf_identifier(self.service.name) {
+            return Err(SchemaError::InvalidIdentifier {
+                kind: "service",
+                name: self.service.name,
+            });
         }
         if self.service.state != self.state.name {
             return Err(SchemaError::ServiceStateMismatch {
