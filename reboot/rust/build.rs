@@ -6,8 +6,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let repository = std::path::PathBuf::from("../..");
     let vendored_include = protoc_bin_vendored::include_path()?;
-    let descriptor =
-        std::path::PathBuf::from(std::env::var("OUT_DIR")?).join("rbt_v1alpha1_descriptor.bin");
+    let output = std::path::PathBuf::from(std::env::var("OUT_DIR")?);
+    let descriptor = output.join("rbt_v1alpha1_descriptor.bin");
+    let placement_output = output.join("placement_proto");
+    std::fs::create_dir_all(&placement_output)?;
     tonic_build::configure()
         .build_server(true)
         .btree_map(["."])
@@ -21,8 +23,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 repository.join("rbt/v1alpha1/database.proto"),
                 repository.join("rbt/v1alpha1/transactions.proto"),
                 repository.join("rbt/v1alpha1/native_2pc.proto"),
-                repository.join("rbt/v1alpha1/placement_planner.proto"),
             ],
+            &[repository.clone(), vendored_include.clone()],
+        )?;
+    tonic_build::configure()
+        .build_client(false)
+        .build_server(false)
+        .out_dir(placement_output)
+        .compile_protos(
+            &[repository.join("rbt/v1alpha1/placement_planner.proto")],
             &[repository, vendored_include],
         )?;
     Ok(())

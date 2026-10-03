@@ -7,14 +7,15 @@
 
 use std::{
     collections::BTreeMap,
+    net::Ipv6Addr,
     sync::{Arc, RwLock},
 };
 
 use tonic::Status;
 
 use crate::{
-    database_proto as proto,
     native_2pc::{Native2pcPlacementPlan, Native2pcRoute, Native2pcShardRoute, NativeActorId},
+    placement_proto as proto,
 };
 
 /// Explicit application selection is required: actor state type does not imply
@@ -44,12 +45,34 @@ pub struct NativeRoutableAddress(String);
 
 impl NativeRoutableAddress {
     pub fn from_host_port(host: &str, port: i32) -> Result<Self, Status> {
-        if host.is_empty() || port <= 0 {
+        if host.is_empty()
+            || host.contains(['/', '?', '#', '@'])
+            || host
+                .bytes()
+                .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
+        {
             return Err(Status::invalid_argument(
-                "native placement server host and positive port are required",
+                "native placement server host is not a valid authority",
             ));
         }
-        Ok(Self(format!("http://{host}:{port}")))
+        if !(1..=65_535).contains(&port) {
+            return Err(Status::invalid_argument(
+                "native placement server port must be in 1..=65535",
+            ));
+        }
+        let authority = if host.parse::<Ipv6Addr>().is_ok() {
+            format!("[{host}]:{port}")
+        } else {
+            format!("{host}:{port}")
+        };
+        let authority = authority.parse::<http::uri::Authority>().map_err(|_| {
+            Status::invalid_argument("native placement server host is not a valid authority")
+        })?;
+        let endpoint = format!("http://{authority}");
+        endpoint.parse::<http::Uri>().map_err(|_| {
+            Status::invalid_argument("native placement server endpoint is not a valid URI")
+        })?;
+        Ok(Self(endpoint))
     }
 
     pub fn as_str(&self) -> &str {
@@ -80,10 +103,19 @@ impl PlanOnlyNative2pcPlacement {
     pub fn install(&self, response: proto::ListenForPlanResponse) -> Result<i64, Status> {
         let snapshot = Arc::new(snapshot_from_response(response)?);
         let version = snapshot.version;
-        *self
+        let mut current = self
             .snapshot
             .write()
-            .map_err(|_| Status::internal("native placement lock poisoned"))? = Some(snapshot);
+            .map_err(|_| Status::internal("native placement lock poisoned"))?;
+        if current
+            .as_ref()
+            .is_some_and(|current| version <= current.version)
+        {
+            return Err(Status::failed_precondition(
+                "native placement plan version must strictly increase",
+            ));
+        }
+        *current = Some(snapshot);
         Ok(version)
     }
 
@@ -310,5 +342,54 @@ mod tests {
         let mut bad_endpoint = response(1, "one.internal:5001");
         bad_endpoint.servers[0].address.as_mut().unwrap().port = 0;
         assert!(placement.install(bad_endpoint).is_err());
+    }
+
+    #[test]
+    fn endpoints_are_uri_validated_and_ipv6_is_bracketed() {
+        assert_eq!(
+            NativeRoutableAddress::from_host_port("127.0.0.1", 5001)
+                .unwrap()
+                .as_str(),
+            "http://127.0.0.1:5001"
+        );
+        assert_eq!(
+            NativeRoutableAddress::from_host_port("planner.internal", 443)
+                .unwrap()
+                .as_str(),
+            "http://planner.internal:443"
+        );
+        assert_eq!(
+            NativeRoutableAddress::from_host_port("::1", 5001)
+                .unwrap()
+                .as_str(),
+            "http://[::1]:5001"
+        );
+        for host in ["", "http://planner", "planner/path", "bad host"] {
+            assert!(NativeRoutableAddress::from_host_port(host, 5001).is_err());
+        }
+        assert!(NativeRoutableAddress::from_host_port("planner", 65_536).is_err());
+    }
+
+    #[test]
+    fn out_of_order_plans_cannot_rollback_a_snapshot() {
+        let placement = PlanOnlyNative2pcPlacement::new();
+        let app = NativeApplicationId::new("app").unwrap();
+        let actor = NativeActorId::new("example.State", "actor").unwrap();
+        placement
+            .install(response(3, "three.internal:5003"))
+            .unwrap();
+        for version in [3, 2] {
+            assert_eq!(
+                placement
+                    .install(response(version, "old.internal:5001"))
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::FailedPrecondition
+            );
+        }
+        assert_eq!(
+            placement.route(&app, &actor).unwrap().address,
+            "http://three.internal:5003"
+        );
     }
 }

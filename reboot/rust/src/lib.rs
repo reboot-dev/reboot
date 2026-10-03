@@ -20,6 +20,11 @@ pub mod durable_coordinator;
 pub mod durable_participant;
 pub mod native_2pc;
 pub mod placement;
+/// Planner DTOs only: the Rust SDK deliberately does not expose planner gRPC
+/// clients/servers or own the planner stream lifecycle.
+pub mod placement_proto {
+    include!(concat!(env!("OUT_DIR"), "/placement_proto/rbt.v1alpha1.rs"));
+}
 pub mod runtime;
 pub mod successful_trailers;
 
