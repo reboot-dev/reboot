@@ -2392,6 +2392,7 @@ mod tests {
             }),
             enrollment_digest: vec![4, 5, 6],
             phase: database_proto::native2pc_participant_record::Phase::Prepared as i32,
+            effects: Some(database_proto::Native2pcActorEffects::default()),
         };
 
         let encoded = record.encode_to_vec();
@@ -2496,6 +2497,7 @@ mod tests {
                 ("coordinator", 4, Type::Message, Label::Optional),
                 ("enrollment_digest", 5, Type::Bytes, Label::Optional),
                 ("phase", 6, Type::Enum, Label::Optional),
+                ("effects", 7, Type::Message, Label::Optional),
             ],
         );
         assert_eq!(
@@ -2523,6 +2525,7 @@ mod tests {
                 ("PREPARED", 2),
                 ("COMMITTED", 3),
                 ("ABORTED", 4),
+                ("STAGED", 5),
             ]
         );
         assert_eq!(
@@ -2646,6 +2649,12 @@ mod tests {
                             "PutParticipant",
                             ".rbt.v1alpha1.Native2pcPutParticipantRequest",
                             ".rbt.v1alpha1.Native2pcPutParticipantResponse",
+                            false
+                        ),
+                        (
+                            "StageParticipant",
+                            ".rbt.v1alpha1.Native2pcStageParticipantRequest",
+                            ".rbt.v1alpha1.Native2pcStageParticipantResponse",
                             false
                         ),
                         (

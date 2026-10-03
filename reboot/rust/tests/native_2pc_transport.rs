@@ -41,6 +41,19 @@ impl proto::native2pc_database_server::Native2pcDatabase for NativeDatabase {
         Ok(Response::new(Default::default()))
     }
 
+    async fn stage_participant(
+        &self,
+        request: Request<proto::Native2pcStageParticipantRequest>,
+    ) -> Result<Response<proto::Native2pcStageParticipantResponse>, Status> {
+        let participant = request.into_inner().participant.unwrap();
+        assert_eq!(
+            participant.phase,
+            proto::native2pc_participant_record::Phase::Staged as i32
+        );
+        assert!(participant.effects.is_some());
+        Ok(Response::new(Default::default()))
+    }
+
     async fn put_commit_decision(
         &self,
         _: Request<proto::Native2pcPutCommitDecisionRequest>,
@@ -184,7 +197,11 @@ async fn native_tonic_clients_reach_only_native_services() {
         .await
         .unwrap();
     sidecar
-        .put_participant(requests.put_participant(&participant_id, true))
+        .stage_participant(requests.stage_participant(&participant_id))
+        .await
+        .unwrap();
+    sidecar
+        .put_participant(requests.put_participant(&participant_id))
         .await
         .unwrap();
     sidecar

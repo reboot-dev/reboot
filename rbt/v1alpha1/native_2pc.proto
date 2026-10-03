@@ -43,7 +43,26 @@ message Native2pcCoordinatorRecord {
   Phase phase = 6;
 }
 
-// Durable native participant state.
+// Opaque, native-v1 effects staged for one enrolled actor. These deliberately
+// are not legacy Task or IdempotentMutation encodings. A later native actor
+// runtime owns their interpretation; the sidecar owns their identity-bound
+// durability and terminal publication.
+message Native2pcEffect {
+  // Nonempty native-v1 application key, canonical within its effect list.
+  bytes key = 1;
+  // Nonempty opaque native-v1 payload.
+  bytes payload = 2;
+}
+
+message Native2pcActorEffects {
+  // Presence distinguishes no state write from an intentional empty state.
+  optional bytes state = 1;
+  // Sorted, duplicate-free native-v1 effects.
+  repeated Native2pcEffect effects = 2;
+}
+
+// Durable native participant state. STAGED is retained separately until an
+// exact PREPARED transition consumes it; a terminal never manufactures state.
 message Native2pcParticipantRecord {
   enum Phase {
     UNSPECIFIED = 0;
@@ -51,6 +70,7 @@ message Native2pcParticipantRecord {
     PREPARED = 2;
     COMMITTED = 3;
     ABORTED = 4;
+    STAGED = 5;
   }
 
   Native2pcProtocol protocol = 1;
@@ -59,6 +79,18 @@ message Native2pcParticipantRecord {
   Native2pcActorId coordinator = 4;
   bytes enrollment_digest = 5;
   Phase phase = 6;
+  Native2pcActorEffects effects = 7;
+}
+
+// The immutable effect journal published atomically with a COMMITTED terminal
+// participant record and its identity-bound terminal receipt.
+message Native2pcAppliedActorEffects {
+  Native2pcProtocol protocol = 1;
+  bytes root_transaction_id = 2;
+  Native2pcActorId participant = 3;
+  Native2pcActorId coordinator = 4;
+  bytes enrollment_digest = 5;
+  Native2pcActorEffects effects = 6;
 }
 
 // Capability negotiation is explicit and version-bound so native peers never
@@ -153,6 +185,14 @@ message Native2pcPutParticipantRequest {
 
 message Native2pcPutParticipantResponse {}
 
+// Staging is a separate durable boundary. It requires a sealed PREPARING
+// enrollment and is idempotent only for the exact same identity and effects.
+message Native2pcStageParticipantRequest {
+  Native2pcParticipantRecord participant = 1;
+}
+
+message Native2pcStageParticipantResponse {}
+
 message Native2pcPutCommitDecisionRequest {
   Native2pcProtocol protocol = 1;
   bytes root_transaction_id = 2;
@@ -193,6 +233,8 @@ service Native2pcDatabase {
       returns (Native2pcPutCoordinatorResponse);
   rpc PutParticipant(Native2pcPutParticipantRequest)
       returns (Native2pcPutParticipantResponse);
+  rpc StageParticipant(Native2pcStageParticipantRequest)
+      returns (Native2pcStageParticipantResponse);
   rpc PutCommitDecision(Native2pcPutCommitDecisionRequest)
       returns (Native2pcPutCommitDecisionResponse);
   rpc PutAbortDecision(Native2pcPutAbortDecisionRequest)

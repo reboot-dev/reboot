@@ -2152,6 +2152,9 @@ TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
   *persisted->mutable_coordinator() = coordinator;
   persisted->set_enrollment_digest(digest);
   persisted->set_phase(v1alpha1::Native2pcParticipantRecord::PREPARED);
+  auto* effect = persisted->mutable_effects()->add_effects();
+  effect->set_key("task/1");
+  effect->set_payload("native-effect");
   v1alpha1::Native2pcPutParticipantResponse participant_response;
   v1alpha1::Native2pcPutParticipantRequest active_participant = put_participant;
   active_participant.mutable_participant()->set_phase(
@@ -2165,8 +2168,54 @@ TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
               active_participant,
               &participant_response)
           .error_code());
+  // A prepare cannot fabricate the durable pre-prepare boundary.
+  grpc::ClientContext unstaged_prepare_context;
+  EXPECT_EQ(
+      grpc::StatusCode::FAILED_PRECONDITION,
+      native_stub
+          ->PutParticipant(
+              &unstaged_prepare_context, put_participant, &participant_response)
+          .error_code());
+  v1alpha1::Native2pcStageParticipantRequest stage_participant;
+  *stage_participant.mutable_participant() = *persisted;
+  stage_participant.mutable_participant()->set_phase(
+      v1alpha1::Native2pcParticipantRecord::STAGED);
+  v1alpha1::Native2pcStageParticipantResponse stage_response;
+  v1alpha1::Native2pcStageParticipantRequest invalid_effect_stage = stage_participant;
+  invalid_effect_stage.mutable_participant()->mutable_effects()->mutable_effects(0)->clear_payload();
+  grpc::ClientContext invalid_effect_stage_context;
+  EXPECT_EQ(
+      grpc::StatusCode::INVALID_ARGUMENT,
+      native_stub
+          ->StageParticipant(
+              &invalid_effect_stage_context, invalid_effect_stage, &stage_response)
+          .error_code());
+  grpc::ClientContext stage_context;
+  ASSERT_TRUE(native_stub
+                  ->StageParticipant(&stage_context, stage_participant, &stage_response)
+                  .ok());
   grpc::ClientContext participant_context;
   ASSERT_TRUE(native_stub->PutParticipant(&participant_context, put_participant, &participant_response).ok());
+  grpc::ClientContext prepared_replay_context;
+  EXPECT_TRUE(native_stub
+                  ->PutParticipant(
+                      &prepared_replay_context, put_participant, &participant_response)
+                  .ok());
+  // Re-staging after prepare may only replay the exact retained effects; it
+  // never recreates an orphan staged record.
+  grpc::ClientContext staged_replay_context;
+  EXPECT_TRUE(native_stub
+                  ->StageParticipant(&staged_replay_context, stage_participant, &stage_response)
+                  .ok());
+  v1alpha1::Native2pcStageParticipantRequest conflicting_stage = stage_participant;
+  conflicting_stage.mutable_participant()->mutable_effects()->mutable_effects(0)->set_payload(
+      "conflicting-native-effect");
+  grpc::ClientContext conflicting_stage_context;
+  EXPECT_EQ(
+      grpc::StatusCode::ALREADY_EXISTS,
+      native_stub
+          ->StageParticipant(&conflicting_stage_context, conflicting_stage, &stage_response)
+          .error_code());
 
   // Same coordinator/digest is insufficient: the actor must be enrolled.
   const auto outsider = actor("Participant", "outsider");
@@ -2181,6 +2230,18 @@ TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
   ASSERT_TRUE(native_stub->TerminalParticipant(&terminal_context, terminal_request, &terminal_response).ok());
   grpc::ClientContext terminal_retry_context;
   EXPECT_TRUE(native_stub->TerminalParticipant(&terminal_retry_context, terminal_request, &terminal_response).ok());
+  // Staging and prepare retries remain identity/effect idempotent after the
+  // participant has terminalized; neither resurrects a staged record.
+  grpc::ClientContext terminal_stage_replay_context;
+  EXPECT_TRUE(native_stub
+                  ->StageParticipant(
+                      &terminal_stage_replay_context, stage_participant, &stage_response)
+                  .ok());
+  grpc::ClientContext terminal_prepare_replay_context;
+  EXPECT_TRUE(native_stub
+                  ->PutParticipant(
+                      &terminal_prepare_replay_context, put_participant, &participant_response)
+                  .ok());
   EXPECT_EQ(v1alpha1::Native2pcParticipantRecord::COMMITTED, terminal_response.terminal_phase());
   *terminal->mutable_participant() = outsider;
   grpc::ClientContext outsider_terminal_context;
@@ -2224,6 +2285,17 @@ TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
   expected_commit_receipt.set_decision(
       v1alpha1::Native2pcTerminalRequest::COMMIT);
   EXPECT_EQ(expected_commit_receipt.SerializeAsString(), *committed_receipt);
+  const auto applied_effects_record = get_default_record(native_key("a", root));
+  ASSERT_TRUE(applied_effects_record.has_value());
+  v1alpha1::Native2pcAppliedActorEffects applied_effects;
+  ASSERT_TRUE(applied_effects.ParseFromString(*applied_effects_record));
+  EXPECT_EQ(root, applied_effects.root_transaction_id());
+  EXPECT_EQ(participant.SerializeAsString(),
+            applied_effects.participant().SerializeAsString());
+  EXPECT_EQ(digest, applied_effects.enrollment_digest());
+  EXPECT_EQ(persisted->effects().SerializeAsString(),
+            applied_effects.effects().SerializeAsString());
+  EXPECT_FALSE(get_default_record(native_key("s", root)).has_value());
 
   // Exercise a distinct durable abort decision and its idempotent terminal
   // delivery. Abort recovery must be distinguishable from a stale PREPARING
@@ -2236,14 +2308,11 @@ TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
                   ->PutCoordinator(
                       &abort_enrollment_context, abort_enrollment, &put_response)
                   .ok());
-  v1alpha1::Native2pcPutParticipantRequest abort_participant = put_participant;
-  abort_participant.mutable_participant()->set_root_transaction_id(abort_root);
-  grpc::ClientContext abort_participant_context;
+  v1alpha1::Native2pcStageParticipantRequest abort_stage = stage_participant;
+  abort_stage.mutable_participant()->set_root_transaction_id(abort_root);
+  grpc::ClientContext abort_stage_context;
   ASSERT_TRUE(native_stub
-                  ->PutParticipant(
-                      &abort_participant_context,
-                      abort_participant,
-                      &participant_response)
+                  ->StageParticipant(&abort_stage_context, abort_stage, &stage_response)
                   .ok());
   v1alpha1::Native2pcPutAbortDecisionRequest abort_decision;
   *abort_decision.mutable_protocol() = protocol();
@@ -2286,6 +2355,8 @@ TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
   const auto aborted_receipt = get_default_record(native_key("t", abort_root));
   ASSERT_TRUE(aborted_receipt.has_value());
   EXPECT_EQ(abort_terminal.terminal().SerializeAsString(), *aborted_receipt);
+  EXPECT_FALSE(get_default_record(native_key("a", abort_root)).has_value());
+  EXPECT_FALSE(get_default_record(native_key("s", abort_root)).has_value());
 
   // Native recovery scans only n2pc/v1 and ignores retained receipt keys and
   // legacy data. Verify exact retained coordinator and participant outcomes,

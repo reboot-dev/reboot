@@ -226,6 +226,22 @@ fn validate_coordinator_request(
     Ok(())
 }
 
+fn validate_effects(effects: &proto::Native2pcActorEffects) -> Result<(), Status> {
+    let mut prior: Option<&[u8]> = None;
+    for effect in &effects.effects {
+        if effect.key.is_empty() || effect.payload.is_empty() {
+            return Err(invalid("native effect keys and payloads must be nonempty"));
+        }
+        if let Some(prior) = prior
+            && prior >= effect.key.as_slice()
+        {
+            return Err(invalid("native effects must be sorted and duplicate-free"));
+        }
+        prior = Some(effect.key.as_slice());
+    }
+    Ok(())
+}
+
 fn validate_participant_request(
     request: &proto::Native2pcPutParticipantRequest,
 ) -> Result<(), Status> {
@@ -245,14 +261,18 @@ fn validate_participant_request(
     )?;
     if !matches!(
         proto::native2pc_participant_record::Phase::try_from(record.phase),
-        Ok(proto::native2pc_participant_record::Phase::Active)
+        Ok(proto::native2pc_participant_record::Phase::Staged)
             | Ok(proto::native2pc_participant_record::Phase::Prepared)
     ) {
         return Err(invalid(
-            "native participant phase must be ACTIVE or PREPARED",
+            "native participant phase must be STAGED or PREPARED",
         ));
     }
-    Ok(())
+    let effects = record
+        .effects
+        .as_ref()
+        .ok_or_else(|| invalid("native participant effects are required"))?;
+    validate_effects(effects)
 }
 
 fn validate_decision(
@@ -345,12 +365,31 @@ impl Native2pcRequests {
         }
     }
 
-    /// Builds the explicit participant record required before a native terminal
-    /// operation. This does not carry or claim staged actor effects.
+    /// Builds a native participant record. Effects are an explicit native-v1
+    /// envelope; an absent envelope is rejected before transport I/O.
+    pub fn stage_participant(
+        &self,
+        participant: &NativeActorId,
+    ) -> proto::Native2pcStageParticipantRequest {
+        proto::Native2pcStageParticipantRequest {
+            participant: Some(proto::Native2pcParticipantRecord {
+                protocol: Some(protocol()),
+                root_transaction_id: self.root.bytes(),
+                participant: Some(participant.to_proto()),
+                coordinator: Some(self.coordinator.to_proto()),
+                enrollment_digest: self.enrollment.digest.clone(),
+                phase: proto::native2pc_participant_record::Phase::Staged as i32,
+                effects: Some(proto::Native2pcActorEffects::default()),
+            }),
+        }
+    }
+
+    /// Builds the exact PREPARED record required by the Native2pc persistence
+    /// RPC. Staging uses `stage_participant`; this method intentionally has no
+    /// phase toggle so it cannot construct a request the sidecar rejects.
     pub fn put_participant(
         &self,
         participant: &NativeActorId,
-        prepared: bool,
     ) -> proto::Native2pcPutParticipantRequest {
         proto::Native2pcPutParticipantRequest {
             participant: Some(proto::Native2pcParticipantRecord {
@@ -359,11 +398,8 @@ impl Native2pcRequests {
                 participant: Some(participant.to_proto()),
                 coordinator: Some(self.coordinator.to_proto()),
                 enrollment_digest: self.enrollment.digest.clone(),
-                phase: if prepared {
-                    proto::native2pc_participant_record::Phase::Prepared as i32
-                } else {
-                    proto::native2pc_participant_record::Phase::Active as i32
-                },
+                phase: proto::native2pc_participant_record::Phase::Prepared as i32,
+                effects: Some(proto::Native2pcActorEffects::default()),
             }),
         }
     }
@@ -435,6 +471,10 @@ pub trait Native2pcDatabaseSidecar: Send + Sync + 'static {
         &self,
         request: proto::Native2pcPutParticipantRequest,
     ) -> NativeFuture<'_, proto::Native2pcPutParticipantResponse>;
+    fn stage_participant(
+        &self,
+        request: proto::Native2pcStageParticipantRequest,
+    ) -> NativeFuture<'_, proto::Native2pcStageParticipantResponse>;
     fn put_commit_decision(
         &self,
         request: proto::Native2pcPutCommitDecisionRequest,
@@ -532,6 +572,30 @@ impl Native2pcDatabaseSidecar for TonicNative2pcDatabaseSidecar {
                 .lock()
                 .await
                 .put_participant(request)
+                .await
+                .map(Response::into_inner)
+        })
+    }
+
+    fn stage_participant(
+        &self,
+        request: proto::Native2pcStageParticipantRequest,
+    ) -> NativeFuture<'_, proto::Native2pcStageParticipantResponse> {
+        Box::pin(async move {
+            let participant = request
+                .participant
+                .as_ref()
+                .ok_or_else(|| invalid("native participant record is required"))?;
+            validate_participant_request(&proto::Native2pcPutParticipantRequest {
+                participant: Some(participant.clone()),
+            })?;
+            if participant.phase != proto::native2pc_participant_record::Phase::Staged as i32 {
+                return Err(invalid("native staged participant phase must be STAGED"));
+            }
+            self.client
+                .lock()
+                .await
+                .stage_participant(request)
                 .await
                 .map(Response::into_inner)
         })
@@ -804,7 +868,7 @@ mod tests {
         );
 
         let prepared = requests
-            .put_participant(&participant("a"), true)
+            .put_participant(&participant("a"))
             .participant
             .unwrap();
         assert_eq!(
@@ -828,6 +892,47 @@ mod tests {
         );
         assert_eq!(
             validate_participant_request(&proto::Native2pcPutParticipantRequest::default())
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        let mut empty_effect = requests().put_participant(&participant("a"));
+        empty_effect
+            .participant
+            .as_mut()
+            .unwrap()
+            .effects
+            .as_mut()
+            .unwrap()
+            .effects
+            .push(proto::Native2pcEffect {
+                key: vec![],
+                payload: vec![1],
+            });
+        assert_eq!(
+            validate_participant_request(&empty_effect)
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        let mut unsorted_effects = requests().put_participant(&participant("a"));
+        let effects = unsorted_effects
+            .participant
+            .as_mut()
+            .unwrap()
+            .effects
+            .as_mut()
+            .unwrap();
+        effects.effects.push(proto::Native2pcEffect {
+            key: b"z".to_vec(),
+            payload: vec![1],
+        });
+        effects.effects.push(proto::Native2pcEffect {
+            key: b"a".to_vec(),
+            payload: vec![1],
+        });
+        assert_eq!(
+            validate_participant_request(&unsorted_effects)
                 .unwrap_err()
                 .code(),
             tonic::Code::InvalidArgument
