@@ -320,6 +320,59 @@ impl<C: ParticipantSidecar> ParticipantEndpoint for InProcessParticipantEndpoint
     }
 }
 
+/// Resolves exactly one explicitly configured local participant target.
+///
+/// This is a composition helper for applications with one known actor host. It
+/// validates the requested state type and reference before exposing that host;
+/// it neither discovers participants nor makes routing or placement decisions.
+pub struct SingleParticipantResolver<C: ParticipantSidecar> {
+    target: ParticipantTarget,
+    endpoint: Arc<InProcessParticipantEndpoint<C>>,
+}
+
+impl<C: ParticipantSidecar> SingleParticipantResolver<C> {
+    /// Binds an injected local host to one complete participant identity.
+    pub fn new(
+        target: ParticipantTarget,
+        host: DurableActorParticipantHost<C>,
+    ) -> Result<Self, Status> {
+        Self::validate_target(&target)?;
+        Ok(Self {
+            target,
+            endpoint: Arc::new(InProcessParticipantEndpoint::new(host)),
+        })
+    }
+
+    fn validate_target(target: &ParticipantTarget) -> Result<(), Status> {
+        if target.state_type.is_empty() || target.state_ref.is_empty() {
+            return Err(Status::invalid_argument(
+                "participant state type and reference must be specified",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl<C: ParticipantSidecar> ParticipantResolver for SingleParticipantResolver<C> {
+    type Endpoint = InProcessParticipantEndpoint<C>;
+
+    fn resolve(
+        &self,
+        participant: &ParticipantTarget,
+    ) -> CoordinatorFuture<'_, Arc<Self::Endpoint>> {
+        let result = (|| {
+            Self::validate_target(participant)?;
+            if participant != &self.target {
+                return Err(Status::unavailable(
+                    "configured local participant target is unavailable",
+                ));
+            }
+            Ok(Arc::clone(&self.endpoint))
+        })();
+        Box::pin(async move { result })
+    }
+}
+
 pub struct DurableRootCoordinator<C: CoordinatorSidecar, R: ParticipantResolver> {
     sidecar: Arc<C>,
     resolver: Arc<R>,
@@ -612,6 +665,10 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
+    use crate::durable_participant::{
+        ActorTransactionStart, DurableActorParticipant, PendingActorEffects,
+    };
+
     #[derive(Clone, Debug, PartialEq)]
     enum Call {
         DbPrepare(database::TransactionCoordinatorPrepareRequest),
@@ -740,6 +797,176 @@ mod tests {
         endpoint: Arc<MockEndpoint>,
     ) -> DurableRootCoordinator<MockSidecar, MockResolver> {
         DurableRootCoordinator::new(sidecar, Arc::new(MockResolver { endpoint }))
+    }
+
+    #[derive(Default)]
+    struct InProcessSidecar {
+        calls: Mutex<Vec<&'static str>>,
+    }
+
+    impl ParticipantSidecar for InProcessSidecar {
+        fn load(&self, _: database::LoadRequest) -> CoordinatorFuture<'_, database::LoadResponse> {
+            self.calls.lock().unwrap().push("load");
+            Box::pin(async { Ok(Default::default()) })
+        }
+
+        fn prepare(
+            &self,
+            _: database::TransactionParticipantPrepareRequest,
+        ) -> CoordinatorFuture<'_, database::TransactionParticipantPrepareResponse> {
+            self.calls.lock().unwrap().push("prepare");
+            Box::pin(async { Ok(Default::default()) })
+        }
+
+        fn commit(
+            &self,
+            _: database::TransactionParticipantCommitRequest,
+        ) -> CoordinatorFuture<'_, database::TransactionParticipantCommitResponse> {
+            self.calls.lock().unwrap().push("commit");
+            Box::pin(async { Ok(Default::default()) })
+        }
+
+        fn abort(
+            &self,
+            _: database::TransactionParticipantAbortRequest,
+        ) -> CoordinatorFuture<'_, database::TransactionParticipantAbortResponse> {
+            self.calls.lock().unwrap().push("abort");
+            Box::pin(async { Ok(Default::default()) })
+        }
+
+        fn recover(
+            &self,
+            _: database::RecoverRequest,
+        ) -> CoordinatorFuture<'_, Vec<database::RecoverResponse>> {
+            self.calls.lock().unwrap().push("recover");
+            Box::pin(async { Ok(Vec::new()) })
+        }
+    }
+
+    fn local_target() -> ParticipantTarget {
+        ParticipantTarget {
+            state_type: "example.Actor".into(),
+            state_ref: "actor/1".into(),
+        }
+    }
+
+    fn local_resolver(
+        sidecar: Arc<InProcessSidecar>,
+    ) -> SingleParticipantResolver<InProcessSidecar> {
+        let participant = DurableActorParticipant::new(sidecar, "example.Actor", "actor/1");
+        SingleParticipantResolver::new(
+            local_target(),
+            DurableActorParticipantHost::new(participant),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn single_participant_resolver_resolves_only_its_exact_target_without_sidecar_io() {
+        let sidecar = Arc::new(InProcessSidecar::default());
+        let resolver = local_resolver(Arc::clone(&sidecar));
+
+        resolver.resolve(&local_target()).await.unwrap();
+        assert!(sidecar.calls.lock().unwrap().is_empty());
+
+        for target in [
+            ParticipantTarget {
+                state_type: "example.OtherActor".into(),
+                state_ref: "actor/1".into(),
+            },
+            ParticipantTarget {
+                state_type: "example.Actor".into(),
+                state_ref: "actor/2".into(),
+            },
+        ] {
+            assert_eq!(
+                resolver
+                    .resolve(&target)
+                    .await
+                    .err()
+                    .map(|error| error.code()),
+                Some(tonic::Code::Unavailable)
+            );
+        }
+        for target in [
+            ParticipantTarget {
+                state_type: String::new(),
+                state_ref: "actor/1".into(),
+            },
+            ParticipantTarget {
+                state_type: "example.Actor".into(),
+                state_ref: String::new(),
+            },
+        ] {
+            assert_eq!(
+                resolver
+                    .resolve(&target)
+                    .await
+                    .err()
+                    .map(|error| error.code()),
+                Some(tonic::Code::InvalidArgument)
+            );
+        }
+        assert_eq!(
+            SingleParticipantResolver::new(
+                ParticipantTarget {
+                    state_type: String::new(),
+                    state_ref: "actor/1".into(),
+                },
+                DurableActorParticipantHost::new(DurableActorParticipant::new(
+                    Arc::clone(&sidecar),
+                    "example.Actor",
+                    "actor/1",
+                )),
+            )
+            .err()
+            .map(|error| error.code()),
+            Some(tonic::Code::InvalidArgument)
+        );
+        assert!(sidecar.calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn coordinator_drives_the_configured_in_process_host_through_prepare_and_commit() {
+        let participant_sidecar = Arc::new(InProcessSidecar::default());
+        let participant = DurableActorParticipant::new(
+            Arc::clone(&participant_sidecar),
+            "example.Actor",
+            "actor/1",
+        );
+        let id = Uuid::from_u128(44);
+        participant
+            .start(ActorTransactionStart {
+                transaction_ids: vec![id],
+                coordinator_state_type: "example.Actor".into(),
+                coordinator_state_ref: "actor/1".into(),
+                mode: TransactionMode::Exclusive,
+                read_only: false,
+                factory: false,
+                state_type: "example.Actor".into(),
+                state_ref: "actor/1".into(),
+            })
+            .await
+            .unwrap();
+        participant
+            .stage(id, PendingActorEffects::default())
+            .await
+            .unwrap();
+        participant_sidecar.calls.lock().unwrap().clear();
+
+        let resolver = SingleParticipantResolver::new(
+            local_target(),
+            DurableActorParticipantHost::new(participant),
+        )
+        .unwrap();
+        let coordinator =
+            DurableRootCoordinator::new(Arc::new(MockSidecar::default()), Arc::new(resolver));
+        coordinator.complete(start(id)).await.unwrap();
+
+        assert_eq!(
+            participant_sidecar.calls.lock().unwrap().as_slice(),
+            ["prepare", "commit"]
+        );
     }
     #[tokio::test]
     async fn persists_and_controls_single_participant_in_exact_order() {
