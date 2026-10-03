@@ -461,7 +461,8 @@ fn validate_recovered_participant(
     )?;
     if !matches!(
         proto::native2pc_participant_record::Phase::try_from(record.phase),
-        Ok(proto::native2pc_participant_record::Phase::Prepared)
+        Ok(proto::native2pc_participant_record::Phase::Staged)
+            | Ok(proto::native2pc_participant_record::Phase::Prepared)
             | Ok(proto::native2pc_participant_record::Phase::Committed)
             | Ok(proto::native2pc_participant_record::Phase::Aborted)
     ) {
@@ -627,7 +628,8 @@ impl Native2pcPreparedParticipantRecovery {
             Ok(proto::native2pc_participant_record::Phase::Prepared) => Ok(Some(Self {
                 participant: participant.clone(),
             })),
-            Ok(proto::native2pc_participant_record::Phase::Committed)
+            Ok(proto::native2pc_participant_record::Phase::Staged)
+            | Ok(proto::native2pc_participant_record::Phase::Committed)
             | Ok(proto::native2pc_participant_record::Phase::Aborted) => Ok(None),
             _ => Err(invalid("native recovered participant phase is illegal")),
         }
@@ -742,6 +744,150 @@ pub async fn recover_prepared_participant_once<
             let response = sidecar.terminal_participant(request.clone()).await?;
             validate_prepared_recovery_terminal_response(&request, &response)?;
             Ok(Native2pcPreparedParticipantRecoveryPass::Terminalized(
+                response,
+            ))
+        }
+    }
+}
+
+/// A pure continuation derived from one durably recovered STAGED participant.
+/// A staged participant cannot be committed: only the sidecar's durable
+/// PREPARED record proves it reached the commit barrier. This continuation may
+/// therefore issue only an identity-bound abort after observing a durable abort
+/// decision; it owns no retry, routing, lock, RPC, or actor execution.
+#[derive(Clone, Debug)]
+pub struct Native2pcStagedParticipantRecovery {
+    participant: proto::Native2pcParticipantRecord,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Native2pcStagedParticipantWatch {
+    Pending,
+    Abort(proto::Native2pcTerminalParticipantRequest),
+}
+
+impl Native2pcStagedParticipantRecovery {
+    pub fn try_from_recovery(
+        recovery: &proto::Native2pcRecoverResponse,
+    ) -> Result<Option<Self>, Status> {
+        validate_recovery_response(recovery)?;
+        let Some(participant) = recovery.participant.as_ref() else {
+            return Ok(None);
+        };
+        match proto::native2pc_participant_record::Phase::try_from(participant.phase) {
+            Ok(proto::native2pc_participant_record::Phase::Staged) => Ok(Some(Self {
+                participant: participant.clone(),
+            })),
+            Ok(proto::native2pc_participant_record::Phase::Prepared)
+            | Ok(proto::native2pc_participant_record::Phase::Committed)
+            | Ok(proto::native2pc_participant_record::Phase::Aborted) => Ok(None),
+            _ => Err(invalid("native recovered participant phase is illegal")),
+        }
+    }
+
+    pub fn watch_request(&self) -> proto::Native2pcWatchRequest {
+        proto::Native2pcWatchRequest {
+            protocol: self.participant.protocol.clone(),
+            root_transaction_id: self.participant.root_transaction_id.clone(),
+            coordinator: self.participant.coordinator.clone(),
+            participant: self.participant.participant.clone(),
+            enrollment_digest: self.participant.enrollment_digest.clone(),
+        }
+    }
+
+    pub fn observe_watch(
+        &self,
+        watch: proto::Native2pcWatchResponse,
+    ) -> Result<Native2pcStagedParticipantWatch, Status> {
+        match proto::native2pc_coordinator_record::Phase::try_from(watch.phase) {
+            Ok(proto::native2pc_coordinator_record::Phase::Preparing) => {
+                Ok(Native2pcStagedParticipantWatch::Pending)
+            }
+            Ok(proto::native2pc_coordinator_record::Phase::AbortDecided) => {
+                Ok(Native2pcStagedParticipantWatch::Abort(
+                    proto::Native2pcTerminalParticipantRequest {
+                        terminal: Some(proto::Native2pcTerminalRequest {
+                            protocol: self.participant.protocol.clone(),
+                            root_transaction_id: self.participant.root_transaction_id.clone(),
+                            participant: self.participant.participant.clone(),
+                            coordinator: self.participant.coordinator.clone(),
+                            enrollment_digest: self.participant.enrollment_digest.clone(),
+                            decision: proto::native2pc_terminal_request::Decision::Abort as i32,
+                        }),
+                    },
+                ))
+            }
+            Ok(proto::native2pc_coordinator_record::Phase::CommitDecided) => {
+                Err(Status::data_loss(
+                    "native staged participant conflicts with durable commit decision",
+                ))
+            }
+            _ => Err(invalid("native recovery watch phase is illegal")),
+        }
+    }
+}
+
+/// One bounded attempt to continue a durably recovered staged participant.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Native2pcStagedParticipantRecoveryPass {
+    NotStaged,
+    Pending,
+    Terminalized(proto::Native2pcTerminalParticipantResponse),
+}
+
+fn validate_staged_recovery_terminal_response(
+    request: &proto::Native2pcTerminalParticipantRequest,
+    response: &proto::Native2pcTerminalParticipantResponse,
+) -> Result<(), Status> {
+    let terminal = request
+        .terminal
+        .as_ref()
+        .ok_or_else(|| invalid("native terminal request is required"))?;
+    validate_terminal(terminal)?;
+    if terminal.decision != proto::native2pc_terminal_request::Decision::Abort as i32 {
+        return Err(invalid("native staged recovery may only abort"));
+    }
+    if response.terminal_phase != proto::native2pc_participant_record::Phase::Aborted as i32 {
+        return Err(Status::data_loss(
+            "native staged recovery terminal response must be ABORTED",
+        ));
+    }
+    Ok(())
+}
+
+/// Resolves the coordinator recorded by one staged participant, watches that
+/// exact identity-bound decision once, then terminalizes only a durable abort.
+/// Commit is an integrity error because this record never crossed PREPARED.
+/// This owns no retry loop, actor lock, placement policy, legacy fallback,
+/// effect interpretation, or materialization.
+pub async fn recover_staged_participant_once<
+    S: Native2pcDatabaseSidecar + ?Sized,
+    R: Native2pcCoordinatorResolver + ?Sized,
+>(
+    sidecar: &S,
+    coordinator_resolver: &R,
+    recovery: &proto::Native2pcRecoverResponse,
+) -> Result<Native2pcStagedParticipantRecoveryPass, Status> {
+    let Some(staged) = Native2pcStagedParticipantRecovery::try_from_recovery(recovery)? else {
+        return Ok(Native2pcStagedParticipantRecoveryPass::NotStaged);
+    };
+    let coordinator = staged
+        .participant
+        .coordinator
+        .as_ref()
+        .expect("validated staged participant")
+        .clone();
+    let coordinator = NativeActorId::new(coordinator.state_type, coordinator.state_ref)
+        .expect("validated staged coordinator");
+    let endpoint = coordinator_resolver.resolve(&coordinator).await?;
+    match staged.observe_watch(endpoint.watch(staged.watch_request()).await?)? {
+        Native2pcStagedParticipantWatch::Pending => {
+            Ok(Native2pcStagedParticipantRecoveryPass::Pending)
+        }
+        Native2pcStagedParticipantWatch::Abort(request) => {
+            let response = sidecar.terminal_participant(request.clone()).await?;
+            validate_staged_recovery_terminal_response(&request, &response)?;
+            Ok(Native2pcStagedParticipantRecoveryPass::Terminalized(
                 response,
             ))
         }
@@ -2124,6 +2270,94 @@ mod tests {
             participant: requests().put_participant(&participant("a")).participant,
             ..Default::default()
         }
+    }
+
+    fn recovered_staged() -> proto::Native2pcRecoverResponse {
+        proto::Native2pcRecoverResponse {
+            participant: requests().stage_participant(&participant("a")).participant,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn staged_recovery_pass_aborts_only_after_a_durable_abort_decision() {
+        let expected_abort = requests().terminal(&participant("a"), false);
+        let staged = recovered_staged();
+        for (phase, response, expected) in [
+            (
+                proto::native2pc_coordinator_record::Phase::Preparing,
+                Err(Status::internal("must not terminalize pending")),
+                Native2pcStagedParticipantRecoveryPass::Pending,
+            ),
+            (
+                proto::native2pc_coordinator_record::Phase::AbortDecided,
+                Ok(proto::Native2pcTerminalParticipantResponse {
+                    terminal_phase: proto::native2pc_participant_record::Phase::Aborted as i32,
+                }),
+                Native2pcStagedParticipantRecoveryPass::Terminalized(
+                    proto::Native2pcTerminalParticipantResponse {
+                        terminal_phase: proto::native2pc_participant_record::Phase::Aborted as i32,
+                    },
+                ),
+            ),
+        ] {
+            let endpoint = Arc::new(WatchEndpoint {
+                response: Ok(proto::Native2pcWatchResponse {
+                    phase: phase as i32,
+                }),
+                requests: std::sync::Mutex::new(Vec::new()),
+            });
+            let resolver = WatchResolver {
+                response: Ok(endpoint.clone()),
+                actors: std::sync::Mutex::new(Vec::new()),
+            };
+            let sidecar = PreparedRecoverySidecar {
+                terminal_response: response,
+                terminal_requests: std::sync::Mutex::new(Vec::new()),
+            };
+            assert_eq!(
+                recover_staged_participant_once(&sidecar, &resolver, &staged)
+                    .await
+                    .unwrap(),
+                expected
+            );
+            assert_eq!(*resolver.actors.lock().unwrap(), vec![coordinator()]);
+            assert_eq!(
+                *endpoint.requests.lock().unwrap(),
+                vec![requests().watch(&participant("a"))]
+            );
+            if phase == proto::native2pc_coordinator_record::Phase::AbortDecided {
+                assert_eq!(
+                    *sidecar.terminal_requests.lock().unwrap(),
+                    vec![expected_abort.clone()]
+                );
+            } else {
+                assert!(sidecar.terminal_requests.lock().unwrap().is_empty());
+            }
+        }
+
+        let endpoint = Arc::new(WatchEndpoint {
+            response: Ok(proto::Native2pcWatchResponse {
+                phase: proto::native2pc_coordinator_record::Phase::CommitDecided as i32,
+            }),
+            requests: std::sync::Mutex::new(Vec::new()),
+        });
+        let resolver = WatchResolver {
+            response: Ok(endpoint),
+            actors: std::sync::Mutex::new(Vec::new()),
+        };
+        let sidecar = PreparedRecoverySidecar {
+            terminal_response: Err(Status::internal("must not terminalize commit conflict")),
+            terminal_requests: std::sync::Mutex::new(Vec::new()),
+        };
+        assert_eq!(
+            recover_staged_participant_once(&sidecar, &resolver, &staged)
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::DataLoss
+        );
+        assert!(sidecar.terminal_requests.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

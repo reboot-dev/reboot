@@ -5499,6 +5499,7 @@ grpc::Status DatabaseService::NativeRecover(
   if (!valid.ok()) return valid;
   std::unique_ptr<rocksdb::Iterator> iterator(db_->NewIterator(NonPrefixIteratorReadOptions()));
   const std::string coordinator_prefix = std::string(kNativePrefix) + "c/";
+  const std::string staged_prefix = std::string(kNativePrefix) + "s/";
   const std::string participant_prefix = std::string(kNativePrefix) + "p/";
   const std::string applied_prefix = std::string(kNativePrefix) + "a/";
   for (iterator->Seek(kNativePrefix.data()); iterator->Valid(); iterator->Next()) {
@@ -5508,18 +5509,19 @@ grpc::Status DatabaseService::NativeRecover(
     if (key.compare(0, coordinator_prefix.size(), coordinator_prefix) == 0) {
       if (!response.mutable_coordinator()->ParseFromArray(iterator->value().data(), iterator->value().size())) return grpc::Status(grpc::StatusCode::DATA_LOSS, "malformed native coordinator record");
       valid = ValidateNativeCoordinator(response.coordinator());
-    } else if (key.compare(0, participant_prefix.size(), participant_prefix) == 0) {
+    } else if (key.compare(0, staged_prefix.size(), staged_prefix) == 0 ||
+               key.compare(0, participant_prefix.size(), participant_prefix) == 0) {
       if (!response.mutable_participant()->ParseFromArray(iterator->value().data(), iterator->value().size())) return grpc::Status(grpc::StatusCode::DATA_LOSS, "malformed native participant record");
       valid = ValidateNativeIdentity(response.participant().protocol(), response.participant().root_transaction_id(), response.participant().participant(), "participant");
       if (valid.ok() && (!NativeActorValid(response.participant().coordinator()) || response.participant().enrollment_digest().empty())) valid = NativeInvalid("native participant identity is invalid");
       if (valid.ok() && (!response.participant().has_effects() || !ValidateNativeEffects(response.participant().effects()).ok())) valid = NativeInvalid("native participant effects are invalid");
-      if (valid.ok() && response.participant().phase() != rbt::v1alpha1::Native2pcParticipantRecord::PREPARED && response.participant().phase() != rbt::v1alpha1::Native2pcParticipantRecord::COMMITTED && response.participant().phase() != rbt::v1alpha1::Native2pcParticipantRecord::ABORTED) valid = NativeInvalid("native participant phase is illegal");
+      if (valid.ok() && response.participant().phase() != rbt::v1alpha1::Native2pcParticipantRecord::STAGED && response.participant().phase() != rbt::v1alpha1::Native2pcParticipantRecord::PREPARED && response.participant().phase() != rbt::v1alpha1::Native2pcParticipantRecord::COMMITTED && response.participant().phase() != rbt::v1alpha1::Native2pcParticipantRecord::ABORTED) valid = NativeInvalid("native participant phase is illegal");
     } else if (key.compare(0, applied_prefix.size(), applied_prefix) == 0) {
       const std::string applied_bytes = iterator->value().ToString();
       if (!response.mutable_applied()->ParseFromString(applied_bytes)) return grpc::Status(grpc::StatusCode::DATA_LOSS, "malformed native applied effects record");
       response.set_applied_journal(applied_bytes);
       valid = ValidateNativeApplied(response.applied());
-    } else continue;  // staged records and terminal receipts never become recovery work.
+    } else continue;  // terminal receipts never become recovery work.
     if (!valid.ok()) return grpc::Status(grpc::StatusCode::DATA_LOSS, valid.error_message());
     if (!responses->Write(response)) return grpc::Status::OK;
   }

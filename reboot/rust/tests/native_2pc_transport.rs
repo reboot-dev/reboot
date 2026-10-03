@@ -12,9 +12,10 @@ use reboot_rust_schema::{
     native_2pc::{
         Native2pcCoordinatorEndpoint, Native2pcCoordinatorResolver, Native2pcDatabaseSidecar,
         Native2pcParticipantEndpoint, Native2pcPreparedParticipantRecoveryPass, Native2pcRequests,
-        NativeActorId, NativeEnrollment, NativeFuture, NativeTransactionId, PROTOCOL_ID,
-        RECORD_VERSION, TonicNative2pcCoordinatorEndpoint, TonicNative2pcDatabaseSidecar,
-        TonicNative2pcParticipantEndpoint, recover_prepared_participant_once,
+        Native2pcStagedParticipantRecoveryPass, NativeActorId, NativeEnrollment, NativeFuture,
+        NativeTransactionId, PROTOCOL_ID, RECORD_VERSION, TonicNative2pcCoordinatorEndpoint,
+        TonicNative2pcDatabaseSidecar, TonicNative2pcParticipantEndpoint,
+        recover_prepared_participant_once, recover_staged_participant_once,
         require_native2pc_participant,
     },
 };
@@ -575,5 +576,89 @@ async fn native_prepared_recovery_crosses_the_real_cxx_sidecar_boundary() {
                 assert!(!recovered.iter().any(|record| record.applied.is_some()));
             }
         }
+    }
+}
+
+/// The staged recovery seam is deliberately narrower than prepared recovery:
+/// it may observe a durable abort and consume the staged record, but can never
+/// turn staging into a commit or infer an abort from a pending coordinator.
+#[tokio::test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+async fn native_staged_recovery_crosses_the_real_cxx_sidecar_boundary() {
+    for (index, abort) in [(0, false), (1, true)] {
+        let database = spawn_cxx_database().await;
+        let sidecar = TonicNative2pcDatabaseSidecar::connect(database.endpoint.clone())
+            .await
+            .unwrap();
+        let coordinator =
+            NativeActorId::new("example.Coordinator", format!("staged-coordinator/{index}"))
+                .unwrap();
+        let participant =
+            NativeActorId::new("example.Participant", format!("staged-participant/{index}"))
+                .unwrap();
+        let requests = Native2pcRequests::new(
+            NativeTransactionId::new([index as u8 + 31; 16]).unwrap(),
+            coordinator.clone(),
+            NativeEnrollment::new([participant.clone()], [7, 6]).unwrap(),
+        );
+        sidecar
+            .put_coordinator(requests.put_coordinator_preparing())
+            .await
+            .unwrap();
+        sidecar
+            .stage_participant(requests.stage_participant(&participant))
+            .await
+            .unwrap();
+        if abort {
+            sidecar
+                .put_abort_decision(requests.put_abort_decision())
+                .await
+                .unwrap();
+        }
+        let staged = sidecar
+            .recover()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|record| {
+                record.participant.as_ref().is_some_and(|participant| {
+                    participant.phase == proto::native2pc_participant_record::Phase::Staged as i32
+                })
+            })
+            .expect("C++ NativeRecover must expose a durable staged participant");
+        let channel = tonic::transport::Endpoint::from_shared(database.endpoint.clone())
+            .unwrap()
+            .connect()
+            .await
+            .unwrap();
+        let resolver = StaticCxxCoordinator {
+            actor: coordinator,
+            endpoint: Arc::new(TonicNative2pcCoordinatorEndpoint::new(channel)),
+        };
+        let pass = recover_staged_participant_once(&sidecar, &resolver, &staged)
+            .await
+            .unwrap();
+        let recovered = sidecar.recover().await.unwrap();
+        if abort {
+            assert!(matches!(
+                pass,
+                Native2pcStagedParticipantRecoveryPass::Terminalized(response)
+                if response.terminal_phase
+                    == proto::native2pc_participant_record::Phase::Aborted as i32
+            ));
+            assert!(recovered.iter().any(|record| {
+                record.participant.as_ref().is_some_and(|participant| {
+                    participant.phase == proto::native2pc_participant_record::Phase::Aborted as i32
+                })
+            }));
+        } else {
+            assert_eq!(pass, Native2pcStagedParticipantRecoveryPass::Pending);
+            assert!(recovered.iter().any(|record| {
+                record.participant.as_ref().is_some_and(|participant| {
+                    participant.phase == proto::native2pc_participant_record::Phase::Staged as i32
+                })
+            }));
+        }
+        assert!(!recovered.iter().any(|record| record.applied.is_some()));
     }
 }
