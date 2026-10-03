@@ -644,21 +644,7 @@ impl<S: Native2pcDatabaseSidecar> Native2pcRecoveryMaterializer<S> {
         // before making any sidecar write, then defer every colliding actor.
         let mut state_only_journals = BTreeMap::<NativeActorId, BTreeSet<Vec<u8>>>::new();
         for record in &recovered {
-            validate_recovery_response(record)?;
-            let Some(applied) = record.applied.as_ref() else {
-                continue;
-            };
-            if applied
-                .effects
-                .as_ref()
-                .is_some_and(|effects| effects.state.is_some() && effects.effects.is_empty())
-            {
-                let participant = applied.participant.as_ref().expect("validated above");
-                let actor = NativeActorId::new(
-                    participant.state_type.clone(),
-                    participant.state_ref.clone(),
-                )
-                .expect("validated above");
+            if let Some(actor) = recovered_state_only_actor(record)? {
                 state_only_journals
                     .entry(actor)
                     .or_default()
@@ -671,34 +657,17 @@ impl<S: Native2pcDatabaseSidecar> Native2pcRecoveryMaterializer<S> {
             ..Default::default()
         };
         for record in recovered {
-            let Some(applied) = record.applied.as_ref() else {
+            let state_only_actor = recovered_state_only_actor(&record)?;
+            let Some(actor) = state_only_actor else {
+                if record.applied.is_some() {
+                    result.deferred.push(record);
+                }
                 continue;
             };
-            let is_state_only = applied
-                .effects
-                .as_ref()
-                .is_some_and(|effects| effects.state.is_some() && effects.effects.is_empty());
-            let actor_has_conflicting_journals = is_state_only
-                && state_only_journals
-                    .get(
-                        &NativeActorId::new(
-                            applied
-                                .participant
-                                .as_ref()
-                                .expect("validated above")
-                                .state_type
-                                .clone(),
-                            applied
-                                .participant
-                                .as_ref()
-                                .expect("validated above")
-                                .state_ref
-                                .clone(),
-                        )
-                        .expect("validated above"),
-                    )
-                    .is_some_and(|journals| journals.len() > 1);
-            if !is_state_only || actor_has_conflicting_journals {
+            let actor_has_conflicting_journals = state_only_journals
+                .get(&actor)
+                .is_some_and(|journals| journals.len() > 1);
+            if actor_has_conflicting_journals {
                 result.deferred.push(record);
                 continue;
             }
@@ -740,6 +709,32 @@ fn validate_materialization_response(
         ));
     }
     Ok(())
+}
+
+fn recovered_state_only_actor(
+    record: &proto::Native2pcRecoverResponse,
+) -> Result<Option<NativeActorId>, Status> {
+    validate_recovery_response(record)?;
+    if record.applied.is_none() {
+        return Ok(None);
+    }
+    // Classify from raw retained bytes, never the lossy prost projection. The
+    // validator above proves its known fields agree with `record.applied` while
+    // leaving additive unknown fields byte-exact for materialization.
+    let applied = proto::Native2pcAppliedActorEffects::decode(record.applied_journal.as_slice())
+        .map_err(|_| Status::data_loss("malformed native recovery applied journal bytes"))?;
+    let effects = applied.effects.as_ref().expect("validated above");
+    if effects.state.is_none() || !effects.effects.is_empty() {
+        return Ok(None);
+    }
+    let participant = applied.participant.as_ref().expect("validated above");
+    Ok(Some(
+        NativeActorId::new(
+            participant.state_type.clone(),
+            participant.state_ref.clone(),
+        )
+        .expect("validated above"),
+    ))
 }
 
 /// Dedicated Native2pc persistence boundary. It is deliberately distinct from
@@ -1459,6 +1454,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn recovery_materializer_rejects_raw_journal_projection_conflicts_before_any_write() {
+        let mut record = recovered_applied(Some(b"state".to_vec()), false);
+        let mut raw =
+            proto::Native2pcAppliedActorEffects::decode(record.applied_journal.as_slice()).unwrap();
+        let effects = raw.effects.as_mut().unwrap();
+        effects.state = None;
+        effects.effects.push(proto::Native2pcEffect {
+            key: b"opaque".to_vec(),
+            payload: b"effect".to_vec(),
+        });
+        record.applied_journal = raw.encode_to_vec();
+        let sidecar = RecoverySidecar {
+            records: vec![record],
+            materialized: std::sync::Mutex::new(Vec::new()),
+        };
+        let executor = Native2pcRecoveryMaterializer::new(sidecar);
+        assert_eq!(
+            executor.recover_and_materialize().await.unwrap_err().code(),
+            tonic::Code::DataLoss
+        );
+        assert!(executor.sidecar.materialized.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn recovery_materializer_defers_conflicting_journals_for_one_actor() {
         let first = recovered_applied(Some(b"first".to_vec()), false);
         let mut second = recovered_applied(Some(b"second".to_vec()), false);
@@ -1477,8 +1496,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recovery_materializer_applies_state_only_and_defers_opaque_journals() {
-        let state_only = recovered_applied(Some(b"state".to_vec()), false);
+    async fn recovery_materializer_forwards_additive_unknown_journal_bytes_exactly() {
+        let mut state_only = recovered_applied(Some(b"state".to_vec()), false);
+        state_only.applied_journal.extend([0xa2, 0x06, 0]);
         let deferred = recovered_applied(Some(b"state".to_vec()), true);
         let sidecar = RecoverySidecar {
             records: vec![state_only.clone(), deferred.clone()],
