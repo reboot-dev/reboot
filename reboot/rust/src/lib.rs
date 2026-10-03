@@ -1,5 +1,10 @@
 //! Experimental Rust input to Reboot's language-neutral `.proto` contract.
 //!
+//! Tonic generates service traits with `tonic::Status` error values. Those
+//! transport signatures are fixed by the generated gRPC contract, so boxing
+//! them to satisfy `clippy::result_large_err` would make the bindings invalid.
+#![allow(clippy::result_large_err)]
+//!
 //! This is intentionally a schema-only spike. It proves that Rust can emit the
 //! existing Reboot descriptor format without Python or Node.js. It does not
 //! claim to host a production Rust servicer: the current `rbt dev run` launcher
