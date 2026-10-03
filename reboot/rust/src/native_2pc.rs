@@ -674,6 +674,80 @@ impl Native2pcPreparedParticipantRecovery {
     }
 }
 
+/// One bounded attempt to continue a durably recovered participant. This has no
+/// retry or scheduling semantics: transport errors remain non-definitive, and a
+/// caller may retry the exact same recovery record later.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Native2pcPreparedParticipantRecoveryPass {
+    NotPrepared,
+    Pending,
+    Terminalized(proto::Native2pcTerminalParticipantResponse),
+}
+
+fn validate_prepared_recovery_terminal_response(
+    request: &proto::Native2pcTerminalParticipantRequest,
+    response: &proto::Native2pcTerminalParticipantResponse,
+) -> Result<(), Status> {
+    let terminal = request
+        .terminal
+        .as_ref()
+        .ok_or_else(|| invalid("native terminal request is required"))?;
+    validate_terminal(terminal)?;
+    let expected = match proto::native2pc_terminal_request::Decision::try_from(terminal.decision) {
+        Ok(proto::native2pc_terminal_request::Decision::Commit) => {
+            proto::native2pc_participant_record::Phase::Committed
+        }
+        Ok(proto::native2pc_terminal_request::Decision::Abort) => {
+            proto::native2pc_participant_record::Phase::Aborted
+        }
+        _ => return Err(invalid("native terminal decision is illegal")),
+    };
+    if response.terminal_phase != expected as i32 {
+        return Err(Status::data_loss(
+            "native prepared recovery terminal response conflicts with decision",
+        ));
+    }
+    Ok(())
+}
+
+/// Resolves the coordinator recorded by one prepared participant, watches that
+/// exact identity-bound decision once, then terminalizes through the native
+/// sidecar only when the decision is durable. It owns no retry loop, actor lock,
+/// placement policy, legacy fallback, effect interpretation, or materialization.
+pub async fn recover_prepared_participant_once<
+    S: Native2pcDatabaseSidecar + ?Sized,
+    R: Native2pcCoordinatorResolver + ?Sized,
+>(
+    sidecar: &S,
+    coordinator_resolver: &R,
+    recovery: &proto::Native2pcRecoverResponse,
+) -> Result<Native2pcPreparedParticipantRecoveryPass, Status> {
+    let Some(prepared) = Native2pcPreparedParticipantRecovery::try_from_recovery(recovery)? else {
+        return Ok(Native2pcPreparedParticipantRecoveryPass::NotPrepared);
+    };
+    let coordinator = prepared
+        .participant
+        .coordinator
+        .as_ref()
+        .expect("validated prepared participant")
+        .clone();
+    let coordinator = NativeActorId::new(coordinator.state_type, coordinator.state_ref)
+        .expect("validated prepared coordinator");
+    let endpoint = coordinator_resolver.resolve(&coordinator).await?;
+    match prepared.observe_watch(endpoint.watch(prepared.watch_request()).await?)? {
+        Native2pcPreparedParticipantWatch::Pending => {
+            Ok(Native2pcPreparedParticipantRecoveryPass::Pending)
+        }
+        Native2pcPreparedParticipantWatch::Terminal(request) => {
+            let response = sidecar.terminal_participant(request.clone()).await?;
+            validate_prepared_recovery_terminal_response(&request, &response)?;
+            Ok(Native2pcPreparedParticipantRecoveryPass::Terminalized(
+                response,
+            ))
+        }
+    }
+}
+
 /// Identity-bound Native2pc request constructors. None of these performs I/O.
 #[derive(Clone, Debug)]
 pub struct Native2pcRequests {
@@ -1954,6 +2028,228 @@ mod tests {
             validate_state_only_applied(&applied).unwrap_err().code(),
             tonic::Code::InvalidArgument
         );
+    }
+
+    struct PreparedRecoverySidecar {
+        terminal_response: Result<proto::Native2pcTerminalParticipantResponse, Status>,
+        terminal_requests: std::sync::Mutex<Vec<proto::Native2pcTerminalParticipantRequest>>,
+    }
+
+    impl Native2pcDatabaseSidecar for PreparedRecoverySidecar {
+        fn put_coordinator(
+            &self,
+            _: proto::Native2pcPutCoordinatorRequest,
+        ) -> NativeFuture<'_, proto::Native2pcPutCoordinatorResponse> {
+            Box::pin(async { Err(Status::unimplemented("not used")) })
+        }
+        fn put_participant(
+            &self,
+            _: proto::Native2pcPutParticipantRequest,
+        ) -> NativeFuture<'_, proto::Native2pcPutParticipantResponse> {
+            Box::pin(async { Err(Status::unimplemented("not used")) })
+        }
+        fn stage_participant(
+            &self,
+            _: proto::Native2pcStageParticipantRequest,
+        ) -> NativeFuture<'_, proto::Native2pcStageParticipantResponse> {
+            Box::pin(async { Err(Status::unimplemented("not used")) })
+        }
+        fn put_commit_decision(
+            &self,
+            _: proto::Native2pcPutCommitDecisionRequest,
+        ) -> NativeFuture<'_, proto::Native2pcPutCommitDecisionResponse> {
+            Box::pin(async { Err(Status::unimplemented("not used")) })
+        }
+        fn put_abort_decision(
+            &self,
+            _: proto::Native2pcPutAbortDecisionRequest,
+        ) -> NativeFuture<'_, proto::Native2pcPutAbortDecisionResponse> {
+            Box::pin(async { Err(Status::unimplemented("not used")) })
+        }
+        fn recover(&self) -> NativeFuture<'_, Vec<proto::Native2pcRecoverResponse>> {
+            Box::pin(async { Err(Status::unimplemented("not used")) })
+        }
+        fn materialize_applied(
+            &self,
+            _: proto::Native2pcMaterializeAppliedRequest,
+        ) -> NativeFuture<'_, proto::Native2pcMaterializeAppliedResponse> {
+            Box::pin(async { Err(Status::unimplemented("not used")) })
+        }
+        fn terminal_participant(
+            &self,
+            request: proto::Native2pcTerminalParticipantRequest,
+        ) -> NativeFuture<'_, proto::Native2pcTerminalParticipantResponse> {
+            Box::pin(async move {
+                self.terminal_requests.lock().unwrap().push(request);
+                self.terminal_response.clone()
+            })
+        }
+    }
+
+    struct WatchEndpoint {
+        response: Result<proto::Native2pcWatchResponse, Status>,
+        requests: std::sync::Mutex<Vec<proto::Native2pcWatchRequest>>,
+    }
+
+    impl Native2pcCoordinatorEndpoint for WatchEndpoint {
+        fn watch(
+            &self,
+            request: proto::Native2pcWatchRequest,
+        ) -> NativeFuture<'_, proto::Native2pcWatchResponse> {
+            Box::pin(async move {
+                self.requests.lock().unwrap().push(request);
+                self.response.clone()
+            })
+        }
+    }
+
+    struct WatchResolver {
+        response: Result<Arc<WatchEndpoint>, Status>,
+        actors: std::sync::Mutex<Vec<NativeActorId>>,
+    }
+
+    impl Native2pcCoordinatorResolver for WatchResolver {
+        type Endpoint = WatchEndpoint;
+        fn resolve(&self, actor: &NativeActorId) -> NativeFuture<'_, Arc<Self::Endpoint>> {
+            let actor = actor.clone();
+            Box::pin(async move {
+                self.actors.lock().unwrap().push(actor);
+                self.response.clone()
+            })
+        }
+    }
+
+    fn recovered_prepared() -> proto::Native2pcRecoverResponse {
+        proto::Native2pcRecoverResponse {
+            participant: requests().put_participant(&participant("a")).participant,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn prepared_recovery_pass_watches_exact_coordinator_and_terminalizes_once() {
+        for (phase, terminal_phase, expected) in [
+            (
+                proto::native2pc_coordinator_record::Phase::CommitDecided,
+                proto::native2pc_participant_record::Phase::Committed,
+                requests().terminal(&participant("a"), true),
+            ),
+            (
+                proto::native2pc_coordinator_record::Phase::AbortDecided,
+                proto::native2pc_participant_record::Phase::Aborted,
+                requests().terminal(&participant("a"), false),
+            ),
+        ] {
+            let endpoint = Arc::new(WatchEndpoint {
+                response: Ok(proto::Native2pcWatchResponse {
+                    phase: phase as i32,
+                }),
+                requests: std::sync::Mutex::new(Vec::new()),
+            });
+            let resolver = WatchResolver {
+                response: Ok(endpoint.clone()),
+                actors: std::sync::Mutex::new(Vec::new()),
+            };
+            let sidecar = PreparedRecoverySidecar {
+                terminal_response: Ok(proto::Native2pcTerminalParticipantResponse {
+                    terminal_phase: terminal_phase as i32,
+                }),
+                terminal_requests: std::sync::Mutex::new(Vec::new()),
+            };
+            assert_eq!(
+                recover_prepared_participant_once(&sidecar, &resolver, &recovered_prepared())
+                    .await
+                    .unwrap(),
+                Native2pcPreparedParticipantRecoveryPass::Terminalized(
+                    proto::Native2pcTerminalParticipantResponse {
+                        terminal_phase: terminal_phase as i32,
+                    }
+                )
+            );
+            assert_eq!(*resolver.actors.lock().unwrap(), vec![coordinator()]);
+            assert_eq!(
+                *endpoint.requests.lock().unwrap(),
+                vec![requests().watch(&participant("a"))]
+            );
+            assert_eq!(*sidecar.terminal_requests.lock().unwrap(), vec![expected]);
+        }
+    }
+
+    #[tokio::test]
+    async fn prepared_recovery_pass_leaves_pending_and_failures_nonterminal() {
+        let endpoint = Arc::new(WatchEndpoint {
+            response: Ok(proto::Native2pcWatchResponse {
+                phase: proto::native2pc_coordinator_record::Phase::Preparing as i32,
+            }),
+            requests: std::sync::Mutex::new(Vec::new()),
+        });
+        let resolver = WatchResolver {
+            response: Ok(endpoint),
+            actors: std::sync::Mutex::new(Vec::new()),
+        };
+        let sidecar = PreparedRecoverySidecar {
+            terminal_response: Err(Status::internal("must not terminalize pending")),
+            terminal_requests: std::sync::Mutex::new(Vec::new()),
+        };
+        assert_eq!(
+            recover_prepared_participant_once(&sidecar, &resolver, &recovered_prepared())
+                .await
+                .unwrap(),
+            Native2pcPreparedParticipantRecoveryPass::Pending
+        );
+        assert!(sidecar.terminal_requests.lock().unwrap().is_empty());
+
+        let resolver = WatchResolver {
+            response: Err(Status::unavailable("coordinator unavailable")),
+            actors: std::sync::Mutex::new(Vec::new()),
+        };
+        assert_eq!(
+            recover_prepared_participant_once(&sidecar, &resolver, &recovered_prepared())
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unavailable
+        );
+        assert!(sidecar.terminal_requests.lock().unwrap().is_empty());
+
+        let mut terminal = recovered_prepared();
+        terminal.participant.as_mut().unwrap().phase =
+            proto::native2pc_participant_record::Phase::Committed as i32;
+        assert_eq!(
+            recover_prepared_participant_once(&sidecar, &resolver, &terminal)
+                .await
+                .unwrap(),
+            Native2pcPreparedParticipantRecoveryPass::NotPrepared
+        );
+        assert_eq!(resolver.actors.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn prepared_recovery_pass_rejects_terminal_phase_mismatch_after_the_write() {
+        let endpoint = Arc::new(WatchEndpoint {
+            response: Ok(proto::Native2pcWatchResponse {
+                phase: proto::native2pc_coordinator_record::Phase::CommitDecided as i32,
+            }),
+            requests: std::sync::Mutex::new(Vec::new()),
+        });
+        let resolver = WatchResolver {
+            response: Ok(endpoint),
+            actors: std::sync::Mutex::new(Vec::new()),
+        };
+        let sidecar = PreparedRecoverySidecar {
+            terminal_response: Ok(proto::Native2pcTerminalParticipantResponse {
+                terminal_phase: proto::native2pc_participant_record::Phase::Aborted as i32,
+            }),
+            terminal_requests: std::sync::Mutex::new(Vec::new()),
+        };
+        assert_eq!(
+            recover_prepared_participant_once(&sidecar, &resolver, &recovered_prepared())
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::DataLoss
+        );
+        assert_eq!(sidecar.terminal_requests.lock().unwrap().len(), 1);
     }
 
     struct RecoverySidecar {
