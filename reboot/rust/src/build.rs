@@ -145,8 +145,20 @@ fn includes_with_vendored<I: AsRef<Path>>(includes: &[I], vendored: &Path) -> Ve
     includes
         .iter()
         .map(|include| include.as_ref().to_owned())
+        // Reboot annotations are part of the build-helper contract, so a Cargo
+        // consumer need not have this SDK repository checked out beside its
+        // own proto directory just to import rbt/v1alpha1/options.proto.
+        .chain(std::iter::once(sdk_repository_root()))
         .chain(std::iter::once(vendored.to_owned()))
         .collect()
+}
+
+fn sdk_repository_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("reboot-rust-schema source is nested below the SDK repository root")
+        .to_owned()
 }
 
 fn proto_relative_name<I: AsRef<Path>>(proto: &Path, includes: &[I]) -> Result<String, BuildError> {
