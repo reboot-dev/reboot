@@ -19,6 +19,7 @@ pub mod codegen;
 pub mod durable_coordinator;
 pub mod durable_participant;
 pub mod native_2pc;
+pub mod placement;
 pub mod runtime;
 pub mod successful_trailers;
 

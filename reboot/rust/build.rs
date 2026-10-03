@@ -21,6 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 repository.join("rbt/v1alpha1/database.proto"),
                 repository.join("rbt/v1alpha1/transactions.proto"),
                 repository.join("rbt/v1alpha1/native_2pc.proto"),
+                repository.join("rbt/v1alpha1/placement_planner.proto"),
             ],
             &[repository, vendored_include],
         )?;
