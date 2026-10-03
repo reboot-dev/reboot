@@ -548,7 +548,7 @@ fn emit_transactional_client(
     let client_module = format!("{}_client", snake_case(service_name));
     output.push_str(&format!("/// Typed target state reference for `{service_name}`.\n///\n/// This value is passed unchanged to the host-owned resolver; it is not an\n/// address, placement hint, UUID, or SDK-generated identity.\n#[derive(Clone, Debug, Eq, PartialEq)]\npub struct {target} {{ state_ref: String }}\nimpl {target} {{ pub fn new(state_ref: impl Into<String>) -> Self {{ Self {{ state_ref: state_ref.into() }} }} pub fn state_ref(&self) -> &str {{ &self.state_ref }} }}\n\n/// Generated typed outbound client for `{service_name}`.\n///\n/// This is an outbound-only transaction foundation. It preserves the validated\n/// transaction path and coordinator headers, replaces only the target state\n/// reference, and delegates routing to the injected resolver. It does not\n/// execute nested inbound transactions, collect participants, or provide\n/// cross-actor atomicity.\npub struct {client}<R> {{ resolver: std::sync::Arc<R> }}\nimpl<R> Clone for {client}<R> {{ fn clone(&self) -> Self {{ Self {{ resolver: self.resolver.clone() }} }} }}\nimpl<R> {client}<R> where R: {runtime_module}::runtime::TransactionalChannelResolver {{ pub fn new(resolver: R) -> Self {{ Self {{ resolver: std::sync::Arc::new(resolver) }} }}\n"));
     for (_, method, request, response, _) in methods {
-        output.push_str(&format!("    pub async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, target: &{target}, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let (channel, request) = {runtime_module}::runtime::transactional_outbound_request(self.resolver.as_ref(), context, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, target.state_ref(), request).await?; proto::{client_module}::{service_name}Client::new(channel).{method}(request).await }}\n"));
+        output.push_str(&format!("    pub async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, target: &{target}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionalCallResponse<proto::{response}>, tonic::Status> {{ let (channel, request) = {runtime_module}::runtime::transactional_outbound_request(self.resolver.as_ref(), context, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, target.state_ref(), request).await?; let response = proto::{client_module}::{service_name}Client::new(channel).{method}(request).await?; let returned_participants = {runtime_module}::successful_trailers::ReturnedParticipants::from_metadata(response.metadata()).map_err(|error| tonic::Status::failed_precondition(error.to_string()))?; Ok({runtime_module}::runtime::TransactionalCallResponse::new(response, returned_participants)) }}\n"));
     }
     output.push_str("}\n\n");
     Ok(())
@@ -1023,7 +1023,9 @@ mod tests {
         assert!(content.contains("pub struct CounterWritesTarget"));
         assert!(content.contains("TransactionalChannelResolver"));
         assert!(content.contains("transactional_outbound_request"));
-        assert!(content.contains("CounterWritesClient::new(channel).increment(request).await"));
+        assert!(content.contains("CounterWritesClient::new(channel).increment(request).await?"));
+        assert!(content.contains("ReturnedParticipants::from_metadata(response.metadata())"));
+        assert!(content.contains("TransactionalCallResponse<proto::CounterValue>"));
         assert!(content.contains("context: &reboot_rust_schema::runtime::TransactionContext"));
         assert!(content.contains("state: &mut proto::Counter"));
         assert!(content.contains("pub struct CounterWritesTransactionAdapter<H, P, C, R, F>"));

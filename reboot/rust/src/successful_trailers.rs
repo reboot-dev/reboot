@@ -6,6 +6,7 @@
 //! neither aggregates remote participants nor coordinates transactions.
 
 use std::{
+    collections::BTreeSet,
     future::Future,
     pin::Pin,
     task::{Context, Poll},
@@ -15,6 +16,8 @@ use http::{HeaderMap, HeaderValue, Request, Response};
 use http_body::{Body, Frame};
 use serde_json::Value;
 use tower::{Layer, Service};
+
+use crate::durable_coordinator::ParticipantTarget;
 
 /// The Reboot trailer carrying participant identities.
 pub const TRANSACTION_PARTICIPANTS_HEADER: &str = "x-reboot-transaction-participants";
@@ -120,6 +123,107 @@ impl std::fmt::Display for ParticipantMetadataError {
 }
 
 impl std::error::Error for ParticipantMetadataError {}
+
+/// Participants returned by a successful remote transactional call.
+///
+/// This is decoded transport metadata only. It is deliberately duplicate-free
+/// and ordered by `(state_type, state_ref)` so callers get deterministic data,
+/// but it does not aggregate calls, enlist participants, or coordinate a
+/// transaction.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ReturnedParticipants(Vec<ParticipantTarget>);
+
+impl ReturnedParticipants {
+    /// Decodes every instance of the native participant trailer from merged
+    /// Tonic response metadata.
+    ///
+    /// Unary Tonic clients merge successful trailers into response metadata.
+    /// This accepts that transport representation only; callers that require
+    /// raw wire trailer visibility must consume the streaming response instead.
+    pub fn from_metadata(
+        metadata: &tonic::metadata::MetadataMap,
+    ) -> Result<Self, ReturnedParticipantsError> {
+        let values = metadata.get_all(TRANSACTION_PARTICIPANTS_HEADER);
+        if values.iter().next().is_none() {
+            return Err(ReturnedParticipantsError::Missing);
+        }
+
+        let mut participants = BTreeSet::new();
+        for value in values.iter() {
+            let value = value
+                .to_str()
+                .map_err(|_| ReturnedParticipantsError::InvalidMetadataValue)?;
+            ParticipantMetadata::try_from_json(value)
+                .map_err(ReturnedParticipantsError::InvalidParticipantMetadata)?;
+            let object = serde_json::from_str::<Value>(value)
+                .expect("ParticipantMetadata validates its JSON representation")
+                .as_object()
+                .cloned()
+                .expect("ParticipantMetadata validates a JSON object");
+            for (state_type, state_refs) in object {
+                for state_ref in state_refs
+                    .as_array()
+                    .expect("ParticipantMetadata validates state-reference arrays")
+                {
+                    participants.insert((
+                        state_type.clone(),
+                        state_ref
+                            .as_str()
+                            .expect("ParticipantMetadata validates state references")
+                            .to_owned(),
+                    ));
+                }
+            }
+        }
+
+        Ok(Self(
+            participants
+                .into_iter()
+                .map(|(state_type, state_ref)| ParticipantTarget {
+                    state_type,
+                    state_ref,
+                })
+                .collect(),
+        ))
+    }
+
+    /// Returns the deterministic, duplicate-free remote participant targets.
+    pub fn participants(&self) -> &[ParticipantTarget] {
+        &self.0
+    }
+
+    /// Consumes this transport result into its remote participant targets.
+    pub fn into_participants(self) -> Vec<ParticipantTarget> {
+        self.0
+    }
+}
+
+/// Failure while decoding returned participant transport metadata.
+#[derive(Debug)]
+pub enum ReturnedParticipantsError {
+    Missing,
+    InvalidMetadataValue,
+    InvalidParticipantMetadata(ParticipantMetadataError),
+}
+
+impl std::fmt::Display for ReturnedParticipantsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Missing => write!(f, "missing returned participant trailer"),
+            Self::InvalidMetadataValue => {
+                write!(
+                    f,
+                    "returned participant trailer is not valid UTF-8 metadata"
+                )
+            }
+            Self::InvalidParticipantMetadata(error) => {
+                write!(f, "invalid returned participant trailer: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ReturnedParticipantsError {}
 
 /// A prevalidated marker consumed by [`SuccessfulParticipantTrailerLayer`].
 ///

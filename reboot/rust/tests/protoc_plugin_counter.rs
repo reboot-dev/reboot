@@ -321,6 +321,22 @@ fn transaction_adapter(
     )
 }
 
+#[derive(Clone)]
+struct FixedChannelResolver(tonic::transport::Channel);
+
+#[tonic::async_trait]
+impl reboot::runtime::TransactionalChannelResolver for FixedChannelResolver {
+    async fn resolve(
+        &self,
+        state_type: &str,
+        state_ref: &str,
+    ) -> Result<tonic::transport::Channel, tonic::Status> {
+        assert_eq!(state_type, "tests.reboot.protoc.TransactionCounter");
+        assert_eq!(state_ref, "transaction-counter");
+        Ok(self.0.clone())
+    }
+}
+
 #[tokio::test]
 async fn generated_transaction_adapter_executes_in_process_protocol_trace() {
     use proto::transaction_counter_writes_server::TransactionCounterWrites;
@@ -451,6 +467,59 @@ async fn generated_transaction_adapter_emits_inbound_participant_only_in_raw_suc
             .get(reboot::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER)
             .unwrap(),
         "{\"tests.reboot.protoc.TransactionCounter\":[\"transaction-counter\"]}"
+    );
+    assert_eq!(*trace.lock().unwrap(), ["participant load", "handler"]);
+    server.abort();
+}
+
+#[tokio::test]
+async fn generated_outbound_client_decodes_generated_inbound_trailer_without_initial_metadata() {
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let adapter = transaction_adapter(Arc::clone(&trace), false);
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .layer(reboot::successful_trailers::SuccessfulParticipantTrailerLayer)
+            .add_service(
+                proto::transaction_counter_writes_server::TransactionCounterWritesServer::new(adapter),
+            )
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+    let channel = tonic::transport::Channel::from_shared(format!("http://{address}"))
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let mut headers = reboot::RebootHeaders::new("caller-state");
+    headers.transaction_ids = Some(vec![Uuid::from_u128(201)]);
+    headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.Root".into());
+    headers.transaction_coordinator_state_ref = Some("root-counter".into());
+    let context = reboot::runtime::TransactionContext::from_headers(
+        headers,
+        reboot::runtime::TransactionMode::Exclusive,
+    )
+    .unwrap();
+    let client = transaction_generated::TransactionCounterWritesClient::new(FixedChannelResolver(channel));
+    let response = client
+        .increment(
+            &context,
+            &transaction_generated::TransactionCounterWritesTarget::new("transaction-counter"),
+            proto::TransactionIncrementRequest { amount: 3 },
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.response().get_ref().value, 7);
+    assert_eq!(
+        response
+            .returned_participants()
+            .participants()
+            .iter()
+            .map(|participant| (&participant.state_type, &participant.state_ref))
+            .collect::<Vec<_>>(),
+        vec![(&"tests.reboot.protoc.TransactionCounter".to_owned(), &"transaction-counter".to_owned())]
     );
     assert_eq!(*trace.lock().unwrap(), ["participant load", "handler"]);
     server.abort();

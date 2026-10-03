@@ -1,7 +1,8 @@
 use reboot_rust_schema::{
     proto,
     successful_trailers::{
-        ParticipantMetadata, SuccessfulParticipantTrailerLayer, TRANSACTION_PARTICIPANTS_HEADER,
+        ParticipantMetadata, ReturnedParticipants, ReturnedParticipantsError,
+        SuccessfulParticipantTrailerLayer, TRANSACTION_PARTICIPANTS_HEADER,
         stage_successful_participants,
     },
 };
@@ -131,4 +132,64 @@ async fn errors_do_not_carry_participants_and_unary_clients_merge_success_traile
         r#"{"tests.reboot.protoc.Echo":["echo/1"]}"#
     );
     server.abort();
+}
+
+#[test]
+fn returned_participants_decode_all_values_deduplicate_and_sort() {
+    let mut metadata = tonic::metadata::MetadataMap::new();
+    metadata.append(
+        TRANSACTION_PARTICIPANTS_HEADER,
+        r#"{"z.type":["z/2","z/1"],"a.type":["a/1"]}"#.parse().unwrap(),
+    );
+    metadata.append(
+        TRANSACTION_PARTICIPANTS_HEADER,
+        r#"{"z.type":["z/1"],"b.type":["b/1"]}"#.parse().unwrap(),
+    );
+
+    let returned = ReturnedParticipants::from_metadata(&metadata).unwrap();
+    assert_eq!(
+        returned
+            .participants()
+            .iter()
+            .map(|participant| (&participant.state_type, &participant.state_ref))
+            .collect::<Vec<_>>(),
+        vec![
+            (&"a.type".to_owned(), &"a/1".to_owned()),
+            (&"b.type".to_owned(), &"b/1".to_owned()),
+            (&"z.type".to_owned(), &"z/1".to_owned()),
+            (&"z.type".to_owned(), &"z/2".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn returned_participants_fail_closed_for_missing_or_malformed_values() {
+    assert!(matches!(
+        ReturnedParticipants::from_metadata(&tonic::metadata::MetadataMap::new()),
+        Err(ReturnedParticipantsError::Missing)
+    ));
+
+    for value in ["[]", "{}", r#"{"type":[]}"#, r#"{"type":[""]}"#] {
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.append(TRANSACTION_PARTICIPANTS_HEADER, value.parse().unwrap());
+        assert!(matches!(
+            ReturnedParticipants::from_metadata(&metadata),
+            Err(ReturnedParticipantsError::InvalidParticipantMetadata(_))
+        ));
+    }
+
+    let mut metadata = tonic::metadata::MetadataMap::new();
+    metadata.append(
+        TRANSACTION_PARTICIPANTS_HEADER,
+        // This models a malformed remote ASCII metadata value; constructors reject it.
+        unsafe {
+            tonic::metadata::MetadataValue::<tonic::metadata::Ascii>::from_shared_unchecked(
+                bytes::Bytes::from_static(b"\xff"),
+            )
+        },
+    );
+    assert!(matches!(
+        ReturnedParticipants::from_metadata(&metadata),
+        Err(ReturnedParticipantsError::InvalidMetadataValue)
+    ));
 }

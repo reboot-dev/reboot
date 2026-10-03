@@ -126,6 +126,50 @@ pub trait TransactionalChannelResolver: Send + Sync + 'static {
     ) -> Result<tonic::transport::Channel, Status>;
 }
 
+/// Successful result of one generated outbound transactional RPC.
+///
+/// This joins a unary response with the participant identities returned in its
+/// successful transport trailers. It is not a coordinator, does not aggregate
+/// results from multiple calls, and makes no atomicity guarantee.
+#[derive(Debug)]
+pub struct TransactionalCallResponse<T> {
+    response: tonic::Response<T>,
+    returned_participants: crate::successful_trailers::ReturnedParticipants,
+}
+
+impl<T> TransactionalCallResponse<T> {
+    /// Constructs a response after the transport trailer decoder succeeds.
+    pub fn new(
+        response: tonic::Response<T>,
+        returned_participants: crate::successful_trailers::ReturnedParticipants,
+    ) -> Self {
+        Self {
+            response,
+            returned_participants,
+        }
+    }
+
+    /// Returns the underlying unary response, including Tonic's merged metadata.
+    pub fn response(&self) -> &tonic::Response<T> {
+        &self.response
+    }
+
+    /// Returns remote participant identities decoded from successful trailers.
+    pub fn returned_participants(&self) -> &crate::successful_trailers::ReturnedParticipants {
+        &self.returned_participants
+    }
+
+    /// Consumes the wrapper into its response and transport-only participant data.
+    pub fn into_parts(
+        self,
+    ) -> (
+        tonic::Response<T>,
+        crate::successful_trailers::ReturnedParticipants,
+    ) {
+        (self.response, self.returned_participants)
+    }
+}
+
 /// Builds one outbound request for a generated transactional application call.
 ///
 /// This preserves only the validated Reboot allowlist held by `context`, swaps
