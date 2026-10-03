@@ -1,9 +1,11 @@
 //! Isolated Native2pc v1 transport boundary.
 //!
 //! This module deliberately exposes **no transaction executor**. It validates
-//! identity-bound Native2pc requests and offers only host-routed Tonic clients
-//! for the dedicated native services. In particular, it never calls legacy
-//! `Database`, `Participant`, `TransactionCoordinator`, or `Recover` RPCs.
+//! identity-bound Native2pc requests and offers host-routed Tonic clients plus
+//! a bounded recovery materializer for state-only committed journals. It never
+//! calls legacy `Database`, `Participant`, `TransactionCoordinator`, or
+//! `Recover` RPCs. It does not construct actors, resolve placement, execute
+//! opaque effects, or coordinate transactions.
 //!
 //! The protocol binds an enrollment digest but does not define a digest
 //! derivation algorithm. Callers therefore must provide an already-bound,
@@ -603,6 +605,90 @@ impl Native2pcRequests {
     }
 }
 
+/// Result of one bounded native recovery pass. Coordinator and participant
+/// records remain control-plane recovery work; this executor applies only the
+/// explicitly supported state-only committed journals. Unsupported journals are
+/// returned verbatim for a future native effect interpreter rather than being
+/// treated as successful application.
+#[derive(Debug, Default)]
+pub struct Native2pcRecoveryMaterialization {
+    pub recovered_records: usize,
+    pub materialized: Vec<proto::Native2pcMaterializeAppliedResponse>,
+    pub deferred: Vec<proto::Native2pcRecoverResponse>,
+}
+
+/// Runs the state-only portion of native recovery using the same trusted
+/// internal-plane assumption as Reboot's Python state manager. It owns no actor
+/// construction, placement, coordinator recovery, or opaque-effect execution.
+pub struct Native2pcRecoveryMaterializer<S> {
+    sidecar: S,
+}
+
+impl<S: Native2pcDatabaseSidecar> Native2pcRecoveryMaterializer<S> {
+    pub fn new(sidecar: S) -> Self {
+        Self { sidecar }
+    }
+
+    pub async fn recover_and_materialize(
+        &self,
+    ) -> Result<Native2pcRecoveryMaterialization, Status> {
+        let recovered = self.sidecar.recover().await?;
+        let mut result = Native2pcRecoveryMaterialization {
+            recovered_records: recovered.len(),
+            ..Default::default()
+        };
+        for record in recovered {
+            let Some(applied) = record.applied.as_ref() else {
+                continue;
+            };
+            let is_state_only = applied
+                .effects
+                .as_ref()
+                .is_some_and(|effects| effects.state.is_some() && effects.effects.is_empty());
+            if !is_state_only {
+                result.deferred.push(record);
+                continue;
+            }
+            let journal = record.applied_journal.clone();
+            let response = self
+                .sidecar
+                .materialize_applied(proto::Native2pcMaterializeAppliedRequest {
+                    applied_journal: journal.clone(),
+                })
+                .await?;
+            validate_materialization_response(&journal, &response)?;
+            result.materialized.push(response);
+        }
+        Ok(result)
+    }
+}
+
+fn validate_materialization_response(
+    journal: &[u8],
+    response: &proto::Native2pcMaterializeAppliedResponse,
+) -> Result<(), Status> {
+    let applied = proto::Native2pcAppliedActorEffects::decode(journal)
+        .map_err(|_| invalid("malformed native applied journal bytes"))?;
+    validate_state_only_applied(&applied)?;
+    let receipt = response
+        .receipt
+        .as_ref()
+        .ok_or_else(|| Status::data_loss("native materialization receipt is required"))?;
+    if receipt.applied.as_ref() != Some(&applied)
+        || receipt.applied_journal != journal
+        || response.state.as_deref()
+            != applied
+                .effects
+                .as_ref()
+                .and_then(|effects| effects.state.as_deref())
+    {
+        return Err(Status::data_loss(
+            "native materialization response conflicts with journal",
+        ));
+    }
+    Ok(())
+}
+
 /// Dedicated Native2pc persistence boundary. It is deliberately distinct from
 /// the legacy `Database` client and has no fallback implementation.
 pub trait Native2pcDatabaseSidecar: Send + Sync + 'static {
@@ -828,22 +914,7 @@ impl Native2pcDatabaseSidecar for TonicNative2pcDatabaseSidecar {
                 .materialize_applied(request)
                 .await?
                 .into_inner();
-            let receipt = response
-                .receipt
-                .as_ref()
-                .ok_or_else(|| Status::data_loss("native materialization receipt is required"))?;
-            if receipt.applied.as_ref() != Some(&applied)
-                || receipt.applied_journal != journal
-                || response.state.as_deref()
-                    != applied
-                        .effects
-                        .as_ref()
-                        .and_then(|effects| effects.state.as_deref())
-            {
-                return Err(Status::data_loss(
-                    "native materialization response conflicts with journal",
-                ));
-            }
+            validate_materialization_response(&journal, &response)?;
             Ok(response)
         })
     }
@@ -1207,6 +1278,135 @@ mod tests {
         assert_eq!(
             validate_state_only_applied(&applied).unwrap_err().code(),
             tonic::Code::InvalidArgument
+        );
+    }
+
+    struct RecoverySidecar {
+        records: Vec<proto::Native2pcRecoverResponse>,
+        materialized: std::sync::Mutex<Vec<Vec<u8>>>,
+    }
+
+    impl Native2pcDatabaseSidecar for RecoverySidecar {
+        fn put_coordinator(
+            &self,
+            _: proto::Native2pcPutCoordinatorRequest,
+        ) -> NativeFuture<'_, proto::Native2pcPutCoordinatorResponse> {
+            Box::pin(async { Err(Status::unimplemented("not used by recovery")) })
+        }
+
+        fn put_participant(
+            &self,
+            _: proto::Native2pcPutParticipantRequest,
+        ) -> NativeFuture<'_, proto::Native2pcPutParticipantResponse> {
+            Box::pin(async { Err(Status::unimplemented("not used by recovery")) })
+        }
+
+        fn stage_participant(
+            &self,
+            _: proto::Native2pcStageParticipantRequest,
+        ) -> NativeFuture<'_, proto::Native2pcStageParticipantResponse> {
+            Box::pin(async { Err(Status::unimplemented("not used by recovery")) })
+        }
+
+        fn put_commit_decision(
+            &self,
+            _: proto::Native2pcPutCommitDecisionRequest,
+        ) -> NativeFuture<'_, proto::Native2pcPutCommitDecisionResponse> {
+            Box::pin(async { Err(Status::unimplemented("not used by recovery")) })
+        }
+
+        fn put_abort_decision(
+            &self,
+            _: proto::Native2pcPutAbortDecisionRequest,
+        ) -> NativeFuture<'_, proto::Native2pcPutAbortDecisionResponse> {
+            Box::pin(async { Err(Status::unimplemented("not used by recovery")) })
+        }
+
+        fn recover(&self) -> NativeFuture<'_, Vec<proto::Native2pcRecoverResponse>> {
+            Box::pin(async { Ok(self.records.clone()) })
+        }
+
+        fn materialize_applied(
+            &self,
+            request: proto::Native2pcMaterializeAppliedRequest,
+        ) -> NativeFuture<'_, proto::Native2pcMaterializeAppliedResponse> {
+            Box::pin(async move {
+                let applied =
+                    proto::Native2pcAppliedActorEffects::decode(request.applied_journal.as_slice())
+                        .map_err(|_| Status::invalid_argument("malformed journal"))?;
+                let state = applied
+                    .effects
+                    .as_ref()
+                    .and_then(|effects| effects.state.clone())
+                    .ok_or_else(|| Status::failed_precondition("state-only journal required"))?;
+                self.materialized
+                    .lock()
+                    .unwrap()
+                    .push(request.applied_journal.clone());
+                Ok(proto::Native2pcMaterializeAppliedResponse {
+                    receipt: Some(proto::Native2pcApplicationReceipt {
+                        applied: Some(applied),
+                        applied_journal: request.applied_journal,
+                    }),
+                    state: Some(state),
+                })
+            })
+        }
+
+        fn terminal_participant(
+            &self,
+            _: proto::Native2pcTerminalParticipantRequest,
+        ) -> NativeFuture<'_, proto::Native2pcTerminalParticipantResponse> {
+            Box::pin(async { Err(Status::unimplemented("not used by recovery")) })
+        }
+    }
+
+    fn recovered_applied(state: Option<Vec<u8>>, opaque: bool) -> proto::Native2pcRecoverResponse {
+        let participant = requests()
+            .put_participant(&participant("a"))
+            .participant
+            .unwrap();
+        let applied = proto::Native2pcAppliedActorEffects {
+            protocol: participant.protocol,
+            root_transaction_id: participant.root_transaction_id,
+            participant: participant.participant,
+            coordinator: participant.coordinator,
+            enrollment_digest: participant.enrollment_digest,
+            effects: Some(proto::Native2pcActorEffects {
+                state,
+                effects: opaque
+                    .then(|| proto::Native2pcEffect {
+                        key: b"opaque".to_vec(),
+                        payload: b"defer".to_vec(),
+                    })
+                    .into_iter()
+                    .collect(),
+            }),
+        };
+        proto::Native2pcRecoverResponse {
+            applied_journal: applied.encode_to_vec(),
+            applied: Some(applied),
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn recovery_materializer_applies_state_only_and_defers_opaque_journals() {
+        let state_only = recovered_applied(Some(b"state".to_vec()), false);
+        let deferred = recovered_applied(Some(b"state".to_vec()), true);
+        let sidecar = RecoverySidecar {
+            records: vec![state_only.clone(), deferred.clone()],
+            materialized: std::sync::Mutex::new(Vec::new()),
+        };
+        let executor = Native2pcRecoveryMaterializer::new(sidecar);
+        let result = executor.recover_and_materialize().await.unwrap();
+        assert_eq!(result.recovered_records, 2);
+        assert_eq!(result.materialized.len(), 1);
+        assert_eq!(result.materialized[0].state, Some(b"state".to_vec()));
+        assert_eq!(result.deferred, vec![deferred]);
+        assert_eq!(
+            *executor.sidecar.materialized.lock().unwrap(),
+            vec![state_only.applied_journal]
         );
     }
 
