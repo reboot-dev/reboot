@@ -370,6 +370,7 @@ class LockableTransaction : public Mutex {
 ////////////////////////////////////////////////////////////////////////
 
 class Native2pcDatabaseService;
+class Native2pcCoordinatorService;
 
 class DatabaseService final : public rbt::v1alpha1::Database::Service {
  public:
@@ -433,6 +434,9 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   grpc::Status NativeTerminal(
       const rbt::v1alpha1::Native2pcTerminalParticipantRequest& request,
       rbt::v1alpha1::Native2pcTerminalParticipantResponse* response);
+  grpc::Status NativeWatch(
+      const rbt::v1alpha1::Native2pcWatchRequest& request,
+      rbt::v1alpha1::Native2pcWatchResponse* response);
 
   // Service methods.
   grpc::Status ColocatedRange(
@@ -1304,6 +1308,18 @@ class Native2pcDatabaseService final : public rbt::v1alpha1::Native2pcDatabase::
   grpc::Status RecoverNative2pc(grpc::ServerContext*, const rbt::v1alpha1::Native2pcRecoverRequest* request, grpc::ServerWriter<rbt::v1alpha1::Native2pcRecoverResponse>* responses) override { return database_.NativeRecover(*request, responses); }
   grpc::Status MaterializeApplied(grpc::ServerContext*, const rbt::v1alpha1::Native2pcMaterializeAppliedRequest* request, rbt::v1alpha1::Native2pcMaterializeAppliedResponse* response) override { return database_.NativeMaterializeApplied(*request, response); }
   grpc::Status TerminalParticipant(grpc::ServerContext*, const rbt::v1alpha1::Native2pcTerminalParticipantRequest* request, rbt::v1alpha1::Native2pcTerminalParticipantResponse* response) override { return database_.NativeTerminal(*request, response); }
+ private:
+  DatabaseService& database_;
+};
+
+class Native2pcCoordinatorService final : public rbt::v1alpha1::Native2pcCoordinator::Service {
+ public:
+  explicit Native2pcCoordinatorService(DatabaseService& database) : database_(database) {}
+  grpc::Status Watch(
+      grpc::ServerContext*, const rbt::v1alpha1::Native2pcWatchRequest* request,
+      rbt::v1alpha1::Native2pcWatchResponse* response) override {
+    return database_.NativeWatch(*request, response);
+  }
  private:
   DatabaseService& database_;
 };
@@ -5066,6 +5082,46 @@ grpc::Status DatabaseService::NativePutCoordinator(
   return put.ok() ? grpc::Status::OK : grpc::Status(grpc::StatusCode::INTERNAL, put.ToString());
 }
 
+grpc::Status DatabaseService::NativeWatch(
+    const rbt::v1alpha1::Native2pcWatchRequest& request,
+    rbt::v1alpha1::Native2pcWatchResponse* response) {
+  grpc::Status valid = ValidateNativeIdentity(
+      request.protocol(), request.root_transaction_id(), request.coordinator(),
+      "coordinator");
+  if (!valid.ok()) return valid;
+  if (!NativeActorValid(request.participant()) || request.enrollment_digest().empty()) {
+    return NativeInvalid("native watch participant and enrollment digest must be nonempty");
+  }
+  std::lock_guard lock(native_2pc_mutex_);
+  std::string bytes;
+  rocksdb::Status get = db_->Get(
+      rocksdb::ReadOptions(), NativeCoordinatorKey(request.root_transaction_id()),
+      &bytes);
+  if (get.IsNotFound()) {
+    return grpc::Status(grpc::StatusCode::NOT_FOUND,
+                        "native coordinator enrollment is missing");
+  }
+  if (!get.ok()) return grpc::Status(grpc::StatusCode::INTERNAL, get.ToString());
+  rbt::v1alpha1::Native2pcCoordinatorRecord coordinator;
+  if (!coordinator.ParseFromString(bytes)) {
+    return grpc::Status(grpc::StatusCode::DATA_LOSS,
+                        "malformed native coordinator record");
+  }
+  valid = ValidateNativeCoordinator(coordinator);
+  if (!valid.ok()) {
+    return grpc::Status(grpc::StatusCode::DATA_LOSS, valid.error_message());
+  }
+  if (coordinator.coordinator().SerializeAsString() !=
+          request.coordinator().SerializeAsString() ||
+      coordinator.enrollment_digest() != request.enrollment_digest() ||
+      !NativeEnrollmentContains(coordinator, request.participant())) {
+    return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION,
+                        "native watch is not bound to coordinator enrollment");
+  }
+  response->set_phase(coordinator.phase());
+  return grpc::Status::OK;
+}
+
 grpc::Status DatabaseService::NativePutDecision(
     const rbt::v1alpha1::Native2pcProtocol& protocol, const std::string& root,
     const rbt::v1alpha1::Native2pcActorId& coordinator, const std::string& digest,
@@ -5514,7 +5570,10 @@ expected<std::unique_ptr<DatabaseServer>> DatabaseServer::Instantiate(
   CHECK(database_service != nullptr);
   std::unique_ptr<grpc::Service> native_service =
       std::make_unique<Native2pcDatabaseService>(*database_service);
+  std::unique_ptr<grpc::Service> native_coordinator_service =
+      std::make_unique<Native2pcCoordinatorService>(*database_service);
   builder.RegisterService(native_service.get());
+  builder.RegisterService(native_coordinator_service.get());
 
   std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
 
@@ -5529,6 +5588,7 @@ expected<std::unique_ptr<DatabaseServer>> DatabaseServer::Instantiate(
   return std::unique_ptr<DatabaseServer>(new DatabaseServer(
       std::move(service.value()),
       std::move(native_service),
+      std::move(native_coordinator_service),
       std::move(server),
       address));
 }

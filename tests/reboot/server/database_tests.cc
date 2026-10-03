@@ -95,6 +95,8 @@ class DatabaseTest : public TemporaryDirectoryTest {
     // Manually remove the temporary directory to avoid a flake
     // on MacOS where the directory is not empty and rmdir in the
     // `TemporaryDirectoryTest::TearDown` fails.
+    native_coordinator_stub.reset();
+    native_stub.reset();
     stub.reset();
     channel.reset();
     server.reset();
@@ -136,9 +138,9 @@ class DatabaseTest : public TemporaryDirectoryTest {
     channel = server->InProcessChannel(grpc::ChannelArguments());
     stub = rbt::v1alpha1::Database::NewStub(channel);
     native_stub = rbt::v1alpha1::Native2pcDatabase::NewStub(channel);
+    native_coordinator_stub = rbt::v1alpha1::Native2pcCoordinator::NewStub(channel);
   }
 
-  // Performs a 'Store'.
   inline void store(
       std::vector<v1alpha1::Actor>&& actor_upserts,
       std::vector<v1alpha1::Task>&& task_upserts,
@@ -362,6 +364,7 @@ class DatabaseTest : public TemporaryDirectoryTest {
   std::shared_ptr<grpc::Channel> channel;
   std::unique_ptr<rbt::v1alpha1::Database::Stub> stub;
   std::unique_ptr<rbt::v1alpha1::Native2pcDatabase::Stub> native_stub;
+  std::unique_ptr<rbt::v1alpha1::Native2pcCoordinator::Stub> native_coordinator_stub;
 };
 
 ////////////////////////////////////////////////////////////////////////
@@ -2115,6 +2118,51 @@ TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
   grpc::ClientContext retry_context;
   EXPECT_TRUE(native_stub->PutCoordinator(&retry_context, put, &put_response).ok());
 
+  // Watch observes only a coordinator record that exactly binds the caller to
+  // its sealed enrollment. It is observation-only: PREPARING is non-definitive.
+  v1alpha1::Native2pcWatchRequest watch;
+  *watch.mutable_protocol() = protocol();
+  watch.set_root_transaction_id(root);
+  *watch.mutable_coordinator() = coordinator;
+  *watch.mutable_participant() = participant;
+  watch.set_enrollment_digest(digest);
+  v1alpha1::Native2pcWatchResponse watch_response;
+  grpc::ClientContext watch_preparing_context;
+  ASSERT_TRUE(native_coordinator_stub
+                  ->Watch(&watch_preparing_context, watch, &watch_response)
+                  .ok());
+  EXPECT_EQ(v1alpha1::Native2pcCoordinatorRecord::PREPARING,
+            watch_response.phase());
+  v1alpha1::Native2pcWatchRequest watch_bad_protocol = watch;
+  watch_bad_protocol.mutable_protocol()->set_record_version(2);
+  grpc::ClientContext watch_bad_protocol_context;
+  EXPECT_EQ(grpc::StatusCode::INVALID_ARGUMENT,
+            native_coordinator_stub
+                ->Watch(
+                    &watch_bad_protocol_context, watch_bad_protocol, &watch_response)
+                .error_code());
+  v1alpha1::Native2pcWatchRequest watch_bad_digest = watch;
+  watch_bad_digest.set_enrollment_digest("other-digest");
+  grpc::ClientContext watch_bad_digest_context;
+  EXPECT_EQ(grpc::StatusCode::FAILED_PRECONDITION,
+            native_coordinator_stub
+                ->Watch(&watch_bad_digest_context, watch_bad_digest, &watch_response)
+                .error_code());
+  v1alpha1::Native2pcWatchRequest watch_outsider = watch;
+  *watch_outsider.mutable_participant() = actor("Participant", "outsider");
+  grpc::ClientContext watch_outsider_context;
+  EXPECT_EQ(grpc::StatusCode::FAILED_PRECONDITION,
+            native_coordinator_stub
+                ->Watch(&watch_outsider_context, watch_outsider, &watch_response)
+                .error_code());
+  v1alpha1::Native2pcWatchRequest watch_missing = watch;
+  watch_missing.set_root_transaction_id(std::string(16, 'm'));
+  grpc::ClientContext watch_missing_context;
+  EXPECT_EQ(grpc::StatusCode::NOT_FOUND,
+            native_coordinator_stub
+                ->Watch(&watch_missing_context, watch_missing, &watch_response)
+                .error_code());
+
   v1alpha1::Native2pcPutCommitDecisionRequest commit;
   *commit.mutable_protocol() = protocol();
   commit.set_root_transaction_id(root);
@@ -2226,6 +2274,12 @@ TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
 
   grpc::ClientContext commit_context;
   ASSERT_TRUE(native_stub->PutCommitDecision(&commit_context, commit, &commit_response).ok());
+  grpc::ClientContext watch_commit_context;
+  ASSERT_TRUE(native_coordinator_stub
+                  ->Watch(&watch_commit_context, watch, &watch_response)
+                  .ok());
+  EXPECT_EQ(v1alpha1::Native2pcCoordinatorRecord::COMMIT_DECIDED,
+            watch_response.phase());
   grpc::ClientContext terminal_context;
   ASSERT_TRUE(native_stub->TerminalParticipant(&terminal_context, terminal_request, &terminal_response).ok());
   grpc::ClientContext terminal_retry_context;

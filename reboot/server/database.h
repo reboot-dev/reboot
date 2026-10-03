@@ -83,6 +83,7 @@ class DatabaseServer final {
       REBOOT_DATABASE_LOG(1)
           << "Waited for database gRPC server at " << address_;
       server_.reset();
+      native_coordinator_service_.reset();
       native_service_.reset();
       service_.reset();
     }
@@ -106,16 +107,20 @@ class DatabaseServer final {
   DatabaseServer(
       std::unique_ptr<grpc::Service>&& service,
       std::unique_ptr<grpc::Service>&& native_service,
+      std::unique_ptr<grpc::Service>&& native_coordinator_service,
       std::unique_ptr<grpc::Server>&& server,
       const std::string& address)
     : service_(std::move(service)),
       native_service_(std::move(native_service)),
+      native_coordinator_service_(std::move(native_coordinator_service)),
       server_(std::move(server)),
       address_(address) {}
 
   std::unique_ptr<grpc::Service> service_;
   // Deliberately separate from Database: Native2pc never extends legacy RPCs.
   std::unique_ptr<grpc::Service> native_service_;
+  // Durable coordinator observation is native-only, never a legacy watch.
+  std::unique_ptr<grpc::Service> native_coordinator_service_;
   std::unique_ptr<grpc::Server> server_;
   const std::string address_;
 };
