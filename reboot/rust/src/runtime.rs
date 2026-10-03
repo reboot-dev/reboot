@@ -81,17 +81,71 @@ pub struct TransactionContext {
     mode: TransactionMode,
 }
 
+/// Host-owned routing for a generated transactional application client.
+///
+/// The generated client supplies the declared state type and the caller-provided
+/// state reference unchanged. Implementations choose the transport endpoint;
+/// they must not rely on the SDK to derive an address or placement.
+#[tonic::async_trait]
+pub trait TransactionalChannelResolver: Send + Sync + 'static {
+    async fn resolve(
+        &self,
+        state_type: &str,
+        state_ref: &str,
+    ) -> Result<tonic::transport::Channel, Status>;
+}
+
+/// Builds one outbound request for a generated transactional application call.
+///
+/// This preserves only the validated Reboot allowlist held by `context`, swaps
+/// its target state reference, and asks the host to route that exact target.
+/// It neither creates transaction identity nor interprets the state reference.
+/// Returned channels are used by the generated client to invoke its statically
+/// declared RPC method. Nested inbound execution and participant collection are
+/// deliberately outside this outbound-only foundation.
+pub async fn transactional_outbound_request<R, Message>(
+    resolver: &R,
+    context: &TransactionContext,
+    state_type: &str,
+    state_ref: &str,
+    message: Message,
+) -> Result<(tonic::transport::Channel, Request<Message>), Status>
+where
+    R: TransactionalChannelResolver,
+{
+    if state_type.is_empty() || state_ref.is_empty() {
+        return Err(Status::invalid_argument(
+            "target state type and reference must not be empty",
+        ));
+    }
+    let mut headers = context.headers().clone();
+    headers.state_ref = state_ref.to_owned();
+    let metadata = headers
+        .to_metadata()
+        .map_err(|error| Status::invalid_argument(error.to_string()))?;
+    let channel = resolver.resolve(state_type, state_ref).await?;
+    let mut request = Request::new(message);
+    *request.metadata_mut() = metadata;
+    Ok((channel, request))
+}
+
 impl TransactionContext {
     /// Validates coordinator-established transaction metadata for one handler.
     pub fn from_headers(
         headers: RebootHeaders,
         mode: TransactionMode,
     ) -> Result<Self, ContextError> {
-        if headers.transaction_ids.is_none() {
+        if headers.transaction_ids.as_ref().is_none_or(Vec::is_empty) {
             return Err(ContextError::MissingTransactionMetadata);
         }
-        if headers.transaction_coordinator_state_type.is_none()
-            || headers.transaction_coordinator_state_ref.is_none()
+        if headers
+            .transaction_coordinator_state_type
+            .as_deref()
+            .is_none_or(str::is_empty)
+            || headers
+                .transaction_coordinator_state_ref
+                .as_deref()
+                .is_none_or(str::is_empty)
         {
             return Err(ContextError::MissingTransactionCoordinatorMetadata);
         }
@@ -1660,6 +1714,109 @@ mod tests {
         assert_eq!(execution.final_state, Some(vec![1, 2, 3]));
         assert_eq!(execution.task_upserts.len(), 1);
         assert_eq!(execution.idempotent_mutations.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn transactional_outbound_request_preserves_validated_context_and_target_metadata() {
+        struct RecordingResolver(std::sync::Mutex<Vec<(String, String)>>);
+
+        #[tonic::async_trait]
+        impl TransactionalChannelResolver for RecordingResolver {
+            async fn resolve(
+                &self,
+                state_type: &str,
+                state_ref: &str,
+            ) -> Result<tonic::transport::Channel, Status> {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push((state_type.to_owned(), state_ref.to_owned()));
+                Ok(tonic::transport::Channel::from_static("http://[::1]:50051").connect_lazy())
+            }
+        }
+
+        let mut headers = RebootHeaders::new("source/actor");
+        headers.transaction_ids = Some(vec![Uuid::from_u128(7), Uuid::from_u128(8)]);
+        headers.transaction_coordinator_state_type = Some("example.Coordinator".into());
+        headers.transaction_coordinator_state_ref = Some("coordinator/42".into());
+        headers.idempotency_key = Some(Uuid::from_u128(9));
+        headers.traceparent =
+            Some("00-0123456789abcdef0123456789abcdef-0123456789abcdef-01".into());
+        headers.internal_call = true;
+        let context =
+            TransactionContext::from_headers(headers, TransactionMode::Exclusive).unwrap();
+        let resolver = RecordingResolver(std::sync::Mutex::new(Vec::new()));
+
+        let (_, request) = transactional_outbound_request(
+            &resolver,
+            &context,
+            "example.Target",
+            "target/actor",
+            proto::Empty {},
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            *resolver.0.lock().unwrap(),
+            [("example.Target".into(), "target/actor".into())]
+        );
+        assert_eq!(
+            request.metadata().get(STATE_REF_HEADER).unwrap(),
+            "target/actor"
+        );
+        assert_eq!(
+            request
+                .metadata()
+                .get(crate::TRANSACTION_IDS_HEADER)
+                .unwrap(),
+            "[\"00000000-0000-0000-0000-000000000007\", \"00000000-0000-0000-0000-000000000008\"]"
+        );
+        assert_eq!(
+            request
+                .metadata()
+                .get(crate::TRANSACTION_COORDINATOR_STATE_TYPE_HEADER)
+                .unwrap(),
+            "example.Coordinator"
+        );
+        assert_eq!(
+            request
+                .metadata()
+                .get(crate::TRANSACTION_COORDINATOR_STATE_REF_HEADER)
+                .unwrap(),
+            "coordinator/42"
+        );
+        assert_eq!(
+            request
+                .metadata()
+                .get(IDEMPOTENCY_KEY_HEADER)
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            Uuid::from_u128(9).to_string()
+        );
+        assert_eq!(
+            request.metadata().get(crate::INTERNAL_CALL_HEADER).unwrap(),
+            "true"
+        );
+        assert!(request.metadata().get("x-example-unknown").is_none());
+
+        for (state_type, state_ref) in [("", "target/actor"), ("example.Target", "")] {
+            assert_eq!(
+                transactional_outbound_request(
+                    &resolver,
+                    &context,
+                    state_type,
+                    state_ref,
+                    proto::Empty {},
+                )
+                .await
+                .unwrap_err()
+                .code(),
+                tonic::Code::InvalidArgument
+            );
+        }
+        assert_eq!(resolver.0.lock().unwrap().len(), 1);
     }
 
     #[test]

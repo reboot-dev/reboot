@@ -526,7 +526,31 @@ fn emit_durable(
         }
         output.push_str("}\n\n");
     }
+    emit_transactional_client(output, service_name, &state, runtime_module, &methods)?;
     emit_transactions(output, service_name, &state, runtime_module, &methods)?;
+    Ok(())
+}
+
+/// Emits a typed outbound client for an annotated Reboot application service.
+///
+/// The host provides routing; the generated client only calls the statically
+/// declared Tonic method after attaching the existing transaction context.
+fn emit_transactional_client(
+    output: &mut String,
+    service_name: &str,
+    state: &str,
+    runtime_module: &str,
+    methods: &[(&DurableKind, String, String, String, String)],
+) -> Result<(), String> {
+    let client = format!("{service_name}Client");
+    let target = format!("{service_name}Target");
+    let declaration = format!("{state}DurableState");
+    let client_module = format!("{}_client", snake_case(service_name));
+    output.push_str(&format!("/// Typed target state reference for `{service_name}`.\n///\n/// This value is passed unchanged to the host-owned resolver; it is not an\n/// address, placement hint, UUID, or SDK-generated identity.\n#[derive(Clone, Debug, Eq, PartialEq)]\npub struct {target} {{ state_ref: String }}\nimpl {target} {{ pub fn new(state_ref: impl Into<String>) -> Self {{ Self {{ state_ref: state_ref.into() }} }} pub fn state_ref(&self) -> &str {{ &self.state_ref }} }}\n\n/// Generated typed outbound client for `{service_name}`.\n///\n/// This is an outbound-only transaction foundation. It preserves the validated\n/// transaction path and coordinator headers, replaces only the target state\n/// reference, and delegates routing to the injected resolver. It does not\n/// execute nested inbound transactions, collect participants, or provide\n/// cross-actor atomicity.\npub struct {client}<R> {{ resolver: std::sync::Arc<R> }}\nimpl<R> Clone for {client}<R> {{ fn clone(&self) -> Self {{ Self {{ resolver: self.resolver.clone() }} }} }}\nimpl<R> {client}<R> where R: {runtime_module}::runtime::TransactionalChannelResolver {{ pub fn new(resolver: R) -> Self {{ Self {{ resolver: std::sync::Arc::new(resolver) }} }}\n"));
+    for (_, method, request, response, _) in methods {
+        output.push_str(&format!("    pub async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, target: &{target}, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let (channel, request) = {runtime_module}::runtime::transactional_outbound_request(self.resolver.as_ref(), context, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, target.state_ref(), request).await?; proto::{client_module}::{service_name}Client::new(channel).{method}(request).await }}\n"));
+    }
+    output.push_str("}\n\n");
     Ok(())
 }
 
@@ -995,6 +1019,11 @@ mod tests {
             .content
             .unwrap();
         assert!(content.contains("pub trait CounterWritesTransactionHandler"));
+        assert!(content.contains("pub struct CounterWritesClient<R>"));
+        assert!(content.contains("pub struct CounterWritesTarget"));
+        assert!(content.contains("TransactionalChannelResolver"));
+        assert!(content.contains("transactional_outbound_request"));
+        assert!(content.contains("CounterWritesClient::new(channel).increment(request).await"));
         assert!(content.contains("context: &reboot_rust_schema::runtime::TransactionContext"));
         assert!(content.contains("state: &mut proto::Counter"));
         assert!(content.contains("pub struct CounterWritesTransactionAdapter<H, P, C, R, F>"));
