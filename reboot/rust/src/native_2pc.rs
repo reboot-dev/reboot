@@ -686,16 +686,12 @@ pub enum Native2pcPreparedParticipantRecoveryPass {
     Terminalized(proto::Native2pcTerminalParticipantResponse),
 }
 
-fn validate_terminal_participant_response(
-    request: &proto::Native2pcTerminalParticipantRequest,
-    response: &proto::Native2pcTerminalParticipantResponse,
+fn validate_terminal_response(
+    request: &proto::Native2pcTerminalRequest,
+    terminal_phase: i32,
 ) -> Result<(), Status> {
-    let terminal = request
-        .terminal
-        .as_ref()
-        .ok_or_else(|| invalid("native terminal request is required"))?;
-    validate_terminal(terminal)?;
-    let expected = match proto::native2pc_terminal_request::Decision::try_from(terminal.decision) {
+    validate_terminal(request)?;
+    let expected = match proto::native2pc_terminal_request::Decision::try_from(request.decision) {
         Ok(proto::native2pc_terminal_request::Decision::Commit) => {
             proto::native2pc_participant_record::Phase::Committed
         }
@@ -704,12 +700,25 @@ fn validate_terminal_participant_response(
         }
         _ => return Err(invalid("native terminal decision is illegal")),
     };
-    if response.terminal_phase != expected as i32 {
+    if terminal_phase != expected as i32 {
         return Err(Status::data_loss(
             "native terminal response conflicts with decision",
         ));
     }
     Ok(())
+}
+
+fn validate_terminal_participant_response(
+    request: &proto::Native2pcTerminalParticipantRequest,
+    response: &proto::Native2pcTerminalParticipantResponse,
+) -> Result<(), Status> {
+    validate_terminal_response(
+        request
+            .terminal
+            .as_ref()
+            .ok_or_else(|| invalid("native terminal request is required"))?,
+        response.terminal_phase,
+    )
 }
 
 /// Resolves the coordinator recorded by one prepared participant, watches that
@@ -1529,12 +1538,15 @@ impl Native2pcParticipantEndpoint for TonicNative2pcParticipantEndpoint {
     ) -> NativeFuture<'_, proto::Native2pcTerminalResponse> {
         Box::pin(async move {
             validate_terminal(&request)?;
-            self.client
+            let response = self
+                .client
                 .lock()
                 .await
-                .terminal(request)
-                .await
-                .map(Response::into_inner)
+                .terminal(request.clone())
+                .await?
+                .into_inner();
+            validate_terminal_response(&request, response.terminal_phase)?;
+            Ok(response)
         })
     }
 }
@@ -1599,6 +1611,56 @@ mod tests {
             )
             .unwrap(),
         )
+    }
+
+    #[test]
+    fn terminal_response_must_exactly_match_the_requested_decision() {
+        let participant = participant("a");
+        for (commit, phase, accepted) in [
+            (
+                true,
+                proto::native2pc_participant_record::Phase::Committed as i32,
+                true,
+            ),
+            (
+                false,
+                proto::native2pc_participant_record::Phase::Aborted as i32,
+                true,
+            ),
+            (
+                true,
+                proto::native2pc_participant_record::Phase::Aborted as i32,
+                false,
+            ),
+            (
+                false,
+                proto::native2pc_participant_record::Phase::Committed as i32,
+                false,
+            ),
+            (
+                true,
+                proto::native2pc_participant_record::Phase::Prepared as i32,
+                false,
+            ),
+            (
+                true,
+                proto::native2pc_participant_record::Phase::Staged as i32,
+                false,
+            ),
+            (
+                true,
+                proto::native2pc_participant_record::Phase::Unspecified as i32,
+                false,
+            ),
+            (true, 999, false),
+        ] {
+            let request = requests().terminal(&participant, commit).terminal.unwrap();
+            let result = validate_terminal_response(&request, phase);
+            assert_eq!(result.is_ok(), accepted);
+            if !accepted {
+                assert_eq!(result.unwrap_err().code(), tonic::Code::DataLoss);
+            }
+        }
     }
 
     fn placement() -> Native2pcPlacementPlan {

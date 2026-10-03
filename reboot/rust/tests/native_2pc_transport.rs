@@ -351,6 +351,11 @@ async fn native_tonic_clients_reach_only_native_services() {
             .terminal_phase,
         proto::native2pc_participant_record::Phase::Committed as i32
     );
+    let mismatch = participant
+        .terminal(requests.terminal(&participant_id, false).terminal.unwrap())
+        .await
+        .unwrap_err();
+    assert_eq!(mismatch.code(), tonic::Code::DataLoss);
 
     let coordinator = TonicNative2pcCoordinatorEndpoint::new(channel);
     assert_eq!(
