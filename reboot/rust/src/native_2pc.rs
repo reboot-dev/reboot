@@ -970,6 +970,40 @@ pub trait Native2pcCoordinatorResolver: Send + Sync + 'static {
     fn resolve(&self, actor: &NativeActorId) -> NativeFuture<'_, Arc<Self::Endpoint>>;
 }
 
+/// A freshly resolved endpoint and its point-in-time Native2pc capability
+/// observation. This is sequential call composition, not a lease, ownership
+/// proof, authorization decision, distributed atomic operation, or executor
+/// safety guarantee. Each call resolves and negotiates again.
+pub struct ResolvedNative2pcParticipant<E> {
+    endpoint: Arc<E>,
+    capabilities: Native2pcParticipantCapabilities,
+}
+
+impl<E> ResolvedNative2pcParticipant<E> {
+    pub fn endpoint(&self) -> &Arc<E> {
+        &self.endpoint
+    }
+
+    pub fn capabilities(&self) -> Native2pcParticipantCapabilities {
+        self.capabilities
+    }
+}
+
+/// Resolves one actor once and requires Native2pc v1 on exactly that endpoint.
+/// Resolution and capability errors preserve their original status and this
+/// helper deliberately performs no caching or legacy fallback.
+pub async fn resolve_required_native2pc_participant<R: Native2pcParticipantResolver + ?Sized>(
+    resolver: &R,
+    actor: &NativeActorId,
+) -> Result<ResolvedNative2pcParticipant<R::Endpoint>, Status> {
+    let endpoint = resolver.resolve(actor).await?;
+    let capabilities = require_native2pc_participant(endpoint.as_ref()).await?;
+    Ok(ResolvedNative2pcParticipant {
+        endpoint,
+        capabilities,
+    })
+}
+
 /// Tonic transport for the dedicated native sidecar service.
 pub struct TonicNative2pcDatabaseSidecar {
     client: tokio::sync::Mutex<
@@ -1536,6 +1570,77 @@ mod tests {
         ) -> NativeFuture<'_, proto::Native2pcTerminalResponse> {
             Box::pin(async { Err(Status::unimplemented("not used by capability tests")) })
         }
+    }
+
+    struct RecordingCapabilityResolver {
+        endpoint: Arc<CapabilityEndpoint>,
+        resolved: std::sync::Mutex<Vec<NativeActorId>>,
+    }
+
+    impl Native2pcParticipantResolver for RecordingCapabilityResolver {
+        type Endpoint = CapabilityEndpoint;
+
+        fn resolve(&self, actor: &NativeActorId) -> NativeFuture<'_, Arc<Self::Endpoint>> {
+            let actor = actor.clone();
+            Box::pin(async move {
+                self.resolved.lock().unwrap().push(actor);
+                Ok(self.endpoint.clone())
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn resolved_participant_negotiates_once_per_resolution_without_a_cache() {
+        let endpoint = Arc::new(CapabilityEndpoint {
+            response: Ok(proto::Native2pcCapabilitiesResponse {
+                accepted: Some(protocol()),
+                native_participant_enabled: true,
+                native_sidecar_enabled: false,
+            }),
+        });
+        let resolver = RecordingCapabilityResolver {
+            endpoint: endpoint.clone(),
+            resolved: std::sync::Mutex::new(Vec::new()),
+        };
+        let actor = participant("a");
+        let first = resolve_required_native2pc_participant(&resolver, &actor)
+            .await
+            .unwrap();
+        let second = resolve_required_native2pc_participant(&resolver, &actor)
+            .await
+            .unwrap();
+        assert!(Arc::ptr_eq(first.endpoint(), &endpoint));
+        assert!(Arc::ptr_eq(second.endpoint(), &endpoint));
+        assert_eq!(
+            first.capabilities(),
+            Native2pcParticipantCapabilities {
+                native_sidecar_enabled: false,
+            }
+        );
+        assert_eq!(
+            *resolver.resolved.lock().unwrap(),
+            vec![actor.clone(), actor]
+        );
+    }
+
+    #[tokio::test]
+    async fn resolved_participant_does_not_probe_when_resolution_fails() {
+        struct FailingResolver;
+        impl Native2pcParticipantResolver for FailingResolver {
+            type Endpoint = CapabilityEndpoint;
+
+            fn resolve(&self, _: &NativeActorId) -> NativeFuture<'_, Arc<Self::Endpoint>> {
+                Box::pin(async { Err(Status::unavailable("placement unavailable")) })
+            }
+        }
+        let error =
+            match resolve_required_native2pc_participant(&FailingResolver, &participant("a")).await
+            {
+                Ok(_) => panic!("failed resolution unexpectedly negotiated a participant"),
+                Err(error) => error,
+            };
+        assert_eq!(error.code(), tonic::Code::Unavailable);
+        assert_eq!(error.message(), "placement unavailable");
     }
 
     #[tokio::test]
