@@ -501,6 +501,10 @@ pub mod database_proto {
 pub enum ContextError {
     EmptyStateRef,
     InvalidMetadata,
+    MissingTransactionCoordinatorMetadata,
+    EmptyTransactionIds,
+    InvalidTransactionIds,
+    InvalidUuid(&'static str),
 }
 
 impl std::fmt::Display for ContextError {
@@ -508,11 +512,280 @@ impl std::fmt::Display for ContextError {
         match self {
             Self::EmptyStateRef => write!(f, "Reboot state reference must not be empty"),
             Self::InvalidMetadata => write!(f, "Reboot metadata value is invalid"),
+            Self::MissingTransactionCoordinatorMetadata => write!(
+                f,
+                "transaction metadata requires coordinator state type and state reference"
+            ),
+            Self::EmptyTransactionIds => {
+                write!(f, "transaction metadata must contain at least one ID")
+            }
+            Self::InvalidTransactionIds => {
+                write!(f, "transaction IDs must be a JSON array of UUIDs")
+            }
+            Self::InvalidUuid(header) => write!(f, "metadata `{header}` must be a UUID"),
         }
     }
 }
 
 impl std::error::Error for ContextError {}
+
+const APPLICATION_ID_HEADER: &str = "x-reboot-application-id";
+const STATE_REF_HEADER: &str = "x-reboot-state-ref";
+const SERVER_ID_HEADER: &str = "x-reboot-server-id";
+const WORKFLOW_ID_HEADER: &str = "x-reboot-workflow-id";
+const WORKFLOW_ITERATION_HEADER: &str = "x-reboot-workflow-iteration";
+const TRANSACTION_IDS_HEADER: &str = "x-reboot-transaction-ids";
+const TRANSACTION_COORDINATOR_STATE_TYPE_HEADER: &str =
+    "x-reboot-transaction-coordinator-state-type";
+const TRANSACTION_COORDINATOR_STATE_REF_HEADER: &str = "x-reboot-transaction-coordinator-state-ref";
+const TRANSACTION_RETRY_AGE_HEADER: &str = "x-reboot-transaction-retry-age";
+const IDEMPOTENCY_KEY_HEADER: &str = "x-reboot-idempotency-key";
+const AUTHORIZATION_HEADER: &str = "authorization";
+const COOKIE_HEADER: &str = "cookie";
+const TASK_SCHEDULE_HEADER: &str = "x-reboot-task-schedule";
+const CALLER_ID_HEADER: &str = "x-reboot-caller-id";
+const TRACEPARENT_HEADER: &str = "traceparent";
+const TRACESTATE_HEADER: &str = "tracestate";
+const INTERNAL_CALL_HEADER: &str = "x-reboot-internal-call";
+const TRANSACTION_COORDINATOR_READ_ONLY_AWARE_HEADER: &str =
+    "x-reboot-transaction-coordinator-read-only-aware";
+
+/// Reboot metadata that is safe to forward to a downstream Reboot call.
+///
+/// This mirrors `reboot.aio.headers.Headers`: unknown inbound metadata is
+/// intentionally discarded rather than transitively forwarded. Transaction
+/// IDs are encoded as the Python runtime's JSON array of canonical UUID text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RebootHeaders {
+    pub state_ref: String,
+    pub application_id: Option<String>,
+    pub server_id: Option<String>,
+    pub workflow_id: Option<uuid::Uuid>,
+    pub workflow_iteration: Option<i64>,
+    pub transaction_ids: Option<Vec<uuid::Uuid>>,
+    pub transaction_coordinator_state_type: Option<String>,
+    pub transaction_coordinator_state_ref: Option<String>,
+    pub transaction_retry_age: Option<uuid::Uuid>,
+    pub idempotency_key: Option<uuid::Uuid>,
+    pub bearer_token: Option<String>,
+    pub task_schedule: Option<String>,
+    pub cookie: Option<String>,
+    pub caller_id: Option<String>,
+    pub traceparent: Option<String>,
+    pub tracestate: Option<String>,
+    pub internal_call: bool,
+    pub coordinator_read_only_aware: bool,
+}
+
+impl RebootHeaders {
+    pub fn new(state_ref: impl Into<String>) -> Self {
+        Self {
+            state_ref: state_ref.into(),
+            application_id: None,
+            server_id: None,
+            workflow_id: None,
+            workflow_iteration: None,
+            transaction_ids: None,
+            transaction_coordinator_state_type: None,
+            transaction_coordinator_state_ref: None,
+            transaction_retry_age: None,
+            idempotency_key: None,
+            bearer_token: None,
+            task_schedule: None,
+            cookie: None,
+            caller_id: None,
+            traceparent: None,
+            tracestate: None,
+            internal_call: false,
+            coordinator_read_only_aware: false,
+        }
+    }
+
+    pub fn from_metadata(metadata: &tonic::metadata::MetadataMap) -> Result<Self, ContextError> {
+        fn get(
+            metadata: &tonic::metadata::MetadataMap,
+            name: &'static str,
+        ) -> Result<Option<String>, ContextError> {
+            metadata
+                .get(name)
+                .map(|value| {
+                    value
+                        .to_str()
+                        .map(str::to_owned)
+                        .map_err(|_| ContextError::InvalidMetadata)
+                })
+                .transpose()
+        }
+        let state_ref = get(metadata, STATE_REF_HEADER)?.ok_or(ContextError::EmptyStateRef)?;
+        if state_ref.is_empty() {
+            return Err(ContextError::EmptyStateRef);
+        }
+        let transaction_ids = match get(metadata, TRANSACTION_IDS_HEADER)? {
+            None => None,
+            Some(value) => {
+                let values: Vec<String> = serde_json::from_str(&value)
+                    .map_err(|_| ContextError::InvalidTransactionIds)?;
+                if values.is_empty() {
+                    return Err(ContextError::EmptyTransactionIds);
+                }
+                Some(
+                    values
+                        .into_iter()
+                        .map(|value| {
+                            uuid::Uuid::parse_str(&value)
+                                .map_err(|_| ContextError::InvalidTransactionIds)
+                        })
+                        .collect::<Result<_, _>>()?,
+                )
+            }
+        };
+        let transaction_coordinator_state_type =
+            get(metadata, TRANSACTION_COORDINATOR_STATE_TYPE_HEADER)?;
+        let transaction_coordinator_state_ref =
+            get(metadata, TRANSACTION_COORDINATOR_STATE_REF_HEADER)?;
+        if transaction_ids.is_some()
+            && (transaction_coordinator_state_type.is_none()
+                || transaction_coordinator_state_ref.is_none())
+        {
+            return Err(ContextError::MissingTransactionCoordinatorMetadata);
+        }
+        let parse_uuid = |name| -> Result<Option<uuid::Uuid>, ContextError> {
+            get(metadata, name)?
+                .map(|value| {
+                    uuid::Uuid::parse_str(&value).map_err(|_| ContextError::InvalidUuid(name))
+                })
+                .transpose()
+        };
+        Ok(Self {
+            state_ref,
+            application_id: get(metadata, APPLICATION_ID_HEADER)?,
+            server_id: get(metadata, SERVER_ID_HEADER)?,
+            workflow_id: parse_uuid(WORKFLOW_ID_HEADER)?,
+            workflow_iteration: get(metadata, WORKFLOW_ITERATION_HEADER)?
+                .map(|value| value.parse().map_err(|_| ContextError::InvalidMetadata))
+                .transpose()?,
+            transaction_ids,
+            transaction_coordinator_state_type,
+            transaction_coordinator_state_ref,
+            transaction_retry_age: parse_uuid(TRANSACTION_RETRY_AGE_HEADER)?,
+            idempotency_key: parse_uuid(IDEMPOTENCY_KEY_HEADER)?,
+            bearer_token: get(metadata, AUTHORIZATION_HEADER)?
+                .map(|value| value.strip_prefix("Bearer ").unwrap_or(&value).to_owned()),
+            task_schedule: get(metadata, TASK_SCHEDULE_HEADER)?,
+            cookie: get(metadata, COOKIE_HEADER)?,
+            caller_id: get(metadata, CALLER_ID_HEADER)?,
+            traceparent: get(metadata, TRACEPARENT_HEADER)?,
+            tracestate: get(metadata, TRACESTATE_HEADER)?,
+            internal_call: get(metadata, INTERNAL_CALL_HEADER)?
+                .is_some_and(|value| value == "true"),
+            coordinator_read_only_aware: metadata
+                .contains_key(TRANSACTION_COORDINATOR_READ_ONLY_AWARE_HEADER),
+        })
+    }
+
+    pub fn to_metadata(&self) -> Result<tonic::metadata::MetadataMap, ContextError> {
+        if self.state_ref.is_empty() {
+            return Err(ContextError::EmptyStateRef);
+        }
+        if self.transaction_ids.as_ref().is_some_and(Vec::is_empty) {
+            return Err(ContextError::EmptyTransactionIds);
+        }
+        if self.transaction_ids.is_some()
+            && (self.transaction_coordinator_state_type.is_none()
+                || self.transaction_coordinator_state_ref.is_none())
+        {
+            return Err(ContextError::MissingTransactionCoordinatorMetadata);
+        }
+        fn insert(
+            metadata: &mut tonic::metadata::MetadataMap,
+            name: &'static str,
+            value: String,
+        ) -> Result<(), ContextError> {
+            metadata.insert(
+                name,
+                value.parse().map_err(|_| ContextError::InvalidMetadata)?,
+            );
+            Ok(())
+        }
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        insert(&mut metadata, STATE_REF_HEADER, self.state_ref.clone())?;
+        for (name, value) in [
+            (APPLICATION_ID_HEADER, &self.application_id),
+            (SERVER_ID_HEADER, &self.server_id),
+        ] {
+            if let Some(value) = value {
+                insert(&mut metadata, name, value.clone())?;
+            }
+        }
+        if let Some(token) = &self.bearer_token {
+            insert(
+                &mut metadata,
+                AUTHORIZATION_HEADER,
+                format!("Bearer {token}"),
+            )?;
+        }
+        if let Some(cookie) = &self.cookie {
+            insert(&mut metadata, COOKIE_HEADER, cookie.clone())?;
+        }
+        if let Some(ids) = &self.transaction_ids {
+            let encoded = format!(
+                "[{}]",
+                ids.iter()
+                    .map(|id| format!("\"{id}\""))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            insert(&mut metadata, TRANSACTION_IDS_HEADER, encoded)?;
+            insert(
+                &mut metadata,
+                TRANSACTION_COORDINATOR_STATE_TYPE_HEADER,
+                self.transaction_coordinator_state_type.clone().unwrap(),
+            )?;
+            insert(
+                &mut metadata,
+                TRANSACTION_COORDINATOR_STATE_REF_HEADER,
+                self.transaction_coordinator_state_ref.clone().unwrap(),
+            )?;
+        }
+        if let Some(age) = self.transaction_retry_age {
+            insert(&mut metadata, TRANSACTION_RETRY_AGE_HEADER, age.to_string())?;
+        }
+        if let Some(id) = self.workflow_id {
+            insert(&mut metadata, WORKFLOW_ID_HEADER, id.to_string())?;
+        }
+        if let Some(iteration) = self.workflow_iteration {
+            insert(
+                &mut metadata,
+                WORKFLOW_ITERATION_HEADER,
+                iteration.to_string(),
+            )?;
+        }
+        if let Some(key) = self.idempotency_key {
+            insert(&mut metadata, IDEMPOTENCY_KEY_HEADER, key.to_string())?;
+        }
+        for (name, value) in [
+            (TRACEPARENT_HEADER, &self.traceparent),
+            (TRACESTATE_HEADER, &self.tracestate),
+            (CALLER_ID_HEADER, &self.caller_id),
+            (TASK_SCHEDULE_HEADER, &self.task_schedule),
+        ] {
+            if let Some(value) = value {
+                insert(&mut metadata, name, value.clone())?;
+            }
+        }
+        if self.internal_call {
+            insert(&mut metadata, INTERNAL_CALL_HEADER, "true".into())?;
+        }
+        if self.coordinator_read_only_aware {
+            insert(
+                &mut metadata,
+                TRANSACTION_COORDINATOR_READ_ONLY_AWARE_HEADER,
+                "true".into(),
+            )?;
+        }
+        Ok(metadata)
+    }
+}
 
 /// The portable subset of Reboot's external-call context.
 ///
@@ -521,21 +794,27 @@ impl std::error::Error for ContextError {}
 /// guesses or synthesizes them.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalContext {
-    state_ref: String,
-    bearer_token: Option<String>,
+    headers: RebootHeaders,
 }
 
 impl ExternalContext {
     pub fn new(state_ref: impl Into<String>) -> Self {
         Self {
-            state_ref: state_ref.into(),
-            bearer_token: None,
+            headers: RebootHeaders::new(state_ref),
         }
     }
 
     pub fn with_bearer_token(mut self, bearer_token: impl Into<String>) -> Self {
-        self.bearer_token = Some(bearer_token.into());
+        self.headers.bearer_token = Some(bearer_token.into());
         self
+    }
+
+    pub fn with_headers(headers: RebootHeaders) -> Self {
+        Self { headers }
+    }
+
+    pub fn headers(&self) -> &RebootHeaders {
+        &self.headers
     }
 
     pub fn reader<T>(&self, message: T) -> Result<tonic::Request<T>, ContextError> {
@@ -563,32 +842,10 @@ impl ExternalContext {
         message: T,
         idempotency_key: Option<uuid::Uuid>,
     ) -> Result<tonic::Request<T>, ContextError> {
-        if self.state_ref.is_empty() {
-            return Err(ContextError::EmptyStateRef);
-        }
+        let mut headers = self.headers.clone();
+        headers.idempotency_key = idempotency_key;
         let mut request = tonic::Request::new(message);
-        request.metadata_mut().insert(
-            "x-reboot-state-ref",
-            self.state_ref
-                .parse()
-                .map_err(|_| ContextError::InvalidMetadata)?,
-        );
-        if let Some(key) = idempotency_key {
-            request.metadata_mut().insert(
-                "x-reboot-idempotency-key",
-                key.to_string()
-                    .parse()
-                    .map_err(|_| ContextError::InvalidMetadata)?,
-            );
-        }
-        if let Some(token) = &self.bearer_token {
-            request.metadata_mut().insert(
-                "authorization",
-                format!("Bearer {token}")
-                    .parse()
-                    .map_err(|_| ContextError::InvalidMetadata)?,
-            );
-        }
+        *request.metadata_mut() = headers.to_metadata()?;
         Ok(request)
     }
 }
@@ -1466,6 +1723,77 @@ mod tests {
 
         let reader = context.reader(proto::Empty {}).unwrap();
         assert!(reader.metadata().get("x-reboot-idempotency-key").is_none());
+    }
+
+    #[test]
+    fn reboot_headers_round_trip_known_metadata_and_drop_unknown_headers() {
+        let mut headers = RebootHeaders::new("actor/opaque-ref");
+        headers.application_id = Some("application-id".into());
+        headers.server_id = Some("server-id".into());
+        headers.workflow_id = Some(uuid::Uuid::from_u128(1));
+        headers.workflow_iteration = Some(7);
+        headers.transaction_ids = Some(vec![uuid::Uuid::from_u128(2), uuid::Uuid::from_u128(3)]);
+        headers.transaction_coordinator_state_type = Some("example.Coordinator".into());
+        headers.transaction_coordinator_state_ref = Some("coordinator/42".into());
+        headers.transaction_retry_age = Some(uuid::Uuid::from_u128(4));
+        headers.idempotency_key = Some(uuid::Uuid::from_u128(5));
+        headers.bearer_token = Some("bearer-token".into());
+        headers.task_schedule = Some("2026-10-03T12:00:00+00:00".into());
+        headers.cookie = Some("session=abc".into());
+        headers.caller_id = Some("caller/application".into());
+        headers.traceparent =
+            Some("00-0123456789abcdef0123456789abcdef-0123456789abcdef-01".into());
+        headers.tracestate = Some("vendor=value".into());
+        headers.internal_call = true;
+        headers.coordinator_read_only_aware = true;
+
+        let mut inbound = headers.to_metadata().unwrap();
+        inbound.insert("x-example-unknown", "must-not-forward".parse().unwrap());
+        assert_eq!(
+            inbound.get(TRANSACTION_IDS_HEADER).unwrap(),
+            "[\"00000000-0000-0000-0000-000000000002\", \"00000000-0000-0000-0000-000000000003\"]"
+        );
+
+        let parsed = RebootHeaders::from_metadata(&inbound).unwrap();
+        assert_eq!(parsed, headers);
+        let emitted = parsed.to_metadata().unwrap();
+        assert!(emitted.get("x-example-unknown").is_none());
+        assert_eq!(emitted.len(), inbound.len() - 1);
+    }
+
+    #[test]
+    fn reboot_headers_reject_malformed_transaction_and_identifier_metadata() {
+        let mut malformed_transaction = tonic::metadata::MetadataMap::new();
+        malformed_transaction.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        malformed_transaction.insert(TRANSACTION_IDS_HEADER, "[\"not-a-uuid\"]".parse().unwrap());
+        malformed_transaction.insert(
+            TRANSACTION_COORDINATOR_STATE_TYPE_HEADER,
+            "example.Coordinator".parse().unwrap(),
+        );
+        malformed_transaction.insert(
+            TRANSACTION_COORDINATOR_STATE_REF_HEADER,
+            "coordinator".parse().unwrap(),
+        );
+        assert_eq!(
+            RebootHeaders::from_metadata(&malformed_transaction),
+            Err(ContextError::InvalidTransactionIds)
+        );
+
+        let mut malformed_retry_age = tonic::metadata::MetadataMap::new();
+        malformed_retry_age.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        malformed_retry_age.insert(TRANSACTION_RETRY_AGE_HEADER, "not-a-uuid".parse().unwrap());
+        assert_eq!(
+            RebootHeaders::from_metadata(&malformed_retry_age),
+            Err(ContextError::InvalidUuid(TRANSACTION_RETRY_AGE_HEADER))
+        );
+
+        let mut malformed_idempotency_key = tonic::metadata::MetadataMap::new();
+        malformed_idempotency_key.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        malformed_idempotency_key.insert(IDEMPOTENCY_KEY_HEADER, "not-a-uuid".parse().unwrap());
+        assert_eq!(
+            RebootHeaders::from_metadata(&malformed_idempotency_key),
+            Err(ContextError::InvalidUuid(IDEMPOTENCY_KEY_HEADER))
+        );
     }
 
     #[test]
