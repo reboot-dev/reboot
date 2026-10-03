@@ -18,6 +18,17 @@ const STATE_REF_HEADER: &str = "x-reboot-state-ref";
 
 type SidecarFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, Status>> + Send + 'a>>;
 
+/// Input needed to recover the one actor owned by this participant.
+///
+/// Recovery is intentionally participant-only: it reconstructs local durable
+/// ownership so that an already-running coordinator can send terminal control.
+/// It neither recovers nor watches a coordinator.
+#[derive(Clone, Debug, Default)]
+pub struct ParticipantRecovery {
+    pub state_tags_by_state_type: std::collections::BTreeMap<String, String>,
+    pub shard_ids: Vec<String>,
+}
+
 /// Minimal sidecar boundary. Production code uses [`TonicParticipantSidecar`];
 /// tests may use this trait to verify requests and failure ordering without
 /// pretending to be a database.
@@ -35,6 +46,11 @@ pub trait ParticipantSidecar: Send + Sync + 'static {
         &self,
         request: database::TransactionParticipantAbortRequest,
     ) -> SidecarFuture<'_, database::TransactionParticipantAbortResponse>;
+    /// Collects every response from the native server-streaming `Database.Recover` RPC.
+    fn recover(
+        &self,
+        request: database::RecoverRequest,
+    ) -> SidecarFuture<'_, Vec<database::RecoverResponse>>;
 }
 
 /// Native Tonic implementation of the actor participant's sidecar boundary.
@@ -107,6 +123,26 @@ impl ParticipantSidecar for TonicParticipantSidecar {
                 .map(Response::into_inner)
         })
     }
+
+    fn recover(
+        &self,
+        request: database::RecoverRequest,
+    ) -> SidecarFuture<'_, Vec<database::RecoverResponse>> {
+        Box::pin(async move {
+            let mut stream = self
+                .client
+                .lock()
+                .await
+                .recover(request)
+                .await?
+                .into_inner();
+            let mut responses = Vec::new();
+            while let Some(response) = stream.message().await? {
+                responses.push(response);
+            }
+            Ok(responses)
+        })
+    }
 }
 
 /// Transaction attributes supplied by a future generated transaction adapter.
@@ -136,6 +172,7 @@ struct Pending {
     coordinator_state_type: String,
     coordinator_state_ref: String,
     effects: PendingActorEffects,
+    prepared: bool,
     // Kept until a terminal sidecar response is acknowledged.
     _lock: tokio::sync::OwnedMutexGuard<()>,
 }
@@ -219,6 +256,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             coordinator_state_type: start.coordinator_state_type,
             coordinator_state_ref: start.coordinator_state_ref,
             effects: PendingActorEffects::default(),
+            prepared: false,
             _lock: lock,
         });
         Ok(state)
@@ -284,6 +322,12 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         if current.root_id != transaction_id {
             return Ok(PrepareOutcome::DefinitiveAbort);
         }
+        // `Database.Recover` restores a durable prepared RocksDB transaction.
+        // A recovering coordinator replays Prepare, which must acknowledge that
+        // state instead of attempting a second sidecar prepare.
+        if current.prepared {
+            return Ok(PrepareOutcome::Prepared);
+        }
         self.sidecar
             .prepare(database::TransactionParticipantPrepareRequest {
                 state_type: self.state_type.clone(),
@@ -303,7 +347,89 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 idempotent_mutations: current.effects.idempotent_mutations.clone(),
             })
             .await?;
+        current.prepared = true;
         Ok(PrepareOutcome::Prepared)
+    }
+
+    /// Rebuilds this actor's durable participant ownership after a restart.
+    ///
+    /// The sidecar's prepared transaction already owns the staged state. The
+    /// native recovery record contains only task and idempotent-mutation
+    /// effects, so state deliberately remains unset here; recovery serves only
+    /// the matching terminal control RPC and never restages or manufactures it.
+    pub async fn recover(&self, recovery: ParticipantRecovery) -> Result<(), Status> {
+        if recovery.shard_ids.is_empty() {
+            return Err(Status::invalid_argument(
+                "participant recovery requires at least one shard ID",
+            ));
+        }
+        let responses = self
+            .sidecar
+            .recover(database::RecoverRequest {
+                state_tags_by_state_type: recovery.state_tags_by_state_type,
+                shard_ids: recovery.shard_ids,
+                skip_idempotent_mutations: true,
+            })
+            .await?;
+        let mut recovered = None;
+        for transaction in responses
+            .into_iter()
+            .flat_map(|response| response.participant_transactions)
+            .filter(|transaction| {
+                transaction.state_type == self.state_type && transaction.state_ref == self.state_ref
+            })
+        {
+            if recovered.is_some() {
+                return Err(Status::failed_precondition(
+                    "multiple durable transactions recovered for one actor",
+                ));
+            }
+            let [root_id] = transaction.transaction_ids.as_slice() else {
+                return Err(Status::failed_precondition(
+                    "recovered transaction must have exactly one root UUID",
+                ));
+            };
+            let root_id = Uuid::from_slice(root_id).map_err(|_| {
+                Status::failed_precondition("recovered transaction ID must be a 16-byte UUID")
+            })?;
+            if transaction.coordinator_state_type.is_empty()
+                || transaction.coordinator_state_ref.is_empty()
+            {
+                return Err(Status::failed_precondition(
+                    "recovered transaction must identify its coordinator",
+                ));
+            }
+            recovered = Some((root_id, transaction));
+        }
+        let Some((root_id, transaction)) = recovered else {
+            return Ok(());
+        };
+
+        // Acquire before publishing ownership, so no terminal request can be
+        // served without this actor's exclusive lock.
+        let lock = Arc::clone(&self.lock).lock_owned().await;
+        let mut pending = self.pending.lock().await;
+        if pending.is_some() {
+            return Err(Status::failed_precondition(
+                "actor already has a pending transaction",
+            ));
+        }
+        *pending = Some(Pending {
+            root_id,
+            coordinator_state_type: transaction.coordinator_state_type,
+            coordinator_state_ref: transaction.coordinator_state_ref,
+            effects: PendingActorEffects {
+                // The native recovery contract does not expose staged state.
+                state: None,
+                task_upserts: transaction.uncommitted_tasks,
+                idempotent_mutations: transaction.uncommitted_idempotent_mutations,
+            },
+            // An unprepared record is retained only to ensure a later Commit
+            // is converted to Abort; it can never be committed.
+            prepared: transaction.prepared,
+            _lock: lock,
+        });
+        Ok(())
     }
 
     async fn terminal(&self, transaction_id: Uuid, commit: bool) -> Result<(), Status> {
@@ -316,7 +442,8 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 "pending transaction ID differs",
             ));
         }
-        if commit {
+        let force_abort = commit && !current.prepared;
+        if commit && !force_abort {
             self.sidecar
                 .commit(database::TransactionParticipantCommitRequest {
                     state_type: self.state_type.clone(),
@@ -333,6 +460,11 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         }
         // Only an acknowledged terminal RPC makes release truthful.
         *pending = None;
+        if force_abort {
+            return Err(Status::failed_precondition(
+                "commit requires the matching prepared transaction; transaction was aborted",
+            ));
+        }
         Ok(())
     }
 }
@@ -458,6 +590,7 @@ mod tests {
         Prepare(Box<database::TransactionParticipantPrepareRequest>),
         Commit(database::TransactionParticipantCommitRequest),
         Abort(database::TransactionParticipantAbortRequest),
+        Recover(database::RecoverRequest),
     }
 
     #[derive(Default)]
@@ -465,6 +598,7 @@ mod tests {
         calls: Mutex<Vec<Call>>,
         prepare_results: Mutex<VecDeque<Result<(), Status>>>,
         terminal_results: Mutex<VecDeque<Result<(), Status>>>,
+        recover_responses: Mutex<VecDeque<Result<database::RecoverResponse, Status>>>,
     }
 
     impl ParticipantSidecar for MockSidecar {
@@ -523,6 +657,19 @@ mod tests {
                 result.map(|()| database::TransactionParticipantAbortResponse::default())
             })
         }
+        fn recover(
+            &self,
+            request: database::RecoverRequest,
+        ) -> SidecarFuture<'_, Vec<database::RecoverResponse>> {
+            self.calls.lock().unwrap().push(Call::Recover(request));
+            let responses = self
+                .recover_responses
+                .lock()
+                .unwrap()
+                .drain(..)
+                .collect::<Result<Vec<_>, _>>();
+            Box::pin(async move { responses })
+        }
     }
 
     fn start(id: Uuid) -> ActorTransactionStart {
@@ -535,6 +682,30 @@ mod tests {
             factory: false,
             state_type: "example.Actor".into(),
             state_ref: "actor/1".into(),
+        }
+    }
+
+    fn recovery() -> ParticipantRecovery {
+        ParticipantRecovery {
+            state_tags_by_state_type: [("example.Actor".into(), "actor".into())].into(),
+            shard_ids: vec!["shard-a".into()],
+        }
+    }
+
+    fn recovered_transaction(id: Uuid, prepared: bool) -> database::Transaction {
+        database::Transaction {
+            state_type: "example.Actor".into(),
+            state_ref: "actor/1".into(),
+            transaction_ids: vec![id.as_bytes().to_vec()],
+            coordinator_state_type: "example.Coordinator".into(),
+            coordinator_state_ref: "coordinator/1".into(),
+            prepared,
+            uncommitted_tasks: vec![database::Task::default()],
+            uncommitted_idempotent_mutations: vec![database::IdempotentMutation {
+                key: vec![9],
+                response: vec![10],
+                ..Default::default()
+            }],
         }
     }
 
@@ -665,5 +836,94 @@ mod tests {
             tonic::Code::InvalidArgument
         );
         assert!(sidecar.calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn recovered_prepared_participant_accepts_matching_terminal_commit_from_stream() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let id = Uuid::from_u128(8);
+        sidecar.recover_responses.lock().unwrap().extend([
+            Ok(database::RecoverResponse::default()),
+            Ok(database::RecoverResponse {
+                participant_transactions: vec![recovered_transaction(id, true)],
+                ..Default::default()
+            }),
+        ]);
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        participant.recover(recovery()).await.unwrap();
+        let host = DurableActorParticipantHost::new(participant.clone());
+        // A recovering coordinator retries Prepare. The recovered durable
+        // transaction must acknowledge it locally, not prepare RocksDB twice.
+        let mut prepare = Request::new(database::PrepareRequest {
+            transaction_id: id.as_bytes().to_vec(),
+            abort_via_response: true,
+            read_only_aware: false,
+            read_only: false,
+        });
+        prepare
+            .metadata_mut()
+            .insert(STATE_REF_HEADER, "actor/1".parse().unwrap());
+        database::participant_server::Participant::prepare(&host, prepare)
+            .await
+            .unwrap();
+        let mut commit = Request::new(database::CommitRequest {
+            transaction_id: id.as_bytes().to_vec(),
+        });
+        commit
+            .metadata_mut()
+            .insert(STATE_REF_HEADER, "actor/1".parse().unwrap());
+        database::participant_server::Participant::commit(&host, commit)
+            .await
+            .unwrap();
+        participant.start(start(Uuid::from_u128(9))).await.unwrap();
+
+        let calls = sidecar.calls.lock().unwrap().clone();
+        assert!(matches!(
+            &calls[0],
+            Call::Recover(request)
+                if request.shard_ids == vec!["shard-a"]
+                    && request.skip_idempotent_mutations
+                    && request.state_tags_by_state_type["example.Actor"] == "actor"
+        ));
+        assert!(matches!(&calls[1], Call::Commit(request) if request.state_ref == "actor/1"));
+        assert!(matches!(&calls[2], Call::Load(_)));
+    }
+
+    #[tokio::test]
+    async fn recovered_unprepared_participant_aborts_and_fails_closed_on_commit() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let id = Uuid::from_u128(10);
+        sidecar
+            .recover_responses
+            .lock()
+            .unwrap()
+            .push_back(Ok(database::RecoverResponse {
+                participant_transactions: vec![recovered_transaction(id, false)],
+                ..Default::default()
+            }));
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        participant.recover(recovery()).await.unwrap();
+        let host = DurableActorParticipantHost::new(participant.clone());
+        let mut commit = Request::new(database::CommitRequest {
+            transaction_id: id.as_bytes().to_vec(),
+        });
+        commit
+            .metadata_mut()
+            .insert(STATE_REF_HEADER, "actor/1".parse().unwrap());
+        assert_eq!(
+            database::participant_server::Participant::commit(&host, commit)
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::FailedPrecondition
+        );
+        participant.start(start(Uuid::from_u128(11))).await.unwrap();
+
+        let calls = sidecar.calls.lock().unwrap().clone();
+        assert!(matches!(&calls[0], Call::Recover(_)));
+        assert!(matches!(&calls[1], Call::Abort(request) if request.state_ref == "actor/1"));
+        assert!(matches!(&calls[2], Call::Load(_)));
     }
 }
