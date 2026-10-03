@@ -19,13 +19,23 @@ const DEFAULT_RUNTIME_MODULE: &str = "reboot_rust_schema";
 enum DurableKind {
     Reader,
     Writer,
-    Transaction(TransactionMode),
+    Transaction(TransactionMetadata),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TransactionMode {
     Exclusive,
     Shared,
+}
+
+/// The complete transaction declaration carried by `TransactionMethodOptions`.
+///
+/// `constructor` is an optional empty message in the wire schema: its presence,
+/// rather than a field within it, is the factory declaration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TransactionMetadata {
+    mode: TransactionMode,
+    factory: bool,
 }
 
 #[derive(Message)]
@@ -87,6 +97,8 @@ struct Empty {}
 
 #[derive(Message)]
 struct RebootTransactionMethodOptions {
+    #[prost(message, optional, tag = "2")]
+    constructor: Option<Empty>,
     #[prost(message, optional, tag = "3")]
     exclusive: Option<Empty>,
     #[prost(message, optional, tag = "4")]
@@ -243,8 +255,14 @@ fn annotations(
                         transaction.exclusive.is_some(),
                         transaction.shared.is_some(),
                     ) {
-                        (true, false) => DurableKind::Transaction(TransactionMode::Exclusive),
-                        (false, true) => DurableKind::Transaction(TransactionMode::Shared),
+                        (true, false) => DurableKind::Transaction(TransactionMetadata {
+                            mode: TransactionMode::Exclusive,
+                            factory: transaction.constructor.is_some(),
+                        }),
+                        (false, true) => DurableKind::Transaction(TransactionMetadata {
+                            mode: TransactionMode::Shared,
+                            factory: transaction.constructor.is_some(),
+                        }),
                         _ => {
                             return Err(format!(
                                 "{file_name}: transaction `{service_name}.{method_name}` must choose exactly one of exclusive or shared mode"
@@ -533,17 +551,21 @@ fn emit_transactions(
     output.push_str("#[tonic::async_trait]\n");
     output.push_str(&format!("pub trait {handler}: Send + Sync + 'static {{\n"));
     for (kind, method, request, response, _) in &transactions {
-        let mode = match kind {
-            DurableKind::Transaction(TransactionMode::Exclusive) => "Exclusive",
-            DurableKind::Transaction(TransactionMode::Shared) => "Shared",
+        let metadata = match kind {
+            DurableKind::Transaction(metadata) => metadata,
             _ => unreachable!("transactions are filtered above"),
         };
-        output.push_str(&format!("    /// Transaction mode declared by this RPC: {mode}.\n    async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n"));
+        let mode = match metadata.mode {
+            TransactionMode::Exclusive => "Exclusive",
+            TransactionMode::Shared => "Shared",
+        };
+        let factory = if metadata.factory { "yes" } else { "no" };
+        output.push_str(&format!("    /// Transaction mode declared by this RPC: {mode}.\n    /// Factory transaction declared by this RPC: {factory}.\n    async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionExecution<proto::{response}>, tonic::Status>;\n"));
     }
     output.push_str("}\n\n");
     output.push_str(&format!("/// Adapts a transaction context supplied by a future Reboot transaction runtime.\n/// This deliberately does not implement the Tonic service: DatabaseActorStore\n/// does not coordinate transaction prepare/commit/abort.\npub struct {adapter}<H> {{ handler: std::sync::Arc<H> }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ handler: self.handler.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(handler: H) -> Self {{ Self {{ handler: std::sync::Arc::new(handler) }} }} }}\nimpl<H: {handler}> {adapter}<H> {{\n"));
     for (_, method, request, response, _) in transactions {
-        output.push_str(&format!("    pub async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status> {{ self.handler.{method}(context, state, request).await }}\n"));
+        output.push_str(&format!("    pub async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionExecution<proto::{response}>, tonic::Status> {{ self.handler.{method}(context, state, request).await }}\n"));
     }
     output.push_str("}\n\n");
     Ok(())
@@ -876,11 +898,12 @@ mod tests {
             ),
         }
         .encode_to_vec();
-        let transaction_options = |mode| {
+        let transaction_options = |mode: TransactionMode, factory: bool| {
             ExtensionOptions {
                 reboot: Some(
                     RebootMethodOptions {
                         transaction: Some(RebootTransactionMethodOptions {
+                            constructor: factory.then_some(Empty {}),
                             exclusive: (mode == TransactionMode::Exclusive).then_some(Empty {}),
                             shared: (mode == TransactionMode::Shared).then_some(Empty {}),
                         }),
@@ -899,11 +922,11 @@ mod tests {
                 methods: vec![
                     RawMethod {
                         name: Some("Exclusive".to_owned()),
-                        options: Some(transaction_options(TransactionMode::Exclusive)),
+                        options: Some(transaction_options(TransactionMode::Exclusive, false)),
                     },
                     RawMethod {
                         name: Some("Shared".to_owned()),
-                        options: Some(transaction_options(TransactionMode::Shared)),
+                        options: Some(transaction_options(TransactionMode::Shared, true)),
                     },
                 ],
             }],
@@ -912,16 +935,22 @@ mod tests {
         let methods = &parsed["counter.proto"]["CounterTransactions"].methods;
         assert_eq!(
             methods["Exclusive"],
-            DurableKind::Transaction(TransactionMode::Exclusive)
+            DurableKind::Transaction(TransactionMetadata {
+                mode: TransactionMode::Exclusive,
+                factory: false,
+            })
         );
         assert_eq!(
             methods["Shared"],
-            DurableKind::Transaction(TransactionMode::Shared)
+            DurableKind::Transaction(TransactionMetadata {
+                mode: TransactionMode::Shared,
+                factory: true,
+            })
         );
     }
 
     #[test]
-    fn transaction_handlers_have_context_and_no_database_writer_envelope() {
+    fn transaction_handlers_require_execution_envelope_and_no_database_writer_envelope() {
         let annotations = HashMap::from([(
             "counter.proto".to_owned(),
             HashMap::from([(
@@ -930,7 +959,10 @@ mod tests {
                     state: "Counter".to_owned(),
                     methods: HashMap::from([(
                         "Increment".to_owned(),
-                        DurableKind::Transaction(TransactionMode::Exclusive),
+                        DurableKind::Transaction(TransactionMetadata {
+                            mode: TransactionMode::Exclusive,
+                            factory: true,
+                        }),
                     )]),
                 },
             )]),
@@ -945,6 +977,8 @@ mod tests {
         assert!(content.contains("state: &mut proto::Counter"));
         assert!(content.contains("pub struct CounterWritesTransactionAdapter<H>"));
         assert!(content.contains("Transaction mode declared by this RPC: Exclusive."));
+        assert!(content.contains("Factory transaction declared by this RPC: yes."));
+        assert!(content.contains("TransactionExecution<proto::CounterValue>"));
         assert!(!content.contains("CounterWritesDatabaseHandler"));
         assert!(!content.contains("writer_async_for_method::<CounterDurableState"));
         assert!(!content.contains("impl<H: CounterWritesTransactionHandler> proto::"));
@@ -1002,7 +1036,10 @@ mod tests {
                         ("Increment".to_owned(), DurableKind::Writer),
                         (
                             "Transaction".to_owned(),
-                            DurableKind::Transaction(TransactionMode::Shared),
+                            DurableKind::Transaction(TransactionMetadata {
+                                mode: TransactionMode::Shared,
+                                factory: false,
+                            }),
                         ),
                     ]),
                 },
@@ -1089,7 +1126,10 @@ mod tests {
                     state: "Counter".to_owned(),
                     methods: HashMap::from([(
                         "Increment".to_owned(),
-                        DurableKind::Transaction(TransactionMode::Exclusive),
+                        DurableKind::Transaction(TransactionMetadata {
+                            mode: TransactionMode::Exclusive,
+                            factory: false,
+                        }),
                     )]),
                 },
             )]),

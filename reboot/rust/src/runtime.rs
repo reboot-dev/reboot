@@ -42,6 +42,33 @@ pub enum TransactionMode {
     Shared,
 }
 
+/// The complete outcome produced by one transaction handler invocation.
+///
+/// A future transaction runtime is responsible for validating and durably
+/// preparing these actor-local effects. This envelope intentionally has no
+/// participant list or aggregate effects: one generated handler owns only its
+/// response and its own final serialized state, task upserts, and idempotent
+/// mutations.
+#[derive(Clone, Debug)]
+pub struct TransactionExecution<Response> {
+    pub response: Response,
+    /// Serialized final protobuf state. `None` deliberately leaves state unset.
+    pub final_state: Option<Vec<u8>>,
+    pub task_upserts: Vec<database::Task>,
+    pub idempotent_mutations: Vec<database::IdempotentMutation>,
+}
+
+impl<Response> TransactionExecution<Response> {
+    pub fn new(response: Response) -> Self {
+        Self {
+            response,
+            final_state: None,
+            task_upserts: Vec::new(),
+            idempotent_mutations: Vec::new(),
+        }
+    }
+}
+
 /// Existing Reboot transaction metadata passed to a generated transaction
 /// handler.
 ///
@@ -109,6 +136,97 @@ impl TransactionContext {
             .transaction_coordinator_state_ref
             .as_deref()
             .expect("TransactionContext validates coordinator state reference")
+    }
+}
+
+/// A root transaction context established from an external call.
+///
+/// Starting a root transaction must be supplied with an ID and timestamp by
+/// the host. The SDK deliberately has no UUID or clock fallback because the
+/// choice must remain compatible with the host's database/restart-detection
+/// strategy (for example, a database-timestamped UUIDv7 versus its documented
+/// fallback). It neither accepts an inbound transaction nor starts a nested
+/// transaction.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RootTransactionContext {
+    transaction: TransactionContext,
+    timestamp: prost_types::Timestamp,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RootTransactionStartError {
+    InboundTransactionContext,
+    EmptyCoordinatorStateType,
+    EmptyStateRef,
+}
+
+impl std::fmt::Display for RootTransactionStartError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InboundTransactionContext => {
+                write!(
+                    f,
+                    "root transaction start refuses inbound or nested transaction context"
+                )
+            }
+            Self::EmptyCoordinatorStateType => {
+                write!(
+                    f,
+                    "root transaction coordinator state type must not be empty"
+                )
+            }
+            Self::EmptyStateRef => write!(f, "root transaction state reference must not be empty"),
+        }
+    }
+}
+
+impl std::error::Error for RootTransactionStartError {}
+
+impl RootTransactionContext {
+    /// Builds a root context using a host-supplied transaction ID and timestamp.
+    ///
+    /// `transaction_id` and `timestamp` are intentionally explicit arguments;
+    /// this SDK does not manufacture them. The coordinator is the state serving
+    /// this root call, so its state reference is the inbound state reference.
+    pub fn start(
+        mut headers: RebootHeaders,
+        coordinator_state_type: impl Into<String>,
+        mode: TransactionMode,
+        transaction_id: Uuid,
+        timestamp: prost_types::Timestamp,
+    ) -> Result<Self, RootTransactionStartError> {
+        if headers.transaction_ids.is_some()
+            || headers.transaction_coordinator_state_type.is_some()
+            || headers.transaction_coordinator_state_ref.is_some()
+            || headers.transaction_retry_age.is_some()
+            || headers.coordinator_read_only_aware
+        {
+            return Err(RootTransactionStartError::InboundTransactionContext);
+        }
+        if headers.state_ref.is_empty() {
+            return Err(RootTransactionStartError::EmptyStateRef);
+        }
+        let coordinator_state_type = coordinator_state_type.into();
+        if coordinator_state_type.is_empty() {
+            return Err(RootTransactionStartError::EmptyCoordinatorStateType);
+        }
+        headers.transaction_ids = Some(vec![transaction_id]);
+        headers.transaction_coordinator_state_type = Some(coordinator_state_type);
+        headers.transaction_coordinator_state_ref = Some(headers.state_ref.clone());
+        let transaction = TransactionContext::from_headers(headers, mode)
+            .expect("RootTransactionContext establishes complete transaction metadata");
+        Ok(Self {
+            transaction,
+            timestamp,
+        })
+    }
+
+    pub fn transaction(&self) -> &TransactionContext {
+        &self.transaction
+    }
+
+    pub fn timestamp(&self) -> &prost_types::Timestamp {
+        &self.timestamp
     }
 }
 
@@ -1479,6 +1597,64 @@ mod tests {
     use super::*;
     use crate::ExternalContext;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn transaction_execution_keeps_explicit_actor_local_effects() {
+        let mut execution = TransactionExecution::new(proto::Text {
+            content: "response".into(),
+        });
+        execution.final_state = Some(vec![1, 2, 3]);
+        execution.task_upserts.push(database::Task::default());
+        execution
+            .idempotent_mutations
+            .push(database::IdempotentMutation::default());
+
+        assert_eq!(execution.response.content, "response");
+        assert_eq!(execution.final_state, Some(vec![1, 2, 3]));
+        assert_eq!(execution.task_upserts.len(), 1);
+        assert_eq!(execution.idempotent_mutations.len(), 1);
+    }
+
+    #[test]
+    fn root_transaction_context_requires_host_identity_and_refuses_inbound_context() {
+        let transaction_id = Uuid::from_u128(42);
+        let timestamp = prost_types::Timestamp {
+            seconds: 1_728_000_000,
+            nanos: 123,
+        };
+        let root = RootTransactionContext::start(
+            RebootHeaders::new("counter/42"),
+            "example.Counter",
+            TransactionMode::Exclusive,
+            transaction_id,
+            timestamp,
+        )
+        .unwrap();
+        assert_eq!(root.transaction().transaction_ids(), &[transaction_id]);
+        assert_eq!(root.transaction().transaction_root_id(), transaction_id);
+        assert_eq!(
+            root.transaction().transaction_coordinator_state_type(),
+            "example.Counter"
+        );
+        assert_eq!(
+            root.transaction().transaction_coordinator_state_ref(),
+            "counter/42"
+        );
+        assert_eq!(root.timestamp(), &timestamp);
+
+        let mut inbound = RebootHeaders::new("counter/42");
+        inbound.transaction_ids = Some(vec![Uuid::from_u128(41)]);
+        assert_eq!(
+            RootTransactionContext::start(
+                inbound,
+                "example.Counter",
+                TransactionMode::Exclusive,
+                transaction_id,
+                timestamp,
+            ),
+            Err(RootTransactionStartError::InboundTransactionContext)
+        );
+    }
 
     async fn start_host() -> (String, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
