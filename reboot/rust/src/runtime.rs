@@ -81,6 +81,37 @@ pub struct TransactionContext {
     mode: TransactionMode,
 }
 
+/// A validated transaction context received from an application RPC.
+///
+/// This is metadata-only plumbing. It preserves the root coordinator and can
+/// derive a child transaction path, but it does not acquire actor ownership,
+/// execute a handler, or make any atomicity guarantee.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InboundTransactionContext {
+    transaction: TransactionContext,
+}
+
+/// Rejects a child ID which would make a transaction path ambiguous.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NestedTransactionPathError {
+    DuplicateTransactionId,
+}
+
+impl std::fmt::Display for NestedTransactionPathError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DuplicateTransactionId => {
+                write!(
+                    f,
+                    "nested transaction ID already exists in the transaction path"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for NestedTransactionPathError {}
+
 /// Host-owned routing for a generated transactional application client.
 ///
 /// The generated client supplies the declared state type and the caller-provided
@@ -135,6 +166,9 @@ impl TransactionContext {
         headers: RebootHeaders,
         mode: TransactionMode,
     ) -> Result<Self, ContextError> {
+        if headers.state_ref.is_empty() {
+            return Err(ContextError::EmptyStateRef);
+        }
         if headers.transaction_ids.as_ref().is_none_or(Vec::is_empty) {
             return Err(ContextError::MissingTransactionMetadata);
         }
@@ -190,6 +224,63 @@ impl TransactionContext {
             .transaction_coordinator_state_ref
             .as_deref()
             .expect("TransactionContext validates coordinator state reference")
+    }
+
+    /// Appends a host-supplied child ID while preserving the root coordinator.
+    ///
+    /// Native Reboot creates a new ID for every nested context. The Rust SDK
+    /// consumes that host-supplied ID rather than manufacturing one, and rejects
+    /// a duplicate so a path cannot identify two distinct nesting levels with
+    /// the same value.
+    pub fn with_nested_transaction_id(
+        &self,
+        transaction_id: Uuid,
+    ) -> Result<Self, NestedTransactionPathError> {
+        if self.transaction_ids().contains(&transaction_id) {
+            return Err(NestedTransactionPathError::DuplicateTransactionId);
+        }
+        let mut headers = self.headers.clone();
+        headers
+            .transaction_ids
+            .as_mut()
+            .expect("TransactionContext validates transaction IDs")
+            .push(transaction_id);
+        Ok(Self {
+            headers,
+            mode: self.mode,
+        })
+    }
+}
+
+impl InboundTransactionContext {
+    /// Parses and validates an inbound Reboot transaction context.
+    pub fn from_metadata(
+        metadata: &tonic::metadata::MetadataMap,
+        mode: TransactionMode,
+    ) -> Result<Self, ContextError> {
+        Self::from_headers(RebootHeaders::from_metadata(metadata)?, mode)
+    }
+
+    /// Validates headers supplied by a host that already parsed metadata.
+    pub fn from_headers(
+        headers: RebootHeaders,
+        mode: TransactionMode,
+    ) -> Result<Self, ContextError> {
+        Ok(Self {
+            transaction: TransactionContext::from_headers(headers, mode)?,
+        })
+    }
+
+    pub fn transaction(&self) -> &TransactionContext {
+        &self.transaction
+    }
+
+    /// Derives the context for a nested transaction without executing it.
+    pub fn with_nested_transaction_id(
+        &self,
+        transaction_id: Uuid,
+    ) -> Result<TransactionContext, NestedTransactionPathError> {
+        self.transaction.with_nested_transaction_id(transaction_id)
     }
 }
 
@@ -1857,6 +1948,61 @@ mod tests {
                 timestamp,
             ),
             Err(RootTransactionStartError::InboundTransactionContext)
+        );
+    }
+
+    #[test]
+    fn inbound_context_parses_and_appends_a_child_path_without_executing() {
+        let root_id = Uuid::from_u128(51);
+        let parent_id = Uuid::from_u128(52);
+        let child_id = Uuid::from_u128(53);
+        let mut headers = RebootHeaders::new("target/actor");
+        headers.transaction_ids = Some(vec![root_id, parent_id]);
+        headers.transaction_coordinator_state_type = Some("example.Root".into());
+        headers.transaction_coordinator_state_ref = Some("root/actor".into());
+        headers.idempotency_key = Some(Uuid::from_u128(54));
+        let metadata = headers.to_metadata().unwrap();
+
+        let inbound =
+            InboundTransactionContext::from_metadata(&metadata, TransactionMode::Exclusive)
+                .unwrap();
+        let nested = inbound.with_nested_transaction_id(child_id).unwrap();
+
+        assert_eq!(
+            inbound.transaction().transaction_ids(),
+            &[root_id, parent_id]
+        );
+        assert_eq!(nested.transaction_ids(), &[root_id, parent_id, child_id]);
+        assert_eq!(nested.transaction_root_id(), root_id);
+        assert_eq!(nested.transaction_id(), child_id);
+        assert_eq!(nested.transaction_coordinator_state_type(), "example.Root");
+        assert_eq!(nested.transaction_coordinator_state_ref(), "root/actor");
+        assert_eq!(nested.headers().state_ref, "target/actor");
+        assert_eq!(nested.headers().idempotency_key, Some(Uuid::from_u128(54)));
+        assert_eq!(
+            inbound.with_nested_transaction_id(parent_id),
+            Err(NestedTransactionPathError::DuplicateTransactionId)
+        );
+    }
+
+    #[test]
+    fn inbound_context_rejects_incomplete_transaction_metadata() {
+        let mut missing_coordinator = RebootHeaders::new("target/actor");
+        missing_coordinator.transaction_ids = Some(vec![Uuid::from_u128(61)]);
+        assert_eq!(
+            InboundTransactionContext::from_headers(
+                missing_coordinator,
+                TransactionMode::Exclusive,
+            ),
+            Err(ContextError::MissingTransactionCoordinatorMetadata)
+        );
+
+        assert_eq!(
+            InboundTransactionContext::from_headers(
+                RebootHeaders::new("target/actor"),
+                TransactionMode::Exclusive,
+            ),
+            Err(ContextError::MissingTransactionMetadata)
         );
     }
 
