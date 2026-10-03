@@ -11,7 +11,12 @@
 //! derivation algorithm. Callers therefore must provide an already-bound,
 //! non-empty digest; this module neither invents nor silently substitutes one.
 
-use std::{collections::BTreeSet, future::Future, pin::Pin, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+};
 
 use prost::Message;
 use tonic::{Response, Status};
@@ -633,6 +638,34 @@ impl<S: Native2pcDatabaseSidecar> Native2pcRecoveryMaterializer<S> {
         &self,
     ) -> Result<Native2pcRecoveryMaterialization, Status> {
         let recovered = self.sidecar.recover().await?;
+        // Recovery streams are not ordered by actor version. Until native state
+        // carries a durable version/order model, applying either of two distinct
+        // journals for one actor would be arbitrary. Validate the full stream
+        // before making any sidecar write, then defer every colliding actor.
+        let mut state_only_journals = BTreeMap::<NativeActorId, BTreeSet<Vec<u8>>>::new();
+        for record in &recovered {
+            validate_recovery_response(record)?;
+            let Some(applied) = record.applied.as_ref() else {
+                continue;
+            };
+            if applied
+                .effects
+                .as_ref()
+                .is_some_and(|effects| effects.state.is_some() && effects.effects.is_empty())
+            {
+                let participant = applied.participant.as_ref().expect("validated above");
+                let actor = NativeActorId::new(
+                    participant.state_type.clone(),
+                    participant.state_ref.clone(),
+                )
+                .expect("validated above");
+                state_only_journals
+                    .entry(actor)
+                    .or_default()
+                    .insert(record.applied_journal.clone());
+            }
+        }
+
         let mut result = Native2pcRecoveryMaterialization {
             recovered_records: recovered.len(),
             ..Default::default()
@@ -645,7 +678,27 @@ impl<S: Native2pcDatabaseSidecar> Native2pcRecoveryMaterializer<S> {
                 .effects
                 .as_ref()
                 .is_some_and(|effects| effects.state.is_some() && effects.effects.is_empty());
-            if !is_state_only {
+            let actor_has_conflicting_journals = is_state_only
+                && state_only_journals
+                    .get(
+                        &NativeActorId::new(
+                            applied
+                                .participant
+                                .as_ref()
+                                .expect("validated above")
+                                .state_type
+                                .clone(),
+                            applied
+                                .participant
+                                .as_ref()
+                                .expect("validated above")
+                                .state_ref
+                                .clone(),
+                        )
+                        .expect("validated above"),
+                    )
+                    .is_some_and(|journals| journals.len() > 1);
+            if !is_state_only || actor_has_conflicting_journals {
                 result.deferred.push(record);
                 continue;
             }
@@ -1388,6 +1441,39 @@ mod tests {
             applied: Some(applied),
             ..Default::default()
         }
+    }
+
+    #[tokio::test]
+    async fn recovery_materializer_validates_entire_stream_before_any_write() {
+        let state_only = recovered_applied(Some(b"state".to_vec()), false);
+        let sidecar = RecoverySidecar {
+            records: vec![state_only, proto::Native2pcRecoverResponse::default()],
+            materialized: std::sync::Mutex::new(Vec::new()),
+        };
+        let executor = Native2pcRecoveryMaterializer::new(sidecar);
+        assert_eq!(
+            executor.recover_and_materialize().await.unwrap_err().code(),
+            tonic::Code::InvalidArgument
+        );
+        assert!(executor.sidecar.materialized.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn recovery_materializer_defers_conflicting_journals_for_one_actor() {
+        let first = recovered_applied(Some(b"first".to_vec()), false);
+        let mut second = recovered_applied(Some(b"second".to_vec()), false);
+        // A valid additive unknown field makes this a distinct exact journal
+        // without corrupting the generated response's parsed view.
+        second.applied_journal.extend([0xa2, 0x06, 0]);
+        let sidecar = RecoverySidecar {
+            records: vec![first.clone(), second.clone()],
+            materialized: std::sync::Mutex::new(Vec::new()),
+        };
+        let executor = Native2pcRecoveryMaterializer::new(sidecar);
+        let result = executor.recover_and_materialize().await.unwrap();
+        assert!(result.materialized.is_empty());
+        assert_eq!(result.deferred, vec![first, second]);
+        assert!(executor.sidecar.materialized.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
