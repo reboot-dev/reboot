@@ -1,13 +1,21 @@
-use std::{net::SocketAddr, pin::Pin};
+use std::{
+    net::{SocketAddr, TcpListener},
+    pin::Pin,
+    process::{Child, Command, Stdio},
+    sync::Arc,
+    time::Duration,
+};
 
 use prost::Message;
 use reboot_rust_schema::{
     database_proto as proto,
     native_2pc::{
-        Native2pcCoordinatorEndpoint, Native2pcDatabaseSidecar, Native2pcParticipantEndpoint,
-        Native2pcRequests, NativeActorId, NativeEnrollment, NativeTransactionId, PROTOCOL_ID,
+        Native2pcCoordinatorEndpoint, Native2pcCoordinatorResolver, Native2pcDatabaseSidecar,
+        Native2pcParticipantEndpoint, Native2pcPreparedParticipantRecoveryPass, Native2pcRequests,
+        NativeActorId, NativeEnrollment, NativeFuture, NativeTransactionId, PROTOCOL_ID,
         RECORD_VERSION, TonicNative2pcCoordinatorEndpoint, TonicNative2pcDatabaseSidecar,
-        TonicNative2pcParticipantEndpoint, require_native2pc_participant,
+        TonicNative2pcParticipantEndpoint, recover_prepared_participant_once,
+        require_native2pc_participant,
     },
 };
 use tokio_stream::{Stream, wrappers::TcpListenerStream};
@@ -361,4 +369,211 @@ async fn native_tonic_recovery_rejects_malformed_journal_response() {
         tonic::Code::InvalidArgument
     );
     server.abort();
+}
+
+struct CxxDatabase {
+    _state: tempfile::TempDir,
+    child: Child,
+    endpoint: String,
+}
+
+impl Drop for CxxDatabase {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+async fn spawn_cxx_database() -> CxxDatabase {
+    let binary = std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE")
+        .expect("REBOOT_NATIVE2PC_CXX_DATABASE must name Bazel's //reboot/server:database");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let state = tempfile::tempdir().unwrap();
+    let server_info = proto::ServerInfo {
+        shard_infos: vec![proto::ShardInfo {
+            shard_id: "s000000000".into(),
+            shard_first_key: vec![],
+        }],
+    };
+    let server_info_path = state.path().join("server-info.pb");
+    std::fs::write(&server_info_path, server_info.encode_to_vec()).unwrap();
+    let mut child = Command::new(binary)
+        .arg(state.path().join("rocksdb"))
+        .arg(server_info_path)
+        .arg(port.to_string())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let endpoint = format!("http://127.0.0.1:{port}");
+    for _ in 0..100 {
+        if TonicNative2pcDatabaseSidecar::connect(endpoint.clone())
+            .await
+            .is_ok()
+        {
+            return CxxDatabase {
+                _state: state,
+                child,
+                endpoint,
+            };
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    panic!("C++ native sidecar did not start");
+}
+
+struct StaticCxxCoordinator {
+    actor: NativeActorId,
+    endpoint: Arc<TonicNative2pcCoordinatorEndpoint>,
+}
+
+impl Native2pcCoordinatorResolver for StaticCxxCoordinator {
+    type Endpoint = TonicNative2pcCoordinatorEndpoint;
+
+    fn resolve(&self, actor: &NativeActorId) -> NativeFuture<'_, Arc<Self::Endpoint>> {
+        if actor != &self.actor {
+            return Box::pin(async { Err(tonic::Status::not_found("unexpected coordinator")) });
+        }
+        let endpoint = self.endpoint.clone();
+        Box::pin(async move { Ok(endpoint) })
+    }
+}
+
+/// This ignored test is deliberately process-bound: Bazel builds the C++ server
+/// and supplies its path, while Cargo drives only the published native protobuf
+/// boundary. It proves the Rust recovery executor cannot terminalize before the
+/// real C++ durable Watch decision exists.
+#[tokio::test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+async fn native_prepared_recovery_crosses_the_real_cxx_sidecar_boundary() {
+    enum Decision {
+        Preparing,
+        Commit,
+        Abort,
+    }
+    for (index, decision) in [Decision::Preparing, Decision::Commit, Decision::Abort]
+        .into_iter()
+        .enumerate()
+    {
+        let database = spawn_cxx_database().await;
+        let sidecar = TonicNative2pcDatabaseSidecar::connect(database.endpoint.clone())
+            .await
+            .unwrap();
+        let coordinator =
+            NativeActorId::new("example.Coordinator", format!("coordinator/{index}")).unwrap();
+        let participant =
+            NativeActorId::new("example.Participant", format!("participant/{index}")).unwrap();
+        let requests = Native2pcRequests::new(
+            NativeTransactionId::new([index as u8 + 1; 16]).unwrap(),
+            coordinator.clone(),
+            NativeEnrollment::new([participant.clone()], [9, 8]).unwrap(),
+        );
+        sidecar
+            .put_coordinator(requests.put_coordinator_preparing())
+            .await
+            .unwrap();
+        sidecar
+            .stage_participant(requests.stage_participant(&participant))
+            .await
+            .unwrap();
+        sidecar
+            .put_participant(requests.put_participant(&participant))
+            .await
+            .unwrap();
+        match decision {
+            Decision::Preparing => {}
+            Decision::Commit => {
+                sidecar
+                    .put_commit_decision(requests.put_commit_decision())
+                    .await
+                    .unwrap();
+            }
+            Decision::Abort => {
+                sidecar
+                    .put_abort_decision(requests.put_abort_decision())
+                    .await
+                    .unwrap();
+            }
+        }
+        let prepared = sidecar
+            .recover()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|record| record.participant.is_some())
+            .unwrap();
+        // A locally valid recovered participant with a forged enrollment digest
+        // must fail at the real C++ Watch boundary and cannot terminalize it.
+        if index == 0 {
+            let mut wrong_digest = prepared.clone();
+            wrong_digest.participant.as_mut().unwrap().enrollment_digest = b"wrong-digest".to_vec();
+            let channel = tonic::transport::Endpoint::from_shared(database.endpoint.clone())
+                .unwrap()
+                .connect()
+                .await
+                .unwrap();
+            let resolver = StaticCxxCoordinator {
+                actor: coordinator.clone(),
+                endpoint: Arc::new(TonicNative2pcCoordinatorEndpoint::new(channel)),
+            };
+            assert_eq!(
+                recover_prepared_participant_once(&sidecar, &resolver, &wrong_digest)
+                    .await
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::FailedPrecondition
+            );
+            assert!(sidecar.recover().await.unwrap().iter().any(|record| {
+                record.participant.as_ref().is_some_and(|participant| {
+                    participant.phase == proto::native2pc_participant_record::Phase::Prepared as i32
+                })
+            }));
+        }
+        let channel = tonic::transport::Endpoint::from_shared(database.endpoint.clone())
+            .unwrap()
+            .connect()
+            .await
+            .unwrap();
+        let resolver = StaticCxxCoordinator {
+            actor: coordinator,
+            endpoint: Arc::new(TonicNative2pcCoordinatorEndpoint::new(channel)),
+        };
+        let pass = recover_prepared_participant_once(&sidecar, &resolver, &prepared)
+            .await
+            .unwrap();
+        let recovered = sidecar.recover().await.unwrap();
+        match decision {
+            Decision::Preparing => {
+                assert_eq!(pass, Native2pcPreparedParticipantRecoveryPass::Pending);
+                assert!(recovered.iter().any(|record| {
+                    record.participant.as_ref().is_some_and(|participant| {
+                        participant.phase
+                            == proto::native2pc_participant_record::Phase::Prepared as i32
+                    })
+                }));
+            }
+            Decision::Commit => {
+                assert!(matches!(
+                    pass,
+                    Native2pcPreparedParticipantRecoveryPass::Terminalized(response)
+                    if response.terminal_phase
+                        == proto::native2pc_participant_record::Phase::Committed as i32
+                ));
+                assert!(recovered.iter().any(|record| record.applied.is_some()));
+            }
+            Decision::Abort => {
+                assert!(matches!(
+                    pass,
+                    Native2pcPreparedParticipantRecoveryPass::Terminalized(response)
+                    if response.terminal_phase
+                        == proto::native2pc_participant_record::Phase::Aborted as i32
+                ));
+                assert!(!recovered.iter().any(|record| record.applied.is_some()));
+            }
+        }
+    }
 }
