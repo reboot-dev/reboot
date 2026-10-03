@@ -626,6 +626,33 @@ async fn native_staged_recovery_crosses_the_real_cxx_sidecar_boundary() {
                 })
             })
             .expect("C++ NativeRecover must expose a durable staged participant");
+        // A locally well-formed staged record with a forged enrollment digest
+        // must fail at C++ Watch before it can issue an abort terminal request.
+        if abort {
+            let mut wrong_digest = staged.clone();
+            wrong_digest.participant.as_mut().unwrap().enrollment_digest = b"wrong-digest".to_vec();
+            let channel = tonic::transport::Endpoint::from_shared(database.endpoint.clone())
+                .unwrap()
+                .connect()
+                .await
+                .unwrap();
+            let resolver = StaticCxxCoordinator {
+                actor: coordinator.clone(),
+                endpoint: Arc::new(TonicNative2pcCoordinatorEndpoint::new(channel)),
+            };
+            assert_eq!(
+                recover_staged_participant_once(&sidecar, &resolver, &wrong_digest)
+                    .await
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::FailedPrecondition
+            );
+            assert!(sidecar.recover().await.unwrap().iter().any(|record| {
+                record.participant.as_ref().is_some_and(|participant| {
+                    participant.phase == proto::native2pc_participant_record::Phase::Staged as i32
+                })
+            }));
+        }
         let channel = tonic::transport::Endpoint::from_shared(database.endpoint.clone())
             .unwrap()
             .connect()
