@@ -938,6 +938,7 @@ mod tests {
         participant
             .start(ActorTransactionStart {
                 transaction_ids: vec![id],
+                transaction_path: crate::durable_participant::TransactionPathContract::RootOnly,
                 coordinator_state_type: "example.Actor".into(),
                 coordinator_state_ref: "actor/1".into(),
                 mode: TransactionMode::Exclusive,

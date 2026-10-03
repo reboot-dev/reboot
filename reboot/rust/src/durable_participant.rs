@@ -1,9 +1,11 @@
 //! Durable, actor-local participant runtime for Reboot's native sidecar protocol.
 //!
-//! This module owns exactly one actor's root, exclusive transaction. It loads
-//! that actor and holds its lock from `start` through a sidecar-acknowledged
-//! `Commit` or `Abort`. It is not a coordinator and deliberately does not
-//! implement nested, shared, read-only, factory, or cross-actor transactions.
+//! This module owns exactly one actor's exclusive transaction. It loads that
+//! actor and holds its lock from `start` through a sidecar-acknowledged
+//! `Commit` or `Abort`. A caller which explicitly opts in may preserve a
+//! nested transaction-ID path in the sidecar record, but this module neither
+//! executes nested RPCs nor coordinates multiple participants. It deliberately
+//! does not implement shared, read-only, factory, or cross-actor transactions.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -150,6 +152,10 @@ impl ParticipantSidecar for TonicParticipantSidecar {
 #[derive(Clone, Debug)]
 pub struct ActorTransactionStart {
     pub transaction_ids: Vec<Uuid>,
+    /// The caller's contract for the transaction-ID path. Preserving a nested
+    /// path is storage/recovery plumbing only: terminal Participant RPCs still
+    /// identify the root transaction ID, as required by `transactions.proto`.
+    pub transaction_path: TransactionPathContract,
     pub coordinator_state_type: String,
     pub coordinator_state_ref: String,
     pub mode: TransactionMode,
@@ -157,6 +163,18 @@ pub struct ActorTransactionStart {
     pub factory: bool,
     pub state_type: String,
     pub state_ref: String,
+}
+
+/// Whether a caller has explicitly opted into preserving a nested ID path.
+///
+/// Generated root adapters use [`Self::RootOnly`]. A future generated inbound
+/// nested adapter must select [`Self::PreserveNested`] after it has validated
+/// its inbound transaction context; accepting a multi-ID path by default would
+/// falsely imply that every current caller implements nested execution.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransactionPathContract {
+    RootOnly,
+    PreserveNested,
 }
 
 /// Serialized effects which become durable only when the participant prepares.
@@ -192,6 +210,7 @@ impl PendingActorEffects {
 
 struct Pending {
     root_id: Uuid,
+    transaction_ids: Vec<Uuid>,
     coordinator_state_type: String,
     coordinator_state_ref: String,
     effects: PendingActorEffects,
@@ -277,6 +296,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             .and_then(|actor| actor.state);
         *pending = Some(Pending {
             root_id: start.transaction_ids[0],
+            transaction_ids: start.transaction_ids,
             coordinator_state_type: start.coordinator_state_type,
             coordinator_state_ref: start.coordinator_state_ref,
             effects: PendingActorEffects::default(),
@@ -324,9 +344,28 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
     }
 
     fn validate_start(&self, start: &ActorTransactionStart) -> Result<(), Status> {
-        if start.transaction_ids.len() != 1 {
+        if start.transaction_ids.is_empty() {
+            return Err(Status::invalid_argument(
+                "transaction ID path must not be empty",
+            ));
+        }
+        if has_duplicate_transaction_ids(&start.transaction_ids) {
+            return Err(Status::invalid_argument(
+                "transaction ID path must not contain duplicate UUIDs",
+            ));
+        }
+        if start.transaction_path == TransactionPathContract::RootOnly
+            && start.transaction_ids.len() != 1
+        {
             return Err(Status::unimplemented(
-                "nested or shared transactions are not supported",
+                "nested transaction paths require the PreserveNested caller contract",
+            ));
+        }
+        if start.transaction_path == TransactionPathContract::PreserveNested
+            && start.transaction_ids.len() == 1
+        {
+            return Err(Status::invalid_argument(
+                "PreserveNested caller contract requires a nested transaction ID path",
             ));
         }
         if start.mode != TransactionMode::Exclusive {
@@ -378,7 +417,11 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 transaction: Some(database::Transaction {
                     state_type: self.state_type.clone(),
                     state_ref: self.state_ref.clone(),
-                    transaction_ids: vec![transaction_id.as_bytes().to_vec()],
+                    transaction_ids: current
+                        .transaction_ids
+                        .iter()
+                        .map(|id| id.as_bytes().to_vec())
+                        .collect(),
                     coordinator_state_type: current.coordinator_state_type.clone(),
                     coordinator_state_ref: current.coordinator_state_ref.clone(),
                     prepared: false,
@@ -427,14 +470,28 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                     "multiple durable transactions recovered for one actor",
                 ));
             }
-            let [root_id] = transaction.transaction_ids.as_slice() else {
+            if transaction.transaction_ids.is_empty() {
                 return Err(Status::failed_precondition(
-                    "recovered transaction must have exactly one root UUID",
+                    "recovered transaction ID path must not be empty",
                 ));
-            };
-            let root_id = Uuid::from_slice(root_id).map_err(|_| {
-                Status::failed_precondition("recovered transaction ID must be a 16-byte UUID")
-            })?;
+            }
+            let transaction_ids = transaction
+                .transaction_ids
+                .iter()
+                .map(|id| {
+                    Uuid::from_slice(id).map_err(|_| {
+                        Status::failed_precondition(
+                            "recovered transaction ID path must contain 16-byte UUIDs",
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if has_duplicate_transaction_ids(&transaction_ids) {
+                return Err(Status::failed_precondition(
+                    "recovered transaction ID path must not contain duplicate UUIDs",
+                ));
+            }
+            let root_id = transaction_ids[0];
             if transaction.coordinator_state_type.is_empty()
                 || transaction.coordinator_state_ref.is_empty()
             {
@@ -442,9 +499,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                     "recovered transaction must identify its coordinator",
                 ));
             }
-            recovered = Some((root_id, transaction));
+            recovered = Some((root_id, transaction_ids, transaction));
         }
-        let Some((root_id, transaction)) = recovered else {
+        let Some((root_id, transaction_ids, transaction)) = recovered else {
             return Ok(());
         };
 
@@ -459,6 +516,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         }
         *pending = Some(Pending {
             root_id,
+            transaction_ids,
             coordinator_state_type: transaction.coordinator_state_type,
             coordinator_state_ref: transaction.coordinator_state_ref,
             effects: PendingActorEffects {
@@ -513,6 +571,13 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         }
         Ok(())
     }
+}
+
+fn has_duplicate_transaction_ids(transaction_ids: &[Uuid]) -> bool {
+    transaction_ids
+        .iter()
+        .enumerate()
+        .any(|(index, id)| transaction_ids[..index].contains(id))
 }
 
 /// Tonic Participant service backed by one durable actor-local runtime.
@@ -723,6 +788,7 @@ mod tests {
     fn start(id: Uuid) -> ActorTransactionStart {
         ActorTransactionStart {
             transaction_ids: vec![id],
+            transaction_path: TransactionPathContract::RootOnly,
             coordinator_state_type: "example.Coordinator".into(),
             coordinator_state_ref: "coordinator/1".into(),
             mode: TransactionMode::Exclusive,
@@ -1021,6 +1087,50 @@ mod tests {
         participant.terminal(id, false).await.unwrap();
         participant.start(start(Uuid::from_u128(4))).await.unwrap();
         assert!(matches!(sidecar.calls.lock().unwrap()[4], Call::Abort(_)));
+    }
+
+    #[tokio::test]
+    async fn preserves_an_explicit_nested_path_but_terminal_control_still_uses_root() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let root = Uuid::from_u128(5);
+        let child = Uuid::from_u128(6);
+        let mut uncontracted = start(root);
+        uncontracted.transaction_ids.push(child);
+        assert_eq!(
+            participant.start(uncontracted).await.unwrap_err().code(),
+            tonic::Code::Unimplemented
+        );
+
+        let mut nested = start(root);
+        nested.transaction_ids.push(child);
+        nested.transaction_path = TransactionPathContract::PreserveNested;
+        participant.start(nested).await.unwrap();
+        participant
+            .stage(root, PendingActorEffects::default())
+            .await
+            .unwrap();
+        assert!(matches!(
+            participant.prepare(child).await.unwrap(),
+            PrepareOutcome::DefinitiveAbort
+        ));
+        assert_eq!(
+            participant.terminal(child, true).await.unwrap_err().code(),
+            tonic::Code::FailedPrecondition
+        );
+        participant.prepare(root).await.unwrap();
+        participant.terminal(root, true).await.unwrap();
+
+        let calls = sidecar.calls.lock().unwrap().clone();
+        assert!(matches!(
+            &calls[1],
+            Call::Prepare(request)
+                if request.transaction.as_ref().is_some_and(|transaction|
+                    transaction.transaction_ids
+                        == vec![root.as_bytes().to_vec(), child.as_bytes().to_vec()])
+        ));
+        assert!(matches!(&calls[2], Call::Commit(_)));
     }
 
     #[tokio::test]
