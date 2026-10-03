@@ -686,6 +686,29 @@ pub enum Native2pcPreparedParticipantRecoveryPass {
     Terminalized(proto::Native2pcTerminalParticipantResponse),
 }
 
+/// A validated native participant prepare acknowledgement.
+/// `DefinitiveAbort` means this participant did not durably prepare; it is not
+/// a transport failure and must never be confused with an unknown outcome.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Native2pcPrepareOutcome {
+    Prepared,
+    DefinitiveAbort,
+}
+
+fn decode_prepare_outcome(outcome: i32) -> Result<Native2pcPrepareOutcome, Status> {
+    match proto::native2pc_prepare_response::Outcome::try_from(outcome) {
+        Ok(proto::native2pc_prepare_response::Outcome::Prepared) => {
+            Ok(Native2pcPrepareOutcome::Prepared)
+        }
+        Ok(proto::native2pc_prepare_response::Outcome::DefinitiveAbort) => {
+            Ok(Native2pcPrepareOutcome::DefinitiveAbort)
+        }
+        _ => Err(Status::data_loss(
+            "native prepare response outcome is illegal",
+        )),
+    }
+}
+
 fn validate_terminal_response(
     request: &proto::Native2pcTerminalRequest,
     terminal_phase: i32,
@@ -1523,12 +1546,15 @@ impl Native2pcParticipantEndpoint for TonicNative2pcParticipantEndpoint {
     ) -> NativeFuture<'_, proto::Native2pcPrepareResponse> {
         Box::pin(async move {
             validate_prepare(&request)?;
-            self.client
+            let response = self
+                .client
                 .lock()
                 .await
                 .prepare(request)
-                .await
-                .map(Response::into_inner)
+                .await?
+                .into_inner();
+            decode_prepare_outcome(response.outcome)?;
+            Ok(response)
         })
     }
 
@@ -1611,6 +1637,31 @@ mod tests {
             )
             .unwrap(),
         )
+    }
+
+    #[test]
+    fn prepare_outcome_accepts_only_durable_or_definitive_values() {
+        assert_eq!(
+            decode_prepare_outcome(proto::native2pc_prepare_response::Outcome::Prepared as i32)
+                .unwrap(),
+            Native2pcPrepareOutcome::Prepared
+        );
+        assert_eq!(
+            decode_prepare_outcome(
+                proto::native2pc_prepare_response::Outcome::DefinitiveAbort as i32
+            )
+            .unwrap(),
+            Native2pcPrepareOutcome::DefinitiveAbort
+        );
+        for outcome in [
+            proto::native2pc_prepare_response::Outcome::Unspecified as i32,
+            999,
+        ] {
+            assert_eq!(
+                decode_prepare_outcome(outcome).unwrap_err().code(),
+                tonic::Code::DataLoss
+            );
+        }
     }
 
     #[test]
