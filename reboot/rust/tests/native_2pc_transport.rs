@@ -7,7 +7,7 @@ use reboot_rust_schema::{
         Native2pcCoordinatorEndpoint, Native2pcDatabaseSidecar, Native2pcParticipantEndpoint,
         Native2pcRequests, NativeActorId, NativeEnrollment, NativeTransactionId, PROTOCOL_ID,
         RECORD_VERSION, TonicNative2pcCoordinatorEndpoint, TonicNative2pcDatabaseSidecar,
-        TonicNative2pcParticipantEndpoint,
+        TonicNative2pcParticipantEndpoint, require_native2pc_participant,
     },
 };
 use tokio_stream::{Stream, wrappers::TcpListenerStream};
@@ -316,16 +316,10 @@ async fn native_tonic_clients_reach_only_native_services() {
         .unwrap();
     let participant = TonicNative2pcParticipantEndpoint::new(channel.clone());
     assert!(
-        participant
-            .capabilities(proto::Native2pcCapabilitiesRequest {
-                required: Some(proto::Native2pcProtocol {
-                    protocol_id: PROTOCOL_ID.into(),
-                    record_version: RECORD_VERSION,
-                }),
-            })
+        require_native2pc_participant(&participant)
             .await
             .unwrap()
-            .native_participant_enabled
+            .native_sidecar_enabled
     );
     assert_eq!(
         participant

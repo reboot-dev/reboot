@@ -891,6 +891,49 @@ pub trait Native2pcDatabaseSidecar: Send + Sync + 'static {
     ) -> NativeFuture<'_, proto::Native2pcTerminalParticipantResponse>;
 }
 
+/// The negotiated capabilities of one reachable Native2pc participant. This is
+/// an observation only: a remote sidecar flag neither grants ownership nor
+/// selects this process's sidecar.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Native2pcParticipantCapabilities {
+    pub native_sidecar_enabled: bool,
+}
+
+/// Builds the exact protocol/version capability request. Callers must negotiate
+/// after resolving an endpoint; neither route nor capability is cacheable here.
+pub fn native2pc_capabilities_request() -> proto::Native2pcCapabilitiesRequest {
+    proto::Native2pcCapabilitiesRequest {
+        required: Some(protocol()),
+    }
+}
+
+fn validate_participant_capabilities_response(
+    response: proto::Native2pcCapabilitiesResponse,
+) -> Result<Native2pcParticipantCapabilities, Status> {
+    validate_protocol(response.accepted.as_ref())?;
+    if !response.native_participant_enabled {
+        return Err(Status::failed_precondition(
+            "remote endpoint does not enable reboot.native-2pc.v1 participant",
+        ));
+    }
+    Ok(Native2pcParticipantCapabilities {
+        native_sidecar_enabled: response.native_sidecar_enabled,
+    })
+}
+
+/// Requires that this exact, independently resolved endpoint speaks Native2pc
+/// v1. Transport errors remain non-definitive and are deliberately propagated;
+/// this helper never probes or falls back to legacy services.
+pub async fn require_native2pc_participant<E: Native2pcParticipantEndpoint + ?Sized>(
+    endpoint: &E,
+) -> Result<Native2pcParticipantCapabilities, Status> {
+    validate_participant_capabilities_response(
+        endpoint
+            .capabilities(native2pc_capabilities_request())
+            .await?,
+    )
+}
+
 /// Host-routed native participant endpoint. A resolver owns placement; state
 /// references are never interpreted as addresses by this module.
 pub trait Native2pcParticipantEndpoint: Send + Sync + 'static {
@@ -1420,6 +1463,89 @@ mod tests {
             prepared.coordinator.unwrap(),
             requests.coordinator.to_proto()
         );
+    }
+
+    #[test]
+    fn participant_capability_negotiation_requires_exact_native_v1_support() {
+        assert_eq!(native2pc_capabilities_request().required, Some(protocol()));
+        for response in [
+            proto::Native2pcCapabilitiesResponse::default(),
+            proto::Native2pcCapabilitiesResponse {
+                accepted: Some(proto::Native2pcProtocol {
+                    protocol_id: PROTOCOL_ID.into(),
+                    record_version: RECORD_VERSION + 1,
+                }),
+                native_participant_enabled: true,
+                native_sidecar_enabled: false,
+            },
+        ] {
+            assert_eq!(
+                validate_participant_capabilities_response(response)
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::InvalidArgument
+            );
+        }
+        assert_eq!(
+            validate_participant_capabilities_response(proto::Native2pcCapabilitiesResponse {
+                accepted: Some(protocol()),
+                native_participant_enabled: false,
+                native_sidecar_enabled: true,
+            })
+            .unwrap_err()
+            .code(),
+            tonic::Code::FailedPrecondition
+        );
+        for native_sidecar_enabled in [false, true] {
+            assert_eq!(
+                validate_participant_capabilities_response(proto::Native2pcCapabilitiesResponse {
+                    accepted: Some(protocol()),
+                    native_participant_enabled: true,
+                    native_sidecar_enabled,
+                })
+                .unwrap(),
+                Native2pcParticipantCapabilities {
+                    native_sidecar_enabled,
+                }
+            );
+        }
+    }
+
+    struct CapabilityEndpoint {
+        response: Result<proto::Native2pcCapabilitiesResponse, Status>,
+    }
+
+    impl Native2pcParticipantEndpoint for CapabilityEndpoint {
+        fn capabilities(
+            &self,
+            _: proto::Native2pcCapabilitiesRequest,
+        ) -> NativeFuture<'_, proto::Native2pcCapabilitiesResponse> {
+            Box::pin(async { self.response.clone() })
+        }
+
+        fn prepare(
+            &self,
+            _: proto::Native2pcPrepareRequest,
+        ) -> NativeFuture<'_, proto::Native2pcPrepareResponse> {
+            Box::pin(async { Err(Status::unimplemented("not used by capability tests")) })
+        }
+
+        fn terminal(
+            &self,
+            _: proto::Native2pcTerminalRequest,
+        ) -> NativeFuture<'_, proto::Native2pcTerminalResponse> {
+            Box::pin(async { Err(Status::unimplemented("not used by capability tests")) })
+        }
+    }
+
+    #[tokio::test]
+    async fn participant_capability_transport_errors_remain_nondefinitive() {
+        let endpoint = CapabilityEndpoint {
+            response: Err(Status::unavailable("temporary native endpoint failure")),
+        };
+        let error = require_native2pc_participant(&endpoint).await.unwrap_err();
+        assert_eq!(error.code(), tonic::Code::Unavailable);
+        assert_eq!(error.message(), "temporary native endpoint failure");
     }
 
     #[test]
