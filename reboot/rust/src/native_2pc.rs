@@ -19,6 +19,7 @@ use std::{
 };
 
 use prost::Message;
+use sha1::{Digest, Sha1};
 use tonic::{Response, Status};
 
 use crate::database_proto as proto;
@@ -83,6 +84,125 @@ impl NativeActorId {
             state_type: self.state_type.clone(),
             state_ref: self.state_ref.clone(),
         }
+    }
+}
+
+/// A trusted-plan shard boundary for a single application. `first_key` is
+/// inclusive; boundaries must be strictly ordered and start with the empty key.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Native2pcShardRoute {
+    pub shard_id: String,
+    pub first_key: Vec<u8>,
+    pub server_id: String,
+}
+
+/// A stale-tolerant routing answer, deliberately not an ownership lease or
+/// authorization assertion.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Native2pcRoute {
+    pub plan_version: i64,
+    pub shard_id: String,
+    pub server_id: String,
+    pub address: String,
+}
+
+/// Immutable snapshot of the Python placement model for one application.
+///
+/// It hashes the first slash-separated state-ref component with SHA-1, chooses
+/// the rightmost inclusive shard boundary at or below that hash, then resolves
+/// shard -> server -> address. A later plan may supersede this answer; callers
+/// must treat it as trusted internal-plane routing only, never as a fence or
+/// proof of actor ownership.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Native2pcPlacementPlan {
+    application_id: String,
+    version: i64,
+    shards: Vec<Native2pcShardRoute>,
+    addresses: BTreeMap<String, String>,
+}
+
+impl Native2pcPlacementPlan {
+    pub fn new(
+        application_id: impl Into<String>,
+        version: i64,
+        shards: impl IntoIterator<Item = Native2pcShardRoute>,
+        addresses: impl IntoIterator<Item = (String, String)>,
+    ) -> Result<Self, Status> {
+        let application_id = application_id.into();
+        if application_id.is_empty() || version < 0 {
+            return Err(invalid(
+                "native placement application and version are required",
+            ));
+        }
+        let shards = shards.into_iter().collect::<Vec<_>>();
+        if shards.is_empty() || shards[0].first_key != Vec::<u8>::new() {
+            return Err(invalid(
+                "native placement shards must start with an empty boundary",
+            ));
+        }
+        let addresses = addresses.into_iter().collect::<BTreeMap<_, _>>();
+        let mut prior: Option<&[u8]> = None;
+        for shard in &shards {
+            if shard.shard_id.is_empty() || shard.server_id.is_empty() {
+                return Err(invalid(
+                    "native placement shard and server ids are required",
+                ));
+            }
+            if prior.is_some_and(|prior| prior >= shard.first_key.as_slice()) {
+                return Err(invalid(
+                    "native placement shard boundaries must be strictly ordered",
+                ));
+            }
+            if addresses.get(&shard.server_id).is_none_or(String::is_empty) {
+                return Err(invalid(
+                    "native placement requires a nonempty address for every server",
+                ));
+            }
+            prior = Some(&shard.first_key);
+        }
+        Ok(Self {
+            application_id,
+            version,
+            shards,
+            addresses,
+        })
+    }
+
+    pub fn application_id(&self) -> &str {
+        &self.application_id
+    }
+
+    pub fn version(&self) -> i64 {
+        self.version
+    }
+
+    pub fn route(
+        &self,
+        application_id: &str,
+        actor: &NativeActorId,
+    ) -> Result<Native2pcRoute, Status> {
+        if application_id != self.application_id {
+            return Err(Status::not_found("native placement application is unknown"));
+        }
+        let component = actor
+            .state_ref()
+            .split('/')
+            .next()
+            .filter(|component| !component.is_empty())
+            .ok_or_else(|| invalid("native actor state reference has no routing component"))?;
+        let hash = Sha1::digest(component.as_bytes());
+        let index = self
+            .shards
+            .partition_point(|shard| shard.first_key.as_slice() <= hash.as_slice())
+            .checked_sub(1)
+            .expect("validated empty shard boundary");
+        let shard = &self.shards[index];
+        Ok(Native2pcRoute {
+            plan_version: self.version,
+            shard_id: shard.shard_id.clone(),
+            server_id: shard.server_id.clone(),
+            address: self.addresses[&shard.server_id].clone(),
+        })
     }
 }
 
@@ -1112,6 +1232,119 @@ mod tests {
             )
             .unwrap(),
         )
+    }
+
+    fn placement() -> Native2pcPlacementPlan {
+        Native2pcPlacementPlan::new(
+            "example-app",
+            7,
+            [
+                Native2pcShardRoute {
+                    shard_id: "s0".into(),
+                    first_key: vec![],
+                    server_id: "server-0".into(),
+                },
+                Native2pcShardRoute {
+                    shard_id: "s1".into(),
+                    first_key: vec![0x90],
+                    server_id: "server-1".into(),
+                },
+                Native2pcShardRoute {
+                    shard_id: "s2".into(),
+                    first_key: vec![0xc0],
+                    server_id: "server-2".into(),
+                },
+            ],
+            [
+                ("server-0".into(), "127.0.0.1:7000".into()),
+                ("server-1".into(), "127.0.0.1:7001".into()),
+                ("server-2".into(), "127.0.0.1:7002".into()),
+            ],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn placement_matches_python_first_component_sha1_routing() {
+        let plan = placement();
+        assert_eq!(
+            plan.route(
+                "example-app",
+                &NativeActorId::new("example.State", "a/colocated-child").unwrap(),
+            )
+            .unwrap(),
+            Native2pcRoute {
+                plan_version: 7,
+                shard_id: "s0".into(),
+                server_id: "server-0".into(),
+                address: "127.0.0.1:7000".into(),
+            }
+        );
+        assert_eq!(
+            plan.route(
+                "example-app",
+                &NativeActorId::new("example.State", "first").unwrap(),
+            )
+            .unwrap()
+            .shard_id,
+            "s2"
+        );
+        assert_eq!(
+            plan.route("wrong-app", &participant("a"))
+                .unwrap_err()
+                .code(),
+            tonic::Code::NotFound
+        );
+    }
+
+    #[test]
+    fn placement_rejects_incomplete_or_ambiguous_plans() {
+        assert!(
+            Native2pcPlacementPlan::new(
+                "example-app",
+                0,
+                [Native2pcShardRoute {
+                    shard_id: "s".into(),
+                    first_key: vec![1],
+                    server_id: "server".into(),
+                }],
+                [("server".into(), "address".into())],
+            )
+            .is_err()
+        );
+        assert!(
+            Native2pcPlacementPlan::new(
+                "example-app",
+                0,
+                [
+                    Native2pcShardRoute {
+                        shard_id: "s0".into(),
+                        first_key: vec![],
+                        server_id: "server".into(),
+                    },
+                    Native2pcShardRoute {
+                        shard_id: "s1".into(),
+                        first_key: vec![],
+                        server_id: "server".into(),
+                    },
+                ],
+                [("server".into(), "address".into())],
+            )
+            .is_err()
+        );
+        assert!(
+            Native2pcPlacementPlan::new(
+                "example-app",
+                0,
+                [Native2pcShardRoute {
+                    shard_id: "s".into(),
+                    first_key: vec![],
+                    server_id: "missing".into(),
+                }],
+                Vec::new(),
+            )
+            .is_err()
+        );
     }
 
     #[test]
