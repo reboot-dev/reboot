@@ -2580,6 +2580,15 @@ mod tests {
             ],
         );
 
+        assert_fields(
+            message(native, "Native2pcRecoverResponse"),
+            &[
+                ("coordinator", 1, Type::Message, Label::Optional),
+                ("participant", 2, Type::Message, Label::Optional),
+                ("applied", 3, Type::Message, Label::Optional),
+            ],
+        );
+
         let services: Vec<_> = native
             .service
             .iter()

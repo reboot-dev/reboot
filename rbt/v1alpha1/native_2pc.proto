@@ -218,6 +218,9 @@ message Native2pcRecoverRequest {
 message Native2pcRecoverResponse {
   Native2pcCoordinatorRecord coordinator = 1;
   Native2pcParticipantRecord participant = 2;
+  // Immutable committed journal. It is redelivered until a future native actor
+  // runtime durably materializes it; recovery never synthesizes it from p/.
+  Native2pcAppliedActorEffects applied = 3;
 }
 
 message Native2pcTerminalParticipantRequest {

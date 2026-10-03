@@ -242,6 +242,116 @@ fn validate_effects(effects: &proto::Native2pcActorEffects) -> Result<(), Status
     Ok(())
 }
 
+fn validate_recovered_coordinator(
+    record: &proto::Native2pcCoordinatorRecord,
+) -> Result<(), Status> {
+    validate_identity(
+        record.protocol.as_ref(),
+        &record.root_transaction_id,
+        record.coordinator.as_ref(),
+        &record.enrollment_digest,
+    )?;
+    if record.enrollment.is_empty()
+        || !matches!(
+            proto::native2pc_coordinator_record::Phase::try_from(record.phase),
+            Ok(proto::native2pc_coordinator_record::Phase::Preparing)
+                | Ok(proto::native2pc_coordinator_record::Phase::CommitDecided)
+                | Ok(proto::native2pc_coordinator_record::Phase::AbortDecided)
+        )
+    {
+        return Err(invalid("native recovered coordinator is invalid"));
+    }
+    let mut prior: Option<&proto::Native2pcActorId> = None;
+    for enrollment in &record.enrollment {
+        validate_actor(
+            enrollment.participant.as_ref(),
+            "native enrolled participant identity is required",
+        )?;
+        if enrollment.enrollment_digest != record.enrollment_digest {
+            return Err(invalid(
+                "native enrollment digest does not match coordinator",
+            ));
+        }
+        let current = enrollment.participant.as_ref().expect("validated above");
+        if let Some(prior) = prior
+            && (prior.state_type.as_str(), prior.state_ref.as_str())
+                >= (current.state_type.as_str(), current.state_ref.as_str())
+        {
+            return Err(invalid(
+                "native enrollment must be sorted and duplicate-free",
+            ));
+        }
+        prior = Some(current);
+    }
+    Ok(())
+}
+
+fn validate_recovered_participant(
+    record: &proto::Native2pcParticipantRecord,
+) -> Result<(), Status> {
+    validate_identity(
+        record.protocol.as_ref(),
+        &record.root_transaction_id,
+        record.coordinator.as_ref(),
+        &record.enrollment_digest,
+    )?;
+    validate_actor(
+        record.participant.as_ref(),
+        "native recovered participant identity is required",
+    )?;
+    if !matches!(
+        proto::native2pc_participant_record::Phase::try_from(record.phase),
+        Ok(proto::native2pc_participant_record::Phase::Prepared)
+            | Ok(proto::native2pc_participant_record::Phase::Committed)
+            | Ok(proto::native2pc_participant_record::Phase::Aborted)
+    ) {
+        return Err(invalid("native recovered participant phase is illegal"));
+    }
+    validate_effects(
+        record
+            .effects
+            .as_ref()
+            .ok_or_else(|| invalid("native recovered participant effects are required"))?,
+    )
+}
+
+fn validate_recovery_response(response: &proto::Native2pcRecoverResponse) -> Result<(), Status> {
+    let entries = usize::from(response.coordinator.is_some())
+        + usize::from(response.participant.is_some())
+        + usize::from(response.applied.is_some());
+    if entries != 1 {
+        return Err(invalid(
+            "native recovery response must contain exactly one record",
+        ));
+    }
+    if let Some(coordinator) = &response.coordinator {
+        return validate_recovered_coordinator(coordinator);
+    }
+    if let Some(participant) = &response.participant {
+        return validate_recovered_participant(participant);
+    }
+    let applied = response
+        .applied
+        .as_ref()
+        .expect("exactly one response record");
+    validate_identity(
+        applied.protocol.as_ref(),
+        &applied.root_transaction_id,
+        applied.coordinator.as_ref(),
+        &applied.enrollment_digest,
+    )?;
+    validate_actor(
+        applied.participant.as_ref(),
+        "native applied participant identity is required",
+    )?;
+    validate_effects(
+        applied
+            .effects
+            .as_ref()
+            .ok_or_else(|| invalid("native applied effects are required"))?,
+    )
+}
+
 fn validate_participant_request(
     request: &proto::Native2pcPutParticipantRequest,
 ) -> Result<(), Status> {
@@ -654,6 +764,7 @@ impl Native2pcDatabaseSidecar for TonicNative2pcDatabaseSidecar {
                 .into_inner();
             let mut recovered = Vec::new();
             while let Some(response) = responses.message().await? {
+                validate_recovery_response(&response)?;
                 recovered.push(response);
             }
             Ok(recovered)
@@ -957,6 +1068,36 @@ mod tests {
             validate_watch(&proto::Native2pcWatchRequest::default())
                 .unwrap_err()
                 .code(),
+            tonic::Code::InvalidArgument
+        );
+        assert_eq!(
+            validate_recovery_response(&proto::Native2pcRecoverResponse::default())
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        assert_eq!(
+            validate_recovery_response(&proto::Native2pcRecoverResponse {
+                coordinator: Some(proto::Native2pcCoordinatorRecord::default()),
+                ..Default::default()
+            })
+            .unwrap_err()
+            .code(),
+            tonic::Code::InvalidArgument
+        );
+        let coordinator = requests().put_coordinator_preparing().coordinator.unwrap();
+        let participant = requests()
+            .put_participant(&participant("a"))
+            .participant
+            .unwrap();
+        assert_eq!(
+            validate_recovery_response(&proto::Native2pcRecoverResponse {
+                coordinator: Some(coordinator),
+                participant: Some(participant),
+                ..Default::default()
+            })
+            .unwrap_err()
+            .code(),
             tonic::Code::InvalidArgument
         );
     }

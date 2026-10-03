@@ -13,7 +13,32 @@ use tokio_stream::{Stream, wrappers::TcpListenerStream};
 use tonic::{Request, Response, Status, transport::Server};
 
 #[derive(Default)]
-struct NativeDatabase;
+struct NativeDatabase {
+    recovery: proto::Native2pcRecoverResponse,
+}
+
+fn valid_recovery() -> proto::Native2pcRecoverResponse {
+    proto::Native2pcRecoverResponse {
+        applied: Some(proto::Native2pcAppliedActorEffects {
+            protocol: Some(proto::Native2pcProtocol {
+                protocol_id: PROTOCOL_ID.into(),
+                record_version: RECORD_VERSION,
+            }),
+            root_transaction_id: vec![1; 16],
+            participant: Some(proto::Native2pcActorId {
+                state_type: "example.Participant".into(),
+                state_ref: "participant/1".into(),
+            }),
+            coordinator: Some(proto::Native2pcActorId {
+                state_type: "example.Coordinator".into(),
+                state_ref: "coordinator/1".into(),
+            }),
+            enrollment_digest: vec![9, 8],
+            effects: Some(proto::Native2pcActorEffects::default()),
+        }),
+        ..Default::default()
+    }
+}
 
 #[tonic::async_trait]
 impl proto::native2pc_database_server::Native2pcDatabase for NativeDatabase {
@@ -79,9 +104,9 @@ impl proto::native2pc_database_server::Native2pcDatabase for NativeDatabase {
             request.into_inner().protocol.unwrap().record_version,
             RECORD_VERSION
         );
-        Ok(Response::new(Box::pin(tokio_stream::iter([Ok(
-            proto::Native2pcRecoverResponse::default(),
-        )]))))
+        Ok(Response::new(Box::pin(tokio_stream::iter([Ok(self
+            .recovery
+            .clone())]))))
     }
 
     async fn terminal_participant(
@@ -153,13 +178,17 @@ impl proto::native2pc_coordinator_server::Native2pcCoordinator for NativeCoordin
     }
 }
 
-async fn serve() -> (SocketAddr, tokio::task::JoinHandle<()>) {
+async fn serve(
+    recovery: proto::Native2pcRecoverResponse,
+) -> (SocketAddr, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
         Server::builder()
             .add_service(
-                proto::native2pc_database_server::Native2pcDatabaseServer::new(NativeDatabase),
+                proto::native2pc_database_server::Native2pcDatabaseServer::new(NativeDatabase {
+                    recovery,
+                }),
             )
             .add_service(
                 proto::native2pc_participant_server::Native2pcParticipantServer::new(
@@ -180,7 +209,7 @@ async fn serve() -> (SocketAddr, tokio::task::JoinHandle<()>) {
 
 #[tokio::test]
 async fn native_tonic_clients_reach_only_native_services() {
-    let (address, server) = serve().await;
+    let (address, server) = serve(valid_recovery()).await;
     let endpoint = format!("http://{address}");
     let sidecar = TonicNative2pcDatabaseSidecar::connect(&endpoint)
         .await
@@ -212,7 +241,19 @@ async fn native_tonic_clients_reach_only_native_services() {
         .put_abort_decision(requests.put_abort_decision())
         .await
         .unwrap();
-    assert_eq!(sidecar.recover().await.unwrap().len(), 1);
+    let recovered = sidecar.recover().await.unwrap();
+    assert_eq!(recovered.len(), 1);
+    assert_eq!(
+        recovered[0]
+            .applied
+            .as_ref()
+            .unwrap()
+            .participant
+            .as_ref()
+            .unwrap()
+            .state_ref,
+        "participant/1"
+    );
     assert_eq!(
         sidecar
             .terminal_participant(requests.terminal(&participant_id, true))
@@ -265,6 +306,19 @@ async fn native_tonic_clients_reach_only_native_services() {
             .unwrap()
             .phase,
         proto::native2pc_coordinator_record::Phase::CommitDecided as i32
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn native_tonic_recovery_rejects_malformed_journal_response() {
+    let (address, server) = serve(proto::Native2pcRecoverResponse::default()).await;
+    let sidecar = TonicNative2pcDatabaseSidecar::connect(format!("http://{address}"))
+        .await
+        .unwrap();
+    assert_eq!(
+        sidecar.recover().await.unwrap_err().code(),
+        tonic::Code::InvalidArgument
     );
     server.abort();
 }

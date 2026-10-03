@@ -2372,12 +2372,16 @@ TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
     recovered.push_back(recovered_response);
   }
   EXPECT_TRUE(reader->Finish().ok());
-  ASSERT_EQ(4, recovered.size());
+  ASSERT_EQ(5, recovered.size());
   bool committed_coordinator_recovered = false;
   bool committed_participant_recovered = false;
+  bool committed_applied_recovered = false;
   bool aborted_coordinator_recovered = false;
   bool aborted_participant_recovered = false;
   for (const auto& response : recovered) {
+    EXPECT_EQ(1, static_cast<int>(response.has_coordinator()) +
+                     static_cast<int>(response.has_participant()) +
+                     static_cast<int>(response.has_applied()));
     if (response.has_coordinator() &&
         response.coordinator().root_transaction_id() == root) {
       EXPECT_EQ(v1alpha1::Native2pcCoordinatorRecord::COMMIT_DECIDED,
@@ -2395,6 +2399,16 @@ TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
                 response.participant().participant().SerializeAsString());
       EXPECT_EQ(digest, response.participant().enrollment_digest());
       committed_participant_recovered = true;
+    }
+    if (response.has_applied() && response.applied().root_transaction_id() == root) {
+      EXPECT_EQ(participant.SerializeAsString(),
+                response.applied().participant().SerializeAsString());
+      EXPECT_EQ(coordinator.SerializeAsString(),
+                response.applied().coordinator().SerializeAsString());
+      EXPECT_EQ(digest, response.applied().enrollment_digest());
+      EXPECT_EQ(persisted->effects().SerializeAsString(),
+                response.applied().effects().SerializeAsString());
+      committed_applied_recovered = true;
     }
     if (response.has_coordinator() &&
         response.coordinator().root_transaction_id() == abort_root) {
@@ -2414,8 +2428,23 @@ TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
   }
   EXPECT_TRUE(committed_coordinator_recovered);
   EXPECT_TRUE(committed_participant_recovered);
+  EXPECT_TRUE(committed_applied_recovered);
   EXPECT_TRUE(aborted_coordinator_recovered);
   EXPECT_TRUE(aborted_participant_recovered);
+
+  // Applied journals are recovery work only when they are well-formed native
+  // records. Semantically invalid and corrupt `a/` values fail the whole native
+  // recovery stream rather than being skipped or reconstructed from p/.
+  v1alpha1::Native2pcAppliedActorEffects invalid_applied;
+  std::string invalid_applied_bytes;
+  ASSERT_TRUE(invalid_applied.SerializeToString(&invalid_applied_bytes));
+  put_default_record(native_key("a", std::string(16, 'b')), invalid_applied_bytes);
+  put_default_record(native_key("a", std::string(16, 'm')), "not-a-native-journal");
+  grpc::ClientContext malformed_recover_context;
+  auto malformed_reader = native_stub->RecoverNative2pc(&malformed_recover_context, recover);
+  while (malformed_reader->Read(&recovered_response)) {
+  }
+  EXPECT_EQ(grpc::StatusCode::DATA_LOSS, malformed_reader->Finish().error_code());
 }
 
 ////////////////////////////////////////////////////////////////////////
