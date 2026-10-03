@@ -14,6 +14,7 @@
 #[cfg(feature = "build")]
 pub mod build;
 pub mod codegen;
+pub mod durable_coordinator;
 pub mod durable_participant;
 pub mod runtime;
 
