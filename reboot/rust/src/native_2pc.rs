@@ -601,6 +601,79 @@ fn validate_watch(request: &proto::Native2pcWatchRequest) -> Result<(), Status> 
     )
 }
 
+/// A pure continuation derived from one durably recovered PREPARED participant.
+/// It owns no retry, routing, lock, RPC, or actor execution; a host recovery
+/// driver may later execute the identity-bound requests it constructs.
+#[derive(Clone, Debug)]
+pub struct Native2pcPreparedParticipantRecovery {
+    participant: proto::Native2pcParticipantRecord,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Native2pcPreparedParticipantWatch {
+    Pending,
+    Terminal(proto::Native2pcTerminalParticipantRequest),
+}
+
+impl Native2pcPreparedParticipantRecovery {
+    pub fn try_from_recovery(
+        recovery: &proto::Native2pcRecoverResponse,
+    ) -> Result<Option<Self>, Status> {
+        validate_recovery_response(recovery)?;
+        let Some(participant) = recovery.participant.as_ref() else {
+            return Ok(None);
+        };
+        match proto::native2pc_participant_record::Phase::try_from(participant.phase) {
+            Ok(proto::native2pc_participant_record::Phase::Prepared) => Ok(Some(Self {
+                participant: participant.clone(),
+            })),
+            Ok(proto::native2pc_participant_record::Phase::Committed)
+            | Ok(proto::native2pc_participant_record::Phase::Aborted) => Ok(None),
+            _ => Err(invalid("native recovered participant phase is illegal")),
+        }
+    }
+
+    pub fn watch_request(&self) -> proto::Native2pcWatchRequest {
+        proto::Native2pcWatchRequest {
+            protocol: self.participant.protocol.clone(),
+            root_transaction_id: self.participant.root_transaction_id.clone(),
+            coordinator: self.participant.coordinator.clone(),
+            participant: self.participant.participant.clone(),
+            enrollment_digest: self.participant.enrollment_digest.clone(),
+        }
+    }
+
+    pub fn observe_watch(
+        &self,
+        watch: proto::Native2pcWatchResponse,
+    ) -> Result<Native2pcPreparedParticipantWatch, Status> {
+        let decision = match proto::native2pc_coordinator_record::Phase::try_from(watch.phase) {
+            Ok(proto::native2pc_coordinator_record::Phase::Preparing) => {
+                return Ok(Native2pcPreparedParticipantWatch::Pending);
+            }
+            Ok(proto::native2pc_coordinator_record::Phase::CommitDecided) => {
+                proto::native2pc_terminal_request::Decision::Commit as i32
+            }
+            Ok(proto::native2pc_coordinator_record::Phase::AbortDecided) => {
+                proto::native2pc_terminal_request::Decision::Abort as i32
+            }
+            _ => return Err(invalid("native recovery watch phase is illegal")),
+        };
+        Ok(Native2pcPreparedParticipantWatch::Terminal(
+            proto::Native2pcTerminalParticipantRequest {
+                terminal: Some(proto::Native2pcTerminalRequest {
+                    protocol: self.participant.protocol.clone(),
+                    root_transaction_id: self.participant.root_transaction_id.clone(),
+                    participant: self.participant.participant.clone(),
+                    coordinator: self.participant.coordinator.clone(),
+                    enrollment_digest: self.participant.enrollment_digest.clone(),
+                    decision,
+                }),
+            },
+        ))
+    }
+}
+
 /// Identity-bound Native2pc request constructors. None of these performs I/O.
 #[derive(Clone, Debug)]
 pub struct Native2pcRequests {
@@ -1496,6 +1569,96 @@ mod tests {
         assert_eq!(
             prepared.coordinator.unwrap(),
             requests.coordinator.to_proto()
+        );
+    }
+
+    #[test]
+    fn prepared_participant_recovery_builds_only_identity_bound_continuations() {
+        let requests = requests();
+        let prepared = requests
+            .put_participant(&participant("a"))
+            .participant
+            .unwrap();
+        let recovery = Native2pcPreparedParticipantRecovery::try_from_recovery(
+            &proto::Native2pcRecoverResponse {
+                participant: Some(prepared.clone()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .expect("prepared participant must continue");
+        assert_eq!(recovery.watch_request(), requests.watch(&participant("a")));
+
+        for (phase, expected) in [
+            (
+                proto::native2pc_coordinator_record::Phase::CommitDecided,
+                requests.terminal(&participant("a"), true),
+            ),
+            (
+                proto::native2pc_coordinator_record::Phase::AbortDecided,
+                requests.terminal(&participant("a"), false),
+            ),
+        ] {
+            assert_eq!(
+                recovery
+                    .observe_watch(proto::Native2pcWatchResponse {
+                        phase: phase as i32,
+                    })
+                    .unwrap(),
+                Native2pcPreparedParticipantWatch::Terminal(expected)
+            );
+        }
+        assert_eq!(
+            recovery
+                .observe_watch(proto::Native2pcWatchResponse {
+                    phase: proto::native2pc_coordinator_record::Phase::Preparing as i32,
+                })
+                .unwrap(),
+            Native2pcPreparedParticipantWatch::Pending
+        );
+
+        for phase in [
+            proto::native2pc_coordinator_record::Phase::Unspecified as i32,
+            99,
+        ] {
+            assert_eq!(
+                recovery
+                    .observe_watch(proto::Native2pcWatchResponse { phase })
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::InvalidArgument
+            );
+        }
+
+        for phase in [
+            proto::native2pc_participant_record::Phase::Committed,
+            proto::native2pc_participant_record::Phase::Aborted,
+        ] {
+            let mut terminal = prepared.clone();
+            terminal.phase = phase as i32;
+            assert!(
+                Native2pcPreparedParticipantRecovery::try_from_recovery(
+                    &proto::Native2pcRecoverResponse {
+                        participant: Some(terminal),
+                        ..Default::default()
+                    }
+                )
+                .unwrap()
+                .is_none()
+            );
+        }
+
+        assert_eq!(
+            Native2pcPreparedParticipantRecovery::try_from_recovery(
+                &proto::Native2pcRecoverResponse {
+                    coordinator: requests.put_coordinator_preparing().coordinator,
+                    participant: Some(prepared),
+                    ..Default::default()
+                }
+            )
+            .unwrap_err()
+            .code(),
+            tonic::Code::InvalidArgument
         );
     }
 
