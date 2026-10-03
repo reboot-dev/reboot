@@ -5,17 +5,20 @@
 //! them to satisfy `clippy::result_large_err` would make the bindings invalid.
 #![allow(clippy::result_large_err)]
 //!
-//! This is intentionally a schema-only spike. It proves that Rust can emit the
-//! existing Reboot descriptor format without Python or Node.js. It does not
-//! claim to host a production Rust servicer: the current `rbt dev run` launcher
-//! supports only `--python` and `--nodejs`. The [`runtime`] module provides a
-//! deliberately scoped Tonic service adapters for executable testing.
+//! This is an experimental schema and transport spike. It proves that Rust can
+//! emit Reboot's existing descriptor format and validate the isolated Native2pc
+//! v1 transport contract without Python or Node.js. It does not claim to host a
+//! production Rust servicer: the current `rbt dev run` launcher supports only
+//! `--python` and `--nodejs`. The [`runtime`] module provides deliberately
+//! scoped Tonic service adapters for executable testing; [`native_2pc`] remains
+//! an explicitly non-executable control-plane boundary.
 
 #[cfg(feature = "build")]
 pub mod build;
 pub mod codegen;
 pub mod durable_coordinator;
 pub mod durable_participant;
+pub mod native_2pc;
 pub mod runtime;
 pub mod successful_trailers;
 
