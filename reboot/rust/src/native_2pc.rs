@@ -686,7 +686,7 @@ pub enum Native2pcPreparedParticipantRecoveryPass {
     Terminalized(proto::Native2pcTerminalParticipantResponse),
 }
 
-fn validate_prepared_recovery_terminal_response(
+fn validate_terminal_participant_response(
     request: &proto::Native2pcTerminalParticipantRequest,
     response: &proto::Native2pcTerminalParticipantResponse,
 ) -> Result<(), Status> {
@@ -706,7 +706,7 @@ fn validate_prepared_recovery_terminal_response(
     };
     if response.terminal_phase != expected as i32 {
         return Err(Status::data_loss(
-            "native prepared recovery terminal response conflicts with decision",
+            "native terminal response conflicts with decision",
         ));
     }
     Ok(())
@@ -742,7 +742,7 @@ pub async fn recover_prepared_participant_once<
         }
         Native2pcPreparedParticipantWatch::Terminal(request) => {
             let response = sidecar.terminal_participant(request.clone()).await?;
-            validate_prepared_recovery_terminal_response(&request, &response)?;
+            validate_terminal_participant_response(&request, &response)?;
             Ok(Native2pcPreparedParticipantRecoveryPass::Terminalized(
                 response,
             ))
@@ -843,16 +843,10 @@ fn validate_staged_recovery_terminal_response(
         .terminal
         .as_ref()
         .ok_or_else(|| invalid("native terminal request is required"))?;
-    validate_terminal(terminal)?;
     if terminal.decision != proto::native2pc_terminal_request::Decision::Abort as i32 {
         return Err(invalid("native staged recovery may only abort"));
     }
-    if response.terminal_phase != proto::native2pc_participant_record::Phase::Aborted as i32 {
-        return Err(Status::data_loss(
-            "native staged recovery terminal response must be ABORTED",
-        ));
-    }
-    Ok(())
+    validate_terminal_participant_response(request, response)
 }
 
 /// Resolves the coordinator recorded by one staged participant, watches that
@@ -1468,12 +1462,15 @@ impl Native2pcDatabaseSidecar for TonicNative2pcDatabaseSidecar {
                     .as_ref()
                     .ok_or_else(|| invalid("native terminal request is required"))?,
             )?;
-            self.client
+            let response = self
+                .client
                 .lock()
                 .await
-                .terminal_participant(request)
-                .await
-                .map(Response::into_inner)
+                .terminal_participant(request.clone())
+                .await?
+                .into_inner();
+            validate_terminal_participant_response(&request, &response)?;
+            Ok(response)
         })
     }
 }

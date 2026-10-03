@@ -317,6 +317,11 @@ async fn native_tonic_clients_reach_only_native_services() {
             .terminal_phase,
         proto::native2pc_participant_record::Phase::Committed as i32
     );
+    let mismatch = sidecar
+        .terminal_participant(requests.terminal(&participant_id, false))
+        .await
+        .unwrap_err();
+    assert_eq!(mismatch.code(), tonic::Code::DataLoss);
 
     let channel = tonic::transport::Endpoint::from_shared(endpoint.clone())
         .unwrap()
