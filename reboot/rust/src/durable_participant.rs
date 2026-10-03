@@ -9,6 +9,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use prost::Message;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
@@ -167,11 +168,34 @@ pub struct PendingActorEffects {
     pub idempotent_mutations: Vec<database::IdempotentMutation>,
 }
 
+impl PendingActorEffects {
+    /// Compares effects using their canonical Prost encodings. State is already
+    /// serialized, so preserve its bytes (and the distinction between unset and
+    /// an empty state) exactly. Repeated effects retain their ordering because
+    /// the sidecar receives them in that order.
+    fn matches_staged(&self, other: &Self) -> bool {
+        self.state == other.state
+            && self.task_upserts.len() == other.task_upserts.len()
+            && self.idempotent_mutations.len() == other.idempotent_mutations.len()
+            && self
+                .task_upserts
+                .iter()
+                .zip(&other.task_upserts)
+                .all(|(left, right)| left.encode_to_vec() == right.encode_to_vec())
+            && self
+                .idempotent_mutations
+                .iter()
+                .zip(&other.idempotent_mutations)
+                .all(|(left, right)| left.encode_to_vec() == right.encode_to_vec())
+    }
+}
+
 struct Pending {
     root_id: Uuid,
     coordinator_state_type: String,
     coordinator_state_ref: String,
     effects: PendingActorEffects,
+    staged: bool,
     prepared: bool,
     // Kept until a terminal sidecar response is acknowledged.
     _lock: tokio::sync::OwnedMutexGuard<()>,
@@ -256,6 +280,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             coordinator_state_type: start.coordinator_state_type,
             coordinator_state_ref: start.coordinator_state_ref,
             effects: PendingActorEffects::default(),
+            staged: false,
             prepared: false,
             _lock: lock,
         });
@@ -276,8 +301,17 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 "pending transaction ID differs",
             ));
         }
-        current.effects = effects;
-        Ok(())
+        if !current.staged {
+            current.effects = effects;
+            current.staged = true;
+            Ok(())
+        } else if current.effects.matches_staged(&effects) {
+            Ok(())
+        } else {
+            Err(Status::failed_precondition(
+                "staged effects differ from the pending transaction",
+            ))
+        }
     }
 
     /// Aborts a started transaction before a coordinator has been driven.
@@ -433,6 +467,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 task_upserts: transaction.uncommitted_tasks,
                 idempotent_mutations: transaction.uncommitted_idempotent_mutations,
             },
+            // Recovery exposes the durable task and idempotent-mutation
+            // effects, so it must never permit a later Stage to replace them.
+            staged: true,
             // An unprepared record is retained only to ensure a later Commit
             // is converted to Abort; it can never be committed.
             prepared: transaction.prepared,
@@ -732,12 +769,28 @@ mod tests {
             response: vec![8],
             ..Default::default()
         };
+        let task = database::Task {
+            method: "example.Task".into(),
+            request: vec![3, 4],
+            ..Default::default()
+        };
         participant
             .stage(
                 id,
                 PendingActorEffects {
                     state: Some(vec![1, 2]),
-                    task_upserts: vec![],
+                    task_upserts: vec![task.clone()],
+                    idempotent_mutations: vec![mutation.clone()],
+                },
+            )
+            .await
+            .unwrap();
+        participant
+            .stage(
+                id,
+                PendingActorEffects {
+                    state: Some(vec![1, 2]),
+                    task_upserts: vec![task.clone()],
                     idempotent_mutations: vec![mutation.clone()],
                 },
             )
@@ -789,11 +842,69 @@ mod tests {
             matches!(&calls[0], Call::Load(request) if request.actors == vec![database::Actor { state_type: "example.Actor".into(), state_ref: "actor/1".into(), state: None }])
         );
         assert!(
-            matches!(&calls[1], Call::Prepare(request) if request.state_type == "example.Actor" && request.state_ref == "actor/1" && request.transaction.as_ref().is_some_and(|transaction| transaction.transaction_ids == vec![id.as_bytes().to_vec()] && transaction.state_type == "example.Actor" && transaction.state_ref == "actor/1" && transaction.coordinator_state_type == "example.Coordinator" && transaction.coordinator_state_ref == "coordinator/1") && request.state == Some(vec![1, 2]) && request.idempotent_mutations == vec![mutation])
+            matches!(&calls[1], Call::Prepare(request) if request.state_type == "example.Actor" && request.state_ref == "actor/1" && request.transaction.as_ref().is_some_and(|transaction| transaction.transaction_ids == vec![id.as_bytes().to_vec()] && transaction.state_type == "example.Actor" && transaction.state_ref == "actor/1" && transaction.coordinator_state_type == "example.Coordinator" && transaction.coordinator_state_ref == "coordinator/1") && request.state == Some(vec![1, 2]) && request.task_upserts == vec![task] && request.idempotent_mutations == vec![mutation])
         );
         assert!(
             matches!(&calls[2], Call::Commit(request) if request.state_type == "example.Actor" && request.state_ref == "actor/1")
         );
+        assert!(matches!(&calls[3], Call::Load(_)));
+    }
+
+    #[tokio::test]
+    async fn rejects_different_staged_effects_without_overwriting_pending_effects() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let id = Uuid::from_u128(101);
+        let effects = PendingActorEffects {
+            state: Some(vec![1, 2]),
+            task_upserts: vec![database::Task {
+                method: "example.Task".into(),
+                request: vec![3, 4],
+                ..Default::default()
+            }],
+            idempotent_mutations: vec![database::IdempotentMutation {
+                key: vec![5],
+                response: vec![6],
+                ..Default::default()
+            }],
+        };
+        participant.start(start(id)).await.unwrap();
+        participant.stage(id, effects.clone()).await.unwrap();
+
+        let mut different_state = effects.clone();
+        different_state.state = Some(vec![9]);
+        let mut different_task = effects.clone();
+        different_task.task_upserts[0].request = vec![9];
+        let mut different_mutation = effects.clone();
+        different_mutation.idempotent_mutations[0].response = vec![9];
+        for different_effects in [different_state, different_task, different_mutation] {
+            assert_eq!(
+                participant
+                    .stage(id, different_effects)
+                    .await
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::FailedPrecondition
+            );
+        }
+
+        participant.prepare(id).await.unwrap();
+        participant.terminal(id, false).await.unwrap();
+        participant
+            .start(start(Uuid::from_u128(102)))
+            .await
+            .unwrap();
+
+        let calls = sidecar.calls.lock().unwrap().clone();
+        assert!(matches!(
+            &calls[1],
+            Call::Prepare(request)
+                if request.state == effects.state
+                    && request.task_upserts == effects.task_upserts
+                    && request.idempotent_mutations == effects.idempotent_mutations
+        ));
+        assert!(matches!(&calls[2], Call::Abort(_)));
         assert!(matches!(&calls[3], Call::Load(_)));
     }
 
