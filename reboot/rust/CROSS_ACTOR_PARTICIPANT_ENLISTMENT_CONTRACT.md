@@ -1,15 +1,21 @@
-# Cross-actor participant enlistment: required wire contract
+# Cross-actor participant enlistment: rejected lifecycle-RPC proposal
 
-## Decision
+> **Superseded:** Reboot's authoritative cross-actor model is a generated typed
+> outbound application RPC carrying the existing transaction context—not a
+> standalone `ParticipantLifecycle.Start` / `Stage` service. See
+> [`CROSS_ACTOR_TRANSACTIONAL_STUB_CONTRACT.md`](CROSS_ACTOR_TRANSACTIONAL_STUB_CONTRACT.md).
+>
+> This document is retained as the analysis that established why terminal
+> `Participant` control RPCs cannot themselves start or stage an actor. Its
+> proposed new lifecycle service must **not** be implemented: the generated
+> application RPC is the correct execution envelope.
 
-`rbt.v1alpha1.Participant` cannot enlist a remote actor.  A new stable wire
-service and messages are mandatory before exposing a Rust cross-actor
-participant abstraction.
+## Historical finding
 
-This document is a contract proposal, not an implementation.  It deliberately
-covers only root, exclusive, non-read-only, non-factory participant lifecycle.
-It does **not** define placement, actor construction, user-RPC dispatch, nested
-transactions, or a routing fallback.
+`rbt.v1alpha1.Participant` cannot enlist a remote actor by itself. It exposes
+only terminal 2PC control, so reusing those methods for start/load/stage would
+be unsafe. The correct replacement is the typed application-RPC model above,
+not a new lifecycle service.
 
 ## Why the existing `Participant` service is insufficient
 
