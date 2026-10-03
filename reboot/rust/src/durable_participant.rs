@@ -280,6 +280,15 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         Ok(())
     }
 
+    /// Aborts a started transaction before a coordinator has been driven.
+    ///
+    /// Callers use this when decoding or invoking a local handler fails. As
+    /// with every terminal sidecar operation, an RPC failure is ambiguous and
+    /// keeps the lock and pending transaction in place for recovery/retry.
+    pub async fn abort(&self, transaction_id: Uuid) -> Result<(), Status> {
+        self.terminal(transaction_id, false).await
+    }
+
     fn validate_start(&self, start: &ActorTransactionStart) -> Result<(), Status> {
         if start.transaction_ids.len() != 1 {
             return Err(Status::unimplemented(

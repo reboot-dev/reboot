@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+
+package tests.reboot.protoc;
+
+message TransactionCounter {
+  option (rbt.v1alpha1.state) = {
+    implements: ["tests.reboot.protoc.TransactionCounterWrites"]
+  };
+  int64 value = 1;
+}
+
+message TransactionIncrementRequest {
+  int64 amount = 1;
+}
+
+message TransactionCounterValue {
+  int64 value = 1;
+}
+
+service TransactionCounterWrites {
+  option (rbt.v1alpha1.service) = {
+    state: "tests.reboot.protoc.TransactionCounter"
+  };
+
+  rpc Increment(TransactionIncrementRequest) returns (TransactionCounterValue) {
+    option (rbt.v1alpha1.method).transaction = {
+      exclusive: {}
+    };
+  }
+}

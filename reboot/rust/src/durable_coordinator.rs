@@ -259,6 +259,18 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         Self { sidecar, resolver }
     }
 
+    /// Returns the injected sidecar so generated Tonic adapters can clone their
+    /// coordinator without inventing a transport dependency.
+    pub fn sidecar(&self) -> Arc<C> {
+        Arc::clone(&self.sidecar)
+    }
+
+    /// Returns the injected resolver so generated Tonic adapters preserve the
+    /// host's routing and placement policy.
+    pub fn resolver(&self) -> Arc<R> {
+        Arc::clone(&self.resolver)
+    }
+
     pub async fn complete(&self, start: RootCoordinatorStart) -> Result<(), Status> {
         Self::validate_start(&start)?;
         let transaction_id = start.transaction_ids[0];

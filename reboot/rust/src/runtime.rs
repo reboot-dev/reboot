@@ -153,6 +153,45 @@ pub struct RootTransactionContext {
     timestamp: prost_types::Timestamp,
 }
 
+/// Host-owned identity for one new root transaction.
+///
+/// The database sidecar's restart-detection and recovery rules determine how
+/// this value is produced. The SDK deliberately only consumes it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RootTransactionStart {
+    pub transaction_id: Uuid,
+    pub timestamp: prost_types::Timestamp,
+}
+
+/// Supplies the identity for a fresh root transaction.
+///
+/// Generated Tonic adapters require this dependency instead of creating a UUID
+/// or reading a clock themselves.
+pub trait RootTransactionStartFactory: Send + Sync + 'static {
+    fn next_root_transaction(&self) -> Result<RootTransactionStart, Status>;
+}
+
+/// Establishes a fresh root context with host-supplied identity.
+pub fn start_root_transaction<F: RootTransactionStartFactory>(
+    headers: RebootHeaders,
+    coordinator_state_type: impl Into<String>,
+    mode: TransactionMode,
+    factory: &F,
+) -> Result<RootTransactionContext, Status> {
+    let coordinator_state_type = coordinator_state_type.into();
+    RootTransactionContext::validate_fresh(&headers, &coordinator_state_type)
+        .map_err(|error| Status::failed_precondition(error.to_string()))?;
+    let start = factory.next_root_transaction()?;
+    RootTransactionContext::start(
+        headers,
+        coordinator_state_type,
+        mode,
+        start.transaction_id,
+        start.timestamp,
+    )
+    .map_err(|error| Status::failed_precondition(error.to_string()))
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RootTransactionStartError {
     InboundTransactionContext,
@@ -195,6 +234,23 @@ impl RootTransactionContext {
         transaction_id: Uuid,
         timestamp: prost_types::Timestamp,
     ) -> Result<Self, RootTransactionStartError> {
+        let coordinator_state_type = coordinator_state_type.into();
+        Self::validate_fresh(&headers, &coordinator_state_type)?;
+        headers.transaction_ids = Some(vec![transaction_id]);
+        headers.transaction_coordinator_state_type = Some(coordinator_state_type);
+        headers.transaction_coordinator_state_ref = Some(headers.state_ref.clone());
+        let transaction = TransactionContext::from_headers(headers, mode)
+            .expect("RootTransactionContext establishes complete transaction metadata");
+        Ok(Self {
+            transaction,
+            timestamp,
+        })
+    }
+
+    fn validate_fresh(
+        headers: &RebootHeaders,
+        coordinator_state_type: &str,
+    ) -> Result<(), RootTransactionStartError> {
         if headers.transaction_ids.is_some()
             || headers.transaction_coordinator_state_type.is_some()
             || headers.transaction_coordinator_state_ref.is_some()
@@ -206,19 +262,10 @@ impl RootTransactionContext {
         if headers.state_ref.is_empty() {
             return Err(RootTransactionStartError::EmptyStateRef);
         }
-        let coordinator_state_type = coordinator_state_type.into();
         if coordinator_state_type.is_empty() {
             return Err(RootTransactionStartError::EmptyCoordinatorStateType);
         }
-        headers.transaction_ids = Some(vec![transaction_id]);
-        headers.transaction_coordinator_state_type = Some(coordinator_state_type);
-        headers.transaction_coordinator_state_ref = Some(headers.state_ref.clone());
-        let transaction = TransactionContext::from_headers(headers, mode)
-            .expect("RootTransactionContext establishes complete transaction metadata");
-        Ok(Self {
-            transaction,
-            timestamp,
-        })
+        Ok(())
     }
 
     pub fn transaction(&self) -> &TransactionContext {

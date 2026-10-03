@@ -548,6 +548,8 @@ fn emit_transactions(
     }
     let handler = format!("{service_name}TransactionHandler");
     let adapter = format!("{service_name}TransactionAdapter");
+    let declaration = format!("{state}DurableState");
+    let server = format!("{}_server", snake_case(service_name));
     output.push_str("#[tonic::async_trait]\n");
     output.push_str(&format!("pub trait {handler}: Send + Sync + 'static {{\n"));
     for (kind, method, request, response, _) in &transactions {
@@ -563,9 +565,29 @@ fn emit_transactions(
         output.push_str(&format!("    /// Transaction mode declared by this RPC: {mode}.\n    /// Factory transaction declared by this RPC: {factory}.\n    async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionExecution<proto::{response}>, tonic::Status>;\n"));
     }
     output.push_str("}\n\n");
-    output.push_str(&format!("/// Adapts a transaction context supplied by a future Reboot transaction runtime.\n/// This deliberately does not implement the Tonic service: DatabaseActorStore\n/// does not coordinate transaction prepare/commit/abort.\npub struct {adapter}<H> {{ handler: std::sync::Arc<H> }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ handler: self.handler.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(handler: H) -> Self {{ Self {{ handler: std::sync::Arc::new(handler) }} }} }}\nimpl<H: {handler}> {adapter}<H> {{\n"));
-    for (_, method, request, response, _) in transactions {
-        output.push_str(&format!("    pub async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionExecution<proto::{response}>, tonic::Status> {{ self.handler.{method}(context, state, request).await }}\n"));
+    output.push_str(&format!("/// Executable Tonic adapter for one fresh, same-actor exclusive root transaction.\n///\n/// The host must inject the participant sidecar, coordinator sidecar, resolver,\n/// and root-start factory. This adapter does not choose routing, placement, a\n/// clock, or a transaction UUID.\npub struct {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory {{ handler: std::sync::Arc<H>, participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: std::sync::Arc<F> }}\nimpl<H, P, C, R, F> Clone for {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory {{ fn clone(&self) -> Self {{ Self {{ handler: self.handler.clone(), participant: self.participant.clone(), coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator::new(self.coordinator.sidecar(), self.coordinator.resolver()), root_start: self.root_start.clone() }} }} }}\nimpl<H, P, C, R, F> {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory {{ pub fn new(participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: F, handler: H) -> Self {{ Self {{ handler: std::sync::Arc::new(handler), participant, coordinator, root_start: std::sync::Arc::new(root_start) }} }} }}\n\n"));
+    output.push_str("#[tonic::async_trait]\n");
+    output.push_str(&format!("impl<H, P, C, R, F> proto::{server}::{service_name} for {adapter}<H, P, C, R, F> where H: {handler}, P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory {{\n"));
+    for (kind, method, request, response, _) in transactions {
+        let metadata = match kind {
+            DurableKind::Transaction(metadata) => metadata,
+            _ => unreachable!("transactions are filtered above"),
+        };
+        let mode = match metadata.mode {
+            TransactionMode::Exclusive => "Exclusive",
+            TransactionMode::Shared => "Shared",
+        };
+        let supported = metadata.mode == TransactionMode::Exclusive && !metadata.factory;
+        let rejection = if metadata.mode != TransactionMode::Exclusive {
+            "shared transactions are not supported"
+        } else {
+            "factory transactions are not supported"
+        };
+        if supported {
+            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let headers = {runtime_module}::RebootHeaders::from_metadata(request.metadata()).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;\n        let root = {runtime_module}::runtime::start_root_transaction(headers, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, {runtime_module}::runtime::TransactionMode::{mode}, self.root_start.as_ref())?;\n        let context = root.transaction();\n        let transaction_id = context.transaction_root_id();\n        let loaded = self.participant.start({runtime_module}::durable_participant::ActorTransactionStart {{ transaction_ids: context.transaction_ids().to_vec(), coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: false, factory: false, state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}).await?;\n        let mut state = match loaded {{ Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes.as_slice()) {{ Ok(state) => state, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(format!(\"stored actor state is not a valid {state}: {{error}}\"))); }} }}, None => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"non-factory transaction requires an existing actor state\")); }} }};\n        let execution = match self.handler.{method}(context, &mut state, request.into_inner()).await {{ Ok(execution) => execution, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(error); }} }};\n        if let Err(error) = self.participant.stage(transaction_id, {runtime_module}::durable_participant::PendingActorEffects {{ state: execution.final_state.clone(), task_upserts: execution.task_upserts.clone(), idempotent_mutations: execution.idempotent_mutations.clone() }}).await {{ self.participant.abort(transaction_id).await?; return Err(error); }}\n        self.coordinator.complete({runtime_module}::durable_coordinator::RootCoordinatorStart {{ transaction_ids: context.transaction_ids().to_vec(), coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), participant: {runtime_module}::durable_coordinator::ParticipantTarget {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: false, factory: false, placement_requested: false }}).await?;\n        Ok(tonic::Response::new(execution.response))\n    }}\n"));
+        } else {
+            output.push_str(&format!("    async fn {method}(&self, _: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ Err(tonic::Status::unimplemented(\"{rejection}\")) }}\n"));
+        }
     }
     output.push_str("}\n\n");
     Ok(())
@@ -950,7 +972,7 @@ mod tests {
     }
 
     #[test]
-    fn transaction_handlers_require_execution_envelope_and_no_database_writer_envelope() {
+    fn transaction_handlers_require_execution_envelope_and_executable_tonic_adapter() {
         let annotations = HashMap::from([(
             "counter.proto".to_owned(),
             HashMap::from([(
@@ -961,7 +983,7 @@ mod tests {
                         "Increment".to_owned(),
                         DurableKind::Transaction(TransactionMetadata {
                             mode: TransactionMode::Exclusive,
-                            factory: true,
+                            factory: false,
                         }),
                     )]),
                 },
@@ -975,9 +997,18 @@ mod tests {
         assert!(content.contains("pub trait CounterWritesTransactionHandler"));
         assert!(content.contains("context: &reboot_rust_schema::runtime::TransactionContext"));
         assert!(content.contains("state: &mut proto::Counter"));
-        assert!(content.contains("pub struct CounterWritesTransactionAdapter<H>"));
-        assert!(content.contains("Transaction mode declared by this RPC: Exclusive."));
-        assert!(content.contains("Factory transaction declared by this RPC: yes."));
+        assert!(content.contains("pub struct CounterWritesTransactionAdapter<H, P, C, R, F>"));
+        assert!(
+            content.contains("impl<H, P, C, R, F> proto::counter_writes_server::CounterWrites")
+        );
+        assert!(content.contains("root-start factory"));
+        assert!(content.contains("start_root_transaction(headers"));
+        assert!(content.contains("participant.start("));
+        assert!(content.contains("participant.stage(transaction_id"));
+        assert!(content.contains("coordinator.complete("));
+        assert!(content.contains("PendingActorEffects"));
+        assert!(content.contains("non-factory transaction requires an existing actor state"));
+        assert!(content.contains("Factory transaction declared by this RPC: no."));
         assert!(content.contains("TransactionExecution<proto::CounterValue>"));
         assert!(!content.contains("CounterWritesDatabaseHandler"));
         assert!(!content.contains("writer_async_for_method::<CounterDurableState"));

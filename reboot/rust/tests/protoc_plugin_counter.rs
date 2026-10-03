@@ -94,7 +94,7 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     std::fs::write(
         fixture.join("build.rs"),
         format!(
-            "fn main() {{\n    let repository = std::path::Path::new(\"{}\");\n    reboot::build::compile_protos_with_runtime(\n        &[\n            repository.join(\"tests/reboot/protoc/counter.proto\"),\n            repository.join(\"tests/reboot/protoc/map_counter.proto\"),\n        ],\n        &[repository],\n        \"crate::proto\",\n        \"reboot\",\n    ).unwrap();\n}}\n",
+            "fn main() {{\n    let repository = std::path::Path::new(\"{}\");\n    reboot::build::compile_protos_with_runtime(\n        &[\n            repository.join(\"tests/reboot/protoc/counter.proto\"),\n            repository.join(\"tests/reboot/protoc/map_counter.proto\"),\n            repository.join(\"tests/reboot/protoc/transaction_counter.proto\"),\n        ],\n        &[repository],\n        \"crate::proto\",\n        \"reboot\",\n    ).unwrap();\n}}\n",
             repository.display()
         ),
     )
@@ -102,7 +102,7 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     std::fs::write(
         fixture.join("Cargo.toml"),
         format!(
-            "[package]\nname = \"reboot-rust-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\nprost = \"0.13\"\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"test-support\"] }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
+            "[package]\nname = \"reboot-rust-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\nprost = \"0.13\"\nprost-types = \"0.13\"\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"test-support\"] }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
             env!("CARGO_MANIFEST_DIR"),
             env!("CARGO_MANIFEST_DIR")
         ),
@@ -124,15 +124,23 @@ mod map_generated {
     include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/map_counter.reboot.rs"));
 }
 
+#[allow(dead_code)]
+mod transaction_generated {
+    include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/transaction_counter.reboot.rs"));
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{generated, map_generated, proto};
+    use super::{generated, map_generated, proto, transaction_generated};
     use prost::Message;
     use reboot::{
         runtime::{test_support::start_database, DatabaseActorStore},
         ExternalContext,
     };
 use std::collections::BTreeMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 use uuid::Uuid;
 
 struct Counter;
@@ -174,6 +182,115 @@ impl map_generated::MapCounterWritesDatabaseHandler for MapCounter {
         state.value += request.amounts.values().sum::<i64>();
         Ok(proto::MapCounterValue { value: state.value })
     }
+}
+
+struct TransactionCounter;
+
+#[tonic::async_trait]
+impl transaction_generated::TransactionCounterWritesTransactionHandler for TransactionCounter {
+    async fn increment(
+        &self,
+        _: &reboot::runtime::TransactionContext,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<reboot::runtime::TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+        state.value += request.amount;
+        Ok(reboot::runtime::TransactionExecution::new(
+            proto::TransactionCounterValue { value: state.value },
+        ))
+    }
+}
+
+struct TransactionParticipantSidecar;
+
+impl reboot::durable_participant::ParticipantSidecar for TransactionParticipantSidecar {
+    fn load(&self, _: reboot::database_proto::LoadRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::LoadResponse, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(reboot::database_proto::LoadResponse::default()) })
+    }
+    fn prepare(&self, _: reboot::database_proto::TransactionParticipantPrepareRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionParticipantPrepareResponse, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(reboot::database_proto::TransactionParticipantPrepareResponse::default()) })
+    }
+    fn commit(&self, _: reboot::database_proto::TransactionParticipantCommitRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionParticipantCommitResponse, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(reboot::database_proto::TransactionParticipantCommitResponse::default()) })
+    }
+    fn abort(&self, _: reboot::database_proto::TransactionParticipantAbortRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionParticipantAbortResponse, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(reboot::database_proto::TransactionParticipantAbortResponse::default()) })
+    }
+    fn recover(&self, _: reboot::database_proto::RecoverRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverResponse>, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+}
+
+struct TransactionCoordinatorSidecar;
+
+impl reboot::durable_coordinator::CoordinatorSidecar for TransactionCoordinatorSidecar {
+    fn coordinator_prepare(&self, _: reboot::database_proto::TransactionCoordinatorPrepareRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorPrepareResponse, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorPrepareResponse::default()) })
+    }
+    fn coordinator_prepared(&self, _: reboot::database_proto::TransactionCoordinatorPreparedRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorPreparedResponse, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorPreparedResponse::default()) })
+    }
+    fn coordinator_cleanup(&self, _: reboot::database_proto::TransactionCoordinatorCleanupRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorCleanupResponse, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorCleanupResponse::default()) })
+    }
+    fn recover(&self, _: reboot::database_proto::RecoverRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverResponse>, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+}
+
+struct TransactionEndpoint;
+
+impl reboot::durable_coordinator::ParticipantEndpoint for TransactionEndpoint {
+    fn prepare(&self, _: &str, _: reboot::database_proto::PrepareRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::PrepareResponse, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(reboot::database_proto::PrepareResponse::default()) })
+    }
+    fn commit(&self, _: &str, _: reboot::database_proto::CommitRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::CommitResponse, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(reboot::database_proto::CommitResponse::default()) })
+    }
+    fn abort(&self, _: &str, _: reboot::database_proto::AbortRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::AbortResponse, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(reboot::database_proto::AbortResponse::default()) })
+    }
+}
+
+struct TransactionResolver;
+
+impl reboot::durable_coordinator::ParticipantResolver for TransactionResolver {
+    type Endpoint = TransactionEndpoint;
+
+    fn resolve(&self, _: &reboot::durable_coordinator::ParticipantTarget) -> Pin<Box<dyn Future<Output = Result<Arc<Self::Endpoint>, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(Arc::new(TransactionEndpoint)) })
+    }
+}
+
+struct TransactionStartFactory;
+
+impl reboot::runtime::RootTransactionStartFactory for TransactionStartFactory {
+    fn next_root_transaction(&self) -> Result<reboot::runtime::RootTransactionStart, tonic::Status> {
+        Ok(reboot::runtime::RootTransactionStart {
+            transaction_id: Uuid::from_u128(102),
+            timestamp: prost_types::Timestamp::default(),
+        })
+    }
+}
+
+#[test]
+fn generated_transaction_adapter_compiles_as_a_tonic_service() {
+    let participant = reboot::durable_participant::DurableActorParticipant::new(
+        Arc::new(TransactionParticipantSidecar),
+        "tests.reboot.protoc.TransactionCounter",
+        "transaction-counter",
+    );
+    let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
+        Arc::new(TransactionCoordinatorSidecar),
+        Arc::new(TransactionResolver),
+    );
+    let adapter = transaction_generated::TransactionCounterWritesTransactionAdapter::new(
+        participant,
+        coordinator,
+        TransactionStartFactory,
+        TransactionCounter,
+    );
+    let _server = proto::transaction_counter_writes_server::TransactionCounterWritesServer::new(adapter);
 }
 
 async fn start_counter_adapters(
