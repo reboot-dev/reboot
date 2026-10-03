@@ -102,7 +102,7 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     std::fs::write(
         fixture.join("Cargo.toml"),
         format!(
-            "[package]\nname = \"reboot-rust-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\nprost = \"0.13\"\nprost-types = \"0.13\"\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"test-support\"] }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
+            "[package]\nname = \"reboot-rust-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\nhttp = \"1\"\nprost = \"0.13\"\nprost-types = \"0.13\"\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"test-support\"] }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
             env!("CARGO_MANIFEST_DIR"),
             env!("CARGO_MANIFEST_DIR")
         ),
@@ -278,6 +278,16 @@ impl reboot::runtime::RootTransactionStartFactory for TransactionStartFactory {
     }
 }
 
+impl reboot::runtime::InboundTransactionStartFactory for TransactionStartFactory {
+    fn next_inbound_transaction(
+        &self,
+        inbound: &reboot::runtime::InboundTransactionContext,
+    ) -> Result<Uuid, tonic::Status> {
+        assert_eq!(inbound.transaction().transaction_root_id(), Uuid::from_u128(201));
+        Ok(Uuid::from_u128(202))
+    }
+}
+
 fn transaction_adapter(
     trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
     fail: bool,
@@ -355,6 +365,95 @@ async fn generated_transaction_adapter_aborts_when_handler_rejects() {
     .unwrap_err();
     assert_eq!(error.code(), tonic::Code::InvalidArgument);
     assert_eq!(*trace.lock().unwrap(), ["participant load", "handler", "participant abort"]);
+}
+
+#[tokio::test]
+async fn generated_transaction_adapter_stages_validated_inbound_participant_in_success_trailer() {
+    use proto::transaction_counter_writes_server::TransactionCounterWrites;
+
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut headers = reboot::RebootHeaders::new("transaction-counter");
+    headers.transaction_ids = Some(vec![Uuid::from_u128(201)]);
+    headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.Root".into());
+    headers.transaction_coordinator_state_ref = Some("root-counter".into());
+    let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+    *request.metadata_mut() = headers.to_metadata().unwrap();
+
+    let response = TransactionCounterWrites::increment(
+        &transaction_adapter(Arc::clone(&trace), false),
+        request,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(response.get_ref().value, 7);
+    assert!(response
+        .extensions()
+        .get::<reboot::successful_trailers::SuccessfulParticipantMetadata>()
+        .is_some());
+    assert_eq!(*trace.lock().unwrap(), ["participant load", "handler"]);
+}
+
+#[tokio::test]
+async fn generated_transaction_adapter_emits_inbound_participant_only_in_raw_success_trailers() {
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let adapter = transaction_adapter(Arc::clone(&trace), false);
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .layer(reboot::successful_trailers::SuccessfulParticipantTrailerLayer)
+            .add_service(
+                proto::transaction_counter_writes_server::TransactionCounterWritesServer::new(adapter),
+            )
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+
+    let channel = tonic::transport::Channel::from_shared(format!("http://{address}"))
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let mut grpc = tonic::client::Grpc::new(channel);
+    grpc.ready().await.unwrap();
+    let mut headers = reboot::RebootHeaders::new("transaction-counter");
+    headers.transaction_ids = Some(vec![Uuid::from_u128(201)]);
+    headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.Root".into());
+    headers.transaction_coordinator_state_ref = Some("root-counter".into());
+    let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+    *request.metadata_mut() = headers.to_metadata().unwrap();
+    let response: tonic::Response<tonic::Streaming<proto::TransactionCounterValue>> = grpc
+        .server_streaming::<
+            proto::TransactionIncrementRequest,
+            proto::TransactionCounterValue,
+            _,
+        >(
+            request,
+            http::uri::PathAndQuery::from_static(
+                "/tests.reboot.protoc.TransactionCounterWrites/Increment",
+            ),
+            tonic::codec::ProstCodec::default(),
+        )
+        .await
+        .unwrap();
+    assert!(response
+        .metadata()
+        .get(reboot::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER)
+        .is_none());
+    let mut stream = response.into_inner();
+    assert_eq!(stream.message().await.unwrap().unwrap().value, 7);
+    let trailers = stream.trailers().await.unwrap().unwrap();
+    assert_eq!(trailers.get("grpc-status").unwrap(), "0");
+    assert_eq!(
+        trailers
+            .get(reboot::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER)
+            .unwrap(),
+        "{\"tests.reboot.protoc.TransactionCounter\":[\"transaction-counter\"]}"
+    );
+    assert_eq!(*trace.lock().unwrap(), ["participant load", "handler"]);
+    server.abort();
 }
 
 async fn start_counter_adapters(

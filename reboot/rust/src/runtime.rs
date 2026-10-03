@@ -316,6 +316,16 @@ pub trait RootTransactionStartFactory: Send + Sync + 'static {
     fn next_root_transaction(&self) -> Result<RootTransactionStart, Status>;
 }
 
+/// Supplies the host-owned child ID for one validated inbound transaction.
+///
+/// A generated server adapter calls this only after it has validated the
+/// inbound Reboot headers. The SDK never generates this ID: native Reboot's
+/// child identity is part of the host's durable transaction/lock contract.
+pub trait InboundTransactionStartFactory: Send + Sync + 'static {
+    fn next_inbound_transaction(&self, inbound: &InboundTransactionContext)
+    -> Result<Uuid, Status>;
+}
+
 /// Establishes a fresh root context with host-supplied identity.
 pub fn start_root_transaction<F: RootTransactionStartFactory>(
     headers: RebootHeaders,
