@@ -13,6 +13,7 @@
 #include "google/protobuf/util/message_differencer.h"
 #include "google/protobuf/wrappers.pb.h"
 #include "rbt/v1alpha1/application_metadata.pb.h"
+#include "rbt/v1alpha1/native_2pc.grpc.pb.h"
 #include "reboot/server/database.h"
 #include "stout/copy.h"
 #include "stout/tests/utils.h"
@@ -134,6 +135,7 @@ class DatabaseTest : public TemporaryDirectoryTest {
 
     channel = server->InProcessChannel(grpc::ChannelArguments());
     stub = rbt::v1alpha1::Database::NewStub(channel);
+    native_stub = rbt::v1alpha1::Native2pcDatabase::NewStub(channel);
   }
 
   // Performs a 'Store'.
@@ -251,6 +253,18 @@ class DatabaseTest : public TemporaryDirectoryTest {
     return call_recover(request);
   }
 
+  void put_default_record(std::string key, std::string value) {
+    auto result = TestOnly_PutDefaultRecord(
+        server->TestOnly_GetService(), std::move(key), std::move(value));
+    ASSERT_TRUE(result.has_value()) << result.error();
+  }
+
+  std::optional<std::string> get_default_record(const std::string& key) {
+    auto result = TestOnly_GetDefaultRecord(server->TestOnly_GetService(), key);
+    EXPECT_TRUE(result.has_value()) << result.error();
+    return result.has_value() ? *result : std::nullopt;
+  }
+
   // Helper to cleanup a coordinator transaction.
   void transaction_coordinator_cleanup(
       const UUID& transaction_id,
@@ -347,6 +361,7 @@ class DatabaseTest : public TemporaryDirectoryTest {
   std::unique_ptr<DatabaseServer> server;
   std::shared_ptr<grpc::Channel> channel;
   std::unique_ptr<rbt::v1alpha1::Database::Stub> stub;
+  std::unique_ptr<rbt::v1alpha1::Native2pcDatabase::Stub> native_stub;
 };
 
 ////////////////////////////////////////////////////////////////////////
@@ -1986,6 +2001,354 @@ TEST_F(TwoShardDatabaseTest, RecoverNoTasks) {
 
 ////////////////////////////////////////////////////////////////////////
 
+TEST_F(
+    TwoShardDatabaseTest,
+    LegacyRecoverAndCleanupIgnoreAndRetainNative2pcV1Records) {
+  // This is deliberately not a valid protobuf. If legacy recovery ever starts
+  // scanning the Native2pc namespace, its legacy ParseFromArray CHECKs would
+  // fail. Native2pc v1 data must instead remain opaque to this sidecar.
+  const std::string key = "n2pc/v1/participant/opaque-invalid-record";
+  const std::string value = "\xffnot-a-legacy-transaction";
+  put_default_record(key, value);
+  ASSERT_EQ(get_default_record(key), value);
+
+  v1alpha1::RecoverResponse response = recover_all_shards();
+  EXPECT_EQ(response.participant_transactions_size(), 0);
+  EXPECT_EQ(response.transaction_coordinators_size(), 0);
+  EXPECT_EQ(response.pending_tasks_size(), 0);
+  EXPECT_EQ(response.idempotent_mutations_size(), 0);
+  EXPECT_EQ(get_default_record(key), value);
+
+  // The legacy cleanup RPC derives a legacy coordinator key from its request;
+  // it must not act as a namespace-wide cleanup mechanism.
+  transaction_coordinator_cleanup(UUID::random(), make_state_ref("legacy"));
+  EXPECT_EQ(get_default_record(key), value);
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
+  const std::string root(16, 'r');
+  auto protocol = []() {
+    v1alpha1::Native2pcProtocol value;
+    value.set_protocol_id("reboot.native-2pc.v1");
+    value.set_record_version(1);
+    return value;
+  };
+  auto actor = [](const std::string& type, const std::string& ref) {
+    v1alpha1::Native2pcActorId value;
+    value.set_state_type(type);
+    value.set_state_ref(ref);
+    return value;
+  };
+  const auto coordinator = actor("Coordinator", "c");
+  const auto participant = actor("Participant", "p");
+  const std::string digest = "digest";
+
+  // Malformed identity and noncanonical enrollment are rejected before write.
+  v1alpha1::Native2pcPutCoordinatorRequest invalid;
+  *invalid.mutable_coordinator()->mutable_protocol() = protocol();
+  invalid.mutable_coordinator()->set_root_transaction_id("short");
+  *invalid.mutable_coordinator()->mutable_coordinator() = coordinator;
+  invalid.mutable_coordinator()->set_enrollment_digest(digest);
+  invalid.mutable_coordinator()->set_phase(v1alpha1::Native2pcCoordinatorRecord::PREPARING);
+  auto* invalid_enrollment = invalid.mutable_coordinator()->add_enrollment();
+  *invalid_enrollment->mutable_participant() = participant;
+  invalid_enrollment->set_enrollment_digest(digest);
+  v1alpha1::Native2pcPutCoordinatorResponse put_response;
+  grpc::ClientContext invalid_context;
+  EXPECT_EQ(grpc::StatusCode::INVALID_ARGUMENT, native_stub->PutCoordinator(&invalid_context, invalid, &put_response).error_code());
+
+  v1alpha1::Native2pcPutCoordinatorRequest put;
+  auto* record = put.mutable_coordinator();
+  *record->mutable_protocol() = protocol();
+  record->set_root_transaction_id(root);
+  *record->mutable_coordinator() = coordinator;
+  record->set_enrollment_digest(digest);
+  record->set_phase(v1alpha1::Native2pcCoordinatorRecord::PREPARING);
+  auto* enrollment = record->add_enrollment();
+  *enrollment->mutable_participant() = participant;
+  enrollment->set_enrollment_digest(digest);
+
+  // Enrollment identity is a canonical, duplicate-free durable contract.
+  v1alpha1::Native2pcPutCoordinatorRequest duplicate_enrollment = put;
+  *duplicate_enrollment.mutable_coordinator()->add_enrollment() = *enrollment;
+  grpc::ClientContext duplicate_enrollment_context;
+  EXPECT_EQ(
+      grpc::StatusCode::INVALID_ARGUMENT,
+      native_stub
+          ->PutCoordinator(
+              &duplicate_enrollment_context,
+              duplicate_enrollment,
+              &put_response)
+          .error_code());
+  v1alpha1::Native2pcPutCoordinatorRequest unsorted_enrollment = put;
+  auto* first_unsorted = unsorted_enrollment.mutable_coordinator()->mutable_enrollment(0);
+  *first_unsorted->mutable_participant() = actor("Participant", "z");
+  *unsorted_enrollment.mutable_coordinator()->add_enrollment() = *enrollment;
+  grpc::ClientContext unsorted_enrollment_context;
+  EXPECT_EQ(
+      grpc::StatusCode::INVALID_ARGUMENT,
+      native_stub
+          ->PutCoordinator(
+              &unsorted_enrollment_context,
+              unsorted_enrollment,
+              &put_response)
+          .error_code());
+
+  // A decision cannot be smuggled into the enrollment creation operation.
+  v1alpha1::Native2pcPutCoordinatorRequest premature_decision = put;
+  premature_decision.mutable_coordinator()->set_phase(
+      v1alpha1::Native2pcCoordinatorRecord::COMMIT_DECIDED);
+  grpc::ClientContext premature_decision_context;
+  EXPECT_EQ(
+      grpc::StatusCode::INVALID_ARGUMENT,
+      native_stub
+          ->PutCoordinator(
+              &premature_decision_context,
+              premature_decision,
+              &put_response)
+          .error_code());
+
+  grpc::ClientContext put_context;
+  ASSERT_TRUE(native_stub->PutCoordinator(&put_context, put, &put_response).ok());
+  grpc::ClientContext retry_context;
+  EXPECT_TRUE(native_stub->PutCoordinator(&retry_context, put, &put_response).ok());
+
+  v1alpha1::Native2pcPutCommitDecisionRequest commit;
+  *commit.mutable_protocol() = protocol();
+  commit.set_root_transaction_id(root);
+  *commit.mutable_coordinator() = coordinator;
+  commit.set_enrollment_digest(digest);
+  v1alpha1::Native2pcPutCommitDecisionResponse commit_response;
+  // A sealed enrollment alone is not enough to decide commit: every member
+  // must be durably PREPARED first.
+  grpc::ClientContext unprepared_commit_context;
+  EXPECT_EQ(
+      grpc::StatusCode::FAILED_PRECONDITION,
+      native_stub
+          ->PutCommitDecision(
+              &unprepared_commit_context, commit, &commit_response)
+          .error_code());
+
+  // Terminal cannot manufacture participant state or bypass the decision.
+  v1alpha1::Native2pcTerminalParticipantRequest terminal_request;
+  auto* terminal = terminal_request.mutable_terminal();
+  *terminal->mutable_protocol() = protocol();
+  terminal->set_root_transaction_id(root);
+  *terminal->mutable_participant() = participant;
+  *terminal->mutable_coordinator() = coordinator;
+  terminal->set_enrollment_digest(digest);
+  terminal->set_decision(v1alpha1::Native2pcTerminalRequest::COMMIT);
+  v1alpha1::Native2pcTerminalParticipantResponse terminal_response;
+  grpc::ClientContext no_decision_context;
+  EXPECT_EQ(grpc::StatusCode::FAILED_PRECONDITION, native_stub->TerminalParticipant(&no_decision_context, terminal_request, &terminal_response).error_code());
+
+  v1alpha1::Native2pcPutParticipantRequest put_participant;
+  auto* persisted = put_participant.mutable_participant();
+  *persisted->mutable_protocol() = protocol();
+  persisted->set_root_transaction_id(root);
+  *persisted->mutable_participant() = participant;
+  *persisted->mutable_coordinator() = coordinator;
+  persisted->set_enrollment_digest(digest);
+  persisted->set_phase(v1alpha1::Native2pcParticipantRecord::PREPARED);
+  v1alpha1::Native2pcPutParticipantResponse participant_response;
+  v1alpha1::Native2pcPutParticipantRequest active_participant = put_participant;
+  active_participant.mutable_participant()->set_phase(
+      v1alpha1::Native2pcParticipantRecord::ACTIVE);
+  grpc::ClientContext active_participant_context;
+  EXPECT_EQ(
+      grpc::StatusCode::INVALID_ARGUMENT,
+      native_stub
+          ->PutParticipant(
+              &active_participant_context,
+              active_participant,
+              &participant_response)
+          .error_code());
+  grpc::ClientContext participant_context;
+  ASSERT_TRUE(native_stub->PutParticipant(&participant_context, put_participant, &participant_response).ok());
+
+  // Same coordinator/digest is insufficient: the actor must be enrolled.
+  const auto outsider = actor("Participant", "outsider");
+  v1alpha1::Native2pcPutParticipantRequest outsider_participant = put_participant;
+  *outsider_participant.mutable_participant()->mutable_participant() = outsider;
+  grpc::ClientContext outsider_participant_context;
+  EXPECT_EQ(grpc::StatusCode::FAILED_PRECONDITION, native_stub->PutParticipant(&outsider_participant_context, outsider_participant, &participant_response).error_code());
+
+  grpc::ClientContext commit_context;
+  ASSERT_TRUE(native_stub->PutCommitDecision(&commit_context, commit, &commit_response).ok());
+  grpc::ClientContext terminal_context;
+  ASSERT_TRUE(native_stub->TerminalParticipant(&terminal_context, terminal_request, &terminal_response).ok());
+  grpc::ClientContext terminal_retry_context;
+  EXPECT_TRUE(native_stub->TerminalParticipant(&terminal_retry_context, terminal_request, &terminal_response).ok());
+  EXPECT_EQ(v1alpha1::Native2pcParticipantRecord::COMMITTED, terminal_response.terminal_phase());
+  *terminal->mutable_participant() = outsider;
+  grpc::ClientContext outsider_terminal_context;
+  EXPECT_EQ(grpc::StatusCode::FAILED_PRECONDITION, native_stub->TerminalParticipant(&outsider_terminal_context, terminal_request, &terminal_response).error_code());
+  *terminal->mutable_participant() = participant;
+  terminal->set_decision(v1alpha1::Native2pcTerminalRequest::ABORT);
+  grpc::ClientContext terminal_conflict_context;
+  EXPECT_EQ(grpc::StatusCode::FAILED_PRECONDITION, native_stub->TerminalParticipant(&terminal_conflict_context, terminal_request, &terminal_response).error_code());
+
+  // The sidecar must retain both participant terminal state and the exact
+  // replay receipt as one durable terminal transition.
+  auto native_hex = [](const std::string& value) {
+    static constexpr char hex[] = "0123456789abcdef";
+    std::string result;
+    result.reserve(value.size() * 2);
+    for (unsigned char byte : value) {
+      result += hex[byte >> 4];
+      result += hex[byte & 15];
+    }
+    return result;
+  };
+  const auto native_key = [&](const std::string& kind,
+                              const std::string& transaction_root) {
+    return "n2pc/v1/" + kind + "/" + native_hex(transaction_root) + "/" +
+        native_hex(participant.state_type()) + "/" +
+        native_hex(participant.state_ref());
+  };
+  const auto committed_record = get_default_record(native_key("p", root));
+  ASSERT_TRUE(committed_record.has_value());
+  v1alpha1::Native2pcParticipantRecord committed_participant;
+  ASSERT_TRUE(committed_participant.ParseFromString(*committed_record));
+  EXPECT_EQ(v1alpha1::Native2pcParticipantRecord::COMMITTED,
+            committed_participant.phase());
+  EXPECT_EQ(participant.SerializeAsString(),
+            committed_participant.participant().SerializeAsString());
+  EXPECT_EQ(digest, committed_participant.enrollment_digest());
+  const auto committed_receipt = get_default_record(native_key("t", root));
+  ASSERT_TRUE(committed_receipt.has_value());
+  v1alpha1::Native2pcTerminalRequest expected_commit_receipt =
+      terminal_request.terminal();
+  expected_commit_receipt.set_decision(
+      v1alpha1::Native2pcTerminalRequest::COMMIT);
+  EXPECT_EQ(expected_commit_receipt.SerializeAsString(), *committed_receipt);
+
+  // Exercise a distinct durable abort decision and its idempotent terminal
+  // delivery. Abort recovery must be distinguishable from a stale PREPARING
+  // or PREPARED record.
+  const std::string abort_root(16, 'a');
+  v1alpha1::Native2pcPutCoordinatorRequest abort_enrollment = put;
+  abort_enrollment.mutable_coordinator()->set_root_transaction_id(abort_root);
+  grpc::ClientContext abort_enrollment_context;
+  ASSERT_TRUE(native_stub
+                  ->PutCoordinator(
+                      &abort_enrollment_context, abort_enrollment, &put_response)
+                  .ok());
+  v1alpha1::Native2pcPutParticipantRequest abort_participant = put_participant;
+  abort_participant.mutable_participant()->set_root_transaction_id(abort_root);
+  grpc::ClientContext abort_participant_context;
+  ASSERT_TRUE(native_stub
+                  ->PutParticipant(
+                      &abort_participant_context,
+                      abort_participant,
+                      &participant_response)
+                  .ok());
+  v1alpha1::Native2pcPutAbortDecisionRequest abort_decision;
+  *abort_decision.mutable_protocol() = protocol();
+  abort_decision.set_root_transaction_id(abort_root);
+  *abort_decision.mutable_coordinator() = coordinator;
+  abort_decision.set_enrollment_digest(digest);
+  v1alpha1::Native2pcPutAbortDecisionResponse abort_response;
+  grpc::ClientContext abort_decision_context;
+  ASSERT_TRUE(native_stub
+                  ->PutAbortDecision(
+                      &abort_decision_context, abort_decision, &abort_response)
+                  .ok());
+  v1alpha1::Native2pcTerminalParticipantRequest abort_terminal = terminal_request;
+  abort_terminal.mutable_terminal()->set_root_transaction_id(abort_root);
+  abort_terminal.mutable_terminal()->set_decision(
+      v1alpha1::Native2pcTerminalRequest::ABORT);
+  v1alpha1::Native2pcTerminalParticipantResponse abort_terminal_response;
+  grpc::ClientContext abort_terminal_context;
+  ASSERT_TRUE(native_stub
+                  ->TerminalParticipant(
+                      &abort_terminal_context,
+                      abort_terminal,
+                      &abort_terminal_response)
+                  .ok());
+  grpc::ClientContext abort_retry_context;
+  EXPECT_TRUE(native_stub
+                  ->TerminalParticipant(
+                      &abort_retry_context,
+                      abort_terminal,
+                      &abort_terminal_response)
+                  .ok());
+  EXPECT_EQ(v1alpha1::Native2pcParticipantRecord::ABORTED,
+            abort_terminal_response.terminal_phase());
+  const auto aborted_record = get_default_record(native_key("p", abort_root));
+  ASSERT_TRUE(aborted_record.has_value());
+  v1alpha1::Native2pcParticipantRecord aborted_participant_record;
+  ASSERT_TRUE(aborted_participant_record.ParseFromString(*aborted_record));
+  EXPECT_EQ(v1alpha1::Native2pcParticipantRecord::ABORTED,
+            aborted_participant_record.phase());
+  const auto aborted_receipt = get_default_record(native_key("t", abort_root));
+  ASSERT_TRUE(aborted_receipt.has_value());
+  EXPECT_EQ(abort_terminal.terminal().SerializeAsString(), *aborted_receipt);
+
+  // Native recovery scans only n2pc/v1 and ignores retained receipt keys and
+  // legacy data. Verify exact retained coordinator and participant outcomes,
+  // rather than merely counting entries.
+  put_default_record("prepared-transaction-coordinator:legacy", "not-native");
+  v1alpha1::Native2pcRecoverRequest recover;
+  *recover.mutable_protocol() = protocol();
+  grpc::ClientContext recover_context;
+  auto reader = native_stub->RecoverNative2pc(&recover_context, recover);
+  std::vector<v1alpha1::Native2pcRecoverResponse> recovered;
+  v1alpha1::Native2pcRecoverResponse recovered_response;
+  while (reader->Read(&recovered_response)) {
+    recovered.push_back(recovered_response);
+  }
+  EXPECT_TRUE(reader->Finish().ok());
+  ASSERT_EQ(4, recovered.size());
+  bool committed_coordinator_recovered = false;
+  bool committed_participant_recovered = false;
+  bool aborted_coordinator_recovered = false;
+  bool aborted_participant_recovered = false;
+  for (const auto& response : recovered) {
+    if (response.has_coordinator() &&
+        response.coordinator().root_transaction_id() == root) {
+      EXPECT_EQ(v1alpha1::Native2pcCoordinatorRecord::COMMIT_DECIDED,
+                response.coordinator().phase());
+      EXPECT_EQ(coordinator.SerializeAsString(),
+                response.coordinator().coordinator().SerializeAsString());
+      EXPECT_EQ(digest, response.coordinator().enrollment_digest());
+      committed_coordinator_recovered = true;
+    }
+    if (response.has_participant() &&
+        response.participant().root_transaction_id() == root) {
+      EXPECT_EQ(v1alpha1::Native2pcParticipantRecord::COMMITTED,
+                response.participant().phase());
+      EXPECT_EQ(participant.SerializeAsString(),
+                response.participant().participant().SerializeAsString());
+      EXPECT_EQ(digest, response.participant().enrollment_digest());
+      committed_participant_recovered = true;
+    }
+    if (response.has_coordinator() &&
+        response.coordinator().root_transaction_id() == abort_root) {
+      EXPECT_EQ(v1alpha1::Native2pcCoordinatorRecord::ABORT_DECIDED,
+                response.coordinator().phase());
+      aborted_coordinator_recovered = true;
+    }
+    if (response.has_participant() &&
+        response.participant().root_transaction_id() == abort_root) {
+      EXPECT_EQ(v1alpha1::Native2pcParticipantRecord::ABORTED,
+                response.participant().phase());
+      EXPECT_EQ(participant.SerializeAsString(),
+                response.participant().participant().SerializeAsString());
+      EXPECT_EQ(digest, response.participant().enrollment_digest());
+      aborted_participant_recovered = true;
+    }
+  }
+  EXPECT_TRUE(committed_coordinator_recovered);
+  EXPECT_TRUE(committed_participant_recovered);
+  EXPECT_TRUE(aborted_coordinator_recovered);
+  EXPECT_TRUE(aborted_participant_recovered);
+}
+
+////////////////////////////////////////////////////////////////////////
+
 TEST_F(TwoShardDatabaseTest, RecoverOneTask) {
   // Create a pending task.
   v1alpha1::Task task =
@@ -3512,6 +3875,7 @@ class LegacyToModernDatabaseTest : public DatabaseTest {
 
     channel = server->InProcessChannel(grpc::ChannelArguments());
     stub = rbt::v1alpha1::Database::NewStub(channel);
+    native_stub = rbt::v1alpha1::Native2pcDatabase::NewStub(channel);
   }
 
   // Restart server with modern multi-shard format (2^14 shards like
@@ -3572,6 +3936,7 @@ class LegacyToModernDatabaseTest : public DatabaseTest {
 
     channel = server->InProcessChannel(grpc::ChannelArguments());
     stub = rbt::v1alpha1::Database::NewStub(channel);
+    native_stub = rbt::v1alpha1::Native2pcDatabase::NewStub(channel);
   }
 
   // Store an idempotent mutation.

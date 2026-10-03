@@ -505,6 +505,13 @@ pub mod database_proto {
     tonic::include_proto!("rbt.v1alpha1");
 }
 
+/// Encoded descriptor set for the generated `rbt.v1alpha1` bindings.
+///
+/// This is intentionally schema-only: no Native2pc client, adapter, or
+/// transaction execution path is exposed by this crate.
+pub const RBT_V1ALPHA1_DESCRIPTOR_SET: &[u8] =
+    tonic::include_file_descriptor_set!("rbt_v1alpha1_descriptor");
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum ContextError {
     EmptyStateRef,
@@ -1601,6 +1608,7 @@ pub const CLINIC: ApplicationSpec = ApplicationSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use prost::Message;
 
     #[test]
     fn scalar_field_types_emit_protobuf_scalar_names() {
@@ -2360,6 +2368,310 @@ mod tests {
                 field: "bad",
                 tag: 19000
             })
+        );
+    }
+
+    #[test]
+    fn native_2pc_generated_bindings_preserve_protocol_and_identity() {
+        let record = database_proto::Native2pcParticipantRecord {
+            protocol: Some(database_proto::Native2pcProtocol {
+                protocol_id: "reboot.native-2pc.v1".into(),
+                record_version: 1,
+            }),
+            root_transaction_id: vec![1, 2, 3],
+            participant: Some(database_proto::Native2pcActorId {
+                state_type: "example.Participant".into(),
+                state_ref: "participant-a".into(),
+            }),
+            coordinator: Some(database_proto::Native2pcActorId {
+                state_type: "example.Coordinator".into(),
+                state_ref: "coordinator-a".into(),
+            }),
+            enrollment_digest: vec![4, 5, 6],
+            phase: database_proto::native2pc_participant_record::Phase::Prepared as i32,
+        };
+
+        let encoded = record.encode_to_vec();
+        let decoded = database_proto::Native2pcParticipantRecord::decode(encoded.as_slice())
+            .expect("generated Native2pc record must decode");
+        assert_eq!(decoded, record);
+    }
+
+    #[test]
+    fn native_2pc_descriptor_has_exact_contract_and_distinct_services() {
+        use prost_types::{
+            FileDescriptorProto, field_descriptor_proto::Label, field_descriptor_proto::Type,
+        };
+
+        fn message<'a>(
+            file: &'a FileDescriptorProto,
+            name: &str,
+        ) -> &'a prost_types::DescriptorProto {
+            file.message_type
+                .iter()
+                .find(|message| message.name.as_deref() == Some(name))
+                .unwrap_or_else(|| panic!("missing {name} message"))
+        }
+
+        fn assert_fields(
+            message: &prost_types::DescriptorProto,
+            expected: &[(&str, i32, Type, Label)],
+        ) {
+            let actual: Vec<_> = message
+                .field
+                .iter()
+                .map(|field| {
+                    (
+                        field.name.as_deref().unwrap(),
+                        field.number.unwrap(),
+                        Type::try_from(field.r#type.unwrap()).unwrap(),
+                        Label::try_from(field.label.unwrap()).unwrap(),
+                    )
+                })
+                .collect();
+            assert_eq!(actual, expected);
+        }
+
+        let descriptor = prost_types::FileDescriptorSet::decode(RBT_V1ALPHA1_DESCRIPTOR_SET)
+            .expect("build script must emit an rbt.v1alpha1 descriptor set");
+        let native = descriptor
+            .file
+            .iter()
+            .find(|file| file.name.as_deref() == Some("rbt/v1alpha1/native_2pc.proto"))
+            .expect("Native2pc proto must be present in generated descriptor set");
+
+        assert_fields(
+            message(native, "Native2pcProtocol"),
+            &[
+                ("protocol_id", 1, Type::String, Label::Optional),
+                ("record_version", 2, Type::Uint32, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcActorId"),
+            &[
+                ("state_type", 1, Type::String, Label::Optional),
+                ("state_ref", 2, Type::String, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcEnrollment"),
+            &[
+                ("participant", 1, Type::Message, Label::Optional),
+                ("enrollment_digest", 2, Type::Bytes, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcCapabilitiesRequest"),
+            &[("required", 1, Type::Message, Label::Optional)],
+        );
+        assert_fields(
+            message(native, "Native2pcCapabilitiesResponse"),
+            &[
+                ("accepted", 1, Type::Message, Label::Optional),
+                ("native_participant_enabled", 2, Type::Bool, Label::Optional),
+                ("native_sidecar_enabled", 3, Type::Bool, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcCoordinatorRecord"),
+            &[
+                ("protocol", 1, Type::Message, Label::Optional),
+                ("root_transaction_id", 2, Type::Bytes, Label::Optional),
+                ("coordinator", 3, Type::Message, Label::Optional),
+                ("enrollment", 4, Type::Message, Label::Repeated),
+                ("enrollment_digest", 5, Type::Bytes, Label::Optional),
+                ("phase", 6, Type::Enum, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcParticipantRecord"),
+            &[
+                ("protocol", 1, Type::Message, Label::Optional),
+                ("root_transaction_id", 2, Type::Bytes, Label::Optional),
+                ("participant", 3, Type::Message, Label::Optional),
+                ("coordinator", 4, Type::Message, Label::Optional),
+                ("enrollment_digest", 5, Type::Bytes, Label::Optional),
+                ("phase", 6, Type::Enum, Label::Optional),
+            ],
+        );
+        assert_eq!(
+            message(native, "Native2pcCoordinatorRecord").enum_type[0]
+                .value
+                .iter()
+                .map(|value| (value.name.as_deref().unwrap(), value.number.unwrap()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("UNSPECIFIED", 0),
+                ("PREPARING", 1),
+                ("COMMIT_DECIDED", 2),
+                ("ABORT_DECIDED", 3),
+            ]
+        );
+        assert_eq!(
+            message(native, "Native2pcParticipantRecord").enum_type[0]
+                .value
+                .iter()
+                .map(|value| (value.name.as_deref().unwrap(), value.number.unwrap()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("UNSPECIFIED", 0),
+                ("ACTIVE", 1),
+                ("PREPARED", 2),
+                ("COMMITTED", 3),
+                ("ABORTED", 4),
+            ]
+        );
+        assert_eq!(
+            message(native, "Native2pcPrepareResponse").enum_type[0]
+                .value
+                .iter()
+                .map(|value| (value.name.as_deref().unwrap(), value.number.unwrap()))
+                .collect::<Vec<_>>(),
+            vec![("UNSPECIFIED", 0), ("PREPARED", 1), ("DEFINITIVE_ABORT", 2)]
+        );
+        assert_eq!(
+            message(native, "Native2pcTerminalRequest").enum_type[0]
+                .value
+                .iter()
+                .map(|value| (value.name.as_deref().unwrap(), value.number.unwrap()))
+                .collect::<Vec<_>>(),
+            vec![("UNSPECIFIED", 0), ("COMMIT", 1), ("ABORT", 2)]
+        );
+        assert_fields(
+            message(native, "Native2pcPrepareRequest"),
+            &[
+                ("protocol", 1, Type::Message, Label::Optional),
+                ("root_transaction_id", 2, Type::Bytes, Label::Optional),
+                ("participant", 3, Type::Message, Label::Optional),
+                ("coordinator", 4, Type::Message, Label::Optional),
+                ("enrollment_digest", 5, Type::Bytes, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcTerminalRequest"),
+            &[
+                ("protocol", 1, Type::Message, Label::Optional),
+                ("root_transaction_id", 2, Type::Bytes, Label::Optional),
+                ("participant", 3, Type::Message, Label::Optional),
+                ("coordinator", 4, Type::Message, Label::Optional),
+                ("enrollment_digest", 5, Type::Bytes, Label::Optional),
+                ("decision", 6, Type::Enum, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcTerminalResponse"),
+            &[("terminal_phase", 1, Type::Enum, Label::Optional)],
+        );
+        assert_fields(
+            message(native, "Native2pcWatchRequest"),
+            &[
+                ("protocol", 1, Type::Message, Label::Optional),
+                ("root_transaction_id", 2, Type::Bytes, Label::Optional),
+                ("coordinator", 3, Type::Message, Label::Optional),
+                ("participant", 4, Type::Message, Label::Optional),
+                ("enrollment_digest", 5, Type::Bytes, Label::Optional),
+            ],
+        );
+
+        let services: Vec<_> = native
+            .service
+            .iter()
+            .map(|service| {
+                (
+                    service.name.as_deref().unwrap(),
+                    service
+                        .method
+                        .iter()
+                        .map(|method| {
+                            (
+                                method.name.as_deref().unwrap(),
+                                method.input_type.as_deref().unwrap(),
+                                method.output_type.as_deref().unwrap(),
+                                method.server_streaming.unwrap_or(false),
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            services,
+            vec![
+                (
+                    "Native2pcParticipant",
+                    vec![
+                        (
+                            "GetCapabilities",
+                            ".rbt.v1alpha1.Native2pcCapabilitiesRequest",
+                            ".rbt.v1alpha1.Native2pcCapabilitiesResponse",
+                            false
+                        ),
+                        (
+                            "Prepare",
+                            ".rbt.v1alpha1.Native2pcPrepareRequest",
+                            ".rbt.v1alpha1.Native2pcPrepareResponse",
+                            false
+                        ),
+                        (
+                            "Terminal",
+                            ".rbt.v1alpha1.Native2pcTerminalRequest",
+                            ".rbt.v1alpha1.Native2pcTerminalResponse",
+                            false
+                        ),
+                    ],
+                ),
+                (
+                    "Native2pcCoordinator",
+                    vec![(
+                        "Watch",
+                        ".rbt.v1alpha1.Native2pcWatchRequest",
+                        ".rbt.v1alpha1.Native2pcWatchResponse",
+                        false
+                    )],
+                ),
+                (
+                    "Native2pcDatabase",
+                    vec![
+                        (
+                            "PutCoordinator",
+                            ".rbt.v1alpha1.Native2pcPutCoordinatorRequest",
+                            ".rbt.v1alpha1.Native2pcPutCoordinatorResponse",
+                            false
+                        ),
+                        (
+                            "PutParticipant",
+                            ".rbt.v1alpha1.Native2pcPutParticipantRequest",
+                            ".rbt.v1alpha1.Native2pcPutParticipantResponse",
+                            false
+                        ),
+                        (
+                            "PutCommitDecision",
+                            ".rbt.v1alpha1.Native2pcPutCommitDecisionRequest",
+                            ".rbt.v1alpha1.Native2pcPutCommitDecisionResponse",
+                            false
+                        ),
+                        (
+                            "PutAbortDecision",
+                            ".rbt.v1alpha1.Native2pcPutAbortDecisionRequest",
+                            ".rbt.v1alpha1.Native2pcPutAbortDecisionResponse",
+                            false
+                        ),
+                        (
+                            "RecoverNative2pc",
+                            ".rbt.v1alpha1.Native2pcRecoverRequest",
+                            ".rbt.v1alpha1.Native2pcRecoverResponse",
+                            true
+                        ),
+                        (
+                            "TerminalParticipant",
+                            ".rbt.v1alpha1.Native2pcTerminalParticipantRequest",
+                            ".rbt.v1alpha1.Native2pcTerminalParticipantResponse",
+                            false
+                        ),
+                    ],
+                ),
+            ]
         );
     }
 }

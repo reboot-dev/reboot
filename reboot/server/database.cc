@@ -28,6 +28,7 @@
 #include "grpcpp/server_builder.h"
 #include "rbt/v1alpha1/application_metadata.pb.h"
 #include "rbt/v1alpha1/database.grpc.pb.h"
+#include "rbt/v1alpha1/native_2pc.grpc.pb.h"
 #include "rbt/v1alpha1/tasks.pb.h"
 #include "reboot/server/monotonic_clock.h"
 #include "rocksdb/db.h"
@@ -368,6 +369,8 @@ class LockableTransaction : public Mutex {
 
 ////////////////////////////////////////////////////////////////////////
 
+class Native2pcDatabaseService;
+
 class DatabaseService final : public rbt::v1alpha1::Database::Service {
  public:
   // Returns a type-erased instance of 'DatabaseService' or an error if
@@ -383,6 +386,48 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   void SetAllowLegacyCoordinatorPrepared(bool allow) {
     allow_legacy_coordinator_prepared_ = allow;
   }
+
+  expected<void> TestOnlyPutDefaultRecord(
+      std::string key,
+      std::string value) {
+    rocksdb::WriteOptions options;
+    options.sync = true;
+    rocksdb::Status status = db_->Put(options, std::move(key), std::move(value));
+    if (!status.ok()) {
+      return make_unexpected(status.ToString());
+    }
+    return {};
+  }
+
+  expected<std::optional<std::string>> TestOnlyGetDefaultRecord(
+      const std::string& key) {
+    std::string value;
+    rocksdb::Status status = db_->Get(rocksdb::ReadOptions(), key, &value);
+    if (status.ok()) {
+      return std::optional<std::string>(std::move(value));
+    }
+    if (status.IsNotFound()) {
+      return std::optional<std::string>();
+    }
+    return make_unexpected(status.ToString());
+  }
+
+  grpc::Status NativePutCoordinator(
+      const rbt::v1alpha1::Native2pcPutCoordinatorRequest& request);
+  grpc::Status NativePutParticipant(
+      const rbt::v1alpha1::Native2pcPutParticipantRequest& request);
+  grpc::Status NativePutDecision(
+      const rbt::v1alpha1::Native2pcProtocol& protocol,
+      const std::string& root_transaction_id,
+      const rbt::v1alpha1::Native2pcActorId& coordinator,
+      const std::string& enrollment_digest,
+      rbt::v1alpha1::Native2pcCoordinatorRecord::Phase decision);
+  grpc::Status NativeRecover(
+      const rbt::v1alpha1::Native2pcRecoverRequest& request,
+      grpc::ServerWriter<rbt::v1alpha1::Native2pcRecoverResponse>* responses);
+  grpc::Status NativeTerminal(
+      const rbt::v1alpha1::Native2pcTerminalParticipantRequest& request,
+      rbt::v1alpha1::Native2pcTerminalParticipantResponse* response);
 
   // Service methods.
   grpc::Status ColocatedRange(
@@ -614,6 +659,10 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   // uses a WriteBatch, which cannot atomically read an existing value before
   // writing; keep this lock through the final database write.
   std::mutex idempotency_collision_mutex_;
+
+  // Native state uses only the n2pc/v1 namespace and has independent
+  // transition serialization; it never participates in legacy transactions.
+  std::mutex native_2pc_mutex_;
 
   // Server info containing shard information.
   ServerInfo server_info_;
@@ -1104,6 +1153,119 @@ std::string MakeLegacyTransactionPreparedKey(
 }
 
 ////////////////////////////////////////////////////////////////////////
+
+namespace {
+constexpr std::string_view kNativePrefix = "n2pc/v1/";
+constexpr std::string_view kNativeProtocol = "reboot.native-2pc.v1";
+
+grpc::Status NativeInvalid(const std::string& message) {
+  return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, message);
+}
+
+std::string NativeHex(const std::string& value) {
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::string result;
+  result.reserve(value.size() * 2);
+  for (unsigned char c : value) {
+    result += kHex[c >> 4];
+    result += kHex[c & 15];
+  }
+  return result;
+}
+
+bool NativeActorValid(const rbt::v1alpha1::Native2pcActorId& actor) {
+  return !actor.state_type().empty() && !actor.state_ref().empty();
+}
+
+std::string NativeActorKey(const rbt::v1alpha1::Native2pcActorId& actor) {
+  return NativeHex(actor.state_type()) + "/" + NativeHex(actor.state_ref());
+}
+
+std::string NativeCoordinatorKey(const std::string& root) {
+  return std::string(kNativePrefix) + "c/" + NativeHex(root);
+}
+
+std::string NativeParticipantKey(
+    const std::string& root,
+    const rbt::v1alpha1::Native2pcActorId& actor,
+    const char* kind) {
+  return std::string(kNativePrefix) + kind + "/" + NativeHex(root) + "/" + NativeActorKey(actor);
+}
+
+grpc::Status ValidateNativeProtocol(const rbt::v1alpha1::Native2pcProtocol& protocol) {
+  if (protocol.protocol_id() != kNativeProtocol || protocol.record_version() != 1) {
+    return NativeInvalid("native 2pc protocol must be reboot.native-2pc.v1/1");
+  }
+  return grpc::Status::OK;
+}
+
+grpc::Status ValidateNativeIdentity(
+    const rbt::v1alpha1::Native2pcProtocol& protocol,
+    const std::string& root,
+    const rbt::v1alpha1::Native2pcActorId& actor,
+    const char* name) {
+  grpc::Status status = ValidateNativeProtocol(protocol);
+  if (!status.ok()) return status;
+  if (root.size() != 16) return NativeInvalid("native root transaction id must be 16 bytes");
+  if (!NativeActorValid(actor)) return NativeInvalid(fmt::format("native {} actor fields must be nonempty", name));
+  return grpc::Status::OK;
+}
+
+grpc::Status ValidateNativeCoordinator(const rbt::v1alpha1::Native2pcCoordinatorRecord& record) {
+  grpc::Status status = ValidateNativeIdentity(record.protocol(), record.root_transaction_id(), record.coordinator(), "coordinator");
+  if (!status.ok()) return status;
+  if (record.enrollment_digest().empty() || record.enrollment_size() == 0) return NativeInvalid("native enrollment and digest must be nonempty");
+  if (record.phase() != rbt::v1alpha1::Native2pcCoordinatorRecord::PREPARING && record.phase() != rbt::v1alpha1::Native2pcCoordinatorRecord::COMMIT_DECIDED && record.phase() != rbt::v1alpha1::Native2pcCoordinatorRecord::ABORT_DECIDED) return NativeInvalid("native coordinator phase is illegal");
+  for (int i = 0; i < record.enrollment_size(); ++i) {
+    const auto& enrollment = record.enrollment(i);
+    if (!NativeActorValid(enrollment.participant()) || enrollment.enrollment_digest() != record.enrollment_digest()) return NativeInvalid("native enrollment actor or digest is invalid");
+    if (i > 0) {
+      const auto& prior = record.enrollment(i - 1).participant();
+      const auto& current = enrollment.participant();
+      if (prior.state_type() > current.state_type() || (prior.state_type() == current.state_type() && prior.state_ref() >= current.state_ref())) return NativeInvalid("native enrollment must be sorted and duplicate-free");
+    }
+  }
+  return grpc::Status::OK;
+}
+
+grpc::Status ValidateNativeTerminal(const rbt::v1alpha1::Native2pcTerminalRequest& terminal) {
+  grpc::Status status = ValidateNativeIdentity(terminal.protocol(), terminal.root_transaction_id(), terminal.participant(), "participant");
+  if (!status.ok()) return status;
+  if (!NativeActorValid(terminal.coordinator()) || terminal.enrollment_digest().empty()) return NativeInvalid("native coordinator and enrollment digest must be nonempty");
+  if (terminal.decision() != rbt::v1alpha1::Native2pcTerminalRequest::COMMIT && terminal.decision() != rbt::v1alpha1::Native2pcTerminalRequest::ABORT) return NativeInvalid("native terminal decision is illegal");
+  return grpc::Status::OK;
+}
+
+grpc::Status ValidateNativeParticipant(const rbt::v1alpha1::Native2pcParticipantRecord& participant) {
+  grpc::Status status = ValidateNativeIdentity(participant.protocol(), participant.root_transaction_id(), participant.participant(), "participant");
+  if (!status.ok()) return status;
+  if (!NativeActorValid(participant.coordinator()) || participant.enrollment_digest().empty()) return NativeInvalid("native participant coordinator and digest must be nonempty");
+  if (participant.phase() != rbt::v1alpha1::Native2pcParticipantRecord::ACTIVE && participant.phase() != rbt::v1alpha1::Native2pcParticipantRecord::PREPARED) return NativeInvalid("native participant must be ACTIVE or PREPARED when persisted");
+  return grpc::Status::OK;
+}
+
+bool NativeEnrollmentContains(
+    const rbt::v1alpha1::Native2pcCoordinatorRecord& coordinator,
+    const rbt::v1alpha1::Native2pcActorId& participant) {
+  for (const auto& enrollment : coordinator.enrollment()) {
+    if (enrollment.participant().SerializeAsString() == participant.SerializeAsString()) return true;
+  }
+  return false;
+}
+}  // namespace
+
+class Native2pcDatabaseService final : public rbt::v1alpha1::Native2pcDatabase::Service {
+ public:
+  explicit Native2pcDatabaseService(DatabaseService& database) : database_(database) {}
+  grpc::Status PutCoordinator(grpc::ServerContext*, const rbt::v1alpha1::Native2pcPutCoordinatorRequest* request, rbt::v1alpha1::Native2pcPutCoordinatorResponse*) override { return database_.NativePutCoordinator(*request); }
+  grpc::Status PutParticipant(grpc::ServerContext*, const rbt::v1alpha1::Native2pcPutParticipantRequest* request, rbt::v1alpha1::Native2pcPutParticipantResponse*) override { return database_.NativePutParticipant(*request); }
+  grpc::Status PutCommitDecision(grpc::ServerContext*, const rbt::v1alpha1::Native2pcPutCommitDecisionRequest* request, rbt::v1alpha1::Native2pcPutCommitDecisionResponse*) override { return database_.NativePutDecision(request->protocol(), request->root_transaction_id(), request->coordinator(), request->enrollment_digest(), rbt::v1alpha1::Native2pcCoordinatorRecord::COMMIT_DECIDED); }
+  grpc::Status PutAbortDecision(grpc::ServerContext*, const rbt::v1alpha1::Native2pcPutAbortDecisionRequest* request, rbt::v1alpha1::Native2pcPutAbortDecisionResponse*) override { return database_.NativePutDecision(request->protocol(), request->root_transaction_id(), request->coordinator(), request->enrollment_digest(), rbt::v1alpha1::Native2pcCoordinatorRecord::ABORT_DECIDED); }
+  grpc::Status RecoverNative2pc(grpc::ServerContext*, const rbt::v1alpha1::Native2pcRecoverRequest* request, grpc::ServerWriter<rbt::v1alpha1::Native2pcRecoverResponse>* responses) override { return database_.NativeRecover(*request, responses); }
+  grpc::Status TerminalParticipant(grpc::ServerContext*, const rbt::v1alpha1::Native2pcTerminalParticipantRequest* request, rbt::v1alpha1::Native2pcTerminalParticipantResponse* response) override { return database_.NativeTerminal(*request, response); }
+ private:
+  DatabaseService& database_;
+};
 
 // To ensure that we can handle failures during a migration we need to
 // differentiate the key prefix. We only use a version suffix, i.e.,
@@ -4839,6 +5001,212 @@ grpc::Status DatabaseService::Preload(
 
 ////////////////////////////////////////////////////////////////////////
 
+grpc::Status DatabaseService::NativePutCoordinator(
+    const rbt::v1alpha1::Native2pcPutCoordinatorRequest& request) {
+  const auto& record = request.coordinator();
+  grpc::Status valid = ValidateNativeCoordinator(record);
+  if (!valid.ok()) return valid;
+  // Enrollment is the only operation that creates a coordinator record.  A
+  // decision must always be a transition of an already durable PREPARING
+  // record; otherwise a caller could manufacture a commit without sealing an
+  // enrollment first.
+  if (record.phase() != rbt::v1alpha1::Native2pcCoordinatorRecord::PREPARING) {
+    return NativeInvalid("native coordinator enrollment must begin PREPARING");
+  }
+  std::lock_guard lock(native_2pc_mutex_);
+  std::string bytes;
+  if (!record.SerializeToString(&bytes)) return grpc::Status(grpc::StatusCode::INTERNAL, "failed to serialize native coordinator");
+  const std::string key = NativeCoordinatorKey(record.root_transaction_id());
+  std::string existing;
+  rocksdb::Status get = db_->Get(rocksdb::ReadOptions(), key, &existing);
+  if (get.ok()) return existing == bytes ? grpc::Status::OK : grpc::Status(grpc::StatusCode::ALREADY_EXISTS, "native coordinator enrollment conflicts with retained record");
+  if (!get.IsNotFound()) return grpc::Status(grpc::StatusCode::INTERNAL, get.ToString());
+  rocksdb::Status put = db_->Put(DefaultWriteOptions(), key, bytes);
+  return put.ok() ? grpc::Status::OK : grpc::Status(grpc::StatusCode::INTERNAL, put.ToString());
+}
+
+grpc::Status DatabaseService::NativePutDecision(
+    const rbt::v1alpha1::Native2pcProtocol& protocol, const std::string& root,
+    const rbt::v1alpha1::Native2pcActorId& coordinator, const std::string& digest,
+    rbt::v1alpha1::Native2pcCoordinatorRecord::Phase decision) {
+  grpc::Status valid = ValidateNativeIdentity(protocol, root, coordinator, "coordinator");
+  if (!valid.ok()) return valid;
+  if (digest.empty()) return NativeInvalid("native enrollment digest must be nonempty");
+  std::lock_guard lock(native_2pc_mutex_);
+  const std::string key = NativeCoordinatorKey(root);
+  std::string bytes;
+  rocksdb::Status get = db_->Get(rocksdb::ReadOptions(), key, &bytes);
+  if (get.IsNotFound()) return grpc::Status(grpc::StatusCode::NOT_FOUND, "native coordinator enrollment is missing");
+  if (!get.ok()) return grpc::Status(grpc::StatusCode::INTERNAL, get.ToString());
+  rbt::v1alpha1::Native2pcCoordinatorRecord record;
+  if (!record.ParseFromString(bytes)) return grpc::Status(grpc::StatusCode::DATA_LOSS, "malformed native coordinator record");
+  valid = ValidateNativeCoordinator(record);
+  if (!valid.ok()) return grpc::Status(grpc::StatusCode::DATA_LOSS, valid.error_message());
+  if (record.coordinator().SerializeAsString() != coordinator.SerializeAsString() || record.enrollment_digest() != digest) return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, "native decision identity conflicts with enrollment");
+  if (record.phase() == decision) return grpc::Status::OK;
+  if (record.phase() != rbt::v1alpha1::Native2pcCoordinatorRecord::PREPARING) return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, "native terminal decision is irreversible");
+  if (decision == rbt::v1alpha1::Native2pcCoordinatorRecord::COMMIT_DECIDED) {
+    // A commit decision is legal only after every sealed participant has
+    // durably prepared the exact identity bound by this enrollment.  The
+    // native mutex keeps this scan and the decision write ordered against
+    // participant persistence and terminal delivery.
+    for (const auto& enrollment : record.enrollment()) {
+      const std::string participant_key = NativeParticipantKey(
+          root, enrollment.participant(), "p");
+      std::string participant_bytes;
+      rocksdb::Status participant_get = db_->Get(
+          rocksdb::ReadOptions(), participant_key, &participant_bytes);
+      if (participant_get.IsNotFound()) {
+        return grpc::Status(
+            grpc::StatusCode::FAILED_PRECONDITION,
+            "native commit requires every enrolled participant to be prepared");
+      }
+      if (!participant_get.ok()) {
+        return grpc::Status(grpc::StatusCode::INTERNAL, participant_get.ToString());
+      }
+      rbt::v1alpha1::Native2pcParticipantRecord participant;
+      if (!participant.ParseFromString(participant_bytes)) {
+        return grpc::Status(
+            grpc::StatusCode::DATA_LOSS,
+            "malformed native participant record");
+      }
+      if (participant.protocol().SerializeAsString() != record.protocol().SerializeAsString() ||
+          participant.root_transaction_id() != root ||
+          participant.participant().SerializeAsString() != enrollment.participant().SerializeAsString() ||
+          participant.coordinator().SerializeAsString() != record.coordinator().SerializeAsString() ||
+          participant.enrollment_digest() != record.enrollment_digest() ||
+          participant.phase() != rbt::v1alpha1::Native2pcParticipantRecord::PREPARED) {
+        return grpc::Status(
+            grpc::StatusCode::FAILED_PRECONDITION,
+            "native commit requires every enrolled participant to be prepared");
+      }
+    }
+  }
+  record.set_phase(decision);
+  if (!record.SerializeToString(&bytes)) return grpc::Status(grpc::StatusCode::INTERNAL, "failed to serialize native decision");
+  rocksdb::Status put = db_->Put(DefaultWriteOptions(), key, bytes);
+  return put.ok() ? grpc::Status::OK : grpc::Status(grpc::StatusCode::INTERNAL, put.ToString());
+}
+
+grpc::Status DatabaseService::NativePutParticipant(
+    const rbt::v1alpha1::Native2pcPutParticipantRequest& request) {
+  const auto& participant = request.participant();
+  grpc::Status valid = ValidateNativeParticipant(participant);
+  if (!valid.ok()) return valid;
+  if (participant.phase() != rbt::v1alpha1::Native2pcParticipantRecord::PREPARED) {
+    return NativeInvalid("native participant persistence must be PREPARED");
+  }
+  std::lock_guard lock(native_2pc_mutex_);
+  std::string coordinator_bytes;
+  rocksdb::Status get_coordinator = db_->Get(
+      rocksdb::ReadOptions(),
+      NativeCoordinatorKey(participant.root_transaction_id()),
+      &coordinator_bytes);
+  if (get_coordinator.IsNotFound()) return grpc::Status(grpc::StatusCode::NOT_FOUND, "native coordinator enrollment is missing");
+  if (!get_coordinator.ok()) return grpc::Status(grpc::StatusCode::INTERNAL, get_coordinator.ToString());
+  rbt::v1alpha1::Native2pcCoordinatorRecord coordinator;
+  if (!coordinator.ParseFromString(coordinator_bytes)) return grpc::Status(grpc::StatusCode::DATA_LOSS, "malformed native coordinator record");
+  valid = ValidateNativeCoordinator(coordinator);
+  if (!valid.ok()) return grpc::Status(grpc::StatusCode::DATA_LOSS, valid.error_message());
+  if (coordinator.protocol().SerializeAsString() != participant.protocol().SerializeAsString() || coordinator.coordinator().SerializeAsString() != participant.coordinator().SerializeAsString() || coordinator.enrollment_digest() != participant.enrollment_digest() || !NativeEnrollmentContains(coordinator, participant.participant())) return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, "native participant is not bound to coordinator enrollment");
+  if (coordinator.phase() != rbt::v1alpha1::Native2pcCoordinatorRecord::PREPARING) {
+    return grpc::Status(
+        grpc::StatusCode::FAILED_PRECONDITION,
+        "native participant cannot be persisted after a decision");
+  }
+  std::string bytes;
+  if (!participant.SerializeToString(&bytes)) return grpc::Status(grpc::StatusCode::INTERNAL, "failed to serialize native participant");
+  const std::string key = NativeParticipantKey(participant.root_transaction_id(), participant.participant(), "p");
+  std::string existing;
+  rocksdb::Status get = db_->Get(rocksdb::ReadOptions(), key, &existing);
+  if (get.ok()) return existing == bytes ? grpc::Status::OK : grpc::Status(grpc::StatusCode::ALREADY_EXISTS, "native participant conflicts with retained record");
+  if (!get.IsNotFound()) return grpc::Status(grpc::StatusCode::INTERNAL, get.ToString());
+  rocksdb::Status put = db_->Put(DefaultWriteOptions(), key, bytes);
+  return put.ok() ? grpc::Status::OK : grpc::Status(grpc::StatusCode::INTERNAL, put.ToString());
+}
+
+grpc::Status DatabaseService::NativeTerminal(
+    const rbt::v1alpha1::Native2pcTerminalParticipantRequest& request,
+    rbt::v1alpha1::Native2pcTerminalParticipantResponse* response) {
+  const auto& terminal = request.terminal();
+  grpc::Status valid = ValidateNativeTerminal(terminal);
+  if (!valid.ok()) return valid;
+  std::lock_guard lock(native_2pc_mutex_);
+  std::string coordinator_bytes;
+  rocksdb::Status get_coordinator = db_->Get(
+      rocksdb::ReadOptions(),
+      NativeCoordinatorKey(terminal.root_transaction_id()),
+      &coordinator_bytes);
+  if (get_coordinator.IsNotFound()) return grpc::Status(grpc::StatusCode::NOT_FOUND, "native coordinator enrollment is missing");
+  if (!get_coordinator.ok()) return grpc::Status(grpc::StatusCode::INTERNAL, get_coordinator.ToString());
+  rbt::v1alpha1::Native2pcCoordinatorRecord coordinator;
+  if (!coordinator.ParseFromString(coordinator_bytes)) return grpc::Status(grpc::StatusCode::DATA_LOSS, "malformed native coordinator record");
+  valid = ValidateNativeCoordinator(coordinator);
+  if (!valid.ok()) return grpc::Status(grpc::StatusCode::DATA_LOSS, valid.error_message());
+  if (coordinator.coordinator().SerializeAsString() != terminal.coordinator().SerializeAsString() || coordinator.enrollment_digest() != terminal.enrollment_digest() || !NativeEnrollmentContains(coordinator, terminal.participant())) return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, "native terminal is not bound to coordinator enrollment");
+  if (terminal.decision() == rbt::v1alpha1::Native2pcTerminalRequest::COMMIT && coordinator.phase() != rbt::v1alpha1::Native2pcCoordinatorRecord::COMMIT_DECIDED) return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, "native commit was not decided");
+  if (terminal.decision() == rbt::v1alpha1::Native2pcTerminalRequest::ABORT && coordinator.phase() != rbt::v1alpha1::Native2pcCoordinatorRecord::ABORT_DECIDED) return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, "native abort was not decided");
+  const std::string participant_key = NativeParticipantKey(terminal.root_transaction_id(), terminal.participant(), "p");
+  const std::string receipt_key = NativeParticipantKey(terminal.root_transaction_id(), terminal.participant(), "t");
+  const std::string receipt = terminal.SerializeAsString();
+  std::string existing_receipt;
+  rocksdb::Status get_receipt = db_->Get(rocksdb::ReadOptions(), receipt_key, &existing_receipt);
+  if (get_receipt.ok()) {
+    if (existing_receipt != receipt) return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, "native terminal receipt conflicts with retained decision");
+    response->set_terminal_phase(terminal.decision() == rbt::v1alpha1::Native2pcTerminalRequest::COMMIT ? rbt::v1alpha1::Native2pcParticipantRecord::COMMITTED : rbt::v1alpha1::Native2pcParticipantRecord::ABORTED);
+    return grpc::Status::OK;
+  }
+  if (!get_receipt.IsNotFound()) return grpc::Status(grpc::StatusCode::INTERNAL, get_receipt.ToString());
+  rbt::v1alpha1::Native2pcParticipantRecord participant;
+  std::string participant_bytes;
+  rocksdb::Status get_participant = db_->Get(rocksdb::ReadOptions(), participant_key, &participant_bytes);
+  if (get_participant.ok()) {
+    if (!participant.ParseFromString(participant_bytes)) return grpc::Status(grpc::StatusCode::DATA_LOSS, "malformed native participant record");
+    if (terminal.decision() == rbt::v1alpha1::Native2pcTerminalRequest::COMMIT && participant.phase() != rbt::v1alpha1::Native2pcParticipantRecord::PREPARED) return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, "native commit requires a prepared participant");
+    if (terminal.decision() == rbt::v1alpha1::Native2pcTerminalRequest::ABORT && participant.phase() != rbt::v1alpha1::Native2pcParticipantRecord::ACTIVE && participant.phase() != rbt::v1alpha1::Native2pcParticipantRecord::PREPARED) return grpc::Status(grpc::StatusCode::DATA_LOSS, "illegal native participant transition");
+    if (participant.protocol().SerializeAsString() != terminal.protocol().SerializeAsString() || participant.root_transaction_id() != terminal.root_transaction_id() || participant.participant().SerializeAsString() != terminal.participant().SerializeAsString() || participant.coordinator().SerializeAsString() != terminal.coordinator().SerializeAsString() || participant.enrollment_digest() != terminal.enrollment_digest()) return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, "native participant identity conflicts with terminal request");
+    if (terminal.decision() == rbt::v1alpha1::Native2pcTerminalRequest::COMMIT && participant.phase() != rbt::v1alpha1::Native2pcParticipantRecord::PREPARED) return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, "native commit requires a prepared participant");
+  } else if (get_participant.IsNotFound()) {
+    return grpc::Status(grpc::StatusCode::NOT_FOUND, "native participant is missing");
+  } else return grpc::Status(grpc::StatusCode::INTERNAL, get_participant.ToString());
+  participant.set_phase(terminal.decision() == rbt::v1alpha1::Native2pcTerminalRequest::COMMIT ? rbt::v1alpha1::Native2pcParticipantRecord::COMMITTED : rbt::v1alpha1::Native2pcParticipantRecord::ABORTED);
+  if (!participant.SerializeToString(&participant_bytes)) return grpc::Status(grpc::StatusCode::INTERNAL, "failed to serialize native participant");
+  rocksdb::WriteBatch batch;
+  batch.Put(participant_key, participant_bytes);
+  batch.Put(receipt_key, receipt);
+  rocksdb::Status write = db_->Write(DefaultWriteOptions(), &batch);
+  if (!write.ok()) return grpc::Status(grpc::StatusCode::INTERNAL, write.ToString());
+  response->set_terminal_phase(participant.phase());
+  return grpc::Status::OK;
+}
+
+grpc::Status DatabaseService::NativeRecover(
+    const rbt::v1alpha1::Native2pcRecoverRequest& request,
+    grpc::ServerWriter<rbt::v1alpha1::Native2pcRecoverResponse>* responses) {
+  grpc::Status valid = ValidateNativeProtocol(request.protocol());
+  if (!valid.ok()) return valid;
+  std::unique_ptr<rocksdb::Iterator> iterator(db_->NewIterator(NonPrefixIteratorReadOptions()));
+  const std::string coordinator_prefix = std::string(kNativePrefix) + "c/";
+  const std::string participant_prefix = std::string(kNativePrefix) + "p/";
+  for (iterator->Seek(kNativePrefix.data()); iterator->Valid(); iterator->Next()) {
+    const std::string key = iterator->key().ToString();
+    if (key.compare(0, kNativePrefix.size(), kNativePrefix) != 0) break;
+    rbt::v1alpha1::Native2pcRecoverResponse response;
+    if (key.compare(0, coordinator_prefix.size(), coordinator_prefix) == 0) {
+      if (!response.mutable_coordinator()->ParseFromArray(iterator->value().data(), iterator->value().size())) return grpc::Status(grpc::StatusCode::DATA_LOSS, "malformed native coordinator record");
+      valid = ValidateNativeCoordinator(response.coordinator());
+    } else if (key.compare(0, participant_prefix.size(), participant_prefix) == 0) {
+      if (!response.mutable_participant()->ParseFromArray(iterator->value().data(), iterator->value().size())) return grpc::Status(grpc::StatusCode::DATA_LOSS, "malformed native participant record");
+      valid = ValidateNativeIdentity(response.participant().protocol(), response.participant().root_transaction_id(), response.participant().participant(), "participant");
+      if (valid.ok() && (!NativeActorValid(response.participant().coordinator()) || response.participant().enrollment_digest().empty())) valid = NativeInvalid("native participant identity is invalid");
+      if (valid.ok() && response.participant().phase() != rbt::v1alpha1::Native2pcParticipantRecord::ACTIVE && response.participant().phase() != rbt::v1alpha1::Native2pcParticipantRecord::PREPARED && response.participant().phase() != rbt::v1alpha1::Native2pcParticipantRecord::COMMITTED && response.participant().phase() != rbt::v1alpha1::Native2pcParticipantRecord::ABORTED) valid = NativeInvalid("native participant phase is illegal");
+    } else continue;  // terminal receipts never become recovery work.
+    if (!valid.ok()) return grpc::Status(grpc::StatusCode::DATA_LOSS, valid.error_message());
+    if (!responses->Write(response)) return grpc::Status::OK;
+  }
+  return iterator->status().ok() ? grpc::Status::OK : grpc::Status(grpc::StatusCode::INTERNAL, iterator->status().ToString());
+}
+
 grpc::Status DatabaseService::RefreshTimestamp(
     grpc::ServerContext* context,
     const RefreshTimestampRequest* request,
@@ -4879,6 +5247,11 @@ expected<std::unique_ptr<DatabaseServer>> DatabaseServer::Instantiate(
   }
 
   builder.RegisterService(service->get());
+  auto* database_service = dynamic_cast<DatabaseService*>(service->get());
+  CHECK(database_service != nullptr);
+  std::unique_ptr<grpc::Service> native_service =
+      std::make_unique<Native2pcDatabaseService>(*database_service);
+  builder.RegisterService(native_service.get());
 
   std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
 
@@ -4892,6 +5265,7 @@ expected<std::unique_ptr<DatabaseServer>> DatabaseServer::Instantiate(
 
   return std::unique_ptr<DatabaseServer>(new DatabaseServer(
       std::move(service.value()),
+      std::move(native_service),
       std::move(server),
       address));
 }
@@ -4903,6 +5277,27 @@ void TestOnly_EnableLegacyCoordinatorPrepared(grpc::Service* service) {
   if (sidecar_service) {
     sidecar_service->SetAllowLegacyCoordinatorPrepared(true);
   }
+}
+
+expected<void> TestOnly_PutDefaultRecord(
+    grpc::Service* service,
+    std::string key,
+    std::string value) {
+  auto* db_service = dynamic_cast<DatabaseService*>(service);
+  if (db_service == nullptr) {
+    return make_unexpected("service is not a DatabaseService");
+  }
+  return db_service->TestOnlyPutDefaultRecord(std::move(key), std::move(value));
+}
+
+expected<std::optional<std::string>> TestOnly_GetDefaultRecord(
+    grpc::Service* service,
+    const std::string& key) {
+  auto* db_service = dynamic_cast<DatabaseService*>(service);
+  if (db_service == nullptr) {
+    return make_unexpected("service is not a DatabaseService");
+  }
+  return db_service->TestOnlyGetDefaultRecord(key);
 }
 
 void SetTestOnlyHookForLongRunningRPC(

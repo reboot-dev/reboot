@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <string>
 
 #include "glog/logging.h"
@@ -82,6 +83,7 @@ class DatabaseServer final {
       REBOOT_DATABASE_LOG(1)
           << "Waited for database gRPC server at " << address_;
       server_.reset();
+      native_service_.reset();
       service_.reset();
     }
   }
@@ -103,13 +105,17 @@ class DatabaseServer final {
  private:
   DatabaseServer(
       std::unique_ptr<grpc::Service>&& service,
+      std::unique_ptr<grpc::Service>&& native_service,
       std::unique_ptr<grpc::Server>&& server,
       const std::string& address)
     : service_(std::move(service)),
+      native_service_(std::move(native_service)),
       server_(std::move(server)),
       address_(address) {}
 
   std::unique_ptr<grpc::Service> service_;
+  // Deliberately separate from Database: Native2pc never extends legacy RPCs.
+  std::unique_ptr<grpc::Service> native_service_;
   std::unique_ptr<grpc::Server> server_;
   const std::string address_;
 };
@@ -119,6 +125,17 @@ class DatabaseServer final {
 // Function to enable legacy coordinator prepared format for testing.
 // This should only be used in tests.
 void TestOnly_EnableLegacyCoordinatorPrepared(grpc::Service* service);
+
+// Direct default-column-family access for sidecar isolation tests. These are
+// intentionally test-only helpers: production callers cannot select a column
+// family or execute arbitrary database operations through them.
+tl::expected<void, std::string> TestOnly_PutDefaultRecord(
+    grpc::Service* service,
+    std::string key,
+    std::string value);
+tl::expected<std::optional<std::string>, std::string> TestOnly_GetDefaultRecord(
+    grpc::Service* service,
+    const std::string& key);
 
 // Identifies the exact call site where the test-only hook fires.
 enum class TestOnlyLongRunningRPCHookSite {

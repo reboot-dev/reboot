@@ -1,0 +1,204 @@
+syntax = "proto3";
+
+package rbt.v1alpha1;
+
+// Isolated persistence and wire contract for the native two-phase commit
+// protocol. It deliberately shares no records or services with the legacy
+// transaction protocol.
+
+// Every native record and request uses this exact protocol identity.
+message Native2pcProtocol {
+  // Must be exactly "reboot.native-2pc.v1".
+  string protocol_id = 1;
+  // Must be 1.
+  uint32 record_version = 2;
+}
+
+// The complete identity of a Reboot actor.
+message Native2pcActorId {
+  string state_type = 1;
+  string state_ref = 2;
+}
+
+// The enrolled participant and the digest binding the enrollment set.
+message Native2pcEnrollment {
+  Native2pcActorId participant = 1;
+  bytes enrollment_digest = 2;
+}
+
+// Durable native coordinator state.
+message Native2pcCoordinatorRecord {
+  enum Phase {
+    UNSPECIFIED = 0;
+    PREPARING = 1;
+    COMMIT_DECIDED = 2;
+    ABORT_DECIDED = 3;
+  }
+
+  Native2pcProtocol protocol = 1;
+  bytes root_transaction_id = 2;
+  Native2pcActorId coordinator = 3;
+  repeated Native2pcEnrollment enrollment = 4;
+  bytes enrollment_digest = 5;
+  Phase phase = 6;
+}
+
+// Durable native participant state.
+message Native2pcParticipantRecord {
+  enum Phase {
+    UNSPECIFIED = 0;
+    ACTIVE = 1;
+    PREPARED = 2;
+    COMMITTED = 3;
+    ABORTED = 4;
+  }
+
+  Native2pcProtocol protocol = 1;
+  bytes root_transaction_id = 2;
+  Native2pcActorId participant = 3;
+  Native2pcActorId coordinator = 4;
+  bytes enrollment_digest = 5;
+  Phase phase = 6;
+}
+
+// Capability negotiation is explicit and version-bound so native peers never
+// infer support from the presence of a legacy transaction service.
+message Native2pcCapabilitiesRequest {
+  Native2pcProtocol required = 1;
+}
+
+message Native2pcCapabilitiesResponse {
+  Native2pcProtocol accepted = 1;
+  bool native_participant_enabled = 2;
+  bool native_sidecar_enabled = 3;
+}
+
+// A prepare is bound to the complete participant and coordinator identities.
+message Native2pcPrepareRequest {
+  Native2pcProtocol protocol = 1;
+  bytes root_transaction_id = 2;
+  Native2pcActorId participant = 3;
+  Native2pcActorId coordinator = 4;
+  bytes enrollment_digest = 5;
+}
+
+message Native2pcPrepareResponse {
+  enum Outcome {
+    UNSPECIFIED = 0;
+    PREPARED = 1;
+    DEFINITIVE_ABORT = 2;
+  }
+
+  Outcome outcome = 1;
+}
+
+// A terminal decision is identity-bound; it cannot be applied by transaction
+// id alone.
+message Native2pcTerminalRequest {
+  enum Decision {
+    UNSPECIFIED = 0;
+    COMMIT = 1;
+    ABORT = 2;
+  }
+
+  Native2pcProtocol protocol = 1;
+  bytes root_transaction_id = 2;
+  Native2pcActorId participant = 3;
+  Native2pcActorId coordinator = 4;
+  bytes enrollment_digest = 5;
+  Decision decision = 6;
+}
+
+message Native2pcTerminalResponse {
+  // The participant phase durably stored for this identity-bound terminal
+  // decision, including on a duplicate terminal request.
+  Native2pcParticipantRecord.Phase terminal_phase = 1;
+}
+
+// Watch includes every identity component needed to bind the observed decision.
+message Native2pcWatchRequest {
+  Native2pcProtocol protocol = 1;
+  bytes root_transaction_id = 2;
+  Native2pcActorId coordinator = 3;
+  Native2pcActorId participant = 4;
+  bytes enrollment_digest = 5;
+}
+
+message Native2pcWatchResponse {
+  Native2pcCoordinatorRecord.Phase phase = 1;
+}
+
+service Native2pcParticipant {
+  rpc GetCapabilities(Native2pcCapabilitiesRequest)
+      returns (Native2pcCapabilitiesResponse);
+  rpc Prepare(Native2pcPrepareRequest) returns (Native2pcPrepareResponse);
+  rpc Terminal(Native2pcTerminalRequest) returns (Native2pcTerminalResponse);
+}
+
+service Native2pcCoordinator {
+  rpc Watch(Native2pcWatchRequest) returns (Native2pcWatchResponse);
+}
+
+// The native persistence surface is separate from the legacy Database service.
+message Native2pcPutCoordinatorRequest {
+  Native2pcCoordinatorRecord coordinator = 1;
+}
+
+message Native2pcPutCoordinatorResponse {}
+
+// Participant persistence is explicit; terminal delivery never creates state.
+message Native2pcPutParticipantRequest {
+  Native2pcParticipantRecord participant = 1;
+}
+
+message Native2pcPutParticipantResponse {}
+
+message Native2pcPutCommitDecisionRequest {
+  Native2pcProtocol protocol = 1;
+  bytes root_transaction_id = 2;
+  Native2pcActorId coordinator = 3;
+  bytes enrollment_digest = 4;
+}
+
+message Native2pcPutCommitDecisionResponse {}
+
+message Native2pcPutAbortDecisionRequest {
+  Native2pcProtocol protocol = 1;
+  bytes root_transaction_id = 2;
+  Native2pcActorId coordinator = 3;
+  bytes enrollment_digest = 4;
+}
+
+message Native2pcPutAbortDecisionResponse {}
+
+message Native2pcRecoverRequest {
+  Native2pcProtocol protocol = 1;
+}
+
+message Native2pcRecoverResponse {
+  Native2pcCoordinatorRecord coordinator = 1;
+  Native2pcParticipantRecord participant = 2;
+}
+
+message Native2pcTerminalParticipantRequest {
+  Native2pcTerminalRequest terminal = 1;
+}
+
+message Native2pcTerminalParticipantResponse {
+  Native2pcParticipantRecord.Phase terminal_phase = 1;
+}
+
+service Native2pcDatabase {
+  rpc PutCoordinator(Native2pcPutCoordinatorRequest)
+      returns (Native2pcPutCoordinatorResponse);
+  rpc PutParticipant(Native2pcPutParticipantRequest)
+      returns (Native2pcPutParticipantResponse);
+  rpc PutCommitDecision(Native2pcPutCommitDecisionRequest)
+      returns (Native2pcPutCommitDecisionResponse);
+  rpc PutAbortDecision(Native2pcPutAbortDecisionRequest)
+      returns (Native2pcPutAbortDecisionResponse);
+  rpc RecoverNative2pc(Native2pcRecoverRequest)
+      returns (stream Native2pcRecoverResponse);
+  rpc TerminalParticipant(Native2pcTerminalParticipantRequest)
+      returns (Native2pcTerminalParticipantResponse);
+}

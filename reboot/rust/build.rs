@@ -6,9 +6,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let repository = std::path::PathBuf::from("../..");
     let vendored_include = protoc_bin_vendored::include_path()?;
+    let descriptor =
+        std::path::PathBuf::from(std::env::var("OUT_DIR")?).join("rbt_v1alpha1_descriptor.bin");
     tonic_build::configure()
         .build_server(true)
         .btree_map(["."])
+        .file_descriptor_set_path(descriptor)
         .compile_protos(
             &[
                 repository.join("tests/reboot/protoc/explicit_state_annotations_full.proto"),
@@ -17,6 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 repository.join("tests/reboot/protoc/shared.proto"),
                 repository.join("rbt/v1alpha1/database.proto"),
                 repository.join("rbt/v1alpha1/transactions.proto"),
+                repository.join("rbt/v1alpha1/native_2pc.proto"),
             ],
             &[repository, vendored_include],
         )?;
