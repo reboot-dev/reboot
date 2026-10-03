@@ -184,7 +184,10 @@ impl map_generated::MapCounterWritesDatabaseHandler for MapCounter {
     }
 }
 
-struct TransactionCounter;
+struct TransactionCounter {
+    trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+    fail: bool,
+}
 
 #[tonic::async_trait]
 impl transaction_generated::TransactionCounterWritesTransactionHandler for TransactionCounter {
@@ -194,26 +197,47 @@ impl transaction_generated::TransactionCounterWritesTransactionHandler for Trans
         state: &mut proto::TransactionCounter,
         request: proto::TransactionIncrementRequest,
     ) -> Result<reboot::runtime::TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+        self.trace.lock().unwrap().push("handler");
+        if self.fail {
+            return Err(tonic::Status::invalid_argument("handler rejected request"));
+        }
         state.value += request.amount;
-        Ok(reboot::runtime::TransactionExecution::new(
+        let mut execution = reboot::runtime::TransactionExecution::new(
             proto::TransactionCounterValue { value: state.value },
-        ))
+        );
+        execution.final_state = Some(state.encode_to_vec());
+        Ok(execution)
     }
 }
 
-struct TransactionParticipantSidecar;
+struct TransactionParticipantSidecar {
+    trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+}
 
 impl reboot::durable_participant::ParticipantSidecar for TransactionParticipantSidecar {
     fn load(&self, _: reboot::database_proto::LoadRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::LoadResponse, tonic::Status>> + Send + '_>> {
-        Box::pin(async { Ok(reboot::database_proto::LoadResponse::default()) })
+        self.trace.lock().unwrap().push("participant load");
+        let state = proto::TransactionCounter { value: 4 }.encode_to_vec();
+        Box::pin(async move { Ok(reboot::database_proto::LoadResponse {
+            actors: vec![reboot::database_proto::Actor {
+                state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                state_ref: "transaction-counter".into(),
+                state: Some(state),
+            }],
+            ..Default::default()
+        }) })
     }
-    fn prepare(&self, _: reboot::database_proto::TransactionParticipantPrepareRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionParticipantPrepareResponse, tonic::Status>> + Send + '_>> {
+    fn prepare(&self, request: reboot::database_proto::TransactionParticipantPrepareRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionParticipantPrepareResponse, tonic::Status>> + Send + '_>> {
+        assert_eq!(proto::TransactionCounter::decode(request.state.unwrap().as_slice()).unwrap().value, 7, "generated adapter must stage the handler's final state before participant prepare");
+        self.trace.lock().unwrap().push("participant prepare");
         Box::pin(async { Ok(reboot::database_proto::TransactionParticipantPrepareResponse::default()) })
     }
     fn commit(&self, _: reboot::database_proto::TransactionParticipantCommitRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionParticipantCommitResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("participant commit");
         Box::pin(async { Ok(reboot::database_proto::TransactionParticipantCommitResponse::default()) })
     }
     fn abort(&self, _: reboot::database_proto::TransactionParticipantAbortRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionParticipantAbortResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("participant abort");
         Box::pin(async { Ok(reboot::database_proto::TransactionParticipantAbortResponse::default()) })
     }
     fn recover(&self, _: reboot::database_proto::RecoverRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverResponse>, tonic::Status>> + Send + '_>> {
@@ -221,44 +245,25 @@ impl reboot::durable_participant::ParticipantSidecar for TransactionParticipantS
     }
 }
 
-struct TransactionCoordinatorSidecar;
+struct TransactionCoordinatorSidecar {
+    trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+}
 
 impl reboot::durable_coordinator::CoordinatorSidecar for TransactionCoordinatorSidecar {
     fn coordinator_prepare(&self, _: reboot::database_proto::TransactionCoordinatorPrepareRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorPrepareResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("coordinator DB prepare");
         Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorPrepareResponse::default()) })
     }
     fn coordinator_prepared(&self, _: reboot::database_proto::TransactionCoordinatorPreparedRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorPreparedResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("coordinator DB prepared");
         Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorPreparedResponse::default()) })
     }
     fn coordinator_cleanup(&self, _: reboot::database_proto::TransactionCoordinatorCleanupRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorCleanupResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("coordinator DB cleanup");
         Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorCleanupResponse::default()) })
     }
     fn recover(&self, _: reboot::database_proto::RecoverRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverResponse>, tonic::Status>> + Send + '_>> {
         Box::pin(async { Ok(Vec::new()) })
-    }
-}
-
-struct TransactionEndpoint;
-
-impl reboot::durable_coordinator::ParticipantEndpoint for TransactionEndpoint {
-    fn prepare(&self, _: &str, _: reboot::database_proto::PrepareRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::PrepareResponse, tonic::Status>> + Send + '_>> {
-        Box::pin(async { Ok(reboot::database_proto::PrepareResponse::default()) })
-    }
-    fn commit(&self, _: &str, _: reboot::database_proto::CommitRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::CommitResponse, tonic::Status>> + Send + '_>> {
-        Box::pin(async { Ok(reboot::database_proto::CommitResponse::default()) })
-    }
-    fn abort(&self, _: &str, _: reboot::database_proto::AbortRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::AbortResponse, tonic::Status>> + Send + '_>> {
-        Box::pin(async { Ok(reboot::database_proto::AbortResponse::default()) })
-    }
-}
-
-struct TransactionResolver;
-
-impl reboot::durable_coordinator::ParticipantResolver for TransactionResolver {
-    type Endpoint = TransactionEndpoint;
-
-    fn resolve(&self, _: &reboot::durable_coordinator::ParticipantTarget) -> Pin<Box<dyn Future<Output = Result<Arc<Self::Endpoint>, tonic::Status>> + Send + '_>> {
-        Box::pin(async { Ok(Arc::new(TransactionEndpoint)) })
     }
 }
 
@@ -273,24 +278,83 @@ impl reboot::runtime::RootTransactionStartFactory for TransactionStartFactory {
     }
 }
 
-#[test]
-fn generated_transaction_adapter_compiles_as_a_tonic_service() {
+fn transaction_adapter(
+    trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+    fail: bool,
+) -> transaction_generated::TransactionCounterWritesTransactionAdapter<
+    TransactionCounter,
+    TransactionParticipantSidecar,
+    TransactionCoordinatorSidecar,
+    reboot::durable_coordinator::SingleParticipantResolver<TransactionParticipantSidecar>,
+    TransactionStartFactory,
+> {
     let participant = reboot::durable_participant::DurableActorParticipant::new(
-        Arc::new(TransactionParticipantSidecar),
+        Arc::new(TransactionParticipantSidecar { trace: Arc::clone(&trace) }),
         "tests.reboot.protoc.TransactionCounter",
         "transaction-counter",
     );
     let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
-        Arc::new(TransactionCoordinatorSidecar),
-        Arc::new(TransactionResolver),
+        Arc::new(TransactionCoordinatorSidecar { trace: Arc::clone(&trace) }),
+        Arc::new(reboot::durable_coordinator::SingleParticipantResolver::new(
+            reboot::durable_coordinator::ParticipantTarget {
+                state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                state_ref: "transaction-counter".into(),
+            },
+            reboot::durable_participant::DurableActorParticipantHost::new(participant.clone()),
+        ).unwrap()),
     );
-    let adapter = transaction_generated::TransactionCounterWritesTransactionAdapter::new(
+    transaction_generated::TransactionCounterWritesTransactionAdapter::new(
         participant,
         coordinator,
         TransactionStartFactory,
-        TransactionCounter,
-    );
-    let _server = proto::transaction_counter_writes_server::TransactionCounterWritesServer::new(adapter);
+        TransactionCounter { trace, fail },
+    )
+}
+
+#[tokio::test]
+async fn generated_transaction_adapter_executes_in_process_protocol_trace() {
+    use proto::transaction_counter_writes_server::TransactionCounterWrites;
+
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+    *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter")
+        .to_metadata()
+        .unwrap();
+    let response = TransactionCounterWrites::increment(
+        &transaction_adapter(Arc::clone(&trace), false),
+        request,
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.into_inner().value, 7);
+    assert_eq!(*trace.lock().unwrap(), [
+        "participant load",
+        "handler",
+        "coordinator DB prepare",
+        "participant prepare",
+        "coordinator DB prepared",
+        "participant commit",
+        "coordinator DB cleanup",
+    ]);
+}
+
+#[tokio::test]
+async fn generated_transaction_adapter_aborts_when_handler_rejects() {
+    use proto::transaction_counter_writes_server::TransactionCounterWrites;
+
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+    *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter")
+        .to_metadata()
+        .unwrap();
+    let error = TransactionCounterWrites::increment(
+        &transaction_adapter(Arc::clone(&trace), true),
+        request,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.code(), tonic::Code::InvalidArgument);
+    assert_eq!(*trace.lock().unwrap(), ["participant load", "handler", "participant abort"]);
 }
 
 async fn start_counter_adapters(
