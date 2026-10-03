@@ -2396,8 +2396,7 @@ grpc::Status DatabaseService::Store(
   if (request->has_idempotent_mutation()) {
     idempotency_collision_lock.lock();
     const IdempotentMutation& incoming = request->idempotent_mutation();
-    if (incoming.has_request_fingerprint()
-        && !incoming.request_fingerprint().empty()) {
+    {
       std::optional<std::string> workflow_id;
       if (incoming.has_workflow_id()) workflow_id = incoming.workflow_id();
       std::optional<uint64_t> workflow_iteration;
