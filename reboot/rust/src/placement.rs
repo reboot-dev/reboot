@@ -17,7 +17,8 @@ use crate::{
     native_2pc::{
         Native2pcCoordinatorEndpoint, Native2pcCoordinatorResolver, Native2pcParticipantEndpoint,
         Native2pcParticipantResolver, Native2pcPlacementPlan, Native2pcRoute, Native2pcShardRoute,
-        NativeActorId, NativeFuture,
+        NativeActorId, NativeFuture, TonicNative2pcCoordinatorEndpoint,
+        TonicNative2pcParticipantEndpoint,
     },
     placement_proto as proto,
 };
@@ -245,6 +246,57 @@ impl<C: Native2pcEndpointConnector> Native2pcCoordinatorResolver for PlacementNa
             self.connector
                 .coordinator(NativeRoutableAddress(route.address), actor)
                 .await
+        })
+    }
+}
+
+/// Direct Tonic bridge for the Python-compatible trusted internal plane.
+/// Each resolve reads the current host-fed snapshot; neither routes nor
+/// connections are cached.
+#[derive(Clone)]
+pub struct TonicApplicationNative2pcResolver {
+    routes: ApplicationNative2pcResolver,
+}
+
+impl TonicApplicationNative2pcResolver {
+    pub fn new(routes: ApplicationNative2pcResolver) -> Self {
+        Self { routes }
+    }
+
+    fn connect(&self, actor: NativeActorId) -> NativeFuture<'_, tonic::transport::Channel> {
+        let route = self.routes.route(&actor);
+        Box::pin(async move {
+            let route = route?;
+            let endpoint = tonic::transport::Endpoint::from_shared(route.address)
+                .map_err(|_| Status::internal("validated native placement endpoint was invalid"))?;
+            endpoint
+                .connect()
+                .await
+                .map_err(|_| Status::unavailable("native placement endpoint was unavailable"))
+        })
+    }
+}
+
+impl Native2pcParticipantResolver for TonicApplicationNative2pcResolver {
+    type Endpoint = TonicNative2pcParticipantEndpoint;
+
+    fn resolve(&self, actor: &NativeActorId) -> NativeFuture<'_, Arc<Self::Endpoint>> {
+        let actor = actor.clone();
+        Box::pin(async move {
+            let channel = self.connect(actor).await?;
+            Ok(Arc::new(TonicNative2pcParticipantEndpoint::new(channel)))
+        })
+    }
+}
+
+impl Native2pcCoordinatorResolver for TonicApplicationNative2pcResolver {
+    type Endpoint = TonicNative2pcCoordinatorEndpoint;
+
+    fn resolve(&self, actor: &NativeActorId) -> NativeFuture<'_, Arc<Self::Endpoint>> {
+        let actor = actor.clone();
+        Box::pin(async move {
+            let channel = self.connect(actor).await?;
+            Ok(Arc::new(TonicNative2pcCoordinatorEndpoint::new(channel)))
         })
     }
 }
@@ -529,6 +581,26 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn tonic_resolver_reports_an_unavailable_route_as_nondefinitive() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let placement = PlanOnlyNative2pcPlacement::new();
+        let application = NativeApplicationId::new("app").unwrap();
+        placement
+            .install(response(1, &format!("127.0.0.1:{port}")))
+            .unwrap();
+        let resolver =
+            TonicApplicationNative2pcResolver::new(placement.application(application).unwrap());
+        let actor = NativeActorId::new("example.State", "actor").unwrap();
+        let error = match Native2pcParticipantResolver::resolve(&resolver, &actor).await {
+            Ok(_) => panic!("unbound native placement endpoint unexpectedly connected"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code(), tonic::Code::Unavailable);
     }
 
     #[test]
