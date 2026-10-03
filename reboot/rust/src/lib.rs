@@ -17,6 +17,7 @@ pub mod codegen;
 pub mod durable_coordinator;
 pub mod durable_participant;
 pub mod runtime;
+pub mod successful_trailers;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
