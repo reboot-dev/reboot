@@ -112,6 +112,185 @@ impl TransactionContext {
     }
 }
 
+#[derive(Debug)]
+struct PendingParticipantTransaction {
+    root_id: Uuid,
+    mode: TransactionMode,
+    prepared: bool,
+}
+
+type ParticipantSlot = Arc<Mutex<Option<PendingParticipantTransaction>>>;
+
+/// Process-local participant state for actors that are already executing an
+/// established transaction context.
+///
+/// This owns only one actor's pending transaction state. It neither starts a
+/// transaction nor contacts a coordinator or database; `Prepare` records the
+/// local prepared state and `Commit`/`Abort` clear it.
+#[derive(Clone, Default)]
+pub struct ActorParticipantHost {
+    participants: Arc<Mutex<HashMap<String, ParticipantSlot>>>,
+}
+
+impl ActorParticipantHost {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registers an actor that has already accepted an inbound transaction RPC.
+    ///
+    /// `TransactionContext::from_headers` performs metadata validation before a
+    /// context can exist. Registration also binds it to the actor state-ref and
+    /// retains the declared mode as participant state; the native Participant
+    /// protocol carries only the root transaction ID, not a mode or context.
+    pub fn activate(&self, context: TransactionContext) -> Result<(), Status> {
+        let state_ref = context.headers().state_ref.clone();
+        if state_ref.is_empty() {
+            return Err(Status::invalid_argument(
+                "metadata `x-reboot-state-ref` must not be empty",
+            ));
+        }
+        let mut participants = self
+            .participants
+            .lock()
+            .expect("participant map mutex poisoned");
+        let pending = participants
+            .entry(state_ref)
+            .or_insert_with(|| Arc::new(Mutex::new(None)))
+            .clone();
+        let mut pending = pending.lock().expect("participant mutex poisoned");
+        if pending.is_some() {
+            return Err(Status::failed_precondition(
+                "actor already has a pending transaction",
+            ));
+        }
+        *pending = Some(PendingParticipantTransaction {
+            root_id: context.transaction_root_id(),
+            mode: context.mode(),
+            prepared: false,
+        });
+        Ok(())
+    }
+
+    fn participant_for_state_ref(&self, state_ref: &str) -> Option<ParticipantSlot> {
+        self.participants
+            .lock()
+            .expect("participant map mutex poisoned")
+            .get(state_ref)
+            .cloned()
+    }
+
+    fn participant(&self, request: &Request<impl Sized>) -> Result<ParticipantSlot, Status> {
+        let state_ref = required_metadata(request, STATE_REF_HEADER)?;
+        self.participant_for_state_ref(&state_ref)
+            .ok_or_else(|| Status::failed_precondition("actor has no pending transaction"))
+    }
+}
+
+fn participant_transaction_id(value: &[u8]) -> Result<Uuid, Status> {
+    Uuid::from_slice(value)
+        .map_err(|_| Status::invalid_argument("transaction_id must be a 16-byte UUID"))
+}
+
+fn prepare_failure(
+    abort_via_response: bool,
+    detail: &'static str,
+) -> Result<Response<database::PrepareResponse>, Status> {
+    if abort_via_response {
+        Ok(Response::new(database::PrepareResponse {
+            abort: true,
+            restart_detected: false,
+            recovery_timestamp: None,
+        }))
+    } else {
+        Err(Status::failed_precondition(detail))
+    }
+}
+
+#[tonic::async_trait]
+impl database::participant_server::Participant for ActorParticipantHost {
+    async fn prepare(
+        &self,
+        request: Request<database::PrepareRequest>,
+    ) -> Result<Response<database::PrepareResponse>, Status> {
+        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
+        let request = request.into_inner();
+        let transaction_id = participant_transaction_id(&request.transaction_id)?;
+        let Some(participant) = self.participant_for_state_ref(&state_ref) else {
+            return prepare_failure(
+                request.abort_via_response,
+                "actor has no pending transaction",
+            );
+        };
+        let mut pending = participant.lock().expect("participant mutex poisoned");
+        let Some(pending) = pending.as_mut() else {
+            return prepare_failure(
+                request.abort_via_response,
+                "actor has no pending transaction",
+            );
+        };
+        if pending.root_id != transaction_id {
+            return prepare_failure(request.abort_via_response, "pending transaction ID differs");
+        }
+        // Mode was validated when the actor accepted its TransactionContext. It
+        // remains participant-local because PrepareRequest does not carry it.
+        let _mode = pending.mode;
+        pending.prepared = true;
+        Ok(Response::new(database::PrepareResponse::default()))
+    }
+
+    async fn commit(
+        &self,
+        request: Request<database::CommitRequest>,
+    ) -> Result<Response<database::CommitResponse>, Status> {
+        let participant = self.participant(&request)?;
+        let transaction_id = participant_transaction_id(&request.get_ref().transaction_id)?;
+        let mut pending = participant.lock().expect("participant mutex poisoned");
+        let Some(current) = pending.as_ref() else {
+            return Err(Status::failed_precondition(
+                "actor has no pending transaction",
+            ));
+        };
+        if current.root_id != transaction_id || !current.prepared {
+            return Err(Status::failed_precondition(
+                "commit requires the matching prepared transaction",
+            ));
+        }
+        *pending = None;
+        Ok(Response::new(database::CommitResponse::default()))
+    }
+
+    async fn abort(
+        &self,
+        request: Request<database::AbortRequest>,
+    ) -> Result<Response<database::AbortResponse>, Status> {
+        let participant = self.participant(&request)?;
+        let transaction_id = participant_transaction_id(&request.get_ref().transaction_id)?;
+        let mut pending = participant.lock().expect("participant mutex poisoned");
+        let Some(current) = pending.as_ref() else {
+            return Err(Status::failed_precondition(
+                "actor has no pending transaction",
+            ));
+        };
+        if current.root_id != transaction_id {
+            return Err(Status::failed_precondition(
+                "abort requires the matching transaction",
+            ));
+        }
+        *pending = None;
+        Ok(Response::new(database::AbortResponse::default()))
+    }
+
+    async fn relinquish_ownership(
+        &self,
+        _: Request<database::RelinquishOwnershipRequest>,
+    ) -> Result<Response<database::RelinquishOwnershipResponse>, Status> {
+        Err(Status::unimplemented(
+            "nested transaction ownership is not part of this participant foundation",
+        ))
+    }
+}
+
 /// Returns the canonical v1 idempotency fingerprint used by every SDK.
 ///
 /// `method_identity` is the fully-qualified protobuf RPC name for generated
@@ -1313,6 +1492,158 @@ mod tests {
                 .unwrap();
         });
         (format!("http://{address}"), server)
+    }
+
+    async fn start_participant_host(
+        host: ActorParticipantHost,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(database::participant_server::ParticipantServer::new(host))
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+        (format!("http://{address}"), server)
+    }
+
+    fn participant_context(state_ref: &str, transaction_id: Uuid) -> TransactionContext {
+        let mut headers = RebootHeaders::new(state_ref);
+        headers.transaction_ids = Some(vec![transaction_id]);
+        headers.transaction_coordinator_state_type = Some("example.Coordinator".into());
+        headers.transaction_coordinator_state_ref = Some("coordinator/1".into());
+        TransactionContext::from_headers(headers, TransactionMode::Exclusive).unwrap()
+    }
+
+    fn participant_request<T>(message: T, state_ref: &str) -> Request<T> {
+        let mut request = Request::new(message);
+        request
+            .metadata_mut()
+            .insert(STATE_REF_HEADER, state_ref.parse().unwrap());
+        request
+    }
+
+    #[tokio::test]
+    async fn participant_prepare_uses_definitive_abort_only_for_known_outcomes() {
+        let host = ActorParticipantHost::new();
+        let transaction_id = Uuid::from_u128(700);
+        host.activate(participant_context("participant-actor", transaction_id))
+            .unwrap();
+        let (address, server) = start_participant_host(host.clone()).await;
+        let mut client = database::participant_client::ParticipantClient::connect(address)
+            .await
+            .unwrap();
+
+        let prepared = client
+            .prepare(participant_request(
+                database::PrepareRequest {
+                    transaction_id: transaction_id.as_bytes().to_vec(),
+                    abort_via_response: true,
+                    read_only_aware: false,
+                    read_only: false,
+                },
+                "participant-actor",
+            ))
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(!prepared.abort);
+
+        let mismatch = client
+            .prepare(participant_request(
+                database::PrepareRequest {
+                    transaction_id: Uuid::from_u128(701).as_bytes().to_vec(),
+                    abort_via_response: true,
+                    read_only_aware: false,
+                    read_only: false,
+                },
+                "participant-actor",
+            ))
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(mismatch.abort);
+        assert!(!mismatch.restart_detected);
+
+        let transport_error = client
+            .prepare(participant_request(
+                database::PrepareRequest {
+                    transaction_id: vec![0],
+                    abort_via_response: true,
+                    read_only_aware: false,
+                    read_only: false,
+                },
+                "participant-actor",
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(transport_error.code(), tonic::Code::InvalidArgument);
+
+        let mismatched_commit = client
+            .commit(participant_request(
+                database::CommitRequest {
+                    transaction_id: Uuid::from_u128(701).as_bytes().to_vec(),
+                },
+                "participant-actor",
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(mismatched_commit.code(), tonic::Code::FailedPrecondition);
+        client
+            .commit(participant_request(
+                database::CommitRequest {
+                    transaction_id: transaction_id.as_bytes().to_vec(),
+                },
+                "participant-actor",
+            ))
+            .await
+            .unwrap();
+        let cleaned_after_commit = client
+            .abort(participant_request(
+                database::AbortRequest {
+                    transaction_id: transaction_id.as_bytes().to_vec(),
+                },
+                "participant-actor",
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(cleaned_after_commit.code(), tonic::Code::FailedPrecondition);
+
+        let abort_id = Uuid::from_u128(702);
+        host.activate(participant_context("participant-actor", abort_id))
+            .unwrap();
+        let mismatched_abort = client
+            .abort(participant_request(
+                database::AbortRequest {
+                    transaction_id: transaction_id.as_bytes().to_vec(),
+                },
+                "participant-actor",
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(mismatched_abort.code(), tonic::Code::FailedPrecondition);
+        client
+            .abort(participant_request(
+                database::AbortRequest {
+                    transaction_id: abort_id.as_bytes().to_vec(),
+                },
+                "participant-actor",
+            ))
+            .await
+            .unwrap();
+        let cleaned_after_abort = client
+            .commit(participant_request(
+                database::CommitRequest {
+                    transaction_id: abort_id.as_bytes().to_vec(),
+                },
+                "participant-actor",
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(cleaned_after_abort.code(), tonic::Code::FailedPrecondition);
+        server.abort();
     }
 
     async fn start_file_host(host: FileBackedHost) -> (String, tokio::task::JoinHandle<()>) {
