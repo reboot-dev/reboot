@@ -506,6 +506,7 @@ pub mod database_proto {
 pub enum ContextError {
     EmptyStateRef,
     InvalidMetadata,
+    MissingTransactionMetadata,
     MissingTransactionCoordinatorMetadata,
     EmptyTransactionIds,
     InvalidTransactionIds,
@@ -517,6 +518,9 @@ impl std::fmt::Display for ContextError {
         match self {
             Self::EmptyStateRef => write!(f, "Reboot state reference must not be empty"),
             Self::InvalidMetadata => write!(f, "Reboot metadata value is invalid"),
+            Self::MissingTransactionMetadata => {
+                write!(f, "transaction context requires transaction metadata")
+            }
             Self::MissingTransactionCoordinatorMetadata => write!(
                 f,
                 "transaction metadata requires coordinator state type and state reference"

@@ -22,11 +22,95 @@ use sha2::{Digest, Sha256};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::{IdempotencyCollision, InMemoryActor, database_proto as database, proto};
+use crate::{
+    ContextError, IdempotencyCollision, InMemoryActor, RebootHeaders, database_proto as database,
+    proto,
+};
 
 const STATE_REF_HEADER: &str = "x-reboot-state-ref";
 const IDEMPOTENCY_KEY_HEADER: &str = "x-reboot-idempotency-key";
 const REQUEST_FINGERPRINT_DOMAIN_V1: &[u8] = b"reboot.idempotency.request-fingerprint.v1\0";
+
+/// The lock mode declared by a transaction RPC.
+///
+/// This is descriptive context for generated transaction handlers. It does not
+/// acquire locks or coordinate commit/abort; those remain the responsibility of
+/// a Reboot transaction runtime.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransactionMode {
+    Exclusive,
+    Shared,
+}
+
+/// Existing Reboot transaction metadata passed to a generated transaction
+/// handler.
+///
+/// Construct this only from inbound metadata that a transaction coordinator has
+/// already established. This SDK intentionally does not start, prepare, commit,
+/// or abort a transaction, so it cannot manufacture a root context.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransactionContext {
+    headers: RebootHeaders,
+    mode: TransactionMode,
+}
+
+impl TransactionContext {
+    /// Validates coordinator-established transaction metadata for one handler.
+    pub fn from_headers(
+        headers: RebootHeaders,
+        mode: TransactionMode,
+    ) -> Result<Self, ContextError> {
+        if headers.transaction_ids.is_none() {
+            return Err(ContextError::MissingTransactionMetadata);
+        }
+        if headers.transaction_coordinator_state_type.is_none()
+            || headers.transaction_coordinator_state_ref.is_none()
+        {
+            return Err(ContextError::MissingTransactionCoordinatorMetadata);
+        }
+        Ok(Self { headers, mode })
+    }
+
+    pub fn headers(&self) -> &RebootHeaders {
+        &self.headers
+    }
+
+    pub fn mode(&self) -> TransactionMode {
+        self.mode
+    }
+
+    pub fn transaction_ids(&self) -> &[Uuid] {
+        self.headers
+            .transaction_ids
+            .as_deref()
+            .expect("TransactionContext validates transaction IDs")
+    }
+
+    pub fn transaction_id(&self) -> Uuid {
+        *self
+            .transaction_ids()
+            .last()
+            .expect("TransactionContext validates non-empty transaction IDs")
+    }
+
+    pub fn transaction_root_id(&self) -> Uuid {
+        self.transaction_ids()[0]
+    }
+
+    pub fn transaction_coordinator_state_type(&self) -> &str {
+        self.headers
+            .transaction_coordinator_state_type
+            .as_deref()
+            .expect("TransactionContext validates coordinator state type")
+    }
+
+    pub fn transaction_coordinator_state_ref(&self) -> &str {
+        self.headers
+            .transaction_coordinator_state_ref
+            .as_deref()
+            .expect("TransactionContext validates coordinator state reference")
+    }
+}
 
 /// Returns the canonical v1 idempotency fingerprint used by every SDK.
 ///

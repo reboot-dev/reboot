@@ -19,6 +19,13 @@ const DEFAULT_RUNTIME_MODULE: &str = "reboot_rust_schema";
 enum DurableKind {
     Reader,
     Writer,
+    Transaction(TransactionMode),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TransactionMode {
+    Exclusive,
+    Shared,
 }
 
 #[derive(Message)]
@@ -71,12 +78,20 @@ struct RebootMethodOptions {
     #[prost(message, optional, tag = "2")]
     writer: Option<Empty>,
     #[prost(message, optional, tag = "3")]
-    transaction: Option<Empty>,
+    transaction: Option<RebootTransactionMethodOptions>,
     #[prost(message, optional, tag = "4")]
     workflow: Option<Empty>,
 }
 #[derive(Message)]
 struct Empty {}
+
+#[derive(Message)]
+struct RebootTransactionMethodOptions {
+    #[prost(message, optional, tag = "3")]
+    exclusive: Option<Empty>,
+    #[prost(message, optional, tag = "4")]
+    shared: Option<Empty>,
+}
 
 #[derive(Clone, Default)]
 struct DurableService {
@@ -214,17 +229,29 @@ fn annotations(
                 .count();
                 if kinds != 1 {
                     return Err(format!(
-                        "{file_name}: annotated method `{service_name}.{method_name}` has no recognized reader/writer kind"
+                        "{file_name}: annotated method `{service_name}.{method_name}` has no recognized Reboot method kind"
                     ));
                 }
-                let kind = match (option.reader.is_some(), option.writer.is_some()) {
-                    (true, false) => DurableKind::Reader,
-                    (false, true) => DurableKind::Writer,
-                    _ => {
-                        return Err(format!(
-                            "{file_name}: annotated method `{service_name}.{method_name}` is unsupported; only reader and writer are supported"
-                        ));
-                    }
+                let kind = match (
+                    option.reader.is_some(),
+                    option.writer.is_some(),
+                    option.transaction,
+                ) {
+                    (true, false, None) => DurableKind::Reader,
+                    (false, true, None) => DurableKind::Writer,
+                    (false, false, Some(transaction)) => match (
+                        transaction.exclusive.is_some(),
+                        transaction.shared.is_some(),
+                    ) {
+                        (true, false) => DurableKind::Transaction(TransactionMode::Exclusive),
+                        (false, true) => DurableKind::Transaction(TransactionMode::Shared),
+                        _ => {
+                            return Err(format!(
+                                "{file_name}: transaction `{service_name}.{method_name}` must choose exactly one of exclusive or shared mode"
+                            ));
+                        }
+                    },
+                    _ => unreachable!("the oneof kind count was validated above"),
                 };
                 methods.insert(method_name, kind);
             }
@@ -314,21 +341,33 @@ fn reject_generated_symbol_collisions(
             format!("{service_name}Handler"),
             format!("{service_name}Adapter"),
         ];
-        if annotations
-            .and_then(|annotations| annotations.get(service_name))
-            .is_some_and(|annotation| {
-                service.method.iter().any(|method| {
-                    method
-                        .name
-                        .as_deref()
-                        .is_some_and(|name| annotation.methods.contains_key(name))
-                })
-            })
+        if let Some(annotation) = annotations.and_then(|annotations| annotations.get(service_name))
         {
-            symbols.extend([
-                format!("{service_name}DatabaseHandler"),
-                format!("{service_name}DatabaseAdapter"),
-            ]);
+            let durable_kinds = service.method.iter().filter_map(|method| {
+                method
+                    .name
+                    .as_deref()
+                    .and_then(|name| annotation.methods.get(name))
+            });
+            let durable_kinds: Vec<_> = durable_kinds.collect();
+            if durable_kinds
+                .iter()
+                .any(|kind| !matches!(kind, DurableKind::Transaction(_)))
+            {
+                symbols.extend([
+                    format!("{service_name}DatabaseHandler"),
+                    format!("{service_name}DatabaseAdapter"),
+                ]);
+            }
+            if durable_kinds
+                .iter()
+                .any(|kind| matches!(kind, DurableKind::Transaction(_)))
+            {
+                symbols.extend([
+                    format!("{service_name}TransactionHandler"),
+                    format!("{service_name}TransactionAdapter"),
+                ]);
+            }
         }
         for symbol in symbols {
             if let Some(previous) = owners.insert(symbol.clone(), service_name) {
@@ -427,31 +466,84 @@ fn emit_durable(
             "/// Durable state declaration generated for `proto::{state}`.\npub struct {declaration};\n\nimpl {runtime_module}::runtime::DurableStateDeclaration for {declaration} {{\n    type State = proto::{state};\n    const STATE_TYPE: &'static str = \"{state_type}\";\n}}\n\n"
         ));
     }
-    let handler = format!("{service_name}DatabaseHandler");
-    let adapter = format!("{service_name}DatabaseAdapter");
-    let server = format!("{}_server", snake_case(service_name));
+    let database_methods: Vec<_> = methods
+        .iter()
+        .filter(|(kind, _, _, _, _)| !matches!(kind, DurableKind::Transaction(_)))
+        .collect();
+    let has_transactions = methods
+        .iter()
+        .any(|(kind, _, _, _, _)| matches!(kind, DurableKind::Transaction(_)));
+    if has_transactions && !database_methods.is_empty() {
+        return Err(format!(
+            "{file}: service `{service_name}` mixes transaction methods with reader/writer methods; the Rust transaction foundation cannot implement a partial Tonic service until a transaction runtime exists"
+        ));
+    }
+    if !database_methods.is_empty() {
+        let handler = format!("{service_name}DatabaseHandler");
+        let adapter = format!("{service_name}DatabaseAdapter");
+        let server = format!("{}_server", snake_case(service_name));
+        output.push_str("#[tonic::async_trait]\n");
+        output.push_str(&format!("pub trait {handler}: Send + Sync + 'static {{\n"));
+        for (kind, method, request, response, _) in &database_methods {
+            output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n", if **kind == DurableKind::Writer { "&mut " } else { "&" }));
+        }
+        output.push_str("}\n\n");
+        output.push_str(&format!("pub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: std::sync::Arc<H> }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ store: self.store.clone(), handler: self.handler.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler: std::sync::Arc::new(handler) }} }} }}\n\n"));
+        output.push_str("#[tonic::async_trait]\n");
+        output.push_str(&format!(
+            "impl<H: {handler}> proto::{server}::{service_name} for {adapter}<H> {{\n"
+        ));
+        for (kind, method, request, response, method_identity) in database_methods {
+            let envelope = match kind {
+                DurableKind::Reader => "reader_async_for",
+                DurableKind::Writer => "writer_async_for_method",
+                DurableKind::Transaction(_) => unreachable!("transactions are filtered above"),
+            };
+            let method_identity = if **kind == DurableKind::Writer {
+                format!("\"{method_identity}\", ")
+            } else {
+                String::new()
+            };
+            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {method_identity}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await }})\n            }},\n        ).await\n    }}\n"));
+        }
+        output.push_str("}\n\n");
+    }
+    emit_transactions(output, service_name, &state, runtime_module, &methods)?;
+    Ok(())
+}
+
+/// Emits the transaction-only handler surface without claiming that the local
+/// DatabaseActorStore can coordinate Reboot's multi-participant protocol.
+fn emit_transactions(
+    output: &mut String,
+    service_name: &str,
+    state: &str,
+    runtime_module: &str,
+    methods: &[(&DurableKind, String, String, String, String)],
+) -> Result<(), String> {
+    let transactions: Vec<_> = methods
+        .iter()
+        .filter(|(kind, _, _, _, _)| matches!(kind, DurableKind::Transaction(_)))
+        .collect();
+    if transactions.is_empty() {
+        return Ok(());
+    }
+    let handler = format!("{service_name}TransactionHandler");
+    let adapter = format!("{service_name}TransactionAdapter");
     output.push_str("#[tonic::async_trait]\n");
     output.push_str(&format!("pub trait {handler}: Send + Sync + 'static {{\n"));
-    for (kind, method, request, response, _) in &methods {
-        output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n", if **kind == DurableKind::Writer { "&mut " } else { "&" }));
+    for (kind, method, request, response, _) in &transactions {
+        let mode = match kind {
+            DurableKind::Transaction(TransactionMode::Exclusive) => "Exclusive",
+            DurableKind::Transaction(TransactionMode::Shared) => "Shared",
+            _ => unreachable!("transactions are filtered above"),
+        };
+        output.push_str(&format!("    /// Transaction mode declared by this RPC: {mode}.\n    async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n"));
     }
     output.push_str("}\n\n");
-    output.push_str(&format!("pub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: std::sync::Arc<H> }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ store: self.store.clone(), handler: self.handler.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler: std::sync::Arc::new(handler) }} }} }}\n\n"));
-    output.push_str("#[tonic::async_trait]\n");
-    output.push_str(&format!(
-        "impl<H: {handler}> proto::{server}::{service_name} for {adapter}<H> {{\n"
-    ));
-    for (kind, method, request, response, method_identity) in methods {
-        let envelope = match kind {
-            DurableKind::Reader => "reader_async_for",
-            DurableKind::Writer => "writer_async_for_method",
-        };
-        let method_identity = if *kind == DurableKind::Writer {
-            format!("\"{method_identity}\", ")
-        } else {
-            String::new()
-        };
-        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {method_identity}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await }})\n            }},\n        ).await\n    }}\n"));
+    output.push_str(&format!("/// Adapts a transaction context supplied by a future Reboot transaction runtime.\n/// This deliberately does not implement the Tonic service: DatabaseActorStore\n/// does not coordinate transaction prepare/commit/abort.\npub struct {adapter}<H> {{ handler: std::sync::Arc<H> }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ handler: self.handler.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(handler: H) -> Self {{ Self {{ handler: std::sync::Arc::new(handler) }} }} }}\nimpl<H: {handler}> {adapter}<H> {{\n"));
+    for (_, method, request, response, _) in transactions {
+        output.push_str(&format!("    pub async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status> {{ self.handler.{method}(context, state, request).await }}\n"));
     }
     output.push_str("}\n\n");
     Ok(())
@@ -774,6 +866,162 @@ mod tests {
     }
 
     #[test]
+    fn transaction_options_preserve_exclusive_and_shared_modes() {
+        let service_options = ExtensionOptions {
+            reboot: Some(
+                RebootServiceOptions {
+                    state: "Counter".to_owned(),
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let transaction_options = |mode| {
+            ExtensionOptions {
+                reboot: Some(
+                    RebootMethodOptions {
+                        transaction: Some(RebootTransactionMethodOptions {
+                            exclusive: (mode == TransactionMode::Exclusive).then_some(Empty {}),
+                            shared: (mode == TransactionMode::Shared).then_some(Empty {}),
+                        }),
+                        ..Default::default()
+                    }
+                    .encode_to_vec(),
+                ),
+            }
+            .encode_to_vec()
+        };
+        let parsed = annotations(vec![RawFile {
+            name: Some("counter.proto".to_owned()),
+            services: vec![RawService {
+                name: Some("CounterTransactions".to_owned()),
+                options: Some(service_options),
+                methods: vec![
+                    RawMethod {
+                        name: Some("Exclusive".to_owned()),
+                        options: Some(transaction_options(TransactionMode::Exclusive)),
+                    },
+                    RawMethod {
+                        name: Some("Shared".to_owned()),
+                        options: Some(transaction_options(TransactionMode::Shared)),
+                    },
+                ],
+            }],
+        }])
+        .unwrap();
+        let methods = &parsed["counter.proto"]["CounterTransactions"].methods;
+        assert_eq!(
+            methods["Exclusive"],
+            DurableKind::Transaction(TransactionMode::Exclusive)
+        );
+        assert_eq!(
+            methods["Shared"],
+            DurableKind::Transaction(TransactionMode::Shared)
+        );
+    }
+
+    #[test]
+    fn transaction_handlers_have_context_and_no_database_writer_envelope() {
+        let annotations = HashMap::from([(
+            "counter.proto".to_owned(),
+            HashMap::from([(
+                "CounterWrites".to_owned(),
+                DurableService {
+                    state: "Counter".to_owned(),
+                    methods: HashMap::from([(
+                        "Increment".to_owned(),
+                        DurableKind::Transaction(TransactionMode::Exclusive),
+                    )]),
+                },
+            )]),
+        )]);
+        let content = generate_inner(request(), annotations)
+            .unwrap()
+            .remove(0)
+            .content
+            .unwrap();
+        assert!(content.contains("pub trait CounterWritesTransactionHandler"));
+        assert!(content.contains("context: &reboot_rust_schema::runtime::TransactionContext"));
+        assert!(content.contains("state: &mut proto::Counter"));
+        assert!(content.contains("pub struct CounterWritesTransactionAdapter<H>"));
+        assert!(content.contains("Transaction mode declared by this RPC: Exclusive."));
+        assert!(!content.contains("CounterWritesDatabaseHandler"));
+        assert!(!content.contains("writer_async_for_method::<CounterDurableState"));
+        assert!(!content.contains("impl<H: CounterWritesTransactionHandler> proto::"));
+    }
+
+    #[test]
+    fn transaction_without_a_mode_is_rejected() {
+        let method_options = ExtensionOptions {
+            reboot: Some(
+                RebootMethodOptions {
+                    transaction: Some(RebootTransactionMethodOptions::default()),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let result = annotations(vec![RawFile {
+            name: Some("counter.proto".to_owned()),
+            services: vec![RawService {
+                name: Some("CounterTransactions".to_owned()),
+                options: Some(
+                    ExtensionOptions {
+                        reboot: Some(
+                            RebootServiceOptions {
+                                state: "Counter".to_owned(),
+                            }
+                            .encode_to_vec(),
+                        ),
+                    }
+                    .encode_to_vec(),
+                ),
+                methods: vec![RawMethod {
+                    name: Some("Increment".to_owned()),
+                    options: Some(method_options),
+                }],
+            }],
+        }]);
+        let error = match result {
+            Ok(_) => panic!("a transaction without a mode must be rejected"),
+            Err(error) => error,
+        };
+        assert!(error.contains("must choose exactly one of exclusive or shared mode"));
+    }
+
+    #[test]
+    fn mixed_transaction_and_database_methods_are_rejected_before_emitting_partial_tonic_impl() {
+        let annotations = HashMap::from([(
+            "counter.proto".to_owned(),
+            HashMap::from([(
+                "CounterWrites".to_owned(),
+                DurableService {
+                    state: "Counter".to_owned(),
+                    methods: HashMap::from([
+                        ("Increment".to_owned(), DurableKind::Writer),
+                        (
+                            "Transaction".to_owned(),
+                            DurableKind::Transaction(TransactionMode::Shared),
+                        ),
+                    ]),
+                },
+            )]),
+        )]);
+        let mut value = request();
+        value.proto_file[0].service[0]
+            .method
+            .push(MethodDescriptorProto {
+                name: Some("Transaction".to_owned()),
+                input_type: Some(".tests.reboot.protoc.IncrementRequest".to_owned()),
+                output_type: Some(".tests.reboot.protoc.CounterValue".to_owned()),
+                ..Default::default()
+            });
+        let error = generate_inner(value, annotations).unwrap_err();
+        assert!(error.contains("mixes transaction methods with reader/writer methods"));
+    }
+
+    #[test]
     fn rejects_malformed_runtime_module_parameter() {
         let mut value = request();
         value.parameter = Some("module=crate::proto,runtime_module=reboot::9invalid".into());
@@ -824,7 +1072,7 @@ mod tests {
         let mut value = request();
         value.proto_file[0].service[0].name = Some("Foo".into());
         value.proto_file[0].service.push(ServiceDescriptorProto {
-            name: Some("FooDatabase".into()),
+            name: Some("FooTransaction".into()),
             method: vec![MethodDescriptorProto {
                 name: Some("Increment".into()),
                 input_type: Some(".tests.reboot.protoc.IncrementRequest".into()),
@@ -839,14 +1087,17 @@ mod tests {
                 "Foo".to_owned(),
                 DurableService {
                     state: "Counter".to_owned(),
-                    methods: HashMap::from([("Increment".to_owned(), DurableKind::Writer)]),
+                    methods: HashMap::from([(
+                        "Increment".to_owned(),
+                        DurableKind::Transaction(TransactionMode::Exclusive),
+                    )]),
                 },
             )]),
         )]);
         let error = generate_inner(value, annotations).unwrap_err();
         assert!(error.contains("Foo"));
-        assert!(error.contains("FooDatabase"));
-        assert!(error.contains("FooDatabaseHandler"));
+        assert!(error.contains("FooTransaction"));
+        assert!(error.contains("FooTransactionHandler"));
     }
 
     #[test]
