@@ -14,7 +14,11 @@ use std::{
 use tonic::Status;
 
 use crate::{
-    native_2pc::{Native2pcPlacementPlan, Native2pcRoute, Native2pcShardRoute, NativeActorId},
+    native_2pc::{
+        Native2pcCoordinatorEndpoint, Native2pcCoordinatorResolver, Native2pcParticipantEndpoint,
+        Native2pcParticipantResolver, Native2pcPlacementPlan, Native2pcRoute, Native2pcShardRoute,
+        NativeActorId, NativeFuture,
+    },
     placement_proto as proto,
 };
 
@@ -160,8 +164,28 @@ impl PlanOnlyNative2pcPlacement {
     }
 }
 
-/// An application-scoped route lookup; it intentionally does not create a
-/// Native2pc client or fall back to any legacy service.
+/// Host-owned connector for resolved Native2pc-only endpoints. The connector
+/// chooses transport/TLS policy; this placement layer never treats routing as
+/// authorization or creates a legacy client.
+pub trait Native2pcEndpointConnector: Send + Sync + 'static {
+    type ParticipantEndpoint: Native2pcParticipantEndpoint;
+    type CoordinatorEndpoint: Native2pcCoordinatorEndpoint;
+
+    fn participant(
+        &self,
+        address: NativeRoutableAddress,
+        actor: NativeActorId,
+    ) -> NativeFuture<'_, Arc<Self::ParticipantEndpoint>>;
+
+    fn coordinator(
+        &self,
+        address: NativeRoutableAddress,
+        actor: NativeActorId,
+    ) -> NativeFuture<'_, Arc<Self::CoordinatorEndpoint>>;
+}
+
+/// An application-scoped route lookup. It intentionally neither creates a
+/// Native2pc client nor falls back to any legacy service.
 #[derive(Clone)]
 pub struct ApplicationNative2pcResolver {
     placement: PlanOnlyNative2pcPlacement,
@@ -171,6 +195,57 @@ pub struct ApplicationNative2pcResolver {
 impl ApplicationNative2pcResolver {
     pub fn route(&self, actor: &NativeActorId) -> Result<Native2pcRoute, Status> {
         self.placement.route(&self.application, actor)
+    }
+
+    /// Bind an explicitly host-owned Native2pc transport connector. The
+    /// resulting resolver is still routing-only; it does not execute any
+    /// transaction or interpret native actor effects.
+    pub fn with_connector<C>(self, connector: Arc<C>) -> PlacementNative2pcResolver<C>
+    where
+        C: Native2pcEndpointConnector,
+    {
+        PlacementNative2pcResolver {
+            placement: self,
+            connector,
+        }
+    }
+}
+
+/// Adapter from a selected application's placement snapshot to the already
+/// existing Native2pc endpoint-resolver traits.
+#[derive(Clone)]
+pub struct PlacementNative2pcResolver<C> {
+    placement: ApplicationNative2pcResolver,
+    connector: Arc<C>,
+}
+
+impl<C: Native2pcEndpointConnector> Native2pcParticipantResolver for PlacementNative2pcResolver<C> {
+    type Endpoint = C::ParticipantEndpoint;
+
+    fn resolve(&self, actor: &NativeActorId) -> NativeFuture<'_, Arc<Self::Endpoint>> {
+        let actor = actor.clone();
+        let route = self.placement.route(&actor);
+        Box::pin(async move {
+            let route = route?;
+            self.connector
+                .participant(NativeRoutableAddress(route.address), actor)
+                .await
+        })
+    }
+}
+
+impl<C: Native2pcEndpointConnector> Native2pcCoordinatorResolver for PlacementNative2pcResolver<C> {
+    type Endpoint = C::CoordinatorEndpoint;
+
+    fn resolve(&self, actor: &NativeActorId) -> NativeFuture<'_, Arc<Self::Endpoint>> {
+        let actor = actor.clone();
+        let route = self.placement.route(&actor);
+        Box::pin(async move {
+            let route = route?;
+            self.connector
+                .coordinator(NativeRoutableAddress(route.address), actor)
+                .await
+        })
     }
 }
 
@@ -247,7 +322,83 @@ fn snapshot_from_response(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
+    use crate::database_proto as native;
+
     use super::*;
+
+    #[derive(Default)]
+    struct MockParticipant;
+
+    impl Native2pcParticipantEndpoint for MockParticipant {
+        fn capabilities(
+            &self,
+            _: native::Native2pcCapabilitiesRequest,
+        ) -> NativeFuture<'_, native::Native2pcCapabilitiesResponse> {
+            Box::pin(async { Err(Status::unimplemented("test endpoint")) })
+        }
+        fn prepare(
+            &self,
+            _: native::Native2pcPrepareRequest,
+        ) -> NativeFuture<'_, native::Native2pcPrepareResponse> {
+            Box::pin(async { Err(Status::unimplemented("test endpoint")) })
+        }
+        fn terminal(
+            &self,
+            _: native::Native2pcTerminalRequest,
+        ) -> NativeFuture<'_, native::Native2pcTerminalResponse> {
+            Box::pin(async { Err(Status::unimplemented("test endpoint")) })
+        }
+    }
+
+    #[derive(Default)]
+    struct MockCoordinator;
+
+    impl Native2pcCoordinatorEndpoint for MockCoordinator {
+        fn watch(
+            &self,
+            _: native::Native2pcWatchRequest,
+        ) -> NativeFuture<'_, native::Native2pcWatchResponse> {
+            Box::pin(async { Err(Status::unimplemented("test endpoint")) })
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingConnector {
+        calls: Mutex<Vec<(String, String, String)>>,
+    }
+
+    impl Native2pcEndpointConnector for RecordingConnector {
+        type ParticipantEndpoint = MockParticipant;
+        type CoordinatorEndpoint = MockCoordinator;
+
+        fn participant(
+            &self,
+            address: NativeRoutableAddress,
+            actor: NativeActorId,
+        ) -> NativeFuture<'_, Arc<Self::ParticipantEndpoint>> {
+            self.calls.lock().unwrap().push((
+                "participant".into(),
+                address.as_str().into(),
+                actor.state_ref().into(),
+            ));
+            Box::pin(async { Ok(Arc::new(MockParticipant)) })
+        }
+
+        fn coordinator(
+            &self,
+            address: NativeRoutableAddress,
+            actor: NativeActorId,
+        ) -> NativeFuture<'_, Arc<Self::CoordinatorEndpoint>> {
+            self.calls.lock().unwrap().push((
+                "coordinator".into(),
+                address.as_str().into(),
+                actor.state_ref().into(),
+            ));
+            Box::pin(async { Ok(Arc::new(MockCoordinator)) })
+        }
+    }
 
     fn response(version: i64, address: &str) -> proto::ListenForPlanResponse {
         let (host, port) = address.split_once(':').unwrap();
@@ -342,6 +493,42 @@ mod tests {
         let mut bad_endpoint = response(1, "one.internal:5001");
         bad_endpoint.servers[0].address.as_mut().unwrap().port = 0;
         assert!(placement.install(bad_endpoint).is_err());
+    }
+
+    #[tokio::test]
+    async fn connector_resolvers_forward_the_routed_address_and_original_actor() {
+        let placement = PlanOnlyNative2pcPlacement::new();
+        let application = NativeApplicationId::new("app").unwrap();
+        placement
+            .install(response(1, "native.internal:5001"))
+            .unwrap();
+        let connector = Arc::new(RecordingConnector::default());
+        let resolver = placement
+            .application(application)
+            .unwrap()
+            .with_connector(Arc::clone(&connector));
+        let actor = NativeActorId::new("example.State", "actor/child").unwrap();
+        Native2pcParticipantResolver::resolve(&resolver, &actor)
+            .await
+            .unwrap();
+        Native2pcCoordinatorResolver::resolve(&resolver, &actor)
+            .await
+            .unwrap();
+        assert_eq!(
+            connector.calls.lock().unwrap().as_slice(),
+            [
+                (
+                    "participant".into(),
+                    "http://native.internal:5001".into(),
+                    "actor/child".into(),
+                ),
+                (
+                    "coordinator".into(),
+                    "http://native.internal:5001".into(),
+                    "actor/child".into(),
+                ),
+            ]
+        );
     }
 
     #[test]

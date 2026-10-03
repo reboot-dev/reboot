@@ -27,7 +27,7 @@ use crate::database_proto as proto;
 pub const PROTOCOL_ID: &str = "reboot.native-2pc.v1";
 pub const RECORD_VERSION: u32 = 1;
 
-type NativeFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, Status>> + Send + 'a>>;
+pub type NativeFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, Status>> + Send + 'a>>;
 
 /// A validated immutable root transaction identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
