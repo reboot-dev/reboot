@@ -593,6 +593,8 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
+    use crate::durable_coordinator::{InProcessParticipantEndpoint, ParticipantEndpoint};
+
     #[derive(Clone, Debug, PartialEq)]
     enum Call {
         Load(database::LoadRequest),
@@ -793,6 +795,89 @@ mod tests {
             matches!(&calls[2], Call::Commit(request) if request.state_type == "example.Actor" && request.state_ref == "actor/1")
         );
         assert!(matches!(&calls[3], Call::Load(_)));
+    }
+
+    #[tokio::test]
+    async fn in_process_endpoint_prepares_and_commits_the_injected_pending_participant() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let id = Uuid::from_u128(12);
+        participant.start(start(id)).await.unwrap();
+        let endpoint = InProcessParticipantEndpoint::new(DurableActorParticipantHost::new(
+            participant.clone(),
+        ));
+
+        endpoint
+            .prepare(
+                "actor/1",
+                database::PrepareRequest {
+                    transaction_id: id.as_bytes().to_vec(),
+                    abort_via_response: true,
+                    read_only_aware: false,
+                    read_only: false,
+                },
+            )
+            .await
+            .unwrap();
+        endpoint
+            .commit(
+                "actor/1",
+                database::CommitRequest {
+                    transaction_id: id.as_bytes().to_vec(),
+                },
+            )
+            .await
+            .unwrap();
+        participant.start(start(Uuid::from_u128(13))).await.unwrap();
+
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [
+                Call::Load(_),
+                Call::Prepare(_),
+                Call::Commit(_),
+                Call::Load(_)
+            ]
+        ));
+    }
+
+    #[tokio::test]
+    async fn in_process_endpoint_rejects_invalid_or_mismatched_state_references() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let id = Uuid::from_u128(14);
+        participant.start(start(id)).await.unwrap();
+        let endpoint =
+            InProcessParticipantEndpoint::new(DurableActorParticipantHost::new(participant));
+        let request = || database::PrepareRequest {
+            transaction_id: id.as_bytes().to_vec(),
+            abort_via_response: true,
+            read_only_aware: false,
+            read_only: false,
+        };
+
+        assert_eq!(
+            endpoint
+                .prepare("actor/2", request())
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        assert_eq!(
+            endpoint
+                .prepare("actor\n2", request())
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Load(_)]
+        ));
     }
 
     #[tokio::test]

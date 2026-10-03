@@ -12,7 +12,11 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::{database_proto as database, runtime::TransactionMode};
+use crate::{
+    database_proto as database,
+    durable_participant::{DurableActorParticipantHost, ParticipantSidecar},
+    runtime::TransactionMode,
+};
 
 const STATE_REF_HEADER: &str = "x-reboot-state-ref";
 type CoordinatorFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, Status>> + Send + 'a>>;
@@ -92,6 +96,17 @@ pub trait ParticipantResolver: Send + Sync + 'static {
         &self,
         participant: &ParticipantTarget,
     ) -> CoordinatorFuture<'_, Arc<Self::Endpoint>>;
+}
+
+fn participant_request<T>(state_ref: &str, body: T) -> Result<Request<T>, Status> {
+    let mut request = Request::new(body);
+    request.metadata_mut().insert(
+        STATE_REF_HEADER,
+        state_ref
+            .parse()
+            .map_err(|_| Status::invalid_argument("invalid participant state reference"))?,
+    );
+    Ok(request)
 }
 
 /// Native Database implementation for the coordinator's durable control data.
@@ -190,16 +205,6 @@ impl TonicParticipantEndpoint {
             ),
         })
     }
-    fn request<T>(state_ref: &str, body: T) -> Result<Request<T>, Status> {
-        let mut request = Request::new(body);
-        request.metadata_mut().insert(
-            STATE_REF_HEADER,
-            state_ref
-                .parse()
-                .map_err(|_| Status::invalid_argument("invalid participant state reference"))?,
-        );
-        Ok(request)
-    }
 }
 impl ParticipantEndpoint for TonicParticipantEndpoint {
     fn prepare(
@@ -212,7 +217,7 @@ impl ParticipantEndpoint for TonicParticipantEndpoint {
             self.client
                 .lock()
                 .await
-                .prepare(Self::request(&state_ref, request)?)
+                .prepare(participant_request(&state_ref, request)?)
                 .await
                 .map(Response::into_inner)
         })
@@ -227,7 +232,7 @@ impl ParticipantEndpoint for TonicParticipantEndpoint {
             self.client
                 .lock()
                 .await
-                .commit(Self::request(&state_ref, request)?)
+                .commit(participant_request(&state_ref, request)?)
                 .await
                 .map(Response::into_inner)
         })
@@ -242,9 +247,75 @@ impl ParticipantEndpoint for TonicParticipantEndpoint {
             self.client
                 .lock()
                 .await
-                .abort(Self::request(&state_ref, request)?)
+                .abort(participant_request(&state_ref, request)?)
                 .await
                 .map(Response::into_inner)
+        })
+    }
+}
+
+/// An explicitly injected route to a local durable participant host.
+///
+/// This executes the generated Participant service trait directly while
+/// preserving the request metadata and status behavior of the Tonic endpoint.
+/// It owns no resolver and does not select actor placement.
+#[derive(Clone)]
+pub struct InProcessParticipantEndpoint<C: ParticipantSidecar> {
+    host: DurableActorParticipantHost<C>,
+}
+
+impl<C: ParticipantSidecar> InProcessParticipantEndpoint<C> {
+    pub fn new(host: DurableActorParticipantHost<C>) -> Self {
+        Self { host }
+    }
+}
+
+impl<C: ParticipantSidecar> ParticipantEndpoint for InProcessParticipantEndpoint<C> {
+    fn prepare(
+        &self,
+        state_ref: &str,
+        request: database::PrepareRequest,
+    ) -> CoordinatorFuture<'_, database::PrepareResponse> {
+        let state_ref = state_ref.to_owned();
+        Box::pin(async move {
+            database::participant_server::Participant::prepare(
+                &self.host,
+                participant_request(&state_ref, request)?,
+            )
+            .await
+            .map(Response::into_inner)
+        })
+    }
+
+    fn commit(
+        &self,
+        state_ref: &str,
+        request: database::CommitRequest,
+    ) -> CoordinatorFuture<'_, database::CommitResponse> {
+        let state_ref = state_ref.to_owned();
+        Box::pin(async move {
+            database::participant_server::Participant::commit(
+                &self.host,
+                participant_request(&state_ref, request)?,
+            )
+            .await
+            .map(Response::into_inner)
+        })
+    }
+
+    fn abort(
+        &self,
+        state_ref: &str,
+        request: database::AbortRequest,
+    ) -> CoordinatorFuture<'_, database::AbortResponse> {
+        let state_ref = state_ref.to_owned();
+        Box::pin(async move {
+            database::participant_server::Participant::abort(
+                &self.host,
+                participant_request(&state_ref, request)?,
+            )
+            .await
+            .map(Response::into_inner)
         })
     }
 }
@@ -648,6 +719,7 @@ mod tests {
             Box::pin(async move { Ok(e) })
         }
     }
+
     fn start(id: Uuid) -> RootCoordinatorStart {
         RootCoordinatorStart {
             transaction_ids: vec![id],
