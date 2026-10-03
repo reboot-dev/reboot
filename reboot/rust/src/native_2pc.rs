@@ -11,6 +11,7 @@
 
 use std::{collections::BTreeSet, future::Future, pin::Pin, sync::Arc};
 
+use prost::Message;
 use tonic::{Response, Status};
 
 use crate::database_proto as proto;
@@ -242,6 +243,38 @@ fn validate_effects(effects: &proto::Native2pcActorEffects) -> Result<(), Status
     Ok(())
 }
 
+fn validate_applied(applied: &proto::Native2pcAppliedActorEffects) -> Result<(), Status> {
+    validate_identity(
+        applied.protocol.as_ref(),
+        &applied.root_transaction_id,
+        applied.coordinator.as_ref(),
+        &applied.enrollment_digest,
+    )?;
+    validate_actor(
+        applied.participant.as_ref(),
+        "native applied participant identity is required",
+    )?;
+    validate_effects(
+        applied
+            .effects
+            .as_ref()
+            .ok_or_else(|| invalid("native applied effects are required"))?,
+    )
+}
+
+fn validate_state_only_applied(
+    applied: &proto::Native2pcAppliedActorEffects,
+) -> Result<(), Status> {
+    validate_applied(applied)?;
+    let effects = applied.effects.as_ref().expect("validated above");
+    if effects.state.is_none() || !effects.effects.is_empty() {
+        return Err(invalid(
+            "native materialization supports exactly one state-only journal",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_recovered_coordinator(
     record: &proto::Native2pcCoordinatorRecord,
 ) -> Result<(), Status> {
@@ -334,22 +367,22 @@ fn validate_recovery_response(response: &proto::Native2pcRecoverResponse) -> Res
         .applied
         .as_ref()
         .expect("exactly one response record");
-    validate_identity(
-        applied.protocol.as_ref(),
-        &applied.root_transaction_id,
-        applied.coordinator.as_ref(),
-        &applied.enrollment_digest,
-    )?;
-    validate_actor(
-        applied.participant.as_ref(),
-        "native applied participant identity is required",
-    )?;
-    validate_effects(
-        applied
-            .effects
-            .as_ref()
-            .ok_or_else(|| invalid("native applied effects are required"))?,
-    )
+    validate_applied(applied)?;
+    if response.applied_journal.is_empty() {
+        return Err(invalid(
+            "native recovery applied journal bytes are required",
+        ));
+    }
+    let wire_applied =
+        proto::Native2pcAppliedActorEffects::decode(response.applied_journal.as_slice())
+            .map_err(|_| Status::data_loss("malformed native recovery applied journal bytes"))?;
+    validate_applied(&wire_applied)?;
+    if wire_applied != *applied {
+        return Err(Status::data_loss(
+            "native recovery applied journal bytes conflict with journal",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_participant_request(
@@ -594,6 +627,10 @@ pub trait Native2pcDatabaseSidecar: Send + Sync + 'static {
         request: proto::Native2pcPutAbortDecisionRequest,
     ) -> NativeFuture<'_, proto::Native2pcPutAbortDecisionResponse>;
     fn recover(&self) -> NativeFuture<'_, Vec<proto::Native2pcRecoverResponse>>;
+    fn materialize_applied(
+        &self,
+        request: proto::Native2pcMaterializeAppliedRequest,
+    ) -> NativeFuture<'_, proto::Native2pcMaterializeAppliedResponse>;
     fn terminal_participant(
         &self,
         request: proto::Native2pcTerminalParticipantRequest,
@@ -768,6 +805,46 @@ impl Native2pcDatabaseSidecar for TonicNative2pcDatabaseSidecar {
                 recovered.push(response);
             }
             Ok(recovered)
+        })
+    }
+
+    fn materialize_applied(
+        &self,
+        request: proto::Native2pcMaterializeAppliedRequest,
+    ) -> NativeFuture<'_, proto::Native2pcMaterializeAppliedResponse> {
+        Box::pin(async move {
+            if request.applied_journal.is_empty() {
+                return Err(invalid("native applied journal bytes are required"));
+            }
+            let applied =
+                proto::Native2pcAppliedActorEffects::decode(request.applied_journal.as_slice())
+                    .map_err(|_| invalid("malformed native applied journal bytes"))?;
+            validate_state_only_applied(&applied)?;
+            let journal = request.applied_journal.clone();
+            let response = self
+                .client
+                .lock()
+                .await
+                .materialize_applied(request)
+                .await?
+                .into_inner();
+            let receipt = response
+                .receipt
+                .as_ref()
+                .ok_or_else(|| Status::data_loss("native materialization receipt is required"))?;
+            if receipt.applied.as_ref() != Some(&applied)
+                || receipt.applied_journal != journal
+                || response.state.as_deref()
+                    != applied
+                        .effects
+                        .as_ref()
+                        .and_then(|effects| effects.state.as_deref())
+            {
+                return Err(Status::data_loss(
+                    "native materialization response conflicts with journal",
+                ));
+            }
+            Ok(response)
         })
     }
 
@@ -1098,6 +1175,37 @@ mod tests {
             })
             .unwrap_err()
             .code(),
+            tonic::Code::InvalidArgument
+        );
+        let staged = requests()
+            .put_participant(&NativeActorId::new("example.Participant", "a").unwrap())
+            .participant
+            .unwrap();
+        let mut applied = proto::Native2pcAppliedActorEffects {
+            protocol: staged.protocol,
+            root_transaction_id: staged.root_transaction_id,
+            participant: staged.participant,
+            coordinator: staged.coordinator,
+            enrollment_digest: staged.enrollment_digest,
+            effects: staged.effects,
+        };
+        assert_eq!(
+            validate_state_only_applied(&applied).unwrap_err().code(),
+            tonic::Code::InvalidArgument
+        );
+        applied.effects.as_mut().unwrap().state = Some(Vec::new());
+        assert!(validate_state_only_applied(&applied).is_ok());
+        applied
+            .effects
+            .as_mut()
+            .unwrap()
+            .effects
+            .push(proto::Native2pcEffect {
+                key: b"opaque".to_vec(),
+                payload: b"effect".to_vec(),
+            });
+        assert_eq!(
+            validate_state_only_applied(&applied).unwrap_err().code(),
             tonic::Code::InvalidArgument
         );
     }

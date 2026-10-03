@@ -2586,6 +2586,26 @@ mod tests {
                 ("coordinator", 1, Type::Message, Label::Optional),
                 ("participant", 2, Type::Message, Label::Optional),
                 ("applied", 3, Type::Message, Label::Optional),
+                ("applied_journal", 4, Type::Bytes, Label::Optional),
+            ],
+        );
+
+        assert_fields(
+            message(native, "Native2pcApplicationReceipt"),
+            &[
+                ("applied", 1, Type::Message, Label::Optional),
+                ("applied_journal", 2, Type::Bytes, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcMaterializeAppliedRequest"),
+            &[("applied_journal", 1, Type::Bytes, Label::Optional)],
+        );
+        assert_fields(
+            message(native, "Native2pcMaterializeAppliedResponse"),
+            &[
+                ("receipt", 1, Type::Message, Label::Optional),
+                ("state", 2, Type::Bytes, Label::Optional),
             ],
         );
 
@@ -2683,6 +2703,12 @@ mod tests {
                             ".rbt.v1alpha1.Native2pcRecoverRequest",
                             ".rbt.v1alpha1.Native2pcRecoverResponse",
                             true
+                        ),
+                        (
+                            "MaterializeApplied",
+                            ".rbt.v1alpha1.Native2pcMaterializeAppliedRequest",
+                            ".rbt.v1alpha1.Native2pcMaterializeAppliedResponse",
+                            false
                         ),
                         (
                             "TerminalParticipant",

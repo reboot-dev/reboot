@@ -221,6 +221,28 @@ message Native2pcRecoverResponse {
   // Immutable committed journal. It is redelivered until a future native actor
   // runtime durably materializes it; recovery never synthesizes it from p/.
   Native2pcAppliedActorEffects applied = 3;
+  // Exact retained wire journal. Unlike `applied`, this preserves additive
+  // unknown fields across a recovery/materialization retry.
+  bytes applied_journal = 4;
+}
+
+// Durable proof that this exact committed journal has been atomically
+// materialized into the native-v1 state namespace. It is not a terminal receipt.
+message Native2pcApplicationReceipt {
+  Native2pcAppliedActorEffects applied = 1;
+  bytes applied_journal = 2;
+}
+
+// Materializes only the byte-exact retained native journal delivered by native
+// recovery. The sidecar parses and validates these bytes itself.
+message Native2pcMaterializeAppliedRequest {
+  bytes applied_journal = 1;
+}
+
+message Native2pcMaterializeAppliedResponse {
+  Native2pcApplicationReceipt receipt = 1;
+  // Present even for an intentionally empty state on success.
+  optional bytes state = 2;
 }
 
 message Native2pcTerminalParticipantRequest {
@@ -244,6 +266,8 @@ service Native2pcDatabase {
       returns (Native2pcPutAbortDecisionResponse);
   rpc RecoverNative2pc(Native2pcRecoverRequest)
       returns (stream Native2pcRecoverResponse);
+  rpc MaterializeApplied(Native2pcMaterializeAppliedRequest)
+      returns (Native2pcMaterializeAppliedResponse);
   rpc TerminalParticipant(Native2pcTerminalParticipantRequest)
       returns (Native2pcTerminalParticipantResponse);
 }

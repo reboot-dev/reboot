@@ -1,5 +1,6 @@
 use std::{net::SocketAddr, pin::Pin};
 
+use prost::Message;
 use reboot_rust_schema::{
     database_proto as proto,
     native_2pc::{
@@ -18,24 +19,29 @@ struct NativeDatabase {
 }
 
 fn valid_recovery() -> proto::Native2pcRecoverResponse {
-    proto::Native2pcRecoverResponse {
-        applied: Some(proto::Native2pcAppliedActorEffects {
-            protocol: Some(proto::Native2pcProtocol {
-                protocol_id: PROTOCOL_ID.into(),
-                record_version: RECORD_VERSION,
-            }),
-            root_transaction_id: vec![1; 16],
-            participant: Some(proto::Native2pcActorId {
-                state_type: "example.Participant".into(),
-                state_ref: "participant/1".into(),
-            }),
-            coordinator: Some(proto::Native2pcActorId {
-                state_type: "example.Coordinator".into(),
-                state_ref: "coordinator/1".into(),
-            }),
-            enrollment_digest: vec![9, 8],
-            effects: Some(proto::Native2pcActorEffects::default()),
+    let applied = proto::Native2pcAppliedActorEffects {
+        protocol: Some(proto::Native2pcProtocol {
+            protocol_id: PROTOCOL_ID.into(),
+            record_version: RECORD_VERSION,
         }),
+        root_transaction_id: vec![1; 16],
+        participant: Some(proto::Native2pcActorId {
+            state_type: "example.Participant".into(),
+            state_ref: "participant/1".into(),
+        }),
+        coordinator: Some(proto::Native2pcActorId {
+            state_type: "example.Coordinator".into(),
+            state_ref: "coordinator/1".into(),
+        }),
+        enrollment_digest: vec![9, 8],
+        effects: Some(proto::Native2pcActorEffects {
+            state: Some(b"materialized-state".to_vec()),
+            ..Default::default()
+        }),
+    };
+    proto::Native2pcRecoverResponse {
+        applied_journal: applied.encode_to_vec(),
+        applied: Some(applied),
         ..Default::default()
     }
 }
@@ -107,6 +113,32 @@ impl proto::native2pc_database_server::Native2pcDatabase for NativeDatabase {
         Ok(Response::new(Box::pin(tokio_stream::iter([Ok(self
             .recovery
             .clone())]))))
+    }
+
+    async fn materialize_applied(
+        &self,
+        request: Request<proto::Native2pcMaterializeAppliedRequest>,
+    ) -> Result<Response<proto::Native2pcMaterializeAppliedResponse>, Status> {
+        let journal = request.into_inner().applied_journal;
+        let applied = proto::Native2pcAppliedActorEffects::decode(journal.as_slice())
+            .map_err(|_| Status::invalid_argument("applied journal is malformed"))?;
+        let state = applied
+            .effects
+            .as_ref()
+            .and_then(|effects| effects.state.clone())
+            .ok_or_else(|| Status::unimplemented("state-only journal required"))?;
+        if !applied.effects.as_ref().unwrap().effects.is_empty() {
+            return Err(Status::unimplemented(
+                "opaque effects are not materializable",
+            ));
+        }
+        Ok(Response::new(proto::Native2pcMaterializeAppliedResponse {
+            receipt: Some(proto::Native2pcApplicationReceipt {
+                applied: Some(applied),
+                applied_journal: journal,
+            }),
+            state: Some(state),
+        }))
     }
 
     async fn terminal_participant(
@@ -209,7 +241,11 @@ async fn serve(
 
 #[tokio::test]
 async fn native_tonic_clients_reach_only_native_services() {
-    let (address, server) = serve(valid_recovery()).await;
+    let mut recovery = valid_recovery();
+    // A future sidecar may retain additive fields Rust does not understand.
+    // The raw journal must still survive recovery → materialization unchanged.
+    recovery.applied_journal.extend([0xA2, 0x06, 0x00]);
+    let (address, server) = serve(recovery).await;
     let endpoint = format!("http://{address}");
     let sidecar = TonicNative2pcDatabaseSidecar::connect(&endpoint)
         .await
@@ -254,6 +290,16 @@ async fn native_tonic_clients_reach_only_native_services() {
             .state_ref,
         "participant/1"
     );
+    let applied = recovered[0].applied.clone().unwrap();
+    let journal = recovered[0].applied_journal.clone();
+    let materialized = sidecar
+        .materialize_applied(proto::Native2pcMaterializeAppliedRequest {
+            applied_journal: journal.clone(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(materialized.receipt.unwrap().applied, Some(applied));
+    assert_eq!(materialized.state, Some(b"materialized-state".to_vec()));
     assert_eq!(
         sidecar
             .terminal_participant(requests.terminal(&participant_id, true))

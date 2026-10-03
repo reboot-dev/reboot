@@ -2432,6 +2432,96 @@ TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
   EXPECT_TRUE(aborted_coordinator_recovered);
   EXPECT_TRUE(aborted_participant_recovered);
 
+  // A committed intent with opaque effects remains deliberately non-materializable.
+  v1alpha1::Native2pcMaterializeAppliedRequest opaque_materialize;
+  opaque_materialize.set_applied_journal(*applied_effects_record);
+  v1alpha1::Native2pcMaterializeAppliedResponse materialize_response;
+  grpc::ClientContext opaque_materialize_context;
+  EXPECT_EQ(grpc::StatusCode::UNIMPLEMENTED,
+            native_stub->MaterializeApplied(
+                &opaque_materialize_context, opaque_materialize, &materialize_response)
+                .error_code());
+
+  // The only v1 materialization shape is one sealed, committed enrollment with
+  // exactly one actor and one state payload. The journal remains immutable.
+  const std::string state_root(16, 'q');
+  v1alpha1::Native2pcPutCoordinatorRequest state_enrollment = put;
+  state_enrollment.mutable_coordinator()->set_root_transaction_id(state_root);
+  grpc::ClientContext state_enrollment_context;
+  ASSERT_TRUE(native_stub->PutCoordinator(
+                  &state_enrollment_context, state_enrollment, &put_response)
+                  .ok());
+  v1alpha1::Native2pcStageParticipantRequest state_stage = stage_participant;
+  state_stage.mutable_participant()->set_root_transaction_id(state_root);
+  state_stage.mutable_participant()->mutable_effects()->clear_effects();
+  state_stage.mutable_participant()->mutable_effects()->set_state("native-state");
+  grpc::ClientContext state_stage_context;
+  ASSERT_TRUE(native_stub->StageParticipant(
+                  &state_stage_context, state_stage, &stage_response)
+                  .ok());
+  v1alpha1::Native2pcPutParticipantRequest state_prepare = put_participant;
+  state_prepare.mutable_participant()->set_root_transaction_id(state_root);
+  state_prepare.mutable_participant()->mutable_effects()->clear_effects();
+  state_prepare.mutable_participant()->mutable_effects()->set_state("native-state");
+  grpc::ClientContext state_prepare_context;
+  ASSERT_TRUE(native_stub->PutParticipant(
+                  &state_prepare_context, state_prepare, &participant_response)
+                  .ok());
+  v1alpha1::Native2pcPutCommitDecisionRequest state_commit = commit;
+  state_commit.set_root_transaction_id(state_root);
+  grpc::ClientContext state_commit_context;
+  ASSERT_TRUE(native_stub->PutCommitDecision(
+                  &state_commit_context, state_commit, &commit_response)
+                  .ok());
+  v1alpha1::Native2pcTerminalParticipantRequest state_terminal = terminal_request;
+  state_terminal.mutable_terminal()->set_root_transaction_id(state_root);
+  state_terminal.mutable_terminal()->set_decision(
+      v1alpha1::Native2pcTerminalRequest::COMMIT);
+  grpc::ClientContext state_terminal_context;
+  ASSERT_TRUE(native_stub->TerminalParticipant(
+                  &state_terminal_context, state_terminal, &terminal_response)
+                  .ok());
+  const auto state_applied_bytes = get_default_record(native_key("a", state_root));
+  ASSERT_TRUE(state_applied_bytes.has_value());
+  v1alpha1::Native2pcAppliedActorEffects state_applied;
+  ASSERT_TRUE(state_applied.ParseFromString(*state_applied_bytes));
+  v1alpha1::Native2pcMaterializeAppliedRequest materialize;
+  materialize.set_applied_journal(*state_applied_bytes);
+  grpc::ClientContext materialize_context;
+  ASSERT_TRUE(native_stub->MaterializeApplied(
+                  &materialize_context, materialize, &materialize_response)
+                  .ok());
+  ASSERT_TRUE(materialize_response.has_receipt());
+  EXPECT_EQ(state_applied.SerializeAsString(),
+            materialize_response.receipt().applied().SerializeAsString());
+  ASSERT_TRUE(materialize_response.has_state());
+  EXPECT_EQ("native-state", materialize_response.state());
+  const std::string native_state_key =
+      "n2pc/v1/state/" + native_hex(participant.state_type()) + "/" +
+      native_hex(participant.state_ref());
+  EXPECT_EQ(std::optional<std::string>("native-state"),
+            get_default_record(native_state_key));
+  const auto materialization_receipt = get_default_record(native_key("m", state_root));
+  ASSERT_TRUE(materialization_receipt.has_value());
+  v1alpha1::Native2pcApplicationReceipt parsed_materialization_receipt;
+  ASSERT_TRUE(parsed_materialization_receipt.ParseFromString(*materialization_receipt));
+  EXPECT_EQ(state_applied.SerializeAsString(),
+            parsed_materialization_receipt.applied().SerializeAsString());
+  grpc::ClientContext materialize_retry_context;
+  EXPECT_TRUE(native_stub->MaterializeApplied(
+                  &materialize_retry_context, materialize, &materialize_response)
+                  .ok());
+  v1alpha1::Native2pcMaterializeAppliedRequest conflicting_materialize = materialize;
+  conflicting_materialize.mutable_applied_journal()->append(
+      std::string({static_cast<char>(0xA2), static_cast<char>(0x06), static_cast<char>(0)}));
+  grpc::ClientContext conflicting_materialize_context;
+  EXPECT_EQ(grpc::StatusCode::FAILED_PRECONDITION,
+            native_stub->MaterializeApplied(
+                &conflicting_materialize_context,
+                conflicting_materialize,
+                &materialize_response)
+                .error_code());
+
   // Applied journals are recovery work only when they are well-formed native
   // records. Semantically invalid and corrupt `a/` values fail the whole native
   // recovery stream rather than being skipped or reconstructed from p/.
