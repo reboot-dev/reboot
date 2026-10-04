@@ -23,6 +23,10 @@ use reboot_rust_schema::{
         recover_preparing_native2pc_coordinator_once, recover_staged_participant_once,
         require_native2pc_participant,
     },
+    placement::{
+        NativeApplicationId, PlanOnlyNative2pcPlacement, TonicApplicationNative2pcResolver,
+    },
+    placement_proto,
 };
 use tokio_stream::{Stream, wrappers::TcpListenerStream};
 use tonic::{Request, Response, Status, transport::Server};
@@ -652,6 +656,85 @@ async fn native_singleton_initial_state_materializes_once_through_the_real_cxx_s
             .await
             .unwrap(),
         b"initial-state"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+async fn native_routed_materialized_state_read_conforms_to_real_cxx_sidecar() {
+    let database = spawn_cxx_database().await;
+    let sidecar = TonicNative2pcDatabaseSidecar::connect(database.endpoint.clone())
+        .await
+        .unwrap();
+    let coordinator = NativeActorId::new("example.Coordinator", "coordinator/routed").unwrap();
+    let participant = NativeActorId::new("example.Participant", "routed/initial").unwrap();
+    let requests = Native2pcRequests::new(
+        NativeTransactionId::new([83; 16]).unwrap(),
+        coordinator,
+        NativeEnrollment::new([participant.clone()], [8, 3]).unwrap(),
+    );
+    commit_and_materialize_singleton_initial_state_once(
+        &sidecar,
+        &requests,
+        Some(b"routed-state".to_vec()),
+    )
+    .await
+    .unwrap();
+
+    let address = database.endpoint.strip_prefix("http://").unwrap();
+    let (host, port) = address.rsplit_once(':').unwrap();
+    let placement = PlanOnlyNative2pcPlacement::new();
+    placement
+        .install(placement_proto::ListenForPlanResponse {
+            plan: Some(placement_proto::Plan {
+                version: 1,
+                applications: vec![placement_proto::plan::Application {
+                    id: "app".into(),
+                    services: vec![],
+                    shards: vec![placement_proto::plan::application::Shard {
+                        id: "root".into(),
+                        range: Some(placement_proto::plan::application::shard::KeyRange {
+                            first_key: vec![],
+                        }),
+                        server_id: "server".into(),
+                        replica_index: 0,
+                    }],
+                }],
+            }),
+            servers: vec![placement_proto::Server {
+                id: "server".into(),
+                application_id: "app".into(),
+                revision_number: 0,
+                address: Some(placement_proto::server::Address {
+                    host: host.into(),
+                    port: port.parse().unwrap(),
+                }),
+                namespace: String::new(),
+                file_descriptor_set: None,
+                reboot_version: String::new(),
+            }],
+        })
+        .unwrap();
+    let resolver = TonicApplicationNative2pcResolver::new(
+        placement
+            .application(NativeApplicationId::new("app").unwrap())
+            .unwrap(),
+    );
+    assert_eq!(
+        resolver
+            .get_materialized_native_state(&participant)
+            .await
+            .unwrap(),
+        b"routed-state"
+    );
+    let absent = NativeActorId::new("example.Participant", "routed/absent").unwrap();
+    assert_eq!(
+        resolver
+            .get_materialized_native_state(&absent)
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::NotFound
     );
 }
 
