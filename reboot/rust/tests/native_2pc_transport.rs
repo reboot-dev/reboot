@@ -13,9 +13,9 @@ use reboot_rust_schema::{
         Native2pcCoordinatorDecision, Native2pcCoordinatorEndpoint, Native2pcCoordinatorResolver,
         Native2pcDatabaseSidecar, Native2pcParticipantEndpoint, Native2pcParticipantResolver,
         Native2pcPreparedParticipantRecoveryPass, Native2pcPreparingCoordinatorRecoveryPass,
-        Native2pcRequests, Native2pcStagedParticipantRecoveryPass, NativeActorId, NativeEnrollment,
-        NativeFuture, NativeTransactionId, PROTOCOL_ID, RECORD_VERSION,
-        TonicNative2pcCoordinatorEndpoint, TonicNative2pcDatabaseSidecar,
+        Native2pcRecoveryMaterializer, Native2pcRequests, Native2pcStagedParticipantRecoveryPass,
+        NativeActorId, NativeEnrollment, NativeFuture, NativeTransactionId, PROTOCOL_ID,
+        RECORD_VERSION, TonicNative2pcCoordinatorEndpoint, TonicNative2pcDatabaseSidecar,
         TonicNative2pcParticipantEndpoint, commit_and_materialize_singleton_initial_state_once,
         decide_native2pc_coordinator_once, recover_and_materialize_singleton_initial_state_once,
         recover_prepared_participant_once, recover_preparing_native2pc_coordinator_once,
@@ -636,6 +636,128 @@ async fn native_singleton_initial_state_materializes_once_through_the_real_cxx_s
         .unwrap();
     assert_eq!(first.materialization, replay);
     assert_eq!(first.materialization.state, Some(b"initial-state".to_vec()));
+}
+
+/// The generic recovery materializer must obey the real sidecar's committed,
+/// state-only boundary and defer opaque journals without interpreting them.
+#[tokio::test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+async fn native_recovery_materializer_filters_real_cxx_state_and_opaque_journals() {
+    let database = spawn_cxx_database().await;
+    let sidecar = TonicNative2pcDatabaseSidecar::connect(database.endpoint.clone())
+        .await
+        .unwrap();
+
+    let state_participant =
+        NativeActorId::new("example.Participant", "participant/materialize").unwrap();
+    let state_requests = Native2pcRequests::new(
+        NativeTransactionId::new([84; 16]).unwrap(),
+        NativeActorId::new("example.Coordinator", "coordinator/materialize").unwrap(),
+        NativeEnrollment::new([state_participant.clone()], [8, 4]).unwrap(),
+    );
+    let (staged, prepared) = state_requests
+        .singleton_state_only_initial_participant(Some(b"recovery-state".to_vec()))
+        .unwrap();
+    sidecar
+        .put_coordinator(state_requests.put_coordinator_preparing())
+        .await
+        .unwrap();
+    sidecar.stage_participant(staged).await.unwrap();
+    sidecar.put_participant(prepared).await.unwrap();
+    sidecar
+        .put_commit_decision(state_requests.put_commit_decision())
+        .await
+        .unwrap();
+    sidecar
+        .terminal_participant(state_requests.terminal(&state_participant, true))
+        .await
+        .unwrap();
+
+    let opaque_participant =
+        NativeActorId::new("example.Participant", "participant/opaque").unwrap();
+    let opaque_requests = Native2pcRequests::new(
+        NativeTransactionId::new([85; 16]).unwrap(),
+        NativeActorId::new("example.Coordinator", "coordinator/opaque").unwrap(),
+        NativeEnrollment::new([opaque_participant.clone()], [8, 5]).unwrap(),
+    );
+    let mut opaque_stage = opaque_requests.stage_participant(&opaque_participant);
+    opaque_stage
+        .participant
+        .as_mut()
+        .unwrap()
+        .effects
+        .as_mut()
+        .unwrap()
+        .effects
+        .push(proto::Native2pcEffect {
+            key: b"opaque-key".to_vec(),
+            payload: b"opaque-payload".to_vec(),
+        });
+    let mut opaque_prepared = proto::Native2pcPutParticipantRequest {
+        participant: opaque_stage.participant.clone(),
+    };
+    opaque_prepared.participant.as_mut().unwrap().phase =
+        proto::native2pc_participant_record::Phase::Prepared as i32;
+    sidecar
+        .put_coordinator(opaque_requests.put_coordinator_preparing())
+        .await
+        .unwrap();
+    sidecar.stage_participant(opaque_stage).await.unwrap();
+    sidecar.put_participant(opaque_prepared).await.unwrap();
+    sidecar
+        .put_commit_decision(opaque_requests.put_commit_decision())
+        .await
+        .unwrap();
+    sidecar
+        .terminal_participant(opaque_requests.terminal(&opaque_participant, true))
+        .await
+        .unwrap();
+
+    let recovered = sidecar.recover().await.unwrap();
+    let state_journal = recovered
+        .iter()
+        .find(|record| {
+            record.applied.as_ref().is_some_and(|applied| {
+                applied.participant.as_ref().is_some_and(|participant| {
+                    participant.state_ref == state_participant.state_ref()
+                })
+            })
+        })
+        .unwrap()
+        .applied_journal
+        .clone();
+    let opaque_journal = recovered
+        .iter()
+        .find(|record| {
+            record.applied.as_ref().is_some_and(|applied| {
+                applied.participant.as_ref().is_some_and(|participant| {
+                    participant.state_ref == opaque_participant.state_ref()
+                })
+            })
+        })
+        .unwrap()
+        .applied_journal
+        .clone();
+
+    let result = Native2pcRecoveryMaterializer::new(sidecar)
+        .recover_and_materialize()
+        .await
+        .unwrap();
+    assert_eq!(result.materialized.len(), 1);
+    assert_eq!(
+        result.materialized[0].state,
+        Some(b"recovery-state".to_vec())
+    );
+    assert_eq!(
+        result.materialized[0]
+            .receipt
+            .as_ref()
+            .unwrap()
+            .applied_journal,
+        state_journal
+    );
+    assert_eq!(result.deferred.len(), 1);
+    assert_eq!(result.deferred[0].applied_journal, opaque_journal);
 }
 
 /// A process crash after durable commit/terminal but before materialization
