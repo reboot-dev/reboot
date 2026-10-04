@@ -53,6 +53,8 @@ using rbt::v1alpha1::ColocatedRangeResponse;
 using rbt::v1alpha1::ColocatedReverseRangeRequest;
 using rbt::v1alpha1::ColocatedReverseRangeResponse;
 using rbt::v1alpha1::ColocatedUpsert;
+using rbt::v1alpha1::CreateActorRequest;
+using rbt::v1alpha1::CreateActorResponse;
 using rbt::v1alpha1::ExportItem;
 using rbt::v1alpha1::ExportRequest;
 using rbt::v1alpha1::ExportResponse;
@@ -466,6 +468,10 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       grpc::ServerContext* context,
       const StoreRequest* request,
       StoreResponse* response) override;
+  grpc::Status CreateActor(
+      grpc::ServerContext* context,
+      const CreateActorRequest* request,
+      CreateActorResponse* response) override;
   grpc::Status Recover(
       grpc::ServerContext* context,
       const RecoverRequest* request,
@@ -2602,6 +2608,82 @@ expected<void> DatabaseService::ValidateNonTransactionalStore(
 
 ////////////////////////////////////////////////////////////////////////
 
+grpc::Status DatabaseService::CreateActor(
+    grpc::ServerContext* context,
+    const CreateActorRequest* request,
+    CreateActorResponse* response) {
+  REBOOT_DATABASE_LOG(1) << "CreateActor { " << request->ShortDebugString()
+                         << " }";
+  *response->mutable_timestamp() = monotonic_clock_->Now();
+
+  if (!request->has_actor() || !request->actor().has_state()
+      || !request->has_idempotent_mutation()) {
+    return grpc::Status(grpc::INVALID_ARGUMENT,
+                        "CreateActor requires an actor state and idempotent mutation");
+  }
+  const Actor& actor = request->actor();
+  const IdempotentMutation& mutation = request->idempotent_mutation();
+  if (actor.state_type().empty() || actor.state_ref().empty()
+      || !request->sync()
+      || mutation.state_type() != actor.state_type()
+      || mutation.state_ref() != actor.state_ref()
+      || mutation.has_workflow_id() || mutation.has_workflow_iteration()) {
+    return grpc::Status(grpc::INVALID_ARGUMENT,
+                        "CreateActor actor and idempotent mutation must describe one non-workflow actor");
+  }
+
+  // This lock lives in the sidecar, rather than the SDK, so the absent check
+  // and write are serialized for every client process using this database.
+  std::lock_guard<std::mutex> lock(idempotency_collision_mutex_);
+  if (HasTransaction(actor.state_ref())) {
+    return grpc::Status(grpc::FAILED_PRECONDITION,
+                        "Cannot create actor while it has an ongoing transaction");
+  }
+  expected<rocksdb::ColumnFamilyHandle*> column_family =
+      LookupOrCreateColumnFamilyHandle(actor.state_type());
+  if (!column_family.has_value()) {
+    return grpc::Status(grpc::UNKNOWN, column_family.error());
+  }
+  std::string existing;
+  rocksdb::Status get = db_->Get(
+      rocksdb::ReadOptions(), *column_family,
+      rocksdb::Slice(MakeActorStateKey(actor.state_ref())), &existing);
+  if (get.ok()) {
+    return grpc::Status(grpc::FAILED_PRECONDITION, "Actor already exists");
+  }
+  if (!get.IsNotFound()) {
+    return grpc::Status(grpc::UNKNOWN,
+                        fmt::format("Failed to read actor: {}", get.ToString()));
+  }
+
+  google::protobuf::RepeatedPtrField<Actor> actors;
+  *actors.Add() = actor;
+  google::protobuf::RepeatedPtrField<Task> tasks;
+  google::protobuf::RepeatedPtrField<ColocatedUpsert> colocated;
+  google::protobuf::RepeatedPtrField<std::string> state_types;
+  google::protobuf::RepeatedPtrField<IdempotentMutation> mutations;
+  *mutations.Add() = mutation;
+  rocksdb::WriteBatch batch;
+  expected<rocksdb::Status> apply =
+      Apply(batch, actors, tasks, colocated, state_types, mutations);
+  if (!apply.has_value()) {
+    return grpc::Status(grpc::UNKNOWN,
+                        fmt::format("Failed to create actor: {}", apply.error()));
+  }
+  if (!apply->ok()) {
+    return grpc::Status(grpc::UNKNOWN,
+                        fmt::format("Failed to create actor: {}", apply->ToString()));
+  }
+  rocksdb::Status write = db_->Write(DefaultWriteOptions(request->sync()), &batch);
+  if (!write.ok()) {
+    return grpc::Status(grpc::UNKNOWN,
+                        fmt::format("Failed to create actor: {}", write.ToString()));
+  }
+  return grpc::Status::OK;
+}
+
+////////////////////////////////////////////////////////////////////////
+
 grpc::Status DatabaseService::Store(
     grpc::ServerContext* context,
     const StoreRequest* request,
@@ -2611,13 +2693,12 @@ grpc::Status DatabaseService::Store(
   // Piggyback the current timestamp for refresh.
   *response->mutable_timestamp() = monotonic_clock_->Now();
 
-  // A WriteBatch does not provide a conditional read/write primitive. Hold
-  // this sidecar-wide lock from the collision check through its final write so
-  // concurrent Store RPCs cannot overwrite a different request's response.
+  // A WriteBatch does not provide a conditional read/write primitive. Serialize
+  // every Store through the final write so CreateActor's absent check cannot
+  // race an unconditional actor upsert from another SDK process.
   std::unique_lock<std::mutex> idempotency_collision_lock(
-      idempotency_collision_mutex_, std::defer_lock);
+      idempotency_collision_mutex_);
   if (request->has_idempotent_mutation()) {
-    idempotency_collision_lock.lock();
     const IdempotentMutation& incoming = request->idempotent_mutation();
     {
       std::optional<std::string> workflow_id;

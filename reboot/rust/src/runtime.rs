@@ -1394,6 +1394,73 @@ impl DatabaseActorStore {
         .await
     }
 
+    /// Runs a generated unary constructor writer. Replays are checked before
+    /// state existence, then the sidecar atomically creates absent state and
+    /// its response record; this is safe across SDK processes sharing a sidecar.
+    pub async fn constructor_writer_async_for_method<Declaration, RequestBody, ResponseBody, F>(
+        &self,
+        method_identity: &str,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        Declaration: DurableStateDeclaration,
+        RequestBody: Message + Send + 'static,
+        ResponseBody: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut Declaration::State,
+            RequestBody,
+        ) -> Pin<Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>>,
+    {
+        let fingerprint = request_fingerprint(method_identity, request.get_ref());
+        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
+        let key = idempotency_key(&request)?;
+        // The lock only avoids duplicate handler execution in this process.
+        // The CreateActor RPC is the cross-process correctness boundary.
+        let lock = self.lock_for_type(Declaration::STATE_TYPE, &state_ref);
+        let _guard = lock.lock().await;
+        if let Some(response) = self
+            .replay_type(Declaration::STATE_TYPE, &state_ref, key, Some(&fingerprint))
+            .await?
+        {
+            return Ok(Response::new(response));
+        }
+        if self
+            .load_type::<Declaration::State>(Declaration::STATE_TYPE, &state_ref)
+            .await?
+            .is_some()
+        {
+            return Err(Status::failed_precondition(
+                "actor state has already been constructed",
+            ));
+        }
+        let mut state = Declaration::State::default();
+        let response = invoke(&mut state, request.into_inner()).await?;
+        let mut database = self.database.clone();
+        database
+            .create_actor(database::CreateActorRequest {
+                actor: Some(database::Actor {
+                    state_type: Declaration::STATE_TYPE.to_owned(),
+                    state_ref: state_ref.clone(),
+                    state: Some(state.encode_to_vec()),
+                }),
+                idempotent_mutation: Some(database::IdempotentMutation {
+                    state_type: Declaration::STATE_TYPE.to_owned(),
+                    state_ref,
+                    key: key.as_bytes().to_vec(),
+                    response: response.encode_to_vec(),
+                    task_ids: vec![],
+                    workflow_id: None,
+                    workflow_iteration: None,
+                    request_fingerprint: Some(fingerprint),
+                }),
+                sync: true,
+            })
+            .await
+            .map_err(database_status)?;
+        Ok(Response::new(response))
+    }
+
     /// Runs a synchronous reader callback after loading the actor state.
     pub async fn reader<State, RequestBody, ResponseBody, F>(
         &self,
@@ -1819,6 +1886,46 @@ pub mod test_support {
             );
             state.store_requests.push(request);
             Ok(Response::new(database::StoreResponse::default()))
+        }
+
+        async fn create_actor(
+            &self,
+            request: Request<database::CreateActorRequest>,
+        ) -> Result<Response<database::CreateActorResponse>, Status> {
+            let request = request.into_inner();
+            let actor = request
+                .actor
+                .ok_or_else(|| Status::invalid_argument("missing actor"))?;
+            let actor_state = actor
+                .state
+                .clone()
+                .ok_or_else(|| Status::invalid_argument("actor has no state"))?;
+            let mutation = request
+                .idempotent_mutation
+                .ok_or_else(|| Status::invalid_argument("missing idempotent mutation"))?;
+            if !request.sync
+                || mutation.state_type != actor.state_type
+                || mutation.state_ref != actor.state_ref
+            {
+                return Err(Status::invalid_argument(
+                    "CreateActor must synchronously contain matching state and mutation",
+                ));
+            }
+            let mut state = self.state.lock().expect("fake database mutex poisoned");
+            let actor_key = (actor.state_type.clone(), actor.state_ref.clone());
+            if state.actors.contains_key(&actor_key) {
+                return Err(Status::failed_precondition("Actor already exists"));
+            }
+            state.actors.insert(actor_key, actor_state);
+            state.mutations.insert(
+                (
+                    mutation.state_type.clone(),
+                    mutation.state_ref.clone(),
+                    mutation.key.clone(),
+                ),
+                mutation,
+            );
+            Ok(Response::new(database::CreateActorResponse::default()))
         }
 
         async fn recover(
@@ -2741,6 +2848,90 @@ mod tests {
         );
         server.abort();
         database_server.abort();
+    }
+
+    #[tokio::test]
+    async fn constructor_writer_creates_replays_rejects_duplicates_and_leaves_failures_absent() {
+        struct ConstructorCounter;
+        impl DurableStateDeclaration for ConstructorCounter {
+            type State = proto::Counter;
+            const STATE_TYPE: &'static str = "tests.reboot.protoc.Counter";
+        }
+
+        let (address, _, server) = start_database().await;
+        let store = DatabaseActorStore::connect(&address).await.unwrap();
+        let context = ExternalContext::new("constructor-counter");
+        let key = Uuid::from_u128(401);
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let success = store
+            .constructor_writer_async_for_method::<ConstructorCounter, _, _, _>(
+                "tests.reboot.protoc.CounterWrites.Construct",
+                context
+                    .writer_with_key(proto::IncrementRequest { amount: 7 }, key)
+                    .unwrap(),
+                {
+                    let calls = calls.clone();
+                    move |state, request| {
+                        calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        Box::pin(async move {
+                            state.value = request.amount;
+                            Ok(proto::CounterValue { value: state.value })
+                        })
+                    }
+                },
+            )
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(success.value, 7);
+        assert_eq!(store.load::<proto::Counter>("constructor-counter").await.unwrap().unwrap().value, 7);
+
+        let replay = store
+            .constructor_writer_async_for_method::<ConstructorCounter, _, _, _>(
+                "tests.reboot.protoc.CounterWrites.Construct",
+                context
+                    .writer_with_key(proto::IncrementRequest { amount: 7 }, key)
+                    .unwrap(),
+                move |_, _| Box::pin(async { Ok(proto::CounterValue { value: 999 }) }),
+            )
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(replay.value, 7);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        let duplicate = store
+            .constructor_writer_async_for_method::<ConstructorCounter, _, _, _>(
+                "tests.reboot.protoc.CounterWrites.Construct",
+                context
+                    .writer_with_key(proto::IncrementRequest { amount: 8 }, Uuid::from_u128(402))
+                    .unwrap(),
+                move |_, _| Box::pin(async { Ok(proto::CounterValue { value: 8 }) }),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(duplicate.code(), tonic::Code::FailedPrecondition);
+
+        let failed_context = ExternalContext::new("failed-constructor");
+        let failed_key = Uuid::from_u128(403);
+        let failure = store
+            .constructor_writer_async_for_method::<ConstructorCounter, _, _, _>(
+                "tests.reboot.protoc.CounterWrites.Construct",
+                failed_context
+                    .writer_with_key(proto::IncrementRequest { amount: 1 }, failed_key)
+                    .unwrap(),
+                move |_, _| Box::pin(async { Err::<proto::CounterValue, _>(Status::internal("handler failed")) }),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(failure.code(), tonic::Code::Internal);
+        assert!(store.load::<proto::Counter>("failed-constructor").await.unwrap().is_none());
+        assert!(store
+            .replay::<proto::Counter, proto::CounterValue>("failed-constructor", failed_key)
+            .await
+            .unwrap()
+            .is_none());
+        server.abort();
     }
 
     #[tokio::test]

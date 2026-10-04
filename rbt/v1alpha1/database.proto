@@ -392,6 +392,23 @@ message StoreResponse {
   optional google.protobuf.Timestamp timestamp = 1;
 }
 
+// Atomically creates one actor only when it does not already exist, together
+// with the completed idempotent writer response. This is intentionally a
+// separate operation: Store remains an unconditional upsert for compatibility.
+message CreateActorRequest {
+  // Must have state set (an empty state is valid).
+  Actor actor = 1;
+  // The response to replay for this constructor invocation.
+  IdempotentMutation idempotent_mutation = 2;
+  // Sync the RocksDB write before returning success.
+  bool sync = 3;
+}
+
+message CreateActorResponse {
+  // Latest timestamp from database clock, for timestamp refresh.
+  optional google.protobuf.Timestamp timestamp = 1;
+}
+
 ////////////////////////////////////////////////////////////////////////
 
 message RecoverRequest {
@@ -642,6 +659,10 @@ service Database {
 
   // Stores the specified data.
   rpc Store(StoreRequest) returns (StoreResponse);
+
+  // Creates a previously absent actor and its idempotent response atomically.
+  // Returns FAILED_PRECONDITION when the actor already exists.
+  rpc CreateActor(CreateActorRequest) returns (CreateActorResponse);
 
   // Returns state needed to recover the server after a potential restart.
   rpc Recover(RecoverRequest) returns (stream RecoverResponse);

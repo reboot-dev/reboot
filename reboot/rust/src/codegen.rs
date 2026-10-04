@@ -540,14 +540,11 @@ fn emit_durable(
                 )
             });
         for (kind, method, request, response, method_identity) in database_methods {
-            if matches!(
-                kind,
-                DurableKind::Writer(WriterMetadata { constructor: true })
-            ) {
-                output.push_str(&format!("    async fn {method}(&self, _: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ Err(tonic::Status::unimplemented(\"constructor writers are not supported\")) }}\n"));
-                continue;
-            }
             let (envelope, prefix) = match kind {
+                DurableKind::Writer(WriterMetadata { constructor: true }) => (
+                    "constructor_writer_async_for_method",
+                    format!("\"{method_identity}\", "),
+                ),
                 DurableKind::Reader if requires_constructor => (
                     "reader_async_for_with_admission",
                     format!("{runtime_module}::runtime::StateAdmission::RequireExisting, "),
@@ -1191,7 +1188,8 @@ mod tests {
         assert!(content.contains("writer_async_for_method_with_admission::<CounterDurableState"));
         assert!(content.contains("reader_async_for_with_admission::<CounterDurableState"));
         assert!(content.contains("StateAdmission::RequireExisting"));
-        assert!(content.contains("constructor writers are not supported"));
+        assert!(content.contains("constructor_writer_async_for_method::<CounterDurableState"));
+        assert!(!content.contains("constructor writers are not supported"));
     }
 
     #[test]

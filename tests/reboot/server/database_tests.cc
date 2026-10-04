@@ -1300,6 +1300,52 @@ TEST_F(TwoShardDatabaseTest, TransactionCoordinatorPrepared) {
 
 ////////////////////////////////////////////////////////////////////////
 
+TEST_F(TwoShardDatabaseTest, CreateActorIsAtomicAndRejectsExistingActor) {
+  const std::string state_type = "ConstructorActor";
+  const std::string state_ref = make_state_ref("atomic-create");
+  const UUID key = UUID::random();
+  v1alpha1::CreateActorRequest request;
+  request.mutable_actor()->set_state_type(state_type);
+  request.mutable_actor()->set_state_ref(state_ref);
+  request.mutable_actor()->set_state("created");
+  request.mutable_idempotent_mutation()->set_state_type(state_type);
+  request.mutable_idempotent_mutation()->set_state_ref(state_ref);
+  request.mutable_idempotent_mutation()->set_key(key.toBytes());
+  request.mutable_idempotent_mutation()->set_response("reply");
+  request.set_sync(true);
+
+  v1alpha1::CreateActorResponse response;
+  grpc::ClientContext context;
+  ASSERT_TRUE(stub->CreateActor(&context, request, &response).ok());
+  ASSERT_TRUE(response.has_timestamp());
+  ASSERT_EQ(load(state_type, state_ref), std::optional<std::string>("created"));
+
+  // A second key cannot replace either the actor or its original response.
+  request.mutable_idempotent_mutation()->set_key(UUID::random().toBytes());
+  request.mutable_actor()->set_state("replaced");
+  v1alpha1::CreateActorResponse conflict_response;
+  grpc::ClientContext conflict_context;
+  grpc::Status conflict =
+      stub->CreateActor(&conflict_context, request, &conflict_response);
+  ASSERT_EQ(conflict.error_code(), grpc::StatusCode::FAILED_PRECONDITION);
+  ASSERT_EQ(load(state_type, state_ref), std::optional<std::string>("created"));
+
+  v1alpha1::RecoverIdempotentMutationsRequest recover;
+  recover.set_state_type(state_type);
+  recover.set_state_ref(state_ref);
+  recover.set_idempotency_key(key.toBytes());
+  grpc::ClientContext recover_context;
+  std::unique_ptr<grpc::ClientReader<v1alpha1::RecoverIdempotentMutationsResponse>>
+      reader(stub->RecoverIdempotentMutations(&recover_context, recover));
+  v1alpha1::RecoverIdempotentMutationsResponse item;
+  ASSERT_TRUE(reader->Read(&item));
+  ASSERT_EQ(item.idempotent_mutations_size(), 1);
+  ASSERT_EQ(item.idempotent_mutations(0).response(), "reply");
+  ASSERT_TRUE(reader->Finish().ok());
+}
+
+////////////////////////////////////////////////////////////////////////
+
 TEST_F(TwoShardDatabaseTest, RecoverIdempotentMutations) {
   const std::string state_type = "Greeter";
   const std::string state_ref = make_state_ref("test_1234");
