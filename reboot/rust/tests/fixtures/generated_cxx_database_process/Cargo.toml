@@ -1,0 +1,17 @@
+[package]
+name = "generated-cxx-database-process-host"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[build-dependencies]
+reboot = { package = "reboot-rust-schema", path = "../../../", features = ["build"] }
+
+[dependencies]
+prost = "0.13"
+prost-types = "0.13"
+reboot = { package = "reboot-rust-schema", path = "../../../", features = ["build", "test-support"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tonic = "0.12"
+uuid = "1"

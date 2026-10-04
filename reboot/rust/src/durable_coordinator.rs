@@ -429,6 +429,8 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 )),
             })
             .await?;
+        #[cfg(feature = "test-support")]
+        test_support::pause_after_coordinator_prepare()?;
 
         for participant in &participants {
             let endpoint = self.resolver.resolve(participant).await?;
@@ -705,6 +707,32 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             ));
         }
         Ok(result.into_iter().collect())
+    }
+}
+
+/// Test-only, cross-process barrier used by the real Database acceptance host.
+///
+/// A host enables it by setting `REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE`
+/// to a marker path.  Once the sealed preparing record is durable, the host
+/// creates that marker and waits for its removal.  This deliberately has no
+/// production build surface and lets the acceptance harness kill a process at
+/// the exact durable recovery boundary without replacing any Tonic transport.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub mod test_support {
+    use std::{fs, path::Path, thread, time::Duration};
+
+    pub fn pause_after_coordinator_prepare() -> Result<(), tonic::Status> {
+        let Ok(marker) = std::env::var("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE") else {
+            return Ok(());
+        };
+        fs::write(&marker, b"sealed\n").map_err(|error| {
+            tonic::Status::internal(format!("cannot create coordinator test barrier: {error}"))
+        })?;
+        while Path::new(&marker).exists() {
+            thread::sleep(Duration::from_millis(10));
+        }
+        Ok(())
     }
 }
 
@@ -1266,6 +1294,55 @@ mod tests {
                 "database.cleanup"
             ]
         );
+    }
+    #[tokio::test]
+    async fn recovery_aborts_and_cleans_up_when_a_restarted_participant_has_no_pending_transaction()
+    {
+        let sidecar = Arc::new(MockSidecar::default());
+        let endpoint = Arc::new(MockEndpoint::default());
+        let id = Uuid::from_u128(41);
+        sidecar
+            .recover
+            .lock()
+            .unwrap()
+            .push_back(Ok(database::RecoverResponse {
+                transaction_coordinators: [(
+                    id.to_string(),
+                    DurableRootCoordinator::<MockSidecar, MockResolver>::record(
+                        "actor/1",
+                        &[start(id).participant],
+                        true,
+                    ),
+                )]
+                .into(),
+                ..Default::default()
+            }));
+        endpoint
+            .prepares
+            .lock()
+            .unwrap()
+            .push_back(Ok(database::PrepareResponse {
+                abort: true,
+                ..Default::default()
+            }));
+
+        coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
+            .recover(CoordinatorRecovery {
+                state_tags_by_state_type: [("example.Actor".into(), "actor".into())].into(),
+                shard_ids: vec!["a".into()],
+                coordinator_state_ref: "actor/1".into(),
+            })
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            endpoint.calls.lock().unwrap().as_slice(),
+            [Call::Prepare(_), Call::Abort(_)]
+        ));
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Recover(_), Call::Cleanup(_)]
+        ));
     }
     #[tokio::test]
     async fn recovery_commits_prepared_record_without_repreparing() {

@@ -1,0 +1,251 @@
+use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
+
+use prost::Message;
+use reboot::{
+    database_proto as database,
+    durable_coordinator::{
+        CoordinatorRecovery, ParticipantResolver, ParticipantTarget, TonicCoordinatorSidecar,
+        TonicParticipantEndpoint,
+    },
+    durable_participant::{
+        DurableActorParticipant, DurableActorParticipantHost, ParticipantRecovery,
+        TonicParticipantSidecar,
+    },
+    runtime::{
+        InboundTransactionStartFactory, RootTransactionStart, RootTransactionStartFactory,
+        TransactionContext, TransactionExecution, TransactionalChannelResolver,
+    },
+};
+use tonic::transport::{Channel, Server};
+use uuid::Uuid;
+
+pub mod proto {
+    tonic::include_proto!("tests.reboot.protoc");
+}
+mod generated {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/tests/reboot/protoc/transaction_counter.reboot.rs"
+    ));
+}
+
+#[derive(Clone)]
+struct Routes {
+    application: String,
+    participants: Arc<HashMap<String, String>>,
+}
+#[tonic::async_trait]
+impl TransactionalChannelResolver for Routes {
+    async fn resolve(&self, _: &str, state_ref: &str) -> Result<Channel, tonic::Status> {
+        if state_ref != "target" {
+            return Err(tonic::Status::not_found("unexpected application route"));
+        }
+        Channel::from_shared(self.application.clone())
+            .unwrap()
+            .connect()
+            .await
+            .map_err(|error| tonic::Status::unavailable(error.to_string()))
+    }
+}
+impl ParticipantResolver for Routes {
+    type Endpoint = TonicParticipantEndpoint;
+    fn resolve(
+        &self,
+        participant: &ParticipantTarget,
+    ) -> Pin<Box<dyn Future<Output = Result<Arc<Self::Endpoint>, tonic::Status>> + Send + '_>> {
+        let endpoint = self.participants.get(&participant.state_ref).cloned();
+        Box::pin(async move {
+            let endpoint =
+                endpoint.ok_or_else(|| tonic::Status::not_found("unexpected participant route"))?;
+            TonicParticipantEndpoint::connect(endpoint)
+                .await
+                .map(Arc::new)
+                .map_err(|error| tonic::Status::unavailable(error.to_string()))
+        })
+    }
+}
+
+struct Starts {
+    root: Uuid,
+    child: Uuid,
+}
+impl RootTransactionStartFactory for Starts {
+    fn next_root_transaction(&self) -> Result<RootTransactionStart, tonic::Status> {
+        Ok(RootTransactionStart {
+            transaction_id: self.root,
+            timestamp: prost_types::Timestamp::default(),
+        })
+    }
+}
+impl InboundTransactionStartFactory for Starts {
+    fn next_inbound_transaction(
+        &self,
+        _: &reboot::runtime::InboundTransactionContext,
+    ) -> Result<Uuid, tonic::Status> {
+        Ok(self.child)
+    }
+}
+
+enum Handler {
+    Target,
+    Root(Root),
+}
+#[tonic::async_trait]
+impl generated::TransactionCounterWritesTransactionHandler for Handler {
+    async fn increment(
+        &self,
+        context: &TransactionContext,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+        state.value += request.amount;
+        if let Self::Root(root) = self {
+            root.client
+                .increment(
+                    context,
+                    &generated::TransactionCounterWritesTarget::new("target"),
+                    request.clone(),
+                )
+                .await?;
+        }
+        let mut result =
+            TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
+        result.final_state = Some(state.encode_to_vec());
+        Ok(result)
+    }
+    async fn factory_increment(
+        &self,
+        _: &TransactionContext,
+        _: &mut proto::TransactionCounter,
+        _: proto::TransactionIncrementRequest,
+    ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+        Err(tonic::Status::unimplemented("fixture excludes factory"))
+    }
+}
+struct Root {
+    client: generated::TransactionCounterWritesClient<Routes>,
+}
+
+fn arg(name: &str) -> String {
+    std::env::args()
+        .skip_while(|arg| arg != name)
+        .nth(1)
+        .unwrap_or_else(|| panic!("missing {name}"))
+}
+fn has(name: &str) -> bool {
+    std::env::args().any(|arg| arg == name)
+}
+
+#[tokio::main]
+async fn main() {
+    let role = arg("--role");
+    let listen = arg("--listen");
+    let database_endpoint = arg("--database");
+    let root_endpoint = arg("--root");
+    let target_endpoint = arg("--target");
+    let root_id = Uuid::parse_str(&arg("--root-id")).unwrap();
+    let participant_sidecar = Arc::new(
+        TonicParticipantSidecar::connect(&database_endpoint)
+            .await
+            .unwrap(),
+    );
+    let coordinator_sidecar = Arc::new(
+        TonicCoordinatorSidecar::connect(&database_endpoint)
+            .await
+            .unwrap(),
+    );
+    let mut endpoints = HashMap::new();
+    endpoints.insert("root".into(), root_endpoint);
+    endpoints.insert("target".into(), target_endpoint.clone());
+    let routes = Routes {
+        application: target_endpoint.clone(),
+        participants: Arc::new(endpoints),
+    };
+    let state_ref = role.clone();
+    let participant = DurableActorParticipant::new(
+        participant_sidecar,
+        "tests.reboot.protoc.TransactionCounter",
+        state_ref,
+    );
+    let participant_host = DurableActorParticipantHost::new(participant.clone());
+    let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
+        coordinator_sidecar,
+        Arc::new(routes.clone()),
+    );
+    let starts = Starts {
+        root: root_id,
+        child: Uuid::from_u128(2),
+    };
+    let handler = if role == "root" {
+        Handler::Root(Root {
+            client: generated::TransactionCounterWritesClient::new(routes.clone()),
+        })
+    } else {
+        Handler::Target
+    };
+    let adapter = generated::TransactionCounterWritesTransactionAdapter::new(
+        participant.clone(),
+        coordinator,
+        starts,
+        handler,
+    );
+    let address = listen.parse().unwrap();
+    let server = tokio::spawn(async move {
+        Server::builder()
+            .layer(reboot::successful_trailers::SuccessfulParticipantTrailerLayer)
+            .add_service(database::participant_server::ParticipantServer::new(
+                participant_host,
+            ))
+            .add_service(
+                proto::transaction_counter_writes_server::TransactionCounterWritesServer::new(
+                    adapter,
+                ),
+            )
+            .serve(address)
+            .await
+            .unwrap();
+    });
+    if has("--invoke") {
+        let endpoint = format!("http://{listen}");
+        let mut client = loop {
+            match proto::transaction_counter_writes_client::TransactionCounterWritesClient::connect(
+                endpoint.clone(),
+            )
+            .await
+            {
+                Ok(client) => break client,
+                Err(_) => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+            }
+        };
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 7 });
+        *request.metadata_mut() = reboot::RebootHeaders::new("root").to_metadata().unwrap();
+        client.increment(request).await.unwrap();
+    }
+    if has("--recover") {
+        participant
+            .recover(ParticipantRecovery {
+                shard_ids: vec!["s000000000".into()],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        if role == "root" {
+            reboot::durable_coordinator::DurableRootCoordinator::new(
+                Arc::new(
+                    TonicCoordinatorSidecar::connect(&database_endpoint)
+                        .await
+                        .unwrap(),
+                ),
+                Arc::new(routes),
+            )
+            .recover(CoordinatorRecovery {
+                shard_ids: vec!["s000000000".into()],
+                coordinator_state_ref: "root".into(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        }
+    }
+    server.await.unwrap();
+}

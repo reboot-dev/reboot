@@ -539,13 +539,19 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
 
     async fn terminal(&self, transaction_id: Uuid, commit: bool) -> Result<(), Status> {
         let mut pending = self.pending.lock().await;
-        let current = pending
-            .as_ref()
-            .ok_or_else(|| Status::failed_precondition("actor has no pending transaction"))?;
+        // Terminal delivery is deliberately idempotent.  In particular, a
+        // coordinator that recovers a sealed `preparing` record can discover
+        // that this process lost an unprepared, in-memory participant and
+        // abort the complete set.  There is nothing to persist or release for
+        // this actor in that case.  A duplicate terminal RPC after a prior
+        // successful terminal response has the same outcome.
+        let Some(current) = pending.as_ref() else {
+            return Ok(());
+        };
         if current.root_id != transaction_id {
-            return Err(Status::failed_precondition(
-                "pending transaction ID differs",
-            ));
+            // This actor may already be serving a later root transaction.
+            // Never terminalize that transaction for a stale control RPC.
+            return Ok(());
         }
         let force_abort = commit && !current.prepared;
         if commit && !force_abort {
@@ -1091,6 +1097,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn terminal_control_is_a_noop_without_the_matching_pending_transaction() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let id = Uuid::from_u128(31);
+
+        // A recovered coordinator can abort an in-memory participant that was
+        // lost before it reached the durable Prepare boundary.  Duplicate
+        // commit/abort delivery is also harmless once a terminal RPC won.
+        participant.terminal(id, false).await.unwrap();
+        participant.terminal(id, true).await.unwrap();
+
+        participant.start(start(Uuid::from_u128(32))).await.unwrap();
+        participant.terminal(id, false).await.unwrap();
+        participant.terminal(id, true).await.unwrap();
+
+        assert!(
+            sidecar
+                .calls
+                .lock()
+                .unwrap()
+                .as_slice()
+                .iter()
+                .all(|call| { matches!(call, Call::Load(_)) })
+        );
+    }
+
+    #[tokio::test]
     async fn preserves_an_explicit_nested_path_but_terminal_control_still_uses_root() {
         let sidecar = Arc::new(MockSidecar::default());
         let participant =
@@ -1116,10 +1150,9 @@ mod tests {
             participant.prepare(child).await.unwrap(),
             PrepareOutcome::DefinitiveAbort
         ));
-        assert_eq!(
-            participant.terminal(child, true).await.unwrap_err().code(),
-            tonic::Code::FailedPrecondition
-        );
+        // A stale terminal request for a nested ID must not affect the root
+        // transaction and is acknowledged as an idempotent no-op.
+        participant.terminal(child, true).await.unwrap();
         participant.prepare(root).await.unwrap();
         participant.terminal(root, true).await.unwrap();
 
