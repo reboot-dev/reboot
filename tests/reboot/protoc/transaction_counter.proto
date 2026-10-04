@@ -45,6 +45,13 @@ service TransactionCounterWrites {
     };
   }
 
+  rpc FactoryIncrementTarget(TransactionIncrementRequest) returns (TransactionCounterValue) {
+    option (rbt.v1alpha1.method).transaction = {
+      constructor: {}
+      exclusive: {}
+    };
+  }
+
   rpc SharedRead(TransactionIncrementRequest) returns (TransactionCounterValue) {
     option (rbt.v1alpha1.method).transaction = {
       shared: {}

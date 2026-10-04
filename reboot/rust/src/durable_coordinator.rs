@@ -3,7 +3,7 @@
 //! This is deliberately a narrow 2PC control path. It persists coordinator
 //! records in the Database sidecar and reaches participants only through an
 //! injected resolver. It does not choose placement, create actors, or support
-//! nested, factory, placement, or multi-actor transactions. Root shared
+//! nested, placement, or multi-actor transactions. Root shared
 //! transactions are supported only when every participant remains read-only.
 
 use std::collections::BTreeSet;
@@ -475,15 +475,14 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         Arc::clone(&self.resolver)
     }
 
-    /// Completes a same-actor root transaction. Kept for factory transactions
-    /// and callers that made no remote transactional calls.
+    /// Completes a root transaction with no remote transactional calls.
     pub async fn complete(&self, start: RootCoordinatorStart) -> Result<(), Status> {
         self.complete_with_returned_participants(start, Vec::new())
             .await
     }
 
-    /// Completes an exclusive non-factory root transaction after its handler
-    /// has enlisted participants returned in successful remote-call trailers.
+    /// Completes an exclusive root transaction after its handler has enlisted
+    /// participants returned in successful remote-call trailers.
     ///
     /// The full de-duplicated set is persisted before *any* Prepare RPC. RPC
     /// status failures remain ambiguous: the sealed preparing record is left
@@ -785,11 +784,6 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         start: &RootCoordinatorStart,
         returned: Vec<ReturnedParticipant>,
     ) -> Result<ParticipantSet, Status> {
-        if start.factory && !returned.is_empty() {
-            return Err(Status::unimplemented(
-                "factory transactions cannot enlist returned remote participants",
-            ));
-        }
         let mut participants = ParticipantSet::default();
         participants.add(start.participant.clone(), start.read_only);
         for participant in returned {
@@ -1283,7 +1277,8 @@ mod tests {
         );
     }
     #[tokio::test]
-    async fn seals_deduplicated_remote_participants_before_prepare_and_waits_for_all_terminals() {
+    async fn factory_seals_deduplicated_remote_participants_before_prepare_and_waits_for_all_terminals()
+     {
         let sidecar = Arc::new(MockSidecar::default());
         let endpoint = Arc::new(MockEndpoint::default());
         let id = Uuid::from_u128(6);
@@ -1295,9 +1290,11 @@ mod tests {
             state_type: "example.Remote".into(),
             state_ref: "remote/b".into(),
         };
+        let mut factory = start(id);
+        factory.factory = true;
         coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
             .complete_with_classified_returned_participants(
-                start(id),
+                factory,
                 vec![
                     returned(remote_b.clone()),
                     returned(remote_a.clone()),

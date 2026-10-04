@@ -90,6 +90,8 @@ fn host(
     invoke: bool,
     marker: Option<&std::path::Path>,
     watch_terminalized: Option<&std::path::Path>,
+    state_ref: Option<&str>,
+    coordinator_state_ref: Option<&str>,
 ) -> Child {
     let mut command = Command::new(binary);
     command
@@ -114,6 +116,12 @@ fn host(
     }
     if invoke {
         command.arg("--invoke");
+    }
+    if let Some(state_ref) = state_ref {
+        command.args(["--state-ref", state_ref]);
+    }
+    if let Some(coordinator_state_ref) = coordinator_state_ref {
+        command.args(["--coordinator-state-ref", coordinator_state_ref]);
     }
     if let Some(marker) = marker {
         command.env("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE", marker);
@@ -191,6 +199,8 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
         false,
         None,
         None,
+        None,
+        None,
     );
     wait(target_port);
     let marker_dir = tempfile::tempdir().unwrap();
@@ -206,6 +216,8 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
         false,
         true,
         Some(&marker),
+        None,
+        None,
         None,
     );
     wait(root_port);
@@ -237,6 +249,8 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
         false,
         None,
         Some(&watch_terminalized),
+        None,
+        None,
     );
     wait(target_port);
     for _ in 0..100 {
@@ -263,6 +277,8 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
         root_id,
         true,
         false,
+        None,
+        None,
         None,
         None,
     );
@@ -354,6 +370,343 @@ fn generated_exclusive_factory_creates_only_absent_actor_through_real_cxx_databa
     );
 }
 
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_exclusive_factory_creates_root_and_commits_existing_target_through_real_cxx_database()
+{
+    let database_binary =
+        std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        database::database_client::DatabaseClient::connect(db.endpoint())
+            .await
+            .unwrap()
+            .store(database::StoreRequest {
+                actor_upserts: vec![database::Actor {
+                    state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                    state_ref: "target".into(),
+                    state: Some(vec![0x08, 0x05]),
+                }],
+                task_upserts: vec![],
+                colocated_upserts: vec![],
+                transaction: None,
+                idempotent_mutation: None,
+                ensure_state_types_created: vec![],
+                sync: true,
+            })
+            .await
+            .unwrap();
+    });
+    let root_port = port();
+    let target_port = port();
+    let mut target = host(
+        &binary,
+        "target",
+        target_port,
+        &db.endpoint(),
+        root_port,
+        target_port,
+        "00000000-0000-0000-0000-000000000004",
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+    );
+    wait(target_port);
+    assert!(
+        factory_target_host(
+            &binary,
+            &db.endpoint(),
+            root_port,
+            target_port,
+            "factory-root",
+            7
+        )
+        .success()
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), "factory-root")),
+        Some(vec![0x08, 0x07])
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), "target")),
+        Some(vec![0x08, 0x0c])
+    );
+    assert!(
+        !factory_target_host(
+            &binary,
+            &db.endpoint(),
+            root_port,
+            target_port,
+            "factory-root",
+            99
+        )
+        .success()
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), "factory-root")),
+        Some(vec![0x08, 0x07])
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), "target")),
+        Some(vec![0x08, 0x0c])
+    );
+    let _ = target.kill();
+    let _ = target.wait();
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_exclusive_factory_root_recovers_existing_target_through_real_cxx_database_processes() {
+    let database_binary =
+        std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let mut db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        database::database_client::DatabaseClient::connect(db.endpoint())
+            .await
+            .unwrap()
+            .store(database::StoreRequest {
+                actor_upserts: vec![database::Actor {
+                    state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                    state_ref: "target".into(),
+                    state: Some(vec![0x08, 0x05]),
+                }],
+                task_upserts: vec![],
+                colocated_upserts: vec![],
+                transaction: None,
+                idempotent_mutation: None,
+                ensure_state_types_created: vec![],
+                sync: true,
+            })
+            .await
+            .unwrap();
+    });
+    let root_port = port();
+    let target_port = port();
+    let root_id = "00000000-0000-0000-0000-000000000005";
+    let marker_dir = tempfile::tempdir().unwrap();
+    let marker = marker_dir.path().join("sealed");
+    let mut target = host(
+        &binary,
+        "target",
+        target_port,
+        &db.endpoint(),
+        root_port,
+        target_port,
+        root_id,
+        false,
+        false,
+        None,
+        None,
+        None,
+        Some("factory-root"),
+    );
+    wait(target_port);
+    let mut root = factory_target_root_host(
+        &binary,
+        &db.endpoint(),
+        root_port,
+        target_port,
+        root_id,
+        "factory-root",
+        &marker,
+    );
+    wait(root_port);
+    for _ in 0..100 {
+        if marker.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(
+        marker.exists(),
+        "factory root never sealed its real C++ coordinator record"
+    );
+    let _ = root.kill();
+    let _ = root.wait();
+    let _ = target.kill();
+    let _ = target.wait();
+    db.restart();
+
+    let watch_terminalized = marker_dir.path().join("target-watch-terminalized");
+    target = host(
+        &binary,
+        "target",
+        target_port,
+        &db.endpoint(),
+        root_port,
+        target_port,
+        root_id,
+        true,
+        false,
+        None,
+        Some(&watch_terminalized),
+        None,
+        Some("factory-root"),
+    );
+    wait(target_port);
+    for _ in 0..100 {
+        if watch_terminalized.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(
+        watch_terminalized.exists(),
+        "target did not Watch the factory-root decision and terminalize"
+    );
+    let recovered_root_port = port();
+    root = host(
+        &binary,
+        "root",
+        recovered_root_port,
+        &db.endpoint(),
+        recovered_root_port,
+        target_port,
+        root_id,
+        true,
+        false,
+        None,
+        None,
+        Some("factory-root"),
+        Some("factory-root"),
+    );
+    wait(recovered_root_port);
+    let (root_state, target_state) = wait_for_states(
+        &runtime,
+        &db.endpoint(),
+        "factory-root",
+        vec![0x08, 0x07],
+        "target",
+        vec![0x08, 0x0c],
+    );
+    assert_eq!(root_state, Some(vec![0x08, 0x07]));
+    assert_eq!(target_state, Some(vec![0x08, 0x0c]));
+    assert!(
+        !factory_target_host(
+            &binary,
+            &db.endpoint(),
+            root_port,
+            target_port,
+            "factory-root",
+            99
+        )
+        .success()
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), "factory-root")),
+        Some(vec![0x08, 0x07])
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), "target")),
+        Some(vec![0x08, 0x0c])
+    );
+    let _ = root.kill();
+    let _ = root.wait();
+    let _ = target.kill();
+    let _ = target.wait();
+}
+
+fn factory_target_root_host(
+    binary: &std::path::Path,
+    database: &str,
+    root_port: u16,
+    target_port: u16,
+    root_id: &str,
+    state_ref: &str,
+    marker: &std::path::Path,
+) -> Child {
+    let mut command = Command::new(binary);
+    command
+        .args([
+            "--role",
+            "root",
+            "--listen",
+            &format!("127.0.0.1:{root_port}"),
+            "--database",
+            database,
+            "--root",
+            &format!("http://127.0.0.1:{root_port}"),
+            "--target",
+            &format!("http://127.0.0.1:{target_port}"),
+            "--root-id",
+            root_id,
+            "--state-ref",
+            state_ref,
+            "--coordinator-state-ref",
+            state_ref,
+            "--invoke",
+            "--factory-target-invoke",
+            "--amount",
+            "7",
+        ])
+        .env("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE", marker)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap()
+}
+
+fn factory_target_host(
+    binary: &std::path::Path,
+    database: &str,
+    root_port: u16,
+    target_port: u16,
+    state_ref: &str,
+    amount: i64,
+) -> std::process::ExitStatus {
+    Command::new(binary)
+        .args([
+            "--role",
+            "root",
+            "--listen",
+            &format!("127.0.0.1:{root_port}"),
+            "--database",
+            database,
+            "--root",
+            &format!("http://127.0.0.1:{root_port}"),
+            "--target",
+            &format!("http://127.0.0.1:{target_port}"),
+            "--root-id",
+            "00000000-0000-0000-0000-000000000004",
+            "--state-ref",
+            state_ref,
+            "--invoke",
+            "--factory-target-invoke",
+            "--exit-after-invoke",
+            "--amount",
+            &amount.to_string(),
+        ])
+        .status()
+        .unwrap()
+}
+
 fn factory_host(
     binary: &std::path::Path,
     database: &str,
@@ -385,6 +738,30 @@ fn factory_host(
         ])
         .status()
         .unwrap()
+}
+
+fn wait_for_states(
+    runtime: &tokio::runtime::Runtime,
+    endpoint: &str,
+    first_ref: &str,
+    expected_first: Vec<u8>,
+    second_ref: &str,
+    expected_second: Vec<u8>,
+) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
+    let mut states = (None, None);
+    for _ in 0..100 {
+        states = (
+            runtime.block_on(load_state(endpoint, first_ref)),
+            runtime.block_on(load_state(endpoint, second_ref)),
+        );
+        if states.0.as_deref() == Some(expected_first.as_slice())
+            && states.1.as_deref() == Some(expected_second.as_slice())
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    states
 }
 
 async fn load_state(endpoint: &str, state_ref: &str) -> Option<Vec<u8>> {

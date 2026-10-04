@@ -13,8 +13,9 @@ use reboot::{
     },
     legacy_coordinator::{DurableCoordinatorWatchHost, TonicCoordinatorWatchEndpoint},
     runtime::{
-        InboundTransactionStartFactory, RootTransactionStart, RootTransactionStartFactory,
-        TransactionContext, TransactionExecution, TransactionalChannelResolver,
+        DatabaseActorStore, InboundTransactionStartFactory, RootTransactionStart,
+        RootTransactionStartFactory, TransactionContext, TransactionExecution,
+        TransactionalChannelResolver,
     },
 };
 use tonic::transport::{Channel, Server};
@@ -94,6 +95,23 @@ enum Handler {
 }
 #[tonic::async_trait]
 impl generated::TransactionCounterWritesTransactionHandler for Handler {
+    async fn read(
+        &self,
+        state: &proto::TransactionCounter,
+        _: proto::TransactionIncrementRequest,
+    ) -> Result<proto::TransactionCounterValue, tonic::Status> {
+        Ok(proto::TransactionCounterValue { value: state.value })
+    }
+
+    async fn write(
+        &self,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<proto::TransactionCounterValue, tonic::Status> {
+        state.value += request.amount;
+        Ok(proto::TransactionCounterValue { value: state.value })
+    }
+
     async fn increment(
         &self,
         context: &TransactionContext,
@@ -122,11 +140,38 @@ impl generated::TransactionCounterWritesTransactionHandler for Handler {
         request: proto::TransactionIncrementRequest,
     ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
         if request.amount < 0 {
-            return Err(tonic::Status::invalid_argument("factory handler rejected request"));
+            return Err(tonic::Status::invalid_argument(
+                "factory handler rejected request",
+            ));
         }
         state.value += request.amount;
         // Deliberately leave final_state unset: the generated factory adapter
         // must durably materialize the state it gave the handler.
+        Ok(TransactionExecution::new(proto::TransactionCounterValue {
+            value: state.value,
+        }))
+    }
+    async fn factory_increment_target(
+        &self,
+        context: &TransactionContext,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+        if request.amount < 0 {
+            return Err(tonic::Status::invalid_argument(
+                "factory handler rejected request",
+            ));
+        }
+        state.value += request.amount;
+        if let Self::Root(root) = self {
+            root.client
+                .increment(
+                    context,
+                    &generated::TransactionCounterWritesTarget::new("target"),
+                    request.clone(),
+                )
+                .await?;
+        }
         Ok(TransactionExecution::new(proto::TransactionCounterValue {
             value: state.value,
         }))
@@ -204,10 +249,12 @@ async fn main() {
     // Any recovered participant can host the legacy Coordinator route for this
     // configured coordinator identity. The decision itself is read from the
     // real C++ sidecar, not a process-local coordinator map.
+    let coordinator_state_ref =
+        optional_arg("--coordinator-state-ref").unwrap_or_else(|| "root".into());
     let coordinator_watch = DurableCoordinatorWatchHost::new(
         coordinator_sidecar,
         "tests.reboot.protoc.TransactionCounter",
-        "root",
+        &coordinator_state_ref,
     )
     .unwrap();
     let starts = Starts {
@@ -221,7 +268,11 @@ async fn main() {
     } else {
         Handler::Target
     };
+    let store = DatabaseActorStore::connect(&database_endpoint)
+        .await
+        .unwrap();
     let adapter = generated::TransactionCounterWritesTransactionAdapter::new(
+        store,
         participant.clone(),
         coordinator,
         starts,
@@ -262,8 +313,12 @@ async fn main() {
             .map(|amount| amount.parse().expect("--amount must be i64"))
             .unwrap_or(7);
         let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount });
-        *request.metadata_mut() = reboot::RebootHeaders::new(&state_ref).to_metadata().unwrap();
-        if has("--factory-invoke") {
+        *request.metadata_mut() = reboot::RebootHeaders::new(&state_ref)
+            .to_metadata()
+            .unwrap();
+        if has("--factory-target-invoke") {
+            client.factory_increment_target(request).await.unwrap();
+        } else if has("--factory-invoke") {
             client.factory_increment(request).await.unwrap();
         } else {
             client.increment(request).await.unwrap();
@@ -307,7 +362,7 @@ async fn main() {
             )
             .recover(CoordinatorRecovery {
                 shard_ids: vec!["s000000000".into()],
-                coordinator_state_ref: "root".into(),
+                coordinator_state_ref: coordinator_state_ref.clone(),
                 ..Default::default()
             })
             .await

@@ -246,6 +246,22 @@ impl transaction_generated::TransactionCounterWritesTransactionHandler for Trans
         ))
     }
 
+    async fn factory_increment_target(
+        &self,
+        _: &reboot::runtime::TransactionContext,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<reboot::runtime::TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+        self.trace.lock().unwrap().push("factory target handler");
+        if self.fail {
+            return Err(tonic::Status::invalid_argument("factory handler rejected request"));
+        }
+        state.value += request.amount;
+        Ok(reboot::runtime::TransactionExecution::new(
+            proto::TransactionCounterValue { value: state.value },
+        ))
+    }
+
     async fn shared_read(
         &self,
         _: &reboot::runtime::TransactionContext,
