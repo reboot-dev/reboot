@@ -17,9 +17,9 @@ use reboot_rust_schema::{
         NativeFuture, NativeTransactionId, PROTOCOL_ID, RECORD_VERSION,
         TonicNative2pcCoordinatorEndpoint, TonicNative2pcDatabaseSidecar,
         TonicNative2pcParticipantEndpoint, commit_and_materialize_singleton_initial_state_once,
-        decide_native2pc_coordinator_once, recover_prepared_participant_once,
-        recover_preparing_native2pc_coordinator_once, recover_staged_participant_once,
-        require_native2pc_participant,
+        decide_native2pc_coordinator_once, recover_and_materialize_singleton_initial_state_once,
+        recover_prepared_participant_once, recover_preparing_native2pc_coordinator_once,
+        recover_staged_participant_once, require_native2pc_participant,
     },
 };
 use tokio_stream::{Stream, wrappers::TcpListenerStream};
@@ -636,6 +636,60 @@ async fn native_singleton_initial_state_materializes_once_through_the_real_cxx_s
         .unwrap();
     assert_eq!(first.materialization, replay);
     assert_eq!(first.materialization.state, Some(b"initial-state".to_vec()));
+}
+
+/// A process crash after durable commit/terminal but before materialization
+/// must resume only the retained exact journal, never rerun the transaction.
+#[tokio::test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+async fn native_singleton_initial_state_recovery_materializes_the_real_cxx_journal() {
+    let database = spawn_cxx_database().await;
+    let sidecar = TonicNative2pcDatabaseSidecar::connect(database.endpoint.clone())
+        .await
+        .unwrap();
+    let coordinator = NativeActorId::new("example.Coordinator", "coordinator/recovery").unwrap();
+    let participant = NativeActorId::new("example.Participant", "participant/recovery").unwrap();
+    let requests = Native2pcRequests::new(
+        NativeTransactionId::new([83; 16]).unwrap(),
+        coordinator,
+        NativeEnrollment::new([participant.clone()], [8, 3]).unwrap(),
+    );
+    let (staged, prepared) = requests
+        .singleton_state_only_initial_participant(Some(b"recovered-state".to_vec()))
+        .unwrap();
+    sidecar
+        .put_coordinator(requests.put_coordinator_preparing())
+        .await
+        .unwrap();
+    sidecar.stage_participant(staged).await.unwrap();
+    sidecar.put_participant(prepared).await.unwrap();
+    sidecar
+        .put_commit_decision(requests.put_commit_decision())
+        .await
+        .unwrap();
+    sidecar
+        .terminal_participant(requests.terminal(&participant, true))
+        .await
+        .unwrap();
+
+    let first = recover_and_materialize_singleton_initial_state_once(
+        &sidecar,
+        &requests,
+        Some(b"recovered-state".to_vec()),
+    )
+    .await
+    .unwrap();
+    let replay = sidecar
+        .materialize_applied(proto::Native2pcMaterializeAppliedRequest {
+            applied_journal: first.applied_journal.clone(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(first.materialization, replay);
+    assert_eq!(
+        first.materialization.state,
+        Some(b"recovered-state".to_vec())
+    );
 }
 
 /// This explicit C++ sidecar proof binds recovery to the durable commit guard:

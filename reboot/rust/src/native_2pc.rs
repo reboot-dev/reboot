@@ -1161,6 +1161,52 @@ fn exact_singleton_initial_applied_journal(
     })
 }
 
+/// Materialize exactly one already-committed singleton initial-state journal.
+///
+/// This is the crash continuation for
+/// [`commit_and_materialize_singleton_initial_state_once`]. It performs only
+/// recovery, exact journal selection, and materialization. In particular, it
+/// never replays prepare/decision/terminal RPCs, retries, creates an actor, or
+/// infers an abort from an ambiguous error.
+pub async fn recover_and_materialize_singleton_initial_state_once<
+    S: Native2pcDatabaseSidecar + ?Sized,
+>(
+    sidecar: &S,
+    requests: &Native2pcRequests,
+    state: Option<Vec<u8>>,
+) -> Result<Native2pcSingletonInitialStateMaterialization, Status> {
+    let state = state.ok_or_else(|| invalid("native initial state is required"))?;
+    let (staged, _) = requests.singleton_state_only_initial_participant(Some(state.clone()))?;
+    let participant = staged
+        .participant
+        .as_ref()
+        .and_then(|record| record.participant.as_ref())
+        .ok_or_else(|| Status::data_loss("native singleton stage lost participant identity"))?;
+    let participant = NativeActorId::new(
+        participant.state_type.clone(),
+        participant.state_ref.clone(),
+    )?;
+    let recovered = sidecar.recover().await?;
+    let journal = exact_singleton_initial_applied_journal(
+        &recovered,
+        &requests.root,
+        &requests.coordinator,
+        &participant,
+        &requests.enrollment.digest,
+        &state,
+    )?;
+    let materialization = sidecar
+        .materialize_applied(proto::Native2pcMaterializeAppliedRequest {
+            applied_journal: journal.clone(),
+        })
+        .await?;
+    validate_materialization_response(&journal, &materialization)?;
+    Ok(Native2pcSingletonInitialStateMaterialization {
+        applied_journal: journal,
+        materialization,
+    })
+}
+
 /// Perform exactly one native singleton, state-only initial materialization.
 ///
 /// This is a host-invoked transport primitive, not an actor factory or runtime.
