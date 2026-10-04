@@ -606,6 +606,64 @@ impl Native2pcCoordinatorResolver for StaticCxxCoordinator {
     }
 }
 
+#[tokio::test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+async fn native_singleton_initial_state_materializes_once_through_the_real_cxx_sidecar() {
+    let database = spawn_cxx_database().await;
+    let sidecar = TonicNative2pcDatabaseSidecar::connect(database.endpoint.clone())
+        .await
+        .unwrap();
+    let coordinator = NativeActorId::new("example.Coordinator", "coordinator/initial").unwrap();
+    let participant = NativeActorId::new("example.Participant", "participant/initial").unwrap();
+    let requests = Native2pcRequests::new(
+        NativeTransactionId::new([82; 16]).unwrap(),
+        coordinator,
+        NativeEnrollment::new([participant.clone()], [8, 2]).unwrap(),
+    );
+    let (staged, prepared) = requests
+        .singleton_state_only_initial_participant(Some(b"initial-state".to_vec()))
+        .unwrap();
+    sidecar
+        .put_coordinator(requests.put_coordinator_preparing())
+        .await
+        .unwrap();
+    sidecar.stage_participant(staged).await.unwrap();
+    sidecar.put_participant(prepared).await.unwrap();
+    sidecar
+        .put_commit_decision(requests.put_commit_decision())
+        .await
+        .unwrap();
+    assert_eq!(
+        sidecar
+            .terminal_participant(requests.terminal(&participant, true))
+            .await
+            .unwrap()
+            .terminal_phase,
+        proto::native2pc_participant_record::Phase::Committed as i32
+    );
+    let journal = sidecar
+        .recover()
+        .await
+        .unwrap()
+        .into_iter()
+        .find_map(|record| (!record.applied_journal.is_empty()).then_some(record.applied_journal))
+        .expect("committed singleton must yield an applied journal");
+    let first = sidecar
+        .materialize_applied(proto::Native2pcMaterializeAppliedRequest {
+            applied_journal: journal.clone(),
+        })
+        .await
+        .unwrap();
+    let replay = sidecar
+        .materialize_applied(proto::Native2pcMaterializeAppliedRequest {
+            applied_journal: journal,
+        })
+        .await
+        .unwrap();
+    assert_eq!(first, replay);
+    assert_eq!(first.state, Some(b"initial-state".to_vec()));
+}
+
 /// This explicit C++ sidecar proof binds recovery to the durable commit guard:
 /// the recovery continuation can decide only because the exact sealed
 /// participant record was already persisted as PREPARED.

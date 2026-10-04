@@ -993,6 +993,59 @@ impl Native2pcRequests {
         }
     }
 
+    /// Builds matched stage/prepare records for the only participant in a sealed
+    /// enrollment. This is deliberately limited to initial state-only
+    /// materialization: it creates no actor, does no I/O, and cannot represent
+    /// opaque effects or a later update to an already materialized actor.
+    pub fn singleton_state_only_initial_participant(
+        &self,
+        state: Option<Vec<u8>>,
+    ) -> Result<
+        (
+            proto::Native2pcStageParticipantRequest,
+            proto::Native2pcPutParticipantRequest,
+        ),
+        Status,
+    > {
+        let state = state.ok_or_else(|| invalid("native initial state is required"))?;
+        let mut participants = self.enrollment.participants();
+        let participant = participants
+            .next()
+            .ok_or_else(|| invalid("native enrollment requires one participant"))?;
+        if participants.next().is_some() {
+            return Err(invalid(
+                "native initial state requires exactly one enrolled participant",
+            ));
+        }
+        let effects = proto::Native2pcActorEffects {
+            state: Some(state),
+            effects: Vec::new(),
+        };
+        let staged = proto::Native2pcStageParticipantRequest {
+            participant: Some(proto::Native2pcParticipantRecord {
+                protocol: Some(protocol()),
+                root_transaction_id: self.root.bytes(),
+                participant: Some(participant.to_proto()),
+                coordinator: Some(self.coordinator.to_proto()),
+                enrollment_digest: self.enrollment.digest.clone(),
+                phase: proto::native2pc_participant_record::Phase::Staged as i32,
+                effects: Some(effects.clone()),
+            }),
+        };
+        let prepared = proto::Native2pcPutParticipantRequest {
+            participant: Some(proto::Native2pcParticipantRecord {
+                protocol: Some(protocol()),
+                root_transaction_id: self.root.bytes(),
+                participant: Some(participant.to_proto()),
+                coordinator: Some(self.coordinator.to_proto()),
+                enrollment_digest: self.enrollment.digest.clone(),
+                phase: proto::native2pc_participant_record::Phase::Prepared as i32,
+                effects: Some(effects),
+            }),
+        };
+        Ok((staged, prepared))
+    }
+
     pub fn prepare(&self, participant: &NativeActorId) -> proto::Native2pcPrepareRequest {
         proto::Native2pcPrepareRequest {
             protocol: Some(protocol()),
@@ -2020,6 +2073,49 @@ mod tests {
         assert_eq!(
             prepared.coordinator.unwrap(),
             requests.coordinator.to_proto()
+        );
+    }
+
+    #[test]
+    fn singleton_initial_state_records_are_matched_and_bounded() {
+        let participant = participant("only");
+        let singleton = Native2pcRequests::new(
+            NativeTransactionId::new([3; 16]).unwrap(),
+            coordinator(),
+            NativeEnrollment::new([participant.clone()], [3, 9]).unwrap(),
+        );
+        let (staged, prepared) = singleton
+            .singleton_state_only_initial_participant(Some(Vec::new()))
+            .unwrap();
+        let staged = staged.participant.unwrap();
+        let prepared = prepared.participant.unwrap();
+        assert_eq!(
+            staged.phase,
+            proto::native2pc_participant_record::Phase::Staged as i32
+        );
+        assert_eq!(
+            prepared.phase,
+            proto::native2pc_participant_record::Phase::Prepared as i32
+        );
+        let mut normalized = prepared.clone();
+        normalized.phase = staged.phase;
+        assert_eq!(normalized, staged);
+        assert_eq!(staged.participant, Some(participant.to_proto()));
+        assert_eq!(staged.effects.unwrap().state, Some(Vec::new()));
+
+        assert_eq!(
+            singleton
+                .singleton_state_only_initial_participant(None)
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        assert_eq!(
+            requests()
+                .singleton_state_only_initial_participant(Some(b"state".to_vec()))
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
         );
     }
 
