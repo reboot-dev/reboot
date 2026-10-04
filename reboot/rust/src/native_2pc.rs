@@ -1548,10 +1548,39 @@ pub trait Native2pcDatabaseSidecar: Send + Sync + 'static {
         &self,
         request: proto::Native2pcMaterializeAppliedRequest,
     ) -> NativeFuture<'_, proto::Native2pcMaterializeAppliedResponse>;
+    fn get_materialized_state(
+        &self,
+        request: proto::Native2pcGetMaterializedStateRequest,
+    ) -> NativeFuture<'_, proto::Native2pcGetMaterializedStateResponse>;
     fn terminal_participant(
         &self,
         request: proto::Native2pcTerminalParticipantRequest,
     ) -> NativeFuture<'_, proto::Native2pcTerminalParticipantResponse>;
+}
+
+/// Builds an exact native state-read request for a caller-selected actor.
+/// Sidecar selection remains the trusted host's responsibility; this helper has
+/// no placement, legacy fallback, or state reconstruction behavior.
+pub fn native2pc_get_materialized_state_request(
+    actor: &NativeActorId,
+) -> proto::Native2pcGetMaterializedStateRequest {
+    proto::Native2pcGetMaterializedStateRequest {
+        protocol: Some(protocol()),
+        actor: Some(actor.to_proto()),
+    }
+}
+
+/// Reads only bytes that an injected native sidecar has already materialized.
+/// A missing state remains `NOT_FOUND`; intentionally empty state is returned
+/// as an empty vector. The bytes are opaque to the Rust SDK.
+pub async fn get_materialized_native_state<S: Native2pcDatabaseSidecar + ?Sized>(
+    sidecar: &S,
+    actor: &NativeActorId,
+) -> Result<Vec<u8>, Status> {
+    Ok(sidecar
+        .get_materialized_state(native2pc_get_materialized_state_request(actor))
+        .await?
+        .state)
 }
 
 /// The negotiated capabilities of one reachable Native2pc participant. This is
@@ -1945,6 +1974,25 @@ impl Native2pcDatabaseSidecar for TonicNative2pcDatabaseSidecar {
                 .into_inner();
             validate_materialization_response(&journal, &response)?;
             Ok(response)
+        })
+    }
+
+    fn get_materialized_state(
+        &self,
+        request: proto::Native2pcGetMaterializedStateRequest,
+    ) -> NativeFuture<'_, proto::Native2pcGetMaterializedStateResponse> {
+        Box::pin(async move {
+            validate_protocol(request.protocol.as_ref())?;
+            validate_actor(
+                request.actor.as_ref(),
+                "native actor state type and reference must not be empty",
+            )?;
+            self.client
+                .lock()
+                .await
+                .get_materialized_state(request)
+                .await
+                .map(Response::into_inner)
         })
     }
 
@@ -2924,6 +2972,12 @@ mod tests {
         ) -> NativeFuture<'_, proto::Native2pcMaterializeAppliedResponse> {
             Box::pin(async { Err(Status::unimplemented("not used")) })
         }
+        fn get_materialized_state(
+            &self,
+            _: proto::Native2pcGetMaterializedStateRequest,
+        ) -> NativeFuture<'_, proto::Native2pcGetMaterializedStateResponse> {
+            Box::pin(async { Err(Status::unimplemented("not used")) })
+        }
         fn terminal_participant(
             &self,
             request: proto::Native2pcTerminalParticipantRequest,
@@ -3258,6 +3312,17 @@ mod tests {
                     }),
                     state: Some(state),
                 })
+            })
+        }
+
+        fn get_materialized_state(
+            &self,
+            _: proto::Native2pcGetMaterializedStateRequest,
+        ) -> NativeFuture<'_, proto::Native2pcGetMaterializedStateResponse> {
+            Box::pin(async {
+                Err(Status::not_found(
+                    "native materialized actor state is missing",
+                ))
             })
         }
 

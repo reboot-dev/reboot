@@ -2614,6 +2614,17 @@ mod tests {
                 ("state", 2, Type::Bytes, Label::Optional),
             ],
         );
+        assert_fields(
+            message(native, "Native2pcGetMaterializedStateRequest"),
+            &[
+                ("protocol", 1, Type::Message, Label::Optional),
+                ("actor", 2, Type::Message, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcGetMaterializedStateResponse"),
+            &[("state", 1, Type::Bytes, Label::Optional)],
+        );
 
         let services: Vec<_> = native
             .service
@@ -2714,6 +2725,12 @@ mod tests {
                             "MaterializeApplied",
                             ".rbt.v1alpha1.Native2pcMaterializeAppliedRequest",
                             ".rbt.v1alpha1.Native2pcMaterializeAppliedResponse",
+                            false
+                        ),
+                        (
+                            "GetMaterializedState",
+                            ".rbt.v1alpha1.Native2pcGetMaterializedStateRequest",
+                            ".rbt.v1alpha1.Native2pcGetMaterializedStateResponse",
                             false
                         ),
                         (

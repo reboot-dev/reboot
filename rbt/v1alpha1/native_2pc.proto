@@ -245,6 +245,17 @@ message Native2pcMaterializeAppliedResponse {
   optional bytes state = 2;
 }
 
+// Reads only state already atomically materialized in the native-v1 namespace.
+// NOT_FOUND distinguishes an absent actor state from intentionally empty bytes.
+message Native2pcGetMaterializedStateRequest {
+  Native2pcProtocol protocol = 1;
+  Native2pcActorId actor = 2;
+}
+
+message Native2pcGetMaterializedStateResponse {
+  bytes state = 1;
+}
+
 message Native2pcTerminalParticipantRequest {
   Native2pcTerminalRequest terminal = 1;
 }
@@ -268,6 +279,8 @@ service Native2pcDatabase {
       returns (stream Native2pcRecoverResponse);
   rpc MaterializeApplied(Native2pcMaterializeAppliedRequest)
       returns (Native2pcMaterializeAppliedResponse);
+  rpc GetMaterializedState(Native2pcGetMaterializedStateRequest)
+      returns (Native2pcGetMaterializedStateResponse);
   rpc TerminalParticipant(Native2pcTerminalParticipantRequest)
       returns (Native2pcTerminalParticipantResponse);
 }

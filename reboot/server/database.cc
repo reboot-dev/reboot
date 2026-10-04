@@ -431,6 +431,9 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   grpc::Status NativeMaterializeApplied(
       const rbt::v1alpha1::Native2pcMaterializeAppliedRequest& request,
       rbt::v1alpha1::Native2pcMaterializeAppliedResponse* response);
+  grpc::Status NativeGetMaterializedState(
+      const rbt::v1alpha1::Native2pcGetMaterializedStateRequest& request,
+      rbt::v1alpha1::Native2pcGetMaterializedStateResponse* response);
   grpc::Status NativeTerminal(
       const rbt::v1alpha1::Native2pcTerminalParticipantRequest& request,
       rbt::v1alpha1::Native2pcTerminalParticipantResponse* response);
@@ -1307,6 +1310,7 @@ class Native2pcDatabaseService final : public rbt::v1alpha1::Native2pcDatabase::
   grpc::Status PutAbortDecision(grpc::ServerContext*, const rbt::v1alpha1::Native2pcPutAbortDecisionRequest* request, rbt::v1alpha1::Native2pcPutAbortDecisionResponse*) override { return database_.NativePutDecision(request->protocol(), request->root_transaction_id(), request->coordinator(), request->enrollment_digest(), rbt::v1alpha1::Native2pcCoordinatorRecord::ABORT_DECIDED); }
   grpc::Status RecoverNative2pc(grpc::ServerContext*, const rbt::v1alpha1::Native2pcRecoverRequest* request, grpc::ServerWriter<rbt::v1alpha1::Native2pcRecoverResponse>* responses) override { return database_.NativeRecover(*request, responses); }
   grpc::Status MaterializeApplied(grpc::ServerContext*, const rbt::v1alpha1::Native2pcMaterializeAppliedRequest* request, rbt::v1alpha1::Native2pcMaterializeAppliedResponse* response) override { return database_.NativeMaterializeApplied(*request, response); }
+  grpc::Status GetMaterializedState(grpc::ServerContext*, const rbt::v1alpha1::Native2pcGetMaterializedStateRequest* request, rbt::v1alpha1::Native2pcGetMaterializedStateResponse* response) override { return database_.NativeGetMaterializedState(*request, response); }
   grpc::Status TerminalParticipant(grpc::ServerContext*, const rbt::v1alpha1::Native2pcTerminalParticipantRequest* request, rbt::v1alpha1::Native2pcTerminalParticipantResponse* response) override { return database_.NativeTerminal(*request, response); }
  private:
   DatabaseService& database_;
@@ -5409,6 +5413,27 @@ grpc::Status DatabaseService::NativeMaterializeApplied(
   if (!write.ok()) return grpc::Status(grpc::StatusCode::INTERNAL, write.ToString());
   *response->mutable_receipt() = expected;
   response->set_state(retained.effects().state());
+  return grpc::Status::OK;
+}
+
+grpc::Status DatabaseService::NativeGetMaterializedState(
+    const rbt::v1alpha1::Native2pcGetMaterializedStateRequest& request,
+    rbt::v1alpha1::Native2pcGetMaterializedStateResponse* response) {
+  grpc::Status valid = ValidateNativeProtocol(request.protocol());
+  if (!valid.ok()) return valid;
+  if (!NativeActorValid(request.actor())) {
+    return NativeInvalid("native actor state type and reference must be nonempty");
+  }
+  std::lock_guard lock(native_2pc_mutex_);
+  std::string state;
+  rocksdb::Status get = db_->Get(
+      rocksdb::ReadOptions(), NativeStateKey(request.actor()), &state);
+  if (get.IsNotFound()) {
+    return grpc::Status(grpc::StatusCode::NOT_FOUND,
+                        "native materialized actor state is missing");
+  }
+  if (!get.ok()) return grpc::Status(grpc::StatusCode::INTERNAL, get.ToString());
+  response->set_state(state);
   return grpc::Status::OK;
 }
 

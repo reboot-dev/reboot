@@ -2541,6 +2541,29 @@ TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
   ASSERT_TRUE(state_applied.ParseFromString(*state_applied_bytes));
   v1alpha1::Native2pcMaterializeAppliedRequest materialize;
   materialize.set_applied_journal(*state_applied_bytes);
+  v1alpha1::Native2pcGetMaterializedStateRequest get_state;
+  *get_state.mutable_protocol() = protocol();
+  *get_state.mutable_actor() = participant;
+  v1alpha1::Native2pcGetMaterializedStateResponse get_state_response;
+  grpc::ClientContext get_state_before_context;
+  EXPECT_EQ(grpc::StatusCode::NOT_FOUND,
+            native_stub->GetMaterializedState(
+                &get_state_before_context, get_state, &get_state_response)
+                .error_code());
+  v1alpha1::Native2pcGetMaterializedStateRequest bad_get_state = get_state;
+  bad_get_state.mutable_protocol()->set_record_version(2);
+  grpc::ClientContext bad_get_state_context;
+  EXPECT_EQ(grpc::StatusCode::INVALID_ARGUMENT,
+            native_stub->GetMaterializedState(
+                &bad_get_state_context, bad_get_state, &get_state_response)
+                .error_code());
+  bad_get_state = get_state;
+  bad_get_state.clear_actor();
+  grpc::ClientContext missing_actor_get_state_context;
+  EXPECT_EQ(grpc::StatusCode::INVALID_ARGUMENT,
+            native_stub->GetMaterializedState(
+                &missing_actor_get_state_context, bad_get_state, &get_state_response)
+                .error_code());
   grpc::ClientContext materialize_context;
   ASSERT_TRUE(native_stub->MaterializeApplied(
                   &materialize_context, materialize, &materialize_response)
@@ -2550,6 +2573,11 @@ TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
             materialize_response.receipt().applied().SerializeAsString());
   ASSERT_TRUE(materialize_response.has_state());
   EXPECT_EQ("native-state", materialize_response.state());
+  grpc::ClientContext get_state_after_context;
+  ASSERT_TRUE(native_stub->GetMaterializedState(
+                  &get_state_after_context, get_state, &get_state_response)
+                  .ok());
+  EXPECT_EQ("native-state", get_state_response.state());
   const std::string native_state_key =
       "n2pc/v1/state/" + native_hex(participant.state_type()) + "/" +
       native_hex(participant.state_ref());

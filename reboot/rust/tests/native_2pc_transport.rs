@@ -17,7 +17,8 @@ use reboot_rust_schema::{
         NativeFuture, NativeTransactionId, PROTOCOL_ID, RECORD_VERSION,
         TonicNative2pcCoordinatorEndpoint, TonicNative2pcDatabaseSidecar,
         TonicNative2pcParticipantEndpoint, commit_and_materialize_singleton_initial_state_once,
-        decide_native2pc_coordinator_once, recover_and_materialize_committed_singleton_state_once,
+        decide_native2pc_coordinator_once, get_materialized_native_state,
+        recover_and_materialize_committed_singleton_state_once,
         recover_and_materialize_singleton_initial_state_once, recover_prepared_participant_once,
         recover_preparing_native2pc_coordinator_once, recover_staged_participant_once,
         require_native2pc_participant,
@@ -152,6 +153,15 @@ impl proto::native2pc_database_server::Native2pcDatabase for NativeDatabase {
             }),
             state: Some(state),
         }))
+    }
+
+    async fn get_materialized_state(
+        &self,
+        _: Request<proto::Native2pcGetMaterializedStateRequest>,
+    ) -> Result<Response<proto::Native2pcGetMaterializedStateResponse>, Status> {
+        Err(Status::not_found(
+            "native materialized actor state is missing",
+        ))
     }
 
     async fn terminal_participant(
@@ -637,6 +647,12 @@ async fn native_singleton_initial_state_materializes_once_through_the_real_cxx_s
         .unwrap();
     assert_eq!(first.materialization, replay);
     assert_eq!(first.materialization.state, Some(b"initial-state".to_vec()));
+    assert_eq!(
+        get_materialized_native_state(&sidecar, &participant)
+            .await
+            .unwrap(),
+        b"initial-state"
+    );
 }
 
 /// The committed-singleton recovery primitive must admit only an exact C++
