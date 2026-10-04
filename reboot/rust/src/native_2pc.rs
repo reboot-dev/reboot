@@ -1102,6 +1102,125 @@ impl Native2pcRequests {
     }
 }
 
+/// The sole result of a host-invoked singleton initial-state operation. A
+/// successful materialization means the native sidecar atomically recorded the
+/// state-only applied receipt; it does not create or execute an actor.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Native2pcSingletonInitialStateMaterialization {
+    pub applied_journal: Vec<u8>,
+    pub materialization: proto::Native2pcMaterializeAppliedResponse,
+}
+
+fn actor_matches(actor: &proto::Native2pcActorId, expected: &NativeActorId) -> bool {
+    actor.state_type == expected.state_type() && actor.state_ref == expected.state_ref()
+}
+
+fn exact_singleton_initial_applied_journal(
+    recovered: &[proto::Native2pcRecoverResponse],
+    root: &NativeTransactionId,
+    coordinator: &NativeActorId,
+    participant: &NativeActorId,
+    digest: &[u8],
+    state: &[u8],
+) -> Result<Vec<u8>, Status> {
+    let mut journal = None;
+    for record in recovered {
+        validate_recovery_response(record)?;
+        let Some(applied) = record.applied.as_ref() else {
+            continue;
+        };
+        let applied_participant = applied
+            .participant
+            .as_ref()
+            .expect("validated applied participant");
+        if !actor_matches(applied_participant, participant) {
+            continue;
+        }
+        let effects = applied.effects.as_ref().expect("validated applied effects");
+        if applied.root_transaction_id != root.bytes()
+            || !applied
+                .coordinator
+                .as_ref()
+                .is_some_and(|value| actor_matches(value, coordinator))
+            || applied.enrollment_digest != digest
+            || effects.state.as_deref() != Some(state)
+            || !effects.effects.is_empty()
+        {
+            return Err(Status::data_loss(
+                "native recovered singleton journal conflicts with requested identity or state",
+            ));
+        }
+        if journal.replace(record.applied_journal.clone()).is_some() {
+            return Err(Status::data_loss(
+                "native recovered singleton journal is duplicate or conflicting",
+            ));
+        }
+    }
+    journal.ok_or_else(|| {
+        Status::failed_precondition("native committed singleton journal was not recovered")
+    })
+}
+
+/// Perform exactly one native singleton, state-only initial materialization.
+///
+/// This is a host-invoked transport primitive, not an actor factory or runtime.
+/// It persists an exact `PREPARING -> STAGED -> PREPARED -> COMMIT_DECIDED ->
+/// COMMITTED` path, then materializes only the exact recovered journal. Every
+/// RPC error is propagated as non-definitive; this function never invents an
+/// abort, retries, routes, executes effects, or falls back to legacy services.
+pub async fn commit_and_materialize_singleton_initial_state_once<
+    S: Native2pcDatabaseSidecar + ?Sized,
+>(
+    sidecar: &S,
+    requests: &Native2pcRequests,
+    state: Option<Vec<u8>>,
+) -> Result<Native2pcSingletonInitialStateMaterialization, Status> {
+    let state = state.ok_or_else(|| invalid("native initial state is required"))?;
+    let (staged, prepared) =
+        requests.singleton_state_only_initial_participant(Some(state.clone()))?;
+    let participant = staged
+        .participant
+        .as_ref()
+        .and_then(|record| record.participant.as_ref())
+        .ok_or_else(|| Status::data_loss("native singleton stage lost participant identity"))?;
+    let participant = NativeActorId::new(
+        participant.state_type.clone(),
+        participant.state_ref.clone(),
+    )?;
+
+    sidecar
+        .put_coordinator(requests.put_coordinator_preparing())
+        .await?;
+    sidecar.stage_participant(staged).await?;
+    sidecar.put_participant(prepared).await?;
+    sidecar
+        .put_commit_decision(requests.put_commit_decision())
+        .await?;
+    let terminal = requests.terminal(&participant, true);
+    let terminal_response = sidecar.terminal_participant(terminal.clone()).await?;
+    validate_terminal_participant_response(&terminal, &terminal_response)?;
+
+    let recovered = sidecar.recover().await?;
+    let journal = exact_singleton_initial_applied_journal(
+        &recovered,
+        &requests.root,
+        &requests.coordinator,
+        &participant,
+        &requests.enrollment.digest,
+        &state,
+    )?;
+    let materialization = sidecar
+        .materialize_applied(proto::Native2pcMaterializeAppliedRequest {
+            applied_journal: journal.clone(),
+        })
+        .await?;
+    validate_materialization_response(&journal, &materialization)?;
+    Ok(Native2pcSingletonInitialStateMaterialization {
+        applied_journal: journal,
+        materialization,
+    })
+}
+
 /// Result of one bounded native recovery pass. Coordinator and participant
 /// records remain control-plane recovery work; this executor applies only the
 /// explicitly supported state-only committed journals. Unsupported journals are
@@ -2116,6 +2235,91 @@ mod tests {
                 .unwrap_err()
                 .code(),
             tonic::Code::InvalidArgument
+        );
+    }
+
+    #[test]
+    fn singleton_initial_materialization_selects_one_exact_recovered_journal() {
+        let participant = participant("only");
+        let singleton = Native2pcRequests::new(
+            NativeTransactionId::new([4; 16]).unwrap(),
+            coordinator(),
+            NativeEnrollment::new([participant.clone()], [4, 9]).unwrap(),
+        );
+        let (_, prepared) = singleton
+            .singleton_state_only_initial_participant(Some(b"state".to_vec()))
+            .unwrap();
+        let prepared = prepared.participant.unwrap();
+        let applied = proto::Native2pcAppliedActorEffects {
+            protocol: prepared.protocol,
+            root_transaction_id: prepared.root_transaction_id,
+            participant: prepared.participant,
+            coordinator: prepared.coordinator,
+            enrollment_digest: prepared.enrollment_digest,
+            effects: prepared.effects,
+        };
+        let exact = proto::Native2pcRecoverResponse {
+            applied_journal: applied.encode_to_vec(),
+            applied: Some(applied.clone()),
+            ..Default::default()
+        };
+        assert_eq!(
+            exact_singleton_initial_applied_journal(
+                std::slice::from_ref(&exact),
+                &singleton.root,
+                &singleton.coordinator,
+                &participant,
+                &singleton.enrollment.digest,
+                b"state",
+            )
+            .unwrap(),
+            exact.applied_journal
+        );
+        assert_eq!(
+            exact_singleton_initial_applied_journal(
+                &[],
+                &singleton.root,
+                &singleton.coordinator,
+                &participant,
+                &singleton.enrollment.digest,
+                b"state",
+            )
+            .unwrap_err()
+            .code(),
+            tonic::Code::FailedPrecondition
+        );
+        let mut mismatched = applied;
+        mismatched.effects.as_mut().unwrap().state = Some(b"other".to_vec());
+        let mismatched = proto::Native2pcRecoverResponse {
+            applied_journal: mismatched.encode_to_vec(),
+            applied: Some(mismatched),
+            ..Default::default()
+        };
+        assert_eq!(
+            exact_singleton_initial_applied_journal(
+                &[mismatched, exact.clone()],
+                &singleton.root,
+                &singleton.coordinator,
+                &participant,
+                &singleton.enrollment.digest,
+                b"state",
+            )
+            .unwrap_err()
+            .code(),
+            tonic::Code::DataLoss
+        );
+        assert_eq!(
+            exact_singleton_initial_applied_journal(
+                &[exact.clone(), exact],
+                &singleton.root,
+                &singleton.coordinator,
+                &participant,
+                &singleton.enrollment.digest,
+                b"state",
+            )
+            .unwrap_err()
+            .code(),
+            tonic::Code::DataLoss
         );
     }
 
