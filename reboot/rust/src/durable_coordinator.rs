@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::{
     database_proto as database,
-    durable_participant::{DurableActorParticipantHost, ParticipantSidecar},
+    durable_participant::{DurableActorParticipantHost, ParticipantSidecar, SharedPromotion},
     runtime::TransactionMode,
 };
 
@@ -515,6 +515,30 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
     ) -> Result<(), Status> {
         Self::validate_start(&start)?;
         let participants = Self::participant_set(&start, returned)?;
+        self.complete_participants(start, participants).await
+    }
+
+    /// Completes the one writer created by a local shared-to-exclusive promotion.
+    ///
+    /// This intentionally does not broaden the generic completion path: the
+    /// opaque proof must match the sole root participant exactly, and no remote
+    /// participants can be enlisted through this seam.
+    pub async fn complete_shared_local_promotion(
+        &self,
+        start: RootCoordinatorStart,
+        promotion: SharedPromotion,
+    ) -> Result<(), Status> {
+        Self::validate_shared_local_promotion(&start, &promotion)?;
+        let mut participants = ParticipantSet::default();
+        participants.add(start.participant.clone(), false);
+        self.complete_participants(start, participants).await
+    }
+
+    async fn complete_participants(
+        &self,
+        start: RootCoordinatorStart,
+        participants: ParticipantSet,
+    ) -> Result<(), Status> {
         let transaction_id = start.transaction_ids[0];
         self.sidecar
             .coordinator_prepare(database::TransactionCoordinatorPrepareRequest {
@@ -722,6 +746,56 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             Ok(())
         })
     }
+    fn validate_shared_local_promotion(
+        start: &RootCoordinatorStart,
+        promotion: &SharedPromotion,
+    ) -> Result<(), Status> {
+        if start.transaction_ids.len() != 1 {
+            return Err(Status::unimplemented(
+                "nested or multi-ID shared promotions are not supported",
+            ));
+        }
+        if start.mode != TransactionMode::Shared {
+            return Err(Status::failed_precondition(
+                "shared local promotion requires a shared root transaction",
+            ));
+        }
+        if start.read_only {
+            return Err(Status::failed_precondition(
+                "shared local promotion must be a writer",
+            ));
+        }
+        if start.factory {
+            return Err(Status::unimplemented(
+                "factory shared promotions are not supported",
+            ));
+        }
+        if start.placement_requested {
+            return Err(Status::unimplemented(
+                "placement-selected transactions are not supported",
+            ));
+        }
+        if start.coordinator_state_type.is_empty()
+            || start.coordinator_state_ref.is_empty()
+            || start.participant.state_type.is_empty()
+            || start.participant.state_ref.is_empty()
+        {
+            return Err(Status::invalid_argument(
+                "coordinator and participant identity must be specified",
+            ));
+        }
+        if !promotion.matches(
+            start.transaction_ids[0],
+            &start.participant.state_type,
+            &start.participant.state_ref,
+        ) {
+            return Err(Status::failed_precondition(
+                "shared promotion does not match the root participant",
+            ));
+        }
+        Ok(())
+    }
+
     fn validate_start(start: &RootCoordinatorStart) -> Result<(), Status> {
         if start.transaction_ids.len() != 1 {
             return Err(Status::unimplemented(
@@ -902,7 +976,7 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::durable_participant::{
-        ActorTransactionStart, DurableActorParticipant, PendingActorEffects,
+        ActorTransactionStart, DurableActorParticipant, ParticipantStartMode, PendingActorEffects,
     };
 
     #[derive(Clone, Debug, PartialEq)]
@@ -1050,6 +1124,44 @@ mod tests {
             placement_requested: false,
         }
     }
+    fn shared_start(id: Uuid) -> RootCoordinatorStart {
+        let mut value = start(id);
+        value.mode = TransactionMode::Shared;
+        value
+    }
+
+    async fn shared_promotion(id: Uuid) -> SharedPromotion {
+        let sidecar = Arc::new(InProcessSidecar::default());
+        *sidecar.load_state.lock().unwrap() = Some(vec![0]);
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let started = participant
+            .start_local(
+                ActorTransactionStart {
+                    transaction_ids: vec![id],
+                    transaction_path: crate::durable_participant::TransactionPathContract::RootOnly,
+                    coordinator_state_type: "example.Actor".into(),
+                    coordinator_state_ref: "actor/1".into(),
+                    mode: TransactionMode::Shared,
+                    read_only: false,
+                    factory: false,
+                    state_type: "example.Actor".into(),
+                    state_ref: "actor/1".into(),
+                },
+                ParticipantStartMode::SharedUpgradeable,
+            )
+            .await
+            .unwrap();
+        started
+            .stage(PendingActorEffects {
+                state: Some(vec![1]),
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .expect("changed shared state must atomically produce a promotion proof")
+    }
+
     fn coordinator(
         sidecar: Arc<MockSidecar>,
         endpoint: Arc<MockEndpoint>,
@@ -1060,12 +1172,23 @@ mod tests {
     #[derive(Default)]
     struct InProcessSidecar {
         calls: Mutex<Vec<&'static str>>,
+        load_state: Mutex<Option<Vec<u8>>>,
     }
 
     impl ParticipantSidecar for InProcessSidecar {
         fn load(&self, _: database::LoadRequest) -> CoordinatorFuture<'_, database::LoadResponse> {
             self.calls.lock().unwrap().push("load");
-            Box::pin(async { Ok(Default::default()) })
+            let state = self.load_state.lock().unwrap().clone();
+            Box::pin(async move {
+                Ok(database::LoadResponse {
+                    actors: vec![database::Actor {
+                        state_type: "example.Actor".into(),
+                        state_ref: "actor/1".into(),
+                        state,
+                    }],
+                    ..Default::default()
+                })
+            })
         }
 
         fn prepare(
@@ -1282,6 +1405,118 @@ mod tests {
             ]
         );
     }
+    #[tokio::test]
+    async fn shared_local_promotion_persists_and_controls_the_single_writer_in_exact_order() {
+        let trace = Arc::new(Mutex::new(Vec::new()));
+        let sidecar = Arc::new(MockSidecar {
+            trace: Arc::clone(&trace),
+            ..Default::default()
+        });
+        let endpoint = Arc::new(MockEndpoint {
+            trace: Arc::clone(&trace),
+            ..Default::default()
+        });
+        let id = Uuid::from_u128(900);
+
+        coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
+            .complete_shared_local_promotion(shared_start(id), shared_promotion(id).await)
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::DbPrepare(prepare), Call::DbPrepared(prepared), Call::DecisionPut(decision), Call::Cleanup(cleanup)]
+                if prepare.transaction_id == id.as_bytes()
+                    && prepare.transaction_coordinator.as_ref().is_some_and(|record|
+                        record.preparing
+                            && record.participants.as_ref().is_some_and(|participants|
+                                participants.read_only.is_empty()
+                                    && participants.should_commit["example.Actor"].state_refs == vec!["actor/1"]))
+                    && prepared.transaction_coordinator.as_ref().is_some_and(|record| !record.preparing)
+                    && decision.decision.as_ref().is_some_and(|decision|
+                        decision.outcome == database::transaction_coordinator_decision::Outcome::Commit as i32)
+                    && cleanup.transaction_id == id.as_bytes()
+        ));
+        assert!(matches!(
+            endpoint.calls.lock().unwrap().as_slice(),
+            [Call::Prepare(prepare), Call::Commit(commit)]
+                if !prepare.read_only && prepare.read_only_aware && prepare.transaction_id == id.as_bytes()
+                    && commit.transaction_id == id.as_bytes()
+        ));
+        assert_eq!(
+            trace.lock().unwrap().as_slice(),
+            [
+                "database.prepare",
+                "participant.prepare",
+                "database.prepared",
+                "database.decision",
+                "participant.commit",
+                "database.cleanup",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn shared_local_promotion_rejects_mismatched_and_unsupported_shapes_before_io() {
+        let promotion_id = Uuid::from_u128(901);
+        let wrong_root = shared_start(Uuid::from_u128(902));
+        let mut wrong_type = shared_start(promotion_id);
+        wrong_type.participant.state_type = "example.Other".into();
+        let mut wrong_ref = shared_start(promotion_id);
+        wrong_ref.participant.state_ref = "actor/other".into();
+        let mut read_only = shared_start(promotion_id);
+        read_only.read_only = true;
+        let mut factory = shared_start(promotion_id);
+        factory.factory = true;
+        let mut placement = shared_start(promotion_id);
+        placement.placement_requested = true;
+        let mut exclusive = shared_start(promotion_id);
+        exclusive.mode = TransactionMode::Exclusive;
+        let mut multiple_ids = shared_start(promotion_id);
+        multiple_ids.transaction_ids.push(Uuid::from_u128(903));
+
+        for (invalid, expected) in [
+            (wrong_root, tonic::Code::FailedPrecondition),
+            (wrong_type, tonic::Code::FailedPrecondition),
+            (wrong_ref, tonic::Code::FailedPrecondition),
+            (read_only, tonic::Code::FailedPrecondition),
+            (factory, tonic::Code::Unimplemented),
+            (placement, tonic::Code::Unimplemented),
+            (exclusive, tonic::Code::FailedPrecondition),
+            (multiple_ids, tonic::Code::Unimplemented),
+        ] {
+            let sidecar = Arc::new(MockSidecar::default());
+            let endpoint = Arc::new(MockEndpoint::default());
+            assert_eq!(
+                coordinator(Arc::clone(&sidecar), endpoint)
+                    .complete_shared_local_promotion(invalid, shared_promotion(promotion_id).await)
+                    .await
+                    .unwrap_err()
+                    .code(),
+                expected
+            );
+            assert!(sidecar.calls.lock().unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn generic_completion_still_rejects_shared_writers_before_io() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let endpoint = Arc::new(MockEndpoint::default());
+        assert_eq!(
+            coordinator(Arc::clone(&sidecar), endpoint)
+                .complete_with_classified_returned_participants(
+                    shared_start(Uuid::from_u128(904)),
+                    Vec::new()
+                )
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::FailedPrecondition
+        );
+        assert!(sidecar.calls.lock().unwrap().is_empty());
+    }
+
     #[tokio::test]
     async fn factory_seals_deduplicated_remote_participants_before_prepare_and_waits_for_all_terminals()
      {

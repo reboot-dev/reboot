@@ -204,9 +204,21 @@ pub enum ParticipantStartMode {
 }
 
 /// Opaque evidence that a shared participant atomically promoted its gate.
+///
+/// Only this module can construct the proof. It is consumed by the narrow
+/// shared-root coordinator seam and is bound to the exact root and participant
+/// identity that upgraded from shared to exclusive ownership.
 #[derive(Debug)]
 pub struct SharedPromotion {
-    _private: (),
+    root_id: Uuid,
+    state_type: String,
+    state_ref: String,
+}
+
+impl SharedPromotion {
+    pub(crate) fn matches(&self, root_id: Uuid, state_type: &str, state_ref: &str) -> bool {
+        self.root_id == root_id && self.state_type == state_type && self.state_ref == state_ref
+    }
 }
 
 /// Whether a caller has explicitly opted into preserving a nested ID path.
@@ -524,7 +536,11 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 })?;
                 current.lock = PendingLock::Exclusive(exclusive);
                 current.disposition = PendingDisposition::Commit;
-                Some(SharedPromotion { _private: () })
+                Some(SharedPromotion {
+                    root_id: current.root_id,
+                    state_type: self.state_type.clone(),
+                    state_ref: self.state_ref.clone(),
+                })
             } else {
                 None
             };
@@ -1934,16 +1950,18 @@ mod tests {
             .start_local(shared, ParticipantStartMode::SharedUpgradeable)
             .await
             .unwrap();
-        assert!(
-            started
-                .stage(PendingActorEffects {
-                    state: Some(vec![1]),
-                    ..Default::default()
-                })
-                .await
-                .unwrap()
-                .is_some()
-        );
+        // `stage` returns only after the shared lease's atomic upgrade has
+        // completed; before this await no promotion proof exists to hand off.
+        let promotion = started
+            .stage(PendingActorEffects {
+                state: Some(vec![1]),
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .expect("changed shared state must produce a promotion proof");
+        assert!(promotion.matches(id, "example.Actor", "actor/1"));
+        assert!(!promotion.matches(Uuid::from_u128(999), "example.Actor", "actor/1"));
         participant.prepare(id, false, false).await.unwrap();
         participant.terminal(id, true).await.unwrap();
         assert!(matches!(
