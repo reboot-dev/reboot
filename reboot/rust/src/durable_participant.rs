@@ -58,6 +58,11 @@ pub trait ParticipantSidecar: Send + Sync + 'static {
         &self,
         request: database::RecoverRequest,
     ) -> SidecarFuture<'_, Vec<database::RecoverResponse>>;
+    /// Collects completed mutations for root-local idempotency admission.
+    fn recover_idempotent_mutations(
+        &self,
+        request: database::RecoverIdempotentMutationsRequest,
+    ) -> SidecarFuture<'_, Vec<database::RecoverIdempotentMutationsResponse>>;
 }
 
 /// Native Tonic implementation of the actor participant's sidecar boundary.
@@ -141,6 +146,26 @@ impl ParticipantSidecar for TonicParticipantSidecar {
                 .lock()
                 .await
                 .recover(request)
+                .await?
+                .into_inner();
+            let mut responses = Vec::new();
+            while let Some(response) = stream.message().await? {
+                responses.push(response);
+            }
+            Ok(responses)
+        })
+    }
+
+    fn recover_idempotent_mutations(
+        &self,
+        request: database::RecoverIdempotentMutationsRequest,
+    ) -> SidecarFuture<'_, Vec<database::RecoverIdempotentMutationsResponse>> {
+        Box::pin(async move {
+            let mut stream = self
+                .client
+                .lock()
+                .await
+                .recover_idempotent_mutations(request)
                 .await?
                 .into_inner();
             let mut responses = Vec::new();
@@ -273,6 +298,11 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             state_ref,
             pending: Arc::new(tokio::sync::Mutex::new(None)),
         }
+    }
+
+    /// The injected sidecar boundary for generated root-local admission.
+    pub fn sidecar(&self) -> Arc<C> {
+        Arc::clone(&self.sidecar)
     }
 
     /// Binds this not-yet-started participant to normal accesses through one
@@ -904,6 +934,12 @@ mod tests {
                 .drain(..)
                 .collect::<Result<Vec<_>, _>>();
             Box::pin(async move { responses })
+        }
+        fn recover_idempotent_mutations(
+            &self,
+            _: database::RecoverIdempotentMutationsRequest,
+        ) -> SidecarFuture<'_, Vec<database::RecoverIdempotentMutationsResponse>> {
+            Box::pin(async { Ok(Vec::new()) })
         }
     }
 

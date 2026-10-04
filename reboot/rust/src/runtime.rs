@@ -67,6 +67,74 @@ impl<Response> TransactionExecution<Response> {
     }
 }
 
+/// Idempotency identity derived from validated transaction metadata for one
+/// generated root-exclusive mutation.
+///
+/// This deliberately has no constructor: generated adapters obtain it from a
+/// [`TransactionContext`], which has already decoded the UUID metadata.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransactionIdempotency {
+    key: Uuid,
+    request_fingerprint: Vec<u8>,
+}
+
+impl TransactionIdempotency {
+    /// The validated idempotency UUID from Reboot metadata.
+    pub fn key(&self) -> Uuid {
+        self.key
+    }
+
+    /// The canonical v1 method/request fingerprint.
+    pub fn request_fingerprint(&self) -> &[u8] {
+        &self.request_fingerprint
+    }
+
+    /// Builds the sole local mutation staged for a successful generated
+    /// root-exclusive transaction handler.
+    pub fn mutation<Response: Message>(
+        &self,
+        state_type: impl Into<String>,
+        state_ref: impl Into<String>,
+        response: &Response,
+    ) -> database::IdempotentMutation {
+        database::IdempotentMutation {
+            state_type: state_type.into(),
+            state_ref: state_ref.into(),
+            key: self.key.as_bytes().to_vec(),
+            response: response.encode_to_vec(),
+            task_ids: vec![],
+            workflow_id: None,
+            workflow_iteration: None,
+            request_fingerprint: Some(self.request_fingerprint.clone()),
+        }
+    }
+
+    /// Decodes one completed matching mutation, rejecting a nonempty
+    /// fingerprint collision before its response can be replayed.
+    pub fn replay<Response: Message + Default>(
+        &self,
+        mutation: &database::IdempotentMutation,
+    ) -> Result<Option<Response>, Status> {
+        if mutation.key != self.key.as_bytes() {
+            return Ok(None);
+        }
+        if mutation
+            .request_fingerprint
+            .as_deref()
+            .is_some_and(|stored| !stored.is_empty() && stored != self.request_fingerprint)
+        {
+            return Err(Status::failed_precondition(
+                "idempotency key was reused with a different request",
+            ));
+        }
+        Response::decode(mutation.response.as_slice())
+            .map(Some)
+            .map_err(|error| {
+                Status::internal(format!("invalid persisted idempotent response: {error}"))
+            })
+    }
+}
+
 /// Existing Reboot transaction metadata passed to a generated transaction
 /// handler.
 ///
@@ -90,6 +158,24 @@ impl PartialEq for TransactionContext {
 }
 
 impl Eq for TransactionContext {}
+
+impl TransactionContext {
+    /// Derives a root transaction's idempotency mutation identity from the
+    /// validated UUID metadata and canonical fully-qualified RPC fingerprint.
+    pub fn idempotency<RequestBody: Message>(
+        &self,
+        method_identity: &str,
+        request: &RequestBody,
+    ) -> Result<TransactionIdempotency, Status> {
+        let key = self.headers.idempotency_key.ok_or_else(|| {
+            Status::invalid_argument("metadata `x-reboot-idempotency-key` is required")
+        })?;
+        Ok(TransactionIdempotency {
+            key,
+            request_fingerprint: request_fingerprint(method_identity, request),
+        })
+    }
+}
 
 /// A validated transaction context received from an application RPC.
 ///
@@ -2702,6 +2788,57 @@ mod tests {
                 0x05, 0xaf, 0xe4, 0x61, 0x53, 0x5b, 0x94, 0x1d, 0x04, 0xc2, 0xf7, 0x09, 0xcc, 0xab,
                 0xa5, 0x0c, 0x2b, 0xa8,
             ]
+        );
+    }
+
+    #[test]
+    fn transaction_idempotency_derives_exact_mutation_and_fails_closed_collision() {
+        let mut headers = RebootHeaders::new("actor/42");
+        headers.idempotency_key = Some(Uuid::from_u128(42));
+        headers.transaction_ids = Some(vec![Uuid::from_u128(1)]);
+        headers.transaction_coordinator_state_type = Some("tests.Root".into());
+        headers.transaction_coordinator_state_ref = Some("root/1".into());
+        let context =
+            TransactionContext::from_headers(headers, TransactionMode::Exclusive).unwrap();
+        let request = proto::Text {
+            content: "request".into(),
+        };
+        let idempotency = context
+            .idempotency("tests.Service.Mutate", &request)
+            .unwrap();
+        let mutation = idempotency.mutation(
+            "tests.Actor",
+            "actor/42",
+            &proto::Text {
+                content: "response".into(),
+            },
+        );
+        assert_eq!(mutation.key, Uuid::from_u128(42).as_bytes());
+        assert_eq!(mutation.state_type, "tests.Actor");
+        assert_eq!(mutation.state_ref, "actor/42");
+        assert_eq!(
+            mutation.request_fingerprint.as_deref(),
+            Some(idempotency.request_fingerprint())
+        );
+        assert_eq!(
+            idempotency
+                .replay::<proto::Text>(&mutation)
+                .unwrap()
+                .unwrap()
+                .content,
+            "response"
+        );
+        let other = context
+            .idempotency(
+                "tests.Service.Mutate",
+                &proto::Text {
+                    content: "other".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            other.replay::<proto::Text>(&mutation).unwrap_err().code(),
+            tonic::Code::FailedPrecondition
         );
     }
 

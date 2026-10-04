@@ -219,8 +219,11 @@ async fn shared_barrier(transaction_id: Uuid) -> Result<(), tonic::Status> {
     };
     std::fs::create_dir_all(&directory)
         .map_err(|error| tonic::Status::internal(error.to_string()))?;
-    std::fs::write(std::path::Path::new(&directory).join(transaction_id.to_string()), [])
-        .map_err(|error| tonic::Status::internal(error.to_string()))?;
+    std::fs::write(
+        std::path::Path::new(&directory).join(transaction_id.to_string()),
+        [],
+    )
+    .map_err(|error| tonic::Status::internal(error.to_string()))?;
     for _ in 0..400 {
         let arrivals = std::fs::read_dir(&directory)
             .map_err(|error| tonic::Status::internal(error.to_string()))?
@@ -338,9 +341,10 @@ async fn main() {
             .map(|amount| amount.parse().expect("--amount must be i64"))
             .unwrap_or(7);
         let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount });
-        *request.metadata_mut() = reboot::RebootHeaders::new(&state_ref)
-            .to_metadata()
-            .unwrap();
+        let mut headers = reboot::RebootHeaders::new(&state_ref);
+        headers.idempotency_key = optional_arg("--idempotency-key")
+            .map(|key| Uuid::parse_str(&key).expect("--idempotency-key must be a UUID"));
+        *request.metadata_mut() = headers.to_metadata().unwrap();
         if has("--shared-invoke") {
             client.shared_read(request).await.unwrap();
         } else if has("--factory-target-invoke") {

@@ -1099,6 +1099,12 @@ mod tests {
             self.calls.lock().unwrap().push("recover");
             Box::pin(async { Ok(Vec::new()) })
         }
+        fn recover_idempotent_mutations(
+            &self,
+            _: database::RecoverIdempotentMutationsRequest,
+        ) -> CoordinatorFuture<'_, Vec<database::RecoverIdempotentMutationsResponse>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
     }
 
     fn local_target() -> ParticipantTarget {

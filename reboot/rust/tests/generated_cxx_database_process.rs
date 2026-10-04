@@ -6,6 +6,7 @@ use std::{
 
 use prost::Message;
 use reboot_rust_schema::database_proto as database;
+use uuid::Uuid;
 
 struct CxxDatabase {
     state: tempfile::TempDir,
@@ -211,6 +212,219 @@ fn exclusive_host(
         ])
         .status()
         .unwrap()
+}
+
+/// Invokes the generated root-exclusive adapter in a fresh fixture process
+/// with a caller-owned idempotency key. A non-success exit is its fail-closed
+/// observable result.
+fn idempotent_exclusive_host(
+    binary: &std::path::Path,
+    database: &str,
+    state_ref: &str,
+    idempotency_key: Uuid,
+    amount: i64,
+    pause_after_decision: Option<&std::path::Path>,
+) -> Child {
+    let listen = port();
+    let mut command = Command::new(binary);
+    command
+        .args([
+            "--role",
+            "target",
+            "--listen",
+            &format!("127.0.0.1:{listen}"),
+            "--database",
+            database,
+            "--root",
+            &format!("http://127.0.0.1:{listen}"),
+            "--target",
+            &format!("http://127.0.0.1:{listen}"),
+            "--root-id",
+            "00000000-0000-0000-0000-000000000106",
+            "--state-ref",
+            state_ref,
+            "--invoke",
+            "--exit-after-invoke",
+            "--idempotency-key",
+            &idempotency_key.to_string(),
+            "--amount",
+            &amount.to_string(),
+        ])
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    if let Some(marker) = pause_after_decision {
+        command.env("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE", marker);
+    }
+    command.spawn().unwrap()
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_root_exclusive_idempotency_is_durable_replayed_and_collision_safe() {
+    let database_binary =
+        std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let state_ref = "idempotent-root";
+    // C++ validates non-v7 keys as RFC UUIDs; use a valid caller-owned v4 key.
+    let key = Uuid::new_v4();
+    runtime.block_on(store_counter(&db.endpoint(), state_ref, 5));
+
+    assert!(
+        idempotent_exclusive_host(&binary, &db.endpoint(), state_ref, key, 7, None)
+            .wait()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), state_ref)),
+        Some(vec![0x08, 0x0c])
+    );
+    let initial = runtime.block_on(recover_idempotent_mutations(&db.endpoint(), state_ref, key));
+    assert_eq!(
+        initial.len(),
+        1,
+        "first call must commit exactly one durable response"
+    );
+    assert_eq!(initial[0].key, key.as_bytes());
+    assert_eq!(initial[0].response, vec![0x08, 0x0c]);
+
+    assert!(
+        idempotent_exclusive_host(&binary, &db.endpoint(), state_ref, key, 7, None)
+            .wait()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), state_ref)),
+        Some(vec![0x08, 0x0c])
+    );
+    assert_eq!(
+        runtime.block_on(recover_idempotent_mutations(&db.endpoint(), state_ref, key)),
+        initial,
+        "same key and request must replay without a second write"
+    );
+
+    assert!(
+        !idempotent_exclusive_host(&binary, &db.endpoint(), state_ref, key, 9, None)
+            .wait()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), state_ref)),
+        Some(vec![0x08, 0x0c])
+    );
+    assert_eq!(
+        runtime.block_on(recover_idempotent_mutations(&db.endpoint(), state_ref, key)),
+        initial,
+        "a key collision must fail closed without replacing the durable response"
+    );
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_root_exclusive_idempotency_recovers_exactly_once_after_decision() {
+    let database_binary =
+        std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let mut db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let state_ref = "idempotent-recovery-root";
+    // C++ validates non-v7 keys as RFC UUIDs; use a valid caller-owned v4 key.
+    let key = Uuid::new_v4();
+    runtime.block_on(store_counter(&db.endpoint(), state_ref, 5));
+    let marker_dir = tempfile::tempdir().unwrap();
+    let marker = marker_dir.path().join("decision-sealed");
+    let mut root =
+        idempotent_exclusive_host(&binary, &db.endpoint(), state_ref, key, 7, Some(&marker));
+    for _ in 0..100 {
+        if marker.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(
+        marker.exists(),
+        "root never persisted its decision after prepare"
+    );
+    let _ = root.kill();
+    let _ = root.wait();
+    db.restart();
+
+    let recovery_port = port();
+    let mut recovered = host(
+        &binary,
+        "root",
+        recovery_port,
+        &db.endpoint(),
+        recovery_port,
+        recovery_port,
+        "00000000-0000-0000-0000-000000000106",
+        true,
+        false,
+        None,
+        None,
+        Some(state_ref),
+        Some(state_ref),
+    );
+    wait(recovery_port);
+    let expected = Some(vec![0x08, 0x0c]);
+    for _ in 0..100 {
+        if runtime.block_on(load_state(&db.endpoint(), state_ref)) == expected {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), state_ref)),
+        expected
+    );
+    let initial = runtime.block_on(recover_idempotent_mutations(&db.endpoint(), state_ref, key));
+    assert_eq!(
+        initial.len(),
+        1,
+        "recovery must commit exactly one durable response"
+    );
+    assert_eq!(initial[0].response, vec![0x08, 0x0c]);
+    assert!(
+        idempotent_exclusive_host(&binary, &db.endpoint(), state_ref, key, 7, None)
+            .wait()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), state_ref)),
+        expected
+    );
+    assert_eq!(
+        runtime.block_on(recover_idempotent_mutations(&db.endpoint(), state_ref, key)),
+        initial,
+        "post-recovery replay must neither lose nor duplicate the durable response"
+    );
+    let _ = recovered.kill();
+    let _ = recovered.wait();
 }
 
 #[test]
@@ -1008,4 +1222,50 @@ async fn load_state(endpoint: &str, state_ref: &str) -> Option<Vec<u8>> {
         .into_iter()
         .next()
         .and_then(|actor| actor.state)
+}
+
+async fn store_counter(endpoint: &str, state_ref: &str, value: i64) {
+    database::database_client::DatabaseClient::connect(endpoint.to_owned())
+        .await
+        .unwrap()
+        .store(database::StoreRequest {
+            actor_upserts: vec![database::Actor {
+                state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                state_ref: state_ref.into(),
+                state: Some(vec![0x08, value as u8]),
+            }],
+            task_upserts: vec![],
+            colocated_upserts: vec![],
+            transaction: None,
+            idempotent_mutation: None,
+            ensure_state_types_created: vec![],
+            sync: true,
+        })
+        .await
+        .unwrap();
+}
+
+async fn recover_idempotent_mutations(
+    endpoint: &str,
+    state_ref: &str,
+    key: Uuid,
+) -> Vec<database::IdempotentMutation> {
+    let mut stream = database::database_client::DatabaseClient::connect(endpoint.to_owned())
+        .await
+        .unwrap()
+        .recover_idempotent_mutations(database::RecoverIdempotentMutationsRequest {
+            state_type: "tests.reboot.protoc.TransactionCounter".into(),
+            state_ref: state_ref.into(),
+            idempotency_key: Some(key.as_bytes().to_vec()),
+            workflow_id: None,
+            workflow_iteration: None,
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let mut mutations = Vec::new();
+    while let Some(response) = stream.message().await.unwrap() {
+        mutations.extend(response.idempotent_mutations);
+    }
+    mutations
 }

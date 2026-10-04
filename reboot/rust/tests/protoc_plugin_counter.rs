@@ -310,6 +310,9 @@ impl reboot::durable_participant::ParticipantSidecar for TransactionParticipantS
     fn recover(&self, _: reboot::database_proto::RecoverRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverResponse>, tonic::Status>> + Send + '_>> {
         Box::pin(async { Ok(Vec::new()) })
     }
+    fn recover_idempotent_mutations(&self, _: reboot::database_proto::RecoverIdempotentMutationsRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
 }
 
 struct TransactionCoordinatorSidecar {
