@@ -19,7 +19,7 @@ use uuid::Uuid;
 use crate::{
     database_proto as database,
     legacy_coordinator::CoordinatorWatchEndpoint,
-    runtime::{ActorGate, ExclusiveActorLease, TransactionMode},
+    runtime::{ActorGate, ExclusiveActorLease, SharedActorLease, TransactionMode},
 };
 
 const STATE_REF_HEADER: &str = "x-reboot-state-ref";
@@ -195,6 +195,20 @@ pub struct ActorTransactionStart {
     pub state_ref: String,
 }
 
+/// Lock contract for a participant root. This remains distinct from the
+/// coordinator's read-only classification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ParticipantStartMode {
+    Exclusive,
+    SharedUpgradeable,
+}
+
+/// Opaque evidence that a shared participant atomically promoted its gate.
+#[derive(Debug)]
+pub struct SharedPromotion {
+    _private: (),
+}
+
 /// Whether a caller has explicitly opted into preserving a nested ID path.
 ///
 /// Generated root adapters use [`Self::RootOnly`]. A future generated inbound
@@ -238,17 +252,91 @@ impl PendingActorEffects {
     }
 }
 
+enum PendingLock {
+    Shared(SharedActorLease),
+    Exclusive(ExclusiveActorLease),
+}
+
+impl PendingLock {
+    fn is_shared(&self) -> bool {
+        matches!(self, Self::Shared(_))
+    }
+
+    fn shared_mut(&mut self) -> Option<&mut SharedActorLease> {
+        match self {
+            Self::Shared(lease) => Some(lease),
+            Self::Exclusive(lease) => {
+                // Keep the exclusive lease observably owned by this pending
+                // transaction while reporting that it cannot be promoted.
+                let _ = lease;
+                None
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PendingDisposition {
+    ReadOnly,
+    Commit,
+}
+
 struct Pending {
     root_id: Uuid,
     transaction_ids: Vec<Uuid>,
     coordinator_state_type: String,
     coordinator_state_ref: String,
     effects: PendingActorEffects,
+    loaded_state: Option<Vec<u8>>,
     staged: bool,
     prepared: bool,
-    read_only: bool,
+    disposition: PendingDisposition,
     // Kept until a terminal sidecar response is acknowledged.
-    _lock: ExclusiveActorLease,
+    lock: PendingLock,
+}
+
+/// Cancellation-safe lifetime for local handler execution. Dropping it before
+/// durable Prepare removes only in-memory ownership; it never sends a terminal
+/// sidecar RPC. Once Prepare succeeds, normal ambiguous durable semantics win.
+pub struct StartedLocalTransaction<C: ParticipantSidecar> {
+    participant: DurableActorParticipant<C>,
+    transaction_id: Uuid,
+    state: Option<Vec<u8>>,
+    armed: bool,
+}
+
+impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
+    pub fn state(&self) -> Option<&[u8]> {
+        self.state.as_deref()
+    }
+
+    pub fn state_bytes(&self) -> Option<Vec<u8>> {
+        self.state.clone()
+    }
+
+    pub async fn stage(
+        &self,
+        effects: PendingActorEffects,
+    ) -> Result<Option<SharedPromotion>, Status> {
+        self.participant.stage(self.transaction_id, effects).await
+    }
+
+    /// Marks that a durable Prepare boundary has been crossed. A future
+    /// coordinator integration must call this only after Prepare succeeds.
+    pub fn disarm_after_durable_prepare(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl<C: ParticipantSidecar> Drop for StartedLocalTransaction<C> {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let participant = self.participant.clone();
+        let transaction_id = self.transaction_id;
+        tokio::spawn(async move { participant.drop_undurable(transaction_id).await });
+    }
 }
 
 /// Only actor-local conflicts are definitive Prepare outcomes. A sidecar RPC
@@ -313,13 +401,29 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         self
     }
 
-    /// Acquires the actor's exclusive lock and loads its current state.
+    /// Compatibility entrypoint for existing exclusive/read-only callers.
     ///
     /// The returned bytes are for the transaction adapter to deserialize; this
     /// runtime never manufactures state or effects itself.
     pub async fn start(&self, start: ActorTransactionStart) -> Result<Option<Vec<u8>>, Status> {
         self.validate_start(&start)?;
-        let lock = self.lock.exclusive().await;
+        self.start_with_mode(start, ParticipantStartMode::Exclusive)
+            .await
+    }
+
+    /// Starts with an explicit local lock contract.
+    pub async fn start_with_mode(
+        &self,
+        start: ActorTransactionStart,
+        mode: ParticipantStartMode,
+    ) -> Result<Option<Vec<u8>>, Status> {
+        self.validate_start_with_mode(&start, mode)?;
+        let lock = match mode {
+            ParticipantStartMode::Exclusive => PendingLock::Exclusive(self.lock.exclusive().await),
+            ParticipantStartMode::SharedUpgradeable => {
+                PendingLock::Shared(self.lock.shared().await)
+            }
+        };
         let mut pending = self.pending.lock().await;
         if pending.is_some() {
             return Err(Status::failed_precondition(
@@ -348,19 +452,44 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             coordinator_state_type: start.coordinator_state_type,
             coordinator_state_ref: start.coordinator_state_ref,
             effects: PendingActorEffects::default(),
+            loaded_state: state.clone(),
             staged: false,
             prepared: false,
-            read_only: start.read_only,
-            _lock: lock,
+            disposition: if start.read_only {
+                PendingDisposition::ReadOnly
+            } else {
+                PendingDisposition::Commit
+            },
+            lock,
         });
         Ok(state)
+    }
+
+    /// Starts a local handler with cancellation-safe pre-durable cleanup.
+    pub async fn start_local(
+        &self,
+        start: ActorTransactionStart,
+        mode: ParticipantStartMode,
+    ) -> Result<StartedLocalTransaction<C>, Status> {
+        let transaction_id = start
+            .transaction_ids
+            .first()
+            .copied()
+            .ok_or_else(|| Status::invalid_argument("transaction ID path must not be empty"))?;
+        let state = self.start_with_mode(start, mode).await?;
+        Ok(StartedLocalTransaction {
+            participant: self.clone(),
+            transaction_id,
+            state,
+            armed: true,
+        })
     }
 
     pub async fn stage(
         &self,
         transaction_id: Uuid,
         effects: PendingActorEffects,
-    ) -> Result<(), Status> {
+    ) -> Result<Option<SharedPromotion>, Status> {
         let mut pending = self.pending.lock().await;
         let current = pending
             .as_mut()
@@ -370,21 +499,43 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 "pending transaction ID differs",
             ));
         }
-        if current.read_only
-            && (effects.state.is_some()
-                || !effects.task_upserts.is_empty()
-                || !effects.idempotent_mutations.is_empty())
+        if current.lock.is_shared()
+            && (!effects.task_upserts.is_empty() || !effects.idempotent_mutations.is_empty())
         {
             return Err(Status::failed_precondition(
-                "read-only transaction produced effects",
+                "shared transactions cannot stage tasks or idempotency mutations",
             ));
         }
         if !current.staged {
+            // Only an existing loaded state with different final bytes can
+            // promote. Clearing state or attempting to create absent state is
+            // classified read-only in this bounded participant slice.
+            let changed = matches!(
+                (&current.loaded_state, &effects.state),
+                (Some(initial), Some(final_state)) if initial != final_state
+            );
+            let promoted = if changed && current.lock.is_shared() {
+                let shared = current
+                    .lock
+                    .shared_mut()
+                    .expect("shared pending lock was checked above");
+                let exclusive = shared.upgrade().await.map_err(|error| {
+                    Status::aborted(format!("shared participant promotion failed: {error:?}"))
+                })?;
+                current.lock = PendingLock::Exclusive(exclusive);
+                current.disposition = PendingDisposition::Commit;
+                Some(SharedPromotion { _private: () })
+            } else {
+                None
+            };
+            if current.lock.is_shared() {
+                current.disposition = PendingDisposition::ReadOnly;
+            }
             current.effects = effects;
             current.staged = true;
-            Ok(())
+            Ok(promoted)
         } else if current.effects.matches_staged(&effects) {
-            Ok(())
+            Ok(None)
         } else {
             Err(Status::failed_precondition(
                 "staged effects differ from the pending transaction",
@@ -402,6 +553,14 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
     }
 
     fn validate_start(&self, start: &ActorTransactionStart) -> Result<(), Status> {
+        self.validate_start_with_mode(start, ParticipantStartMode::Exclusive)
+    }
+
+    fn validate_start_with_mode(
+        &self,
+        start: &ActorTransactionStart,
+        mode: ParticipantStartMode,
+    ) -> Result<(), Status> {
         if start.transaction_ids.is_empty() {
             return Err(Status::invalid_argument(
                 "transaction ID path must not be empty",
@@ -426,10 +585,37 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 "PreserveNested caller contract requires a nested transaction ID path",
             ));
         }
-        if start.mode == TransactionMode::Shared && !start.read_only {
+        if start.mode == TransactionMode::Shared
+            && mode == ParticipantStartMode::Exclusive
+            && !start.read_only
+        {
             return Err(Status::failed_precondition(
                 "shared transactions must remain read-only",
             ));
+        }
+        if mode == ParticipantStartMode::SharedUpgradeable {
+            if start.mode != TransactionMode::Shared {
+                return Err(Status::invalid_argument(
+                    "SharedUpgradeable requires shared transaction mode",
+                ));
+            }
+            if start.transaction_path != TransactionPathContract::RootOnly
+                || start.transaction_ids.len() != 1
+            {
+                return Err(Status::unimplemented(
+                    "SharedUpgradeable requires a fresh root transaction",
+                ));
+            }
+            if start.factory {
+                return Err(Status::unimplemented(
+                    "SharedUpgradeable does not support factory transactions",
+                ));
+            }
+            if start.read_only {
+                return Err(Status::invalid_argument(
+                    "SharedUpgradeable requires a writable shared transaction attempt",
+                ));
+            }
         }
         if start.factory && start.transaction_path != TransactionPathContract::RootOnly {
             return Err(Status::unimplemented(
@@ -462,7 +648,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         if current.root_id != transaction_id {
             return Ok(PrepareOutcome::DefinitiveAbort);
         }
-        if current.read_only {
+        if current.disposition == PendingDisposition::ReadOnly {
             if !(read_only_aware && read_only) {
                 return Err(Status::failed_precondition(
                     "read-only participant requires a read-only-aware prepare",
@@ -594,14 +780,15 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 task_upserts: transaction.uncommitted_tasks,
                 idempotent_mutations: transaction.uncommitted_idempotent_mutations,
             },
+            loaded_state: None,
             // Recovery exposes the durable task and idempotent-mutation
             // effects, so it must never permit a later Stage to replace them.
             staged: true,
             // An unprepared record is retained only to ensure a later Commit
             // is converted to Abort; it can never be committed.
             prepared: transaction.prepared,
-            read_only: false,
-            _lock: lock,
+            disposition: PendingDisposition::Commit,
+            lock: PendingLock::Exclusive(lock),
         });
         Ok(())
     }
@@ -652,6 +839,16 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         }
     }
 
+    async fn drop_undurable(&self, transaction_id: Uuid) {
+        let mut pending = self.pending.lock().await;
+        if pending
+            .as_ref()
+            .is_some_and(|current| current.root_id == transaction_id && !current.prepared)
+        {
+            *pending = None;
+        }
+    }
+
     async fn terminal(&self, transaction_id: Uuid, commit: bool) -> Result<(), Status> {
         let mut pending = self.pending.lock().await;
         // Terminal delivery is deliberately idempotent.  In particular, a
@@ -668,7 +865,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             // Never terminalize that transaction for a stale control RPC.
             return Ok(());
         }
-        if current.read_only {
+        if current.disposition == PendingDisposition::ReadOnly {
             *pending = None;
             return Ok(());
         }
@@ -865,6 +1062,7 @@ mod tests {
         prepare_results: Mutex<VecDeque<Result<(), Status>>>,
         terminal_results: Mutex<VecDeque<Result<(), Status>>>,
         recover_responses: Mutex<VecDeque<Result<database::RecoverResponse, Status>>>,
+        load_state: Mutex<Option<Vec<u8>>>,
     }
 
     impl ParticipantSidecar for MockSidecar {
@@ -873,7 +1071,20 @@ mod tests {
             request: database::LoadRequest,
         ) -> SidecarFuture<'_, database::LoadResponse> {
             self.calls.lock().unwrap().push(Call::Load(request));
-            Box::pin(async { Ok(database::LoadResponse::default()) })
+            let state = self.load_state.lock().unwrap().clone();
+            Box::pin(async move {
+                Ok(database::LoadResponse {
+                    actors: state
+                        .into_iter()
+                        .map(|state| database::Actor {
+                            state_type: "example.Actor".into(),
+                            state_ref: "actor/1".into(),
+                            state: Some(state),
+                        })
+                        .collect(),
+                    ..Default::default()
+                })
+            })
         }
         fn prepare(
             &self,
@@ -1659,5 +1870,208 @@ mod tests {
                 [Call::Recover(_)]
             ));
         }
+    }
+
+    #[tokio::test]
+    async fn start_preserves_legacy_shared_rejection_and_upgradeable_shape_validation() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let id = Uuid::from_u128(799);
+        let mut shared = start(id);
+        shared.mode = TransactionMode::Shared;
+        assert_eq!(
+            participant.start(shared.clone()).await.unwrap_err().code(),
+            tonic::Code::FailedPrecondition
+        );
+
+        let mut exclusive = shared.clone();
+        exclusive.mode = TransactionMode::Exclusive;
+        assert_eq!(
+            participant
+                .start_with_mode(exclusive, ParticipantStartMode::SharedUpgradeable)
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+
+        let mut factory = shared.clone();
+        factory.factory = true;
+        assert_eq!(
+            participant
+                .start_with_mode(factory, ParticipantStartMode::SharedUpgradeable)
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unimplemented
+        );
+
+        let mut nested = shared;
+        nested.transaction_ids.push(Uuid::from_u128(798));
+        nested.transaction_path = TransactionPathContract::PreserveNested;
+        assert_eq!(
+            participant
+                .start_with_mode(nested, ParticipantStartMode::SharedUpgradeable)
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unimplemented
+        );
+        assert!(sidecar.calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn shared_changed_state_promotes_and_prepares_durably() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let id = Uuid::from_u128(800);
+        *sidecar.load_state.lock().unwrap() = Some(vec![0]);
+        let mut shared = start(id);
+        shared.mode = TransactionMode::Shared;
+        let started = participant
+            .start_local(shared, ParticipantStartMode::SharedUpgradeable)
+            .await
+            .unwrap();
+        assert!(
+            started
+                .stage(PendingActorEffects {
+                    state: Some(vec![1]),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .is_some()
+        );
+        participant.prepare(id, false, false).await.unwrap();
+        participant.terminal(id, true).await.unwrap();
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Load(_), Call::Prepare(_), Call::Commit(_)]
+        ));
+    }
+
+    #[tokio::test]
+    async fn shared_unchanged_releases_at_read_only_prepare_and_rejects_effects() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let id = Uuid::from_u128(801);
+        let mut shared = start(id);
+        shared.mode = TransactionMode::Shared;
+        participant
+            .start_with_mode(shared, ParticipantStartMode::SharedUpgradeable)
+            .await
+            .unwrap();
+        assert_eq!(
+            participant
+                .stage(
+                    id,
+                    PendingActorEffects {
+                        task_upserts: vec![database::Task::default()],
+                        ..Default::default()
+                    }
+                )
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::FailedPrecondition
+        );
+        assert!(
+            participant
+                .stage(id, PendingActorEffects::default())
+                .await
+                .unwrap()
+                .is_none()
+        );
+        participant.prepare(id, true, true).await.unwrap();
+        participant
+            .start(start(Uuid::from_u128(802)))
+            .await
+            .unwrap();
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Load(_), Call::Load(_)]
+        ));
+    }
+
+    #[tokio::test]
+    async fn shared_absent_or_cleared_state_stays_read_only() {
+        for (id, loaded, final_state) in [
+            (Uuid::from_u128(803), None, Some(vec![7])),
+            (Uuid::from_u128(804), Some(vec![7]), None),
+        ] {
+            let sidecar = Arc::new(MockSidecar::default());
+            *sidecar.load_state.lock().unwrap() = loaded;
+            let participant =
+                DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+            let mut shared = start(id);
+            shared.mode = TransactionMode::Shared;
+            participant
+                .start_with_mode(shared, ParticipantStartMode::SharedUpgradeable)
+                .await
+                .unwrap();
+            assert!(
+                participant
+                    .stage(
+                        id,
+                        PendingActorEffects {
+                            state: final_state,
+                            ..Default::default()
+                        }
+                    )
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            participant.prepare(id, true, true).await.unwrap();
+            assert!(matches!(
+                sidecar.calls.lock().unwrap().as_slice(),
+                [Call::Load(_)]
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn dropped_local_guard_releases_undurable_pending_without_terminal_rpc() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let id = Uuid::from_u128(805);
+        let started = participant
+            .start_local(start(id), ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        drop(started);
+        tokio::task::yield_now().await;
+        participant
+            .start(start(Uuid::from_u128(806)))
+            .await
+            .unwrap();
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Load(_), Call::Load(_)]
+        ));
+    }
+
+    #[tokio::test]
+    async fn dropped_local_guard_keeps_durable_prepared_participant_owned() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let id = Uuid::from_u128(806);
+        let started = participant
+            .start_local(start(id), ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        participant.prepare(id, false, false).await.unwrap();
+        drop(started);
+        tokio::task::yield_now().await;
+        assert!(participant.pending.lock().await.is_some());
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Load(_), Call::Prepare(_)]
+        ));
     }
 }
