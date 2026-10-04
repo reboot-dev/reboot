@@ -18,7 +18,8 @@ use crate::{
         Native2pcCoordinatorEndpoint, Native2pcCoordinatorResolver, Native2pcParticipantEndpoint,
         Native2pcParticipantResolver, Native2pcPlacementPlan, Native2pcRoute, Native2pcShardRoute,
         NativeActorId, NativeFuture, TonicNative2pcCoordinatorEndpoint,
-        TonicNative2pcParticipantEndpoint,
+        TonicNative2pcDatabaseSidecar, TonicNative2pcParticipantEndpoint,
+        get_materialized_native_state,
     },
     placement_proto as proto,
 };
@@ -261,6 +262,18 @@ pub struct TonicApplicationNative2pcResolver {
 impl TonicApplicationNative2pcResolver {
     pub fn new(routes: ApplicationNative2pcResolver) -> Self {
         Self { routes }
+    }
+
+    /// Routes one caller-selected actor through the current trusted host plan,
+    /// then reads only its already-materialized native bytes. This is neither an
+    /// ownership claim nor a retry/reroute policy.
+    pub async fn get_materialized_native_state(
+        &self,
+        actor: &NativeActorId,
+    ) -> Result<Vec<u8>, Status> {
+        let channel = self.connect(actor.clone()).await?;
+        let sidecar = TonicNative2pcDatabaseSidecar::new(channel);
+        get_materialized_native_state(&sidecar, actor).await
     }
 
     fn connect(&self, actor: NativeActorId) -> NativeFuture<'_, tonic::transport::Channel> {

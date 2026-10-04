@@ -1825,6 +1825,14 @@ pub struct TonicNative2pcDatabaseSidecar {
 }
 
 impl TonicNative2pcDatabaseSidecar {
+    pub fn new(channel: tonic::transport::Channel) -> Self {
+        Self {
+            client: tokio::sync::Mutex::new(
+                proto::native2pc_database_client::Native2pcDatabaseClient::new(channel),
+            ),
+        }
+    }
+
     pub async fn connect(endpoint: impl AsRef<str>) -> Result<Self, tonic::transport::Error> {
         Ok(Self {
             client: tokio::sync::Mutex::new(
