@@ -309,3 +309,101 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
     let _ = target.kill();
     let _ = target.wait();
 }
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_exclusive_factory_creates_only_absent_actor_through_real_cxx_database() {
+    let database_binary =
+        std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let db = CxxDatabase::start(database_binary);
+    // Do not seed this state type or actor. C++ Load deliberately omits an
+    // unknown column family, and TransactionParticipantPrepare creates it
+    // when applying the first durable state write inside its RocksDB txn.
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    assert!(factory_host(&binary, &db.endpoint(), "factory-created", 7).success());
+    // TransactionCounter { value: 7 } has canonical protobuf bytes 0x08, 0x07.
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), "factory-created")),
+        Some(vec![0x08, 0x07])
+    );
+
+    // Existing state must reject without overwriting the first construction.
+    assert!(!factory_host(&binary, &db.endpoint(), "factory-created", 99).success());
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), "factory-created")),
+        Some(vec![0x08, 0x07])
+    );
+
+    // The fixture's negative amount makes its factory handler fail before
+    // coordinator preparation; no actor state may be materialized.
+    assert!(!factory_host(&binary, &db.endpoint(), "factory-handler-failed", -1).success());
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), "factory-handler-failed")),
+        None
+    );
+}
+
+fn factory_host(
+    binary: &std::path::Path,
+    database: &str,
+    state_ref: &str,
+    amount: i64,
+) -> std::process::ExitStatus {
+    let listen = port();
+    Command::new(binary)
+        .args([
+            "--role",
+            "root",
+            "--listen",
+            &format!("127.0.0.1:{listen}"),
+            "--database",
+            database,
+            "--root",
+            &format!("http://127.0.0.1:{listen}"),
+            "--target",
+            &format!("http://127.0.0.1:{}", port()),
+            "--root-id",
+            "00000000-0000-0000-0000-000000000003",
+            "--state-ref",
+            state_ref,
+            "--invoke",
+            "--factory-invoke",
+            "--exit-after-invoke",
+            "--amount",
+            &amount.to_string(),
+        ])
+        .status()
+        .unwrap()
+}
+
+async fn load_state(endpoint: &str, state_ref: &str) -> Option<Vec<u8>> {
+    database::database_client::DatabaseClient::connect(endpoint.to_owned())
+        .await
+        .unwrap()
+        .load(database::LoadRequest {
+            actors: vec![database::Actor {
+                state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                state_ref: state_ref.into(),
+                state: None,
+            }],
+            task_ids: vec![],
+        })
+        .await
+        .unwrap()
+        .into_inner()
+        .actors
+        .into_iter()
+        .next()
+        .and_then(|actor| actor.state)
+}

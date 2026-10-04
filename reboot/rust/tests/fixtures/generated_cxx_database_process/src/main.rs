@@ -32,16 +32,17 @@ mod generated {
 
 #[derive(Clone)]
 struct Routes {
-    application: String,
     participants: Arc<HashMap<String, String>>,
 }
 #[tonic::async_trait]
 impl TransactionalChannelResolver for Routes {
     async fn resolve(&self, _: &str, state_ref: &str) -> Result<Channel, tonic::Status> {
-        if state_ref != "target" {
-            return Err(tonic::Status::not_found("unexpected application route"));
-        }
-        Channel::from_shared(self.application.clone())
+        let endpoint = self
+            .participants
+            .get(state_ref)
+            .cloned()
+            .ok_or_else(|| tonic::Status::not_found("unexpected application route"))?;
+        Channel::from_shared(endpoint)
             .unwrap()
             .connect()
             .await
@@ -117,10 +118,28 @@ impl generated::TransactionCounterWritesTransactionHandler for Handler {
     async fn factory_increment(
         &self,
         _: &TransactionContext,
-        _: &mut proto::TransactionCounter,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+        if request.amount < 0 {
+            return Err(tonic::Status::invalid_argument("factory handler rejected request"));
+        }
+        state.value += request.amount;
+        // Deliberately leave final_state unset: the generated factory adapter
+        // must durably materialize the state it gave the handler.
+        Ok(TransactionExecution::new(proto::TransactionCounterValue {
+            value: state.value,
+        }))
+    }
+    async fn shared_read(
+        &self,
+        _: &TransactionContext,
+        state: &mut proto::TransactionCounter,
         _: proto::TransactionIncrementRequest,
     ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
-        Err(tonic::Status::unimplemented("fixture excludes factory"))
+        Ok(TransactionExecution::new(proto::TransactionCounterValue {
+            value: state.value,
+        }))
     }
 }
 struct Root {
@@ -136,6 +155,15 @@ fn arg(name: &str) -> String {
 fn has(name: &str) -> bool {
     std::env::args().any(|arg| arg == name)
 }
+fn optional_arg(name: &str) -> Option<String> {
+    let mut args = std::env::args();
+    while let Some(arg) = args.next() {
+        if arg == name {
+            return args.next();
+        }
+    }
+    None
+}
 
 #[tokio::main]
 async fn main() {
@@ -145,6 +173,7 @@ async fn main() {
     let root_endpoint = arg("--root");
     let target_endpoint = arg("--target");
     let root_id = Uuid::parse_str(&arg("--root-id")).unwrap();
+    let state_ref = optional_arg("--state-ref").unwrap_or_else(|| role.clone());
     let participant_sidecar = Arc::new(
         TonicParticipantSidecar::connect(&database_endpoint)
             .await
@@ -156,17 +185,16 @@ async fn main() {
             .unwrap(),
     );
     let mut endpoints = HashMap::new();
-    endpoints.insert("root".into(), root_endpoint);
+    endpoints.insert("root".into(), root_endpoint.clone());
+    endpoints.insert(state_ref.clone(), root_endpoint);
     endpoints.insert("target".into(), target_endpoint.clone());
     let routes = Routes {
-        application: target_endpoint.clone(),
         participants: Arc::new(endpoints),
     };
-    let state_ref = role.clone();
     let participant = DurableActorParticipant::new(
         participant_sidecar,
         "tests.reboot.protoc.TransactionCounter",
-        state_ref,
+        state_ref.clone(),
     );
     let participant_host = DurableActorParticipantHost::new(participant.clone());
     let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
@@ -230,9 +258,19 @@ async fn main() {
                 Err(_) => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
             }
         };
-        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 7 });
-        *request.metadata_mut() = reboot::RebootHeaders::new("root").to_metadata().unwrap();
-        client.increment(request).await.unwrap();
+        let amount = optional_arg("--amount")
+            .map(|amount| amount.parse().expect("--amount must be i64"))
+            .unwrap_or(7);
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount });
+        *request.metadata_mut() = reboot::RebootHeaders::new(&state_ref).to_metadata().unwrap();
+        if has("--factory-invoke") {
+            client.factory_increment(request).await.unwrap();
+        } else {
+            client.increment(request).await.unwrap();
+        }
+        if has("--exit-after-invoke") {
+            return;
+        }
     }
     if has("--recover") {
         // The server task and recovery path start together. Retry our own
