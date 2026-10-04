@@ -12,11 +12,12 @@ use reboot_rust_schema::{
     native_2pc::{
         Native2pcCoordinatorDecision, Native2pcCoordinatorEndpoint, Native2pcCoordinatorResolver,
         Native2pcDatabaseSidecar, Native2pcParticipantEndpoint, Native2pcParticipantResolver,
-        Native2pcPreparedParticipantRecoveryPass, Native2pcRequests,
-        Native2pcStagedParticipantRecoveryPass, NativeActorId, NativeEnrollment, NativeFuture,
-        NativeTransactionId, PROTOCOL_ID, RECORD_VERSION, TonicNative2pcCoordinatorEndpoint,
-        TonicNative2pcDatabaseSidecar, TonicNative2pcParticipantEndpoint,
-        decide_native2pc_coordinator_once, recover_prepared_participant_once,
+        Native2pcPreparedParticipantRecoveryPass, Native2pcPreparingCoordinatorRecoveryPass,
+        Native2pcRequests, Native2pcStagedParticipantRecoveryPass, NativeActorId, NativeEnrollment,
+        NativeFuture, NativeTransactionId, PROTOCOL_ID, RECORD_VERSION,
+        TonicNative2pcCoordinatorEndpoint, TonicNative2pcDatabaseSidecar,
+        TonicNative2pcParticipantEndpoint, decide_native2pc_coordinator_once,
+        recover_prepared_participant_once, recover_preparing_native2pc_coordinator_once,
         recover_staged_participant_once, require_native2pc_participant,
     },
 };
@@ -603,6 +604,69 @@ impl Native2pcCoordinatorResolver for StaticCxxCoordinator {
         let endpoint = self.endpoint.clone();
         Box::pin(async move { Ok(endpoint) })
     }
+}
+
+/// This explicit C++ sidecar proof binds recovery to the durable commit guard:
+/// the recovery continuation can decide only because the exact sealed
+/// participant record was already persisted as PREPARED.
+#[tokio::test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+async fn native_preparing_coordinator_recovery_crosses_the_real_cxx_sidecar_boundary() {
+    let database = spawn_cxx_database().await;
+    let sidecar = TonicNative2pcDatabaseSidecar::connect(database.endpoint.clone())
+        .await
+        .unwrap();
+    let (participant_address, participant_server) = serve(Default::default()).await;
+    let coordinator = NativeActorId::new("example.Coordinator", "coordinator/decision").unwrap();
+    let participant = NativeActorId::new("example.Participant", "participant/decision").unwrap();
+    let requests = Native2pcRequests::new(
+        NativeTransactionId::new([81; 16]).unwrap(),
+        coordinator.clone(),
+        NativeEnrollment::new([participant.clone()], [8, 1]).unwrap(),
+    );
+    sidecar
+        .put_coordinator(requests.put_coordinator_preparing())
+        .await
+        .unwrap();
+    sidecar
+        .stage_participant(requests.stage_participant(&participant))
+        .await
+        .unwrap();
+    sidecar
+        .put_participant(requests.put_participant(&participant))
+        .await
+        .unwrap();
+    let recovered = sidecar
+        .recover()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|record| record.coordinator.is_some())
+        .expect("C++ sidecar must recover the durable PREPARING coordinator");
+    let channel = tonic::transport::Endpoint::from_shared(format!("http://{participant_address}"))
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let resolver = StaticParticipantResolver {
+        actor: participant,
+        endpoint: Arc::new(TonicNative2pcParticipantEndpoint::new(channel)),
+    };
+    assert_eq!(
+        recover_preparing_native2pc_coordinator_once(&sidecar, &resolver, &recovered)
+            .await
+            .unwrap(),
+        Native2pcPreparingCoordinatorRecoveryPass::Decided(Native2pcCoordinatorDecision::Committed)
+    );
+    assert!(sidecar.recover().await.unwrap().iter().any(|record| {
+        record.coordinator.as_ref().is_some_and(|record| {
+            record.coordinator.as_ref().is_some_and(|identity| {
+                identity.state_type == coordinator.state_type()
+                    && identity.state_ref == coordinator.state_ref()
+            }) && record.phase == proto::native2pc_coordinator_record::Phase::CommitDecided as i32
+        })
+    }));
+    participant_server.abort();
 }
 
 /// This ignored test is deliberately process-bound: Bazel builds the C++ server

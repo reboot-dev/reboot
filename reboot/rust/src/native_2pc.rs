@@ -1334,6 +1334,38 @@ pub enum Native2pcCoordinatorDecision {
     Aborted,
 }
 
+async fn decide_preparing_native2pc_coordinator_once<
+    S: Native2pcDatabaseSidecar + ?Sized,
+    R: Native2pcParticipantResolver + ?Sized,
+>(
+    sidecar: &S,
+    resolver: &R,
+    requests: &Native2pcRequests,
+) -> Result<Native2pcCoordinatorDecision, Status> {
+    for participant in requests.enrollment.participants() {
+        let endpoint = resolve_required_native2pc_participant(resolver, participant).await?;
+        match decode_prepare_outcome(
+            endpoint
+                .endpoint()
+                .prepare(requests.prepare(participant))
+                .await?
+                .outcome,
+        )? {
+            Native2pcPrepareOutcome::Prepared => {}
+            Native2pcPrepareOutcome::DefinitiveAbort => {
+                sidecar
+                    .put_abort_decision(requests.put_abort_decision())
+                    .await?;
+                return Ok(Native2pcCoordinatorDecision::Aborted);
+            }
+        }
+    }
+    sidecar
+        .put_commit_decision(requests.put_commit_decision())
+        .await?;
+    Ok(Native2pcCoordinatorDecision::Committed)
+}
+
 /// Persist one sealed native coordinator and make at most one durable decision.
 ///
 /// This deliberately composes only the Python-style coordinator boundary: write
@@ -1354,30 +1386,62 @@ pub async fn decide_native2pc_coordinator_once<
     sidecar
         .put_coordinator(requests.put_coordinator_preparing())
         .await?;
+    decide_preparing_native2pc_coordinator_once(sidecar, resolver, requests).await
+}
 
-    for participant in requests.enrollment.participants() {
-        let endpoint = resolve_required_native2pc_participant(resolver, participant).await?;
-        match decode_prepare_outcome(
-            endpoint
-                .endpoint()
-                .prepare(requests.prepare(participant))
-                .await?
-                .outcome,
-        )? {
-            Native2pcPrepareOutcome::Prepared => {}
-            Native2pcPrepareOutcome::DefinitiveAbort => {
-                sidecar
-                    .put_abort_decision(requests.put_abort_decision())
-                    .await?;
-                return Ok(Native2pcCoordinatorDecision::Aborted);
-            }
-        }
+/// Result of one bounded continuation of a recovered coordinator record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Native2pcPreparingCoordinatorRecoveryPass {
+    NotPreparing,
+    Decided(Native2pcCoordinatorDecision),
+}
+
+/// Re-prepare one immutable, durably recovered native `PREPARING` coordinator.
+///
+/// The recovery record—not the caller—supplies the root, coordinator, ordered
+/// enrollment, and digest. It does not rewrite `PREPARING`, terminalize any
+/// participant, invent timeout aborts, or own retries. Errors remain
+/// non-definitive, so a host recovery driver may retry this exact record later.
+pub async fn recover_preparing_native2pc_coordinator_once<
+    S: Native2pcDatabaseSidecar + ?Sized,
+    R: Native2pcParticipantResolver + ?Sized,
+>(
+    sidecar: &S,
+    resolver: &R,
+    recovery: &proto::Native2pcRecoverResponse,
+) -> Result<Native2pcPreparingCoordinatorRecoveryPass, Status> {
+    validate_recovery_response(recovery)?;
+    let Some(record) = recovery.coordinator.as_ref() else {
+        return Ok(Native2pcPreparingCoordinatorRecoveryPass::NotPreparing);
+    };
+    if proto::native2pc_coordinator_record::Phase::try_from(record.phase)
+        != Ok(proto::native2pc_coordinator_record::Phase::Preparing)
+    {
+        return Ok(Native2pcPreparingCoordinatorRecoveryPass::NotPreparing);
     }
-
-    sidecar
-        .put_commit_decision(requests.put_commit_decision())
-        .await?;
-    Ok(Native2pcCoordinatorDecision::Committed)
+    let coordinator = record.coordinator.as_ref().expect("validated coordinator");
+    let enrollment = NativeEnrollment::new(
+        record.enrollment.iter().map(|entry| {
+            let participant = entry.participant.as_ref().expect("validated enrollment");
+            NativeActorId::new(
+                participant.state_type.clone(),
+                participant.state_ref.clone(),
+            )
+            .expect("validated enrollment actor")
+        }),
+        record.enrollment_digest.clone(),
+    )?;
+    let requests = Native2pcRequests::new(
+        NativeTransactionId::new(&record.root_transaction_id)?,
+        NativeActorId::new(
+            coordinator.state_type.clone(),
+            coordinator.state_ref.clone(),
+        )?,
+        enrollment,
+    );
+    Ok(Native2pcPreparingCoordinatorRecoveryPass::Decided(
+        decide_preparing_native2pc_coordinator_once(sidecar, resolver, &requests).await?,
+    ))
 }
 
 /// Tonic transport for the dedicated native sidecar service.
