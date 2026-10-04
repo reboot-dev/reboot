@@ -13,13 +13,14 @@ use reboot_rust_schema::{
         Native2pcCoordinatorDecision, Native2pcCoordinatorEndpoint, Native2pcCoordinatorResolver,
         Native2pcDatabaseSidecar, Native2pcParticipantEndpoint, Native2pcParticipantResolver,
         Native2pcPreparedParticipantRecoveryPass, Native2pcPreparingCoordinatorRecoveryPass,
-        Native2pcRecoveryMaterializer, Native2pcRequests, Native2pcStagedParticipantRecoveryPass,
-        NativeActorId, NativeEnrollment, NativeFuture, NativeTransactionId, PROTOCOL_ID,
-        RECORD_VERSION, TonicNative2pcCoordinatorEndpoint, TonicNative2pcDatabaseSidecar,
+        Native2pcRequests, Native2pcStagedParticipantRecoveryPass, NativeActorId, NativeEnrollment,
+        NativeFuture, NativeTransactionId, PROTOCOL_ID, RECORD_VERSION,
+        TonicNative2pcCoordinatorEndpoint, TonicNative2pcDatabaseSidecar,
         TonicNative2pcParticipantEndpoint, commit_and_materialize_singleton_initial_state_once,
-        decide_native2pc_coordinator_once, recover_and_materialize_singleton_initial_state_once,
-        recover_prepared_participant_once, recover_preparing_native2pc_coordinator_once,
-        recover_staged_participant_once, require_native2pc_participant,
+        decide_native2pc_coordinator_once, recover_and_materialize_committed_singleton_state_once,
+        recover_and_materialize_singleton_initial_state_once, recover_prepared_participant_once,
+        recover_preparing_native2pc_coordinator_once, recover_staged_participant_once,
+        require_native2pc_participant,
     },
 };
 use tokio_stream::{Stream, wrappers::TcpListenerStream};
@@ -739,25 +740,45 @@ async fn native_recovery_materializer_filters_real_cxx_state_and_opaque_journals
         .applied_journal
         .clone();
 
-    let result = Native2pcRecoveryMaterializer::new(sidecar)
-        .recover_and_materialize()
-        .await
-        .unwrap();
-    assert_eq!(result.materialized.len(), 1);
+    let result = recover_and_materialize_committed_singleton_state_once(
+        &sidecar,
+        &state_requests,
+        &state_participant,
+        Some(b"recovery-state".to_vec()),
+    )
+    .await
+    .unwrap();
     assert_eq!(
-        result.materialized[0].state,
+        result.materialization.state,
         Some(b"recovery-state".to_vec())
     );
     assert_eq!(
-        result.materialized[0]
+        result
+            .materialization
             .receipt
             .as_ref()
             .unwrap()
             .applied_journal,
         state_journal
     );
-    assert_eq!(result.deferred.len(), 1);
-    assert_eq!(result.deferred[0].applied_journal, opaque_journal);
+    assert_eq!(
+        recover_and_materialize_committed_singleton_state_once(
+            &sidecar,
+            &opaque_requests,
+            &opaque_participant,
+            Some(b"opaque-state".to_vec()),
+        )
+        .await
+        .unwrap_err()
+        .code(),
+        tonic::Code::DataLoss
+    );
+    let recovered_after = sidecar.recover().await.unwrap();
+    assert!(
+        recovered_after
+            .iter()
+            .any(|record| record.applied_journal == opaque_journal)
+    );
 }
 
 /// A process crash after durable commit/terminal but before materialization

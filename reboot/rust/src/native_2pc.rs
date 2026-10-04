@@ -1161,6 +1161,132 @@ fn exact_singleton_initial_applied_journal(
     })
 }
 
+/// Select one exact, committed, singleton, state-only journal from one recovery
+/// snapshot. This is an admission boundary only: it does not infer a decision,
+/// interpret effects, or make a persistence write.
+fn exact_committed_singleton_state_only_journal(
+    recovered: &[proto::Native2pcRecoverResponse],
+    root: &NativeTransactionId,
+    coordinator: &NativeActorId,
+    participant: &NativeActorId,
+    digest: &[u8],
+    state: &[u8],
+) -> Result<Vec<u8>, Status> {
+    let mut journal = None;
+    let mut commit = None;
+    for record in recovered {
+        validate_recovery_response(record)?;
+        if let Some(applied) = record.applied.as_ref() {
+            let applied_participant = applied
+                .participant
+                .as_ref()
+                .expect("validated applied participant");
+            if !actor_matches(applied_participant, participant) {
+                continue;
+            }
+            let effects = applied.effects.as_ref().expect("validated applied effects");
+            if applied.root_transaction_id != root.bytes()
+                || !applied
+                    .coordinator
+                    .as_ref()
+                    .is_some_and(|value| actor_matches(value, coordinator))
+                || applied.enrollment_digest != digest
+                || effects.state.as_deref() != Some(state)
+                || !effects.effects.is_empty()
+            {
+                return Err(Status::data_loss(
+                    "native recovered singleton journal conflicts with requested identity or state",
+                ));
+            }
+            if journal.replace(record.applied_journal.clone()).is_some() {
+                return Err(Status::data_loss(
+                    "native recovered singleton journal is duplicate or conflicting",
+                ));
+            }
+            continue;
+        }
+        let Some(record) = record.coordinator.as_ref() else {
+            continue;
+        };
+        if !record
+            .coordinator
+            .as_ref()
+            .is_some_and(|value| actor_matches(value, coordinator))
+        {
+            continue;
+        }
+        let singleton_enrollment = record.enrollment.len() == 1
+            && record.enrollment[0]
+                .participant
+                .as_ref()
+                .is_some_and(|value| actor_matches(value, participant));
+        if record.root_transaction_id != root.bytes()
+            || record.enrollment_digest != digest
+            || !singleton_enrollment
+            || record.phase != proto::native2pc_coordinator_record::Phase::CommitDecided as i32
+        {
+            return Err(Status::data_loss(
+                "native recovered coordinator conflicts with committed singleton admission",
+            ));
+        }
+        if commit.replace(()).is_some() {
+            return Err(Status::data_loss(
+                "native recovered committed singleton coordinator is duplicate or conflicting",
+            ));
+        }
+    }
+    if commit.is_none() {
+        return Err(Status::failed_precondition(
+            "native committed singleton coordinator was not recovered",
+        ));
+    }
+    journal.ok_or_else(|| {
+        Status::failed_precondition("native committed singleton journal was not recovered")
+    })
+}
+
+/// Recover and materialize exactly one caller-selected, already-committed
+/// singleton state-only journal. The complete recovery snapshot must contain
+/// both the byte-exact applied journal and its matching durable `COMMIT_DECIDED`
+/// coordinator record. It never replays transaction phases, creates or executes
+/// an actor, retries, or derives an abort.
+pub async fn recover_and_materialize_committed_singleton_state_once<
+    S: Native2pcDatabaseSidecar + ?Sized,
+>(
+    sidecar: &S,
+    requests: &Native2pcRequests,
+    participant: &NativeActorId,
+    state: Option<Vec<u8>>,
+) -> Result<Native2pcSingletonInitialStateMaterialization, Status> {
+    let state = state.ok_or_else(|| invalid("native singleton state is required"))?;
+    if requests.enrollment.participants.len() != 1
+        || !requests.enrollment.participants.contains(participant)
+    {
+        return Err(invalid(
+            "native committed singleton materialization requires its sole enrolled participant",
+        ));
+    }
+    let recovered = sidecar.recover().await?;
+    let journal = exact_committed_singleton_state_only_journal(
+        &recovered,
+        &requests.root,
+        &requests.coordinator,
+        participant,
+        &requests.enrollment.digest,
+        &state,
+    )?;
+    let materialization = sidecar
+        .materialize_applied(proto::Native2pcMaterializeAppliedRequest {
+            applied_journal: journal.clone(),
+        })
+        .await?;
+    validate_materialization_response(&journal, &materialization)?;
+    Ok(Native2pcSingletonInitialStateMaterialization {
+        applied_journal: journal,
+        materialization,
+    })
+}
+
 /// Materialize exactly one already-committed singleton initial-state journal.
 ///
 /// This is the crash continuation for
@@ -3170,6 +3296,114 @@ mod tests {
             applied: Some(applied),
             ..Default::default()
         }
+    }
+
+    fn singleton_requests() -> Native2pcRequests {
+        Native2pcRequests::new(
+            root(),
+            coordinator(),
+            NativeEnrollment::new([participant("a")], [9, 8]).unwrap(),
+        )
+    }
+
+    fn committed_singleton_recovery(state: Vec<u8>) -> Vec<proto::Native2pcRecoverResponse> {
+        let requests = singleton_requests();
+        let mut coordinator = requests.put_coordinator_preparing().coordinator.unwrap();
+        coordinator.phase = proto::native2pc_coordinator_record::Phase::CommitDecided as i32;
+        let (_, prepared) = requests
+            .singleton_state_only_initial_participant(Some(state))
+            .unwrap();
+        let participant = prepared.participant.unwrap();
+        let applied = proto::Native2pcAppliedActorEffects {
+            protocol: participant.protocol,
+            root_transaction_id: participant.root_transaction_id,
+            participant: participant.participant,
+            coordinator: participant.coordinator,
+            enrollment_digest: participant.enrollment_digest,
+            effects: participant.effects,
+        };
+        vec![
+            proto::Native2pcRecoverResponse {
+                coordinator: Some(coordinator),
+                ..Default::default()
+            },
+            proto::Native2pcRecoverResponse {
+                applied_journal: applied.encode_to_vec(),
+                applied: Some(applied),
+                ..Default::default()
+            },
+        ]
+    }
+
+    #[tokio::test]
+    async fn committed_singleton_materialization_requires_matching_durable_admission() {
+        let state = b"admitted-state".to_vec();
+        let records = committed_singleton_recovery(state.clone());
+        let sidecar = RecoverySidecar {
+            records,
+            materialized: std::sync::Mutex::new(Vec::new()),
+        };
+        let result = recover_and_materialize_committed_singleton_state_once(
+            &sidecar,
+            &singleton_requests(),
+            &participant("a"),
+            Some(state.clone()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.materialization.state, Some(state));
+        assert_eq!(sidecar.materialized.lock().unwrap().len(), 1);
+
+        let mut missing_commit = committed_singleton_recovery(b"admitted-state".to_vec());
+        missing_commit[0].coordinator.as_mut().unwrap().phase =
+            proto::native2pc_coordinator_record::Phase::Preparing as i32;
+        let sidecar = RecoverySidecar {
+            records: missing_commit,
+            materialized: std::sync::Mutex::new(Vec::new()),
+        };
+        assert_eq!(
+            recover_and_materialize_committed_singleton_state_once(
+                &sidecar,
+                &singleton_requests(),
+                &participant("a"),
+                Some(b"admitted-state".to_vec()),
+            )
+            .await
+            .unwrap_err()
+            .code(),
+            tonic::Code::DataLoss
+        );
+        assert!(sidecar.materialized.lock().unwrap().is_empty());
+
+        let mut opaque = committed_singleton_recovery(b"admitted-state".to_vec());
+        let applied = opaque[1].applied.as_mut().unwrap();
+        applied
+            .effects
+            .as_mut()
+            .unwrap()
+            .effects
+            .push(proto::Native2pcEffect {
+                key: b"opaque".to_vec(),
+                payload: b"defer".to_vec(),
+            });
+        opaque[1].applied_journal = applied.encode_to_vec();
+        let sidecar = RecoverySidecar {
+            records: opaque,
+            materialized: std::sync::Mutex::new(Vec::new()),
+        };
+        assert_eq!(
+            recover_and_materialize_committed_singleton_state_once(
+                &sidecar,
+                &singleton_requests(),
+                &participant("a"),
+                Some(b"admitted-state".to_vec()),
+            )
+            .await
+            .unwrap_err()
+            .code(),
+            tonic::Code::DataLoss
+        );
+        assert!(sidecar.materialized.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
