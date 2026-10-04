@@ -10,13 +10,14 @@ use prost::Message;
 use reboot_rust_schema::{
     database_proto as proto,
     native_2pc::{
-        Native2pcCoordinatorEndpoint, Native2pcCoordinatorResolver, Native2pcDatabaseSidecar,
-        Native2pcParticipantEndpoint, Native2pcPreparedParticipantRecoveryPass, Native2pcRequests,
+        Native2pcCoordinatorDecision, Native2pcCoordinatorEndpoint, Native2pcCoordinatorResolver,
+        Native2pcDatabaseSidecar, Native2pcParticipantEndpoint, Native2pcParticipantResolver,
+        Native2pcPreparedParticipantRecoveryPass, Native2pcRequests,
         Native2pcStagedParticipantRecoveryPass, NativeActorId, NativeEnrollment, NativeFuture,
         NativeTransactionId, PROTOCOL_ID, RECORD_VERSION, TonicNative2pcCoordinatorEndpoint,
         TonicNative2pcDatabaseSidecar, TonicNative2pcParticipantEndpoint,
-        recover_prepared_participant_once, recover_staged_participant_once,
-        require_native2pc_participant,
+        decide_native2pc_coordinator_once, recover_prepared_participant_once,
+        recover_staged_participant_once, require_native2pc_participant,
     },
 };
 use tokio_stream::{Stream, wrappers::TcpListenerStream};
@@ -160,8 +161,17 @@ impl proto::native2pc_database_server::Native2pcDatabase for NativeDatabase {
     }
 }
 
-#[derive(Default)]
-struct NativeParticipant;
+struct NativeParticipant {
+    prepare_outcome: i32,
+}
+
+impl Default for NativeParticipant {
+    fn default() -> Self {
+        Self {
+            prepare_outcome: proto::native2pc_prepare_response::Outcome::Prepared as i32,
+        }
+    }
+}
 
 #[tonic::async_trait]
 impl proto::native2pc_participant_server::Native2pcParticipant for NativeParticipant {
@@ -186,7 +196,7 @@ impl proto::native2pc_participant_server::Native2pcParticipant for NativePartici
         _: Request<proto::Native2pcPrepareRequest>,
     ) -> Result<Response<proto::Native2pcPrepareResponse>, Status> {
         Ok(Response::new(proto::Native2pcPrepareResponse {
-            outcome: proto::native2pc_prepare_response::Outcome::Prepared as i32,
+            outcome: self.prepare_outcome,
         }))
     }
 
@@ -222,6 +232,17 @@ impl proto::native2pc_coordinator_server::Native2pcCoordinator for NativeCoordin
 async fn serve(
     recovery: proto::Native2pcRecoverResponse,
 ) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+    serve_with_prepare_outcome(
+        recovery,
+        proto::native2pc_prepare_response::Outcome::Prepared as i32,
+    )
+    .await
+}
+
+async fn serve_with_prepare_outcome(
+    recovery: proto::Native2pcRecoverResponse,
+    prepare_outcome: i32,
+) -> (SocketAddr, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
@@ -233,7 +254,7 @@ async fn serve(
             )
             .add_service(
                 proto::native2pc_participant_server::Native2pcParticipantServer::new(
-                    NativeParticipant,
+                    NativeParticipant { prepare_outcome },
                 ),
             )
             .add_service(
@@ -246,6 +267,23 @@ async fn serve(
             .unwrap();
     });
     (address, server)
+}
+
+struct StaticParticipantResolver {
+    actor: NativeActorId,
+    endpoint: Arc<TonicNative2pcParticipantEndpoint>,
+}
+
+impl Native2pcParticipantResolver for StaticParticipantResolver {
+    type Endpoint = TonicNative2pcParticipantEndpoint;
+
+    fn resolve(&self, actor: &NativeActorId) -> NativeFuture<'_, Arc<Self::Endpoint>> {
+        if actor != &self.actor {
+            return Box::pin(async { Err(Status::not_found("unexpected participant")) });
+        }
+        let endpoint = Arc::clone(&self.endpoint);
+        Box::pin(async move { Ok(endpoint) })
+    }
 }
 
 #[tokio::test]
@@ -357,6 +395,19 @@ async fn native_tonic_clients_reach_only_native_services() {
         .unwrap_err();
     assert_eq!(mismatch.code(), tonic::Code::DataLoss);
 
+    let coordinator_pass_endpoint =
+        Arc::new(TonicNative2pcParticipantEndpoint::new(channel.clone()));
+    let coordinator_pass_resolver = StaticParticipantResolver {
+        actor: participant_id.clone(),
+        endpoint: coordinator_pass_endpoint,
+    };
+    assert_eq!(
+        decide_native2pc_coordinator_once(&sidecar, &coordinator_pass_resolver, &requests)
+            .await
+            .unwrap(),
+        Native2pcCoordinatorDecision::Committed
+    );
+
     let coordinator = TonicNative2pcCoordinatorEndpoint::new(channel);
     assert_eq!(
         coordinator
@@ -365,6 +416,106 @@ async fn native_tonic_clients_reach_only_native_services() {
             .unwrap()
             .phase,
         proto::native2pc_coordinator_record::Phase::CommitDecided as i32
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn native_tonic_participant_rejects_malformed_prepare_outcomes() {
+    for outcome in [
+        proto::native2pc_prepare_response::Outcome::Unspecified as i32,
+        999,
+    ] {
+        let (address, server) = serve_with_prepare_outcome(Default::default(), outcome).await;
+        let channel = tonic::transport::Endpoint::from_shared(format!("http://{address}"))
+            .unwrap()
+            .connect()
+            .await
+            .unwrap();
+        let participant = TonicNative2pcParticipantEndpoint::new(channel);
+        let coordinator =
+            NativeActorId::new("example.Coordinator", "coordinator/malformed").unwrap();
+        let actor = NativeActorId::new("example.Participant", "participant/malformed").unwrap();
+        let requests = Native2pcRequests::new(
+            NativeTransactionId::new([42; 16]).unwrap(),
+            coordinator,
+            NativeEnrollment::new([actor.clone()], [4, 2]).unwrap(),
+        );
+        assert_eq!(
+            participant
+                .prepare(requests.prepare(&actor))
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::DataLoss
+        );
+        server.abort();
+    }
+}
+
+#[tokio::test]
+async fn native_tonic_coordinator_aborts_only_after_a_definitive_prepare_abort() {
+    let (address, server) = serve_with_prepare_outcome(
+        Default::default(),
+        proto::native2pc_prepare_response::Outcome::DefinitiveAbort as i32,
+    )
+    .await;
+    let endpoint = format!("http://{address}");
+    let sidecar = TonicNative2pcDatabaseSidecar::connect(&endpoint)
+        .await
+        .unwrap();
+    let actor = NativeActorId::new("example.Participant", "participant/abort").unwrap();
+    let requests = Native2pcRequests::new(
+        NativeTransactionId::new([24; 16]).unwrap(),
+        NativeActorId::new("example.Coordinator", "coordinator/abort").unwrap(),
+        NativeEnrollment::new([actor.clone()], [2, 4]).unwrap(),
+    );
+    let channel = tonic::transport::Endpoint::from_shared(endpoint)
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let resolver = StaticParticipantResolver {
+        actor,
+        endpoint: Arc::new(TonicNative2pcParticipantEndpoint::new(channel)),
+    };
+    assert_eq!(
+        decide_native2pc_coordinator_once(&sidecar, &resolver, &requests)
+            .await
+            .unwrap(),
+        Native2pcCoordinatorDecision::Aborted
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn native_tonic_coordinator_leaves_malformed_prepare_nondefinitive() {
+    let (address, server) = serve_with_prepare_outcome(Default::default(), 999).await;
+    let endpoint = format!("http://{address}");
+    let sidecar = TonicNative2pcDatabaseSidecar::connect(&endpoint)
+        .await
+        .unwrap();
+    let actor = NativeActorId::new("example.Participant", "participant/pending").unwrap();
+    let requests = Native2pcRequests::new(
+        NativeTransactionId::new([25; 16]).unwrap(),
+        NativeActorId::new("example.Coordinator", "coordinator/pending").unwrap(),
+        NativeEnrollment::new([actor.clone()], [2, 5]).unwrap(),
+    );
+    let channel = tonic::transport::Endpoint::from_shared(endpoint)
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let resolver = StaticParticipantResolver {
+        actor,
+        endpoint: Arc::new(TonicNative2pcParticipantEndpoint::new(channel)),
+    };
+    assert_eq!(
+        decide_native2pc_coordinator_once(&sidecar, &resolver, &requests)
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::DataLoss
     );
     server.abort();
 }

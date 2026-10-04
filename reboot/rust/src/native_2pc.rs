@@ -1323,6 +1323,63 @@ pub async fn resolve_required_native2pc_participant<R: Native2pcParticipantResol
     })
 }
 
+/// The one durable decision written by a bounded native coordinator pass.
+///
+/// `Committed` means the sidecar accepted a `COMMIT_DECIDED` write after every
+/// enrolled participant reported `PREPARED`. It does not mean any participant
+/// has terminalized, actor state has materialized, or opaque effects have run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Native2pcCoordinatorDecision {
+    Committed,
+    Aborted,
+}
+
+/// Persist one sealed native coordinator and make at most one durable decision.
+///
+/// This deliberately composes only the Python-style coordinator boundary: write
+/// the immutable `PREPARING` enrollment, freshly resolve and negotiate every
+/// native participant, then commit after unanimous `PREPARED` or abort after an
+/// explicit `DEFINITIVE_ABORT`. Resolution, capability, prepare, and malformed
+/// response failures are non-definitive and return without a decision. There is
+/// no legacy fallback, timeout policy, participant terminalization, effect
+/// staging, actor execution, or retry ownership here.
+pub async fn decide_native2pc_coordinator_once<
+    S: Native2pcDatabaseSidecar + ?Sized,
+    R: Native2pcParticipantResolver + ?Sized,
+>(
+    sidecar: &S,
+    resolver: &R,
+    requests: &Native2pcRequests,
+) -> Result<Native2pcCoordinatorDecision, Status> {
+    sidecar
+        .put_coordinator(requests.put_coordinator_preparing())
+        .await?;
+
+    for participant in requests.enrollment.participants() {
+        let endpoint = resolve_required_native2pc_participant(resolver, participant).await?;
+        match decode_prepare_outcome(
+            endpoint
+                .endpoint()
+                .prepare(requests.prepare(participant))
+                .await?
+                .outcome,
+        )? {
+            Native2pcPrepareOutcome::Prepared => {}
+            Native2pcPrepareOutcome::DefinitiveAbort => {
+                sidecar
+                    .put_abort_decision(requests.put_abort_decision())
+                    .await?;
+                return Ok(Native2pcCoordinatorDecision::Aborted);
+            }
+        }
+    }
+
+    sidecar
+        .put_commit_decision(requests.put_commit_decision())
+        .await?;
+    Ok(Native2pcCoordinatorDecision::Committed)
+}
+
 /// Tonic transport for the dedicated native sidecar service.
 pub struct TonicNative2pcDatabaseSidecar {
     client: tokio::sync::Mutex<
