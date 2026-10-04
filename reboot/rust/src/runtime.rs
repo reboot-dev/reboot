@@ -44,11 +44,9 @@ pub enum TransactionMode {
 
 /// The complete outcome produced by one transaction handler invocation.
 ///
-/// A future transaction runtime is responsible for validating and durably
-/// preparing these actor-local effects. This envelope intentionally has no
-/// participant list or aggregate effects: one generated handler owns only its
-/// response and its own final serialized state, task upserts, and idempotent
-/// mutations.
+/// The handler enlists only identities returned by successful generated
+/// transactional clients. The generated root adapter gives that set to the
+/// durable coordinator before it sends any Prepare RPC.
 #[derive(Clone, Debug)]
 pub struct TransactionExecution<Response> {
     pub response: Response,
@@ -56,6 +54,7 @@ pub struct TransactionExecution<Response> {
     pub final_state: Option<Vec<u8>>,
     pub task_upserts: Vec<database::Task>,
     pub idempotent_mutations: Vec<database::IdempotentMutation>,
+    pub returned_participants: Vec<crate::durable_coordinator::ParticipantTarget>,
 }
 
 impl<Response> TransactionExecution<Response> {
@@ -65,7 +64,18 @@ impl<Response> TransactionExecution<Response> {
             final_state: None,
             task_upserts: Vec::new(),
             idempotent_mutations: Vec::new(),
+            returned_participants: Vec::new(),
         }
+    }
+
+    /// Enlists every identity decoded from a successful remote-call trailer.
+    /// Deduplication and durable sealing happen in `DurableRootCoordinator`.
+    pub fn enlist_returned_participants(
+        &mut self,
+        returned: &crate::successful_trailers::ReturnedParticipants,
+    ) {
+        self.returned_participants
+            .extend(returned.participants().iter().cloned());
     }
 }
 

@@ -2824,7 +2824,8 @@ TEST_F(TwoShardDatabaseTest, RecoverTransactionsWithPrepared) {
   transaction_coordinator_prepared(
       transaction_id.toBytes(),
       std::string(coordinator_state_ref),  // coordinator's state_ref
-      {{state_type, {state_ref}}});
+      {{state_type, {state_ref}},
+       {"remote.Service", {make_state_ref("remote_a"), make_state_ref("remote_b")}}});
 
   restart_server();
 
@@ -2863,12 +2864,17 @@ TEST_F(TwoShardDatabaseTest, RecoverTransactionsWithPrepared) {
                                  .participants()
                                  .should_commit();
 
-  EXPECT_EQ(participants.size(), 1);
+  EXPECT_EQ(participants.size(), 2);
   ASSERT_TRUE(participants.contains(state_type));
+  ASSERT_TRUE(participants.contains("remote.Service"));
 
   EXPECT_THAT(
       participants.at(state_type).state_refs(),
       testing::UnorderedElementsAre(state_ref));
+  EXPECT_THAT(
+      participants.at("remote.Service").state_refs(),
+      testing::UnorderedElementsAre(
+          make_state_ref("remote_a"), make_state_ref("remote_b")));
 }
 
 ////////////////////////////////////////////////////////////////////////

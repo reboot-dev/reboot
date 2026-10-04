@@ -6,6 +6,7 @@
 //! nested, shared, read-only, or multi-actor transactions. Factory
 //! transactions are limited to the same exclusive root actor.
 
+use std::collections::BTreeSet;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -22,7 +23,7 @@ use crate::{
 const STATE_REF_HEADER: &str = "x-reboot-state-ref";
 type CoordinatorFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, Status>> + Send + 'a>>;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ParticipantTarget {
     pub state_type: String,
     pub state_ref: String,
@@ -396,64 +397,72 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         Arc::clone(&self.resolver)
     }
 
+    /// Completes a same-actor root transaction. Kept for factory transactions
+    /// and callers that made no remote transactional calls.
     pub async fn complete(&self, start: RootCoordinatorStart) -> Result<(), Status> {
+        self.complete_with_returned_participants(start, Vec::new())
+            .await
+    }
+
+    /// Completes an exclusive non-factory root transaction after its handler
+    /// has enlisted participants returned in successful remote-call trailers.
+    ///
+    /// The full de-duplicated set is persisted before *any* Prepare RPC. RPC
+    /// status failures remain ambiguous: the sealed preparing record is left
+    /// intact for recovery. A definitive Prepare abort drives Abort to every
+    /// recorded participant and is cleaned up only after every acknowledgement.
+    pub async fn complete_with_returned_participants(
+        &self,
+        start: RootCoordinatorStart,
+        returned: Vec<ParticipantTarget>,
+    ) -> Result<(), Status> {
         Self::validate_start(&start)?;
+        let participants = Self::participant_set(&start, returned)?;
         let transaction_id = start.transaction_ids[0];
-        let record = Self::record(&start.coordinator_state_ref, &start.participant, true);
-        // This must be first: after any later ambiguity Recover has the exact
-        // participant and coordinator identity needed to continue safely.
         self.sidecar
             .coordinator_prepare(database::TransactionCoordinatorPrepareRequest {
                 transaction_id: transaction_id.as_bytes().to_vec(),
-                transaction_coordinator: Some(record.clone()),
+                transaction_coordinator: Some(Self::record(
+                    &start.coordinator_state_ref,
+                    &participants,
+                    true,
+                )),
             })
             .await?;
-        let endpoint = self.resolver.resolve(&start.participant).await?;
-        let response = endpoint
-            .prepare(
-                &start.participant.state_ref,
-                database::PrepareRequest {
-                    transaction_id: transaction_id.as_bytes().to_vec(),
-                    abort_via_response: true,
-                    read_only_aware: false,
-                    read_only: false,
-                },
-            )
-            .await?;
-        // Only this explicit field is definitive. Every RPC status (including
-        // unavailable and old-peer behavior) remains ambiguous and leaves the
-        // durable preparing record for recovery.
-        if response.abort {
-            endpoint
-                .abort(
-                    &start.participant.state_ref,
-                    database::AbortRequest {
+
+        for participant in &participants {
+            let endpoint = self.resolver.resolve(participant).await?;
+            let response = endpoint
+                .prepare(
+                    &participant.state_ref,
+                    database::PrepareRequest {
                         transaction_id: transaction_id.as_bytes().to_vec(),
+                        abort_via_response: true,
+                        read_only_aware: false,
+                        read_only: false,
                     },
                 )
                 .await?;
-            return self
-                .cleanup(transaction_id, &start.coordinator_state_ref)
-                .await;
+            if response.abort {
+                self.terminal_all(transaction_id, &participants, false)
+                    .await?;
+                return self
+                    .cleanup(transaction_id, &start.coordinator_state_ref)
+                    .await;
+            }
         }
         self.sidecar
             .coordinator_prepared(database::TransactionCoordinatorPreparedRequest {
                 transaction_id: transaction_id.as_bytes().to_vec(),
                 transaction_coordinator: Some(Self::record(
                     &start.coordinator_state_ref,
-                    &start.participant,
+                    &participants,
                     false,
                 )),
                 ..Default::default()
             })
             .await?;
-        endpoint
-            .commit(
-                &start.participant.state_ref,
-                database::CommitRequest {
-                    transaction_id: transaction_id.as_bytes().to_vec(),
-                },
-            )
+        self.terminal_all(transaction_id, &participants, true)
             .await?;
         self.cleanup(transaction_id, &start.coordinator_state_ref)
             .await
@@ -492,28 +501,29 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             let transaction_id = Uuid::parse_str(&id).map_err(|_| {
                 Status::failed_precondition("recovered coordinator key must be a UUID")
             })?;
-            let participant = Self::participant_from_record(&record)?;
-            let endpoint = self.resolver.resolve(&participant).await?;
+            let participants = Self::participants_from_record(&record)?;
             if record.preparing {
-                let response = endpoint
-                    .prepare(
-                        &participant.state_ref,
-                        database::PrepareRequest {
-                            transaction_id: transaction_id.as_bytes().to_vec(),
-                            abort_via_response: true,
-                            read_only_aware: false,
-                            read_only: false,
-                        },
-                    )
-                    .await?;
-                if response.abort {
-                    endpoint
-                        .abort(
+                let mut abort = false;
+                for participant in &participants {
+                    let endpoint = self.resolver.resolve(participant).await?;
+                    let response = endpoint
+                        .prepare(
                             &participant.state_ref,
-                            database::AbortRequest {
+                            database::PrepareRequest {
                                 transaction_id: transaction_id.as_bytes().to_vec(),
+                                abort_via_response: true,
+                                read_only_aware: false,
+                                read_only: false,
                             },
                         )
+                        .await?;
+                    if response.abort {
+                        abort = true;
+                        break;
+                    }
+                }
+                if abort {
+                    self.terminal_all(transaction_id, &participants, false)
                         .await?;
                     self.cleanup(transaction_id, &record.state_ref).await?;
                     continue;
@@ -523,20 +533,14 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                         transaction_id: transaction_id.as_bytes().to_vec(),
                         transaction_coordinator: Some(Self::record(
                             &record.state_ref,
-                            &participant,
+                            &participants,
                             false,
                         )),
                         ..Default::default()
                     })
                     .await?;
             }
-            endpoint
-                .commit(
-                    &participant.state_ref,
-                    database::CommitRequest {
-                        transaction_id: transaction_id.as_bytes().to_vec(),
-                    },
-                )
+            self.terminal_all(transaction_id, &participants, true)
                 .await?;
             self.cleanup(transaction_id, &record.state_ref).await?;
         }
@@ -590,38 +594,85 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 "coordinator and participant identity must be specified",
             ));
         }
-        if start.coordinator_state_type != start.participant.state_type
-            || start.coordinator_state_ref != start.participant.state_ref
-        {
-            return Err(Status::unimplemented(
-                "multi-actor transactions are not supported",
-            ));
+        Ok(())
+    }
+    async fn terminal_all(
+        &self,
+        transaction_id: Uuid,
+        participants: &[ParticipantTarget],
+        commit: bool,
+    ) -> Result<(), Status> {
+        for participant in participants {
+            let endpoint = self.resolver.resolve(participant).await?;
+            if commit {
+                endpoint
+                    .commit(
+                        &participant.state_ref,
+                        database::CommitRequest {
+                            transaction_id: transaction_id.as_bytes().to_vec(),
+                        },
+                    )
+                    .await?;
+            } else {
+                endpoint
+                    .abort(
+                        &participant.state_ref,
+                        database::AbortRequest {
+                            transaction_id: transaction_id.as_bytes().to_vec(),
+                        },
+                    )
+                    .await?;
+            }
         }
         Ok(())
     }
+    fn participant_set(
+        start: &RootCoordinatorStart,
+        returned: Vec<ParticipantTarget>,
+    ) -> Result<Vec<ParticipantTarget>, Status> {
+        if start.factory && !returned.is_empty() {
+            return Err(Status::unimplemented(
+                "factory transactions cannot enlist returned remote participants",
+            ));
+        }
+        let mut participants = BTreeSet::from([start.participant.clone()]);
+        participants.extend(returned);
+        if participants.iter().any(|participant| {
+            participant.state_type.is_empty() || participant.state_ref.is_empty()
+        }) {
+            return Err(Status::invalid_argument(
+                "participant identity must be specified",
+            ));
+        }
+        Ok(participants.into_iter().collect())
+    }
     fn record(
         state_ref: &str,
-        participant: &ParticipantTarget,
+        participants: &[ParticipantTarget],
         preparing: bool,
     ) -> database::TransactionCoordinator {
+        let mut should_commit = std::collections::BTreeMap::new();
+        for participant in participants {
+            should_commit
+                .entry(participant.state_type.clone())
+                .or_insert_with(|| database::participants::StateRefs {
+                    state_refs: Vec::new(),
+                })
+                .state_refs
+                .push(participant.state_ref.clone());
+        }
         database::TransactionCoordinator {
             state_ref: state_ref.to_owned(),
             participants: Some(database::Participants {
-                should_commit: [(
-                    participant.state_type.clone(),
-                    database::participants::StateRefs {
-                        state_refs: vec![participant.state_ref.clone()],
-                    },
-                )]
-                .into(),
+                should_commit,
                 read_only: Default::default(),
             }),
             preparing,
         }
     }
-    fn participant_from_record(
+    fn participants_from_record(
         record: &database::TransactionCoordinator,
-    ) -> Result<ParticipantTarget, Status> {
+    ) -> Result<Vec<ParticipantTarget>, Status> {
         if !record
             .participants
             .as_ref()
@@ -634,25 +685,26 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         let participants = record.participants.as_ref().ok_or_else(|| {
             Status::failed_precondition("recovered coordinator has no participants")
         })?;
-        if participants.should_commit.len() != 1 {
-            return Err(Status::unimplemented(
-                "multi-actor coordinator recovery is not supported",
-            ));
+        let mut result = BTreeSet::new();
+        for (state_type, refs) in &participants.should_commit {
+            for state_ref in &refs.state_refs {
+                if state_type.is_empty() || state_ref.is_empty() {
+                    return Err(Status::failed_precondition(
+                        "recovered coordinator contains an invalid participant",
+                    ));
+                }
+                result.insert(ParticipantTarget {
+                    state_type: state_type.clone(),
+                    state_ref: state_ref.clone(),
+                });
+            }
         }
-        let (state_type, refs) = participants
-            .should_commit
-            .iter()
-            .next()
-            .expect("len checked");
-        if refs.state_refs.len() != 1 || state_type.is_empty() || refs.state_refs[0].is_empty() {
+        if result.is_empty() {
             return Err(Status::failed_precondition(
-                "recovered coordinator must have one participant",
+                "recovered coordinator has no participants",
             ));
         }
-        Ok(ParticipantTarget {
-            state_type: state_type.clone(),
-            state_ref: refs.state_refs[0].clone(),
-        })
+        Ok(result.into_iter().collect())
     }
 }
 
@@ -1009,6 +1061,115 @@ mod tests {
         );
     }
     #[tokio::test]
+    async fn seals_deduplicated_remote_participants_before_prepare_and_waits_for_all_terminals() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let endpoint = Arc::new(MockEndpoint::default());
+        let id = Uuid::from_u128(6);
+        let remote_a = ParticipantTarget {
+            state_type: "example.Remote".into(),
+            state_ref: "remote/a".into(),
+        };
+        let remote_b = ParticipantTarget {
+            state_type: "example.Remote".into(),
+            state_ref: "remote/b".into(),
+        };
+        coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
+            .complete_with_returned_participants(
+                start(id),
+                vec![remote_b.clone(), remote_a.clone(), remote_b.clone()],
+            )
+            .await
+            .unwrap();
+
+        let calls = sidecar.calls.lock().unwrap().clone();
+        let prepared = match &calls[0] {
+            Call::DbPrepare(request) => request.transaction_coordinator.as_ref().unwrap(),
+            other => panic!("expected durable coordinator prepare, got {other:?}"),
+        };
+        assert_eq!(
+            prepared
+                .participants
+                .as_ref()
+                .unwrap()
+                .should_commit
+                .get("example.Remote")
+                .unwrap()
+                .state_refs,
+            vec!["remote/a", "remote/b"],
+        );
+        assert_eq!(
+            endpoint
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|call| matches!(call, Call::Prepare(_)))
+                .count(),
+            3,
+        );
+        assert_eq!(
+            endpoint
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|call| matches!(call, Call::Commit(_)))
+                .count(),
+            3,
+        );
+        assert!(matches!(calls.last(), Some(Call::Cleanup(_))));
+    }
+    #[tokio::test]
+    async fn definitive_abort_waits_for_every_participant_ack_before_cleanup() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let endpoint = Arc::new(MockEndpoint::default());
+        endpoint.prepares.lock().unwrap().extend([
+            Ok(database::PrepareResponse::default()),
+            Ok(database::PrepareResponse {
+                abort: true,
+                ..Default::default()
+            }),
+        ]);
+        let id = Uuid::from_u128(7);
+        coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
+            .complete_with_returned_participants(
+                start(id),
+                vec![ParticipantTarget {
+                    state_type: "example.Remote".into(),
+                    state_ref: "remote/a".into(),
+                }],
+            )
+            .await
+            .unwrap();
+        let calls = endpoint.calls.lock().unwrap();
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| matches!(call, Call::Prepare(_)))
+                .count(),
+            2
+        );
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| matches!(call, Call::Abort(_)))
+                .count(),
+            2
+        );
+        assert!(
+            !sidecar
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|call| matches!(call, Call::DbPrepared(_)))
+        );
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().last(),
+            Some(Call::Cleanup(_))
+        ));
+    }
+    #[tokio::test]
     async fn only_prepare_abort_is_definitive_and_other_failures_leave_record() {
         let sidecar = Arc::new(MockSidecar::default());
         let endpoint = Arc::new(MockEndpoint::default());
@@ -1072,7 +1233,7 @@ mod tests {
                     id.to_string(),
                     DurableRootCoordinator::<MockSidecar, MockResolver>::record(
                         "actor/1",
-                        &start(id).participant,
+                        &[start(id).participant],
                         true,
                     ),
                 )]
@@ -1120,7 +1281,7 @@ mod tests {
                     id.to_string(),
                     DurableRootCoordinator::<MockSidecar, MockResolver>::record(
                         "actor/1",
-                        &start(id).participant,
+                        &[start(id).participant],
                         false,
                     ),
                 )]
