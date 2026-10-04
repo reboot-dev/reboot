@@ -601,6 +601,135 @@ fn emit_transactional_client(
 
 /// Emits the transaction-only handler surface without claiming that the local
 /// DatabaseActorStore can coordinate Reboot's multi-participant protocol.
+///
+/// Keep the generated transaction paths separate. In particular, a future
+/// shared-root promotion must not accidentally change inbound shared execution.
+fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<'_>) {
+    // This intentionally retains the established combined fresh/inbound
+    // exclusive flow. Shared transactions are rendered by their own emitter.
+    output.push_str(&format!(
+        "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_metadata(request.metadata()).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;\n        let inbound = headers.transaction_ids.is_some();\n        if inbound && {} {{ return Err(tonic::Status::unimplemented(\"factory transactions must be exclusive root transactions\")); }}\n",
+        flow.method, flow.request, flow.response, flow.runtime_module, flow.factory,
+    ));
+    emit_transaction_flow(output, flow);
+    output.push_str("    }\n");
+}
+fn emit_shared_transaction_method(output: &mut String, flow: TransactionFlow<'_>) {
+    output.push_str(&format!(
+        "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_metadata(request.metadata()).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;\n        let inbound = headers.transaction_ids.is_some();\n        if inbound {{\n            // Shared inbound execution remains read-only; it never promotes.\n", flow.method, flow.request, flow.response, flow.runtime_module
+    ));
+    emit_transaction_flow(
+        output,
+        TransactionFlow {
+            inbound: TransactionInbound::KnownInbound,
+            shared_root_ownership_seam: false,
+            ..flow
+        },
+    );
+    output.push_str("        } else {\n            // Fresh shared roots are deliberately read-only until the local\n            // ownership seam can use start_local(SharedUpgradeable) together\n            // with a coordinator completion API. Do not promote here.\n");
+    emit_transaction_flow(
+        output,
+        TransactionFlow {
+            inbound: TransactionInbound::KnownFreshRoot,
+            shared_root_ownership_seam: true,
+            ..flow
+        },
+    );
+    output.push_str("        }\n    }\n");
+}
+
+#[derive(Clone, Copy)]
+enum TransactionInbound {
+    Dynamic,
+    KnownInbound,
+    KnownFreshRoot,
+}
+
+#[derive(Clone, Copy)]
+struct TransactionFlow<'a> {
+    method: &'a str,
+    request: &'a str,
+    response: &'a str,
+    method_identity: &'a str,
+    state: &'a str,
+    declaration: &'a str,
+    runtime_module: &'a str,
+    mode: &'a str,
+    factory: bool,
+    inbound: TransactionInbound,
+    shared_root_ownership_seam: bool,
+}
+
+/// Renders one complete execution flow. The caller owns the outer method and,
+/// for shared methods, selects the already-validated inbound or fresh-root path.
+fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
+    let TransactionFlow {
+        method,
+        request: _,
+        response,
+        method_identity,
+        state,
+        declaration,
+        runtime_module,
+        mode,
+        factory,
+        inbound,
+        shared_root_ownership_seam,
+    } = flow;
+    let (context, transaction_path, automatic_idempotency, participant_metadata, returned_participants, completion) = match inbound {
+        TransactionInbound::Dynamic => (
+            format!("let mut context = if inbound {{ let inbound_context = {runtime_module}::runtime::InboundTransactionContext::from_headers(headers, {runtime_module}::runtime::TransactionMode::{mode}).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; let child_id = self.root_start.next_inbound_transaction(&inbound_context)?; inbound_context.with_nested_transaction_id(child_id).map_err(|error| tonic::Status::invalid_argument(error.to_string()))? }} else {{ {runtime_module}::runtime::start_root_transaction(headers, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, {runtime_module}::runtime::TransactionMode::{mode}, self.root_start.as_ref())?.transaction().clone() }};"),
+            format!("if inbound {{ {runtime_module}::durable_participant::TransactionPathContract::PreserveNested }} else {{ {runtime_module}::durable_participant::TransactionPathContract::RootOnly }}"),
+            format!("if !inbound && context.headers().idempotency_key.is_some() && matches!({runtime_module}::runtime::TransactionMode::{mode}, {runtime_module}::runtime::TransactionMode::Exclusive)"),
+            format!("inbound.then(|| {runtime_module}::successful_trailers::ParticipantMetadata::classified_single(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, &context.headers().state_ref, false, context.headers().coordinator_read_only_aware)).transpose().map_err(|error| tonic::Status::failed_precondition(error.to_string()))?"),
+            "if inbound { Vec::new() } else { context.take_returned_participants() }".to_owned(),
+            "if let Some(metadata) = participant_metadata { reboot_metadata } else { coordinator_completion }".to_owned(),
+        ),
+        TransactionInbound::KnownInbound => (
+            format!("let mut context = {{ let inbound_context = {runtime_module}::runtime::InboundTransactionContext::from_headers(headers, {runtime_module}::runtime::TransactionMode::{mode}).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; let child_id = self.root_start.next_inbound_transaction(&inbound_context)?; inbound_context.with_nested_transaction_id(child_id).map_err(|error| tonic::Status::invalid_argument(error.to_string()))? }};"),
+            format!("{runtime_module}::durable_participant::TransactionPathContract::PreserveNested"),
+            "if false".to_owned(),
+            format!("Some({runtime_module}::successful_trailers::ParticipantMetadata::classified_single(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, &context.headers().state_ref, true, context.headers().coordinator_read_only_aware).map_err(|error| tonic::Status::failed_precondition(error.to_string()))?)"),
+            "Vec::new()".to_owned(),
+            "if let Some(metadata) = participant_metadata { reboot_metadata } else { coordinator_completion }".to_owned(),
+        ),
+        TransactionInbound::KnownFreshRoot => (
+            format!("let mut context = {runtime_module}::runtime::start_root_transaction(headers, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, {runtime_module}::runtime::TransactionMode::{mode}, self.root_start.as_ref())?.transaction().clone();"),
+            format!("{runtime_module}::durable_participant::TransactionPathContract::RootOnly"),
+            "if false".to_owned(),
+            "None".to_owned(),
+            "context.take_returned_participants()".to_owned(),
+            "if let Some(metadata) = participant_metadata { reboot_metadata } else { coordinator_completion }".to_owned(),
+        ),
+    };
+    let prefix = if matches!(inbound, TransactionInbound::Dynamic) {
+        "        "
+    } else {
+        "            "
+    };
+    let read_only = mode == "Shared";
+    output.push_str(&format!("{prefix}{context}\n{prefix}if {read_only} {{ context.enable_read_only_aware(); }}\n{prefix}let transaction_id = context.transaction_root_id();\n{prefix}let automatic_idempotency = {automatic_idempotency} {{ Some(context.idempotency(\"{method_identity}\", request.get_ref())?) }} else {{ None }};\n{prefix}if let Some(idempotency) = &automatic_idempotency {{ let recovered = self.participant.sidecar().recover_idempotent_mutations({runtime_module}::database_proto::RecoverIdempotentMutationsRequest {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone(), idempotency_key: Some(idempotency.key().as_bytes().to_vec()), workflow_id: None, workflow_iteration: None }}).await?; for recovered in recovered {{ for mutation in recovered.idempotent_mutations {{ if let Some(response) = idempotency.replay::<proto::{response}>(&mutation)? {{ return Ok(tonic::Response::new(response)); }} }} }} }}\n"));
+    output.push_str(&format!("{prefix}let participant_metadata = {participant_metadata};\n{prefix}let loaded = self.participant.start({runtime_module}::durable_participant::ActorTransactionStart {{ transaction_ids: context.transaction_ids().to_vec(), transaction_path: {transaction_path}, coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: {read_only}, factory: {factory}, state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}).await?;\n{prefix}let mut state = match loaded {{ Some(_) if {factory} => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"factory transaction requires an absent actor state\")); }}, Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes.as_slice()) {{ Ok(state) => state, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(format!(\"stored actor state is not a valid {state}: {{error}}\"))); }} }}, None if {factory} => proto::{state}::default(), None => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"non-factory transaction requires an existing actor state\")); }} }};\n"));
+    output.push_str(&format!("{prefix}let execution = match self.handler.{method}(&context, &mut state, request.into_inner()).await {{ Ok(execution) => execution, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(error); }} }};\n{prefix}if automatic_idempotency.is_some() && !execution.idempotent_mutations.is_empty() {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"root-local idempotency stages exactly one automatic mutation\")); }}\n{prefix}let automatic_mutations = automatic_idempotency.as_ref().map(|idempotency| idempotency.mutation(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, context.headers().state_ref.clone(), &execution.response)).into_iter().collect::<Vec<_>>();\n{prefix}if let Err(error) = self.participant.stage(transaction_id, {runtime_module}::durable_participant::PendingActorEffects {{ state: if {factory} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else {{ execution.final_state.clone() }}, task_upserts: execution.task_upserts.clone(), idempotent_mutations: if automatic_idempotency.is_some() {{ automatic_mutations }} else {{ execution.idempotent_mutations.clone() }} }}).await {{ self.participant.abort(transaction_id).await?; return Err(error); }}\n"));
+    if shared_root_ownership_seam {
+        output.push_str(&format!("{prefix}// Local-only shared-root ownership is intentionally not activated: the\n{prefix}// current coordinator accepts only the read-only shared classification.\n"));
+    }
+    let completion = completion
+        .replace(
+            "reboot_metadata",
+            &format!(
+                "{runtime_module}::successful_trailers::stage_successful_participants(&mut response, metadata);"
+            ),
+        )
+        .replace(
+            "coordinator_completion",
+            &format!(
+                "self.coordinator.complete_with_classified_returned_participants({runtime_module}::durable_coordinator::RootCoordinatorStart {{ transaction_ids: context.transaction_ids().to_vec(), coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), participant: {runtime_module}::durable_coordinator::ParticipantTarget {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: {read_only}, factory: {factory}, placement_requested: false }}, returned_participants).await?;"
+            ),
+        );
+    output.push_str(&format!("{prefix}let returned_participants = {returned_participants};\n{prefix}let mut response = tonic::Response::new(execution.response);\n{prefix}{completion}\n{prefix}Ok(response)\n"));
+}
+
 fn emit_transactions(
     output: &mut String,
     service_name: &str,
@@ -696,18 +825,28 @@ fn emit_transactions(
             DurableKind::Transaction(metadata) => metadata,
             _ => unreachable!("transactions are filtered above"),
         };
-        let mode = match metadata.mode {
-            TransactionMode::Exclusive => "Exclusive",
-            TransactionMode::Shared => "Shared",
+        let flow = TransactionFlow {
+            method,
+            request,
+            response,
+            method_identity,
+            state,
+            declaration: &declaration,
+            runtime_module,
+            mode: match metadata.mode {
+                TransactionMode::Exclusive => "Exclusive",
+                TransactionMode::Shared => "Shared",
+            },
+            factory: metadata.factory,
+            inbound: TransactionInbound::Dynamic,
+            shared_root_ownership_seam: false,
         };
-        let supported = metadata.mode == TransactionMode::Exclusive || !metadata.factory;
-        let read_only = metadata.mode == TransactionMode::Shared;
-        let factory_flag = metadata.factory;
-        let rejection = "factory shared transactions are not supported";
-        if supported {
-            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let headers = {runtime_module}::RebootHeaders::from_metadata(request.metadata()).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;\n        let inbound = headers.transaction_ids.is_some();\n        if inbound && {factory_flag} {{ return Err(tonic::Status::unimplemented(\"factory transactions must be exclusive root transactions\")); }}\n        let mut context = if inbound {{ let inbound_context = {runtime_module}::runtime::InboundTransactionContext::from_headers(headers, {runtime_module}::runtime::TransactionMode::{mode}).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; let child_id = self.root_start.next_inbound_transaction(&inbound_context)?; inbound_context.with_nested_transaction_id(child_id).map_err(|error| tonic::Status::invalid_argument(error.to_string()))? }} else {{ {runtime_module}::runtime::start_root_transaction(headers, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, {runtime_module}::runtime::TransactionMode::{mode}, self.root_start.as_ref())?.transaction().clone() }};\n        if {read_only} {{ context.enable_read_only_aware(); }}\n        let transaction_id = context.transaction_root_id();\n        let automatic_idempotency = if !inbound && context.headers().idempotency_key.is_some() && matches!({runtime_module}::runtime::TransactionMode::{mode}, {runtime_module}::runtime::TransactionMode::Exclusive) {{ Some(context.idempotency(\"{method_identity}\", request.get_ref())?) }} else {{ None }};\n        if let Some(idempotency) = &automatic_idempotency {{ let recovered = self.participant.sidecar().recover_idempotent_mutations({runtime_module}::database_proto::RecoverIdempotentMutationsRequest {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone(), idempotency_key: Some(idempotency.key().as_bytes().to_vec()), workflow_id: None, workflow_iteration: None }}).await?; for recovered in recovered {{ for mutation in recovered.idempotent_mutations {{ if let Some(response) = idempotency.replay::<proto::{response}>(&mutation)? {{ return Ok(tonic::Response::new(response)); }} }} }} }}\n        let participant_metadata = inbound.then(|| {runtime_module}::successful_trailers::ParticipantMetadata::classified_single(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, &context.headers().state_ref, {read_only}, context.headers().coordinator_read_only_aware)).transpose().map_err(|error| tonic::Status::failed_precondition(error.to_string()))?;\n        let loaded = self.participant.start({runtime_module}::durable_participant::ActorTransactionStart {{ transaction_ids: context.transaction_ids().to_vec(), transaction_path: if inbound {{ {runtime_module}::durable_participant::TransactionPathContract::PreserveNested }} else {{ {runtime_module}::durable_participant::TransactionPathContract::RootOnly }}, coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: {read_only}, factory: {factory_flag}, state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}).await?;\n        let mut state = match loaded {{ Some(_) if {factory_flag} => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"factory transaction requires an absent actor state\")); }}, Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes.as_slice()) {{ Ok(state) => state, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(format!(\"stored actor state is not a valid {state}: {{error}}\"))); }} }}, None if {factory_flag} => proto::{state}::default(), None => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"non-factory transaction requires an existing actor state\")); }} }};\n        let execution = match self.handler.{method}(&context, &mut state, request.into_inner()).await {{ Ok(execution) => execution, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(error); }} }};\n        if automatic_idempotency.is_some() && !execution.idempotent_mutations.is_empty() {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"root-local idempotency stages exactly one automatic mutation\")); }}\n        let automatic_mutations = automatic_idempotency.as_ref().map(|idempotency| idempotency.mutation(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, context.headers().state_ref.clone(), &execution.response)).into_iter().collect::<Vec<_>>();\n        if let Err(error) = self.participant.stage(transaction_id, {runtime_module}::durable_participant::PendingActorEffects {{ state: if {factory_flag} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else {{ execution.final_state.clone() }}, task_upserts: execution.task_upserts.clone(), idempotent_mutations: if automatic_idempotency.is_some() {{ automatic_mutations }} else {{ execution.idempotent_mutations.clone() }} }}).await {{ self.participant.abort(transaction_id).await?; return Err(error); }}\n        let returned_participants = if inbound {{ Vec::new() }} else {{ context.take_returned_participants() }};\n        let mut response = tonic::Response::new(execution.response);\n        if let Some(metadata) = participant_metadata {{ {runtime_module}::successful_trailers::stage_successful_participants(&mut response, metadata); }} else {{ self.coordinator.complete_with_classified_returned_participants({runtime_module}::durable_coordinator::RootCoordinatorStart {{ transaction_ids: context.transaction_ids().to_vec(), coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), participant: {runtime_module}::durable_coordinator::ParticipantTarget {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: {read_only}, factory: {factory_flag}, placement_requested: false }}, returned_participants).await?; }}\n        Ok(response)\n    }}\n"));
-        } else {
-            output.push_str(&format!("    async fn {method}(&self, _: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ Err(tonic::Status::unimplemented(\"{rejection}\")) }}\n"));
+        match metadata.mode {
+            TransactionMode::Exclusive => emit_exclusive_transaction_method(output, flow),
+            TransactionMode::Shared if metadata.factory => output.push_str(&format!(
+                "    async fn {method}(&self, _: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ Err(tonic::Status::unimplemented(\"factory shared transactions are not supported\")) }}\n"
+            )),
+            TransactionMode::Shared => emit_shared_transaction_method(output, flow),
         }
     }
     output.push_str("}\n\n");
@@ -1164,6 +1303,78 @@ mod tests {
         assert!(!content.contains("CounterWritesDatabaseHandler"));
         assert!(!content.contains("writer_async_for_method::<CounterDurableState"));
         assert!(!content.contains("impl<H: CounterWritesTransactionHandler> proto::"));
+    }
+
+    #[test]
+    fn shared_transactions_render_distinct_inbound_and_fresh_root_read_only_paths() {
+        let annotations = HashMap::from([(
+            "counter.proto".to_owned(),
+            HashMap::from([(
+                "CounterWrites".to_owned(),
+                DurableService {
+                    state: "Counter".to_owned(),
+                    default_constructible: true,
+                    methods: HashMap::from([(
+                        "Increment".to_owned(),
+                        DurableKind::Transaction(TransactionMetadata {
+                            mode: TransactionMode::Shared,
+                            factory: false,
+                        }),
+                    )]),
+                },
+            )]),
+        )]);
+        let content = generate_inner(request(), annotations)
+            .unwrap()
+            .remove(0)
+            .content
+            .unwrap();
+
+        assert!(
+            content.contains("// Shared inbound execution remains read-only; it never promotes.")
+        );
+        assert!(content.contains("transaction_path: reboot_rust_schema::durable_participant::TransactionPathContract::PreserveNested"));
+        assert!(
+            content.contains("// Fresh shared roots are deliberately read-only until the local")
+        );
+        assert!(content.contains("ownership seam can use start_local(SharedUpgradeable) together"));
+        assert!(content.contains("transaction_path: reboot_rust_schema::durable_participant::TransactionPathContract::RootOnly"));
+        assert!(
+            content
+                .contains("current coordinator accepts only the read-only shared classification")
+        );
+        assert!(!content.contains("ParticipantStartMode::SharedUpgradeable"));
+        assert!(!content.contains("complete_shared_local_promotion"));
+    }
+
+    #[test]
+    fn exclusive_transactions_keep_the_established_combined_fresh_and_inbound_flow() {
+        let annotations = HashMap::from([(
+            "counter.proto".to_owned(),
+            HashMap::from([(
+                "CounterWrites".to_owned(),
+                DurableService {
+                    state: "Counter".to_owned(),
+                    default_constructible: true,
+                    methods: HashMap::from([(
+                        "Increment".to_owned(),
+                        DurableKind::Transaction(TransactionMetadata {
+                            mode: TransactionMode::Exclusive,
+                            factory: false,
+                        }),
+                    )]),
+                },
+            )]),
+        )]);
+        let content = generate_inner(request(), annotations)
+            .unwrap()
+            .remove(0)
+            .content
+            .unwrap();
+
+        assert!(content.contains("let mut context = if inbound { let inbound_context"));
+        assert!(content.contains("if inbound { reboot_rust_schema::durable_participant::TransactionPathContract::PreserveNested } else { reboot_rust_schema::durable_participant::TransactionPathContract::RootOnly }"));
+        assert!(!content.contains("Fresh shared roots are deliberately read-only"));
     }
 
     #[test]
