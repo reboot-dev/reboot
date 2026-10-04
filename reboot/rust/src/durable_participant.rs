@@ -17,8 +17,9 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::{
-    database_proto as database, legacy_coordinator::CoordinatorWatchEndpoint,
-    runtime::TransactionMode,
+    database_proto as database,
+    legacy_coordinator::CoordinatorWatchEndpoint,
+    runtime::{ActorGate, ExclusiveActorLease, TransactionMode},
 };
 
 const STATE_REF_HEADER: &str = "x-reboot-state-ref";
@@ -247,7 +248,7 @@ struct Pending {
     prepared: bool,
     read_only: bool,
     // Kept until a terminal sidecar response is acknowledged.
-    _lock: tokio::sync::OwnedMutexGuard<()>,
+    _lock: ExclusiveActorLease,
 }
 
 /// Only actor-local conflicts are definitive Prepare outcomes. A sidecar RPC
@@ -264,7 +265,7 @@ pub struct DurableActorParticipant<C: ParticipantSidecar> {
     sidecar: Arc<C>,
     state_type: String,
     state_ref: String,
-    lock: Arc<tokio::sync::Mutex<()>>,
+    lock: ActorGate,
     pending: Arc<tokio::sync::Mutex<Option<Pending>>>,
 }
 
@@ -274,7 +275,7 @@ impl<C: ParticipantSidecar> Clone for DurableActorParticipant<C> {
             sidecar: Arc::clone(&self.sidecar),
             state_type: self.state_type.clone(),
             state_ref: self.state_ref.clone(),
-            lock: Arc::clone(&self.lock),
+            lock: self.lock.clone(),
             pending: Arc::clone(&self.pending),
         }
     }
@@ -293,7 +294,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             // A participant may be hosted by a sidecar unrelated to any
             // DatabaseActorStore, so its default gate is actor-local. Mixed
             // generated adapters bind it to their exact store below.
-            lock: Arc::new(tokio::sync::Mutex::new(())),
+            lock: ActorGate::new(),
             state_type,
             state_ref,
             pending: Arc::new(tokio::sync::Mutex::new(None)),
@@ -318,7 +319,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
     /// runtime never manufactures state or effects itself.
     pub async fn start(&self, start: ActorTransactionStart) -> Result<Option<Vec<u8>>, Status> {
         self.validate_start(&start)?;
-        let lock = Arc::clone(&self.lock).lock_owned().await;
+        let lock = self.lock.exclusive().await;
         let mut pending = self.pending.lock().await;
         if pending.is_some() {
             return Err(Status::failed_precondition(
@@ -575,7 +576,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
 
         // Acquire before publishing ownership, so no terminal request can be
         // served without this actor's exclusive lock.
-        let lock = Arc::clone(&self.lock).lock_owned().await;
+        let lock = self.lock.exclusive().await;
         let mut pending = self.pending.lock().await;
         if pending.is_some() {
             return Err(Status::failed_precondition(

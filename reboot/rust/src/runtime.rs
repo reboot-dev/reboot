@@ -849,16 +849,178 @@ struct ActorLockKey {
     state_ref: String,
 }
 
-static DATABASE_ACTOR_LOCKS: LazyLock<Mutex<HashMap<ActorLockKey, Weak<tokio::sync::Mutex<()>>>>> =
+#[derive(Default)]
+struct ActorGateState {
+    shared: usize,
+    exclusive: bool,
+    upgrading: bool,
+}
+
+struct ActorGateInner {
+    state: Mutex<ActorGateState>,
+    changed: tokio::sync::Notify,
+}
+
+/// Process-local reader/writer gate for one durable actor.
+///
+/// An upgrade keeps its shared lease until it atomically becomes exclusive.
+/// While an upgrade is waiting, new shared leases cannot barge ahead of it.
+#[derive(Clone)]
+pub struct ActorGate {
+    inner: Arc<ActorGateInner>,
+}
+
+/// A shared actor lease. No production participant path requests this yet.
+pub struct SharedActorLease {
+    inner: Arc<ActorGateInner>,
+    active: bool,
+}
+
+/// An exclusive actor lease held by normal store access and durable participants.
+pub struct ExclusiveActorLease {
+    inner: Arc<ActorGateInner>,
+    active: bool,
+}
+
+/// An upgrade could not be completed without giving up the shared lease.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ActorGateUpgradeError {
+    UpgradeInProgress,
+    TimedOut,
+}
+
+impl ActorGate {
+    pub(crate) fn new() -> Self {
+        Self {
+            inner: Arc::new(ActorGateInner {
+                state: Mutex::new(ActorGateState::default()),
+                changed: tokio::sync::Notify::new(),
+            }),
+        }
+    }
+
+    pub async fn shared(&self) -> SharedActorLease {
+        loop {
+            let notified = self.inner.changed.notified();
+            {
+                let mut state = self.inner.state.lock().expect("actor gate mutex poisoned");
+                if !state.exclusive && !state.upgrading {
+                    state.shared += 1;
+                    return SharedActorLease {
+                        inner: Arc::clone(&self.inner),
+                        active: true,
+                    };
+                }
+            }
+            notified.await;
+        }
+    }
+
+    pub async fn exclusive(&self) -> ExclusiveActorLease {
+        loop {
+            let notified = self.inner.changed.notified();
+            {
+                let mut state = self.inner.state.lock().expect("actor gate mutex poisoned");
+                if !state.exclusive && state.shared == 0 {
+                    state.exclusive = true;
+                    return ExclusiveActorLease {
+                        inner: Arc::clone(&self.inner),
+                        active: true,
+                    };
+                }
+            }
+            notified.await;
+        }
+    }
+}
+
+impl Drop for SharedActorLease {
+    fn drop(&mut self) {
+        if self.active {
+            let mut state = self.inner.state.lock().expect("actor gate mutex poisoned");
+            state.shared -= 1;
+            self.inner.changed.notify_waiters();
+        }
+    }
+}
+
+impl Drop for ExclusiveActorLease {
+    fn drop(&mut self) {
+        if self.active {
+            let mut state = self.inner.state.lock().expect("actor gate mutex poisoned");
+            state.exclusive = false;
+            self.inner.changed.notify_waiters();
+        }
+    }
+}
+
+struct UpgradeWait {
+    inner: Arc<ActorGateInner>,
+    active: bool,
+}
+
+impl Drop for UpgradeWait {
+    fn drop(&mut self) {
+        if self.active {
+            let mut state = self.inner.state.lock().expect("actor gate mutex poisoned");
+            state.upgrading = false;
+            self.inner.changed.notify_waiters();
+        }
+    }
+}
+
+impl SharedActorLease {
+    /// Atomically promotes this lease. A second concurrent upgrader is rejected
+    /// without releasing its own shared lease.
+    pub async fn upgrade(&mut self) -> Result<ExclusiveActorLease, ActorGateUpgradeError> {
+        {
+            let mut state = self.inner.state.lock().expect("actor gate mutex poisoned");
+            if state.upgrading {
+                return Err(ActorGateUpgradeError::UpgradeInProgress);
+            }
+            state.upgrading = true;
+        }
+        let mut wait = UpgradeWait {
+            inner: Arc::clone(&self.inner),
+            active: true,
+        };
+        loop {
+            let notified = self.inner.changed.notified();
+            {
+                let mut state = self.inner.state.lock().expect("actor gate mutex poisoned");
+                if !state.exclusive && state.shared == 1 {
+                    state.shared = 0;
+                    state.upgrading = false;
+                    state.exclusive = true;
+                    wait.active = false;
+                    self.active = false;
+                    return Ok(ExclusiveActorLease {
+                        inner: Arc::clone(&self.inner),
+                        active: true,
+                    });
+                }
+            }
+            notified.await;
+        }
+    }
+
+    /// Promotes atomically, retaining this shared lease if the deadline expires.
+    pub async fn upgrade_for(
+        &mut self,
+        timeout: std::time::Duration,
+    ) -> Result<ExclusiveActorLease, ActorGateUpgradeError> {
+        tokio::time::timeout(timeout, self.upgrade())
+            .await
+            .map_err(|_| ActorGateUpgradeError::TimedOut)?
+    }
+}
+
+static DATABASE_ACTOR_LOCKS: LazyLock<Mutex<HashMap<ActorLockKey, Weak<ActorGateInner>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Returns the process-local gate shared by normal actor access and an
 /// exclusive durable participant for this exact actor identity.
-fn same_actor_gate(
-    endpoint: &str,
-    state_type: &str,
-    state_ref: &str,
-) -> Arc<tokio::sync::Mutex<()>> {
+fn same_actor_gate(endpoint: &str, state_type: &str, state_ref: &str) -> ActorGate {
     let key = ActorLockKey {
         endpoint: endpoint.to_owned(),
         state_type: state_type.to_owned(),
@@ -867,13 +1029,13 @@ fn same_actor_gate(
     let mut registry = DATABASE_ACTOR_LOCKS
         .lock()
         .expect("database actor-lock registry mutex poisoned");
-    registry.retain(|_, lock| lock.strong_count() > 0);
+    registry.retain(|_, gate| gate.strong_count() > 0);
     match registry.get(&key).and_then(Weak::upgrade) {
-        Some(lock) => lock,
+        Some(inner) => ActorGate { inner },
         None => {
-            let lock = Arc::new(tokio::sync::Mutex::new(()));
-            registry.insert(key, Arc::downgrade(&lock));
-            lock
+            let gate = ActorGate::new();
+            registry.insert(key, Arc::downgrade(&gate.inner));
+            gate
         }
     }
 }
@@ -1196,7 +1358,7 @@ impl DatabaseActorStore {
         })
     }
 
-    fn lock_for_type(&self, state_type: &str, state_ref: &str) -> Arc<tokio::sync::Mutex<()>> {
+    fn lock_for_type(&self, state_type: &str, state_ref: &str) -> ActorGate {
         same_actor_gate(&self.endpoint, state_type, state_ref)
     }
 
@@ -1204,7 +1366,7 @@ impl DatabaseActorStore {
     ///
     /// Durable transaction participants for this Database sidecar must use the
     /// same gate so an exclusive transaction cannot race a normal method.
-    pub fn actor_gate(&self, state_type: &str, state_ref: &str) -> Arc<tokio::sync::Mutex<()>> {
+    pub fn actor_gate(&self, state_type: &str, state_ref: &str) -> ActorGate {
         self.lock_for_type(state_type, state_ref)
     }
 
@@ -1370,7 +1532,7 @@ impl DatabaseActorStore {
         let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
         let key = idempotency_key(&request)?;
         let lock = self.lock_for_type(state_type, &state_ref);
-        let _guard = lock.lock().await;
+        let _guard = lock.exclusive().await;
         if let Some(response) = self
             .replay_type(state_type, &state_ref, key, Some(&fingerprint))
             .await?
@@ -1475,7 +1637,7 @@ impl DatabaseActorStore {
         let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
         let key = idempotency_key(&request)?;
         let lock = self.lock_for_type(state_type, &state_ref);
-        let _guard = lock.lock().await;
+        let _guard = lock.exclusive().await;
         if let Some(response) = self
             .replay_type(state_type, &state_ref, key, Some(&fingerprint))
             .await?
@@ -1603,7 +1765,7 @@ impl DatabaseActorStore {
         // The lock only avoids duplicate handler execution in this process.
         // The CreateActor RPC is the cross-process correctness boundary.
         let lock = self.lock_for_type(Declaration::STATE_TYPE, &state_ref);
-        let _guard = lock.lock().await;
+        let _guard = lock.exclusive().await;
         if let Some(response) = self
             .replay_type(Declaration::STATE_TYPE, &state_ref, key, Some(&fingerprint))
             .await?
@@ -2279,13 +2441,76 @@ mod tests {
         let other_sidecar = DatabaseActorStore::connect_lazy("http://127.0.0.1:41002").unwrap();
         let first_gate = first.actor_gate("example.Actor", "actor/1");
         assert!(Arc::ptr_eq(
-            &first_gate,
-            &same_sidecar.actor_gate("example.Actor", "actor/1"),
+            &first_gate.inner,
+            &same_sidecar.actor_gate("example.Actor", "actor/1").inner,
         ));
         assert!(!Arc::ptr_eq(
-            &first_gate,
-            &other_sidecar.actor_gate("example.Actor", "actor/1"),
+            &first_gate.inner,
+            &other_sidecar.actor_gate("example.Actor", "actor/1").inner,
         ));
+    }
+
+    #[tokio::test]
+    async fn actor_gate_upgrade_is_atomic_and_blocks_reader_barge() {
+        let gate = ActorGate::new();
+        let mut upgrading = gate.shared().await;
+        let mut other_reader = gate.shared().await;
+
+        let upgrade = upgrading.upgrade();
+        tokio::pin!(upgrade);
+        tokio::select! {
+            _ = &mut upgrade => panic!("upgrade must wait for the other reader"),
+            _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {}
+        }
+        assert!(matches!(
+            other_reader.upgrade().await,
+            Err(ActorGateUpgradeError::UpgradeInProgress)
+        ));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(10), gate.shared(),)
+                .await
+                .is_err()
+        );
+
+        drop(other_reader);
+        let exclusive = upgrade.await.unwrap();
+        drop(exclusive);
+    }
+
+    #[tokio::test]
+    async fn actor_gate_upgrade_timeout_and_cancellation_preserve_shared_lease() {
+        let gate = ActorGate::new();
+        let mut upgrading = gate.shared().await;
+        let blocker = gate.shared().await;
+
+        assert!(matches!(
+            upgrading
+                .upgrade_for(std::time::Duration::from_millis(10))
+                .await,
+            Err(ActorGateUpgradeError::TimedOut)
+        ));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(10), gate.exclusive(),)
+                .await
+                .is_err()
+        );
+
+        {
+            let cancelled_upgrade = upgrading.upgrade();
+            tokio::pin!(cancelled_upgrade);
+            tokio::select! {
+                _ = &mut cancelled_upgrade => panic!("upgrade must wait for the other reader"),
+                _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {}
+            }
+        }
+        let additional_reader =
+            tokio::time::timeout(std::time::Duration::from_millis(10), gate.shared())
+                .await
+                .expect("cancelled upgrade must clear the reader barrier");
+        drop(additional_reader);
+        drop(blocker);
+        drop(upgrading);
+        drop(gate.exclusive().await);
     }
     use crate::ExternalContext;
     use std::collections::BTreeMap;
