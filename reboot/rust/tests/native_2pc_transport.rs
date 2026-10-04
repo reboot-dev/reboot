@@ -639,11 +639,11 @@ async fn native_singleton_initial_state_materializes_once_through_the_real_cxx_s
     assert_eq!(first.materialization.state, Some(b"initial-state".to_vec()));
 }
 
-/// The generic recovery materializer must obey the real sidecar's committed,
-/// state-only boundary and defer opaque journals without interpreting them.
+/// The committed-singleton recovery primitive must admit only an exact C++
+/// durable snapshot and reject state/opaque mismatches before materialization.
 #[tokio::test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
-async fn native_recovery_materializer_filters_real_cxx_state_and_opaque_journals() {
+async fn native_committed_singleton_recovery_conforms_to_real_cxx_sidecar() {
     let database = spawn_cxx_database().await;
     let sidecar = TonicNative2pcDatabaseSidecar::connect(database.endpoint.clone())
         .await
@@ -760,6 +760,18 @@ async fn native_recovery_materializer_filters_real_cxx_state_and_opaque_journals
             .unwrap()
             .applied_journal,
         state_journal
+    );
+    assert_eq!(
+        recover_and_materialize_committed_singleton_state_once(
+            &sidecar,
+            &state_requests,
+            &state_participant,
+            Some(b"wrong-state".to_vec()),
+        )
+        .await
+        .unwrap_err()
+        .code(),
+        tonic::Code::DataLoss
     );
     assert_eq!(
         recover_and_materialize_committed_singleton_state_once(
