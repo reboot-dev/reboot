@@ -645,15 +645,15 @@ async fn generated_outbound_client_decodes_generated_inbound_trailer_without_ini
         .connect()
         .await
         .unwrap();
-    let mut headers = reboot::RebootHeaders::new("caller-state");
-    headers.transaction_ids = Some(vec![Uuid::from_u128(201)]);
-    headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.Root".into());
-    headers.transaction_coordinator_state_ref = Some("root-counter".into());
-    let context = reboot::runtime::TransactionContext::from_headers(
-        headers,
+    let root = reboot::runtime::RootTransactionContext::start(
+        reboot::RebootHeaders::new("caller-state"),
+        "tests.reboot.protoc.Root",
         reboot::runtime::TransactionMode::Exclusive,
+        Uuid::from_u128(201),
+        prost_types::Timestamp::default(),
     )
     .unwrap();
+    let context = root.transaction();
     let client = transaction_generated::TransactionCounterWritesClient::new(FixedChannelResolver(channel));
     let response = client
         .increment(
@@ -673,7 +673,58 @@ async fn generated_outbound_client_decodes_generated_inbound_trailer_without_ini
             .collect::<Vec<_>>(),
         vec![(&"tests.reboot.protoc.TransactionCounter".to_owned(), &"transaction-counter".to_owned())]
     );
+    assert_eq!(
+        root.transaction().take_returned_participants(),
+        vec![reboot::durable_coordinator::ParticipantTarget {
+            state_type: "tests.reboot.protoc.TransactionCounter".into(),
+            state_ref: "transaction-counter".into(),
+        }]
+    );
+    assert!(root.transaction().take_returned_participants().is_empty());
     assert_eq!(*trace.lock().unwrap(), ["participant load", "handler"]);
+    server.abort();
+}
+
+#[tokio::test]
+async fn generated_outbound_client_does_not_enlist_failed_rpc() {
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let adapter = transaction_adapter(trace, true);
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .layer(reboot::successful_trailers::SuccessfulParticipantTrailerLayer)
+            .add_service(
+                proto::transaction_counter_writes_server::TransactionCounterWritesServer::new(adapter),
+            )
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+    let channel = tonic::transport::Channel::from_shared(format!("http://{address}"))
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let root = reboot::runtime::RootTransactionContext::start(
+        reboot::RebootHeaders::new("caller-state"),
+        "tests.reboot.protoc.Root",
+        reboot::runtime::TransactionMode::Exclusive,
+        Uuid::from_u128(201),
+        prost_types::Timestamp::default(),
+    )
+    .unwrap();
+    let client = transaction_generated::TransactionCounterWritesClient::new(FixedChannelResolver(channel));
+    let error = client
+        .increment(
+            root.transaction(),
+            &transaction_generated::TransactionCounterWritesTarget::new("transaction-counter"),
+            proto::TransactionIncrementRequest { amount: 3 },
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code(), tonic::Code::InvalidArgument);
+    assert!(root.transaction().take_returned_participants().is_empty());
     server.abort();
 }
 

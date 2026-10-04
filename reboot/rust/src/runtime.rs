@@ -9,7 +9,7 @@
 //! by `x-reboot-state-ref`, writes require a UUID idempotency key, and reads
 //! return the actor's last successfully written message.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs::{self, File, OpenOptions};
 use std::future::Future;
 use std::io::{self, Write};
@@ -54,7 +54,6 @@ pub struct TransactionExecution<Response> {
     pub final_state: Option<Vec<u8>>,
     pub task_upserts: Vec<database::Task>,
     pub idempotent_mutations: Vec<database::IdempotentMutation>,
-    pub returned_participants: Vec<crate::durable_coordinator::ParticipantTarget>,
 }
 
 impl<Response> TransactionExecution<Response> {
@@ -64,18 +63,7 @@ impl<Response> TransactionExecution<Response> {
             final_state: None,
             task_upserts: Vec::new(),
             idempotent_mutations: Vec::new(),
-            returned_participants: Vec::new(),
         }
-    }
-
-    /// Enlists every identity decoded from a successful remote-call trailer.
-    /// Deduplication and durable sealing happen in `DurableRootCoordinator`.
-    pub fn enlist_returned_participants(
-        &mut self,
-        returned: &crate::successful_trailers::ReturnedParticipants,
-    ) {
-        self.returned_participants
-            .extend(returned.participants().iter().cloned());
     }
 }
 
@@ -85,11 +73,23 @@ impl<Response> TransactionExecution<Response> {
 /// Construct this only from inbound metadata that a transaction coordinator has
 /// already established. This SDK intentionally does not start, prepare, commit,
 /// or abort a transaction, so it cannot manufacture a root context.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct TransactionContext {
     headers: RebootHeaders,
     mode: TransactionMode,
+    /// Present only for a generated fresh root. Inbound contexts deliberately
+    /// have no root aggregation authority.
+    returned_participants:
+        Option<Arc<Mutex<BTreeSet<crate::durable_coordinator::ParticipantTarget>>>>,
 }
+
+impl PartialEq for TransactionContext {
+    fn eq(&self, other: &Self) -> bool {
+        self.headers == other.headers && self.mode == other.mode
+    }
+}
+
+impl Eq for TransactionContext {}
 
 /// A validated transaction context received from an application RPC.
 ///
@@ -237,7 +237,51 @@ impl TransactionContext {
         {
             return Err(ContextError::MissingTransactionCoordinatorMetadata);
         }
-        Ok(Self { headers, mode })
+        Ok(Self {
+            headers,
+            mode,
+            returned_participants: None,
+        })
+    }
+
+    fn with_returned_participant_collection(mut self) -> Self {
+        self.returned_participants = Some(Arc::new(Mutex::new(BTreeSet::new())));
+        self
+    }
+
+    /// Enlists validated identities from one successful generated outbound RPC.
+    ///
+    /// This is a no-op for inbound contexts: only a fresh root can aggregate
+    /// remote participants for the root coordinator.
+    pub fn enlist_returned_participants(
+        &self,
+        returned: &crate::successful_trailers::ReturnedParticipants,
+    ) {
+        if let Some(participants) = &self.returned_participants {
+            participants
+                .lock()
+                .expect("returned participant mutex poisoned")
+                .extend(returned.participants().iter().cloned());
+        }
+    }
+
+    /// Drains the root's generated outbound participant set exactly once.
+    ///
+    /// Generated root adapters call this immediately before durable coordinator
+    /// completion. Inbound contexts return an empty set and never coordinate.
+    pub fn take_returned_participants(&self) -> Vec<crate::durable_coordinator::ParticipantTarget> {
+        self.returned_participants
+            .as_ref()
+            .map(|participants| {
+                std::mem::take(
+                    &mut *participants
+                        .lock()
+                        .expect("returned participant mutex poisoned"),
+                )
+                .into_iter()
+                .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn headers(&self) -> &RebootHeaders {
@@ -302,6 +346,8 @@ impl TransactionContext {
         Ok(Self {
             headers,
             mode: self.mode,
+            // Nested inbound contexts must not retain root aggregation state.
+            returned_participants: None,
         })
     }
 }
@@ -449,7 +495,8 @@ impl RootTransactionContext {
         headers.transaction_coordinator_state_type = Some(coordinator_state_type);
         headers.transaction_coordinator_state_ref = Some(headers.state_ref.clone());
         let transaction = TransactionContext::from_headers(headers, mode)
-            .expect("RootTransactionContext establishes complete transaction metadata");
+            .expect("RootTransactionContext establishes complete transaction metadata")
+            .with_returned_participant_collection();
         Ok(Self {
             transaction,
             timestamp,
@@ -2096,6 +2143,56 @@ mod tests {
         assert_eq!(execution.final_state, Some(vec![1, 2, 3]));
         assert_eq!(execution.task_upserts.len(), 1);
         assert_eq!(execution.idempotent_mutations.len(), 1);
+    }
+
+    #[test]
+    fn only_root_context_enlists_validated_returned_participants_once() {
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.append(
+            crate::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER,
+            "{\"example.Remote\":[\"remote/a\",\"remote/a\",\"remote/b\"]}"
+                .parse()
+                .unwrap(),
+        );
+        let returned = crate::successful_trailers::ReturnedParticipants::from_metadata(&metadata)
+            .unwrap();
+
+        let root = RootTransactionContext::start(
+            RebootHeaders::new("root/actor"),
+            "example.Root",
+            TransactionMode::Exclusive,
+            Uuid::from_u128(1),
+            prost_types::Timestamp::default(),
+        )
+        .unwrap();
+        root.transaction().enlist_returned_participants(&returned);
+        root.transaction().enlist_returned_participants(&returned);
+        assert_eq!(
+            root.transaction().take_returned_participants(),
+            vec![
+                crate::durable_coordinator::ParticipantTarget {
+                    state_type: "example.Remote".into(),
+                    state_ref: "remote/a".into(),
+                },
+                crate::durable_coordinator::ParticipantTarget {
+                    state_type: "example.Remote".into(),
+                    state_ref: "remote/b".into(),
+                },
+            ]
+        );
+        assert!(root.transaction().take_returned_participants().is_empty());
+
+        let mut inbound_headers = RebootHeaders::new("nested/actor");
+        inbound_headers.transaction_ids = Some(vec![Uuid::from_u128(1)]);
+        inbound_headers.transaction_coordinator_state_type = Some("example.Root".into());
+        inbound_headers.transaction_coordinator_state_ref = Some("root/actor".into());
+        let inbound = InboundTransactionContext::from_headers(
+            inbound_headers,
+            TransactionMode::Exclusive,
+        )
+        .unwrap();
+        inbound.transaction().enlist_returned_participants(&returned);
+        assert!(inbound.transaction().take_returned_participants().is_empty());
     }
 
     #[tokio::test]
