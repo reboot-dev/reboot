@@ -217,13 +217,14 @@ fn exclusive_host(
 /// Invokes the generated root-exclusive adapter in a fresh fixture process
 /// with a caller-owned idempotency key. A non-success exit is its fail-closed
 /// observable result.
-fn idempotent_exclusive_host(
+fn idempotent_transaction_host(
     binary: &std::path::Path,
     database: &str,
     state_ref: &str,
     idempotency_key: Uuid,
     amount: i64,
     pause_after_decision: Option<&std::path::Path>,
+    factory: bool,
 ) -> Child {
     let listen = port();
     let mut command = Command::new(binary);
@@ -252,10 +253,51 @@ fn idempotent_exclusive_host(
         ])
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
+    if factory {
+        command.arg("--factory-invoke");
+    }
     if let Some(marker) = pause_after_decision {
         command.env("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE", marker);
     }
     command.spawn().unwrap()
+}
+
+fn idempotent_exclusive_host(
+    binary: &std::path::Path,
+    database: &str,
+    state_ref: &str,
+    idempotency_key: Uuid,
+    amount: i64,
+    pause_after_decision: Option<&std::path::Path>,
+) -> Child {
+    idempotent_transaction_host(
+        binary,
+        database,
+        state_ref,
+        idempotency_key,
+        amount,
+        pause_after_decision,
+        false,
+    )
+}
+
+fn idempotent_factory_host(
+    binary: &std::path::Path,
+    database: &str,
+    state_ref: &str,
+    idempotency_key: Uuid,
+    amount: i64,
+    pause_after_decision: Option<&std::path::Path>,
+) -> Child {
+    idempotent_transaction_host(
+        binary,
+        database,
+        state_ref,
+        idempotency_key,
+        amount,
+        pause_after_decision,
+        true,
+    )
 }
 
 #[test]
@@ -422,6 +464,174 @@ fn generated_root_exclusive_idempotency_recovers_exactly_once_after_decision() {
         runtime.block_on(recover_idempotent_mutations(&db.endpoint(), state_ref, key)),
         initial,
         "post-recovery replay must neither lose nor duplicate the durable response"
+    );
+    let _ = recovered.kill();
+    let _ = recovered.wait();
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_factory_root_idempotency_replays_before_absent_state_admission_and_rejects_collisions()
+{
+    let database_binary =
+        std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let state_ref = "idempotent-factory-root";
+    // The native sidecar validates caller keys as RFC UUIDs; this is a v4 key.
+    let key = Uuid::new_v4();
+
+    assert!(
+        idempotent_factory_host(&binary, &db.endpoint(), state_ref, key, 7, None)
+            .wait()
+            .unwrap()
+            .success()
+    );
+    let expected = Some(vec![0x08, 0x07]);
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), state_ref)),
+        expected
+    );
+    let initial = runtime.block_on(recover_idempotent_mutations(&db.endpoint(), state_ref, key));
+    assert_eq!(
+        initial.len(),
+        1,
+        "factory creation stages exactly one response"
+    );
+    assert_eq!(initial[0].response, vec![0x08, 0x07]);
+
+    assert!(
+        idempotent_factory_host(&binary, &db.endpoint(), state_ref, key, 7, None)
+            .wait()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), state_ref)),
+        expected
+    );
+    assert_eq!(
+        runtime.block_on(recover_idempotent_mutations(&db.endpoint(), state_ref, key)),
+        initial,
+        "replay must precede factory absent-state admission and not recreate state"
+    );
+
+    assert!(
+        !idempotent_factory_host(&binary, &db.endpoint(), state_ref, key, 9, None)
+            .wait()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), state_ref)),
+        expected
+    );
+    assert_eq!(
+        runtime.block_on(recover_idempotent_mutations(&db.endpoint(), state_ref, key)),
+        initial,
+        "a factory-key collision must fail closed without replacing the response"
+    );
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_factory_root_idempotency_recovers_after_post_decision_crash() {
+    let database_binary =
+        std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let mut db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let state_ref = "idempotent-factory-recovery-root";
+    // The native sidecar validates caller keys as RFC UUIDs; this is a v4 key.
+    let key = Uuid::new_v4();
+    let marker_dir = tempfile::tempdir().unwrap();
+    let marker = marker_dir.path().join("factory-decision-sealed");
+    let mut root =
+        idempotent_factory_host(&binary, &db.endpoint(), state_ref, key, 7, Some(&marker));
+    for _ in 0..100 {
+        if marker.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(
+        marker.exists(),
+        "factory root never persisted its decision after prepare"
+    );
+    let _ = root.kill();
+    let _ = root.wait();
+    db.restart();
+
+    let recovery_port = port();
+    let mut recovered = host(
+        &binary,
+        "root",
+        recovery_port,
+        &db.endpoint(),
+        recovery_port,
+        recovery_port,
+        "00000000-0000-0000-0000-000000000106",
+        true,
+        false,
+        None,
+        None,
+        Some(state_ref),
+        Some(state_ref),
+    );
+    wait(recovery_port);
+    let expected = Some(vec![0x08, 0x07]);
+    for _ in 0..100 {
+        if runtime.block_on(load_state(&db.endpoint(), state_ref)) == expected {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), state_ref)),
+        expected
+    );
+    let initial = runtime.block_on(recover_idempotent_mutations(&db.endpoint(), state_ref, key));
+    assert_eq!(
+        initial.len(),
+        1,
+        "recovery must commit exactly one factory response"
+    );
+    assert_eq!(initial[0].response, vec![0x08, 0x07]);
+    assert!(
+        idempotent_factory_host(&binary, &db.endpoint(), state_ref, key, 7, None)
+            .wait()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), state_ref)),
+        expected
+    );
+    assert_eq!(
+        runtime.block_on(recover_idempotent_mutations(&db.endpoint(), state_ref, key)),
+        initial,
+        "post-recovery replay must neither lose nor duplicate factory state or response"
     );
     let _ = recovered.kill();
     let _ = recovered.wait();
