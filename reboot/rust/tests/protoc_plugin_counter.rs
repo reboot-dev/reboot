@@ -208,27 +208,47 @@ impl transaction_generated::TransactionCounterWritesTransactionHandler for Trans
         execution.final_state = Some(state.encode_to_vec());
         Ok(execution)
     }
+
+    async fn factory_increment(
+        &self,
+        _: &reboot::runtime::TransactionContext,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<reboot::runtime::TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+        self.trace.lock().unwrap().push("factory handler");
+        if self.fail {
+            return Err(tonic::Status::invalid_argument("factory handler rejected request"));
+        }
+        state.value += request.amount;
+        // Deliberately no final_state: the generated factory adapter must stage
+        // the default-initialized state it passed to the handler.
+        Ok(reboot::runtime::TransactionExecution::new(
+            proto::TransactionCounterValue { value: state.value },
+        ))
+    }
 }
 
 struct TransactionParticipantSidecar {
     trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+    state: Option<proto::TransactionCounter>,
+    staged_states: Arc<std::sync::Mutex<Vec<Option<Vec<u8>>>>>,
 }
 
 impl reboot::durable_participant::ParticipantSidecar for TransactionParticipantSidecar {
     fn load(&self, _: reboot::database_proto::LoadRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::LoadResponse, tonic::Status>> + Send + '_>> {
         self.trace.lock().unwrap().push("participant load");
-        let state = proto::TransactionCounter { value: 4 }.encode_to_vec();
+        let state = self.state.clone().map(|state| state.encode_to_vec());
         Box::pin(async move { Ok(reboot::database_proto::LoadResponse {
             actors: vec![reboot::database_proto::Actor {
                 state_type: "tests.reboot.protoc.TransactionCounter".into(),
                 state_ref: "transaction-counter".into(),
-                state: Some(state),
+                state,
             }],
             ..Default::default()
         }) })
     }
     fn prepare(&self, request: reboot::database_proto::TransactionParticipantPrepareRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionParticipantPrepareResponse, tonic::Status>> + Send + '_>> {
-        assert_eq!(proto::TransactionCounter::decode(request.state.unwrap().as_slice()).unwrap().value, 7, "generated adapter must stage the handler's final state before participant prepare");
+        self.staged_states.lock().unwrap().push(request.state.clone());
         self.trace.lock().unwrap().push("participant prepare");
         Box::pin(async { Ok(reboot::database_proto::TransactionParticipantPrepareResponse::default()) })
     }
@@ -299,7 +319,50 @@ fn transaction_adapter(
     TransactionStartFactory,
 > {
     let participant = reboot::durable_participant::DurableActorParticipant::new(
-        Arc::new(TransactionParticipantSidecar { trace: Arc::clone(&trace) }),
+        Arc::new(TransactionParticipantSidecar {
+            trace: Arc::clone(&trace),
+            state: Some(proto::TransactionCounter { value: 4 }),
+            staged_states: Arc::new(std::sync::Mutex::new(Vec::new())),
+        }),
+        "tests.reboot.protoc.TransactionCounter",
+        "transaction-counter",
+    );
+    let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
+        Arc::new(TransactionCoordinatorSidecar { trace: Arc::clone(&trace) }),
+        Arc::new(reboot::durable_coordinator::SingleParticipantResolver::new(
+            reboot::durable_coordinator::ParticipantTarget {
+                state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                state_ref: "transaction-counter".into(),
+            },
+            reboot::durable_participant::DurableActorParticipantHost::new(participant.clone()),
+        ).unwrap()),
+    );
+    transaction_generated::TransactionCounterWritesTransactionAdapter::new(
+        participant,
+        coordinator,
+        TransactionStartFactory,
+        TransactionCounter { trace, fail },
+    )
+}
+
+fn factory_transaction_adapter(
+    trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+    initial_state: Option<proto::TransactionCounter>,
+    staged_states: Arc<std::sync::Mutex<Vec<Option<Vec<u8>>>>>,
+    fail: bool,
+) -> transaction_generated::TransactionCounterWritesTransactionAdapter<
+    TransactionCounter,
+    TransactionParticipantSidecar,
+    TransactionCoordinatorSidecar,
+    reboot::durable_coordinator::SingleParticipantResolver<TransactionParticipantSidecar>,
+    TransactionStartFactory,
+> {
+    let participant = reboot::durable_participant::DurableActorParticipant::new(
+        Arc::new(TransactionParticipantSidecar {
+            trace: Arc::clone(&trace),
+            state: initial_state,
+            staged_states,
+        }),
         "tests.reboot.protoc.TransactionCounter",
         "transaction-counter",
     );
@@ -381,6 +444,95 @@ async fn generated_transaction_adapter_aborts_when_handler_rejects() {
     .unwrap_err();
     assert_eq!(error.code(), tonic::Code::InvalidArgument);
     assert_eq!(*trace.lock().unwrap(), ["participant load", "handler", "participant abort"]);
+}
+
+#[tokio::test]
+async fn generated_factory_transaction_materializes_default_state_and_rejects_existing_actor() {
+    use proto::transaction_counter_writes_server::TransactionCounterWrites;
+
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let staged_states = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+    *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter")
+        .to_metadata()
+        .unwrap();
+    let response = TransactionCounterWrites::factory_increment(
+        &factory_transaction_adapter(Arc::clone(&trace), None, Arc::clone(&staged_states), false),
+        request,
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.into_inner().value, 3);
+    assert_eq!(
+        proto::TransactionCounter::decode(
+            staged_states.lock().unwrap()[0].as_deref().unwrap(),
+        )
+        .unwrap(),
+        proto::TransactionCounter { value: 3 },
+        "factory commit must materialize state even when the handler supplies no final_state",
+    );
+    assert_eq!(*trace.lock().unwrap(), [
+        "participant load",
+        "factory handler",
+        "coordinator DB prepare",
+        "participant prepare",
+        "coordinator DB prepared",
+        "participant commit",
+        "coordinator DB cleanup",
+    ]);
+
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let staged_states = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+    *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter")
+        .to_metadata()
+        .unwrap();
+    let error = TransactionCounterWrites::increment(
+        &factory_transaction_adapter(Arc::clone(&trace), None, Arc::clone(&staged_states), false),
+        request,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+    assert!(staged_states.lock().unwrap().is_empty());
+    assert_eq!(*trace.lock().unwrap(), ["participant load", "participant abort"]);
+
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let staged_states = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+    *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter")
+        .to_metadata()
+        .unwrap();
+    let error = TransactionCounterWrites::factory_increment(
+        &factory_transaction_adapter(
+            Arc::clone(&trace),
+            Some(proto::TransactionCounter { value: 9 }),
+            Arc::clone(&staged_states),
+            false,
+        ),
+        request,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+    assert!(staged_states.lock().unwrap().is_empty());
+    assert_eq!(*trace.lock().unwrap(), ["participant load", "participant abort"]);
+
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let staged_states = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+    *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter")
+        .to_metadata()
+        .unwrap();
+    let error = TransactionCounterWrites::factory_increment(
+        &factory_transaction_adapter(Arc::clone(&trace), None, Arc::clone(&staged_states), true),
+        request,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.code(), tonic::Code::InvalidArgument);
+    assert!(staged_states.lock().unwrap().is_empty(), "aborted factory must not prepare state");
+    assert_eq!(*trace.lock().unwrap(), ["participant load", "factory handler", "participant abort"]);
 }
 
 #[tokio::test]

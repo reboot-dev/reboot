@@ -5,7 +5,8 @@
 //! `Commit` or `Abort`. A caller which explicitly opts in may preserve a
 //! nested transaction-ID path in the sidecar record, but this module neither
 //! executes nested RPCs nor coordinates multiple participants. It deliberately
-//! does not implement shared, read-only, factory, or cross-actor transactions.
+//! does not implement shared, read-only, or cross-actor transactions. Factory
+//! transactions are limited to one exclusive root actor.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -378,9 +379,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 "read-only transactions are not supported",
             ));
         }
-        if start.factory {
+        if start.factory && start.transaction_path != TransactionPathContract::RootOnly {
             return Err(Status::unimplemented(
-                "factory transactions are not supported",
+                "factory transactions must be exclusive root transactions",
             ));
         }
         if start.state_type != self.state_type || start.state_ref != self.state_ref {
@@ -1151,6 +1152,26 @@ mod tests {
             tonic::Code::InvalidArgument
         );
         assert!(sidecar.calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn permits_factory_only_for_an_exclusive_root_transaction() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let mut root_factory = start(Uuid::from_u128(70));
+        root_factory.factory = true;
+        participant.start(root_factory).await.unwrap();
+        participant.abort(Uuid::from_u128(70)).await.unwrap();
+
+        let mut nested_factory = start(Uuid::from_u128(71));
+        nested_factory.factory = true;
+        nested_factory.transaction_ids.push(Uuid::from_u128(72));
+        nested_factory.transaction_path = TransactionPathContract::PreserveNested;
+        assert_eq!(
+            participant.start(nested_factory).await.unwrap_err().code(),
+            tonic::Code::Unimplemented
+        );
     }
 
     #[tokio::test]

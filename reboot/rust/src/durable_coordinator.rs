@@ -3,7 +3,8 @@
 //! This is deliberately a narrow 2PC control path. It persists coordinator
 //! records in the Database sidecar and reaches participants only through an
 //! injected resolver. It does not choose placement, create actors, or support
-//! nested, shared, read-only, factory, or multi-actor transactions.
+//! nested, shared, read-only, or multi-actor transactions. Factory
+//! transactions are limited to the same exclusive root actor.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -574,11 +575,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 "read-only transactions are not supported",
             ));
         }
-        if start.factory {
-            return Err(Status::unimplemented(
-                "factory transactions are not supported",
-            ));
-        }
+
         if start.placement_requested {
             return Err(Status::unimplemented(
                 "placement-selected transactions are not supported",

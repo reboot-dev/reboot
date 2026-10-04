@@ -29,4 +29,11 @@ service TransactionCounterWrites {
       exclusive: {}
     };
   }
+
+  rpc FactoryIncrement(TransactionIncrementRequest) returns (TransactionCounterValue) {
+    option (rbt.v1alpha1.method).transaction = {
+      constructor: {}
+      exclusive: {}
+    };
+  }
 }
