@@ -178,10 +178,11 @@ impl generated::TransactionCounterWritesTransactionHandler for Handler {
     }
     async fn shared_read(
         &self,
-        _: &TransactionContext,
+        context: &TransactionContext,
         state: &mut proto::TransactionCounter,
         _: proto::TransactionIncrementRequest,
     ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+        shared_barrier(context.transaction_root_id()).await?;
         Ok(TransactionExecution::new(proto::TransactionCounterValue {
             value: state.value,
         }))
@@ -208,6 +209,30 @@ fn optional_arg(name: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Test-only cross-process barrier proving shared handlers overlap before
+/// either read-only participant is released at Prepare.
+async fn shared_barrier(transaction_id: Uuid) -> Result<(), tonic::Status> {
+    let Some(directory) = std::env::var_os("REBOOT_TEST_SHARED_BARRIER_DIR") else {
+        return Ok(());
+    };
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| tonic::Status::internal(error.to_string()))?;
+    std::fs::write(std::path::Path::new(&directory).join(transaction_id.to_string()), [])
+        .map_err(|error| tonic::Status::internal(error.to_string()))?;
+    for _ in 0..400 {
+        let arrivals = std::fs::read_dir(&directory)
+            .map_err(|error| tonic::Status::internal(error.to_string()))?
+            .count();
+        if arrivals >= 2 {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    Err(tonic::Status::deadline_exceeded(
+        "shared transaction barrier did not observe both callers",
+    ))
 }
 
 #[tokio::main]
@@ -316,7 +341,9 @@ async fn main() {
         *request.metadata_mut() = reboot::RebootHeaders::new(&state_ref)
             .to_metadata()
             .unwrap();
-        if has("--factory-target-invoke") {
+        if has("--shared-invoke") {
+            client.shared_read(request).await.unwrap();
+        } else if has("--factory-target-invoke") {
             client.factory_increment_target(request).await.unwrap();
         } else if has("--factory-invoke") {
             client.factory_increment(request).await.unwrap();

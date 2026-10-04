@@ -1742,6 +1742,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn recovery_of_all_read_only_root_persists_empty_commit_set_without_fanout() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let endpoint = Arc::new(MockEndpoint::default());
+        let id = Uuid::from_u128(802);
+        let mut participants = ParticipantSet::default();
+        participants.add(start(id).participant, true);
+        participants.add(
+            ParticipantTarget {
+                state_type: "example.Remote".into(),
+                state_ref: "reader".into(),
+            },
+            true,
+        );
+        sidecar
+            .recover
+            .lock()
+            .unwrap()
+            .push_back(Ok(database::RecoverResponse {
+                transaction_coordinators: [(
+                    id.to_string(),
+                    DurableRootCoordinator::<MockSidecar, MockResolver>::record(
+                        "actor/1",
+                        &participants,
+                        false,
+                    ),
+                )]
+                .into(),
+                ..Default::default()
+            }));
+        coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
+            .recover(CoordinatorRecovery {
+                state_tags_by_state_type: Default::default(),
+                shard_ids: vec!["a".into()],
+                coordinator_state_ref: "actor/1".into(),
+            })
+            .await
+            .unwrap();
+        assert!(endpoint.calls.lock().unwrap().is_empty());
+        let calls = sidecar.calls.lock().unwrap().clone();
+        assert!(matches!(
+            &calls[..],
+            [Call::Recover(_), Call::DecisionPut(request), Call::Cleanup(_)]
+                if request.decision.as_ref().is_some_and(|decision|
+                    decision.outcome == database::transaction_coordinator_decision::Outcome::Commit as i32
+                    && decision.participants.as_ref().is_some_and(|participants|
+                        participants.should_commit.is_empty() && participants.read_only.is_empty()))
+        ));
+    }
+
+    #[tokio::test]
     async fn rejects_unsupported_shapes_before_sidecar_io() {
         let sidecar = Arc::new(MockSidecar::default());
         let endpoint = Arc::new(MockEndpoint::default());

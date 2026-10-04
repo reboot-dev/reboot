@@ -3303,9 +3303,8 @@ grpc::Status DatabaseService::TransactionCoordinatorDecisionPut(
   }
   const TransactionCoordinatorDecision& decision = request->decision();
   if (decision.outcome() == TransactionCoordinatorDecision::COMMIT
-      && (!decision.has_participants() || decision.participants().should_commit().empty()
-          || !decision.participants().read_only().empty())) {
-    return grpc::Status(grpc::INVALID_ARGUMENT, "commit decision requires nonempty exclusive participants");
+      && (!decision.has_participants() || !decision.participants().read_only().empty())) {
+    return grpc::Status(grpc::INVALID_ARGUMENT, "commit decision must contain only terminal commit participants");
   }
   if (decision.outcome() == TransactionCoordinatorDecision::ABORT && decision.has_participants()) {
     return grpc::Status(grpc::INVALID_ARGUMENT, "abort decision must not carry participants");
@@ -3319,6 +3318,29 @@ grpc::Status DatabaseService::TransactionCoordinatorDecisionPut(
   std::string existing;
   rocksdb::Status status = transaction->GetForUpdate(rocksdb::ReadOptions(), rocksdb::Slice(key), &existing);
   if (status.IsNotFound()) {
+    if (decision.outcome() == TransactionCoordinatorDecision::COMMIT
+        && decision.participants().should_commit().empty()) {
+      // An empty terminal commit set is meaningful only for a prepared root
+      // whose complete persisted membership is read-only.  The read-only
+      // members released at Prepare and must never appear in the Watch set.
+      std::string coordinator_data;
+      const std::string coordinator_key = MakeTransactionCoordinatorKey(
+          GetShardForStateRef(decision.coordinator_state_ref()), *transaction_id);
+      status = transaction->GetForUpdate(
+          rocksdb::ReadOptions(), rocksdb::Slice(coordinator_key), &coordinator_data);
+      TransactionCoordinator coordinator;
+      if (status.IsNotFound() || !status.ok()
+          || !coordinator.ParseFromString(coordinator_data)
+          || coordinator.state_ref() != decision.coordinator_state_ref()
+          || !coordinator.has_participants()
+          || !coordinator.participants().should_commit().empty()
+          || coordinator.participants().read_only().empty()) {
+        transaction->Rollback();
+        return grpc::Status(
+            grpc::INVALID_ARGUMENT,
+            "empty commit decision requires nonempty all-read-only coordinator participants");
+      }
+    }
     status = transaction->Put(rocksdb::Slice(key), rocksdb::Slice(data));
     if (status.ok()) status = transaction->Commit();
   } else if (status.ok()) {

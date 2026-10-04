@@ -141,6 +141,231 @@ fn wait(port: u16) {
     panic!("host did not listen");
 }
 
+fn shared_host(
+    binary: &std::path::Path,
+    database: &str,
+    listen: u16,
+    root_id: &str,
+    barrier: Option<&std::path::Path>,
+    decision_marker: Option<&std::path::Path>,
+) -> Child {
+    let mut command = Command::new(binary);
+    command
+        .args([
+            "--role",
+            "target",
+            "--listen",
+            &format!("127.0.0.1:{listen}"),
+            "--database",
+            database,
+            "--root",
+            &format!("http://127.0.0.1:{listen}"),
+            "--target",
+            &format!("http://127.0.0.1:{listen}"),
+            "--root-id",
+            root_id,
+            "--state-ref",
+            "root",
+            "--invoke",
+            "--shared-invoke",
+            "--exit-after-invoke",
+        ])
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    if let Some(barrier) = barrier {
+        command.env("REBOOT_TEST_SHARED_BARRIER_DIR", barrier);
+    }
+    if let Some(marker) = decision_marker {
+        command.env("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE", marker);
+    }
+    command.spawn().unwrap()
+}
+
+fn exclusive_host(
+    binary: &std::path::Path,
+    database: &str,
+    state_ref: &str,
+    amount: i64,
+) -> std::process::ExitStatus {
+    let listen = port();
+    Command::new(binary)
+        .args([
+            "--role",
+            "target",
+            "--listen",
+            &format!("127.0.0.1:{listen}"),
+            "--database",
+            database,
+            "--root",
+            &format!("http://127.0.0.1:{listen}"),
+            "--target",
+            &format!("http://127.0.0.1:{listen}"),
+            "--root-id",
+            "00000000-0000-0000-0000-000000000104",
+            "--state-ref",
+            state_ref,
+            "--invoke",
+            "--exit-after-invoke",
+            "--amount",
+            &amount.to_string(),
+        ])
+        .status()
+        .unwrap()
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_shared_roots_overlap_without_mutation_then_exclusive_works() {
+    let database_binary = std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").unwrap();
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        database::database_client::DatabaseClient::connect(db.endpoint())
+            .await
+            .unwrap()
+            .store(database::StoreRequest {
+                actor_upserts: vec![database::Actor {
+                    state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                    state_ref: "root".into(),
+                    state: Some(vec![0x08, 0x05]),
+                }],
+                task_upserts: vec![],
+                colocated_upserts: vec![],
+                transaction: None,
+                idempotent_mutation: None,
+                ensure_state_types_created: vec![],
+                sync: true,
+            })
+            .await
+            .unwrap();
+    });
+    let barrier = tempfile::tempdir().unwrap();
+    let mut first = shared_host(
+        &binary,
+        &db.endpoint(),
+        port(),
+        "00000000-0000-0000-0000-000000000101",
+        Some(barrier.path()),
+        None,
+    );
+    let mut second = shared_host(
+        &binary,
+        &db.endpoint(),
+        port(),
+        "00000000-0000-0000-0000-000000000102",
+        Some(barrier.path()),
+        None,
+    );
+    assert!(first.wait().unwrap().success());
+    assert!(second.wait().unwrap().success());
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), "root")),
+        Some(vec![0x08, 0x05])
+    );
+    assert!(exclusive_host(&binary, &db.endpoint(), "root", 7).success());
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), "root")),
+        Some(vec![0x08, 0x0c])
+    );
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_shared_root_recovers_after_empty_commit_decision_before_cleanup() {
+    let database_binary = std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").unwrap();
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let mut db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        database::database_client::DatabaseClient::connect(db.endpoint())
+            .await
+            .unwrap()
+            .store(database::StoreRequest {
+                actor_upserts: vec![database::Actor {
+                    state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                    state_ref: "root".into(),
+                    state: Some(vec![0x08, 0x05]),
+                }],
+                task_upserts: vec![],
+                colocated_upserts: vec![],
+                transaction: None,
+                idempotent_mutation: None,
+                ensure_state_types_created: vec![],
+                sync: true,
+            })
+            .await
+            .unwrap();
+    });
+    let marker_dir = tempfile::tempdir().unwrap();
+    let marker = marker_dir.path().join("sealed");
+    let mut root = shared_host(
+        &binary,
+        &db.endpoint(),
+        port(),
+        "00000000-0000-0000-0000-000000000103",
+        None,
+        Some(&marker),
+    );
+    for _ in 0..100 {
+        if marker.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(
+        marker.exists(),
+        "shared root never persisted its empty commit decision"
+    );
+    let _ = root.kill();
+    let _ = root.wait();
+    db.restart();
+    let recovery_port = port();
+    let mut recovered = host(
+        &binary,
+        "root",
+        recovery_port,
+        &db.endpoint(),
+        recovery_port,
+        recovery_port,
+        "00000000-0000-0000-0000-000000000103",
+        true,
+        false,
+        None,
+        None,
+        Some("root"),
+        Some("root"),
+    );
+    wait(recovery_port);
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), "root")),
+        Some(vec![0x08, 0x05])
+    );
+    let _ = recovered.kill();
+    let _ = recovered.wait();
+}
+
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
 fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes() {

@@ -2076,6 +2076,84 @@ TEST_F(
 
 ////////////////////////////////////////////////////////////////////////
 
+TEST_F(TwoShardDatabaseTest, EmptyCommitDecisionRequiresAllReadOnlyCoordinatorMembership) {
+  const UUID transaction_id = UUID::random();
+  const std::string coordinator_state_ref = make_state_ref("read_only_root");
+  const std::string state_type = "Reader";
+  const std::string reader_ref = make_state_ref("reader");
+
+  v1alpha1::TransactionCoordinatorPreparedRequest prepared;
+  prepared.set_transaction_id(transaction_id.toBytes());
+  auto* coordinator = prepared.mutable_transaction_coordinator();
+  coordinator->set_state_ref(coordinator_state_ref);
+  (*coordinator->mutable_participants()->mutable_read_only())[state_type]
+      .add_state_refs(reader_ref);
+  v1alpha1::TransactionCoordinatorPreparedResponse prepared_response;
+  grpc::ClientContext prepared_context;
+  ASSERT_TRUE(stub->TransactionCoordinatorPrepared(
+                  &prepared_context, prepared, &prepared_response)
+                  .ok());
+
+  v1alpha1::TransactionCoordinatorDecisionPutRequest commit;
+  commit.set_root_transaction_id(transaction_id.toBytes());
+  auto* decision = commit.mutable_decision();
+  decision->set_coordinator_state_ref(coordinator_state_ref);
+  decision->set_outcome(v1alpha1::TransactionCoordinatorDecision::COMMIT);
+  decision->mutable_participants();  // Empty Watch set: readers released at Prepare.
+  v1alpha1::TransactionCoordinatorDecisionPutResponse commit_response;
+  grpc::ClientContext commit_context;
+  EXPECT_TRUE(stub->TransactionCoordinatorDecisionPut(
+                  &commit_context, commit, &commit_response)
+                  .ok());
+
+  // The terminal decision is immutable even after the coordinator membership
+  // has established that this empty commit set is legitimate.
+  v1alpha1::TransactionCoordinatorDecisionPutRequest conflicting = commit;
+  conflicting.mutable_decision()->set_outcome(
+      v1alpha1::TransactionCoordinatorDecision::ABORT);
+  conflicting.mutable_decision()->clear_participants();
+  grpc::ClientContext conflicting_context;
+  EXPECT_EQ(grpc::StatusCode::FAILED_PRECONDITION,
+            stub->TransactionCoordinatorDecisionPut(
+                    &conflicting_context, conflicting, &commit_response)
+                .error_code());
+
+  const UUID empty_membership_id = UUID::random();
+  v1alpha1::TransactionCoordinatorPreparedRequest empty_membership;
+  empty_membership.set_transaction_id(empty_membership_id.toBytes());
+  empty_membership.mutable_transaction_coordinator()->set_state_ref(
+      make_state_ref("empty_root"));
+  v1alpha1::TransactionCoordinatorPreparedResponse empty_membership_response;
+  grpc::ClientContext empty_membership_context;
+  ASSERT_TRUE(stub->TransactionCoordinatorPrepared(
+                  &empty_membership_context,
+                  empty_membership,
+                  &empty_membership_response)
+                  .ok());
+  v1alpha1::TransactionCoordinatorDecisionPutRequest invalid_empty = commit;
+  invalid_empty.set_root_transaction_id(empty_membership_id.toBytes());
+  invalid_empty.mutable_decision()->set_coordinator_state_ref(
+      empty_membership.transaction_coordinator().state_ref());
+  grpc::ClientContext invalid_empty_context;
+  EXPECT_EQ(grpc::StatusCode::INVALID_ARGUMENT,
+            stub->TransactionCoordinatorDecisionPut(
+                    &invalid_empty_context, invalid_empty, &commit_response)
+                .error_code());
+
+  v1alpha1::TransactionCoordinatorDecisionPutRequest invalid_reader_set = commit;
+  invalid_reader_set.set_root_transaction_id(UUID::random().toBytes());
+  (*invalid_reader_set.mutable_decision()->mutable_participants()
+        ->mutable_read_only())[state_type]
+      .add_state_refs(reader_ref);
+  grpc::ClientContext invalid_reader_set_context;
+  EXPECT_EQ(grpc::StatusCode::INVALID_ARGUMENT,
+            stub->TransactionCoordinatorDecisionPut(
+                    &invalid_reader_set_context,
+                    invalid_reader_set,
+                    &commit_response)
+                .error_code());
+}
+
 TEST_F(TwoShardDatabaseTest, Native2pcSidecarValidatesTransitionsAndRecovery) {
   const std::string root(16, 'r');
   auto protocol = []() {
