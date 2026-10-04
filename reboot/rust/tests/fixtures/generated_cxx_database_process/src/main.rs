@@ -235,9 +235,16 @@ async fn main() {
         client.increment(request).await.unwrap();
     }
     if has("--recover") {
-        let watch = TonicCoordinatorWatchEndpoint::connect(format!("http://{listen}"))
-            .await
-            .unwrap();
+        // The server task and recovery path start together. Retry our own
+        // Coordinator route until the Tonic listener is bound; connection
+        // refusal is startup timing, not a terminal Watch result.
+        let endpoint = format!("http://{listen}");
+        let watch = loop {
+            match TonicCoordinatorWatchEndpoint::connect(endpoint.clone()).await {
+                Ok(watch) => break watch,
+                Err(_) => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+            }
+        };
         participant
             .recover_and_watch(
                 ParticipantRecovery {
