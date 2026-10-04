@@ -17,17 +17,23 @@ use http_body::{Body, Frame};
 use serde_json::Value;
 use tower::{Layer, Service};
 
-use crate::durable_coordinator::ParticipantTarget;
+use crate::durable_coordinator::{ParticipantTarget, ReturnedParticipant};
 
 /// The Reboot trailer carrying participant identities.
 pub const TRANSACTION_PARTICIPANTS_HEADER: &str = "x-reboot-transaction-participants";
+/// The Reboot trailer carrying participants that may release at Prepare.
+pub const TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER: &str =
+    "x-reboot-transaction-participants-read-only";
 
 /// A validated JSON encoding of Reboot transaction participants.
 ///
 /// The encoding is the native `{"state.type":["state/ref"]}` metadata shape.
 /// Validation occurs here, before it can be put in a response extension.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ParticipantMetadata(HeaderValue);
+pub struct ParticipantMetadata {
+    should_commit: HeaderValue,
+    read_only: Option<HeaderValue>,
+}
 
 impl ParticipantMetadata {
     /// Validates native participant JSON before it is eligible for transport.
@@ -62,7 +68,10 @@ impl ParticipantMetadata {
             }
         }
         HeaderValue::from_str(value)
-            .map(Self)
+            .map(|should_commit| Self {
+                should_commit,
+                read_only: None,
+            })
             .map_err(ParticipantMetadataError::HeaderValue)
     }
 
@@ -71,8 +80,41 @@ impl ParticipantMetadata {
         Self::try_from_json(serde_json::json!({ state_type: [state_ref] }).to_string())
     }
 
-    fn header_value(&self) -> HeaderValue {
-        self.0.clone()
+    /// Builds metadata for one local participant. Read-only-aware coordinators
+    /// receive two disjoint sets; older coordinators receive the historical
+    /// single writer set for rolling-upgrade compatibility.
+    pub fn classified_single(
+        state_type: &str,
+        state_ref: &str,
+        read_only: bool,
+        read_only_aware: bool,
+    ) -> Result<Self, ParticipantMetadataError> {
+        if !read_only_aware {
+            return Self::single(state_type, state_ref);
+        }
+        let participant = serde_json::json!({ state_type: [state_ref] }).to_string();
+        let empty = HeaderValue::from_static("{}");
+        let participant =
+            HeaderValue::from_str(&participant).map_err(ParticipantMetadataError::HeaderValue)?;
+        Ok(if read_only {
+            Self {
+                should_commit: empty,
+                read_only: Some(participant),
+            }
+        } else {
+            Self {
+                should_commit: participant,
+                read_only: Some(empty),
+            }
+        })
+    }
+
+    fn should_commit_header_value(&self) -> HeaderValue {
+        self.should_commit.clone()
+    }
+
+    fn read_only_header_value(&self) -> Option<HeaderValue> {
+        self.read_only.clone()
     }
 }
 
@@ -131,7 +173,7 @@ impl std::error::Error for ParticipantMetadataError {}
 /// but it does not aggregate calls, enlist participants, or coordinate a
 /// transaction.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ReturnedParticipants(Vec<ParticipantTarget>);
+pub struct ReturnedParticipants(Vec<ReturnedParticipant>);
 
 impl ReturnedParticipants {
     /// Decodes every instance of the native participant trailer from merged
@@ -148,60 +190,98 @@ impl ReturnedParticipants {
             return Err(ReturnedParticipantsError::Missing);
         }
 
-        let mut participants = BTreeSet::new();
-        for value in values.iter() {
-            let value = value
-                .to_str()
-                .map_err(|_| ReturnedParticipantsError::InvalidMetadataValue)?;
-            ParticipantMetadata::try_from_json(value)
-                .map_err(ReturnedParticipantsError::InvalidParticipantMetadata)?;
-            let object = serde_json::from_str::<Value>(value)
-                .expect("ParticipantMetadata validates its JSON representation")
-                .as_object()
-                .cloned()
-                .expect("ParticipantMetadata validates a JSON object");
-            for (state_type, state_refs) in object {
-                for state_ref in state_refs
-                    .as_array()
-                    .expect("ParticipantMetadata validates state-reference arrays")
-                {
-                    participants.insert((
-                        state_type.clone(),
-                        state_ref
-                            .as_str()
-                            .expect("ParticipantMetadata validates state references")
-                            .to_owned(),
-                    ));
-                }
-            }
+        let should_commit = participant_targets(values)?;
+        let read_only =
+            participant_targets(metadata.get_all(TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER))?;
+        // The old standard trailer is a writer set. If a target appears in both
+        // trailers, write wins irrespective of header ordering.
+        let mut targets = should_commit.clone();
+        for target in &read_only {
+            targets.insert(target.clone());
         }
-
-        Ok(Self(
-            participants
-                .into_iter()
-                .map(|(state_type, state_ref)| ParticipantTarget {
-                    state_type,
-                    state_ref,
-                })
-                .collect(),
-        ))
+        let participants = targets
+            .iter()
+            .map(|target| ReturnedParticipant {
+                target: target.clone(),
+                read_only: read_only.contains(target) && !should_commit.contains(target),
+            })
+            .collect::<Vec<_>>();
+        if participants.is_empty() {
+            return Err(ReturnedParticipantsError::Empty);
+        }
+        Ok(Self(participants))
     }
 
     /// Returns the deterministic, duplicate-free remote participant targets.
-    pub fn participants(&self) -> &[ParticipantTarget] {
+    pub fn participants(&self) -> &[ReturnedParticipant] {
         &self.0
     }
 
     /// Consumes this transport result into its remote participant targets.
-    pub fn into_participants(self) -> Vec<ParticipantTarget> {
+    pub fn into_participants(self) -> Vec<ReturnedParticipant> {
         self.0
     }
+}
+
+fn participant_targets<'a>(
+    values: tonic::metadata::GetAll<'a, tonic::metadata::Ascii>,
+) -> Result<BTreeSet<ParticipantTarget>, ReturnedParticipantsError> {
+    let mut participants = BTreeSet::new();
+    for value in values.iter() {
+        let value = value
+            .to_str()
+            .map_err(|_| ReturnedParticipantsError::InvalidMetadataValue)?;
+        let parsed: Value = serde_json::from_str(value).map_err(|error| {
+            ReturnedParticipantsError::InvalidParticipantMetadata(ParticipantMetadataError::Json(
+                error,
+            ))
+        })?;
+        let object =
+            parsed
+                .as_object()
+                .ok_or(ReturnedParticipantsError::InvalidParticipantMetadata(
+                    ParticipantMetadataError::ExpectedObject,
+                ))?;
+        for (state_type, state_refs) in object {
+            if state_type.is_empty() {
+                return Err(ReturnedParticipantsError::InvalidParticipantMetadata(
+                    ParticipantMetadataError::EmptyStateType,
+                ));
+            }
+            let state_refs = state_refs.as_array().ok_or_else(|| {
+                ReturnedParticipantsError::InvalidParticipantMetadata(
+                    ParticipantMetadataError::ExpectedStateRefArray(state_type.clone()),
+                )
+            })?;
+            if state_refs.is_empty() {
+                return Err(ReturnedParticipantsError::InvalidParticipantMetadata(
+                    ParticipantMetadataError::EmptyStateRefArray(state_type.clone()),
+                ));
+            }
+            for state_ref in state_refs {
+                let state_ref = state_ref
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| {
+                        ReturnedParticipantsError::InvalidParticipantMetadata(
+                            ParticipantMetadataError::InvalidStateRef(state_type.clone()),
+                        )
+                    })?;
+                participants.insert(ParticipantTarget {
+                    state_type: state_type.clone(),
+                    state_ref: state_ref.to_owned(),
+                });
+            }
+        }
+    }
+    Ok(participants)
 }
 
 /// Failure while decoding returned participant transport metadata.
 #[derive(Debug)]
 pub enum ReturnedParticipantsError {
     Missing,
+    Empty,
     InvalidMetadataValue,
     InvalidParticipantMetadata(ParticipantMetadataError),
 }
@@ -210,6 +290,7 @@ impl std::fmt::Display for ReturnedParticipantsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Missing => write!(f, "missing returned participant trailer"),
+            Self::Empty => write!(f, "returned participant trailers are empty"),
             Self::InvalidMetadataValue => {
                 write!(
                     f,
@@ -322,8 +403,11 @@ impl Body for ParticipantTrailerBody {
                 {
                     trailers.append(
                         TRANSACTION_PARTICIPANTS_HEADER,
-                        self.metadata.header_value(),
+                        self.metadata.should_commit_header_value(),
                     );
+                    if let Some(read_only) = self.metadata.read_only_header_value() {
+                        trailers.append(TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER, read_only);
+                    }
                 }
                 Poll::Ready(Some(Ok(frame)))
             }

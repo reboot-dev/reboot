@@ -9,7 +9,7 @@
 //! by `x-reboot-state-ref`, writes require a UUID idempotency key, and reads
 //! return the actor's last successfully written message.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File, OpenOptions};
 use std::future::Future;
 use std::io::{self, Write};
@@ -80,7 +80,7 @@ pub struct TransactionContext {
     /// Present only for a generated fresh root. Inbound contexts deliberately
     /// have no root aggregation authority.
     returned_participants:
-        Option<Arc<Mutex<BTreeSet<crate::durable_coordinator::ParticipantTarget>>>>,
+        Option<Arc<Mutex<BTreeMap<crate::durable_coordinator::ParticipantTarget, bool>>>>,
 }
 
 impl PartialEq for TransactionContext {
@@ -245,7 +245,7 @@ impl TransactionContext {
     }
 
     fn with_returned_participant_collection(mut self) -> Self {
-        self.returned_participants = Some(Arc::new(Mutex::new(BTreeSet::new())));
+        self.returned_participants = Some(Arc::new(Mutex::new(BTreeMap::new())));
         self
     }
 
@@ -258,10 +258,17 @@ impl TransactionContext {
         returned: &crate::successful_trailers::ReturnedParticipants,
     ) {
         if let Some(participants) = &self.returned_participants {
-            participants
+            let mut collected = participants
                 .lock()
-                .expect("returned participant mutex poisoned")
-                .extend(returned.participants().iter().cloned());
+                .expect("returned participant mutex poisoned");
+            for participant in returned.participants() {
+                // A successful call that classifies a target as a writer wins
+                // over any prior read-only classification from another call.
+                collected
+                    .entry(participant.target.clone())
+                    .and_modify(|read_only| *read_only &= participant.read_only)
+                    .or_insert(participant.read_only);
+            }
         }
     }
 
@@ -269,7 +276,9 @@ impl TransactionContext {
     ///
     /// Generated root adapters call this immediately before durable coordinator
     /// completion. Inbound contexts return an empty set and never coordinate.
-    pub fn take_returned_participants(&self) -> Vec<crate::durable_coordinator::ParticipantTarget> {
+    pub fn take_returned_participants(
+        &self,
+    ) -> Vec<crate::durable_coordinator::ReturnedParticipant> {
         self.returned_participants
             .as_ref()
             .map(|participants| {
@@ -279,6 +288,12 @@ impl TransactionContext {
                         .expect("returned participant mutex poisoned"),
                 )
                 .into_iter()
+                .map(
+                    |(target, read_only)| crate::durable_coordinator::ReturnedParticipant {
+                        target,
+                        read_only,
+                    },
+                )
                 .collect()
             })
             .unwrap_or_default()
@@ -290,6 +305,12 @@ impl TransactionContext {
 
     pub fn mode(&self) -> TransactionMode {
         self.mode
+    }
+
+    /// Marks generated root shared transactions as capable of carrying the
+    /// disjoint read-only participant trailers required by durable 2PC.
+    pub fn enable_read_only_aware(&mut self) {
+        self.headers.coordinator_read_only_aware = true;
     }
 
     pub fn transaction_ids(&self) -> &[Uuid] {
@@ -494,6 +515,9 @@ impl RootTransactionContext {
         headers.transaction_ids = Some(vec![transaction_id]);
         headers.transaction_coordinator_state_type = Some(coordinator_state_type);
         headers.transaction_coordinator_state_ref = Some(headers.state_ref.clone());
+        // Shared roots can only complete after every participant is classified
+        // read-only, so advertise the two-set trailer contract to remotes.
+        headers.coordinator_read_only_aware = mode == TransactionMode::Shared;
         let transaction = TransactionContext::from_headers(headers, mode)
             .expect("RootTransactionContext establishes complete transaction metadata")
             .with_returned_participant_collection();
@@ -1467,7 +1491,9 @@ impl DatabaseActorStore {
         F: for<'a> FnOnce(
             &'a mut Declaration::State,
             RequestBody,
-        ) -> Pin<Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>>,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
     {
         let fingerprint = request_fingerprint(method_identity, request.get_ref());
         let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
@@ -2058,14 +2084,18 @@ pub mod test_support {
             &self,
             _: Request<database::TransactionCoordinatorDecisionPutRequest>,
         ) -> Result<Response<database::TransactionCoordinatorDecisionPutResponse>, Status> {
-            Ok(Response::new(database::TransactionCoordinatorDecisionPutResponse::default()))
+            Ok(Response::new(
+                database::TransactionCoordinatorDecisionPutResponse::default(),
+            ))
         }
 
         async fn transaction_coordinator_decision_get(
             &self,
             _: Request<database::TransactionCoordinatorDecisionGetRequest>,
         ) -> Result<Response<database::TransactionCoordinatorDecisionGetResponse>, Status> {
-            Ok(Response::new(database::TransactionCoordinatorDecisionGetResponse::default()))
+            Ok(Response::new(
+                database::TransactionCoordinatorDecisionGetResponse::default(),
+            ))
         }
 
         async fn export(
@@ -2168,8 +2198,8 @@ mod tests {
                 .parse()
                 .unwrap(),
         );
-        let returned = crate::successful_trailers::ReturnedParticipants::from_metadata(&metadata)
-            .unwrap();
+        let returned =
+            crate::successful_trailers::ReturnedParticipants::from_metadata(&metadata).unwrap();
 
         let root = RootTransactionContext::start(
             RebootHeaders::new("root/actor"),
@@ -2184,13 +2214,19 @@ mod tests {
         assert_eq!(
             root.transaction().take_returned_participants(),
             vec![
-                crate::durable_coordinator::ParticipantTarget {
-                    state_type: "example.Remote".into(),
-                    state_ref: "remote/a".into(),
+                crate::durable_coordinator::ReturnedParticipant {
+                    target: crate::durable_coordinator::ParticipantTarget {
+                        state_type: "example.Remote".into(),
+                        state_ref: "remote/a".into(),
+                    },
+                    read_only: false,
                 },
-                crate::durable_coordinator::ParticipantTarget {
-                    state_type: "example.Remote".into(),
-                    state_ref: "remote/b".into(),
+                crate::durable_coordinator::ReturnedParticipant {
+                    target: crate::durable_coordinator::ParticipantTarget {
+                        state_type: "example.Remote".into(),
+                        state_ref: "remote/b".into(),
+                    },
+                    read_only: false,
                 },
             ]
         );
@@ -2200,13 +2236,18 @@ mod tests {
         inbound_headers.transaction_ids = Some(vec![Uuid::from_u128(1)]);
         inbound_headers.transaction_coordinator_state_type = Some("example.Root".into());
         inbound_headers.transaction_coordinator_state_ref = Some("root/actor".into());
-        let inbound = InboundTransactionContext::from_headers(
-            inbound_headers,
-            TransactionMode::Exclusive,
-        )
-        .unwrap();
-        inbound.transaction().enlist_returned_participants(&returned);
-        assert!(inbound.transaction().take_returned_participants().is_empty());
+        let inbound =
+            InboundTransactionContext::from_headers(inbound_headers, TransactionMode::Exclusive)
+                .unwrap();
+        inbound
+            .transaction()
+            .enlist_returned_participants(&returned);
+        assert!(
+            inbound
+                .transaction()
+                .take_returned_participants()
+                .is_empty()
+        );
     }
 
     #[tokio::test]
@@ -3005,7 +3046,15 @@ mod tests {
             .unwrap()
             .into_inner();
         assert_eq!(success.value, 7);
-        assert_eq!(store.load::<proto::Counter>("constructor-counter").await.unwrap().unwrap().value, 7);
+        assert_eq!(
+            store
+                .load::<proto::Counter>("constructor-counter")
+                .await
+                .unwrap()
+                .unwrap()
+                .value,
+            7
+        );
 
         let replay = store
             .constructor_writer_async_for_method::<ConstructorCounter, _, _, _>(
@@ -3041,17 +3090,29 @@ mod tests {
                 failed_context
                     .writer_with_key(proto::IncrementRequest { amount: 1 }, failed_key)
                     .unwrap(),
-                move |_, _| Box::pin(async { Err::<proto::CounterValue, _>(Status::internal("handler failed")) }),
+                move |_, _| {
+                    Box::pin(async {
+                        Err::<proto::CounterValue, _>(Status::internal("handler failed"))
+                    })
+                },
             )
             .await
             .unwrap_err();
         assert_eq!(failure.code(), tonic::Code::Internal);
-        assert!(store.load::<proto::Counter>("failed-constructor").await.unwrap().is_none());
-        assert!(store
-            .replay::<proto::Counter, proto::CounterValue>("failed-constructor", failed_key)
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            store
+                .load::<proto::Counter>("failed-constructor")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            store
+                .replay::<proto::Counter, proto::CounterValue>("failed-constructor", failed_key)
+                .await
+                .unwrap()
+                .is_none()
+        );
         server.abort();
     }
 

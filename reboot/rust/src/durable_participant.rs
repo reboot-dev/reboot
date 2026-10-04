@@ -220,6 +220,7 @@ struct Pending {
     effects: PendingActorEffects,
     staged: bool,
     prepared: bool,
+    read_only: bool,
     // Kept until a terminal sidecar response is acknowledged.
     _lock: tokio::sync::OwnedMutexGuard<()>,
 }
@@ -306,6 +307,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             effects: PendingActorEffects::default(),
             staged: false,
             prepared: false,
+            read_only: start.read_only,
             _lock: lock,
         });
         Ok(state)
@@ -323,6 +325,15 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         if current.root_id != transaction_id {
             return Err(Status::failed_precondition(
                 "pending transaction ID differs",
+            ));
+        }
+        if current.read_only
+            && (effects.state.is_some()
+                || !effects.task_upserts.is_empty()
+                || !effects.idempotent_mutations.is_empty())
+        {
+            return Err(Status::failed_precondition(
+                "read-only transaction produced effects",
             ));
         }
         if !current.staged {
@@ -372,14 +383,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 "PreserveNested caller contract requires a nested transaction ID path",
             ));
         }
-        if start.mode != TransactionMode::Exclusive {
-            return Err(Status::unimplemented(
-                "shared transactions are not supported",
-            ));
-        }
-        if start.read_only {
-            return Err(Status::unimplemented(
-                "read-only transactions are not supported",
+        if start.mode == TransactionMode::Shared && !start.read_only {
+            return Err(Status::failed_precondition(
+                "shared transactions must remain read-only",
             ));
         }
         if start.factory && start.transaction_path != TransactionPathContract::RootOnly {
@@ -400,13 +406,29 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         Ok(())
     }
 
-    async fn prepare(&self, transaction_id: Uuid) -> Result<PrepareOutcome, Status> {
+    async fn prepare(
+        &self,
+        transaction_id: Uuid,
+        read_only_aware: bool,
+        read_only: bool,
+    ) -> Result<PrepareOutcome, Status> {
         let mut pending = self.pending.lock().await;
         let Some(current) = pending.as_mut() else {
             return Ok(PrepareOutcome::DefinitiveAbort);
         };
         if current.root_id != transaction_id {
             return Ok(PrepareOutcome::DefinitiveAbort);
+        }
+        if current.read_only {
+            if !(read_only_aware && read_only) {
+                return Err(Status::failed_precondition(
+                    "read-only participant requires a read-only-aware prepare",
+                ));
+            }
+            // The coordinator has already sealed this participant in its read-only map.
+            // No sidecar transaction exists, so release exactly once at Prepare.
+            *pending = None;
+            return Ok(PrepareOutcome::Prepared);
         }
         // `Database.Recover` restores a durable prepared RocksDB transaction.
         // A recovering coordinator replays Prepare, which must acknowledge that
@@ -535,6 +557,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             // An unprepared record is retained only to ensure a later Commit
             // is converted to Abort; it can never be committed.
             prepared: transaction.prepared,
+            read_only: false,
             _lock: lock,
         });
         Ok(())
@@ -600,6 +623,10 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         if current.root_id != transaction_id {
             // This actor may already be serving a later root transaction.
             // Never terminalize that transaction for a stale control RPC.
+            return Ok(());
+        }
+        if current.read_only {
+            *pending = None;
             return Ok(());
         }
         let force_abort = commit && !current.prepared;
@@ -721,9 +748,11 @@ impl<C: ParticipantSidecar> database::participant_server::Participant
         request: Request<database::PrepareRequest>,
     ) -> Result<Response<database::PrepareResponse>, Status> {
         let abort_via_response = request.get_ref().abort_via_response;
+        let read_only_aware = request.get_ref().read_only_aware;
+        let read_only = request.get_ref().read_only;
         match self
             .participant
-            .prepare(self.transaction_id(&request)?)
+            .prepare(self.transaction_id(&request)?, read_only_aware, read_only)
             .await?
         {
             PrepareOutcome::Prepared => Ok(Response::new(database::PrepareResponse::default())),
@@ -1059,7 +1088,7 @@ mod tests {
             );
         }
 
-        participant.prepare(id).await.unwrap();
+        participant.prepare(id, false, false).await.unwrap();
         participant.terminal(id, false).await.unwrap();
         participant
             .start(start(Uuid::from_u128(102)))
@@ -1179,11 +1208,15 @@ mod tests {
         let id = Uuid::from_u128(3);
         participant.start(start(id)).await.unwrap();
         assert_eq!(
-            participant.prepare(id).await.unwrap_err().code(),
+            participant
+                .prepare(id, false, false)
+                .await
+                .unwrap_err()
+                .code(),
             tonic::Code::Unavailable
         );
         // A retry is the only safe response to an ambiguous prepare failure.
-        participant.prepare(id).await.unwrap();
+        participant.prepare(id, false, false).await.unwrap();
         assert_eq!(
             participant.terminal(id, false).await.unwrap_err().code(),
             tonic::Code::Unavailable
@@ -1244,13 +1277,13 @@ mod tests {
             .await
             .unwrap();
         assert!(matches!(
-            participant.prepare(child).await.unwrap(),
+            participant.prepare(child, false, false).await.unwrap(),
             PrepareOutcome::DefinitiveAbort
         ));
         // A stale terminal request for a nested ID must not affect the root
         // transaction and is acknowledged as an idempotent no-op.
         participant.terminal(child, true).await.unwrap();
-        participant.prepare(root).await.unwrap();
+        participant.prepare(root, false, false).await.unwrap();
         participant.terminal(root, true).await.unwrap();
 
         let calls = sidecar.calls.lock().unwrap().clone();
@@ -1262,6 +1295,43 @@ mod tests {
                         == vec![root.as_bytes().to_vec(), child.as_bytes().to_vec()])
         ));
         assert!(matches!(&calls[2], Call::Commit(_)));
+    }
+
+    #[tokio::test]
+    async fn root_read_only_prepare_releases_without_sidecar_transaction_or_terminal_rpc() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let id = Uuid::from_u128(600);
+        let mut read_only = start(id);
+        read_only.mode = TransactionMode::Shared;
+        read_only.read_only = true;
+        participant.start(read_only).await.unwrap();
+        participant
+            .stage(id, PendingActorEffects::default())
+            .await
+            .unwrap();
+        let host = DurableActorParticipantHost::new(participant.clone());
+        let mut request = Request::new(database::PrepareRequest {
+            transaction_id: id.as_bytes().to_vec(),
+            abort_via_response: true,
+            read_only_aware: true,
+            read_only: true,
+        });
+        request
+            .metadata_mut()
+            .insert(STATE_REF_HEADER, "actor/1".parse().unwrap());
+        database::participant_server::Participant::prepare(&host, request)
+            .await
+            .unwrap();
+        participant
+            .start(start(Uuid::from_u128(601)))
+            .await
+            .unwrap();
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Load(_), Call::Load(_)]
+        ));
     }
 
     #[tokio::test]

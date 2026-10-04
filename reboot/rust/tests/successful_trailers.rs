@@ -3,7 +3,7 @@ use reboot_rust_schema::{
     successful_trailers::{
         ParticipantMetadata, ReturnedParticipants, ReturnedParticipantsError,
         SuccessfulParticipantTrailerLayer, TRANSACTION_PARTICIPANTS_HEADER,
-        stage_successful_participants,
+        TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER, stage_successful_participants,
     },
 };
 
@@ -151,13 +151,65 @@ fn returned_participants_decode_all_values_deduplicate_and_sort() {
         returned
             .participants()
             .iter()
-            .map(|participant| (&participant.state_type, &participant.state_ref))
+            .map(|participant| {
+                (
+                    &participant.target.state_type,
+                    &participant.target.state_ref,
+                    participant.read_only,
+                )
+            })
             .collect::<Vec<_>>(),
         vec![
-            (&"a.type".to_owned(), &"a/1".to_owned()),
-            (&"b.type".to_owned(), &"b/1".to_owned()),
-            (&"z.type".to_owned(), &"z/1".to_owned()),
-            (&"z.type".to_owned(), &"z/2".to_owned()),
+            (&"a.type".to_owned(), &"a/1".to_owned(), false),
+            (&"b.type".to_owned(), &"b/1".to_owned(), false),
+            (&"z.type".to_owned(), &"z/1".to_owned(), false),
+            (&"z.type".to_owned(), &"z/2".to_owned(), false),
+        ]
+    );
+}
+
+#[test]
+fn returned_participants_classify_read_only_and_make_writes_win() {
+    let mut metadata = tonic::metadata::MetadataMap::new();
+    metadata.append(TRANSACTION_PARTICIPANTS_HEADER, "{}".parse().unwrap());
+    metadata.append(
+        TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER,
+        r#"{"read.type":["read/1"],"both.type":["both/1"]}"#
+            .parse()
+            .unwrap(),
+    );
+    metadata.append(
+        TRANSACTION_PARTICIPANTS_HEADER,
+        r#"{"write.type":["write/1"],"both.type":["both/1"]}"#
+            .parse()
+            .unwrap(),
+    );
+
+    let returned = ReturnedParticipants::from_metadata(&metadata).unwrap();
+    assert_eq!(
+        returned.participants(),
+        [
+            reboot_rust_schema::durable_coordinator::ReturnedParticipant {
+                target: reboot_rust_schema::durable_coordinator::ParticipantTarget {
+                    state_type: "both.type".into(),
+                    state_ref: "both/1".into(),
+                },
+                read_only: false,
+            },
+            reboot_rust_schema::durable_coordinator::ReturnedParticipant {
+                target: reboot_rust_schema::durable_coordinator::ParticipantTarget {
+                    state_type: "read.type".into(),
+                    state_ref: "read/1".into(),
+                },
+                read_only: true,
+            },
+            reboot_rust_schema::durable_coordinator::ReturnedParticipant {
+                target: reboot_rust_schema::durable_coordinator::ParticipantTarget {
+                    state_type: "write.type".into(),
+                    state_ref: "write/1".into(),
+                },
+                read_only: false,
+            },
         ]
     );
 }
@@ -169,7 +221,7 @@ fn returned_participants_fail_closed_for_missing_or_malformed_values() {
         Err(ReturnedParticipantsError::Missing)
     ));
 
-    for value in ["[]", "{}", r#"{"type":[]}"#, r#"{"type":[""]}"#] {
+    for value in ["[]", r#"{"type":[]}"#, r#"{"type":[""]}"#] {
         let mut metadata = tonic::metadata::MetadataMap::new();
         metadata.append(TRANSACTION_PARTICIPANTS_HEADER, value.parse().unwrap());
         assert!(matches!(
@@ -177,6 +229,13 @@ fn returned_participants_fail_closed_for_missing_or_malformed_values() {
             Err(ReturnedParticipantsError::InvalidParticipantMetadata(_))
         ));
     }
+
+    let mut metadata = tonic::metadata::MetadataMap::new();
+    metadata.append(TRANSACTION_PARTICIPANTS_HEADER, "{}".parse().unwrap());
+    assert!(matches!(
+        ReturnedParticipants::from_metadata(&metadata),
+        Err(ReturnedParticipantsError::Empty)
+    ));
 
     let mut metadata = tonic::metadata::MetadataMap::new();
     metadata.append(

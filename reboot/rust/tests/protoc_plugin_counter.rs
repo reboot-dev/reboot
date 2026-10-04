@@ -226,6 +226,18 @@ impl transaction_generated::TransactionCounterWritesTransactionHandler for Trans
             proto::TransactionCounterValue { value: state.value },
         ))
     }
+
+    async fn shared_read(
+        &self,
+        _: &reboot::runtime::TransactionContext,
+        state: &mut proto::TransactionCounter,
+        _: proto::TransactionIncrementRequest,
+    ) -> Result<reboot::runtime::TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+        self.trace.lock().unwrap().push("shared handler");
+        Ok(reboot::runtime::TransactionExecution::new(
+            proto::TransactionCounterValue { value: state.value },
+        ))
+    }
 }
 
 struct TransactionParticipantSidecar {
@@ -631,7 +643,7 @@ async fn generated_transaction_adapter_emits_inbound_participant_only_in_raw_suc
 }
 
 #[tokio::test]
-async fn generated_outbound_client_decodes_generated_inbound_trailer_without_initial_metadata() {
+async fn generated_shared_root_to_remote_read_only_call_returns_classified_participant() {
     let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -654,7 +666,7 @@ async fn generated_outbound_client_decodes_generated_inbound_trailer_without_ini
     let root = reboot::runtime::RootTransactionContext::start(
         reboot::RebootHeaders::new("caller-state"),
         "tests.reboot.protoc.Root",
-        reboot::runtime::TransactionMode::Exclusive,
+        reboot::runtime::TransactionMode::Shared,
         Uuid::from_u128(201),
         prost_types::Timestamp::default(),
     )
@@ -662,32 +674,41 @@ async fn generated_outbound_client_decodes_generated_inbound_trailer_without_ini
     let context = root.transaction();
     let client = transaction_generated::TransactionCounterWritesClient::new(FixedChannelResolver(channel));
     let response = client
-        .increment(
-            &context,
+        .shared_read(
+            context,
             &transaction_generated::TransactionCounterWritesTarget::new("transaction-counter"),
             proto::TransactionIncrementRequest { amount: 3 },
         )
         .await
         .unwrap();
-    assert_eq!(response.response().get_ref().value, 7);
+    assert_eq!(response.response().get_ref().value, 4);
     assert_eq!(
         response
             .returned_participants()
             .participants()
             .iter()
-            .map(|participant| (&participant.state_type, &participant.state_ref))
+            .map(|participant| {
+                (
+                    &participant.target.state_type,
+                    &participant.target.state_ref,
+                    participant.read_only,
+                )
+            })
             .collect::<Vec<_>>(),
-        vec![(&"tests.reboot.protoc.TransactionCounter".to_owned(), &"transaction-counter".to_owned())]
+        vec![(&"tests.reboot.protoc.TransactionCounter".to_owned(), &"transaction-counter".to_owned(), true)]
     );
     assert_eq!(
         root.transaction().take_returned_participants(),
-        vec![reboot::durable_coordinator::ParticipantTarget {
-            state_type: "tests.reboot.protoc.TransactionCounter".into(),
-            state_ref: "transaction-counter".into(),
+        vec![reboot::durable_coordinator::ReturnedParticipant {
+            target: reboot::durable_coordinator::ParticipantTarget {
+                state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                state_ref: "transaction-counter".into(),
+            },
+            read_only: true,
         }]
     );
     assert!(root.transaction().take_returned_participants().is_empty());
-    assert_eq!(*trace.lock().unwrap(), ["participant load", "handler"]);
+    assert_eq!(*trace.lock().unwrap(), ["participant load", "shared handler"]);
     server.abort();
 }
 

@@ -1,10 +1,10 @@
-//! Durable root coordinator for one exclusive actor participant.
+//! Durable root coordinator for root exclusive and read-only actor participants.
 //!
 //! This is deliberately a narrow 2PC control path. It persists coordinator
 //! records in the Database sidecar and reaches participants only through an
 //! injected resolver. It does not choose placement, create actors, or support
-//! nested, shared, read-only, or multi-actor transactions. Factory
-//! transactions are limited to the same exclusive root actor.
+//! nested, factory, placement, or multi-actor transactions. Root shared
+//! transactions are supported only when every participant remains read-only.
 
 use std::collections::BTreeSet;
 use std::future::Future;
@@ -27,6 +27,38 @@ type CoordinatorFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, Status>> +
 pub struct ParticipantTarget {
     pub state_type: String,
     pub state_ref: String,
+}
+
+/// A classification carried by successful participant trailers. A write wins
+/// if a target appears in both classifications.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReturnedParticipant {
+    pub target: ParticipantTarget,
+    pub read_only: bool,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct ParticipantSet {
+    should_commit: BTreeSet<ParticipantTarget>,
+    read_only: BTreeSet<ParticipantTarget>,
+}
+impl ParticipantSet {
+    fn add(&mut self, target: ParticipantTarget, read_only: bool) {
+        if read_only {
+            if !self.should_commit.contains(&target) {
+                self.read_only.insert(target);
+            }
+        } else {
+            self.read_only.remove(&target);
+            self.should_commit.insert(target);
+        }
+    }
+    fn prepare(&self) -> impl Iterator<Item = (&ParticipantTarget, bool)> {
+        self.should_commit
+            .iter()
+            .map(|target| (target, false))
+            .chain(self.read_only.iter().map(|target| (target, true)))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -462,6 +494,26 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         start: RootCoordinatorStart,
         returned: Vec<ParticipantTarget>,
     ) -> Result<(), Status> {
+        self.complete_with_classified_returned_participants(
+            start,
+            returned
+                .into_iter()
+                .map(|target| ReturnedParticipant {
+                    target,
+                    read_only: false,
+                })
+                .collect(),
+        )
+        .await
+    }
+
+    /// Completes a root transaction with classifications from a read-only-aware
+    /// successful trailer. New generated adapters use this path.
+    pub async fn complete_with_classified_returned_participants(
+        &self,
+        start: RootCoordinatorStart,
+        returned: Vec<ReturnedParticipant>,
+    ) -> Result<(), Status> {
         Self::validate_start(&start)?;
         let participants = Self::participant_set(&start, returned)?;
         let transaction_id = start.transaction_ids[0];
@@ -475,7 +527,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 )),
             })
             .await?;
-        for participant in &participants {
+        for (participant, read_only) in participants.prepare() {
             let endpoint = self.resolver.resolve(participant).await?;
             let response = endpoint
                 .prepare(
@@ -483,15 +535,15 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                     database::PrepareRequest {
                         transaction_id: transaction_id.as_bytes().to_vec(),
                         abort_via_response: true,
-                        read_only_aware: false,
-                        read_only: false,
+                        read_only_aware: true,
+                        read_only,
                     },
                 )
                 .await?;
             if response.abort {
                 self.persist_abort(transaction_id, &start.coordinator_state_ref)
                     .await?;
-                self.terminal_all(transaction_id, &participants, false)
+                self.terminal_all(transaction_id, &participants.should_commit, false)
                     .await?;
                 return self
                     .cleanup(transaction_id, &start.coordinator_state_ref)
@@ -513,7 +565,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             .await?;
         #[cfg(feature = "test-support")]
         test_support::pause_after_durable_decision()?;
-        self.terminal_all(transaction_id, &participants, true)
+        self.terminal_all(transaction_id, &participants.should_commit, true)
             .await?;
         self.cleanup(transaction_id, &start.coordinator_state_ref)
             .await
@@ -555,7 +607,10 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             let participants = Self::participants_from_record(&record)?;
             if record.preparing {
                 let mut abort = false;
-                for participant in &participants {
+                // Read-only actors released their lock after the original Prepare;
+                // a recovered coordinator must never re-prepare them.
+                for participant in &participants.should_commit {
+                    let read_only = false;
                     let endpoint = self.resolver.resolve(participant).await?;
                     let response = endpoint
                         .prepare(
@@ -563,8 +618,8 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                             database::PrepareRequest {
                                 transaction_id: transaction_id.as_bytes().to_vec(),
                                 abort_via_response: true,
-                                read_only_aware: false,
-                                read_only: false,
+                                read_only_aware: true,
+                                read_only,
                             },
                         )
                         .await?;
@@ -576,7 +631,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 if abort {
                     self.persist_abort(transaction_id, &record.state_ref)
                         .await?;
-                    self.terminal_all(transaction_id, &participants, false)
+                    self.terminal_all(transaction_id, &participants.should_commit, false)
                         .await?;
                     self.cleanup(transaction_id, &record.state_ref).await?;
                     continue;
@@ -599,7 +654,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             // an optimization after this write.
             self.persist_commit(transaction_id, &record.state_ref, &participants)
                 .await?;
-            self.terminal_all(transaction_id, &participants, true)
+            self.terminal_all(transaction_id, &participants.should_commit, true)
                 .await?;
             self.cleanup(transaction_id, &record.state_ref).await?;
         }
@@ -627,7 +682,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         &self,
         transaction_id: Uuid,
         coordinator_state_ref: &str,
-        participants: &[ParticipantTarget],
+        participants: &ParticipantSet,
     ) -> Result<(), Status> {
         self.sidecar
             .decision_put(database::TransactionCoordinatorDecisionPutRequest {
@@ -635,8 +690,17 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 decision: Some(database::TransactionCoordinatorDecision {
                     coordinator_state_ref: coordinator_state_ref.to_owned(),
                     outcome: database::transaction_coordinator_decision::Outcome::Commit as i32,
-                    participants: Self::record(coordinator_state_ref, participants, false)
-                        .participants,
+                    // Watch membership is only the terminal commit set. Read-only
+                    // actors were released at Prepare and must not be committed.
+                    participants: Self::record(
+                        coordinator_state_ref,
+                        &ParticipantSet {
+                            should_commit: participants.should_commit.clone(),
+                            read_only: BTreeSet::new(),
+                        },
+                        false,
+                    )
+                    .participants,
                 }),
             })
             .await?;
@@ -665,14 +729,9 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 "nested or shared transactions are not supported",
             ));
         }
-        if start.mode != TransactionMode::Exclusive {
-            return Err(Status::unimplemented(
-                "shared transactions are not supported",
-            ));
-        }
-        if start.read_only {
-            return Err(Status::unimplemented(
-                "read-only transactions are not supported",
+        if start.mode == TransactionMode::Shared && !start.read_only {
+            return Err(Status::failed_precondition(
+                "shared root transactions must remain read-only",
             ));
         }
 
@@ -695,7 +754,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
     async fn terminal_all(
         &self,
         transaction_id: Uuid,
-        participants: &[ParticipantTarget],
+        participants: &BTreeSet<ParticipantTarget>,
         commit: bool,
     ) -> Result<(), Status> {
         for participant in participants {
@@ -724,32 +783,38 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
     }
     fn participant_set(
         start: &RootCoordinatorStart,
-        returned: Vec<ParticipantTarget>,
-    ) -> Result<Vec<ParticipantTarget>, Status> {
+        returned: Vec<ReturnedParticipant>,
+    ) -> Result<ParticipantSet, Status> {
         if start.factory && !returned.is_empty() {
             return Err(Status::unimplemented(
                 "factory transactions cannot enlist returned remote participants",
             ));
         }
-        let mut participants = BTreeSet::from([start.participant.clone()]);
-        participants.extend(returned);
-        if participants.iter().any(|participant| {
+        let mut participants = ParticipantSet::default();
+        participants.add(start.participant.clone(), start.read_only);
+        for participant in returned {
+            participants.add(participant.target, participant.read_only);
+        }
+        if participants.prepare().any(|(participant, _)| {
             participant.state_type.is_empty() || participant.state_ref.is_empty()
         }) {
             return Err(Status::invalid_argument(
                 "participant identity must be specified",
             ));
         }
-        Ok(participants.into_iter().collect())
+        if start.mode == TransactionMode::Shared && !participants.should_commit.is_empty() {
+            return Err(Status::failed_precondition(
+                "shared root transactions must remain read-only",
+            ));
+        }
+        Ok(participants)
     }
-    fn record(
-        state_ref: &str,
-        participants: &[ParticipantTarget],
-        preparing: bool,
-    ) -> database::TransactionCoordinator {
-        let mut should_commit = std::collections::BTreeMap::new();
+    fn state_ref_map(
+        participants: &BTreeSet<ParticipantTarget>,
+    ) -> std::collections::BTreeMap<String, database::participants::StateRefs> {
+        let mut result = std::collections::BTreeMap::new();
         for participant in participants {
-            should_commit
+            result
                 .entry(participant.state_type.clone())
                 .or_insert_with(|| database::participants::StateRefs {
                     state_refs: Vec::new(),
@@ -757,50 +822,56 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 .state_refs
                 .push(participant.state_ref.clone());
         }
+        result
+    }
+    fn record(
+        state_ref: &str,
+        participants: &ParticipantSet,
+        preparing: bool,
+    ) -> database::TransactionCoordinator {
         database::TransactionCoordinator {
             state_ref: state_ref.to_owned(),
             participants: Some(database::Participants {
-                should_commit,
-                read_only: Default::default(),
+                should_commit: Self::state_ref_map(&participants.should_commit),
+                read_only: Self::state_ref_map(&participants.read_only),
             }),
             preparing,
         }
     }
     fn participants_from_record(
         record: &database::TransactionCoordinator,
-    ) -> Result<Vec<ParticipantTarget>, Status> {
-        if !record
-            .participants
-            .as_ref()
-            .is_none_or(|participants| participants.read_only.is_empty())
-        {
-            return Err(Status::unimplemented(
-                "read-only coordinator recovery is not supported",
-            ));
-        }
+    ) -> Result<ParticipantSet, Status> {
         let participants = record.participants.as_ref().ok_or_else(|| {
             Status::failed_precondition("recovered coordinator has no participants")
         })?;
-        let mut result = BTreeSet::new();
-        for (state_type, refs) in &participants.should_commit {
-            for state_ref in &refs.state_refs {
-                if state_type.is_empty() || state_ref.is_empty() {
-                    return Err(Status::failed_precondition(
-                        "recovered coordinator contains an invalid participant",
-                    ));
+        let mut result = ParticipantSet::default();
+        for (map, read_only) in [
+            (&participants.should_commit, false),
+            (&participants.read_only, true),
+        ] {
+            for (state_type, refs) in map {
+                for state_ref in &refs.state_refs {
+                    if state_type.is_empty() || state_ref.is_empty() {
+                        return Err(Status::failed_precondition(
+                            "recovered coordinator contains an invalid participant",
+                        ));
+                    }
+                    result.add(
+                        ParticipantTarget {
+                            state_type: state_type.clone(),
+                            state_ref: state_ref.clone(),
+                        },
+                        read_only,
+                    );
                 }
-                result.insert(ParticipantTarget {
-                    state_type: state_type.clone(),
-                    state_ref: state_ref.clone(),
-                });
             }
         }
-        if result.is_empty() {
+        if result.should_commit.is_empty() && result.read_only.is_empty() {
             return Err(Status::failed_precondition(
                 "recovered coordinator has no participants",
             ));
         }
-        Ok(result.into_iter().collect())
+        Ok(result)
     }
 }
 
@@ -954,6 +1025,19 @@ mod tests {
         fn resolve(&self, _: &ParticipantTarget) -> CoordinatorFuture<'_, Arc<Self::Endpoint>> {
             let e = Arc::clone(&self.endpoint);
             Box::pin(async move { Ok(e) })
+        }
+    }
+
+    fn returned(target: ParticipantTarget) -> ReturnedParticipant {
+        ReturnedParticipant {
+            target,
+            read_only: false,
+        }
+    }
+    fn write_set(target: ParticipantTarget) -> ParticipantSet {
+        ParticipantSet {
+            should_commit: BTreeSet::from([target]),
+            read_only: BTreeSet::new(),
         }
     }
 
@@ -1212,9 +1296,13 @@ mod tests {
             state_ref: "remote/b".into(),
         };
         coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
-            .complete_with_returned_participants(
+            .complete_with_classified_returned_participants(
                 start(id),
-                vec![remote_b.clone(), remote_a.clone(), remote_b.clone()],
+                vec![
+                    returned(remote_b.clone()),
+                    returned(remote_a.clone()),
+                    returned(remote_b.clone()),
+                ],
             )
             .await
             .unwrap();
@@ -1270,12 +1358,12 @@ mod tests {
         ]);
         let id = Uuid::from_u128(7);
         coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
-            .complete_with_returned_participants(
+            .complete_with_classified_returned_participants(
                 start(id),
-                vec![ParticipantTarget {
+                vec![returned(ParticipantTarget {
                     state_type: "example.Remote".into(),
                     state_ref: "remote/a".into(),
-                }],
+                })],
             )
             .await
             .unwrap();
@@ -1371,7 +1459,7 @@ mod tests {
                     id.to_string(),
                     DurableRootCoordinator::<MockSidecar, MockResolver>::record(
                         "actor/1",
-                        &[start(id).participant],
+                        &write_set(start(id).participant),
                         true,
                     ),
                 )]
@@ -1426,7 +1514,7 @@ mod tests {
                     id.to_string(),
                     DurableRootCoordinator::<MockSidecar, MockResolver>::record(
                         "actor/1",
-                        &[start(id).participant],
+                        &write_set(start(id).participant),
                         true,
                     ),
                 )]
@@ -1474,7 +1562,7 @@ mod tests {
                     id.to_string(),
                     DurableRootCoordinator::<MockSidecar, MockResolver>::record(
                         "actor/1",
-                        &[start(id).participant],
+                        &write_set(start(id).participant),
                         false,
                     ),
                 )]
@@ -1498,6 +1586,164 @@ mod tests {
             [Call::Recover(_), Call::DecisionPut(_), Call::Cleanup(_)]
         ));
     }
+    #[tokio::test]
+    async fn read_only_root_is_prepared_released_and_excluded_from_commit_decision() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let endpoint = Arc::new(MockEndpoint::default());
+        let id = Uuid::from_u128(800);
+        let mut root = start(id);
+        root.mode = TransactionMode::Shared;
+        root.read_only = true;
+        coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
+            .complete_with_classified_returned_participants(
+                root,
+                vec![
+                    ReturnedParticipant {
+                        target: ParticipantTarget {
+                            state_type: "example.Remote".into(),
+                            state_ref: "reader".into(),
+                        },
+                        read_only: true,
+                    },
+                    ReturnedParticipant {
+                        target: ParticipantTarget {
+                            state_type: "example.Remote".into(),
+                            state_ref: "writer".into(),
+                        },
+                        read_only: false,
+                    },
+                    // Write wins over a duplicate read-only trailer.
+                    ReturnedParticipant {
+                        target: ParticipantTarget {
+                            state_type: "example.Remote".into(),
+                            state_ref: "writer".into(),
+                        },
+                        read_only: true,
+                    },
+                ],
+            )
+            .await
+            .unwrap_err();
+        // A shared root may not acquire a writer from a trailer, and it fails
+        // before it seals any durable record.
+        assert!(sidecar.calls.lock().unwrap().is_empty());
+
+        let mut root = start(id);
+        root.mode = TransactionMode::Shared;
+        root.read_only = true;
+        coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
+            .complete_with_classified_returned_participants(
+                root,
+                vec![ReturnedParticipant {
+                    target: ParticipantTarget {
+                        state_type: "example.Remote".into(),
+                        state_ref: "reader".into(),
+                    },
+                    read_only: true,
+                }],
+            )
+            .await
+            .unwrap();
+        let calls = sidecar.calls.lock().unwrap().clone();
+        let record = match &calls[0] {
+            Call::DbPrepare(request) => request.transaction_coordinator.as_ref().unwrap(),
+            other => panic!("expected prepare record, got {other:?}"),
+        };
+        assert!(
+            record
+                .participants
+                .as_ref()
+                .unwrap()
+                .should_commit
+                .is_empty()
+        );
+        assert_eq!(
+            record.participants.as_ref().unwrap().read_only["example.Actor"].state_refs,
+            vec!["actor/1"]
+        );
+        assert_eq!(
+            record.participants.as_ref().unwrap().read_only["example.Remote"].state_refs,
+            vec!["reader"]
+        );
+        let participant = endpoint.calls.lock().unwrap().clone();
+        assert_eq!(
+            participant
+                .iter()
+                .filter(|call| matches!(call, Call::Prepare(_)))
+                .count(),
+            2
+        );
+        assert!(participant.iter().filter(|call| matches!(call, Call::Prepare(request) if request.read_only_aware && request.read_only)).count() == 2);
+        assert_eq!(
+            participant
+                .iter()
+                .filter(|call| matches!(call, Call::Commit(_)))
+                .count(),
+            0
+        );
+        assert!(
+            matches!(&calls[2], Call::DecisionPut(request) if request.decision.as_ref().is_some_and(|decision| decision.participants.as_ref().is_some_and(|participants| participants.should_commit.is_empty() && participants.read_only.is_empty())))
+        );
+    }
+
+    #[tokio::test]
+    async fn recovery_skips_read_only_participants_and_commits_only_writers() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let endpoint = Arc::new(MockEndpoint::default());
+        let id = Uuid::from_u128(801);
+        let mut participants = ParticipantSet::default();
+        participants.add(start(id).participant, false);
+        participants.add(
+            ParticipantTarget {
+                state_type: "example.Remote".into(),
+                state_ref: "reader".into(),
+            },
+            true,
+        );
+        sidecar
+            .recover
+            .lock()
+            .unwrap()
+            .push_back(Ok(database::RecoverResponse {
+                transaction_coordinators: [(
+                    id.to_string(),
+                    DurableRootCoordinator::<MockSidecar, MockResolver>::record(
+                        "actor/1",
+                        &participants,
+                        true,
+                    ),
+                )]
+                .into(),
+                ..Default::default()
+            }));
+        coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
+            .recover(CoordinatorRecovery {
+                state_tags_by_state_type: Default::default(),
+                shard_ids: vec!["a".into()],
+                coordinator_state_ref: "actor/1".into(),
+            })
+            .await
+            .unwrap();
+        let calls = endpoint.calls.lock().unwrap().clone();
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| matches!(call, Call::Prepare(_)))
+                .count(),
+            1
+        );
+        assert!(
+            matches!(&calls[0], Call::Prepare(request) if request.read_only_aware && !request.read_only)
+        );
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| matches!(call, Call::Commit(_)))
+                .count(),
+            1
+        );
+    }
+
     #[tokio::test]
     async fn rejects_unsupported_shapes_before_sidecar_io() {
         let sidecar = Arc::new(MockSidecar::default());
