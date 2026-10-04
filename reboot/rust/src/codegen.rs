@@ -18,8 +18,14 @@ const DEFAULT_RUNTIME_MODULE: &str = "reboot_rust_schema";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DurableKind {
     Reader,
-    Writer,
+    Writer(WriterMetadata),
     Transaction(TransactionMetadata),
+}
+
+/// The declaration carried by a database writer option.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct WriterMetadata {
+    constructor: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -80,13 +86,20 @@ struct ExtensionOptions {
 struct RebootServiceOptions {
     #[prost(string, tag = "1")]
     state: String,
+    #[prost(bool, tag = "2")]
+    default_constructible: bool,
+}
+#[derive(Message)]
+struct RebootWriterMethodOptions {
+    #[prost(message, optional, tag = "2")]
+    constructor: Option<Empty>,
 }
 #[derive(Message)]
 struct RebootMethodOptions {
     #[prost(message, optional, tag = "1")]
     reader: Option<Empty>,
     #[prost(message, optional, tag = "2")]
-    writer: Option<Empty>,
+    writer: Option<RebootWriterMethodOptions>,
     #[prost(message, optional, tag = "3")]
     transaction: Option<RebootTransactionMethodOptions>,
     #[prost(message, optional, tag = "4")]
@@ -108,6 +121,7 @@ struct RebootTransactionMethodOptions {
 #[derive(Clone, Default)]
 struct DurableService {
     state: String,
+    default_constructible: bool,
     methods: HashMap<String, DurableKind>,
 }
 
@@ -250,7 +264,13 @@ fn annotations(
                     option.transaction,
                 ) {
                     (true, false, None) => DurableKind::Reader,
-                    (false, true, None) => DurableKind::Writer,
+                    (false, true, None) => DurableKind::Writer(WriterMetadata {
+                        constructor: option
+                            .writer
+                            .expect("writer presence was checked")
+                            .constructor
+                            .is_some(),
+                    }),
                     (false, false, Some(transaction)) => match (
                         transaction.exclusive.is_some(),
                         transaction.shared.is_some(),
@@ -277,6 +297,7 @@ fn annotations(
                 service_name,
                 DurableService {
                     state: service_option.state,
+                    default_constructible: service_option.default_constructible,
                     methods,
                 },
             );
@@ -503,7 +524,7 @@ fn emit_durable(
         output.push_str("#[tonic::async_trait]\n");
         output.push_str(&format!("pub trait {handler}: Send + Sync + 'static {{\n"));
         for (kind, method, request, response, _) in &database_methods {
-            output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n", if **kind == DurableKind::Writer { "&mut " } else { "&" }));
+            output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n", if matches!(**kind, DurableKind::Writer(_)) { "&mut " } else { "&" }));
         }
         output.push_str("}\n\n");
         output.push_str(&format!("pub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: std::sync::Arc<H> }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ store: self.store.clone(), handler: self.handler.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler: std::sync::Arc::new(handler) }} }} }}\n\n"));
@@ -511,18 +532,40 @@ fn emit_durable(
         output.push_str(&format!(
             "impl<H: {handler}> proto::{server}::{service_name} for {adapter}<H> {{\n"
         ));
+        let requires_constructor = !annotation.default_constructible
+            && database_methods.iter().any(|(kind, _, _, _, _)| {
+                matches!(
+                    kind,
+                    DurableKind::Writer(WriterMetadata { constructor: true })
+                )
+            });
         for (kind, method, request, response, method_identity) in database_methods {
-            let envelope = match kind {
-                DurableKind::Reader => "reader_async_for",
-                DurableKind::Writer => "writer_async_for_method",
+            if matches!(
+                kind,
+                DurableKind::Writer(WriterMetadata { constructor: true })
+            ) {
+                output.push_str(&format!("    async fn {method}(&self, _: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ Err(tonic::Status::unimplemented(\"constructor writers are not supported\")) }}\n"));
+                continue;
+            }
+            let (envelope, prefix) = match kind {
+                DurableKind::Reader if requires_constructor => (
+                    "reader_async_for_with_admission",
+                    format!("{runtime_module}::runtime::StateAdmission::RequireExisting, "),
+                ),
+                DurableKind::Reader => ("reader_async_for", String::new()),
+                DurableKind::Writer(_) if requires_constructor => (
+                    "writer_async_for_method_with_admission",
+                    format!(
+                        "\"{method_identity}\", {runtime_module}::runtime::StateAdmission::RequireExisting, "
+                    ),
+                ),
+                DurableKind::Writer(_) => (
+                    "writer_async_for_method",
+                    format!("\"{method_identity}\", "),
+                ),
                 DurableKind::Transaction(_) => unreachable!("transactions are filtered above"),
             };
-            let method_identity = if **kind == DurableKind::Writer {
-                format!("\"{method_identity}\", ")
-            } else {
-                String::new()
-            };
-            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {method_identity}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await }})\n            }},\n        ).await\n    }}\n"));
+            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await }})\n            }},\n        ).await\n    }}\n"));
         }
         output.push_str("}\n\n");
     }
@@ -875,7 +918,11 @@ mod tests {
                 "CounterWrites".to_owned(),
                 DurableService {
                     state: "Counter".to_owned(),
-                    methods: HashMap::from([("Increment".to_owned(), DurableKind::Writer)]),
+                    default_constructible: true,
+                    methods: HashMap::from([(
+                        "Increment".to_owned(),
+                        DurableKind::Writer(WriterMetadata { constructor: false }),
+                    )]),
                 },
             )]),
         )]);
@@ -912,7 +959,11 @@ mod tests {
                     "CounterWrites".to_owned(),
                     DurableService {
                         state: annotation_state.to_owned(),
-                        methods: HashMap::from([("Increment".to_owned(), DurableKind::Writer)]),
+                        default_constructible: true,
+                        methods: HashMap::from([(
+                            "Increment".to_owned(),
+                            DurableKind::Writer(WriterMetadata { constructor: false }),
+                        )]),
                     },
                 )]),
             )]);
@@ -939,6 +990,7 @@ mod tests {
             reboot: Some(
                 RebootServiceOptions {
                     state: "Counter".to_owned(),
+                    default_constructible: true,
                 }
                 .encode_to_vec(),
             ),
@@ -1003,6 +1055,7 @@ mod tests {
                 "CounterWrites".to_owned(),
                 DurableService {
                     state: "Counter".to_owned(),
+                    default_constructible: true,
                     methods: HashMap::from([(
                         "Increment".to_owned(),
                         DurableKind::Transaction(TransactionMetadata {
@@ -1072,6 +1125,7 @@ mod tests {
                         reboot: Some(
                             RebootServiceOptions {
                                 state: "Counter".to_owned(),
+                                default_constructible: true,
                             }
                             .encode_to_vec(),
                         ),
@@ -1092,6 +1146,55 @@ mod tests {
     }
 
     #[test]
+    fn constructor_aware_database_adapters_require_existing_state_and_reject_constructors() {
+        let annotations = HashMap::from([(
+            "counter.proto".to_owned(),
+            HashMap::from([(
+                "CounterWrites".to_owned(),
+                DurableService {
+                    state: "Counter".to_owned(),
+                    default_constructible: false,
+                    methods: HashMap::from([
+                        (
+                            "Increment".to_owned(),
+                            DurableKind::Writer(WriterMetadata { constructor: false }),
+                        ),
+                        (
+                            "Construct".to_owned(),
+                            DurableKind::Writer(WriterMetadata { constructor: true }),
+                        ),
+                        ("Read".to_owned(), DurableKind::Reader),
+                    ]),
+                },
+            )]),
+        )]);
+        let mut value = request();
+        value.proto_file[0].service[0].method.extend([
+            MethodDescriptorProto {
+                name: Some("Construct".to_owned()),
+                input_type: Some(".tests.reboot.protoc.IncrementRequest".into()),
+                output_type: Some(".tests.reboot.protoc.CounterValue".into()),
+                ..Default::default()
+            },
+            MethodDescriptorProto {
+                name: Some("Read".to_owned()),
+                input_type: Some(".tests.reboot.protoc.IncrementRequest".into()),
+                output_type: Some(".tests.reboot.protoc.CounterValue".into()),
+                ..Default::default()
+            },
+        ]);
+        let content = generate_inner(value, annotations)
+            .unwrap()
+            .remove(0)
+            .content
+            .unwrap();
+        assert!(content.contains("writer_async_for_method_with_admission::<CounterDurableState"));
+        assert!(content.contains("reader_async_for_with_admission::<CounterDurableState"));
+        assert!(content.contains("StateAdmission::RequireExisting"));
+        assert!(content.contains("constructor writers are not supported"));
+    }
+
+    #[test]
     fn mixed_transaction_and_database_methods_are_rejected_before_emitting_partial_tonic_impl() {
         let annotations = HashMap::from([(
             "counter.proto".to_owned(),
@@ -1099,8 +1202,12 @@ mod tests {
                 "CounterWrites".to_owned(),
                 DurableService {
                     state: "Counter".to_owned(),
+                    default_constructible: true,
                     methods: HashMap::from([
-                        ("Increment".to_owned(), DurableKind::Writer),
+                        (
+                            "Increment".to_owned(),
+                            DurableKind::Writer(WriterMetadata { constructor: false }),
+                        ),
                         (
                             "Transaction".to_owned(),
                             DurableKind::Transaction(TransactionMetadata {
@@ -1191,6 +1298,7 @@ mod tests {
                 "Foo".to_owned(),
                 DurableService {
                     state: "Counter".to_owned(),
+                    default_constructible: true,
                     methods: HashMap::from([(
                         "Increment".to_owned(),
                         DurableKind::Transaction(TransactionMetadata {

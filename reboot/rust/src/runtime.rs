@@ -941,6 +941,28 @@ pub trait DurableStateDeclaration {
     const STATE_TYPE: &'static str;
 }
 
+/// Controls whether a missing state is implicitly created by a generated call.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StateAdmission {
+    /// Preserve the legacy public API behavior of using `State::default()`.
+    DefaultOnAbsent,
+    /// Reject calls until a supported constructor has stored the state.
+    RequireExisting,
+}
+
+fn admit_state<State: Default>(
+    state: Option<State>,
+    admission: StateAdmission,
+) -> Result<State, Status> {
+    match (state, admission) {
+        (Some(state), _) => Ok(state),
+        (None, StateAdmission::DefaultOnAbsent) => Ok(State::default()),
+        (None, StateAdmission::RequireExisting) => Err(Status::failed_precondition(
+            "actor state must be constructed before this method can be called",
+        )),
+    }
+}
+
 impl RebootState for proto::Echo {
     const STATE_TYPE: &'static str = "tests.reboot.protoc.Echo";
 }
@@ -1237,6 +1259,35 @@ impl DatabaseActorStore {
             Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
         >,
     {
+        self.writer_async_with_method_admission(
+            state_type,
+            method_identity,
+            StateAdmission::DefaultOnAbsent,
+            request,
+            invoke,
+        )
+        .await
+    }
+
+    async fn writer_async_with_method_admission<State, RequestBody, ResponseBody, F>(
+        &self,
+        state_type: &'static str,
+        method_identity: &str,
+        admission: StateAdmission,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        State: Message + Default + Clone + Send + Sync + 'static,
+        RequestBody: Message + Send + 'static,
+        ResponseBody: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut State,
+            RequestBody,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
         let fingerprint = request_fingerprint(method_identity, request.get_ref());
         let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
         let key = idempotency_key(&request)?;
@@ -1248,10 +1299,7 @@ impl DatabaseActorStore {
         {
             return Ok(Response::new(response));
         }
-        let mut state = self
-            .load_type(state_type, &state_ref)
-            .await?
-            .unwrap_or_default();
+        let mut state = admit_state(self.load_type(state_type, &state_ref).await?, admission)?;
         let response = invoke(&mut state, request.into_inner()).await?;
         self.store_type(
             state_type,
@@ -1311,6 +1359,35 @@ impl DatabaseActorStore {
         self.writer_async_with_method::<Declaration::State, _, _, _>(
             Declaration::STATE_TYPE,
             method_identity,
+            request,
+            invoke,
+        )
+        .await
+    }
+
+    /// Runs a generated writer with an explicit admission policy.
+    pub async fn writer_async_for_method_with_admission<Declaration, RequestBody, ResponseBody, F>(
+        &self,
+        method_identity: &str,
+        admission: StateAdmission,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        Declaration: DurableStateDeclaration,
+        RequestBody: Message + Send + 'static,
+        ResponseBody: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut Declaration::State,
+            RequestBody,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
+        self.writer_async_with_method_admission::<Declaration::State, _, _, _>(
+            Declaration::STATE_TYPE,
+            method_identity,
+            admission,
             request,
             invoke,
         )
@@ -1387,9 +1464,34 @@ impl DatabaseActorStore {
         self.reader_async::<Declaration::State, _, _, _>(Declaration::STATE_TYPE, request, invoke)
             .await
     }
-}
 
-/// Concrete generated-style adapter for the `EchoMethods` service.
+    /// Runs a generated reader with an explicit admission policy.
+    pub async fn reader_async_for_with_admission<Declaration, RequestBody, ResponseBody, F>(
+        &self,
+        admission: StateAdmission,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        Declaration: DurableStateDeclaration,
+        RequestBody: Send + 'static,
+        ResponseBody: Message + Default + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a Declaration::State,
+            RequestBody,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
+        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
+        let state = admit_state(
+            self.load_type::<Declaration::State>(Declaration::STATE_TYPE, &state_ref)
+                .await?,
+            admission,
+        )?;
+        Ok(Response::new(invoke(&state, request.into_inner()).await?))
+    }
+}
 #[derive(Clone)]
 pub struct EchoMethodsAdapter {
     store: DatabaseActorStore,
@@ -1841,6 +1943,24 @@ pub mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn admission_requires_existing_or_preserves_default_compatibility() {
+        assert_eq!(
+            admit_state::<u32>(None, StateAdmission::DefaultOnAbsent).unwrap(),
+            0
+        );
+        assert_eq!(
+            admit_state::<u32>(None, StateAdmission::RequireExisting)
+                .unwrap_err()
+                .code(),
+            tonic::Code::FailedPrecondition
+        );
+        assert_eq!(
+            admit_state(Some(7_u32), StateAdmission::RequireExisting).unwrap(),
+            7
+        );
+    }
     use crate::ExternalContext;
     use std::collections::BTreeMap;
 
