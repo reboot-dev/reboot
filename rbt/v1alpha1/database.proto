@@ -582,6 +582,43 @@ message TransactionCoordinatorCleanupResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
+// Immutable terminal decision for the legacy Coordinator.Watch recovery path.
+// This is intentionally separate from TransactionCoordinator: cleanup may
+// remove the live control-loop record only after direct delivery, whereas a
+// participant that missed delivery still needs an authoritative decision.
+message TransactionCoordinatorDecision {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    COMMIT = 1;
+    ABORT = 2;
+  }
+
+  // The coordinator state identity. Together with root_transaction_id this is
+  // the RocksDB identity of a decision; a root UUID alone is not sufficient.
+  string coordinator_state_ref = 1;
+  Outcome outcome = 2;
+  // Present only for COMMIT and is the immutable complete participant set.
+  Participants participants = 3;
+}
+
+message TransactionCoordinatorDecisionPutRequest {
+  bytes root_transaction_id = 1;
+  TransactionCoordinatorDecision decision = 2;
+}
+message TransactionCoordinatorDecisionPutResponse {}
+
+message TransactionCoordinatorDecisionGetRequest {
+  bytes root_transaction_id = 1;
+  string coordinator_state_ref = 2;
+}
+message TransactionCoordinatorDecisionGetResponse {
+  // Absent means no durable terminal decision. It must never be interpreted as
+  // either commit or abort by a Watch host.
+  optional TransactionCoordinatorDecision decision = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
 message RefreshTimestampRequest {}
 
 message RefreshTimestampResponse {
@@ -689,6 +726,12 @@ service Database {
 
   rpc TransactionCoordinatorCleanup(TransactionCoordinatorCleanupRequest)
       returns (TransactionCoordinatorCleanupResponse);
+
+  rpc TransactionCoordinatorDecisionPut(TransactionCoordinatorDecisionPutRequest)
+      returns (TransactionCoordinatorDecisionPutResponse);
+
+  rpc TransactionCoordinatorDecisionGet(TransactionCoordinatorDecisionGetRequest)
+      returns (TransactionCoordinatorDecisionGetResponse);
 
   // Exports all items for the given state type and shards. Fails
   // with `FAILED_PRECONDITION` if the data exceeds the gRPC message

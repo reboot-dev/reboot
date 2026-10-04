@@ -84,6 +84,11 @@ using rbt::v1alpha1::Transaction;
 using rbt::v1alpha1::TransactionCoordinator;
 using rbt::v1alpha1::TransactionCoordinatorCleanupRequest;
 using rbt::v1alpha1::TransactionCoordinatorCleanupResponse;
+using rbt::v1alpha1::TransactionCoordinatorDecision;
+using rbt::v1alpha1::TransactionCoordinatorDecisionGetRequest;
+using rbt::v1alpha1::TransactionCoordinatorDecisionGetResponse;
+using rbt::v1alpha1::TransactionCoordinatorDecisionPutRequest;
+using rbt::v1alpha1::TransactionCoordinatorDecisionPutResponse;
 using rbt::v1alpha1::TransactionCoordinatorPreparedRequest;
 using rbt::v1alpha1::TransactionCoordinatorPreparedResponse;
 using rbt::v1alpha1::TransactionCoordinatorPrepareRequest;
@@ -505,6 +510,14 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       grpc::ServerContext* context,
       const TransactionCoordinatorCleanupRequest* request,
       TransactionCoordinatorCleanupResponse* response) override;
+  grpc::Status TransactionCoordinatorDecisionPut(
+      grpc::ServerContext* context,
+      const TransactionCoordinatorDecisionPutRequest* request,
+      TransactionCoordinatorDecisionPutResponse* response) override;
+  grpc::Status TransactionCoordinatorDecisionGet(
+      grpc::ServerContext* context,
+      const TransactionCoordinatorDecisionGetRequest* request,
+      TransactionCoordinatorDecisionGetResponse* response) override;
   grpc::Status Export(
       grpc::ServerContext* context,
       const ExportRequest* request,
@@ -1149,6 +1162,9 @@ std::string MakeTransactionParticipantKey(
 // legacy semantics where only _prepared_ transactions were persisted,
 // but now we also persist transactions that are _preparing_.
 #define TRANSACTION_COORDINATOR_KEY_PREFIX "prepared-transaction-coordinator"
+// Terminal decisions outlive the coordinator control-loop record.  Do not
+// derive a decision from a missing control-loop key.
+#define TRANSACTION_COORDINATOR_DECISION_KEY_PREFIX "transaction-coordinator-decision"
 
 // Returns a RocksDB key that represents a transaction coordinator,
 // including shard information.
@@ -1159,6 +1175,18 @@ std::string MakeTransactionCoordinatorKey(
       TRANSACTION_COORDINATOR_KEY_PREFIX ":{}:{}",
       shard_id,
       transaction_id);
+}
+
+// The root UUID is insufficient where a coordinator actor identity can be
+// reused. This key has no shard component because Watch must remain available
+// after the coordinator process/control-loop record is gone.
+std::string MakeTransactionCoordinatorDecisionKey(
+    const std::string& transaction_id,
+    const std::string& coordinator_state_ref) {
+  return fmt::format(
+      TRANSACTION_COORDINATOR_DECISION_KEY_PREFIX ":{}:{}",
+      transaction_id,
+      coordinator_state_ref);
 }
 
 // Legacy function for backward compatibility. Returns a key without shard
@@ -3258,6 +3286,69 @@ grpc::Status DatabaseService::TransactionCoordinatorCleanup(
         fmt::format("Failed to cleanup transaction: {}", status.ToString()));
   }
 
+  return grpc::Status::OK;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+grpc::Status DatabaseService::TransactionCoordinatorDecisionPut(
+    grpc::ServerContext* context,
+    const TransactionCoordinatorDecisionPutRequest* request,
+    TransactionCoordinatorDecisionPutResponse* response) {
+  expected<std::string> transaction_id = TransactionIdFromBytes(request->root_transaction_id());
+  if (!transaction_id.has_value()) return grpc::Status(grpc::INVALID_ARGUMENT, transaction_id.error());
+  if (!request->has_decision() || request->decision().coordinator_state_ref().empty()
+      || request->decision().outcome() == TransactionCoordinatorDecision::OUTCOME_UNSPECIFIED) {
+    return grpc::Status(grpc::INVALID_ARGUMENT, "terminal coordinator decision is incomplete");
+  }
+  const TransactionCoordinatorDecision& decision = request->decision();
+  if (decision.outcome() == TransactionCoordinatorDecision::COMMIT
+      && (!decision.has_participants() || decision.participants().should_commit().empty()
+          || !decision.participants().read_only().empty())) {
+    return grpc::Status(grpc::INVALID_ARGUMENT, "commit decision requires nonempty exclusive participants");
+  }
+  if (decision.outcome() == TransactionCoordinatorDecision::ABORT && decision.has_participants()) {
+    return grpc::Status(grpc::INVALID_ARGUMENT, "abort decision must not carry participants");
+  }
+  std::string data;
+  if (!decision.SerializeToString(&data)) return grpc::Status(grpc::UNKNOWN, "failed to serialize coordinator decision");
+  const std::string key = MakeTransactionCoordinatorDecisionKey(*transaction_id, decision.coordinator_state_ref());
+  // GetForUpdate makes the first terminal outcome immutable under concurrent
+  // coordinator/recovery paths; no read-then-overwrite race is permitted.
+  std::unique_ptr<rocksdb::Transaction> transaction(db_->BeginTransaction(DefaultWriteOptions()));
+  std::string existing;
+  rocksdb::Status status = transaction->GetForUpdate(rocksdb::ReadOptions(), rocksdb::Slice(key), &existing);
+  if (status.IsNotFound()) {
+    status = transaction->Put(rocksdb::Slice(key), rocksdb::Slice(data));
+    if (status.ok()) status = transaction->Commit();
+  } else if (status.ok()) {
+    if (existing != data) {
+      transaction->Rollback();
+      return grpc::Status(grpc::FAILED_PRECONDITION, "terminal coordinator decision is immutable");
+    }
+    status = transaction->Commit();
+  }
+  if (!status.ok()) return grpc::Status(grpc::UNKNOWN, fmt::format("failed to persist coordinator decision: {}", status.ToString()));
+  return grpc::Status::OK;
+}
+
+grpc::Status DatabaseService::TransactionCoordinatorDecisionGet(
+    grpc::ServerContext* context,
+    const TransactionCoordinatorDecisionGetRequest* request,
+    TransactionCoordinatorDecisionGetResponse* response) {
+  expected<std::string> transaction_id = TransactionIdFromBytes(request->root_transaction_id());
+  if (!transaction_id.has_value()) return grpc::Status(grpc::INVALID_ARGUMENT, transaction_id.error());
+  if (request->coordinator_state_ref().empty()) return grpc::Status(grpc::INVALID_ARGUMENT, "coordinator state reference is required");
+  std::string data;
+  rocksdb::Status status = db_->Get(rocksdb::ReadOptions(), MakeTransactionCoordinatorDecisionKey(*transaction_id, request->coordinator_state_ref()), &data);
+  if (status.IsNotFound()) return grpc::Status::OK;
+  if (!status.ok()) return grpc::Status(grpc::UNKNOWN, fmt::format("failed to load coordinator decision: {}", status.ToString()));
+  TransactionCoordinatorDecision decision;
+  if (!decision.ParseFromString(data) || decision.coordinator_state_ref() != request->coordinator_state_ref()
+      || decision.outcome() == TransactionCoordinatorDecision::OUTCOME_UNSPECIFIED) {
+    return grpc::Status(grpc::DATA_LOSS, "stored coordinator decision is invalid");
+  }
+  *response->mutable_decision() = std::move(decision);
   return grpc::Status::OK;
 }
 

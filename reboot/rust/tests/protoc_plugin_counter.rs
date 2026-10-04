@@ -282,6 +282,10 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TransactionCoordinatorS
         self.trace.lock().unwrap().push("coordinator DB cleanup");
         Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorCleanupResponse::default()) })
     }
+    fn decision_put(&self, _: reboot::database_proto::TransactionCoordinatorDecisionPutRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorDecisionPutResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("coordinator DB decision");
+        Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorDecisionPutResponse::default()) })
+    }
     fn recover(&self, _: reboot::database_proto::RecoverRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverResponse>, tonic::Status>> + Send + '_>> {
         Box::pin(async { Ok(Vec::new()) })
     }
@@ -422,6 +426,7 @@ async fn generated_transaction_adapter_executes_in_process_protocol_trace() {
         "coordinator DB prepare",
         "participant prepare",
         "coordinator DB prepared",
+        "coordinator DB decision",
         "participant commit",
         "coordinator DB cleanup",
     ]);
@@ -477,6 +482,7 @@ async fn generated_factory_transaction_materializes_default_state_and_rejects_ex
         "coordinator DB prepare",
         "participant prepare",
         "coordinator DB prepared",
+        "coordinator DB decision",
         "participant commit",
         "coordinator DB cleanup",
     ]);

@@ -11,6 +11,7 @@ use reboot::{
         DurableActorParticipant, DurableActorParticipantHost, ParticipantRecovery,
         TonicParticipantSidecar,
     },
+    legacy_coordinator::{DurableCoordinatorWatchHost, TonicCoordinatorWatchEndpoint},
     runtime::{
         InboundTransactionStartFactory, RootTransactionStart, RootTransactionStartFactory,
         TransactionContext, TransactionExecution, TransactionalChannelResolver,
@@ -169,9 +170,18 @@ async fn main() {
     );
     let participant_host = DurableActorParticipantHost::new(participant.clone());
     let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
-        coordinator_sidecar,
+        Arc::clone(&coordinator_sidecar),
         Arc::new(routes.clone()),
     );
+    // Any recovered participant can host the legacy Coordinator route for this
+    // configured coordinator identity. The decision itself is read from the
+    // real C++ sidecar, not a process-local coordinator map.
+    let coordinator_watch = DurableCoordinatorWatchHost::new(
+        coordinator_sidecar,
+        "tests.reboot.protoc.TransactionCounter",
+        "root",
+    )
+    .unwrap();
     let starts = Starts {
         root: root_id,
         child: Uuid::from_u128(2),
@@ -195,6 +205,9 @@ async fn main() {
             .layer(reboot::successful_trailers::SuccessfulParticipantTrailerLayer)
             .add_service(database::participant_server::ParticipantServer::new(
                 participant_host,
+            ))
+            .add_service(database::coordinator_server::CoordinatorServer::new(
+                coordinator_watch,
             ))
             .add_service(
                 proto::transaction_counter_writes_server::TransactionCounterWritesServer::new(
@@ -222,13 +235,22 @@ async fn main() {
         client.increment(request).await.unwrap();
     }
     if has("--recover") {
-        participant
-            .recover(ParticipantRecovery {
-                shard_ids: vec!["s000000000".into()],
-                ..Default::default()
-            })
+        let watch = TonicCoordinatorWatchEndpoint::connect(format!("http://{listen}"))
             .await
             .unwrap();
+        participant
+            .recover_and_watch(
+                ParticipantRecovery {
+                    shard_ids: vec!["s000000000".into()],
+                    ..Default::default()
+                },
+                &watch,
+            )
+            .await
+            .unwrap();
+        if role == "target" {
+            reboot::durable_participant::test_support::signal_watch_terminalized().unwrap();
+        }
         if role == "root" {
             reboot::durable_coordinator::DurableRootCoordinator::new(
                 Arc::new(

@@ -89,6 +89,7 @@ fn host(
     recover: bool,
     invoke: bool,
     marker: Option<&std::path::Path>,
+    watch_terminalized: Option<&std::path::Path>,
 ) -> Child {
     let mut command = Command::new(binary);
     command
@@ -116,6 +117,9 @@ fn host(
     }
     if let Some(marker) = marker {
         command.env("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE", marker);
+    }
+    if let Some(marker) = watch_terminalized {
+        command.env("REBOOT_TEST_TARGET_WATCH_TERMINALIZED", marker);
     }
     command.spawn().unwrap()
 }
@@ -186,6 +190,7 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
         false,
         false,
         None,
+        None,
     );
     wait(target_port);
     let marker_dir = tempfile::tempdir().unwrap();
@@ -201,6 +206,7 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
         false,
         true,
         Some(&marker),
+        None,
     );
     wait(root_port);
     for _ in 0..100 {
@@ -218,6 +224,7 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
     let _ = target.kill();
     let _ = target.wait();
     db.restart();
+    let watch_terminalized = marker_dir.path().join("target-watch-terminalized");
     target = host(
         &binary,
         "target",
@@ -229,8 +236,23 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
         true,
         false,
         None,
+        Some(&watch_terminalized),
     );
     wait(target_port);
+    for _ in 0..100 {
+        if watch_terminalized.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(
+        watch_terminalized.exists(),
+        "target did not receive a Watch decision and terminalize its prepared participant"
+    );
+    assert!(
+        root.try_wait().unwrap().is_some(),
+        "root recovery must remain stopped until target Watch recovery terminalizes"
+    );
     root = host(
         &binary,
         "root",
@@ -241,6 +263,7 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
         root_id,
         true,
         false,
+        None,
         None,
     );
     wait(root_port);
@@ -274,12 +297,11 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
             .into_iter()
             .map(|actor| actor.state.unwrap())
             .collect::<Vec<_>>();
-        // The barrier fires before any participant Prepare.  Those staged
-        // effects are intentionally only in actor memory (the native
-        // Transaction contract says unprepared records must abort on
-        // recovery), so recovery must preserve the initial state rather than
-        // manufacture a commit.
-        assert!(states.iter().all(Vec::is_empty));
+        // The root was killed after persisting the immutable commit decision
+        // but before terminal fan-out. The restarted target's Coordinator.Watch
+        // host reads that decision from the real C++ RocksDB sidecar and commits
+        // its prepared participant without a recovered coordinator process.
+        assert!(states.iter().all(|state| !state.is_empty()));
         assert_eq!(states[0], states[1]);
     });
     let _ = root.kill();

@@ -2054,6 +2054,20 @@ pub mod test_support {
         ) -> Result<Response<database::TransactionCoordinatorCleanupResponse>, Status> {
             Ok(Response::new(Default::default()))
         }
+        async fn transaction_coordinator_decision_put(
+            &self,
+            _: Request<database::TransactionCoordinatorDecisionPutRequest>,
+        ) -> Result<Response<database::TransactionCoordinatorDecisionPutResponse>, Status> {
+            Ok(Response::new(database::TransactionCoordinatorDecisionPutResponse::default()))
+        }
+
+        async fn transaction_coordinator_decision_get(
+            &self,
+            _: Request<database::TransactionCoordinatorDecisionGetRequest>,
+        ) -> Result<Response<database::TransactionCoordinatorDecisionGetResponse>, Status> {
+            Ok(Response::new(database::TransactionCoordinatorDecisionGetResponse::default()))
+        }
+
         async fn export(
             &self,
             _: Request<database::ExportRequest>,

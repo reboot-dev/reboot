@@ -65,6 +65,26 @@ pub trait CoordinatorSidecar: Send + Sync + 'static {
         &self,
         request: database::TransactionCoordinatorCleanupRequest,
     ) -> CoordinatorFuture<'_, database::TransactionCoordinatorCleanupResponse>;
+    fn decision_put(
+        &self,
+        _request: database::TransactionCoordinatorDecisionPutRequest,
+    ) -> CoordinatorFuture<'_, database::TransactionCoordinatorDecisionPutResponse> {
+        Box::pin(async {
+            Err(Status::unimplemented(
+                "durable Coordinator.Watch decisions are required",
+            ))
+        })
+    }
+    fn decision_get(
+        &self,
+        _request: database::TransactionCoordinatorDecisionGetRequest,
+    ) -> CoordinatorFuture<'_, database::TransactionCoordinatorDecisionGetResponse> {
+        Box::pin(async {
+            Err(Status::unimplemented(
+                "durable Coordinator.Watch decisions are required",
+            ))
+        })
+    }
     fn recover(
         &self,
         request: database::RecoverRequest,
@@ -164,6 +184,32 @@ impl CoordinatorSidecar for TonicCoordinatorSidecar {
                 .lock()
                 .await
                 .transaction_coordinator_cleanup(request)
+                .await
+                .map(Response::into_inner)
+        })
+    }
+    fn decision_put(
+        &self,
+        request: database::TransactionCoordinatorDecisionPutRequest,
+    ) -> CoordinatorFuture<'_, database::TransactionCoordinatorDecisionPutResponse> {
+        Box::pin(async move {
+            self.client
+                .lock()
+                .await
+                .transaction_coordinator_decision_put(request)
+                .await
+                .map(Response::into_inner)
+        })
+    }
+    fn decision_get(
+        &self,
+        request: database::TransactionCoordinatorDecisionGetRequest,
+    ) -> CoordinatorFuture<'_, database::TransactionCoordinatorDecisionGetResponse> {
+        Box::pin(async move {
+            self.client
+                .lock()
+                .await
+                .transaction_coordinator_decision_get(request)
                 .await
                 .map(Response::into_inner)
         })
@@ -429,9 +475,6 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 )),
             })
             .await?;
-        #[cfg(feature = "test-support")]
-        test_support::pause_after_coordinator_prepare()?;
-
         for participant in &participants {
             let endpoint = self.resolver.resolve(participant).await?;
             let response = endpoint
@@ -446,6 +489,8 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 )
                 .await?;
             if response.abort {
+                self.persist_abort(transaction_id, &start.coordinator_state_ref)
+                    .await?;
                 self.terminal_all(transaction_id, &participants, false)
                     .await?;
                 return self
@@ -464,6 +509,10 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 ..Default::default()
             })
             .await?;
+        self.persist_commit(transaction_id, &start.coordinator_state_ref, &participants)
+            .await?;
+        #[cfg(feature = "test-support")]
+        test_support::pause_after_durable_decision()?;
         self.terminal_all(transaction_id, &participants, true)
             .await?;
         self.cleanup(transaction_id, &start.coordinator_state_ref)
@@ -525,6 +574,8 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                     }
                 }
                 if abort {
+                    self.persist_abort(transaction_id, &record.state_ref)
+                        .await?;
                     self.terminal_all(transaction_id, &participants, false)
                         .await?;
                     self.cleanup(transaction_id, &record.state_ref).await?;
@@ -542,10 +593,53 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                     })
                     .await?;
             }
+            // A recovered prepared record is a commit decision only after the
+            // immutable Watch record is durable. Direct terminal delivery can
+            // be lost with the coordinator process, so it must remain merely
+            // an optimization after this write.
+            self.persist_commit(transaction_id, &record.state_ref, &participants)
+                .await?;
             self.terminal_all(transaction_id, &participants, true)
                 .await?;
             self.cleanup(transaction_id, &record.state_ref).await?;
         }
+        Ok(())
+    }
+
+    async fn persist_abort(
+        &self,
+        transaction_id: Uuid,
+        coordinator_state_ref: &str,
+    ) -> Result<(), Status> {
+        self.sidecar
+            .decision_put(database::TransactionCoordinatorDecisionPutRequest {
+                root_transaction_id: transaction_id.as_bytes().to_vec(),
+                decision: Some(database::TransactionCoordinatorDecision {
+                    coordinator_state_ref: coordinator_state_ref.to_owned(),
+                    outcome: database::transaction_coordinator_decision::Outcome::Abort as i32,
+                    participants: None,
+                }),
+            })
+            .await?;
+        Ok(())
+    }
+    async fn persist_commit(
+        &self,
+        transaction_id: Uuid,
+        coordinator_state_ref: &str,
+        participants: &[ParticipantTarget],
+    ) -> Result<(), Status> {
+        self.sidecar
+            .decision_put(database::TransactionCoordinatorDecisionPutRequest {
+                root_transaction_id: transaction_id.as_bytes().to_vec(),
+                decision: Some(database::TransactionCoordinatorDecision {
+                    coordinator_state_ref: coordinator_state_ref.to_owned(),
+                    outcome: database::transaction_coordinator_decision::Outcome::Commit as i32,
+                    participants: Self::record(coordinator_state_ref, participants, false)
+                        .participants,
+                }),
+            })
+            .await?;
         Ok(())
     }
 
@@ -713,16 +807,16 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
 /// Test-only, cross-process barrier used by the real Database acceptance host.
 ///
 /// A host enables it by setting `REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE`
-/// to a marker path.  Once the sealed preparing record is durable, the host
-/// creates that marker and waits for its removal.  This deliberately has no
-/// production build surface and lets the acceptance harness kill a process at
-/// the exact durable recovery boundary without replacing any Tonic transport.
+/// to a marker path. Once the immutable commit decision is durable but before
+/// direct terminal fan-out, the host creates that marker and waits for its
+/// removal. This deliberately has no production build surface and lets the
+/// acceptance harness kill the coordinator at the Watch recovery boundary.
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub mod test_support {
     use std::{fs, path::Path, thread, time::Duration};
 
-    pub fn pause_after_coordinator_prepare() -> Result<(), tonic::Status> {
+    pub fn pause_after_durable_decision() -> Result<(), tonic::Status> {
         let Ok(marker) = std::env::var("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE") else {
             return Ok(());
         };
@@ -751,6 +845,7 @@ mod tests {
         DbPrepare(database::TransactionCoordinatorPrepareRequest),
         Prepare(database::PrepareRequest),
         DbPrepared(database::TransactionCoordinatorPreparedRequest),
+        DecisionPut(database::TransactionCoordinatorDecisionPutRequest),
         Commit(database::CommitRequest),
         Cleanup(database::TransactionCoordinatorCleanupRequest),
         Abort(database::AbortRequest),
@@ -785,6 +880,14 @@ mod tests {
         ) -> CoordinatorFuture<'_, database::TransactionCoordinatorCleanupResponse> {
             self.calls.lock().unwrap().push(Call::Cleanup(r));
             self.trace.lock().unwrap().push("database.cleanup");
+            Box::pin(async { Ok(Default::default()) })
+        }
+        fn decision_put(
+            &self,
+            request: database::TransactionCoordinatorDecisionPutRequest,
+        ) -> CoordinatorFuture<'_, database::TransactionCoordinatorDecisionPutResponse> {
+            self.calls.lock().unwrap().push(Call::DecisionPut(request));
+            self.trace.lock().unwrap().push("database.decision");
             Box::pin(async { Ok(Default::default()) })
         }
         fn recover(
@@ -1074,8 +1177,14 @@ mod tests {
             matches!(&db[1], Call::DbPrepared(r) if r.transaction_coordinator.as_ref().is_some_and(|r| !r.preparing))
         );
         assert!(matches!(&participant[1], Call::Commit(r) if r.transaction_id == id.as_bytes()));
+        assert!(matches!(
+            &db[2],
+            Call::DecisionPut(r)
+                if r.root_transaction_id == id.as_bytes()
+                    && r.decision.as_ref().is_some_and(|d| d.outcome == database::transaction_coordinator_decision::Outcome::Commit as i32)
+        ));
         assert!(
-            matches!(&db[2], Call::Cleanup(r) if r.transaction_id == id.as_bytes() && r.coordinator_state_ref == "actor/1")
+            matches!(&db[3], Call::Cleanup(r) if r.transaction_id == id.as_bytes() && r.coordinator_state_ref == "actor/1")
         );
         assert_eq!(
             trace.lock().unwrap().as_slice(),
@@ -1083,8 +1192,9 @@ mod tests {
                 "database.prepare",
                 "participant.prepare",
                 "database.prepared",
+                "database.decision",
                 "participant.commit",
-                "database.cleanup"
+                "database.cleanup",
             ]
         );
     }
@@ -1282,7 +1392,12 @@ mod tests {
         ));
         assert!(matches!(
             sidecar.calls.lock().unwrap().as_slice(),
-            [Call::Recover(_), Call::DbPrepared(_), Call::Cleanup(_)]
+            [
+                Call::Recover(_),
+                Call::DbPrepared(_),
+                Call::DecisionPut(_),
+                Call::Cleanup(_)
+            ]
         ));
         assert_eq!(
             trace.lock().unwrap().as_slice(),
@@ -1290,6 +1405,7 @@ mod tests {
                 "database.recover",
                 "participant.prepare",
                 "database.prepared",
+                "database.decision",
                 "participant.commit",
                 "database.cleanup"
             ]
@@ -1341,7 +1457,7 @@ mod tests {
         ));
         assert!(matches!(
             sidecar.calls.lock().unwrap().as_slice(),
-            [Call::Recover(_), Call::Cleanup(_)]
+            [Call::Recover(_), Call::DecisionPut(_), Call::Cleanup(_)]
         ));
     }
     #[tokio::test]
@@ -1379,7 +1495,7 @@ mod tests {
         ));
         assert!(matches!(
             sidecar.calls.lock().unwrap().as_slice(),
-            [Call::Recover(_), Call::Cleanup(_)]
+            [Call::Recover(_), Call::DecisionPut(_), Call::Cleanup(_)]
         ));
     }
     #[tokio::test]

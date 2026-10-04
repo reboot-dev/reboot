@@ -16,7 +16,10 @@ use prost::Message;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::{database_proto as database, runtime::TransactionMode};
+use crate::{
+    database_proto as database, legacy_coordinator::CoordinatorWatchEndpoint,
+    runtime::TransactionMode,
+};
 
 const STATE_REF_HEADER: &str = "x-reboot-state-ref";
 
@@ -537,6 +540,52 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         Ok(())
     }
 
+    /// Rebuilds ownership and converges it through the legacy Coordinator.Watch
+    /// route selected by the host. An unprepared durable participant is
+    /// fail-closed locally and cannot accept a commit decision.
+    pub async fn recover_and_watch<W: CoordinatorWatchEndpoint>(
+        &self,
+        recovery: ParticipantRecovery,
+        watch: &W,
+    ) -> Result<(), Status> {
+        self.recover(recovery).await?;
+        let pending = self.pending.lock().await;
+        let Some(current) = pending.as_ref() else {
+            return Ok(());
+        };
+        let root_id = current.root_id;
+        let prepared = current.prepared;
+        drop(pending);
+
+        if !prepared {
+            return self.terminal(root_id, false).await;
+        }
+
+        loop {
+            match watch
+                .watch(database::WatchRequest {
+                    transaction_id: root_id.as_bytes().to_vec(),
+                    state_type: self.state_type.clone(),
+                    state_ref: self.state_ref.clone(),
+                })
+                .await
+            {
+                Ok(response) => return self.terminal(root_id, !response.aborted).await,
+                // A status is not an authoritative decision. Mirror Python's
+                // Watch loop by retrying every non-validating failure; task
+                // cancellation still cancels this future rather than being
+                // converted into a terminal participant control.
+                Err(status) if !terminal_watch_failure(&status) => {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                // A validating Watch host deliberately returns membership and
+                // malformed-decision failures. No terminal control is allowed
+                // before a successful, authoritative Watch response.
+                Err(status) => return Err(status),
+            }
+        }
+    }
+
     async fn terminal(&self, transaction_id: Uuid, commit: bool) -> Result<(), Status> {
         let mut pending = self.pending.lock().await;
         // Terminal delivery is deliberately idempotent.  In particular, a
@@ -577,6 +626,31 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             ));
         }
         Ok(())
+    }
+}
+
+fn terminal_watch_failure(status: &Status) -> bool {
+    matches!(
+        status.code(),
+        tonic::Code::InvalidArgument | tonic::Code::FailedPrecondition | tonic::Code::DataLoss
+    )
+}
+
+/// Test-only cross-process acknowledgement used by the real C++ Database
+/// acceptance fixture. It is emitted only after a successful Watch response
+/// has caused the recovered prepared participant's terminal RPC to succeed.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub mod test_support {
+    pub fn signal_watch_terminalized() -> Result<(), tonic::Status> {
+        let Ok(marker) = std::env::var("REBOOT_TEST_TARGET_WATCH_TERMINALIZED") else {
+            return Ok(());
+        };
+        std::fs::write(marker, b"watch-terminalized\n").map_err(|error| {
+            tonic::Status::internal(format!(
+                "cannot create Watch recovery test barrier: {error}"
+            ))
+        })
     }
 }
 
@@ -789,6 +863,29 @@ mod tests {
                 .drain(..)
                 .collect::<Result<Vec<_>, _>>();
             Box::pin(async move { responses })
+        }
+    }
+
+    #[derive(Default)]
+    struct MockWatch {
+        requests: Mutex<Vec<database::WatchRequest>>,
+        responses: Mutex<VecDeque<Result<database::WatchResponse, Status>>>,
+    }
+
+    impl CoordinatorWatchEndpoint for MockWatch {
+        fn watch(
+            &self,
+            request: database::WatchRequest,
+        ) -> crate::legacy_coordinator::CoordinatorWatchFuture<'_, database::WatchResponse>
+        {
+            self.requests.lock().unwrap().push(request);
+            let response = self
+                .responses
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("test must provide a Watch response");
+            Box::pin(async move { response })
         }
     }
 
@@ -1294,5 +1391,154 @@ mod tests {
         assert!(matches!(&calls[0], Call::Recover(_)));
         assert!(matches!(&calls[1], Call::Abort(request) if request.state_ref == "actor/1"));
         assert!(matches!(&calls[2], Call::Load(_)));
+    }
+
+    fn recovered_sidecar(id: Uuid, prepared: bool) -> Arc<MockSidecar> {
+        let sidecar = Arc::new(MockSidecar::default());
+        sidecar
+            .recover_responses
+            .lock()
+            .unwrap()
+            .push_back(Ok(database::RecoverResponse {
+                participant_transactions: vec![recovered_transaction(id, prepared)],
+                ..Default::default()
+            }));
+        sidecar
+    }
+
+    #[tokio::test]
+    async fn recovered_prepared_participant_commits_only_after_watch_commit() {
+        let id = Uuid::from_u128(700);
+        let sidecar = recovered_sidecar(id, true);
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let watch = MockWatch::default();
+        watch
+            .responses
+            .lock()
+            .unwrap()
+            .push_back(Ok(database::WatchResponse { aborted: false }));
+
+        participant
+            .recover_and_watch(recovery(), &watch)
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Recover(_), Call::Commit(_)]
+        ));
+        assert_eq!(
+            watch.requests.lock().unwrap().as_slice(),
+            [database::WatchRequest {
+                transaction_id: id.as_bytes().to_vec(),
+                state_type: "example.Actor".into(),
+                state_ref: "actor/1".into()
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn recovered_prepared_participant_aborts_after_watch_abort() {
+        let id = Uuid::from_u128(701);
+        let sidecar = recovered_sidecar(id, true);
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let watch = MockWatch::default();
+        watch
+            .responses
+            .lock()
+            .unwrap()
+            .push_back(Ok(database::WatchResponse { aborted: true }));
+
+        participant
+            .recover_and_watch(recovery(), &watch)
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Recover(_), Call::Abort(_)]
+        ));
+    }
+
+    #[tokio::test]
+    async fn recovered_unprepared_participant_aborts_without_querying_watch() {
+        let id = Uuid::from_u128(702);
+        let sidecar = recovered_sidecar(id, false);
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let watch = MockWatch::default();
+
+        participant
+            .recover_and_watch(recovery(), &watch)
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Recover(_), Call::Abort(_)]
+        ));
+        assert!(watch.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn retries_internal_watch_failure_before_terminal_control() {
+        let id = Uuid::from_u128(703);
+        let sidecar = recovered_sidecar(id, true);
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let watch = MockWatch::default();
+        watch.responses.lock().unwrap().extend([
+            Err(Status::internal("coordinator temporarily failed")),
+            Ok(database::WatchResponse { aborted: false }),
+        ]);
+
+        participant
+            .recover_and_watch(recovery(), &watch)
+            .await
+            .unwrap();
+
+        assert_eq!(watch.requests.lock().unwrap().len(), 2);
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Recover(_), Call::Commit(_)]
+        ));
+    }
+
+    #[tokio::test]
+    async fn missing_or_foreign_watch_membership_does_not_terminalize_recovery() {
+        for status in [
+            Status::unavailable("decision missing"),
+            Status::failed_precondition(
+                "participant is not a member of the durable commit decision",
+            ),
+        ] {
+            let id = Uuid::new_v4();
+            let sidecar = recovered_sidecar(id, true);
+            let participant =
+                DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+            let watch = MockWatch::default();
+            // Missing is non-definitive, so follow it with foreign membership;
+            // foreign membership is definitive and leaves local state intact.
+            watch.responses.lock().unwrap().extend([
+                Err(status),
+                Err(Status::failed_precondition(
+                    "participant is not a member of the durable commit decision",
+                )),
+            ]);
+            assert_eq!(
+                participant
+                    .recover_and_watch(recovery(), &watch)
+                    .await
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::FailedPrecondition
+            );
+            assert!(matches!(
+                sidecar.calls.lock().unwrap().as_slice(),
+                [Call::Recover(_)]
+            ));
+        }
     }
 }

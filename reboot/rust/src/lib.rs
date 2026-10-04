@@ -18,6 +18,7 @@ pub mod build;
 pub mod codegen;
 pub mod durable_coordinator;
 pub mod durable_participant;
+pub mod legacy_coordinator;
 pub mod native_2pc;
 pub mod placement;
 /// Planner DTOs only: the Rust SDK deliberately does not expose planner gRPC
