@@ -14,12 +14,14 @@ use std::{
 use tonic::Status;
 
 use crate::{
+    database_proto,
     native_2pc::{
-        Native2pcCoordinatorEndpoint, Native2pcCoordinatorResolver, Native2pcParticipantEndpoint,
-        Native2pcParticipantResolver, Native2pcPlacementPlan, Native2pcRoute, Native2pcShardRoute,
-        NativeActorId, NativeFuture, TonicNative2pcCoordinatorEndpoint,
-        TonicNative2pcDatabaseSidecar, TonicNative2pcParticipantEndpoint,
-        get_materialized_native_state,
+        Native2pcCoordinatorEndpoint, Native2pcCoordinatorResolver, Native2pcDatabaseSidecar,
+        Native2pcParticipantEndpoint, Native2pcParticipantResolver, Native2pcPlacementPlan,
+        Native2pcRoute, Native2pcShardRoute, NativeActorId, NativeFuture,
+        TonicNative2pcCoordinatorEndpoint, TonicNative2pcDatabaseSidecar,
+        TonicNative2pcParticipantEndpoint, get_materialized_native_state,
+        recovered_state_only_journal_participant,
     },
     placement_proto as proto,
 };
@@ -274,6 +276,23 @@ impl TonicApplicationNative2pcResolver {
         let channel = self.connect(actor.clone()).await?;
         let sidecar = TonicNative2pcDatabaseSidecar::new(channel);
         get_materialized_native_state(&sidecar, actor).await
+    }
+
+    /// Makes one native-only materialization attempt for a recovered state-only
+    /// journal. The journal's encoded participant is the sole route selector;
+    /// failures are propagated without fallback, retry, or terminal decisions.
+    pub async fn materialize_recovered_state_only_journal(
+        &self,
+        recovery: &database_proto::Native2pcRecoverResponse,
+    ) -> Result<database_proto::Native2pcMaterializeAppliedResponse, Status> {
+        let (applied_journal, participant) = recovered_state_only_journal_participant(recovery)?;
+        let channel = self.connect(participant).await?;
+        let sidecar = TonicNative2pcDatabaseSidecar::new(channel);
+        sidecar
+            .materialize_applied(database_proto::Native2pcMaterializeAppliedRequest {
+                applied_journal,
+            })
+            .await
     }
 
     fn connect(&self, actor: NativeActorId) -> NativeFuture<'_, tonic::transport::Channel> {

@@ -738,6 +738,109 @@ async fn native_routed_materialized_state_read_conforms_to_real_cxx_sidecar() {
     );
 }
 
+#[tokio::test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+async fn native_routed_recovered_journal_materializes_once_through_real_cxx_sidecar() {
+    let database = spawn_cxx_database().await;
+    let sidecar = TonicNative2pcDatabaseSidecar::connect(database.endpoint.clone())
+        .await
+        .unwrap();
+    let coordinator =
+        NativeActorId::new("example.Coordinator", "coordinator/routed-recovery").unwrap();
+    let participant = NativeActorId::new("example.Participant", "routed/recovery").unwrap();
+    let requests = Native2pcRequests::new(
+        NativeTransactionId::new([84; 16]).unwrap(),
+        coordinator,
+        NativeEnrollment::new([participant.clone()], [8, 4]).unwrap(),
+    );
+    let (staged, prepared) = requests
+        .singleton_state_only_initial_participant(Some(b"recovered-routed-state".to_vec()))
+        .unwrap();
+    sidecar
+        .put_coordinator(requests.put_coordinator_preparing())
+        .await
+        .unwrap();
+    sidecar.stage_participant(staged).await.unwrap();
+    sidecar.put_participant(prepared).await.unwrap();
+    sidecar
+        .put_commit_decision(requests.put_commit_decision())
+        .await
+        .unwrap();
+    let terminal = requests.terminal(&participant, true);
+    sidecar.terminal_participant(terminal).await.unwrap();
+    let recovery = sidecar
+        .recover()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|record| record.applied.is_some())
+        .unwrap();
+
+    let address = database.endpoint.strip_prefix("http://").unwrap();
+    let (host, port) = address.rsplit_once(':').unwrap();
+    let placement = PlanOnlyNative2pcPlacement::new();
+    placement
+        .install(placement_proto::ListenForPlanResponse {
+            plan: Some(placement_proto::Plan {
+                version: 1,
+                applications: vec![placement_proto::plan::Application {
+                    id: "app".into(),
+                    services: vec![],
+                    shards: vec![placement_proto::plan::application::Shard {
+                        id: "root".into(),
+                        range: Some(placement_proto::plan::application::shard::KeyRange {
+                            first_key: vec![],
+                        }),
+                        server_id: "server".into(),
+                        replica_index: 0,
+                    }],
+                }],
+            }),
+            servers: vec![placement_proto::Server {
+                id: "server".into(),
+                application_id: "app".into(),
+                revision_number: 0,
+                address: Some(placement_proto::server::Address {
+                    host: host.into(),
+                    port: port.parse().unwrap(),
+                }),
+                namespace: String::new(),
+                file_descriptor_set: None,
+                reboot_version: String::new(),
+            }],
+        })
+        .unwrap();
+    let resolver = TonicApplicationNative2pcResolver::new(
+        placement
+            .application(NativeApplicationId::new("app").unwrap())
+            .unwrap(),
+    );
+    let mut forged = recovery.clone();
+    forged.applied.as_mut().unwrap().participant = Some(proto::Native2pcActorId {
+        state_type: "example.Participant".into(),
+        state_ref: "forged/route".into(),
+    });
+    assert_eq!(
+        resolver
+            .materialize_recovered_state_only_journal(&forged)
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::DataLoss
+    );
+    resolver
+        .materialize_recovered_state_only_journal(&recovery)
+        .await
+        .unwrap();
+    assert_eq!(
+        resolver
+            .get_materialized_native_state(&participant)
+            .await
+            .unwrap(),
+        b"recovered-routed-state"
+    );
+}
+
 /// The committed-singleton recovery primitive must admit only an exact C++
 /// durable snapshot and reject state/opaque mismatches before materialization.
 #[tokio::test]

@@ -513,6 +513,30 @@ fn validate_recovery_response(response: &proto::Native2pcRecoverResponse) -> Res
     Ok(())
 }
 
+/// Extract the only participant allowed to select a routed materialization
+/// endpoint. The participant comes from the byte-exact journal, never a caller
+/// or a projection. This does not decide, retry, or materialize anything.
+pub fn recovered_state_only_journal_participant(
+    response: &proto::Native2pcRecoverResponse,
+) -> Result<(Vec<u8>, NativeActorId), Status> {
+    validate_recovery_response(response)?;
+    let journal = response.applied_journal.clone();
+    let applied = proto::Native2pcAppliedActorEffects::decode(journal.as_slice())
+        .map_err(|_| Status::data_loss("malformed native recovery applied journal bytes"))?;
+    validate_state_only_applied(&applied)?;
+    let participant = applied
+        .participant
+        .as_ref()
+        .ok_or_else(|| Status::data_loss("native recovered journal lacks participant identity"))?;
+    Ok((
+        journal,
+        NativeActorId::new(
+            participant.state_type.clone(),
+            participant.state_ref.clone(),
+        )?,
+    ))
+}
+
 fn validate_participant_request(
     request: &proto::Native2pcPutParticipantRequest,
 ) -> Result<(), Status> {
