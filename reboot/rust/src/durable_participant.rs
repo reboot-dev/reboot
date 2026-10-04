@@ -261,13 +261,25 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         state_type: impl Into<String>,
         state_ref: impl Into<String>,
     ) -> Self {
+        let state_type = state_type.into();
+        let state_ref = state_ref.into();
         Self {
             sidecar,
-            state_type: state_type.into(),
-            state_ref: state_ref.into(),
+            // A participant may be hosted by a sidecar unrelated to any
+            // DatabaseActorStore, so its default gate is actor-local. Mixed
+            // generated adapters bind it to their exact store below.
             lock: Arc::new(tokio::sync::Mutex::new(())),
+            state_type,
+            state_ref,
             pending: Arc::new(tokio::sync::Mutex::new(None)),
         }
+    }
+
+    /// Binds this not-yet-started participant to normal accesses through one
+    /// exact Database sidecar.
+    pub fn with_database_actor_gate(mut self, store: &crate::runtime::DatabaseActorStore) -> Self {
+        self.lock = store.actor_gate(&self.state_type, &self.state_ref);
+        self
     }
 
     /// Acquires the actor's exclusive lock and loads its current state.

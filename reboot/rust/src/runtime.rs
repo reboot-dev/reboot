@@ -766,6 +766,32 @@ struct ActorLockKey {
 static DATABASE_ACTOR_LOCKS: LazyLock<Mutex<HashMap<ActorLockKey, Weak<tokio::sync::Mutex<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// Returns the process-local gate shared by normal actor access and an
+/// exclusive durable participant for this exact actor identity.
+fn same_actor_gate(
+    endpoint: &str,
+    state_type: &str,
+    state_ref: &str,
+) -> Arc<tokio::sync::Mutex<()>> {
+    let key = ActorLockKey {
+        endpoint: endpoint.to_owned(),
+        state_type: state_type.to_owned(),
+        state_ref: state_ref.to_owned(),
+    };
+    let mut registry = DATABASE_ACTOR_LOCKS
+        .lock()
+        .expect("database actor-lock registry mutex poisoned");
+    registry.retain(|_, lock| lock.strong_count() > 0);
+    match registry.get(&key).and_then(Weak::upgrade) {
+        Some(lock) => lock,
+        None => {
+            let lock = Arc::new(tokio::sync::Mutex::new(()));
+            registry.insert(key, Arc::downgrade(&lock));
+            lock
+        }
+    }
+}
+
 /// An in-memory host for the generated `EchoMethods` Tonic service.
 ///
 /// Clones share all actors. State is process-local and is lost when the host is
@@ -1061,7 +1087,6 @@ impl RebootState for proto::Counter {
 pub struct DatabaseActorStore {
     database: database::database_client::DatabaseClient<tonic::transport::Channel>,
     endpoint: String,
-    actor_locks: Arc<Mutex<HashMap<ActorLockKey, Arc<tokio::sync::Mutex<()>>>>>,
 }
 
 impl DatabaseActorStore {
@@ -1072,38 +1097,29 @@ impl DatabaseActorStore {
         Ok(Self {
             database: database::database_client::DatabaseClient::connect(endpoint).await?,
             endpoint: endpoint_uri,
-            actor_locks: Arc::new(Mutex::new(HashMap::new())),
+        })
+    }
+
+    /// Creates a store whose channel connects on its first request.
+    pub fn connect_lazy(endpoint: impl AsRef<str>) -> Result<Self, tonic::transport::Error> {
+        let endpoint = tonic::transport::Endpoint::from_shared(endpoint.as_ref().to_owned())?;
+        let endpoint_uri = endpoint.uri().to_string();
+        Ok(Self {
+            database: database::database_client::DatabaseClient::new(endpoint.connect_lazy()),
+            endpoint: endpoint_uri,
         })
     }
 
     fn lock_for_type(&self, state_type: &str, state_ref: &str) -> Arc<tokio::sync::Mutex<()>> {
-        let key = ActorLockKey {
-            endpoint: self.endpoint.clone(),
-            state_type: state_type.to_owned(),
-            state_ref: state_ref.to_owned(),
-        };
-        let mut locks = self
-            .actor_locks
-            .lock()
-            .expect("actor-lock map mutex poisoned");
-        if let Some(lock) = locks.get(&key) {
-            return lock.clone();
-        }
+        same_actor_gate(&self.endpoint, state_type, state_ref)
+    }
 
-        let mut registry = DATABASE_ACTOR_LOCKS
-            .lock()
-            .expect("database actor-lock registry mutex poisoned");
-        registry.retain(|_, lock| lock.strong_count() > 0);
-        let lock = match registry.get(&key).and_then(Weak::upgrade) {
-            Some(lock) => lock,
-            None => {
-                let lock = Arc::new(tokio::sync::Mutex::new(()));
-                registry.insert(key.clone(), Arc::downgrade(&lock));
-                lock
-            }
-        };
-        locks.insert(key, lock.clone());
-        lock
+    /// Returns the exact per-sidecar actor gate used by normal store access.
+    ///
+    /// Durable transaction participants for this Database sidecar must use the
+    /// same gate so an exclusive transaction cannot race a normal method.
+    pub fn actor_gate(&self, state_type: &str, state_ref: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.lock_for_type(state_type, state_ref)
     }
 
     /// Loads the current state for an actor, if it has been stored.
@@ -2168,6 +2184,22 @@ mod tests {
             admit_state(Some(7_u32), StateAdmission::RequireExisting).unwrap(),
             7
         );
+    }
+
+    #[tokio::test]
+    async fn actor_gates_share_only_the_same_normalized_sidecar_endpoint() {
+        let first = DatabaseActorStore::connect_lazy("http://127.0.0.1:41001").unwrap();
+        let same_sidecar = DatabaseActorStore::connect_lazy("http://127.0.0.1:41001").unwrap();
+        let other_sidecar = DatabaseActorStore::connect_lazy("http://127.0.0.1:41002").unwrap();
+        let first_gate = first.actor_gate("example.Actor", "actor/1");
+        assert!(Arc::ptr_eq(
+            &first_gate,
+            &same_sidecar.actor_gate("example.Actor", "actor/1"),
+        ));
+        assert!(!Arc::ptr_eq(
+            &first_gate,
+            &other_sidecar.actor_gate("example.Actor", "actor/1"),
+        ));
     }
     use crate::ExternalContext;
     use std::collections::BTreeMap;

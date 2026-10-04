@@ -512,12 +512,10 @@ fn emit_durable(
     let has_transactions = methods
         .iter()
         .any(|(kind, _, _, _, _)| matches!(kind, DurableKind::Transaction(_)));
-    if has_transactions && !database_methods.is_empty() {
-        return Err(format!(
-            "{file}: service `{service_name}` mixes transaction methods with reader/writer methods; the Rust transaction foundation cannot implement a partial Tonic service until a transaction runtime exists"
-        ));
-    }
-    if !database_methods.is_empty() {
+    // A mixed durable service has one Tonic trait, therefore it must have one
+    // adapter implementing every declared method. Database-only services keep
+    // their smaller adapter; mixed services are emitted below.
+    if !database_methods.is_empty() && !has_transactions {
         let handler = format!("{service_name}DatabaseHandler");
         let adapter = format!("{service_name}DatabaseAdapter");
         let server = format!("{}_server", snake_case(service_name));
@@ -539,7 +537,7 @@ fn emit_durable(
                     DurableKind::Writer(WriterMetadata { constructor: true })
                 )
             });
-        for (kind, method, request, response, method_identity) in database_methods {
+        for (kind, method, request, response, method_identity) in &database_methods {
             let (envelope, prefix) = match kind {
                 DurableKind::Writer(WriterMetadata { constructor: true }) => (
                     "constructor_writer_async_for_method",
@@ -567,7 +565,14 @@ fn emit_durable(
         output.push_str("}\n\n");
     }
     emit_transactional_client(output, service_name, &state, runtime_module, &methods)?;
-    emit_transactions(output, service_name, &state, runtime_module, &methods)?;
+    emit_transactions(
+        output,
+        service_name,
+        &state,
+        runtime_module,
+        &methods,
+        &database_methods,
+    )?;
     Ok(())
 }
 
@@ -602,6 +607,7 @@ fn emit_transactions(
     state: &str,
     runtime_module: &str,
     methods: &[(&DurableKind, String, String, String, String)],
+    database_methods: &[&(&DurableKind, String, String, String, String)],
 ) -> Result<(), String> {
     let transactions: Vec<_> = methods
         .iter()
@@ -616,6 +622,9 @@ fn emit_transactions(
     let server = format!("{}_server", snake_case(service_name));
     output.push_str("#[tonic::async_trait]\n");
     output.push_str(&format!("pub trait {handler}: Send + Sync + 'static {{\n"));
+    for (kind, method, request, response, _) in database_methods {
+        output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n", if matches!(**kind, DurableKind::Writer(_)) { "&mut " } else { "&" }));
+    }
     for (kind, method, request, response, _) in &transactions {
         let metadata = match kind {
             DurableKind::Transaction(metadata) => metadata,
@@ -629,9 +638,59 @@ fn emit_transactions(
         output.push_str(&format!("    /// Transaction mode declared by this RPC: {mode}.\n    /// Factory transaction declared by this RPC: {factory}.\n    async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionExecution<proto::{response}>, tonic::Status>;\n"));
     }
     output.push_str("}\n\n");
-    output.push_str(&format!("/// Executable Tonic adapter for one fresh, same-actor exclusive root transaction or one validated inbound nested transaction.\n///\n/// The host must inject the participant sidecar, coordinator sidecar, resolver,\n/// and transaction-start factory. Inbound calls receive a host-supplied child ID,\n/// stage only their local participant, and return it through the successful trailer seam; they never drive the root coordinator. This adapter does not choose routing, placement, a clock, or a transaction UUID.\npub struct {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ handler: std::sync::Arc<H>, participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: std::sync::Arc<F> }}\nimpl<H, P, C, R, F> Clone for {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ fn clone(&self) -> Self {{ Self {{ handler: self.handler.clone(), participant: self.participant.clone(), coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator::new(self.coordinator.sidecar(), self.coordinator.resolver()), root_start: self.root_start.clone() }} }} }}\nimpl<H, P, C, R, F> {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ pub fn new(participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: F, handler: H) -> Self {{ Self {{ handler: std::sync::Arc::new(handler), participant, coordinator, root_start: std::sync::Arc::new(root_start) }} }} }}\n\n"));
+    let (store_field, store_clone, store_argument, store_init, participant_bind) =
+        if database_methods.is_empty() {
+            (
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+            )
+        } else {
+            (
+                format!("store: {runtime_module}::runtime::DatabaseActorStore, "),
+                "store: self.store.clone(), ".to_owned(),
+                format!("store: {runtime_module}::runtime::DatabaseActorStore, "),
+                "store, ".to_owned(),
+                "let participant = participant.with_database_actor_gate(&store); ".to_owned(),
+            )
+        };
+    output.push_str(&format!("/// Executable Tonic adapter for one fresh, same-actor exclusive root transaction or one validated inbound nested transaction.\n///\n/// The host must inject the participant sidecar, coordinator sidecar, resolver,\n/// and transaction-start factory. Inbound calls receive a host-supplied child ID,\n/// stage only their local participant, and return it through the successful trailer seam; they never drive the root coordinator. This adapter does not choose routing, placement, a clock, or a transaction UUID.\npub struct {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ {store_field}handler: std::sync::Arc<H>, participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: std::sync::Arc<F> }}\nimpl<H, P, C, R, F> Clone for {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ fn clone(&self) -> Self {{ Self {{ {store_clone}handler: self.handler.clone(), participant: self.participant.clone(), coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator::new(self.coordinator.sidecar(), self.coordinator.resolver()), root_start: self.root_start.clone() }} }} }}\nimpl<H, P, C, R, F> {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ pub fn new({store_argument}participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: F, handler: H) -> Self {{ {participant_bind}Self {{ {store_init}handler: std::sync::Arc::new(handler), participant, coordinator, root_start: std::sync::Arc::new(root_start) }} }} }}\n\n"));
     output.push_str("#[tonic::async_trait]\n");
     output.push_str(&format!("impl<H, P, C, R, F> proto::{server}::{service_name} for {adapter}<H, P, C, R, F> where H: {handler}, P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{\n"));
+    let requires_constructor = !database_methods.is_empty()
+        && database_methods.iter().any(|(kind, _, _, _, _)| {
+            matches!(
+                **kind,
+                DurableKind::Writer(WriterMetadata { constructor: true })
+            )
+        });
+    for (kind, method, request, response, method_identity) in database_methods {
+        let (envelope, prefix) = match kind {
+            DurableKind::Writer(WriterMetadata { constructor: true }) => (
+                "constructor_writer_async_for_method",
+                format!("\"{method_identity}\", "),
+            ),
+            DurableKind::Reader if requires_constructor => (
+                "reader_async_for_with_admission",
+                format!("{runtime_module}::runtime::StateAdmission::RequireExisting, "),
+            ),
+            DurableKind::Reader => ("reader_async_for", String::new()),
+            DurableKind::Writer(_) if requires_constructor => (
+                "writer_async_for_method_with_admission",
+                format!(
+                    "\"{method_identity}\", {runtime_module}::runtime::StateAdmission::RequireExisting, "
+                ),
+            ),
+            DurableKind::Writer(_) => (
+                "writer_async_for_method",
+                format!("\"{method_identity}\", "),
+            ),
+            DurableKind::Transaction(_) => unreachable!("transactions are filtered above"),
+        };
+        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await }})\n            }},\n        ).await\n    }}\n"));
+    }
     for (kind, method, request, response, _) in transactions {
         let metadata = match kind {
             DurableKind::Transaction(metadata) => metadata,
@@ -1227,7 +1286,7 @@ mod tests {
     }
 
     #[test]
-    fn mixed_transaction_and_database_methods_are_rejected_before_emitting_partial_tonic_impl() {
+    fn mixed_transaction_and_database_methods_emit_one_complete_tonic_adapter() {
         let annotations = HashMap::from([(
             "counter.proto".to_owned(),
             HashMap::from([(
@@ -1260,8 +1319,16 @@ mod tests {
                 output_type: Some(".tests.reboot.protoc.CounterValue".to_owned()),
                 ..Default::default()
             });
-        let error = generate_inner(value, annotations).unwrap_err();
-        assert!(error.contains("mixes transaction methods with reader/writer methods"));
+        let content = generate_inner(value, annotations)
+            .unwrap()
+            .remove(0)
+            .content
+            .unwrap();
+        assert!(content.contains("pub trait CounterWritesTransactionHandler"));
+        assert!(content.contains("async fn increment(&self, state: &mut proto::Counter"));
+        assert!(content.contains("async fn transaction(&self, context:"));
+        assert!(content.contains("pub struct CounterWritesTransactionAdapter"));
+        assert!(content.contains("store: reboot_rust_schema::runtime::DatabaseActorStore"));
     }
 
     #[test]

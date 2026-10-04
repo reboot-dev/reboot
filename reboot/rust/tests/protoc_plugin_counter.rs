@@ -191,6 +191,25 @@ struct TransactionCounter {
 
 #[tonic::async_trait]
 impl transaction_generated::TransactionCounterWritesTransactionHandler for TransactionCounter {
+    async fn read(
+        &self,
+        state: &proto::TransactionCounter,
+        _: proto::TransactionIncrementRequest,
+    ) -> Result<proto::TransactionCounterValue, tonic::Status> {
+        self.trace.lock().unwrap().push("reader handler");
+        Ok(proto::TransactionCounterValue { value: state.value })
+    }
+
+    async fn write(
+        &self,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<proto::TransactionCounterValue, tonic::Status> {
+        self.trace.lock().unwrap().push("writer handler");
+        state.value += request.amount;
+        Ok(proto::TransactionCounterValue { value: state.value })
+    }
+
     async fn increment(
         &self,
         _: &reboot::runtime::TransactionContext,
@@ -334,6 +353,24 @@ fn transaction_adapter(
     reboot::durable_coordinator::SingleParticipantResolver<TransactionParticipantSidecar>,
     TransactionStartFactory,
 > {
+    transaction_adapter_with_store(
+        trace,
+        fail,
+        DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+    )
+}
+
+fn transaction_adapter_with_store(
+    trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+    fail: bool,
+    store: DatabaseActorStore,
+) -> transaction_generated::TransactionCounterWritesTransactionAdapter<
+    TransactionCounter,
+    TransactionParticipantSidecar,
+    TransactionCoordinatorSidecar,
+    reboot::durable_coordinator::SingleParticipantResolver<TransactionParticipantSidecar>,
+    TransactionStartFactory,
+> {
     let participant = reboot::durable_participant::DurableActorParticipant::new(
         Arc::new(TransactionParticipantSidecar {
             trace: Arc::clone(&trace),
@@ -354,6 +391,7 @@ fn transaction_adapter(
         ).unwrap()),
     );
     transaction_generated::TransactionCounterWritesTransactionAdapter::new(
+        store,
         participant,
         coordinator,
         TransactionStartFactory,
@@ -373,6 +411,7 @@ fn factory_transaction_adapter(
     reboot::durable_coordinator::SingleParticipantResolver<TransactionParticipantSidecar>,
     TransactionStartFactory,
 > {
+    let store = DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap();
     let participant = reboot::durable_participant::DurableActorParticipant::new(
         Arc::new(TransactionParticipantSidecar {
             trace: Arc::clone(&trace),
@@ -393,6 +432,7 @@ fn factory_transaction_adapter(
         ).unwrap()),
     );
     transaction_generated::TransactionCounterWritesTransactionAdapter::new(
+        store,
         participant,
         coordinator,
         TransactionStartFactory,
@@ -640,6 +680,69 @@ async fn generated_transaction_adapter_emits_inbound_participant_only_in_raw_suc
     );
     assert_eq!(*trace.lock().unwrap(), ["participant load", "handler"]);
     server.abort();
+}
+
+#[tokio::test]
+async fn generated_mixed_service_mounts_and_dispatches_database_and_transaction_methods() {
+    let (database_endpoint, _, database_server) = start_database().await;
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let adapter = transaction_adapter_with_store(
+        Arc::clone(&trace),
+        false,
+        DatabaseActorStore::connect(&database_endpoint).await.unwrap(),
+    );
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .layer(reboot::successful_trailers::SuccessfulParticipantTrailerLayer)
+            .add_service(
+                proto::transaction_counter_writes_server::TransactionCounterWritesServer::new(adapter),
+            )
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+    let mut client = proto::transaction_counter_writes_client::TransactionCounterWritesClient::connect(
+        format!("http://{address}"),
+    )
+    .await
+    .unwrap();
+    let context = ExternalContext::new("transaction-counter");
+    assert_eq!(
+        client
+            .read(context.reader(proto::TransactionIncrementRequest { amount: 0 }).unwrap())
+            .await
+            .unwrap()
+            .into_inner()
+            .value,
+        0
+    );
+    assert_eq!(
+        client
+            .write(
+                context
+                    .writer_with_key(proto::TransactionIncrementRequest { amount: 2 }, Uuid::from_u128(301))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .into_inner()
+            .value,
+        2
+    );
+    let mut transaction = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+    *transaction.metadata_mut() = reboot::RebootHeaders::new("transaction-counter").to_metadata().unwrap();
+    assert_eq!(client.increment(transaction).await.unwrap().into_inner().value, 7);
+    let mut factory = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+    *factory.metadata_mut() = reboot::RebootHeaders::new("transaction-counter").to_metadata().unwrap();
+    assert_eq!(client.factory_increment(factory).await.unwrap_err().code(), tonic::Code::FailedPrecondition);
+    assert_eq!(
+        *trace.lock().unwrap(),
+        ["reader handler", "writer handler", "participant load", "handler", "coordinator DB prepare", "participant prepare", "coordinator DB prepared", "coordinator DB decision", "participant commit", "coordinator DB cleanup", "participant load", "participant abort"]
+    );
+    server.abort();
+    database_server.abort();
 }
 
 #[tokio::test]
