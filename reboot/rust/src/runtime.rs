@@ -68,6 +68,24 @@ impl<Response> TransactionExecution<Response> {
     }
 }
 
+/// Opaque context passed only to a fresh, single-actor shared-root handler.
+///
+/// It deliberately exposes no transaction metadata, routing, enlistment,
+/// task, idempotency, or returned-participant capability. The generated
+/// adapter owns those boundaries and detects a local state change after the
+/// handler returns.
+#[derive(Debug)]
+pub struct SharedLocalTransactionContext {
+    _private: (),
+}
+
+impl SharedLocalTransactionContext {
+    #[doc(hidden)]
+    pub fn new_for_generated_adapter() -> Self {
+        Self { _private: () }
+    }
+}
+
 /// Idempotency identity derived from validated transaction metadata for one
 /// generated root-exclusive mutation.
 ///

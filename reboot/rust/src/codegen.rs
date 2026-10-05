@@ -1462,23 +1462,34 @@ fn emit_shared_transaction_method(output: &mut String, flow: TransactionFlow<'_>
             ..flow
         },
     );
-    output.push_str("        } else {\n            // Fresh shared roots are deliberately read-only until the local\n            // ownership seam can use start_local(SharedUpgradeable) together\n            // with a coordinator completion API. Do not promote here.\n");
-    emit_transaction_flow(
-        output,
-        TransactionFlow {
-            inbound: TransactionInbound::KnownFreshRoot,
-            shared_root_ownership_seam: true,
-            ..flow
-        },
-    );
+    output.push_str("        } else {\n");
+    emit_fresh_shared_local_flow(output, flow);
     output.push_str("        }\n    }\n");
+}
+
+/// Renders the bounded fresh-shared local vertical. It excludes inbound,
+/// factory, remote, and multi-participant shapes by construction.
+fn emit_fresh_shared_local_flow(output: &mut String, flow: TransactionFlow<'_>) {
+    let TransactionFlow {
+        method,
+        state,
+        declaration,
+        runtime_module,
+        factory,
+        ..
+    } = flow;
+    debug_assert!(
+        !factory,
+        "shared factories are outside the bounded vertical"
+    );
+    let prefix = "            ";
+    output.push_str(&format!("{prefix}let mut context = {runtime_module}::runtime::start_root_transaction(headers, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, {runtime_module}::runtime::TransactionMode::Shared, self.root_start.as_ref())?.transaction().clone();\n{prefix}context.enable_read_only_aware();\n{prefix}let local = self.participant.start_local({runtime_module}::durable_participant::ActorTransactionStart {{ transaction_ids: context.transaction_ids().to_vec(), transaction_path: {runtime_module}::durable_participant::TransactionPathContract::RootOnly, coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), mode: {runtime_module}::runtime::TransactionMode::Shared, read_only: false, factory: false, state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, {runtime_module}::durable_participant::ParticipantStartMode::SharedUpgradeable).await?;\n{prefix}let mut state = match local.state_bytes() {{ Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes.as_slice()) {{ Ok(state) => state, Err(error) => return Err(tonic::Status::failed_precondition(format!(\"stored actor state is not a valid {state}: {{error}}\"))), }}, None => return Err(tonic::Status::failed_precondition(\"non-factory transaction requires an existing actor state\")), }};\n{prefix}let initial_state = <proto::{state} as prost::Message>::encode_to_vec(&state);\n{prefix}let response = self.handler.{method}_fresh_shared(&{runtime_module}::runtime::SharedLocalTransactionContext::new_for_generated_adapter(), &mut state, request.into_inner()).await?;\n{prefix}let final_state = <proto::{state} as prost::Message>::encode_to_vec(&state);\n{prefix}let promotion = local.stage({runtime_module}::durable_participant::PendingActorEffects {{ state: (initial_state != final_state).then_some(final_state), task_upserts: Vec::new(), idempotent_mutations: Vec::new() }}).await?;\n{prefix}let start = {runtime_module}::durable_coordinator::RootCoordinatorStart {{ transaction_ids: context.transaction_ids().to_vec(), coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), participant: {runtime_module}::durable_coordinator::ParticipantTarget {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, mode: {runtime_module}::runtime::TransactionMode::Shared, read_only: promotion.is_none(), factory: false, placement_requested: false }};\n{prefix}match promotion {{ Some(promotion) => self.coordinator.complete_shared_local_promotion(start, local.into_shared_local_promotion(promotion)?).await?, None => {{ drop(local); self.coordinator.complete_with_classified_returned_participants(start, Vec::new()).await?; }} }}\n{prefix}Ok(tonic::Response::new(response))\n"));
 }
 
 #[derive(Clone, Copy)]
 enum TransactionInbound {
     Dynamic,
     KnownInbound,
-    KnownFreshRoot,
 }
 
 #[derive(Clone, Copy)]
@@ -1529,14 +1540,7 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
             "Vec::new()".to_owned(),
             "if let Some(metadata) = participant_metadata { reboot_metadata } else { coordinator_completion }".to_owned(),
         ),
-        TransactionInbound::KnownFreshRoot => (
-            format!("let mut context = {runtime_module}::runtime::start_root_transaction(headers, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, {runtime_module}::runtime::TransactionMode::{mode}, self.root_start.as_ref())?.transaction().clone();"),
-            format!("{runtime_module}::durable_participant::TransactionPathContract::RootOnly"),
-            "if false".to_owned(),
-            "None".to_owned(),
-            "context.take_returned_participants()".to_owned(),
-            "if let Some(metadata) = participant_metadata { reboot_metadata } else { coordinator_completion }".to_owned(),
-        ),
+
     };
     let prefix = if matches!(inbound, TransactionInbound::Dynamic) {
         "        "
@@ -1601,6 +1605,9 @@ fn emit_transactions(
         };
         let factory = if metadata.factory { "yes" } else { "no" };
         output.push_str(&format!("    /// Transaction mode declared by this RPC: {mode}.\n    /// Factory transaction declared by this RPC: {factory}.\n    async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionExecution<proto::{response}>, tonic::Status>;\n"));
+        if matches!(metadata.mode, TransactionMode::Shared) {
+            output.push_str(&format!("    /// Fresh shared-root local execution only; this context has no transaction capabilities.\n    async fn {method}_fresh_shared(&self, context: &{runtime_module}::runtime::SharedLocalTransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n"));
+        }
     }
     output.push_str("}\n\n");
     let (store_field, store_clone, store_argument, store_init, participant_bind) =
@@ -3698,17 +3705,12 @@ mod tests {
             content.contains("// Shared inbound execution remains read-only; it never promotes.")
         );
         assert!(content.contains("transaction_path: reboot_rust_schema::durable_participant::TransactionPathContract::PreserveNested"));
-        assert!(
-            content.contains("// Fresh shared roots are deliberately read-only until the local")
-        );
-        assert!(content.contains("ownership seam can use start_local(SharedUpgradeable) together"));
-        assert!(content.contains("transaction_path: reboot_rust_schema::durable_participant::TransactionPathContract::RootOnly"));
-        assert!(
-            content
-                .contains("current coordinator accepts only the read-only shared classification")
-        );
-        assert!(!content.contains("ParticipantStartMode::SharedUpgradeable"));
-        assert!(!content.contains("complete_shared_local_promotion"));
+        assert!(content.contains("ParticipantStartMode::SharedUpgradeable"));
+        assert!(content.contains("SharedLocalTransactionContext::new_for_generated_adapter"));
+        assert!(content.contains("into_shared_local_promotion(promotion)"));
+        assert!(content.contains("complete_shared_local_promotion(start"));
+        assert!(content.contains("async fn increment_fresh_shared("));
+        assert!(!content.contains("TransactionContext, state: &mut proto::Counter, request: proto::CounterRequest) -> Result<proto::CounterValue"));
     }
 
     #[test]

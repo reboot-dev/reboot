@@ -319,6 +319,20 @@ impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler fo
             proto::TransactionCounterValue { value: state.value },
         ))
     }
+
+    async fn shared_read_fresh_shared(
+        &self,
+        _: &reboot::runtime::SharedLocalTransactionContext,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<proto::TransactionCounterValue, tonic::Status> {
+        self.trace.lock().unwrap().push("fresh shared handler");
+        if self.fail || request.amount < 0 {
+            return Err(tonic::Status::invalid_argument("fresh shared handler rejected request"));
+        }
+        state.value += request.amount;
+        Ok(proto::TransactionCounterValue { value: state.value })
+    }
 }
 
 struct TransactionParticipantSidecar {
@@ -962,6 +976,72 @@ async fn generated_shared_root_to_remote_read_only_call_returns_classified_parti
     );
     assert!(root.transaction().take_returned_participants().is_empty());
     assert_eq!(*trace.lock().unwrap(), ["participant load", "shared handler"]);
+    server.abort();
+}
+
+#[tokio::test]
+async fn generated_fresh_shared_root_uses_read_only_or_direct_local_promotion() {
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let adapter = transaction_adapter(Arc::clone(&trace), false);
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(
+                proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(adapter),
+            )
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+    let mut client = proto::transaction_counter_writes_methods_client::TransactionCounterWritesMethodsClient::connect(
+        format!("http://{address}"),
+    )
+    .await
+    .unwrap();
+
+    let mut unchanged = tonic::Request::new(proto::TransactionIncrementRequest { amount: 0 });
+    *unchanged.metadata_mut() = reboot::RebootHeaders::new("transaction-counter").to_metadata().unwrap();
+    assert_eq!(client.shared_read(unchanged).await.unwrap().into_inner().value, 4);
+    assert_eq!(
+        *trace.lock().unwrap(),
+        ["participant load", "fresh shared handler", "coordinator DB prepare", "coordinator DB decision", "coordinator DB cleanup"]
+    );
+
+    trace.lock().unwrap().clear();
+    let mut changed = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+    *changed.metadata_mut() = reboot::RebootHeaders::new("transaction-counter").to_metadata().unwrap();
+    assert_eq!(client.shared_read(changed).await.unwrap().into_inner().value, 7);
+    assert_eq!(
+        *trace.lock().unwrap(),
+        ["participant load", "fresh shared handler", "coordinator DB prepare", "participant prepare", "coordinator DB prepared", "coordinator DB decision", "participant commit", "coordinator DB cleanup"]
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn generated_fresh_shared_handler_error_releases_undurable_lease() {
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let adapter = transaction_adapter(Arc::clone(&trace), false);
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(adapter))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+    let mut client = proto::transaction_counter_writes_methods_client::TransactionCounterWritesMethodsClient::connect(format!("http://{address}")).await.unwrap();
+    let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: -1 });
+    *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter").to_metadata().unwrap();
+    assert_eq!(client.shared_read(request).await.unwrap_err().code(), tonic::Code::InvalidArgument);
+    assert_eq!(*trace.lock().unwrap(), ["participant load", "fresh shared handler"]);
+    trace.lock().unwrap().clear();
+    let mut retry = tonic::Request::new(proto::TransactionIncrementRequest { amount: 0 });
+    *retry.metadata_mut() = reboot::RebootHeaders::new("transaction-counter").to_metadata().unwrap();
+    assert_eq!(client.shared_read(retry).await.unwrap().into_inner().value, 4);
+    assert_eq!(trace.lock().unwrap()[0..2], ["participant load", "fresh shared handler"]);
     server.abort();
 }
 
