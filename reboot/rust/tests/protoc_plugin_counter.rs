@@ -43,6 +43,13 @@ fn protoc_plugin_emits_durable_counter_adapters() {
     assert!(content.contains("let handler = self.handler.clone();"));
     assert!(content.contains("Box::pin(async move"));
     assert!(content.contains("reboot::runtime::DatabaseActorStore"));
+    assert!(content.contains("pub struct CounterWritesExternalClient"));
+    assert!(content.contains("context: reboot::ExternalContext"));
+    assert!(content.contains("self.context.writer(request)"));
+    assert!(content.contains("pub async fn increment_with_key"));
+    assert!(content.contains("self.context.writer_with_key(request, idempotency_key)"));
+    assert!(content.contains("pub struct CounterReadsExternalClient"));
+    assert!(content.contains("self.context.reader(request)"));
 }
 
 #[test]
@@ -984,6 +991,79 @@ async fn start_counter_adapters(
             .unwrap();
     });
     (format!("http://{address}"), server)
+}
+
+#[tokio::test]
+async fn generated_external_clients_attach_reader_and_writer_context() {
+    let (database_endpoint, database, database_server) = start_database().await;
+    let (address, server) = start_counter_adapters(&database_endpoint).await;
+    let context = ExternalContext::new("generated-external-counter");
+    let automatic_channel = tonic::transport::Channel::from_shared(address.clone())
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let mut writes = generated::CounterWritesExternalClient::new(automatic_channel, context.clone());
+    assert_eq!(
+        writes
+            .increment(proto::IncrementRequest { amount: 5 })
+            .await
+            .unwrap()
+            .into_inner()
+            .value,
+        5
+    );
+
+    let explicit_key = Uuid::parse_str("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").unwrap();
+    assert_eq!(
+        writes
+            .increment_with_key(proto::IncrementRequest { amount: 2 }, explicit_key)
+            .await
+            .unwrap()
+            .into_inner()
+            .value,
+        7
+    );
+    assert_eq!(
+        writes
+            .increment_with_key(proto::IncrementRequest { amount: 2 }, explicit_key)
+            .await
+            .unwrap()
+            .into_inner()
+            .value,
+        7,
+        "an explicit idempotency key must replay the first writer response"
+    );
+
+    let reader_channel = tonic::transport::Channel::from_shared(address)
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let mut reads = generated::CounterReadsExternalClient::new(reader_channel, context);
+    assert_eq!(
+        reads.get(proto::Empty {}).await.unwrap().into_inner().value,
+        7
+    );
+
+    let stores = database.store_requests();
+    assert_eq!(stores.len(), 2, "explicit replay must not issue Store");
+    let automatic_key = Uuid::from_slice(
+        stores[0]
+            .idempotent_mutation
+            .as_ref()
+            .unwrap()
+            .key
+            .as_slice(),
+    )
+    .unwrap();
+    assert_eq!(automatic_key.get_version_num(), 7);
+    assert_eq!(
+        stores[1].idempotent_mutation.as_ref().unwrap().key,
+        explicit_key.as_bytes()
+    );
+    server.abort();
+    database_server.abort();
 }
 
 async fn start_map_counter_adapters(

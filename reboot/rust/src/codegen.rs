@@ -407,6 +407,12 @@ fn reject_generated_symbol_collisions(
                     format!("{service_name}TransactionAdapter"),
                 ]);
             }
+            if durable_kinds
+                .iter()
+                .any(|kind| !matches!(kind, DurableKind::Transaction(_)))
+            {
+                symbols.push(format!("{service_name}ExternalClient"));
+            }
         }
         for symbol in symbols {
             if let Some(previous) = owners.insert(symbol.clone(), service_name) {
@@ -565,6 +571,7 @@ fn emit_durable(
         output.push_str("}\n\n");
     }
     emit_transactional_client(output, service_name, &state, runtime_module, &methods)?;
+    emit_external_client(output, service_name, runtime_module, &database_methods);
     emit_transactions(
         output,
         service_name,
@@ -574,6 +581,37 @@ fn emit_durable(
         &database_methods,
     )?;
     Ok(())
+}
+
+/// Emits a typed external client for declared database reader and writer RPCs.
+///
+/// Transaction methods deliberately remain on the host-routed `ServiceClient`.
+fn emit_external_client(
+    output: &mut String,
+    service_name: &str,
+    runtime_module: &str,
+    database_methods: &[&(&DurableKind, String, String, String, String)],
+) {
+    if database_methods.is_empty() {
+        return;
+    }
+    let client = format!("{service_name}ExternalClient");
+    let client_module = format!("{}_client", snake_case(service_name));
+    output.push_str(&format!(
+        "/// Generated typed external client for database methods on `{service_name}`.\n///\n/// Reader requests use the supplied external context. Writer requests create a\n/// fresh automatic idempotency key unless the caller uses the `_with_key` form.\npub struct {client} {{ client: proto::{client_module}::{service_name}Client<tonic::transport::Channel>, context: {runtime_module}::ExternalContext }}\nimpl {client} {{ pub fn new(channel: tonic::transport::Channel, context: {runtime_module}::ExternalContext) -> Self {{ Self {{ client: proto::{client_module}::{service_name}Client::new(channel), context }} }}\n"
+    ));
+    for (kind, method, request, response, _) in database_methods {
+        match **kind {
+            DurableKind::Reader => output.push_str(&format!(
+                "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let request = self.context.reader(request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; self.client.{method}(request).await }}\n"
+            )),
+            DurableKind::Writer(_) => output.push_str(&format!(
+                "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let request = self.context.writer(request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; self.client.{method}(request).await }}\n    pub async fn {method}_with_key(&mut self, request: proto::{request}, idempotency_key: uuid::Uuid) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let request = self.context.writer_with_key(request, idempotency_key).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; self.client.{method}(request).await }}\n"
+            )),
+            DurableKind::Transaction(_) => unreachable!("transactions are filtered above"),
+        }
+    }
+    output.push_str("}\n\n");
 }
 
 /// Emits a typed outbound client for an annotated Reboot application service.
@@ -1301,6 +1339,7 @@ mod tests {
         assert!(content.contains("Factory transaction declared by this RPC: no."));
         assert!(content.contains("TransactionExecution<proto::CounterValue>"));
         assert!(!content.contains("CounterWritesDatabaseHandler"));
+        assert!(!content.contains("CounterWritesExternalClient"));
         assert!(!content.contains("writer_async_for_method::<CounterDurableState"));
         assert!(!content.contains("impl<H: CounterWritesTransactionHandler> proto::"));
     }
