@@ -137,7 +137,7 @@ mod tests {
         runtime::{test_support::start_database, DatabaseActorStore},
         ExternalContext,
     };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -279,6 +279,7 @@ struct TransactionParticipantSidecar {
     trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
     state: Option<proto::TransactionCounter>,
     staged_states: Arc<std::sync::Mutex<Vec<Option<Vec<u8>>>>>,
+    idempotent_recovery: Arc<std::sync::Mutex<VecDeque<Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>>>>,
 }
 
 impl reboot::durable_participant::ParticipantSidecar for TransactionParticipantSidecar {
@@ -311,7 +312,8 @@ impl reboot::durable_participant::ParticipantSidecar for TransactionParticipantS
         Box::pin(async { Ok(Vec::new()) })
     }
     fn recover_idempotent_mutations(&self, _: reboot::database_proto::RecoverIdempotentMutationsRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>> + Send + '_>> {
-        Box::pin(async { Ok(Vec::new()) })
+        let response = self.idempotent_recovery.lock().unwrap().pop_front().unwrap_or(Ok(Vec::new()));
+        Box::pin(async move { response })
     }
 }
 
@@ -372,10 +374,29 @@ fn transaction_adapter(
     reboot::durable_coordinator::SingleParticipantResolver<TransactionParticipantSidecar>,
     TransactionStartFactory,
 > {
-    transaction_adapter_with_store(
+    transaction_adapter_with_idempotent_recovery(
+        trace,
+        fail,
+        Arc::new(std::sync::Mutex::new(VecDeque::new())),
+    )
+}
+
+fn transaction_adapter_with_idempotent_recovery(
+    trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+    fail: bool,
+    idempotent_recovery: Arc<std::sync::Mutex<VecDeque<Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>>>>,
+) -> transaction_generated::TransactionCounterWritesTransactionAdapter<
+    TransactionCounter,
+    TransactionParticipantSidecar,
+    TransactionCoordinatorSidecar,
+    reboot::durable_coordinator::SingleParticipantResolver<TransactionParticipantSidecar>,
+    TransactionStartFactory,
+> {
+    transaction_adapter_with_store_and_idempotent_recovery(
         trace,
         fail,
         DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+        idempotent_recovery,
     )
 }
 
@@ -390,11 +411,32 @@ fn transaction_adapter_with_store(
     reboot::durable_coordinator::SingleParticipantResolver<TransactionParticipantSidecar>,
     TransactionStartFactory,
 > {
+    transaction_adapter_with_store_and_idempotent_recovery(
+        trace,
+        fail,
+        store,
+        Arc::new(std::sync::Mutex::new(VecDeque::new())),
+    )
+}
+
+fn transaction_adapter_with_store_and_idempotent_recovery(
+    trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+    fail: bool,
+    store: DatabaseActorStore,
+    idempotent_recovery: Arc<std::sync::Mutex<VecDeque<Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>>>>,
+) -> transaction_generated::TransactionCounterWritesTransactionAdapter<
+    TransactionCounter,
+    TransactionParticipantSidecar,
+    TransactionCoordinatorSidecar,
+    reboot::durable_coordinator::SingleParticipantResolver<TransactionParticipantSidecar>,
+    TransactionStartFactory,
+> {
     let participant = reboot::durable_participant::DurableActorParticipant::new(
         Arc::new(TransactionParticipantSidecar {
             trace: Arc::clone(&trace),
             state: Some(proto::TransactionCounter { value: 4 }),
             staged_states: Arc::new(std::sync::Mutex::new(Vec::new())),
+            idempotent_recovery,
         }),
         "tests.reboot.protoc.TransactionCounter",
         "transaction-counter",
@@ -436,6 +478,7 @@ fn factory_transaction_adapter(
             trace: Arc::clone(&trace),
             state: initial_state,
             staged_states,
+            idempotent_recovery: Arc::new(std::sync::Mutex::new(VecDeque::new())),
         }),
         "tests.reboot.protoc.TransactionCounter",
         "transaction-counter",
@@ -520,6 +563,48 @@ async fn generated_transaction_adapter_aborts_when_handler_rejects() {
     .unwrap_err();
     assert_eq!(error.code(), tonic::Code::InvalidArgument);
     assert_eq!(*trace.lock().unwrap(), ["participant load", "handler", "participant abort"]);
+}
+
+#[tokio::test]
+async fn generated_transaction_adapter_aborts_and_releases_lease_when_post_admission_idempotency_recovery_fails() {
+    use proto::transaction_counter_writes_server::TransactionCounterWrites;
+
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let idempotent_recovery = Arc::new(std::sync::Mutex::new(VecDeque::from([
+        Ok(Vec::new()),
+        Err(tonic::Status::unavailable("post-admission idempotency recovery failed")),
+    ])));
+    let adapter = transaction_adapter_with_idempotent_recovery(
+        Arc::clone(&trace),
+        false,
+        idempotent_recovery,
+    );
+    let mut headers = reboot::RebootHeaders::new("transaction-counter");
+    headers.idempotency_key = Some(Uuid::from_u128(401));
+    let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+    *request.metadata_mut() = headers.to_metadata().unwrap();
+
+    let error = TransactionCounterWrites::increment(&adapter, request).await.unwrap_err();
+    assert_eq!(error.code(), tonic::Code::Unavailable);
+    assert_eq!(*trace.lock().unwrap(), ["participant load", "participant abort"]);
+
+    trace.lock().unwrap().clear();
+    let mut headers = reboot::RebootHeaders::new("transaction-counter");
+    headers.idempotency_key = Some(Uuid::from_u128(402));
+    let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+    *request.metadata_mut() = headers.to_metadata().unwrap();
+    let response = TransactionCounterWrites::increment(&adapter, request).await.unwrap();
+    assert_eq!(response.into_inner().value, 7);
+    assert_eq!(*trace.lock().unwrap(), [
+        "participant load",
+        "handler",
+        "coordinator DB prepare",
+        "participant prepare",
+        "coordinator DB prepared",
+        "coordinator DB decision",
+        "participant commit",
+        "coordinator DB cleanup",
+    ]);
 }
 
 #[tokio::test]
