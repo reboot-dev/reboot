@@ -135,9 +135,24 @@ struct RebootWriterMethodOptions {
     constructor: Option<Empty>,
 }
 #[derive(Message)]
+struct RebootReaderMethodOptions {
+    #[prost(enumeration = "ReaderState", tag = "3")]
+    state: i32,
+}
+
+/// Wire values of `rbt.v1alpha1.ReaderMethodOptions.State` relevant to the
+/// bounded unary Rust generator. Unknown values retain Python's default-state
+/// behavior and are not treated as streaming.
+#[derive(Clone, Copy, Debug, prost::Enumeration)]
+enum ReaderState {
+    Default = 0,
+    Unary = 1,
+    Streaming = 2,
+}
+#[derive(Message)]
 struct RebootMethodOptions {
     #[prost(message, optional, tag = "1")]
-    reader: Option<Empty>,
+    reader: Option<RebootReaderMethodOptions>,
     #[prost(message, optional, tag = "2")]
     writer: Option<RebootWriterMethodOptions>,
     #[prost(message, optional, tag = "3")]
@@ -427,7 +442,23 @@ fn annotations_for_generated_files(
                     option.writer.is_some(),
                     option.transaction,
                 ) {
-                    (true, false, None) => DurableKind::Reader,
+                    (true, false, None) => {
+                        // Python promotes this option to its `streaming`
+                        // feature even when the RPC itself is unary. Rust has
+                        // no streaming reader adapter, so reject it at the
+                        // raw plugin boundary rather than silently emitting a
+                        // unary adapter with incompatible state semantics.
+                        if option
+                            .reader
+                            .as_ref()
+                            .is_some_and(|reader| reader.state == ReaderState::Streaming as i32)
+                        {
+                            return Err(format!(
+                                "{file_name}: service `{service_name}` method `{method_name}` requests streaming state; only unary methods are supported"
+                            ));
+                        }
+                        DurableKind::Reader
+                    }
                     (false, true, None) => DurableKind::Writer(WriterMetadata {
                         constructor: option
                             .writer
@@ -2061,7 +2092,7 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(Empty {}),
+                    reader: Some(RebootReaderMethodOptions::default()),
                     ..Default::default()
                 }
                 .encode_to_vec(),
@@ -2087,6 +2118,114 @@ mod tests {
         assert_eq!(
             error,
             "Reboot service 'CounterReads' has illegal name: all Reboot service names must end in 'Methods', since (unlike basic gRPC) they provide methods to Reboot states"
+        );
+    }
+
+    #[test]
+    fn raw_plugin_accepts_unary_reader_with_default_state_option() {
+        fn push_varint(output: &mut Vec<u8>, mut value: usize) {
+            while value >= 0x80 {
+                output.push((value as u8 & 0x7f) | 0x80);
+                value >>= 7;
+            }
+            output.push(value as u8);
+        }
+
+        let method_options = ExtensionOptions {
+            reboot: Some(
+                RebootMethodOptions {
+                    reader: Some(RebootReaderMethodOptions {
+                        state: ReaderState::Default as i32,
+                    }),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let mut request = request();
+        request.file_to_generate = vec!["tests/reboot/protoc/counter.proto".to_owned()];
+        request.proto_file[0].name = Some("tests/reboot/protoc/counter.proto".to_owned());
+        let mut wire = request.encode_to_vec();
+        let mut raw_method = MethodDescriptorProto {
+            name: Some("Increment".to_owned()),
+            input_type: Some(".tests.reboot.protoc.IncrementRequest".to_owned()),
+            output_type: Some(".tests.reboot.protoc.CounterValue".to_owned()),
+            ..Default::default()
+        }
+        .encode_to_vec();
+        raw_method.push(0x22); // MethodDescriptorProto.options (field 4).
+        push_varint(&mut raw_method, method_options.len());
+        raw_method.extend(method_options);
+        let mut raw_service = ServiceDescriptorProto {
+            name: Some("CounterWritesMethods".to_owned()),
+            ..Default::default()
+        }
+        .encode_to_vec();
+        raw_service.push(0x12); // ServiceDescriptorProto.method (field 2).
+        push_varint(&mut raw_service, raw_method.len());
+        raw_service.extend(raw_method);
+        let mut raw_file = FileDescriptorProto {
+            name: Some("tests/reboot/protoc/counter.proto".to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            syntax: Some("proto3".to_owned()),
+            ..Default::default()
+        }
+        .encode_to_vec();
+        raw_file.push(0x32); // FileDescriptorProto.service (field 6).
+        push_varint(&mut raw_file, raw_service.len());
+        raw_file.extend(raw_service);
+        wire.push(0x7a); // CodeGeneratorRequest.proto_file (field 15).
+        push_varint(&mut wire, raw_file.len());
+        wire.extend(raw_file);
+
+        assert_eq!(generate_from_wire(&wire).error, None);
+    }
+
+    #[test]
+    fn raw_plugin_rejects_unary_reader_with_streaming_state_option() {
+        let method_options = ExtensionOptions {
+            reboot: Some(
+                RebootMethodOptions {
+                    reader: Some(RebootReaderMethodOptions {
+                        state: ReaderState::Streaming as i32,
+                    }),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let mut request = request();
+        request.file_to_generate = vec!["tests/reboot/protoc/counter.proto".to_owned()];
+        request.proto_file[0].name = Some("tests/reboot/protoc/counter.proto".to_owned());
+        let mut wire = request.encode_to_vec();
+        // Both decoders consume this overlay. The custom option is retained
+        // only by RawRequest, while the ordinary syntax field remains proto3.
+        let mut raw_file = RawFile {
+            name: Some("tests/reboot/protoc/counter.proto".to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            messages: vec![],
+            services: vec![RawService {
+                name: Some("CounterWritesMethods".to_owned()),
+                options: None,
+                methods: vec![RawMethod {
+                    name: Some("Increment".to_owned()),
+                    options: Some(method_options),
+                }],
+            }],
+        }
+        .encode_to_vec();
+        raw_file.extend([0x62, 0x06, b'p', b'r', b'o', b't', b'o', b'3']);
+        wire.push(0x7a); // CodeGeneratorRequest.proto_file (field 15).
+        wire.push(u8::try_from(raw_file.len()).expect("small raw test descriptor"));
+        wire.extend(raw_file);
+
+        assert_eq!(
+            generate_from_wire(&wire).error.as_deref(),
+            Some(
+                "tests/reboot/protoc/counter.proto: service `CounterWritesMethods` method `Increment` requests streaming state; only unary methods are supported"
+            )
         );
     }
 
@@ -2140,7 +2279,7 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(Empty {}),
+                    reader: Some(RebootReaderMethodOptions::default()),
                     ..Default::default()
                 }
                 .encode_to_vec(),
@@ -2200,7 +2339,7 @@ mod tests {
         let mut method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(Empty {}),
+                    reader: Some(RebootReaderMethodOptions::default()),
                     ..Default::default()
                 }
                 .encode_to_vec(),
@@ -2248,7 +2387,7 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(Empty {}),
+                    reader: Some(RebootReaderMethodOptions::default()),
                     ..Default::default()
                 }
                 .encode_to_vec(),
@@ -2318,7 +2457,7 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(Empty {}),
+                    reader: Some(RebootReaderMethodOptions::default()),
                     ..Default::default()
                 }
                 .encode_to_vec(),
@@ -2406,7 +2545,7 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(Empty {}),
+                    reader: Some(RebootReaderMethodOptions::default()),
                     ..Default::default()
                 }
                 .encode_to_vec(),
@@ -2555,7 +2694,7 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(Empty {}),
+                    reader: Some(RebootReaderMethodOptions::default()),
                     ..Default::default()
                 }
                 .encode_to_vec(),
@@ -2626,7 +2765,7 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(Empty {}),
+                    reader: Some(RebootReaderMethodOptions::default()),
                     ..Default::default()
                 }
                 .encode_to_vec(),
@@ -2722,7 +2861,7 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(Empty {}),
+                    reader: Some(RebootReaderMethodOptions::default()),
                     ..Default::default()
                 }
                 .encode_to_vec(),
