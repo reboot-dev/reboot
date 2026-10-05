@@ -331,6 +331,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "googleapis-tonic-google-rpc"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57a1acd59550061903676f85ca63a7cec755fcb8e71d1c8a38132f2e77929cf3"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tonic",
+]
+
+[[package]]
 name = "h2"
 version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -843,6 +854,7 @@ dependencies = [
  "base64",
  "bytes",
  "chrono",
+ "googleapis-tonic-google-rpc",
  "heck",
  "http",
  "http-body",

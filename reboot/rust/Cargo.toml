@@ -25,6 +25,7 @@ test-support = ["dep:tokio-stream"]
 base64 = "0.22"
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+googleapis-tonic-google-rpc = "0.11"
 heck = "0.5"
 http = "1"
 http-body = "1"

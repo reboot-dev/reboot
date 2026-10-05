@@ -211,6 +211,8 @@ struct DurableService {
     state: String,
     default_constructible: bool,
     methods: HashMap<String, DurableKind>,
+    /// Owned declarations only used while emitting writer contracts.
+    declared_errors: HashMap<String, Vec<String>>,
 }
 
 /// Generates forwarding adapters without custom descriptor option semantics.
@@ -404,6 +406,7 @@ fn annotations_for_generated_files(
                 }
             };
             let mut methods = HashMap::new();
+            let mut declared_errors = HashMap::new();
             for method in service.methods {
                 let Some(method_name) = method.name else {
                     continue;
@@ -427,21 +430,22 @@ fn annotations_for_generated_files(
                 let option = RebootMethodOptions::decode(bytes.as_slice()).map_err(|error| {
                     format!("{file_name}: invalid rbt.v1alpha1.method option: {error}")
                 })?;
-                // Rust has neither generated declared-error types nor the rich
-                // gRPC status/detail boundary they require. Python derives the
-                // generic `error` feature from this non-empty declaration, so
-                // reject at this generated-file service boundary rather than
-                // emitting an adapter that drops the contract.
-                if !RebootMethodErrorOptions::decode(bytes.as_slice())
+                let mut method_declared_errors = RebootMethodErrorOptions::decode(bytes.as_slice())
                     .map_err(|error| {
                         format!("{file_name}: invalid rbt.v1alpha1.method option: {error}")
                     })?
-                    .errors
-                    .is_empty()
-                {
-                    return Err(format!(
-                        "{file_name}: service `{service_name}` method `{method_name}` requests declared errors; this generator supports only methods without declared errors"
-                    ));
+                    .errors;
+                for declared_error in &mut method_declared_errors {
+                    let declared_error_type = Some(declared_error.clone());
+                    let declared_error_name = same_package_proto_type(
+                        &file_name,
+                        file.package.as_deref().unwrap_or_default(),
+                        &service_name,
+                        &method_name,
+                        "declared error",
+                        &declared_error_type,
+                    )?;
+                    *declared_error = declared_error_name.to_owned();
                 }
                 if method_name.chars().next().is_some_and(char::is_lowercase) {
                     return Err(format!(
@@ -522,7 +526,13 @@ fn annotations_for_generated_files(
                         ));
                     }
                 };
-                methods.insert(method_name, kind);
+                if !method_declared_errors.is_empty() && !matches!(kind, DurableKind::Writer(_)) {
+                    return Err(format!(
+                        "{file_name}: service `{service_name}` method `{method_name}` declares errors, but declared errors are supported only on writer methods"
+                    ));
+                }
+                methods.insert(method_name.clone(), kind);
+                declared_errors.insert(method_name, method_declared_errors);
             }
             services.insert(
                 service_name,
@@ -530,6 +540,7 @@ fn annotations_for_generated_files(
                     state,
                     default_constructible,
                     methods,
+                    declared_errors,
                 },
             );
         }
@@ -1219,10 +1230,29 @@ fn emit_durable(
         let handler = format!("{service_name}DatabaseHandler");
         let adapter = format!("{service_name}DatabaseAdapter");
         let server = format!("{}_server", snake_case(service_name));
+        for (kind, method, _, _, method_identity) in &database_methods {
+            let declared_errors = declared_writer_errors(annotation, kind, method_identity);
+            if !declared_errors.is_empty() {
+                emit_declared_error_enum(
+                    output,
+                    service_name,
+                    method,
+                    package,
+                    declared_errors,
+                    runtime_module,
+                );
+            }
+        }
         output.push_str("#[tonic::async_trait]\n");
         output.push_str(&format!("pub trait {handler}: Send + Sync + 'static {{\n"));
-        for (kind, method, request, response, _) in &database_methods {
-            output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n", if matches!(**kind, DurableKind::Writer(_)) { "&mut " } else { "&" }));
+        for (kind, method, request, response, method_identity) in &database_methods {
+            let declared_errors = declared_writer_errors(annotation, kind, method_identity);
+            if declared_errors.is_empty() {
+                output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n", if matches!(**kind, DurableKind::Writer(_)) { "&mut " } else { "&" }));
+            } else {
+                let error = declared_error_type(service_name, method);
+                output.push_str(&format!("    async fn {method}(&self, state: &mut proto::{state}, request: proto::{request}) -> Result<proto::{response}, {error}>;\n"));
+            }
         }
         output.push_str("}\n\n");
         output.push_str(&format!("pub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: std::sync::Arc<H> }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ store: self.store.clone(), handler: self.handler.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler: std::sync::Arc::new(handler) }} }} }}\n\n"));
@@ -1260,12 +1290,24 @@ fn emit_durable(
                 ),
                 DurableKind::Transaction(_) => unreachable!("transactions are filtered above"),
             };
-            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await }})\n            }},\n        ).await\n    }}\n"));
+            let map_declared_error =
+                if declared_writer_errors(annotation, kind, method_identity).is_empty() {
+                    String::new()
+                } else {
+                    ".map_err(|error| error.into_status())".to_owned()
+                };
+            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await{map_declared_error} }})\n            }},\n        ).await\n    }}\n"));
         }
         output.push_str("}\n\n");
     }
     emit_transactional_client(output, service_name, &state, runtime_module, &methods)?;
-    emit_external_client(output, service_name, runtime_module, &database_methods);
+    emit_external_client(
+        output,
+        service_name,
+        runtime_module,
+        annotation,
+        &database_methods,
+    );
     emit_transactions(
         output,
         service_name,
@@ -1280,10 +1322,62 @@ fn emit_durable(
 /// Emits a typed external client for declared database reader and writer RPCs.
 ///
 /// Transaction methods deliberately remain on the host-routed `ServiceClient`.
+fn declared_writer_errors<'a>(
+    annotation: &'a DurableService,
+    kind: &DurableKind,
+    method_identity: &str,
+) -> &'a [String] {
+    if !matches!(kind, DurableKind::Writer(_)) {
+        return &[];
+    }
+    method_identity
+        .rsplit('.')
+        .next()
+        .and_then(|method| annotation.declared_errors.get(method))
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+}
+
+fn declared_error_type(service_name: &str, method: &str) -> String {
+    format!("{service_name}{}Error", method.to_upper_camel_case())
+}
+
+fn emit_declared_error_enum(
+    output: &mut String,
+    service_name: &str,
+    method: &str,
+    package: &str,
+    declared_errors: &[String],
+    runtime_module: &str,
+) {
+    let error_type = declared_error_type(service_name, method);
+    output.push_str(&format!("/// Declared errors for `{service_name}.{method}`, in `.proto` declaration order.\n#[derive(Debug)]\npub enum {error_type} {{\n"));
+    for declared_error in declared_errors {
+        let variant = declared_error.to_upper_camel_case();
+        output.push_str(&format!("    {variant}(proto::{variant}),\n"));
+    }
+    output.push_str("    /// A non-declared transport failure.\n    Grpc(tonic::Status),\n}\n");
+    output.push_str(&format!(
+        "impl {error_type} {{\n    fn into_status(self) -> tonic::Status {{ match self {{\n"
+    ));
+    for declared_error in declared_errors {
+        let variant = declared_error.to_upper_camel_case();
+        output.push_str(&format!("        Self::{variant}(error) => {runtime_module}::declared_error_status(tonic::Code::Unknown, \"declared error\", \"type.googleapis.com/{package}.{declared_error}\", &error),\n"));
+    }
+    output.push_str("        Self::Grpc(status) => status,\n    } }\n    fn from_status(status: tonic::Status) -> Self {\n");
+    output.push_str(&format!("        let Ok(Some(rich_status)) = {runtime_module}::declared_error_details(&status) else {{ return Self::Grpc(status); }};\n        for detail in rich_status.details {{\n"));
+    for declared_error in declared_errors {
+        let variant = declared_error.to_upper_camel_case();
+        output.push_str(&format!("            if detail.type_url == \"type.googleapis.com/{package}.{declared_error}\" {{ match <proto::{variant} as prost::Message>::decode(detail.value.as_slice()) {{ Ok(error) => return Self::{variant}(error), Err(_) => return Self::Grpc(status), }} }}\n"));
+    }
+    output.push_str("        }\n        Self::Grpc(status)\n    }\n}\n\n");
+}
+
 fn emit_external_client(
     output: &mut String,
     service_name: &str,
     runtime_module: &str,
+    annotation: &DurableService,
     database_methods: &[&(&DurableKind, String, String, String, String)],
 ) {
     if database_methods.is_empty() {
@@ -1294,14 +1388,24 @@ fn emit_external_client(
     output.push_str(&format!(
         "/// Generated typed external client for database methods on `{service_name}`.\n///\n/// Reader requests use the supplied external context. Writer requests create a\n/// fresh automatic idempotency key unless the caller uses the `_with_key` form.\npub struct {client} {{ client: proto::{client_module}::{service_name}Client<tonic::transport::Channel>, context: {runtime_module}::ExternalContext }}\nimpl {client} {{ pub fn new(channel: tonic::transport::Channel, context: {runtime_module}::ExternalContext) -> Self {{ Self {{ client: proto::{client_module}::{service_name}Client::new(channel), context }} }}\n"
     ));
-    for (kind, method, request, response, _) in database_methods {
+    for (kind, method, request, response, method_identity) in database_methods {
         match **kind {
             DurableKind::Reader => output.push_str(&format!(
                 "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let request = self.context.reader(request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; self.client.{method}(request).await }}\n"
             )),
-            DurableKind::Writer(_) => output.push_str(&format!(
-                "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let request = self.context.writer(request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; self.client.{method}(request).await }}\n    pub async fn {method}_with_key(&mut self, request: proto::{request}, idempotency_key: uuid::Uuid) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let request = self.context.writer_with_key(request, idempotency_key).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; self.client.{method}(request).await }}\n"
-            )),
+            DurableKind::Writer(_) => {
+                let declared_errors = declared_writer_errors(annotation, kind, method_identity);
+                if declared_errors.is_empty() {
+                    output.push_str(&format!(
+                        "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let request = self.context.writer(request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; self.client.{method}(request).await }}\n    pub async fn {method}_with_key(&mut self, request: proto::{request}, idempotency_key: uuid::Uuid) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let request = self.context.writer_with_key(request, idempotency_key).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; self.client.{method}(request).await }}\n"
+                    ));
+                } else {
+                    let error = declared_error_type(service_name, method);
+                    output.push_str(&format!(
+                        "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, {error}> {{ let request = self.context.writer(request).map_err(|error| {error}::Grpc(tonic::Status::invalid_argument(error.to_string())))?; self.client.{method}(request).await.map_err({error}::from_status) }}\n    pub async fn {method}_with_key(&mut self, request: proto::{request}, idempotency_key: uuid::Uuid) -> Result<tonic::Response<proto::{response}>, {error}> {{ let request = self.context.writer_with_key(request, idempotency_key).map_err(|error| {error}::Grpc(tonic::Status::invalid_argument(error.to_string())))?; self.client.{method}(request).await.map_err({error}::from_status) }}\n"
+                    ));
+                }
+            }
             DurableKind::Transaction(_) => unreachable!("transactions are filtered above"),
         }
     }
@@ -1933,6 +2037,7 @@ mod tests {
                         "Increment".to_owned(),
                         DurableKind::Writer(WriterMetadata { constructor: false }),
                     )]),
+                    declared_errors: HashMap::new(),
                 },
             )]),
         )]);
@@ -1974,6 +2079,7 @@ mod tests {
                             "Increment".to_owned(),
                             DurableKind::Writer(WriterMetadata { constructor: false }),
                         )]),
+                        declared_errors: HashMap::new(),
                     },
                 )]),
             )]);
@@ -3481,12 +3587,12 @@ mod tests {
         assert_eq!(
             generate_from_wire(&raw_request(
                 Some(reboot_transaction_method_options::Mode::Exclusive(Empty {})),
-                vec!["CounterError".to_owned()],
+                vec![".tests.reboot.protoc.CounterError".to_owned()],
             ))
             .error
             .as_deref(),
             Some(
-                "tests/reboot/protoc/counter.proto: service `CounterWritesMethods` method `Increment` requests declared errors; this generator supports only methods without declared errors"
+                "tests/reboot/protoc/counter.proto: service `CounterWritesMethods` method `Increment` declares errors, but declared errors are supported only on writer methods"
             )
         );
     }
@@ -3507,6 +3613,7 @@ mod tests {
                             factory: false,
                         }),
                     )]),
+                    declared_errors: HashMap::new(),
                 },
             )]),
         )]);
@@ -3577,6 +3684,7 @@ mod tests {
                             factory: false,
                         }),
                     )]),
+                    declared_errors: HashMap::new(),
                 },
             )]),
         )]);
@@ -3619,6 +3727,7 @@ mod tests {
                             factory: false,
                         }),
                     )]),
+                    declared_errors: HashMap::new(),
                 },
             )]),
         )]);
@@ -3649,6 +3758,7 @@ mod tests {
                             factory: true,
                         }),
                     )]),
+                    declared_errors: HashMap::new(),
                 },
             )]),
         )]);
@@ -3756,6 +3866,7 @@ mod tests {
                         ),
                         ("Read".to_owned(), DurableKind::Reader),
                     ]),
+                    declared_errors: HashMap::new(),
                 },
             )]),
         )]);
@@ -3808,6 +3919,7 @@ mod tests {
                             }),
                         ),
                     ]),
+                    declared_errors: HashMap::new(),
                 },
             )]),
         )]);
@@ -3906,6 +4018,7 @@ mod tests {
                             factory: false,
                         }),
                     )]),
+                    declared_errors: HashMap::new(),
                 },
             )]),
         )]);

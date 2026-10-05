@@ -32,6 +32,7 @@ pub mod state_ref;
 pub mod successful_trailers;
 
 use chrono::{DateTime, FixedOffset, Utc};
+use prost::Message;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -1243,6 +1244,42 @@ pub fn is_retryable_status_code(code: tonic::Code) -> bool {
 /// Returns whether a Tonic status has Python-compatible retryable transport code.
 pub fn is_retryable_status(status: &tonic::Status) -> bool {
     is_retryable_status_code(status.code())
+}
+
+/// Encodes one declared protobuf error in a standard `google.rpc.Status`
+/// trailer. Generated adapters provide the proto type URL explicitly.
+pub fn declared_error_status<M: prost::Message>(
+    code: tonic::Code,
+    message: impl Into<String>,
+    type_url: impl Into<String>,
+    error: &M,
+) -> tonic::Status {
+    let status = googleapis_tonic_google_rpc::google::rpc::Status {
+        code: code as i32,
+        message: message.into(),
+        details: vec![prost_types::Any {
+            type_url: type_url.into(),
+            value: error.encode_to_vec(),
+        }],
+    };
+    tonic::Status::with_details(
+        code,
+        status.message.clone(),
+        bytes::Bytes::from(status.encode_to_vec()),
+    )
+}
+
+/// Decodes ordered rich-status details from a Tonic status.
+///
+/// `None` is an ordinary gRPC status; malformed binary details remain an
+/// error so generated clients preserve the status as undeclared.
+pub fn declared_error_details(
+    status: &tonic::Status,
+) -> Result<Option<googleapis_tonic_google_rpc::google::rpc::Status>, prost::DecodeError> {
+    if status.details().is_empty() {
+        return Ok(None);
+    }
+    googleapis_tonic_google_rpc::google::rpc::Status::decode(status.details()).map(Some)
 }
 
 /// The portable, code-only subset of Python's generated gRPC error markers.

@@ -23,13 +23,26 @@ message CounterValue {
   int64 value = 1;
 }
 
+message CounterLimitExceeded {
+  int64 limit = 1;
+}
+
+message CounterSecondaryExceeded {
+  int64 limit = 1;
+}
+
 service CounterWritesMethods {
   option (rbt.v1alpha1.service) = {
     state: "tests.reboot.protoc.Counter"
   };
 
   rpc Increment(IncrementRequest) returns (CounterValue) {
-    option (rbt.v1alpha1.method).writer = {};
+    option (rbt.v1alpha1.method) = {
+      writer: {}
+      // Preserve declaration order in the generated client contract.
+      errors: ".tests.reboot.protoc.CounterSecondaryExceeded"
+      errors: ".tests.reboot.protoc.CounterLimitExceeded"
+    };
   }
 }
 

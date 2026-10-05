@@ -52,6 +52,16 @@ fn protoc_plugin_emits_durable_counter_adapters() {
     assert!(content.contains("self.context.writer_with_key(request, idempotency_key)"));
     assert!(content.contains("pub struct CounterReadsMethodsExternalClient"));
     assert!(content.contains("self.context.reader(request)"));
+    let declared_error = content
+        .find("pub enum CounterWritesMethodsIncrementError")
+        .unwrap();
+    let secondary = content[declared_error..]
+        .find("CounterSecondaryExceeded(proto::CounterSecondaryExceeded)")
+        .unwrap();
+    let limit = content[declared_error..]
+        .find("CounterLimitExceeded(proto::CounterLimitExceeded)")
+        .unwrap();
+    assert!(secondary < limit, "declared errors must retain proto order");
 }
 
 #[test]
@@ -111,7 +121,7 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     std::fs::write(
         fixture.join("Cargo.toml"),
         format!(
-            "[package]\nname = \"reboot-rust-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\nhttp = \"1\"\nprost = \"0.13\"\nprost-types = \"0.13\"\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"test-support\"] }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
+            "[package]\nname = \"reboot-rust-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\ngoogleapis-tonic-google-rpc = \"0.11\"\nhttp = \"1\"\nprost = \"0.13\"\nprost-types = \"0.13\"\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"test-support\"] }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
             env!("CARGO_MANIFEST_DIR"),
             env!("CARGO_MANIFEST_DIR")
         ),
@@ -160,8 +170,13 @@ impl generated::CounterWritesMethodsDatabaseHandler for Counter {
         &self,
         state: &mut proto::Counter,
         request: proto::IncrementRequest,
-    ) -> Result<proto::CounterValue, tonic::Status> {
+    ) -> Result<proto::CounterValue, generated::CounterWritesMethodsIncrementError> {
         tokio::task::yield_now().await;
+        if request.amount < 0 {
+            return Err(generated::CounterWritesMethodsIncrementError::CounterLimitExceeded(
+                proto::CounterLimitExceeded { limit: state.value },
+            ));
+        }
         state.value += request.amount;
         Ok(proto::CounterValue { value: state.value })
     }
@@ -176,6 +191,28 @@ impl generated::CounterReadsMethodsDatabaseHandler for Counter {
     ) -> Result<proto::CounterValue, tonic::Status> {
         tokio::task::yield_now().await;
         Ok(proto::CounterValue { value: state.value })
+    }
+}
+
+
+struct RichErrorService;
+
+#[tonic::async_trait]
+impl proto::counter_writes_methods_server::CounterWritesMethods for RichErrorService {
+    async fn increment(&self, request: tonic::Request<proto::IncrementRequest>) -> Result<tonic::Response<proto::CounterValue>, tonic::Status> {
+        let known = prost_types::Any { type_url: "type.googleapis.com/tests.reboot.protoc.CounterLimitExceeded".into(), value: proto::CounterLimitExceeded { limit: 9 }.encode_to_vec() };
+        let secondary = prost_types::Any { type_url: "type.googleapis.com/tests.reboot.protoc.CounterSecondaryExceeded".into(), value: proto::CounterSecondaryExceeded { limit: 10 }.encode_to_vec() };
+        let details = match request.into_inner().amount {
+            // The first recognized outer detail wins even though the declaration
+            // order is Secondary then Limit.
+            1 => vec![known, secondary],
+            2 => vec![prost_types::Any { type_url: "type.googleapis.com/tests.reboot.protoc.CounterLimitExceeded".into(), value: vec![0xff] }],
+            3 => vec![prost_types::Any { type_url: "type.googleapis.com/example.Unknown".into(), value: vec![1] }],
+            4 => return Err(tonic::Status::with_details(tonic::Code::InvalidArgument, "malformed rich status", vec![0xff].into())),
+            _ => return Err(tonic::Status::not_found("ordinary grpc")),
+        };
+        let status = googleapis_tonic_google_rpc::google::rpc::Status { code: tonic::Code::InvalidArgument as i32, message: "fixture".into(), details };
+        Err(tonic::Status::with_details(tonic::Code::InvalidArgument, "fixture", status.encode_to_vec().into()))
     }
 }
 
@@ -1001,6 +1038,25 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
     let (address, server) = start_counter_adapters(&database_endpoint).await;
     let context = ExternalContext::new("generated-external-counter")
         .with_caller_id(CallerId::new("a1234567890", None).unwrap());
+    let mut raw = proto::counter_writes_methods_client::CounterWritesMethodsClient::connect(address.clone())
+        .await
+        .unwrap();
+    let status = raw
+        .increment(context.writer(proto::IncrementRequest { amount: -1 }).unwrap())
+        .await
+        .unwrap_err();
+    assert_eq!(status.code(), tonic::Code::Unknown);
+    let rich_status = googleapis_tonic_google_rpc::google::rpc::Status::decode(status.details()).unwrap();
+    assert_eq!(rich_status.code, tonic::Code::Unknown as i32);
+    assert_eq!(rich_status.details.len(), 1);
+    assert_eq!(
+        rich_status.details[0].type_url,
+        "type.googleapis.com/tests.reboot.protoc.CounterLimitExceeded"
+    );
+    assert_eq!(
+        proto::CounterLimitExceeded::decode(rich_status.details[0].value.as_slice()).unwrap(),
+        proto::CounterLimitExceeded { limit: 0 }
+    );
     let automatic_channel = context.connect(address.clone()).await.unwrap();
     let mut writes = generated::CounterWritesMethodsExternalClient::new(automatic_channel, context.clone());
     assert_eq!(
@@ -1012,6 +1068,11 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
             .value,
         5
     );
+    assert!(matches!(
+        writes.increment(proto::IncrementRequest { amount: -1 }).await,
+        Err(generated::CounterWritesMethodsIncrementError::CounterLimitExceeded(error))
+            if error.limit == 5
+    ));
 
     let explicit_key = Uuid::parse_str("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").unwrap();
     assert_eq!(
@@ -1059,6 +1120,47 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
     );
     server.abort();
     database_server.abort();
+}
+
+
+#[tokio::test]
+async fn generated_external_client_decodes_ordered_declared_errors_and_preserves_grpc_fallbacks() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { tonic::transport::Server::builder().add_service(proto::counter_writes_methods_server::CounterWritesMethodsServer::new(RichErrorService)).serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener)).await.unwrap(); });
+    let context = ExternalContext::new("rich-error-counter");
+    let channel = context.connect(format!("http://{address}")).await.unwrap();
+    let mut client = generated::CounterWritesMethodsExternalClient::new(channel, context);
+    assert!(matches!(
+        client.increment(proto::IncrementRequest { amount: 1 }).await,
+        Err(generated::CounterWritesMethodsIncrementError::CounterLimitExceeded(error))
+            if error.limit == 9
+    ));
+    // A known type URL with malformed message bytes is not a declared error.
+    assert!(matches!(
+        client.increment(proto::IncrementRequest { amount: 2 }).await,
+        Err(generated::CounterWritesMethodsIncrementError::Grpc(status))
+            if status.code() == tonic::Code::InvalidArgument
+    ));
+    // An unknown rich detail falls back to the gRPC status code.
+    assert!(matches!(
+        client.increment(proto::IncrementRequest { amount: 3 }).await,
+        Err(generated::CounterWritesMethodsIncrementError::Grpc(status))
+            if status.code() == tonic::Code::InvalidArgument
+    ));
+    // A malformed grpc-status-details-bin trailer also remains a gRPC error.
+    assert!(matches!(
+        client.increment(proto::IncrementRequest { amount: 4 }).await,
+        Err(generated::CounterWritesMethodsIncrementError::Grpc(status))
+            if status.code() == tonic::Code::InvalidArgument
+    ));
+    // No rich trailer preserves the ordinary transport status.
+    assert!(matches!(
+        client.increment(proto::IncrementRequest { amount: 5 }).await,
+        Err(generated::CounterWritesMethodsIncrementError::Grpc(status))
+            if status.code() == tonic::Code::NotFound
+    ));
+    server.abort();
 }
 
 async fn start_map_counter_adapters(
@@ -1294,7 +1396,7 @@ mod tests {
             &self,
             state: &mut proto::Counter,
             request: proto::IncrementRequest,
-        ) -> Result<proto::CounterValue, tonic::Status> {
+        ) -> Result<proto::CounterValue, generated::CounterWritesMethodsIncrementError> {
             state.value += request.amount;
             Ok(proto::CounterValue { value: state.value })
         }
