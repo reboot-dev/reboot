@@ -719,6 +719,34 @@ impl RebootHeaders {
         }
     }
 
+    /// Returns the metadata safe for token verification and authorization.
+    ///
+    /// This preserves caller identity, bearer credentials, state/server identity,
+    /// cookies, and tracing while deliberately removing mutation and transaction
+    /// context so authorization cannot accidentally enlist in a caller's work.
+    pub fn copy_for_token_verification_and_authorization(&self) -> Self {
+        Self {
+            state_ref: self.state_ref.clone(),
+            application_id: self.application_id.clone(),
+            server_id: self.server_id.clone(),
+            workflow_id: None,
+            workflow_iteration: None,
+            transaction_ids: None,
+            transaction_coordinator_state_type: None,
+            transaction_coordinator_state_ref: None,
+            transaction_retry_age: None,
+            idempotency_key: None,
+            bearer_token: self.bearer_token.clone(),
+            task_schedule: None,
+            cookie: self.cookie.clone(),
+            caller_id: self.caller_id.clone(),
+            traceparent: self.traceparent.clone(),
+            tracestate: self.tracestate.clone(),
+            internal_call: false,
+            coordinator_read_only_aware: false,
+        }
+    }
+
     pub fn from_metadata(metadata: &tonic::metadata::MetadataMap) -> Result<Self, ContextError> {
         fn get(
             metadata: &tonic::metadata::MetadataMap,
@@ -1896,6 +1924,49 @@ mod tests {
         let emitted = parsed.to_metadata().unwrap();
         assert!(emitted.get("x-example-unknown").is_none());
         assert_eq!(emitted.len(), inbound.len() - 1);
+    }
+
+    #[test]
+    fn authorization_header_copy_drops_transaction_and_mutation_context() {
+        let mut headers = RebootHeaders::new("actor/ref");
+        headers.application_id = Some("application".into());
+        headers.server_id = Some("server".into());
+        headers.workflow_id = Some(uuid::Uuid::from_u128(1));
+        headers.workflow_iteration = Some(2);
+        headers.transaction_ids = Some(vec![uuid::Uuid::from_u128(3)]);
+        headers.transaction_coordinator_state_type = Some("example.Coordinator".into());
+        headers.transaction_coordinator_state_ref = Some("coordinator/ref".into());
+        headers.transaction_retry_age = Some(uuid::Uuid::from_u128(4));
+        headers.idempotency_key = Some(uuid::Uuid::from_u128(5));
+        headers.task_schedule =
+            Some(DateTime::parse_from_rfc3339("2026-10-03T12:00:00+00:00").unwrap());
+        headers.internal_call = true;
+        headers.coordinator_read_only_aware = true;
+        headers.bearer_token = Some("token".into());
+        headers.cookie = Some("cookie".into());
+        headers.caller_id = Some("application_id=cloud".parse().unwrap());
+        headers.traceparent = Some("traceparent".into());
+        headers.tracestate = Some("tracestate".into());
+
+        let authorization = headers.copy_for_token_verification_and_authorization();
+        assert_eq!(authorization.state_ref, "actor/ref");
+        assert_eq!(authorization.application_id, Some("application".into()));
+        assert_eq!(authorization.server_id, Some("server".into()));
+        assert_eq!(authorization.bearer_token, Some("token".into()));
+        assert_eq!(authorization.cookie, Some("cookie".into()));
+        assert_eq!(authorization.caller_id, "application_id=cloud".parse().ok());
+        assert_eq!(authorization.traceparent, Some("traceparent".into()));
+        assert_eq!(authorization.tracestate, Some("tracestate".into()));
+        assert!(authorization.workflow_id.is_none());
+        assert!(authorization.workflow_iteration.is_none());
+        assert!(authorization.transaction_ids.is_none());
+        assert!(authorization.transaction_coordinator_state_type.is_none());
+        assert!(authorization.transaction_coordinator_state_ref.is_none());
+        assert!(authorization.transaction_retry_age.is_none());
+        assert!(authorization.idempotency_key.is_none());
+        assert!(authorization.task_schedule.is_none());
+        assert!(!authorization.internal_call);
+        assert!(!authorization.coordinator_read_only_aware);
     }
 
     #[test]
