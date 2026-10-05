@@ -72,24 +72,25 @@ must never inherit promotion authority.
    bytes, kill/restart after coordinator-prepare and after decision, recovery,
    and exactly-once final application/response.
 
-## Pending: exclusive-to-shared downgrade
+## Implemented: exclusive-to-shared downgrade
 
-**Use case:** Python's actor lock lets an exclusive holder downgrade to shared,
-then grants already-queued compatible readers while later writers remain behind
-them. Rust currently implements shared acquisition, exclusive FIFO acquisition,
-and shared-to-exclusive upgrade, but deliberately exposes no downgrade API.
+**Python source:** `aio/state_managers.py:1711-1760,1936-1961` defines an
+exclusive-to-shared transition that admits compatible queued readers before the
+next writer while preventing reader barging.
 
-**Why it is pending:** Rust does not currently queue shared waiters, so it
-cannot distinguish readers that were waiting before a writer from readers trying
-to barge after that writer. Adding a superficial `downgrade()` would either
-starve the writer or violate the existing no-reader-barge guarantee. This needs
-a unified ordered reader/writer waiter queue plus cancellation tests before an
-API is added.
+**Rust implementation:** `src/runtime.rs` uses one ordered reader/writer waiter
+queue. `ExclusiveActorLease::downgrade(self) -> SharedActorLease` performs the
+linear mode transition and wakes the leading reader cohort; readers after a
+queued writer remain blocked. Dropping any queued reader or writer removes its
+ticket and wakes the queue. Upgrades still reject when any queue entry exists,
+so a shared snapshot never bypasses or deadlocks behind a writer.
 
-**Required acceptance coverage:** readers queued before a writer are admitted
-on downgrade; readers arriving after that writer are not; cancelled readers and
-writers are removed safely; no two exclusive leases coexist; and an upgrader
-never jumps the queue or deadlocks while retaining its snapshot.
+**Unit evidence:** `actor_gate_downgrade_admits_earlier_readers_without_reader_barge`
+and `actor_gate_cancellation_removes_a_grant_ready_reader` cover the new queue
+semantics. Existing `actor_gate_queues_writers_fifo_and_blocks_reader_barge`,
+`actor_gate_cancellation_removes_queued_writer_even_when_grant_is_ready`, and
+upgrade tests cover FIFO writer exclusion, grant-ready cancellation, and
+non-bypassing upgrade behavior.
 
 ## Pending: workflow-scoped idempotency aliases and seeds
 

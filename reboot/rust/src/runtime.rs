@@ -856,8 +856,20 @@ struct ActorGateState {
     shared: usize,
     exclusive: bool,
     upgrading: bool,
-    writers: VecDeque<u64>,
-    next_writer: u64,
+    waiters: VecDeque<ActorGateWaiter>,
+    next_waiter: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ActorGateWaitMode {
+    Shared,
+    Exclusive,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ActorGateWaiter {
+    ticket: u64,
+    mode: ActorGateWaitMode,
 }
 
 struct ActorGateInner {
@@ -868,7 +880,9 @@ struct ActorGateInner {
 /// Process-local reader/writer gate for one durable actor.
 ///
 /// An upgrade keeps its shared lease until it atomically becomes exclusive.
-/// While an upgrade or queued writer is waiting, new shared leases cannot
+/// Waiters are admitted in FIFO reader/writer cohorts: readers queued before
+/// the next writer acquire together, but readers arriving after that writer
+/// cannot barge ahead. While an upgrade is waiting, new shared leases cannot
 /// barge ahead of it. Exclusive waiters are granted FIFO order.
 #[derive(Clone)]
 pub struct ActorGate {
@@ -917,12 +931,39 @@ impl ActorGate {
     }
 
     pub async fn shared(&self) -> SharedActorLease {
+        let ticket = {
+            let mut state = self.inner.state.lock().expect("actor gate mutex poisoned");
+            if !state.exclusive && !state.upgrading && state.waiters.is_empty() {
+                state.shared += 1;
+                return SharedActorLease {
+                    inner: Arc::clone(&self.inner),
+                    active: true,
+                };
+            }
+            let ticket = state.next_waiter;
+            state.next_waiter = state.next_waiter.wrapping_add(1);
+            state.waiters.push_back(ActorGateWaiter {
+                ticket,
+                mode: ActorGateWaitMode::Shared,
+            });
+            ticket
+        };
+        let mut wait = ActorGateWait {
+            inner: Arc::clone(&self.inner),
+            ticket,
+            active: true,
+        };
         loop {
             let notified = self.inner.changed.notified();
             {
                 let mut state = self.inner.state.lock().expect("actor gate mutex poisoned");
-                if !state.exclusive && !state.upgrading && state.writers.is_empty() {
+                if !state.exclusive
+                    && !state.upgrading
+                    && shared_waiter_is_admissible(&state.waiters, ticket)
+                {
+                    remove_actor_gate_waiter(&mut state.waiters, ticket);
                     state.shared += 1;
+                    wait.active = false;
                     return SharedActorLease {
                         inner: Arc::clone(&self.inner),
                         active: true,
@@ -936,12 +977,15 @@ impl ActorGate {
     pub async fn exclusive(&self) -> ExclusiveActorLease {
         let ticket = {
             let mut state = self.inner.state.lock().expect("actor gate mutex poisoned");
-            let ticket = state.next_writer;
-            state.next_writer = state.next_writer.wrapping_add(1);
-            state.writers.push_back(ticket);
+            let ticket = state.next_waiter;
+            state.next_waiter = state.next_waiter.wrapping_add(1);
+            state.waiters.push_back(ActorGateWaiter {
+                ticket,
+                mode: ActorGateWaitMode::Exclusive,
+            });
             ticket
         };
-        let mut wait = WriterWait {
+        let mut wait = ActorGateWait {
             inner: Arc::clone(&self.inner),
             ticket,
             active: true,
@@ -950,12 +994,16 @@ impl ActorGate {
             let notified = self.inner.changed.notified();
             {
                 let mut state = self.inner.state.lock().expect("actor gate mutex poisoned");
-                if state.writers.front() == Some(&ticket)
+                if state.waiters.front()
+                    == Some(&ActorGateWaiter {
+                        ticket,
+                        mode: ActorGateWaitMode::Exclusive,
+                    })
                     && !state.exclusive
                     && state.shared == 0
                     && !state.upgrading
                 {
-                    state.writers.pop_front();
+                    state.waiters.pop_front();
                     state.exclusive = true;
                     wait.active = false;
                     return ExclusiveActorLease {
@@ -989,25 +1037,63 @@ impl Drop for ExclusiveActorLease {
     }
 }
 
-struct WriterWait {
+impl ExclusiveActorLease {
+    /// Atomically demotes this exclusive lease to a shared lease.
+    ///
+    /// Readers already queued before the next writer become eligible together;
+    /// later readers remain queued behind that writer. Consuming `self` makes
+    /// the mode transition linear: this method cannot leave both lease types
+    /// active for one holder.
+    pub fn downgrade(mut self) -> SharedActorLease {
+        let mut state = self.inner.state.lock().expect("actor gate mutex poisoned");
+        assert!(
+            state.exclusive,
+            "active exclusive lease requires exclusive gate state"
+        );
+        state.exclusive = false;
+        state.shared = 1;
+        self.active = false;
+        self.inner.changed.notify_waiters();
+        SharedActorLease {
+            inner: Arc::clone(&self.inner),
+            active: true,
+        }
+    }
+}
+
+struct ActorGateWait {
     inner: Arc<ActorGateInner>,
     ticket: u64,
     active: bool,
 }
 
-impl Drop for WriterWait {
+impl Drop for ActorGateWait {
     fn drop(&mut self) {
         if self.active {
             let mut state = self.inner.state.lock().expect("actor gate mutex poisoned");
-            let position = state
-                .writers
-                .iter()
-                .position(|ticket| *ticket == self.ticket)
-                .expect("queued actor-gate writer must remain registered");
-            state.writers.remove(position);
+            remove_actor_gate_waiter(&mut state.waiters, self.ticket);
             self.inner.changed.notify_waiters();
         }
     }
+}
+
+fn remove_actor_gate_waiter(waiters: &mut VecDeque<ActorGateWaiter>, ticket: u64) {
+    let position = waiters
+        .iter()
+        .position(|waiter| waiter.ticket == ticket)
+        .expect("queued actor-gate waiter must remain registered");
+    waiters.remove(position);
+}
+
+fn shared_waiter_is_admissible(waiters: &VecDeque<ActorGateWaiter>, ticket: u64) -> bool {
+    for waiter in waiters {
+        match waiter.mode {
+            ActorGateWaitMode::Shared if waiter.ticket == ticket => return true,
+            ActorGateWaitMode::Shared => {}
+            ActorGateWaitMode::Exclusive => return false,
+        }
+    }
+    false
 }
 
 struct UpgradeWait {
@@ -1034,7 +1120,7 @@ impl SharedActorLease {
             // An upgrade keeps its read snapshot, so it cannot wait behind an
             // already queued writer without deadlocking that writer. Reject it
             // retryably instead of letting it bypass FIFO writer admission.
-            if state.upgrading || !state.writers.is_empty() {
+            if state.upgrading || !state.waiters.is_empty() {
                 return Err(ActorGateUpgradeError::UpgradeInProgress);
             }
             state.upgrading = true;
@@ -2635,6 +2721,47 @@ mod tests {
         assert_pending(second.as_mut()).await;
         drop(first_lease);
         drop(second.await);
+    }
+
+    #[tokio::test]
+    async fn actor_gate_downgrade_admits_earlier_readers_without_reader_barge() {
+        let gate = ActorGate::new();
+        let holder = gate.exclusive().await;
+        let mut earlier_reader = Box::pin(gate.shared());
+        assert_pending(earlier_reader.as_mut()).await;
+        let mut writer = Box::pin(gate.exclusive());
+        assert_pending(writer.as_mut()).await;
+        let mut later_reader = Box::pin(gate.shared());
+        assert_pending(later_reader.as_mut()).await;
+
+        let shared_holder = holder.downgrade();
+        let earlier_lease = earlier_reader.await;
+        assert_pending(writer.as_mut()).await;
+        assert_pending(later_reader.as_mut()).await;
+
+        drop(earlier_lease);
+        drop(shared_holder);
+        let writer_lease = writer.await;
+        assert_pending(later_reader.as_mut()).await;
+        drop(writer_lease);
+        drop(later_reader.await);
+    }
+
+    #[tokio::test]
+    async fn actor_gate_cancellation_removes_a_grant_ready_reader() {
+        let gate = ActorGate::new();
+        let holder = gate.exclusive().await;
+        let mut cancelled_reader = Box::pin(gate.shared());
+        assert_pending(cancelled_reader.as_mut()).await;
+        let mut writer = Box::pin(gate.exclusive());
+        assert_pending(writer.as_mut()).await;
+
+        // Downgrade makes the reader eligible. Dropping its future before it
+        // takes the grant must remove its ticket rather than strand the writer.
+        let shared_holder = holder.downgrade();
+        drop(cancelled_reader);
+        drop(shared_holder);
+        drop(writer.await);
     }
 
     #[tokio::test]
