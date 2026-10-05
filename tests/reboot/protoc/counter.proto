@@ -8,8 +8,8 @@ package tests.reboot.protoc;
 message Counter {
   option (rbt.v1alpha1.state) = {
     implements: [
-      "tests.reboot.protoc.CounterWrites",
-      "tests.reboot.protoc.CounterReads"
+      "tests.reboot.protoc.CounterWritesMethods",
+      "tests.reboot.protoc.CounterReadsMethods"
     ]
   };
   int64 value = 1;
@@ -23,7 +23,7 @@ message CounterValue {
   int64 value = 1;
 }
 
-service CounterWrites {
+service CounterWritesMethods {
   option (rbt.v1alpha1.service) = {
     state: "tests.reboot.protoc.Counter"
   };
@@ -33,7 +33,7 @@ service CounterWrites {
   }
 }
 
-service CounterReads {
+service CounterReadsMethods {
   option (rbt.v1alpha1.service) = {
     state: "tests.reboot.protoc.Counter"
   };

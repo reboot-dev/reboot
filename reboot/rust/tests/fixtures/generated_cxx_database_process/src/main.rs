@@ -94,7 +94,7 @@ enum Handler {
     Root(Root),
 }
 #[tonic::async_trait]
-impl generated::TransactionCounterWritesTransactionHandler for Handler {
+impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
     async fn query(
         &self,
         state: &proto::TransactionCounter,
@@ -123,7 +123,7 @@ impl generated::TransactionCounterWritesTransactionHandler for Handler {
             root.client
                 .increment(
                     context,
-                    &generated::TransactionCounterWritesTarget::new("target"),
+                    &generated::TransactionCounterWritesMethodsTarget::new("target"),
                     request.clone(),
                 )
                 .await?;
@@ -167,7 +167,7 @@ impl generated::TransactionCounterWritesTransactionHandler for Handler {
             root.client
                 .increment(
                     context,
-                    &generated::TransactionCounterWritesTarget::new("target"),
+                    &generated::TransactionCounterWritesMethodsTarget::new("target"),
                     request.clone(),
                 )
                 .await?;
@@ -189,7 +189,7 @@ impl generated::TransactionCounterWritesTransactionHandler for Handler {
     }
 }
 struct Root {
-    client: generated::TransactionCounterWritesClient<Routes>,
+    client: generated::TransactionCounterWritesMethodsClient<Routes>,
 }
 
 fn arg(name: &str) -> String {
@@ -291,7 +291,7 @@ async fn main() {
     };
     let handler = if role == "root" {
         Handler::Root(Root {
-            client: generated::TransactionCounterWritesClient::new(routes.clone()),
+            client: generated::TransactionCounterWritesMethodsClient::new(routes.clone()),
         })
     } else {
         Handler::Target
@@ -299,7 +299,7 @@ async fn main() {
     let store = DatabaseActorStore::connect(&database_endpoint)
         .await
         .unwrap();
-    let adapter = generated::TransactionCounterWritesTransactionAdapter::new(
+    let adapter = generated::TransactionCounterWritesMethodsTransactionAdapter::new(
         store,
         participant.clone(),
         coordinator,
@@ -317,7 +317,7 @@ async fn main() {
                 coordinator_watch,
             ))
             .add_service(
-                proto::transaction_counter_writes_server::TransactionCounterWritesServer::new(
+                proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(
                     adapter,
                 ),
             )
@@ -328,7 +328,7 @@ async fn main() {
     if has("--invoke") {
         let endpoint = format!("http://{listen}");
         let mut client = loop {
-            match proto::transaction_counter_writes_client::TransactionCounterWritesClient::connect(
+            match proto::transaction_counter_writes_methods_client::TransactionCounterWritesMethodsClient::connect(
                 endpoint.clone(),
             )
             .await

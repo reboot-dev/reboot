@@ -304,6 +304,20 @@ fn annotations_for_generated_files(
             if service_option.is_none() && !has_method_option {
                 continue;
             }
+            // `process_file` invokes `_check_services` only for a descriptor
+            // requested through `file_to_generate`. A linked dependency may
+            // therefore remain malformed until it is generated itself.
+            if !service_name.ends_with("Methods") {
+                if generated_files.contains(&file_name) {
+                    return Err(format!(
+                        "Reboot service '{service_full_name}' has illegal name: all Reboot service names must end in 'Methods', since (unlike basic gRPC) they provide methods to Reboot states"
+                    ));
+                }
+                // Python does not inspect linked dependency services until they
+                // appear in `file_to_generate`; do not force state derivation
+                // for an invalid method-only dependency here.
+                continue;
+            }
             let service_option = service_option
                 .map(|bytes| {
                     RebootServiceOptions::decode(bytes.as_slice()).map_err(|error| {
@@ -1679,7 +1693,7 @@ mod tests {
                 package: Some("tests.reboot.protoc".into()),
                 syntax: Some("proto3".into()),
                 service: vec![ServiceDescriptorProto {
-                    name: Some("CounterWrites".into()),
+                    name: Some("CounterWritesMethods".into()),
                     method: vec![MethodDescriptorProto {
                         name: Some("Increment".into()),
                         input_type: Some(".tests.reboot.protoc.IncrementRequest".into()),
@@ -1696,7 +1710,7 @@ mod tests {
     #[test]
     fn generates_forwarding_adapter_without_options() {
         let content = generate(request()).file.remove(0).content.unwrap();
-        assert!(content.contains("CounterWritesHandler"));
+        assert!(content.contains("CounterWritesMethodsHandler"));
         assert!(content.contains("self.handler.increment(request).await"));
     }
 
@@ -1806,7 +1820,7 @@ mod tests {
         let annotations = HashMap::from([(
             "counter.proto".to_owned(),
             HashMap::from([(
-                "CounterWrites".to_owned(),
+                "CounterWritesMethods".to_owned(),
                 DurableService {
                     state: "Counter".to_owned(),
                     default_constructible: true,
@@ -1847,7 +1861,7 @@ mod tests {
             let annotations = HashMap::from([(
                 "counter.proto".to_owned(),
                 HashMap::from([(
-                    "CounterWrites".to_owned(),
+                    "CounterWritesMethods".to_owned(),
                     DurableService {
                         state: annotation_state.to_owned(),
                         default_constructible: true,
@@ -1870,7 +1884,9 @@ mod tests {
                     .contains("const STATE_TYPE: &'static str = \"tests.reboot.protoc.Counter\";")
             );
             assert!(content.contains("store.writer_async_for_method::<CounterDurableState"));
-            assert!(content.contains("\"tests.reboot.protoc.CounterWrites.Increment\", request"));
+            assert!(
+                content.contains("\"tests.reboot.protoc.CounterWritesMethods.Increment\", request")
+            );
             assert!(!content.contains("\"Counter\", request"));
         }
     }
@@ -2043,7 +2059,7 @@ mod tests {
         };
         assert_eq!(
             error,
-            "counter.proto: Reboot service `CounterReads` has illegal name: all method-only Reboot service names must end in `Methods`"
+            "Reboot service 'CounterReads' has illegal name: all Reboot service names must end in 'Methods', since (unlike basic gRPC) they provide methods to Reboot states"
         );
     }
 
@@ -2344,6 +2360,76 @@ mod tests {
             generate_from_wire(&generated_dependency).error.as_deref(),
             Some(
                 "Reboot state 'tests.reboot.protoc.Counter' has conflicting methods named 'Get': one from 'tests.reboot.protoc.CounterMethods.Get', another from 'tests.reboot.protoc.CounterAdminMethods.Get'. Each method name may only be used once per state type."
+            )
+        );
+    }
+
+    #[test]
+    fn raw_reboot_service_methods_suffix_validation_is_scoped_to_generated_files() {
+        fn append_raw_file(wire: &mut Vec<u8>, file: RawFile) {
+            let mut descriptor = file.encode_to_vec();
+            // Preserve syntax in the raw descriptor that shadows the ordinary
+            // descriptor consumed by the executable plugin.
+            descriptor.extend([0x62, 0x06, b'p', b'r', b'o', b't', b'o', b'3']);
+            wire.push(0x7a); // CodeGeneratorRequest.proto_file (field 15).
+            wire.push(u8::try_from(descriptor.len()).expect("small raw descriptor"));
+            wire.extend(descriptor);
+        }
+
+        let method_options = ExtensionOptions {
+            reboot: Some(
+                RebootMethodOptions {
+                    reader: Some(Empty {}),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let invalid_dependency = RawFile {
+            name: Some("tests/reboot/protoc/dependency.proto".to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            messages: vec![],
+            services: vec![RawService {
+                name: Some("CounterApi".to_owned()),
+                options: None,
+                methods: vec![RawMethod {
+                    name: Some("Get".to_owned()),
+                    options: Some(method_options),
+                }],
+            }],
+        };
+        let request = |file_to_generate: &str| CodeGeneratorRequest {
+            parameter: Some("module=reboot_rust_schema::proto".to_owned()),
+            file_to_generate: vec![file_to_generate.to_owned()],
+            proto_file: vec![
+                FileDescriptorProto {
+                    name: Some("tests/reboot/protoc/main.proto".to_owned()),
+                    package: Some("tests.reboot.protoc".to_owned()),
+                    syntax: Some("proto3".to_owned()),
+                    ..Default::default()
+                },
+                FileDescriptorProto {
+                    name: Some("tests/reboot/protoc/dependency.proto".to_owned()),
+                    package: Some("tests.reboot.protoc".to_owned()),
+                    syntax: Some("proto3".to_owned()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        let mut dependency_only = request("tests/reboot/protoc/main.proto").encode_to_vec();
+        append_raw_file(&mut dependency_only, invalid_dependency.clone());
+        assert!(generate_from_wire(&dependency_only).error.is_none());
+
+        let mut generated_dependency =
+            request("tests/reboot/protoc/dependency.proto").encode_to_vec();
+        append_raw_file(&mut generated_dependency, invalid_dependency);
+        assert_eq!(
+            generate_from_wire(&generated_dependency).error.as_deref(),
+            Some(
+                "Reboot service 'tests.reboot.protoc.CounterApi' has illegal name: all Reboot service names must end in 'Methods', since (unlike basic gRPC) they provide methods to Reboot states"
             )
         );
     }
@@ -2679,7 +2765,7 @@ mod tests {
         let annotations = HashMap::from([(
             "counter.proto".to_owned(),
             HashMap::from([(
-                "CounterWrites".to_owned(),
+                "CounterWritesMethods".to_owned(),
                 DurableService {
                     state: "Counter".to_owned(),
                     default_constructible: true,
@@ -2698,20 +2784,24 @@ mod tests {
             .remove(0)
             .content
             .unwrap();
-        assert!(content.contains("pub trait CounterWritesTransactionHandler"));
-        assert!(content.contains("pub struct CounterWritesClient<R>"));
-        assert!(content.contains("pub struct CounterWritesTarget"));
+        assert!(content.contains("pub trait CounterWritesMethodsTransactionHandler"));
+        assert!(content.contains("pub struct CounterWritesMethodsClient<R>"));
+        assert!(content.contains("pub struct CounterWritesMethodsTarget"));
         assert!(content.contains("TransactionalChannelResolver"));
         assert!(content.contains("transactional_outbound_request"));
-        assert!(content.contains("CounterWritesClient::new(channel).increment(request).await?"));
+        assert!(
+            content.contains("CounterWritesMethodsClient::new(channel).increment(request).await?")
+        );
         assert!(content.contains("ReturnedParticipants::from_metadata(response.metadata())"));
         assert!(content.contains("TransactionalCallResponse<proto::CounterValue>"));
         assert!(content.contains("context: &reboot_rust_schema::runtime::TransactionContext"));
         assert!(content.contains("state: &mut proto::Counter"));
-        assert!(content.contains("pub struct CounterWritesTransactionAdapter<H, P, C, R, F>"));
         assert!(
-            content.contains("impl<H, P, C, R, F> proto::counter_writes_server::CounterWrites")
+            content.contains("pub struct CounterWritesMethodsTransactionAdapter<H, P, C, R, F>")
         );
+        assert!(content.contains(
+            "impl<H, P, C, R, F> proto::counter_writes_methods_server::CounterWritesMethods"
+        ));
         assert!(content.contains("transaction-start factory"));
         assert!(content.contains("start_root_transaction(headers"));
         assert!(content.contains("InboundTransactionStartFactory"));
@@ -2734,10 +2824,10 @@ mod tests {
         assert!(content.contains("non-factory transaction requires an existing actor state"));
         assert!(content.contains("Factory transaction declared by this RPC: no."));
         assert!(content.contains("TransactionExecution<proto::CounterValue>"));
-        assert!(!content.contains("CounterWritesDatabaseHandler"));
-        assert!(!content.contains("CounterWritesExternalClient"));
+        assert!(!content.contains("CounterWritesMethodsDatabaseHandler"));
+        assert!(!content.contains("CounterWritesMethodsExternalClient"));
         assert!(!content.contains("writer_async_for_method::<CounterDurableState"));
-        assert!(!content.contains("impl<H: CounterWritesTransactionHandler> proto::"));
+        assert!(!content.contains("impl<H: CounterWritesMethodsTransactionHandler> proto::"));
     }
 
     #[test]
@@ -2745,7 +2835,7 @@ mod tests {
         let annotations = HashMap::from([(
             "counter.proto".to_owned(),
             HashMap::from([(
-                "CounterWrites".to_owned(),
+                "CounterWritesMethods".to_owned(),
                 DurableService {
                     state: "Counter".to_owned(),
                     default_constructible: true,
@@ -2787,7 +2877,7 @@ mod tests {
         let annotations = HashMap::from([(
             "counter.proto".to_owned(),
             HashMap::from([(
-                "CounterWrites".to_owned(),
+                "CounterWritesMethods".to_owned(),
                 DurableService {
                     state: "Counter".to_owned(),
                     default_constructible: true,
@@ -2817,7 +2907,7 @@ mod tests {
         let annotations = HashMap::from([(
             "counter.proto".to_owned(),
             HashMap::from([(
-                "CounterWrites".to_owned(),
+                "CounterWritesMethods".to_owned(),
                 DurableService {
                     state: "Counter".to_owned(),
                     default_constructible: false,
@@ -2916,7 +3006,7 @@ mod tests {
         let annotations = HashMap::from([(
             "counter.proto".to_owned(),
             HashMap::from([(
-                "CounterWrites".to_owned(),
+                "CounterWritesMethods".to_owned(),
                 DurableService {
                     state: "Counter".to_owned(),
                     default_constructible: false,
@@ -2966,7 +3056,7 @@ mod tests {
         let annotations = HashMap::from([(
             "counter.proto".to_owned(),
             HashMap::from([(
-                "CounterWrites".to_owned(),
+                "CounterWritesMethods".to_owned(),
                 DurableService {
                     state: "Counter".to_owned(),
                     default_constructible: true,
@@ -3000,10 +3090,10 @@ mod tests {
             .remove(0)
             .content
             .unwrap();
-        assert!(content.contains("pub trait CounterWritesTransactionHandler"));
+        assert!(content.contains("pub trait CounterWritesMethodsTransactionHandler"));
         assert!(content.contains("async fn increment(&self, state: &mut proto::Counter"));
         assert!(content.contains("async fn transaction(&self, context:"));
-        assert!(content.contains("pub struct CounterWritesTransactionAdapter"));
+        assert!(content.contains("pub struct CounterWritesMethodsTransactionAdapter"));
         assert!(content.contains("store: reboot_rust_schema::runtime::DatabaseActorStore"));
     }
 
@@ -3095,7 +3185,7 @@ mod tests {
         let mut value = request();
         value.proto_file[0].service[0].method[0].name = Some("Type".into());
         let error = generate(value).error.unwrap();
-        assert!(error.contains("CounterWrites"));
+        assert!(error.contains("CounterWritesMethods"));
         assert!(error.contains("Type"));
         assert!(error.contains("type"));
         assert!(error.contains("Rust keyword"));
@@ -3129,7 +3219,7 @@ mod tests {
             },
         ];
         let error = generate(value).error.unwrap();
-        assert!(error.contains("CounterWrites"));
+        assert!(error.contains("CounterWritesMethods"));
         assert!(error.contains("GetURL"));
         assert!(error.contains("GetUrl"));
         assert!(error.contains("get_url"));

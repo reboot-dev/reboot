@@ -28,27 +28,29 @@ fn protoc_plugin_emits_durable_counter_adapters() {
 
     let content =
         std::fs::read_to_string(generated.join("tests/reboot/protoc/counter.reboot.rs")).unwrap();
-    assert!(content.contains("pub trait CounterWritesDatabaseHandler"));
-    assert!(content.contains("pub trait CounterReadsDatabaseHandler"));
-    assert!(content.contains("#[tonic::async_trait]\npub trait CounterWritesDatabaseHandler"));
+    assert!(content.contains("pub trait CounterWritesMethodsDatabaseHandler"));
+    assert!(content.contains("pub trait CounterReadsMethodsDatabaseHandler"));
+    assert!(
+        content.contains("#[tonic::async_trait]\npub trait CounterWritesMethodsDatabaseHandler")
+    );
     assert!(content.contains("async fn increment"));
     assert!(content.contains("handler: std::sync::Arc<H>"));
-    assert!(content.contains("impl<H> Clone for CounterWritesDatabaseAdapter<H>"));
+    assert!(content.contains("impl<H> Clone for CounterWritesMethodsDatabaseAdapter<H>"));
     assert!(content.contains("pub struct CounterDurableState;"));
     assert!(content.contains("type State = proto::Counter;"));
     assert!(content.contains("const STATE_TYPE: &'static str = \"tests.reboot.protoc.Counter\";"));
     assert!(content.contains("store.writer_async_for_method::<CounterDurableState"));
     assert!(content.contains("store.reader_async_for::<CounterDurableState"));
-    assert!(content.contains("\"tests.reboot.protoc.CounterWrites.Increment\", request"));
+    assert!(content.contains("\"tests.reboot.protoc.CounterWritesMethods.Increment\", request"));
     assert!(content.contains("let handler = self.handler.clone();"));
     assert!(content.contains("Box::pin(async move"));
     assert!(content.contains("reboot::runtime::DatabaseActorStore"));
-    assert!(content.contains("pub struct CounterWritesExternalClient"));
+    assert!(content.contains("pub struct CounterWritesMethodsExternalClient"));
     assert!(content.contains("context: reboot::ExternalContext"));
     assert!(content.contains("self.context.writer(request)"));
     assert!(content.contains("pub async fn increment_with_key"));
     assert!(content.contains("self.context.writer_with_key(request, idempotency_key)"));
-    assert!(content.contains("pub struct CounterReadsExternalClient"));
+    assert!(content.contains("pub struct CounterReadsMethodsExternalClient"));
     assert!(content.contains("self.context.reader(request)"));
 }
 
@@ -153,7 +155,7 @@ use uuid::Uuid;
 struct Counter;
 
 #[tonic::async_trait]
-impl generated::CounterWritesDatabaseHandler for Counter {
+impl generated::CounterWritesMethodsDatabaseHandler for Counter {
     async fn increment(
         &self,
         state: &mut proto::Counter,
@@ -166,7 +168,7 @@ impl generated::CounterWritesDatabaseHandler for Counter {
 }
 
 #[tonic::async_trait]
-impl generated::CounterReadsDatabaseHandler for Counter {
+impl generated::CounterReadsMethodsDatabaseHandler for Counter {
     async fn get(
         &self,
         state: &proto::Counter,
@@ -180,7 +182,7 @@ impl generated::CounterReadsDatabaseHandler for Counter {
 struct MapCounter;
 
 #[tonic::async_trait]
-impl map_generated::MapCounterWritesDatabaseHandler for MapCounter {
+impl map_generated::MapCounterWritesMethodsDatabaseHandler for MapCounter {
     async fn increment(
         &self,
         state: &mut proto::MapCounter,
@@ -197,7 +199,7 @@ struct TransactionCounter {
 }
 
 #[tonic::async_trait]
-impl transaction_generated::TransactionCounterWritesTransactionHandler for TransactionCounter {
+impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler for TransactionCounter {
     async fn query(
         &self,
         state: &proto::TransactionCounter,
@@ -374,7 +376,7 @@ impl reboot::runtime::InboundTransactionStartFactory for TransactionStartFactory
 fn transaction_adapter(
     trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
     fail: bool,
-) -> transaction_generated::TransactionCounterWritesTransactionAdapter<
+) -> transaction_generated::TransactionCounterWritesMethodsTransactionAdapter<
     TransactionCounter,
     TransactionParticipantSidecar,
     TransactionCoordinatorSidecar,
@@ -392,7 +394,7 @@ fn transaction_adapter_with_idempotent_recovery(
     trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
     fail: bool,
     idempotent_recovery: Arc<std::sync::Mutex<VecDeque<Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>>>>,
-) -> transaction_generated::TransactionCounterWritesTransactionAdapter<
+) -> transaction_generated::TransactionCounterWritesMethodsTransactionAdapter<
     TransactionCounter,
     TransactionParticipantSidecar,
     TransactionCoordinatorSidecar,
@@ -411,7 +413,7 @@ fn transaction_adapter_with_store(
     trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
     fail: bool,
     store: DatabaseActorStore,
-) -> transaction_generated::TransactionCounterWritesTransactionAdapter<
+) -> transaction_generated::TransactionCounterWritesMethodsTransactionAdapter<
     TransactionCounter,
     TransactionParticipantSidecar,
     TransactionCoordinatorSidecar,
@@ -431,7 +433,7 @@ fn transaction_adapter_with_store_and_idempotent_recovery(
     fail: bool,
     store: DatabaseActorStore,
     idempotent_recovery: Arc<std::sync::Mutex<VecDeque<Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>>>>,
-) -> transaction_generated::TransactionCounterWritesTransactionAdapter<
+) -> transaction_generated::TransactionCounterWritesMethodsTransactionAdapter<
     TransactionCounter,
     TransactionParticipantSidecar,
     TransactionCoordinatorSidecar,
@@ -458,7 +460,7 @@ fn transaction_adapter_with_store_and_idempotent_recovery(
             reboot::durable_participant::DurableActorParticipantHost::new(participant.clone()),
         ).unwrap()),
     );
-    transaction_generated::TransactionCounterWritesTransactionAdapter::new(
+    transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(
         store,
         participant,
         coordinator,
@@ -472,7 +474,7 @@ fn factory_transaction_adapter(
     initial_state: Option<proto::TransactionCounter>,
     staged_states: Arc<std::sync::Mutex<Vec<Option<Vec<u8>>>>>,
     fail: bool,
-) -> transaction_generated::TransactionCounterWritesTransactionAdapter<
+) -> transaction_generated::TransactionCounterWritesMethodsTransactionAdapter<
     TransactionCounter,
     TransactionParticipantSidecar,
     TransactionCoordinatorSidecar,
@@ -500,7 +502,7 @@ fn factory_transaction_adapter(
             reboot::durable_participant::DurableActorParticipantHost::new(participant.clone()),
         ).unwrap()),
     );
-    transaction_generated::TransactionCounterWritesTransactionAdapter::new(
+    transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(
         store,
         participant,
         coordinator,
@@ -527,14 +529,14 @@ impl reboot::runtime::TransactionalChannelResolver for FixedChannelResolver {
 
 #[tokio::test]
 async fn generated_transaction_adapter_executes_in_process_protocol_trace() {
-    use proto::transaction_counter_writes_server::TransactionCounterWrites;
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
 
     let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
     let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
     *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter")
         .to_metadata()
         .unwrap();
-    let response = TransactionCounterWrites::increment(
+    let response = TransactionCounterWritesMethods::increment(
         &transaction_adapter(Arc::clone(&trace), false),
         request,
     )
@@ -555,14 +557,14 @@ async fn generated_transaction_adapter_executes_in_process_protocol_trace() {
 
 #[tokio::test]
 async fn generated_transaction_adapter_aborts_when_handler_rejects() {
-    use proto::transaction_counter_writes_server::TransactionCounterWrites;
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
 
     let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
     let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
     *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter")
         .to_metadata()
         .unwrap();
-    let error = TransactionCounterWrites::increment(
+    let error = TransactionCounterWritesMethods::increment(
         &transaction_adapter(Arc::clone(&trace), true),
         request,
     )
@@ -574,7 +576,7 @@ async fn generated_transaction_adapter_aborts_when_handler_rejects() {
 
 #[tokio::test]
 async fn generated_transaction_adapter_aborts_and_releases_lease_when_post_admission_idempotency_recovery_fails() {
-    use proto::transaction_counter_writes_server::TransactionCounterWrites;
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
 
     let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
     let idempotent_recovery = Arc::new(std::sync::Mutex::new(VecDeque::from([
@@ -591,7 +593,7 @@ async fn generated_transaction_adapter_aborts_and_releases_lease_when_post_admis
     let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
     *request.metadata_mut() = headers.to_metadata().unwrap();
 
-    let error = TransactionCounterWrites::increment(&adapter, request).await.unwrap_err();
+    let error = TransactionCounterWritesMethods::increment(&adapter, request).await.unwrap_err();
     assert_eq!(error.code(), tonic::Code::Unavailable);
     assert_eq!(*trace.lock().unwrap(), ["participant load", "participant abort"]);
 
@@ -600,7 +602,7 @@ async fn generated_transaction_adapter_aborts_and_releases_lease_when_post_admis
     headers.idempotency_key = Some(Uuid::from_u128(402));
     let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
     *request.metadata_mut() = headers.to_metadata().unwrap();
-    let response = TransactionCounterWrites::increment(&adapter, request).await.unwrap();
+    let response = TransactionCounterWritesMethods::increment(&adapter, request).await.unwrap();
     assert_eq!(response.into_inner().value, 7);
     assert_eq!(*trace.lock().unwrap(), [
         "participant load",
@@ -616,7 +618,7 @@ async fn generated_transaction_adapter_aborts_and_releases_lease_when_post_admis
 
 #[tokio::test]
 async fn generated_factory_transaction_materializes_default_state_and_rejects_existing_actor() {
-    use proto::transaction_counter_writes_server::TransactionCounterWrites;
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
 
     let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
     let staged_states = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -624,7 +626,7 @@ async fn generated_factory_transaction_materializes_default_state_and_rejects_ex
     *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter")
         .to_metadata()
         .unwrap();
-    let response = TransactionCounterWrites::factory_increment(
+    let response = TransactionCounterWritesMethods::factory_increment(
         &factory_transaction_adapter(Arc::clone(&trace), None, Arc::clone(&staged_states), false),
         request,
     )
@@ -656,7 +658,7 @@ async fn generated_factory_transaction_materializes_default_state_and_rejects_ex
     *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter")
         .to_metadata()
         .unwrap();
-    let error = TransactionCounterWrites::increment(
+    let error = TransactionCounterWritesMethods::increment(
         &factory_transaction_adapter(Arc::clone(&trace), None, Arc::clone(&staged_states), false),
         request,
     )
@@ -672,7 +674,7 @@ async fn generated_factory_transaction_materializes_default_state_and_rejects_ex
     *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter")
         .to_metadata()
         .unwrap();
-    let error = TransactionCounterWrites::factory_increment(
+    let error = TransactionCounterWritesMethods::factory_increment(
         &factory_transaction_adapter(
             Arc::clone(&trace),
             Some(proto::TransactionCounter { value: 9 }),
@@ -693,7 +695,7 @@ async fn generated_factory_transaction_materializes_default_state_and_rejects_ex
     *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter")
         .to_metadata()
         .unwrap();
-    let error = TransactionCounterWrites::factory_increment(
+    let error = TransactionCounterWritesMethods::factory_increment(
         &factory_transaction_adapter(Arc::clone(&trace), None, Arc::clone(&staged_states), true),
         request,
     )
@@ -706,7 +708,7 @@ async fn generated_factory_transaction_materializes_default_state_and_rejects_ex
 
 #[tokio::test]
 async fn generated_transaction_adapter_stages_validated_inbound_participant_in_success_trailer() {
-    use proto::transaction_counter_writes_server::TransactionCounterWrites;
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
 
     let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
     let mut headers = reboot::RebootHeaders::new("transaction-counter");
@@ -716,7 +718,7 @@ async fn generated_transaction_adapter_stages_validated_inbound_participant_in_s
     let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
     *request.metadata_mut() = headers.to_metadata().unwrap();
 
-    let response = TransactionCounterWrites::increment(
+    let response = TransactionCounterWritesMethods::increment(
         &transaction_adapter(Arc::clone(&trace), false),
         request,
     )
@@ -741,7 +743,7 @@ async fn generated_transaction_adapter_emits_inbound_participant_only_in_raw_suc
         tonic::transport::Server::builder()
             .layer(reboot::successful_trailers::SuccessfulParticipantTrailerLayer)
             .add_service(
-                proto::transaction_counter_writes_server::TransactionCounterWritesServer::new(adapter),
+                proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(adapter),
             )
             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
             .await
@@ -769,7 +771,7 @@ async fn generated_transaction_adapter_emits_inbound_participant_only_in_raw_suc
         >(
             request,
             http::uri::PathAndQuery::from_static(
-                "/tests.reboot.protoc.TransactionCounterWrites/Increment",
+                "/tests.reboot.protoc.TransactionCounterWritesMethods/Increment",
             ),
             tonic::codec::ProstCodec::default(),
         )
@@ -808,13 +810,13 @@ async fn generated_mixed_service_mounts_and_dispatches_database_and_transaction_
         tonic::transport::Server::builder()
             .layer(reboot::successful_trailers::SuccessfulParticipantTrailerLayer)
             .add_service(
-                proto::transaction_counter_writes_server::TransactionCounterWritesServer::new(adapter),
+                proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(adapter),
             )
             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
             .await
             .unwrap();
     });
-    let mut client = proto::transaction_counter_writes_client::TransactionCounterWritesClient::connect(
+    let mut client = proto::transaction_counter_writes_methods_client::TransactionCounterWritesMethodsClient::connect(
         format!("http://{address}"),
     )
     .await
@@ -866,7 +868,7 @@ async fn generated_shared_root_to_remote_read_only_call_returns_classified_parti
         tonic::transport::Server::builder()
             .layer(reboot::successful_trailers::SuccessfulParticipantTrailerLayer)
             .add_service(
-                proto::transaction_counter_writes_server::TransactionCounterWritesServer::new(adapter),
+                proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(adapter),
             )
             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
             .await
@@ -886,11 +888,11 @@ async fn generated_shared_root_to_remote_read_only_call_returns_classified_parti
     )
     .unwrap();
     let context = root.transaction();
-    let client = transaction_generated::TransactionCounterWritesClient::new(FixedChannelResolver(channel));
+    let client = transaction_generated::TransactionCounterWritesMethodsClient::new(FixedChannelResolver(channel));
     let response = client
         .shared_read(
             context,
-            &transaction_generated::TransactionCounterWritesTarget::new("transaction-counter"),
+            &transaction_generated::TransactionCounterWritesMethodsTarget::new("transaction-counter"),
             proto::TransactionIncrementRequest { amount: 3 },
         )
         .await
@@ -936,7 +938,7 @@ async fn generated_outbound_client_does_not_enlist_failed_rpc() {
         tonic::transport::Server::builder()
             .layer(reboot::successful_trailers::SuccessfulParticipantTrailerLayer)
             .add_service(
-                proto::transaction_counter_writes_server::TransactionCounterWritesServer::new(adapter),
+                proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(adapter),
             )
             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
             .await
@@ -955,11 +957,11 @@ async fn generated_outbound_client_does_not_enlist_failed_rpc() {
         prost_types::Timestamp::default(),
     )
     .unwrap();
-    let client = transaction_generated::TransactionCounterWritesClient::new(FixedChannelResolver(channel));
+    let client = transaction_generated::TransactionCounterWritesMethodsClient::new(FixedChannelResolver(channel));
     let error = client
         .increment(
             root.transaction(),
-            &transaction_generated::TransactionCounterWritesTarget::new("transaction-counter"),
+            &transaction_generated::TransactionCounterWritesMethodsTarget::new("transaction-counter"),
             proto::TransactionIncrementRequest { amount: 3 },
         )
         .await
@@ -972,11 +974,11 @@ async fn generated_outbound_client_does_not_enlist_failed_rpc() {
 async fn start_counter_adapters(
     database_endpoint: &str,
 ) -> (String, tokio::task::JoinHandle<()>) {
-    let writes = generated::CounterWritesDatabaseAdapter::new(
+    let writes = generated::CounterWritesMethodsDatabaseAdapter::new(
         DatabaseActorStore::connect(database_endpoint).await.unwrap(),
         Counter,
     );
-    let reads = generated::CounterReadsDatabaseAdapter::new(
+    let reads = generated::CounterReadsMethodsDatabaseAdapter::new(
         DatabaseActorStore::connect(database_endpoint).await.unwrap(),
         Counter,
     );
@@ -984,8 +986,8 @@ async fn start_counter_adapters(
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
         tonic::transport::Server::builder()
-            .add_service(proto::counter_writes_server::CounterWritesServer::new(writes))
-            .add_service(proto::counter_reads_server::CounterReadsServer::new(reads))
+            .add_service(proto::counter_writes_methods_server::CounterWritesMethodsServer::new(writes))
+            .add_service(proto::counter_reads_methods_server::CounterReadsMethodsServer::new(reads))
             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
             .await
             .unwrap();
@@ -1000,7 +1002,7 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
     let context = ExternalContext::new("generated-external-counter")
         .with_caller_id(CallerId::new("a1234567890", None).unwrap());
     let automatic_channel = context.connect(address.clone()).await.unwrap();
-    let mut writes = generated::CounterWritesExternalClient::new(automatic_channel, context.clone());
+    let mut writes = generated::CounterWritesMethodsExternalClient::new(automatic_channel, context.clone());
     assert_eq!(
         writes
             .increment(proto::IncrementRequest { amount: 5 })
@@ -1033,7 +1035,7 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
     );
 
     let reader_channel = context.connect(address).await.unwrap();
-    let mut reads = generated::CounterReadsExternalClient::new(reader_channel, context);
+    let mut reads = generated::CounterReadsMethodsExternalClient::new(reader_channel, context);
     assert_eq!(
         reads.get(proto::Empty {}).await.unwrap().into_inner().value,
         7
@@ -1062,7 +1064,7 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
 async fn start_map_counter_adapters(
     database_endpoint: &str,
 ) -> (String, tokio::task::JoinHandle<()>) {
-    let writes = map_generated::MapCounterWritesDatabaseAdapter::new(
+    let writes = map_generated::MapCounterWritesMethodsDatabaseAdapter::new(
         DatabaseActorStore::connect(database_endpoint).await.unwrap(),
         MapCounter,
     );
@@ -1071,7 +1073,7 @@ async fn start_map_counter_adapters(
     let server = tokio::spawn(async move {
         tonic::transport::Server::builder()
             .add_service(
-                proto::map_counter_writes_server::MapCounterWritesServer::new(writes),
+                proto::map_counter_writes_methods_server::MapCounterWritesMethodsServer::new(writes),
             )
             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
             .await
@@ -1086,7 +1088,7 @@ async fn generated_map_writer_replays_for_equivalent_map_insertion_orders() {
     let context = ExternalContext::new("database-durable-map-counter");
     let key = Uuid::from_u128(21);
     let (address, server) = start_map_counter_adapters(&database_endpoint).await;
-    let mut writes = proto::map_counter_writes_client::MapCounterWritesClient::connect(address)
+    let mut writes = proto::map_counter_writes_methods_client::MapCounterWritesMethodsClient::connect(address)
         .await
         .unwrap();
 
@@ -1126,7 +1128,7 @@ async fn generated_durable_counter_replays_after_service_recreation() {
     let first_key = Uuid::from_u128(19);
 
     let (address, server) = start_counter_adapters(&database_endpoint).await;
-    let mut writes = proto::counter_writes_client::CounterWritesClient::connect(address)
+    let mut writes = proto::counter_writes_methods_client::CounterWritesMethodsClient::connect(address)
         .await
         .unwrap();
     assert_eq!(
@@ -1145,10 +1147,10 @@ async fn generated_durable_counter_replays_after_service_recreation() {
     server.abort();
 
     let (address, server) = start_counter_adapters(&database_endpoint).await;
-    let mut writes = proto::counter_writes_client::CounterWritesClient::connect(address.clone())
+    let mut writes = proto::counter_writes_methods_client::CounterWritesMethodsClient::connect(address.clone())
         .await
         .unwrap();
-    let mut reads = proto::counter_reads_client::CounterReadsClient::connect(address)
+    let mut reads = proto::counter_reads_methods_client::CounterReadsMethodsClient::connect(address)
         .await
         .unwrap();
     assert_eq!(
@@ -1287,7 +1289,7 @@ mod tests {
     struct Counter;
 
     #[tonic::async_trait]
-    impl generated::CounterWritesDatabaseHandler for Counter {
+    impl generated::CounterWritesMethodsDatabaseHandler for Counter {
         async fn increment(
             &self,
             state: &mut proto::Counter,
@@ -1301,7 +1303,7 @@ mod tests {
     #[tokio::test]
     async fn default_helper_generated_writer_executes() {
         let (database_endpoint, _, database_server) = start_database().await;
-        let adapter = generated::CounterWritesDatabaseAdapter::new(
+        let adapter = generated::CounterWritesMethodsDatabaseAdapter::new(
             DatabaseActorStore::connect(&database_endpoint).await.unwrap(),
             Counter,
         );
@@ -1309,13 +1311,13 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             tonic::transport::Server::builder()
-                .add_service(proto::counter_writes_server::CounterWritesServer::new(adapter))
+                .add_service(proto::counter_writes_methods_server::CounterWritesMethodsServer::new(adapter))
                 .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
                 .await
                 .unwrap();
         });
         let context = ExternalContext::new("default-cargo-helper");
-        let mut client = proto::counter_writes_client::CounterWritesClient::connect(format!("http://{address}"))
+        let mut client = proto::counter_writes_methods_client::CounterWritesMethodsClient::connect(format!("http://{address}"))
             .await
             .unwrap();
         assert_eq!(

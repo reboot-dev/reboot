@@ -2224,7 +2224,7 @@ impl proto::echo_methods_server::EchoMethods for EchoMethodsAdapter {
 }
 
 #[tonic::async_trait]
-impl proto::counter_writes_server::CounterWrites for CounterAdapter {
+impl proto::counter_writes_methods_server::CounterWritesMethods for CounterAdapter {
     async fn increment(
         &self,
         request: Request<proto::IncrementRequest>,
@@ -2232,7 +2232,7 @@ impl proto::counter_writes_server::CounterWrites for CounterAdapter {
         self.store
             .writer_async_with_method::<proto::Counter, _, _, _>(
                 "tests.reboot.protoc.Counter",
-                "tests.reboot.protoc.CounterWrites.Increment",
+                "tests.reboot.protoc.CounterWritesMethods.Increment",
                 request,
                 |state, request| {
                     Box::pin(async move {
@@ -2249,7 +2249,7 @@ impl proto::counter_writes_server::CounterWrites for CounterAdapter {
 }
 
 #[tonic::async_trait]
-impl proto::counter_reads_server::CounterReads for CounterAdapter {
+impl proto::counter_reads_methods_server::CounterReadsMethods for CounterAdapter {
     async fn get(
         &self,
         request: Request<proto::Empty>,
@@ -3375,8 +3375,14 @@ mod tests {
         };
         let _: &BTreeMap<String, i64> = &first.amounts;
         assert_eq!(
-            request_fingerprint("tests.reboot.protoc.MapCounterWrites.Increment", &first),
-            request_fingerprint("tests.reboot.protoc.MapCounterWrites.Increment", &second),
+            request_fingerprint(
+                "tests.reboot.protoc.MapCounterWritesMethods.Increment",
+                &first
+            ),
+            request_fingerprint(
+                "tests.reboot.protoc.MapCounterWritesMethods.Increment",
+                &second
+            ),
         );
     }
 
@@ -3597,12 +3603,14 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             tonic::transport::Server::builder()
-                .add_service(proto::counter_writes_server::CounterWritesServer::new(
-                    adapter.clone(),
-                ))
-                .add_service(proto::counter_reads_server::CounterReadsServer::new(
-                    adapter,
-                ))
+                .add_service(
+                    proto::counter_writes_methods_server::CounterWritesMethodsServer::new(
+                        adapter.clone(),
+                    ),
+                )
+                .add_service(
+                    proto::counter_reads_methods_server::CounterReadsMethodsServer::new(adapter),
+                )
                 .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
                 .await
                 .unwrap();
@@ -3618,9 +3626,10 @@ mod tests {
 
         let (address, server) =
             start_counter_adapter(CounterAdapter::connect(&database_address).await.unwrap()).await;
-        let mut writes = proto::counter_writes_client::CounterWritesClient::connect(address)
-            .await
-            .unwrap();
+        let mut writes =
+            proto::counter_writes_methods_client::CounterWritesMethodsClient::connect(address)
+                .await
+                .unwrap();
         let first = writes
             .increment(
                 context
@@ -3635,13 +3644,15 @@ mod tests {
 
         let (address, server) =
             start_counter_adapter(CounterAdapter::connect(&database_address).await.unwrap()).await;
-        let mut writes =
-            proto::counter_writes_client::CounterWritesClient::connect(address.clone())
+        let mut writes = proto::counter_writes_methods_client::CounterWritesMethodsClient::connect(
+            address.clone(),
+        )
+        .await
+        .unwrap();
+        let mut reads =
+            proto::counter_reads_methods_client::CounterReadsMethodsClient::connect(address)
                 .await
                 .unwrap();
-        let mut reads = proto::counter_reads_client::CounterReadsClient::connect(address)
-            .await
-            .unwrap();
         let replay = writes
             .increment(
                 context
@@ -3719,7 +3730,7 @@ mod tests {
         let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let success = store
             .constructor_writer_async_for_method::<ConstructorCounter, _, _, _>(
-                "tests.reboot.protoc.CounterWrites.Construct",
+                "tests.reboot.protoc.CounterWritesMethods.Construct",
                 context
                     .writer_with_key(proto::IncrementRequest { amount: 7 }, key)
                     .unwrap(),
@@ -3750,7 +3761,7 @@ mod tests {
 
         let replay = store
             .constructor_writer_async_for_method::<ConstructorCounter, _, _, _>(
-                "tests.reboot.protoc.CounterWrites.Construct",
+                "tests.reboot.protoc.CounterWritesMethods.Construct",
                 context
                     .writer_with_key(proto::IncrementRequest { amount: 7 }, key)
                     .unwrap(),
@@ -3764,7 +3775,7 @@ mod tests {
 
         let duplicate = store
             .constructor_writer_async_for_method::<ConstructorCounter, _, _, _>(
-                "tests.reboot.protoc.CounterWrites.Construct",
+                "tests.reboot.protoc.CounterWritesMethods.Construct",
                 context
                     .writer_with_key(proto::IncrementRequest { amount: 8 }, Uuid::from_u128(402))
                     .unwrap(),
@@ -3778,7 +3789,7 @@ mod tests {
         let failed_key = Uuid::from_u128(403);
         let failure = store
             .constructor_writer_async_for_method::<ConstructorCounter, _, _, _>(
-                "tests.reboot.protoc.CounterWrites.Construct",
+                "tests.reboot.protoc.CounterWritesMethods.Construct",
                 failed_context
                     .writer_with_key(proto::IncrementRequest { amount: 1 }, failed_key)
                     .unwrap(),

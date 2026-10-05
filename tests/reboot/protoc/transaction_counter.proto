@@ -6,7 +6,7 @@ package tests.reboot.protoc;
 
 message TransactionCounter {
   option (rbt.v1alpha1.state) = {
-    implements: ["tests.reboot.protoc.TransactionCounterWrites"]
+    implements: ["tests.reboot.protoc.TransactionCounterWritesMethods"]
   };
   int64 value = 1;
 }
@@ -19,7 +19,7 @@ message TransactionCounterValue {
   int64 value = 1;
 }
 
-service TransactionCounterWrites {
+service TransactionCounterWritesMethods {
   option (rbt.v1alpha1.service) = {
     state: "tests.reboot.protoc.TransactionCounter"
   };
