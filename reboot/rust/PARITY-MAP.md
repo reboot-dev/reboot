@@ -106,5 +106,12 @@ The following tests are intentionally ignored until a reproducible
 - `rust/tests/native_2pc_transport.rs` — native preparation/recovery and
   materialization acceptances.
 
+**Current verification blocker (2026-10-05):** the local artifact and
+`REBOOT_NATIVE2PC_CXX_DATABASE` are absent. The prior `maxbucek` verification
+host cannot currently be resolved from this environment, while local free disk
+is below the 40 GiB Bazel guardrail, so rebuilding locally is prohibited.
+Pending evidence is a fresh artifact plus all ignored process/restart tests;
+this is an environment gate, not proof that the sidecar protocol is wrong.
+
 Passing unit or fake-sidecar tests never substitutes for those process/restart
 acceptances.
