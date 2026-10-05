@@ -16,6 +16,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -170,6 +171,7 @@ impl TransactionContext {
         let key = self.headers.idempotency_key.ok_or_else(|| {
             Status::invalid_argument("metadata `x-reboot-idempotency-key` is required")
         })?;
+        check_idempotency_key_not_expired(key)?;
         Ok(TransactionIdempotency {
             key,
             request_fingerprint: request_fingerprint(method_identity, request),
@@ -2021,11 +2023,39 @@ fn required_metadata(request: &Request<impl Sized>, name: &'static str) -> Resul
 
 fn idempotency_key<T>(request: &Request<T>) -> Result<Uuid, Status> {
     let value = required_metadata(request, IDEMPOTENCY_KEY_HEADER)?;
-    Uuid::parse_str(&value).map_err(|_| {
+    let key = Uuid::parse_str(&value).map_err(|_| {
         Status::invalid_argument(format!(
             "metadata `{IDEMPOTENCY_KEY_HEADER}` must be a UUID"
         ))
-    })
+    })?;
+    check_idempotency_key_not_expired(key)?;
+    Ok(key)
+}
+
+/// Rejects a UUIDv7 idempotency key whose embedded expiry timestamp is already
+/// in the past. Other UUID versions intentionally retain Python compatibility.
+pub fn check_idempotency_key_not_expired(key: Uuid) -> Result<(), Status> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| Status::internal("system clock predates Unix epoch"))?
+        .as_millis();
+    check_idempotency_key_not_expired_at(key, now)
+}
+
+fn check_idempotency_key_not_expired_at(key: Uuid, now_ms: u128) -> Result<(), Status> {
+    if key.get_version_num() != 7 {
+        return Ok(());
+    }
+    let bytes = key.as_bytes();
+    let timestamp_ms = bytes[..6].iter().fold(0_u128, |timestamp, byte| {
+        (timestamp << 8) | u128::from(*byte)
+    });
+    if timestamp_ms < now_ms {
+        return Err(Status::failed_precondition(
+            "UUIDv7 idempotency key has expired",
+        ));
+    }
+    Ok(())
 }
 
 #[tonic::async_trait]
@@ -3139,6 +3169,22 @@ mod tests {
                 0xa5, 0x0c, 0x2b, 0xa8,
             ]
         );
+    }
+
+    fn uuid_v7_with_timestamp(timestamp_ms: u64) -> Uuid {
+        let mut bytes = [0_u8; 16];
+        bytes[..6].copy_from_slice(&timestamp_ms.to_be_bytes()[2..]);
+        bytes[6] = 0x70;
+        bytes[8] = 0x80;
+        Uuid::from_bytes(bytes)
+    }
+
+    #[test]
+    fn idempotency_expiry_matches_python_uuid_v7_contract() {
+        assert!(check_idempotency_key_not_expired_at(Uuid::new_v4(), 1).is_ok());
+        assert!(check_idempotency_key_not_expired_at(uuid_v7_with_timestamp(9), 10).is_err());
+        assert!(check_idempotency_key_not_expired_at(uuid_v7_with_timestamp(10), 10).is_ok());
+        assert!(check_idempotency_key_not_expired_at(uuid_v7_with_timestamp(11), 10).is_ok());
     }
 
     #[test]
