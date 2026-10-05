@@ -160,17 +160,28 @@ struct RebootMethodOptions {
     #[prost(message, optional, tag = "4")]
     workflow: Option<Empty>,
 }
-#[derive(Message)]
+#[derive(Clone, Message)]
 struct Empty {}
 
 #[derive(Message)]
 struct RebootTransactionMethodOptions {
     #[prost(message, optional, tag = "2")]
     constructor: Option<Empty>,
-    #[prost(message, optional, tag = "3")]
-    exclusive: Option<Empty>,
-    #[prost(message, optional, tag = "4")]
-    shared: Option<Empty>,
+    // This is a protobuf `oneof`, not two independent flags. In particular,
+    // when malformed raw wire contains both fields, protobuf keeps the last
+    // field; Python's generated options message has that same behavior.
+    #[prost(oneof = "reboot_transaction_method_options::Mode", tags = "3, 4")]
+    mode: Option<reboot_transaction_method_options::Mode>,
+}
+
+mod reboot_transaction_method_options {
+    #[derive(Clone, prost::Oneof)]
+    pub enum Mode {
+        #[prost(message, tag = "3")]
+        Exclusive(super::Empty),
+        #[prost(message, tag = "4")]
+        Shared(super::Empty),
+    }
 }
 
 #[derive(Clone, Default)]
@@ -466,21 +477,22 @@ fn annotations_for_generated_files(
                             .constructor
                             .is_some(),
                     }),
-                    (false, false, Some(transaction)) => match (
-                        transaction.exclusive.is_some(),
-                        transaction.shared.is_some(),
-                    ) {
-                        (true, false) => DurableKind::Transaction(TransactionMetadata {
-                            mode: TransactionMode::Exclusive,
-                            factory: transaction.constructor.is_some(),
-                        }),
-                        (false, true) => DurableKind::Transaction(TransactionMetadata {
-                            mode: TransactionMode::Shared,
-                            factory: transaction.constructor.is_some(),
-                        }),
-                        _ => {
+                    (false, false, Some(transaction)) => match transaction.mode {
+                        Some(reboot_transaction_method_options::Mode::Exclusive(_)) => {
+                            DurableKind::Transaction(TransactionMetadata {
+                                mode: TransactionMode::Exclusive,
+                                factory: transaction.constructor.is_some(),
+                            })
+                        }
+                        Some(reboot_transaction_method_options::Mode::Shared(_)) => {
+                            DurableKind::Transaction(TransactionMetadata {
+                                mode: TransactionMode::Shared,
+                                factory: transaction.constructor.is_some(),
+                            })
+                        }
+                        None => {
                             return Err(format!(
-                                "{file_name}: transaction `{service_name}.{method_name}` must choose exactly one of exclusive or shared mode"
+                                "{file_name}: Transaction '{method_name}' does not say how it holds the lock on its own state while it runs. Every transaction must declare one of:\n  exclusive: {{}} takes the lock exclusive from the start, so that concurrent callers of the same state queue behind it. The choice for a transaction that writes its own state, which is most of them.\n  shared: {{}} takes the lock shared and upgrades it to exclusive only if the transaction writes its own state, so that callers proceed concurrently while none of them writes it. The choice for a transaction that mostly reads its own state while writing others.\nFor example:\n  option (rbt.v1alpha1.method) = {{\n    transaction: {{ exclusive: {{}} }},\n  }};"
                             ));
                         }
                     },
@@ -3089,8 +3101,14 @@ mod tests {
                     RebootMethodOptions {
                         transaction: Some(RebootTransactionMethodOptions {
                             constructor: factory.then_some(Empty {}),
-                            exclusive: (mode == TransactionMode::Exclusive).then_some(Empty {}),
-                            shared: (mode == TransactionMode::Shared).then_some(Empty {}),
+                            mode: match mode {
+                                TransactionMode::Exclusive => Some(
+                                    reboot_transaction_method_options::Mode::Exclusive(Empty {}),
+                                ),
+                                TransactionMode::Shared => {
+                                    Some(reboot_transaction_method_options::Mode::Shared(Empty {}))
+                                }
+                            },
                         }),
                         ..Default::default()
                     }
@@ -3133,6 +3151,83 @@ mod tests {
                 mode: TransactionMode::Shared,
                 factory: true,
             })
+        );
+    }
+
+    #[test]
+    fn raw_plugin_transaction_mode_options_match_python_oneof_and_diagnostic() {
+        fn push_length_delimited(output: &mut Vec<u8>, field: u8, value: &[u8]) {
+            output.push(field);
+            let mut length = value.len();
+            while length >= 0x80 {
+                output.push((length as u8 & 0x7f) | 0x80);
+                length >>= 7;
+            }
+            output.push(length as u8);
+            output.extend(value);
+        }
+
+        let raw_request = |mode| {
+            let method_option = ExtensionOptions {
+                reboot: Some(
+                    RebootMethodOptions {
+                        transaction: Some(RebootTransactionMethodOptions {
+                            constructor: Some(Empty {}),
+                            mode,
+                        }),
+                        ..Default::default()
+                    }
+                    .encode_to_vec(),
+                ),
+            }
+            .encode_to_vec();
+            // Raw option overlays must remain full ordinary descriptors too:
+            // generate_from_wire decodes this request both as prost_types and
+            // through the raw mirror retaining extension field 50000.
+            let mut method = MethodDescriptorProto {
+                name: Some("Increment".to_owned()),
+                input_type: Some(".tests.reboot.protoc.IncrementRequest".to_owned()),
+                output_type: Some(".tests.reboot.protoc.CounterValue".to_owned()),
+                ..Default::default()
+            }
+            .encode_to_vec();
+            push_length_delimited(&mut method, 0x22, &method_option);
+            let mut service = RawService {
+                name: Some("CounterWritesMethods".to_owned()),
+                methods: vec![],
+                options: None,
+            }
+            .encode_to_vec();
+            push_length_delimited(&mut service, 0x12, &method);
+            let mut descriptor = RawFile {
+                name: Some("tests/reboot/protoc/counter.proto".to_owned()),
+                package: Some("tests.reboot.protoc".to_owned()),
+                messages: vec![],
+                services: vec![],
+            }
+            .encode_to_vec();
+            push_length_delimited(&mut descriptor, 0x32, &service);
+            descriptor.extend([0x62, 0x06, b'p', b'r', b'o', b't', b'o', b'3']);
+            let mut request = request();
+            request.file_to_generate = vec!["tests/reboot/protoc/counter.proto".to_owned()];
+            request.proto_file[0].name = Some("tests/reboot/protoc/counter.proto".to_owned());
+            let mut wire = request.encode_to_vec();
+            push_length_delimited(&mut wire, 0x7a, &descriptor);
+            wire
+        };
+
+        for mode in [
+            reboot_transaction_method_options::Mode::Exclusive(Empty {}),
+            reboot_transaction_method_options::Mode::Shared(Empty {}),
+        ] {
+            let response = generate_from_wire(&raw_request(Some(mode)));
+            assert!(response.error.is_none(), "{response:?}");
+        }
+        assert_eq!(
+            generate_from_wire(&raw_request(None)).error.as_deref(),
+            Some(
+                "tests/reboot/protoc/counter.proto: Transaction 'Increment' does not say how it holds the lock on its own state while it runs. Every transaction must declare one of:\n  exclusive: {} takes the lock exclusive from the start, so that concurrent callers of the same state queue behind it. The choice for a transaction that writes its own state, which is most of them.\n  shared: {} takes the lock shared and upgrades it to exclusive only if the transaction writes its own state, so that callers proceed concurrently while none of them writes it. The choice for a transaction that mostly reads its own state while writing others.\nFor example:\n  option (rbt.v1alpha1.method) = {\n    transaction: { exclusive: {} },\n  };"
+            )
         );
     }
 
@@ -3374,7 +3469,10 @@ mod tests {
             Ok(_) => panic!("a transaction without a mode must be rejected"),
             Err(error) => error,
         };
-        assert!(error.contains("must choose exactly one of exclusive or shared mode"));
+        assert_eq!(
+            error,
+            "counter.proto: Transaction 'Increment' does not say how it holds the lock on its own state while it runs. Every transaction must declare one of:\n  exclusive: {} takes the lock exclusive from the start, so that concurrent callers of the same state queue behind it. The choice for a transaction that writes its own state, which is most of them.\n  shared: {} takes the lock shared and upgrades it to exclusive only if the transaction writes its own state, so that callers proceed concurrently while none of them writes it. The choice for a transaction that mostly reads its own state while writing others.\nFor example:\n  option (rbt.v1alpha1.method) = {\n    transaction: { exclusive: {} },\n  };"
+        );
     }
 
     #[test]
