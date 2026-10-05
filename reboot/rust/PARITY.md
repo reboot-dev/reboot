@@ -70,6 +70,25 @@ must never inherit promotion authority.
    bytes, kill/restart after coordinator-prepare and after decision, recovery,
    and exactly-once final application/response.
 
+## Pending: exclusive-to-shared downgrade
+
+**Use case:** Python's actor lock lets an exclusive holder downgrade to shared,
+then grants already-queued compatible readers while later writers remain behind
+them. Rust currently implements shared acquisition, exclusive FIFO acquisition,
+and shared-to-exclusive upgrade, but deliberately exposes no downgrade API.
+
+**Why it is pending:** Rust does not currently queue shared waiters, so it
+cannot distinguish readers that were waiting before a writer from readers trying
+to barge after that writer. Adding a superficial `downgrade()` would either
+starve the writer or violate the existing no-reader-barge guarantee. This needs
+a unified ordered reader/writer waiter queue plus cancellation tests before an
+API is added.
+
+**Required acceptance coverage:** readers queued before a writer are admitted
+on downgrade; readers arriving after that writer are not; cancelled readers and
+writers are removed safely; no two exclusive leases coexist; and an upgrader
+never jumps the queue or deadlocks while retaining its snapshot.
+
 ## Other known parity gaps
 
 These are not blockers for the local promotion slice and should be tackled
