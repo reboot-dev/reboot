@@ -949,10 +949,6 @@ impl RebootHeaders {
                 CALLER_ID_HEADER,
                 self.caller_id.as_ref().map(ToString::to_string),
             ),
-            (
-                TASK_SCHEDULE_HEADER,
-                self.task_schedule.as_ref().map(DateTime::to_rfc3339),
-            ),
         ] {
             if let Some(value) = value {
                 insert(&mut metadata, name, value)?;
@@ -2177,6 +2173,10 @@ mod tests {
         headers.coordinator_read_only_aware = true;
 
         let mut inbound = headers.to_metadata().unwrap();
+        inbound.insert(
+            TASK_SCHEDULE_HEADER,
+            "2026-10-03T12:00:00+00:00".parse().unwrap(),
+        );
         inbound.insert("x-example-unknown", "must-not-forward".parse().unwrap());
         assert_eq!(
             inbound.get(TRANSACTION_IDS_HEADER).unwrap(),
@@ -2187,7 +2187,10 @@ mod tests {
         assert_eq!(parsed, headers);
         let emitted = parsed.to_metadata().unwrap();
         assert!(emitted.get("x-example-unknown").is_none());
-        assert_eq!(emitted.len(), inbound.len() - 1);
+        // Python reads `x-reboot-task-schedule` on inbound task delivery but
+        // deliberately does not propagate it to downstream RPC metadata.
+        assert!(emitted.get(TASK_SCHEDULE_HEADER).is_none());
+        assert_eq!(emitted.len(), inbound.len() - 2);
     }
 
     #[test]
@@ -2399,7 +2402,7 @@ mod tests {
     }
 
     #[test]
-    fn task_schedule_is_typed_validated_and_defaults_empty_metadata_to_now() {
+    fn task_schedule_is_inbound_only_and_defaults_empty_metadata_to_now() {
         let mut scheduled = tonic::metadata::MetadataMap::new();
         scheduled.insert(STATE_REF_HEADER, "actor".parse().unwrap());
         scheduled.insert(
@@ -2411,13 +2414,12 @@ mod tests {
             parsed.task_schedule,
             Some(DateTime::parse_from_rfc3339("2026-10-03T12:00:00+02:00").unwrap())
         );
-        assert_eq!(
+        assert!(
             parsed
                 .to_metadata()
                 .unwrap()
                 .get(TASK_SCHEDULE_HEADER)
-                .unwrap(),
-            "2026-10-03T12:00:00+02:00"
+                .is_none()
         );
 
         let mut empty = tonic::metadata::MetadataMap::new();
