@@ -1005,7 +1005,14 @@ impl ExternalContext {
     /// before retrying across a process boundary; use `writer_with_key` for
     /// subsequent attempts.
     pub fn writer<T>(&self, message: T) -> Result<tonic::Request<T>, ContextError> {
-        self.writer_with_key(message, uuid::Uuid::new_v4())
+        let expiry = std::time::SystemTime::now()
+            .checked_add(std::time::Duration::from_secs(7 * 24 * 60 * 60))
+            .expect("idempotency expiry must fit SystemTime")
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("idempotency expiry must be after the Unix epoch");
+        let timestamp =
+            uuid::Timestamp::from_unix(uuid::NoContext, expiry.as_secs(), expiry.subsec_nanos());
+        self.writer_with_key(message, uuid::Uuid::new_v7(timestamp))
     }
 
     /// Builds a retry-safe writer call using a caller-owned idempotency key.
