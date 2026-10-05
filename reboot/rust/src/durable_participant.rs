@@ -511,6 +511,20 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 "pending transaction ID differs",
             ));
         }
+        let changes_read_only_state = match (&current.loaded_state, &effects.state) {
+            (None, Some(_)) => true,
+            (Some(initial), Some(final_state)) => initial != final_state,
+            _ => false,
+        };
+        if current.disposition == PendingDisposition::ReadOnly
+            && (!effects.task_upserts.is_empty()
+                || !effects.idempotent_mutations.is_empty()
+                || changes_read_only_state)
+        {
+            return Err(Status::failed_precondition(
+                "read-only transactions cannot stage changed state, tasks, or idempotency mutations",
+            ));
+        }
         if current.lock.is_shared()
             && (!effects.task_upserts.is_empty() || !effects.idempotent_mutations.is_empty())
         {
@@ -1607,6 +1621,40 @@ mod tests {
         assert!(matches!(
             sidecar.calls.lock().unwrap().as_slice(),
             [Call::Load(_), Call::Load(_)]
+        ));
+    }
+
+    #[tokio::test]
+    async fn read_only_root_rejects_changed_state_instead_of_silently_discarding_it() {
+        let sidecar = Arc::new(MockSidecar::default());
+        *sidecar.load_state.lock().unwrap() = Some(vec![1]);
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let id = Uuid::from_u128(602);
+        let mut read_only = start(id);
+        read_only.mode = TransactionMode::Shared;
+        read_only.read_only = true;
+        participant.start(read_only).await.unwrap();
+
+        let error = participant
+            .stage(
+                id,
+                PendingActorEffects {
+                    state: Some(vec![2]),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+        assert_eq!(
+            error.message(),
+            "read-only transactions cannot stage changed state, tasks, or idempotency mutations"
+        );
+        participant.abort(id).await.unwrap();
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Load(_)]
         ));
     }
 
