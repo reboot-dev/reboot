@@ -1058,6 +1058,21 @@ impl ExternalContext {
     }
 }
 
+/// Returns whether a transport status is safe to retry as a disconnected call.
+///
+/// This deliberately matches Python's narrow `aio.aborted.is_retryable_status_code`:
+/// only `Unavailable` is classified as retryable. It does not retry a request,
+/// decide whether an idempotent mutation reached durable storage, or change
+/// transaction recovery semantics.
+pub fn is_retryable_status_code(code: tonic::Code) -> bool {
+    code == tonic::Code::Unavailable
+}
+
+/// Returns whether a Tonic status has Python-compatible retryable transport code.
+pub fn is_retryable_status(status: &tonic::Status) -> bool {
+    is_retryable_status_code(status.code())
+}
+
 /// Small, executable runtime slice: serialized actor state plus write
 /// idempotency. It intentionally uses process-local memory; durable storage,
 /// distributed locks, and multi-actor transactions remain separate layers.
@@ -1893,6 +1908,23 @@ mod tests {
             .await
             .unwrap_err();
         assert!(error.to_string().contains("invalid URI"));
+    }
+
+    #[test]
+    fn retryable_statuses_match_python_unavailable_only_policy() {
+        assert!(is_retryable_status_code(tonic::Code::Unavailable));
+        assert!(is_retryable_status(&tonic::Status::unavailable(
+            "disconnected"
+        )));
+        for code in [
+            tonic::Code::Aborted,
+            tonic::Code::Cancelled,
+            tonic::Code::DeadlineExceeded,
+            tonic::Code::Internal,
+            tonic::Code::Unknown,
+        ] {
+            assert!(!is_retryable_status_code(code));
+        }
     }
 
     #[test]
