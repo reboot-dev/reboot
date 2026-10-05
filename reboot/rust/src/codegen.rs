@@ -211,23 +211,60 @@ fn annotations(
             let Some(service_name) = service.name else {
                 continue;
             };
-            let Some(options) = service.options else {
+            let service_option = service
+                .options
+                .as_deref()
+                .map(|options| {
+                    ExtensionOptions::decode(options)
+                        .map_err(|error| format!("{file_name}: invalid service options: {error}"))
+                })
+                .transpose()?
+                .and_then(|extension| extension.reboot);
+            let has_method_option = service.methods.iter().try_fold(
+                false,
+                |found, method| -> Result<bool, String> {
+                    let Some(options) = method.options.as_deref() else {
+                        return Ok(found);
+                    };
+                    let extension = ExtensionOptions::decode(options)
+                        .map_err(|error| format!("{file_name}: invalid method options: {error}"))?;
+                    Ok(found || extension.reboot.is_some())
+                },
+            )?;
+            // Python treats either annotation as sufficient to classify a service
+            // as Reboot. A service option is optional because the `Methods`
+            // naming convention supplies its state name.
+            if service_option.is_none() && !has_method_option {
                 continue;
-            };
-            let extension = ExtensionOptions::decode(options.as_slice())
-                .map_err(|error| format!("{file_name}: invalid service options: {error}"))?;
-            let Some(bytes) = extension.reboot else {
-                continue;
-            };
-            let service_option =
-                RebootServiceOptions::decode(bytes.as_slice()).map_err(|error| {
-                    format!("{file_name}: invalid rbt.v1alpha1.service option: {error}")
-                })?;
-            if service_option.state.is_empty() {
-                return Err(format!(
-                    "{file_name}: annotated service `{service_name}` is missing rbt.v1alpha1.service.state"
-                ));
             }
+            let service_option = service_option
+                .map(|bytes| {
+                    RebootServiceOptions::decode(bytes.as_slice()).map_err(|error| {
+                        format!("{file_name}: invalid rbt.v1alpha1.service option: {error}")
+                    })
+                })
+                .transpose()?;
+            let (state, default_constructible) = match service_option {
+                // Method-only services follow Python's `Methods` convention.
+                // Keep the established explicit-option path intact until its
+                // fixture corpus can migrate as one compatible API change.
+                None => {
+                    let Some(state) = service_name.strip_suffix("Methods") else {
+                        return Err(format!(
+                            "{file_name}: Reboot service `{service_name}` has illegal name: all method-only Reboot service names must end in `Methods`"
+                        ));
+                    };
+                    (state.to_owned(), false)
+                }
+                Some(service_option) if service_option.state.is_empty() => {
+                    return Err(format!(
+                        "{file_name}: annotated service `{service_name}` is missing rbt.v1alpha1.service.state"
+                    ));
+                }
+                Some(service_option) => {
+                    (service_option.state, service_option.default_constructible)
+                }
+            };
             let mut methods = HashMap::new();
             for method in service.methods {
                 let Some(method_name) = method.name else {
@@ -309,8 +346,8 @@ fn annotations(
             services.insert(
                 service_name,
                 DurableService {
-                    state: service_option.state,
-                    default_constructible: service_option.default_constructible,
+                    state,
+                    default_constructible,
                     methods,
                 },
             );
@@ -1267,6 +1304,76 @@ mod tests {
     }
 
     #[test]
+    fn method_annotation_without_service_annotation_uses_methods_convention() {
+        let method_options = ExtensionOptions {
+            reboot: Some(
+                RebootMethodOptions {
+                    writer: Some(RebootWriterMethodOptions::default()),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        // Round-trip the raw descriptor representation used by the plugin so
+        // this does not rely on reflected extension registration.
+        let raw = RawRequest {
+            files: vec![RawFile {
+                name: Some("counter.proto".to_owned()),
+                services: vec![RawService {
+                    name: Some("CounterMethods".to_owned()),
+                    options: None,
+                    methods: vec![RawMethod {
+                        name: Some("Increment".to_owned()),
+                        options: Some(method_options),
+                    }],
+                }],
+            }],
+        }
+        .encode_to_vec();
+        let annotations = annotations(RawRequest::decode(raw.as_slice()).unwrap().files).unwrap();
+        let service = &annotations["counter.proto"]["CounterMethods"];
+        assert_eq!(service.state, "Counter");
+        assert!(!service.default_constructible);
+        assert!(matches!(
+            service.methods["Increment"],
+            DurableKind::Writer(WriterMetadata { constructor: false })
+        ));
+    }
+
+    #[test]
+    fn method_annotation_without_service_annotation_requires_methods_suffix() {
+        let method_options = ExtensionOptions {
+            reboot: Some(
+                RebootMethodOptions {
+                    reader: Some(Empty {}),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let error = match annotations(vec![RawFile {
+            name: Some("counter.proto".to_owned()),
+            services: vec![RawService {
+                name: Some("CounterReads".to_owned()),
+                options: None,
+                methods: vec![RawMethod {
+                    name: Some("ReadCounter".to_owned()),
+                    options: Some(method_options),
+                }],
+            }],
+        }]) {
+            Err(error) => error,
+            Ok(_) => panic!("method-annotated non-Methods service unexpectedly accepted"),
+        };
+        assert_eq!(
+            error,
+            "counter.proto: Reboot service `CounterReads` has illegal name: all method-only Reboot service names must end in `Methods`"
+        );
+    }
+
+    #[test]
     fn annotated_reboot_method_must_start_with_uppercase() {
         let method_options = ExtensionOptions {
             reboot: Some(
@@ -1281,7 +1388,7 @@ mod tests {
         let error = match annotations(vec![RawFile {
             name: Some("counter.proto".to_owned()),
             services: vec![RawService {
-                name: Some("CounterWrites".to_owned()),
+                name: Some("CounterMethods".to_owned()),
                 options: Some(
                     ExtensionOptions {
                         reboot: Some(
@@ -1305,7 +1412,7 @@ mod tests {
         };
         assert_eq!(
             error,
-            "counter.proto: Reboot method `CounterWrites/increment` has illegal name: all Reboot RPC method names must start with an uppercase letter."
+            "counter.proto: Reboot method `CounterMethods/increment` has illegal name: all Reboot RPC method names must start with an uppercase letter."
         );
     }
 
@@ -1340,7 +1447,7 @@ mod tests {
         let parsed = annotations(vec![RawFile {
             name: Some("counter.proto".to_owned()),
             services: vec![RawService {
-                name: Some("CounterTransactions".to_owned()),
+                name: Some("CounterMethods".to_owned()),
                 options: Some(service_options),
                 methods: vec![
                     RawMethod {
@@ -1355,7 +1462,7 @@ mod tests {
             }],
         }])
         .unwrap();
-        let methods = &parsed["counter.proto"]["CounterTransactions"].methods;
+        let methods = &parsed["counter.proto"]["CounterMethods"].methods;
         assert_eq!(
             methods["Exclusive"],
             DurableKind::Transaction(TransactionMetadata {
@@ -1581,7 +1688,7 @@ mod tests {
         let result = annotations(vec![RawFile {
             name: Some("counter.proto".to_owned()),
             services: vec![RawService {
-                name: Some("CounterTransactions".to_owned()),
+                name: Some("CounterMethods".to_owned()),
                 options: Some(
                     ExtensionOptions {
                         reboot: Some(
