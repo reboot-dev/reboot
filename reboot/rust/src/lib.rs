@@ -1868,25 +1868,35 @@ mod tests {
     #[test]
     fn external_context_attaches_reboot_metadata() {
         let context = ExternalContext::new("opaque-state-ref").with_bearer_token("test-token");
+        let before_writer = std::time::SystemTime::now();
         let request = context
             .writer(proto::Text {
                 content: "hello from rust".to_owned(),
             })
             .unwrap();
+        let after_writer = std::time::SystemTime::now();
         let metadata = request.metadata();
         assert_eq!(
             metadata.get("x-reboot-state-ref").unwrap(),
             "opaque-state-ref"
         );
+        let automatic_key = uuid::Uuid::parse_str(
+            metadata
+                .get("x-reboot-idempotency-key")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(automatic_key.get_version_num(), 7);
+        let (seconds, nanos) = automatic_key.get_timestamp().unwrap().to_unix();
+        let automatic_expiry = std::time::UNIX_EPOCH + std::time::Duration::new(seconds, nanos);
         assert!(
-            uuid::Uuid::parse_str(
-                metadata
-                    .get("x-reboot-idempotency-key")
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-            )
-            .is_ok()
+            automatic_expiry
+                >= before_writer + std::time::Duration::from_secs(7 * 24 * 60 * 60 - 1)
+        );
+        assert!(
+            automatic_expiry <= after_writer + std::time::Duration::from_secs(7 * 24 * 60 * 60 + 1)
         );
         assert_eq!(metadata.get("authorization").unwrap(), "Bearer test-token");
 
