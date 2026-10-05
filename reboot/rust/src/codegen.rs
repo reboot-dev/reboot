@@ -177,6 +177,9 @@ pub fn generate_from_wire(input: &[u8]) -> CodeGeneratorResponse {
         Ok(value) => value,
         Err(error) => return error_response(error.to_string()),
     };
+    if let Err(error) = validate_generated_file_syntax_and_package_paths(&request) {
+        return error_response(error);
+    }
     let raw = match RawRequest::decode(input) {
         Ok(value) => value,
         Err(error) => return error_response(error.to_string()),
@@ -208,22 +211,23 @@ pub fn generate_from_descriptor_set_wire(
         Ok(value) => value,
         Err(error) => return error_response(error.to_string()),
     };
+    let request = CodeGeneratorRequest {
+        parameter: Some(format!(
+            "{MODULE_PARAMETER_PREFIX}{module},{RUNTIME_MODULE_PARAMETER_PREFIX}{runtime_module}"
+        )),
+        file_to_generate: file_to_generate.to_vec(),
+        proto_file: descriptor_set.file,
+        ..Default::default()
+    };
+    if let Err(error) = validate_generated_file_syntax_and_package_paths(&request) {
+        return error_response(error);
+    }
     let generated_files: HashSet<_> = file_to_generate.iter().cloned().collect();
     let annotations = match annotations_for_generated_files(raw.files, &generated_files) {
         Ok(value) => value,
         Err(error) => return error_response(error),
     };
-    respond(generate_inner(
-        CodeGeneratorRequest {
-            parameter: Some(format!(
-                "{MODULE_PARAMETER_PREFIX}{module},{RUNTIME_MODULE_PARAMETER_PREFIX}{runtime_module}"
-            )),
-            file_to_generate: file_to_generate.to_vec(),
-            proto_file: descriptor_set.file,
-            ..Default::default()
-        },
-        annotations,
-    ))
+    respond(generate_inner(request, annotations))
 }
 
 fn respond(result: Result<Vec<code_generator_response::File>, String>) -> CodeGeneratorResponse {
@@ -874,6 +878,69 @@ fn generate_file(
         content: Some(content),
         ..Default::default()
     })
+}
+
+/// Mirrors `RebootProtocPlugin.template_data`'s generated-file package/path
+/// contract. Rust's build helper retains proto-relative output names too, so a
+/// mismatched descriptor would otherwise generate an adapter at a misleading
+/// module path.
+///
+/// Python invokes `process_file` only for files requested from protoc, not
+/// every linked descriptor in its pool. Retain that boundary here.
+fn validate_generated_file_syntax_and_package_paths(
+    request: &CodeGeneratorRequest,
+) -> Result<(), String> {
+    let descriptors: BTreeMap<_, _> = request
+        .proto_file
+        .iter()
+        .filter_map(|file| file.name.as_deref().map(|name| (name, file)))
+        .collect();
+    for file_name in &request.file_to_generate {
+        let file = descriptors
+            .get(file_name.as_str())
+            .ok_or_else(|| format!("missing descriptor for file_to_generate `{file_name}`"))?;
+        let syntax = file.syntax.as_deref().unwrap_or_default();
+        if syntax != "proto3" && file_name != "google/protobuf/descriptor.proto" {
+            return Err(format!(
+                "Unsupported: not a proto3 file. Reboot only supports proto files that set 'syntax=\"proto3\";', but got 'syntax=\"{syntax}\";'"
+            ));
+        }
+        validate_proto_file_package_path(file_name, file.package.as_deref())?;
+    }
+    Ok(())
+}
+
+fn validate_proto_file_package_path<'a>(
+    file_name: &str,
+    package: Option<&'a str>,
+) -> Result<&'a str, String> {
+    let package = package.filter(|value| !value.is_empty()).ok_or_else(|| {
+        format!("Proto file '{file_name}' is missing a (currently) required 'package' statement")
+    })?;
+    // Python uses `os.path.dirname` and splits that result on `os.path.sep`.
+    // The Rust generator runs on the same Linux descriptor-path convention, so
+    // retain empty components (for example, in `api//v1/file.proto`) exactly.
+    let directory = file_name
+        .rsplit_once('/')
+        .map(|(directory, _)| directory)
+        .unwrap_or_default();
+    if directory.split('/').any(|component| {
+        !component
+            .bytes()
+            .all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
+    }) {
+        return Err(format!(
+            "Proto file '{file_name}' is located in a directory '{directory}' that is not a legal 'proto3' package name component. Legal characters are letters, numbers, and underscore. Reboot requires that the directory structure matches the proto file's package name. Please rename your directory."
+        ));
+    }
+    let expected_directory = package.replace('.', "/");
+    if expected_directory != directory {
+        return Err(format!(
+            "Proto file '{file_name}' has package '{package}', but based on the file's path the expected package was '{}'. 'rbt generate' expects the package to match the directory structure. Check that the API base directory is correct, and if so, adjust either the proto file's location or its package.",
+            directory.replace('/', ".")
+        ));
+    }
+    Ok(package)
 }
 
 fn reject_generated_symbol_collisions(
@@ -1647,11 +1714,73 @@ mod tests {
         let mut descriptor = request();
         descriptor.proto_file[0].name = Some("google/protobuf/descriptor.proto".to_owned());
         descriptor.file_to_generate = vec!["google/protobuf/descriptor.proto".to_owned()];
+        descriptor.proto_file[0].package = Some("google.protobuf".to_owned());
+        descriptor.proto_file[0].service.clear();
         descriptor.proto_file[0].syntax = None;
         assert!(
             generate_from_wire(&descriptor.encode_to_vec())
                 .error
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn raw_plugin_validates_package_paths_only_for_files_to_generate() {
+        let request = |file_to_generate: &str| CodeGeneratorRequest {
+            parameter: Some("module=reboot_rust_schema::proto".to_owned()),
+            file_to_generate: vec![file_to_generate.to_owned()],
+            proto_file: vec![
+                FileDescriptorProto {
+                    name: Some("tests/reboot/protoc/main.proto".to_owned()),
+                    package: Some("tests.reboot.protoc".to_owned()),
+                    syntax: Some("proto3".to_owned()),
+                    ..Default::default()
+                },
+                FileDescriptorProto {
+                    name: Some("dependency.proto".to_owned()),
+                    package: Some("wrong.package".to_owned()),
+                    syntax: Some("proto3".to_owned()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        assert!(
+            generate_from_wire(&request("tests/reboot/protoc/main.proto").encode_to_vec())
+                .error
+                .is_none()
+        );
+        assert_eq!(
+            generate_from_wire(&request("dependency.proto").encode_to_vec())
+                .error
+                .as_deref(),
+            Some(
+                "Proto file 'dependency.proto' has package 'wrong.package', but based on the file's path the expected package was ''. 'rbt generate' expects the package to match the directory structure. Check that the API base directory is correct, and if so, adjust either the proto file's location or its package."
+            )
+        );
+    }
+
+    #[test]
+    fn raw_plugin_rejects_illegal_package_directory_components() {
+        let request = CodeGeneratorRequest {
+            parameter: Some("module=reboot_rust_schema::proto".to_owned()),
+            file_to_generate: vec!["tests/reboot-v1/counter.proto".to_owned()],
+            proto_file: vec![FileDescriptorProto {
+                name: Some("tests/reboot-v1/counter.proto".to_owned()),
+                package: Some("tests.reboot_v1".to_owned()),
+                syntax: Some("proto3".to_owned()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert_eq!(
+            generate_from_wire(&request.encode_to_vec())
+                .error
+                .as_deref(),
+            Some(
+                "Proto file 'tests/reboot-v1/counter.proto' is located in a directory 'tests/reboot-v1' that is not a legal 'proto3' package name component. Legal characters are letters, numbers, and underscore. Reboot requires that the directory structure matches the proto file's package name. Please rename your directory."
+            )
         );
     }
     #[test]
@@ -1803,9 +1932,9 @@ mod tests {
         // through its second RawRequest decode.
         let mut wire = CodeGeneratorRequest {
             parameter: Some("module=reboot_rust_schema::proto".to_owned()),
-            file_to_generate: vec!["counter.proto".to_owned()],
+            file_to_generate: vec!["tests/reboot/protoc/counter.proto".to_owned()],
             proto_file: vec![FileDescriptorProto {
-                name: Some("counter.proto".to_owned()),
+                name: Some("tests/reboot/protoc/counter.proto".to_owned()),
                 package: Some("tests.reboot.protoc".to_owned()),
                 syntax: Some("proto3".to_owned()),
                 service: vec![ServiceDescriptorProto {
@@ -1823,7 +1952,7 @@ mod tests {
         // valid proto3 descriptor rather than shadowing the first descriptor
         // with an unset syntax in this synthetic raw-option fixture.
         let mut raw_file = RawFile {
-            name: Some("counter.proto".to_owned()),
+            name: Some("tests/reboot/protoc/counter.proto".to_owned()),
             package: Some("tests.reboot.protoc".to_owned()),
             messages: vec![],
             services: vec![RawService {
@@ -2166,7 +2295,7 @@ mod tests {
             .encode_to_vec()
         };
         let dependency = RawFile {
-            name: Some("dependency.proto".to_owned()),
+            name: Some("tests/reboot/protoc/dependency.proto".to_owned()),
             package: Some("tests.reboot.protoc".to_owned()),
             messages: vec![],
             services: vec![
@@ -2197,15 +2326,19 @@ mod tests {
         let request = |file_to_generate: &str| CodeGeneratorRequest {
             parameter: Some("module=reboot_rust_schema::proto".to_owned()),
             file_to_generate: vec![file_to_generate.to_owned()],
-            proto_file: vec![ordinary("main.proto"), ordinary("dependency.proto")],
+            proto_file: vec![
+                ordinary("tests/reboot/protoc/main.proto"),
+                ordinary("tests/reboot/protoc/dependency.proto"),
+            ],
             ..Default::default()
         };
 
-        let mut dependency_only = request("main.proto").encode_to_vec();
+        let mut dependency_only = request("tests/reboot/protoc/main.proto").encode_to_vec();
         append_raw_file(&mut dependency_only, dependency.clone());
         assert!(generate_from_wire(&dependency_only).error.is_none());
 
-        let mut generated_dependency = request("dependency.proto").encode_to_vec();
+        let mut generated_dependency =
+            request("tests/reboot/protoc/dependency.proto").encode_to_vec();
         append_raw_file(&mut generated_dependency, dependency);
         assert_eq!(
             generate_from_wire(&generated_dependency).error.as_deref(),
@@ -2409,7 +2542,7 @@ mod tests {
         }
         .encode_to_vec();
         let state = RawFile {
-            name: Some("state.proto".to_owned()),
+            name: Some("tests/reboot/protoc/state.proto".to_owned()),
             package: Some("tests.reboot.protoc".to_owned()),
             messages: vec![RawMessage {
                 name: Some("User".to_owned()),
@@ -2419,16 +2552,16 @@ mod tests {
         };
         let request = CodeGeneratorRequest {
             parameter: Some("module=reboot_rust_schema::proto".to_owned()),
-            file_to_generate: vec!["state.proto".to_owned()],
+            file_to_generate: vec!["tests/reboot/protoc/state.proto".to_owned()],
             proto_file: vec![
                 FileDescriptorProto {
-                    name: Some("state.proto".to_owned()),
+                    name: Some("tests/reboot/protoc/state.proto".to_owned()),
                     package: Some("tests.reboot.protoc".to_owned()),
                     syntax: Some("proto3".to_owned()),
                     ..Default::default()
                 },
                 FileDescriptorProto {
-                    name: Some("methods.proto".to_owned()),
+                    name: Some("tests/reboot/protoc/methods.proto".to_owned()),
                     package: Some("tests.reboot.protoc".to_owned()),
                     syntax: Some("proto3".to_owned()),
                     ..Default::default()
@@ -2442,7 +2575,7 @@ mod tests {
             append_raw_file(
                 &mut wire,
                 RawFile {
-                    name: Some("methods.proto".to_owned()),
+                    name: Some("tests/reboot/protoc/methods.proto".to_owned()),
                     package: Some("tests.reboot.protoc".to_owned()),
                     messages: vec![],
                     services: vec![RawService {
