@@ -763,8 +763,13 @@ impl RebootHeaders {
             metadata: &tonic::metadata::MetadataMap,
             name: &'static str,
         ) -> Result<Option<String>, ContextError> {
+            // Python's `dict(metadata)` keeps the final value for duplicate
+            // gRPC metadata keys. Select the final entry rather than
+            // `MetadataMap::get`, which selects the first.
             metadata
-                .get(name)
+                .get_all(name)
+                .iter()
+                .next_back()
                 .map(|value| {
                     value
                         .to_str()
@@ -2291,6 +2296,105 @@ mod tests {
         assert_eq!(
             RebootHeaders::from_metadata(&metadata).unwrap().caller_id,
             Some(caller)
+        );
+    }
+
+    #[test]
+    fn python_caller_id_and_metadata_corpus_matches_public_header_subset() {
+        // `aio/caller_id.py:37-65`: empty comma components are ignored, each
+        // non-empty component requires an equals sign, unknown keys are ignored,
+        // and repeated keys retain the last value.
+        let caller_id_vectors = [
+            (
+                ",,unknown=future,space_id=sabc123def4,,application_id=aabc123def4,",
+                Some(("aabc123def4", Some("sabc123def4"))),
+            ),
+            (
+                "application_id=cloud,application_id=aabc123def4",
+                Some(("aabc123def4", None)),
+            ),
+            (
+                "space_id=sabc123def4,space_id=invalid,application_id=cloud",
+                None,
+            ),
+            ("application_id=cloud,unknown", None),
+            ("unknown=value", None),
+            ("application_id=", None),
+        ];
+        for (wire, expected) in caller_id_vectors {
+            match expected {
+                Some((application_id, space_id)) => {
+                    let parsed: CallerId = wire.parse().unwrap();
+                    assert_eq!(parsed.application_id(), application_id, "{wire}");
+                    assert_eq!(parsed.space_id(), space_id, "{wire}");
+                }
+                None => assert!(wire.parse::<CallerId>().is_err(), "{wire}"),
+            }
+        }
+
+        // `aio/headers.py:127-137,251-393,400-521`: `dict(metadata)` selects
+        // each known key's final value and metadata re-emission drops unknown
+        // inbound keys. The authorization projection is transaction-free.
+        let first_workflow = uuid::Uuid::from_u128(1);
+        let final_workflow = uuid::Uuid::from_u128(2);
+        let mut inbound = tonic::metadata::MetadataMap::new();
+        inbound.append(STATE_REF_HEADER, "discarded-state".parse().unwrap());
+        inbound.append(STATE_REF_HEADER, "actor/final".parse().unwrap());
+        inbound.append(AUTHORIZATION_HEADER, "Bearer discarded".parse().unwrap());
+        inbound.append(AUTHORIZATION_HEADER, "Bearer retained".parse().unwrap());
+        inbound.append(CALLER_ID_HEADER, "application_id=cloud".parse().unwrap());
+        inbound.append(
+            CALLER_ID_HEADER,
+            "space_id=sabc123def4,application_id=aabc123def4"
+                .parse()
+                .unwrap(),
+        );
+        inbound.append(
+            WORKFLOW_ID_HEADER,
+            first_workflow.to_string().parse().unwrap(),
+        );
+        inbound.append(
+            WORKFLOW_ID_HEADER,
+            final_workflow.to_string().parse().unwrap(),
+        );
+        inbound.append("x-reboot-unknown-future-key", "drop-me".parse().unwrap());
+
+        let parsed = RebootHeaders::from_metadata(&inbound).unwrap();
+        assert_eq!(parsed.state_ref, "actor/final");
+        assert_eq!(parsed.bearer_token.as_deref(), Some("retained"));
+        assert_eq!(parsed.workflow_id, Some(final_workflow));
+        assert_eq!(
+            parsed
+                .caller_id
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("space_id=sabc123def4,application_id=aabc123def4")
+        );
+
+        let emitted = parsed.to_metadata().unwrap();
+        assert!(emitted.get("x-reboot-unknown-future-key").is_none());
+        assert_eq!(emitted.get(STATE_REF_HEADER).unwrap(), "actor/final");
+        assert_eq!(
+            emitted.get(AUTHORIZATION_HEADER).unwrap(),
+            "Bearer retained"
+        );
+        assert_eq!(
+            emitted.get(CALLER_ID_HEADER).unwrap(),
+            "space_id=sabc123def4,application_id=aabc123def4"
+        );
+
+        let authorization = parsed.copy_for_token_verification_and_authorization();
+        assert_eq!(authorization.state_ref, "actor/final");
+        assert_eq!(authorization.bearer_token.as_deref(), Some("retained"));
+        assert_eq!(authorization.workflow_id, None);
+        assert_eq!(
+            authorization
+                .caller_id
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("space_id=sabc123def4,application_id=aabc123def4")
         );
     }
 
