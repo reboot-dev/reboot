@@ -933,42 +933,49 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
     );
     wait(root_port);
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    runtime.block_on(async {
-        let mut client = database::database_client::DatabaseClient::connect(db.endpoint())
-            .await
-            .unwrap();
-        let result = client
-            .load(database::LoadRequest {
-                actors: vec![
-                    database::Actor {
-                        state_type: "tests.reboot.protoc.TransactionCounter".into(),
-                        state_ref: "root".into(),
-                        state: None,
-                    },
-                    database::Actor {
-                        state_type: "tests.reboot.protoc.TransactionCounter".into(),
-                        state_ref: "target".into(),
-                        state: None,
-                    },
-                ],
-                task_ids: vec![],
-            })
-            .await
-            .unwrap()
-            .into_inner();
-        assert_eq!(result.actors.len(), 2);
-        let states = result
-            .actors
-            .into_iter()
-            .map(|actor| actor.state.unwrap())
-            .collect::<Vec<_>>();
-        // The root was killed after persisting the immutable commit decision
-        // but before terminal fan-out. The restarted target's Coordinator.Watch
-        // host reads that decision from the real C++ RocksDB sidecar and commits
-        // its prepared participant without a recovered coordinator process.
-        assert!(states.iter().all(|state| !state.is_empty()));
-        assert_eq!(states[0], states[1]);
-    });
+    let mut client = runtime
+        .block_on(database::database_client::DatabaseClient::connect(
+            db.endpoint(),
+        ))
+        .unwrap();
+    let states = (0..100)
+        .find_map(|_| {
+            let result = runtime
+                .block_on(client.load(database::LoadRequest {
+                    actors: vec![
+                        database::Actor {
+                            state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                            state_ref: "root".into(),
+                            state: None,
+                        },
+                        database::Actor {
+                            state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                            state_ref: "target".into(),
+                            state: None,
+                        },
+                    ],
+                    task_ids: vec![],
+                }))
+                .unwrap()
+                .into_inner();
+            assert_eq!(result.actors.len(), 2);
+            let states = result
+                .actors
+                .into_iter()
+                .map(|actor| actor.state.unwrap())
+                .collect::<Vec<_>>();
+            if states.iter().all(|state| !state.is_empty()) && states[0] == states[1] {
+                Some(states)
+            } else {
+                std::thread::sleep(Duration::from_millis(25));
+                None
+            }
+        })
+        .expect("root recovery did not commit both actors after target Watch terminalized");
+    // The root was killed after persisting the immutable commit decision but
+    // before terminal fan-out. TCP readiness only proves the recovered root
+    // listener is bound; wait for its durable recovery to commit as well.
+    assert_eq!(states[0], states[1]);
     let _ = root.kill();
     let _ = root.wait();
     let _ = target.kill();
