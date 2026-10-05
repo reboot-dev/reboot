@@ -18,7 +18,11 @@ use tonic::{
     transport::{Channel, Endpoint},
 };
 
-use crate::{placement_proto as proto, runtime::TransactionalChannelResolver};
+use crate::{
+    durable_coordinator::{ParticipantResolver, ParticipantTarget, TonicParticipantEndpoint},
+    placement_proto as proto,
+    runtime::TransactionalChannelResolver,
+};
 
 /// Explicit application identity for legacy application-plane placement.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -432,8 +436,63 @@ impl TransactionalChannelResolver for LegacyApplicationResolver {
     }
 }
 
+/// Durable coordinator participant routing over one fixed legacy application.
+///
+/// Each resolution reads the current validated application-plane plan using
+/// only the participant's raw wire state reference. It deliberately creates a
+/// fresh lazy channel and makes no ownership, fencing, handoff, retry, cache,
+/// or Native2pc claim.
+#[derive(Clone)]
+pub struct LegacyApplicationParticipantResolver {
+    application: LegacyApplicationId,
+    placement: PlanOnlyLegacyPlacement,
+}
+
+impl LegacyApplicationParticipantResolver {
+    pub fn new(application: LegacyApplicationId, placement: PlanOnlyLegacyPlacement) -> Self {
+        Self {
+            application,
+            placement,
+        }
+    }
+}
+
+impl ParticipantResolver for LegacyApplicationParticipantResolver {
+    type Endpoint = TonicParticipantEndpoint;
+
+    fn resolve(
+        &self,
+        participant: &ParticipantTarget,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Arc<Self::Endpoint>, Status>> + Send + '_>,
+    > {
+        let result = self
+            .placement
+            .route(&self.application, &participant.state_ref)
+            .and_then(|route| {
+                Endpoint::from_shared(format!("http://{}", route.address.as_str()))
+                    .map(|endpoint| {
+                        Arc::new(TonicParticipantEndpoint::from_channel(
+                            endpoint.connect_lazy(),
+                        ))
+                    })
+                    .map_err(|_| {
+                        Status::unavailable("legacy placement route has an invalid endpoint")
+                    })
+            });
+        Box::pin(async move { result })
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use tokio_stream::wrappers::TcpListenerStream;
+    use tonic::{Request, Response, transport::Server};
+
+    use crate::{database_proto as database, durable_coordinator::ParticipantEndpoint};
+
     use super::*;
 
     fn response(
@@ -627,5 +686,155 @@ mod tests {
         let route = placement.route(&application, "opaque/child").unwrap();
         assert_eq!(route.plan_version, 2);
         assert_eq!(route.address.as_str(), "two.internal:5002");
+    }
+
+    #[derive(Clone)]
+    struct RecordingParticipant {
+        name: &'static str,
+        calls: Arc<Mutex<Vec<(&'static str, String)>>>,
+    }
+
+    #[tonic::async_trait]
+    impl database::participant_server::Participant for RecordingParticipant {
+        async fn prepare(
+            &self,
+            request: Request<database::PrepareRequest>,
+        ) -> Result<Response<database::PrepareResponse>, Status> {
+            let state_ref = request
+                .metadata()
+                .get("x-reboot-state-ref")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .to_owned();
+            self.calls.lock().unwrap().push((self.name, state_ref));
+            Ok(Response::new(database::PrepareResponse::default()))
+        }
+
+        async fn commit(
+            &self,
+            _: Request<database::CommitRequest>,
+        ) -> Result<Response<database::CommitResponse>, Status> {
+            Ok(Response::new(database::CommitResponse::default()))
+        }
+
+        async fn abort(
+            &self,
+            _: Request<database::AbortRequest>,
+        ) -> Result<Response<database::AbortResponse>, Status> {
+            Ok(Response::new(database::AbortResponse::default()))
+        }
+
+        async fn relinquish_ownership(
+            &self,
+            _: Request<database::RelinquishOwnershipRequest>,
+        ) -> Result<Response<database::RelinquishOwnershipResponse>, Status> {
+            Ok(Response::new(
+                database::RelinquishOwnershipResponse::default(),
+            ))
+        }
+    }
+
+    async fn serve_participant(
+        name: &'static str,
+    ) -> (
+        String,
+        Arc<Mutex<Vec<(&'static str, String)>>>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let participant = RecordingParticipant {
+            name,
+            calls: Arc::clone(&calls),
+        };
+        let task = tokio::spawn(async move {
+            Server::builder()
+                .add_service(database::participant_server::ParticipantServer::new(
+                    participant,
+                ))
+                .serve_with_incoming(TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+        (address.to_string(), calls, task)
+    }
+
+    #[tokio::test]
+    async fn participant_resolver_rejects_missing_malformed_and_unknown_routes_and_reroutes_control_rpc()
+     {
+        let placement = PlanOnlyLegacyPlacement::new();
+        let application = LegacyApplicationId::new("app").unwrap();
+        let resolver =
+            LegacyApplicationParticipantResolver::new(application.clone(), placement.clone());
+        let target = ParticipantTarget {
+            state_type: "intentionally.unrelated.State".into(),
+            state_ref: "opaque/child".into(),
+        };
+
+        assert_eq!(
+            match resolver.resolve(&target).await {
+                Err(error) => error.code(),
+                Ok(_) => panic!("resolver unexpectedly accepted an absent plan"),
+            },
+            tonic::Code::Unavailable
+        );
+
+        let (one_address, one_calls, one_task) = serve_participant("one").await;
+        placement
+            .install(response(1, vec![vec![]], &one_address))
+            .unwrap();
+        for malformed in ["", "/child"] {
+            let malformed = ParticipantTarget {
+                state_type: "ignored".into(),
+                state_ref: malformed.into(),
+            };
+            assert_eq!(
+                match resolver.resolve(&malformed).await {
+                    Err(error) => error.code(),
+                    Ok(_) => panic!("resolver unexpectedly accepted malformed state reference"),
+                },
+                tonic::Code::InvalidArgument
+            );
+        }
+        let unknown = LegacyApplicationParticipantResolver::new(
+            LegacyApplicationId::new("unknown").unwrap(),
+            placement.clone(),
+        );
+        assert_eq!(
+            match unknown.resolve(&target).await {
+                Err(error) => error.code(),
+                Ok(_) => panic!("resolver unexpectedly accepted an unknown application"),
+            },
+            tonic::Code::NotFound
+        );
+
+        let endpoint = resolver.resolve(&target).await.unwrap();
+        endpoint
+            .prepare(&target.state_ref, database::PrepareRequest::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            one_calls.lock().unwrap().as_slice(),
+            [("one", "opaque/child".into())]
+        );
+
+        let (two_address, two_calls, two_task) = serve_participant("two").await;
+        placement
+            .install(response(2, vec![vec![]], &two_address))
+            .unwrap();
+        let endpoint = resolver.resolve(&target).await.unwrap();
+        endpoint
+            .prepare(&target.state_ref, database::PrepareRequest::default())
+            .await
+            .unwrap();
+        assert_eq!(one_calls.lock().unwrap().len(), 1);
+        assert_eq!(
+            two_calls.lock().unwrap().as_slice(),
+            [("two", "opaque/child".into())]
+        );
+
+        one_task.abort();
+        two_task.abort();
     }
 }

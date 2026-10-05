@@ -275,6 +275,19 @@ pub struct TonicParticipantEndpoint {
     >,
 }
 impl TonicParticipantEndpoint {
+    /// Binds an already constructed Tonic channel without connecting eagerly.
+    ///
+    /// Placement-aware callers can construct this from `Endpoint::connect_lazy`
+    /// after validating their route. The existing `connect` constructor remains
+    /// the explicit eager-connect path for callers that require it.
+    pub(crate) fn from_channel(channel: tonic::transport::Channel) -> Self {
+        Self {
+            client: tokio::sync::Mutex::new(database::participant_client::ParticipantClient::new(
+                channel,
+            )),
+        }
+    }
+
     pub async fn connect(endpoint: impl AsRef<str>) -> Result<Self, tonic::transport::Error> {
         Ok(Self {
             client: tokio::sync::Mutex::new(
