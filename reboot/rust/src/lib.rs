@@ -528,6 +528,7 @@ pub const RBT_V1ALPHA1_DESCRIPTOR_SET: &[u8] =
 pub enum ContextError {
     EmptyStateRef,
     InvalidMetadata,
+    InvalidBearerToken,
     InvalidCallerId,
     MissingTransactionMetadata,
     MissingTransactionCoordinatorMetadata,
@@ -541,6 +542,7 @@ impl std::fmt::Display for ContextError {
         match self {
             Self::EmptyStateRef => write!(f, "Reboot state reference must not be empty"),
             Self::InvalidMetadata => write!(f, "Reboot metadata value is invalid"),
+            Self::InvalidBearerToken => write!(f, "Reboot bearer token is invalid"),
             Self::InvalidCallerId => write!(f, "Reboot caller ID is invalid"),
             Self::MissingTransactionMetadata => {
                 write!(f, "transaction context requires transaction metadata")
@@ -561,6 +563,15 @@ impl std::fmt::Display for ContextError {
 }
 
 impl std::error::Error for ContextError {}
+
+const MAX_BEARER_TOKEN_LENGTH: usize = 4096;
+
+fn validate_bearer_token(token: &str) -> Result<(), ContextError> {
+    if token.len() > MAX_BEARER_TOKEN_LENGTH || !token.is_ascii() || token.contains('\n') {
+        return Err(ContextError::InvalidBearerToken);
+    }
+    Ok(())
+}
 
 /// Identifies an application caller in Reboot metadata.
 ///
@@ -816,7 +827,12 @@ impl RebootHeaders {
             transaction_retry_age: parse_uuid(TRANSACTION_RETRY_AGE_HEADER)?,
             idempotency_key: parse_uuid(IDEMPOTENCY_KEY_HEADER)?,
             bearer_token: get(metadata, AUTHORIZATION_HEADER)?
-                .map(|value| value.strip_prefix("Bearer ").unwrap_or(&value).to_owned()),
+                .map(|value| value.strip_prefix("Bearer ").unwrap_or(&value).to_owned())
+                .map(|token| {
+                    validate_bearer_token(&token)?;
+                    Ok(token)
+                })
+                .transpose()?,
             task_schedule: get(metadata, TASK_SCHEDULE_HEADER)?
                 .map(|value| {
                     if value.is_empty() {
@@ -875,6 +891,7 @@ impl RebootHeaders {
             }
         }
         if let Some(token) = &self.bearer_token {
+            validate_bearer_token(token)?;
             insert(
                 &mut metadata,
                 AUTHORIZATION_HEADER,
@@ -1924,6 +1941,33 @@ mod tests {
         let emitted = parsed.to_metadata().unwrap();
         assert!(emitted.get("x-example-unknown").is_none());
         assert_eq!(emitted.len(), inbound.len() - 1);
+    }
+
+    #[test]
+    fn bearer_tokens_match_python_length_and_metadata_validation() {
+        let maximum = "a".repeat(MAX_BEARER_TOKEN_LENGTH);
+        let mut valid = RebootHeaders::new("actor");
+        valid.bearer_token = Some(maximum);
+        assert!(valid.to_metadata().is_ok());
+
+        let too_long = "a".repeat(MAX_BEARER_TOKEN_LENGTH + 1);
+        let mut outbound = RebootHeaders::new("actor");
+        outbound.bearer_token = Some(too_long.clone());
+        assert!(matches!(
+            outbound.to_metadata(),
+            Err(ContextError::InvalidBearerToken)
+        ));
+
+        let mut inbound = tonic::metadata::MetadataMap::new();
+        inbound.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        inbound.insert(
+            AUTHORIZATION_HEADER,
+            format!("Bearer {too_long}").parse().unwrap(),
+        );
+        assert_eq!(
+            RebootHeaders::from_metadata(&inbound),
+            Err(ContextError::InvalidBearerToken)
+        );
     }
 
     #[test]
