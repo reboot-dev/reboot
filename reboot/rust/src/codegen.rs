@@ -129,12 +129,12 @@ enum AutoConstruct {
     PerUserId = 1,
 }
 
-#[derive(Message)]
+#[derive(Clone, Message)]
 struct RebootWriterMethodOptions {
     #[prost(message, optional, tag = "2")]
     constructor: Option<Empty>,
 }
-#[derive(Message)]
+#[derive(Clone, Message)]
 struct RebootReaderMethodOptions {
     #[prost(enumeration = "ReaderState", tag = "3")]
     state: i32,
@@ -151,19 +151,30 @@ enum ReaderState {
 }
 #[derive(Message)]
 struct RebootMethodOptions {
-    #[prost(message, optional, tag = "1")]
-    reader: Option<RebootReaderMethodOptions>,
-    #[prost(message, optional, tag = "2")]
-    writer: Option<RebootWriterMethodOptions>,
-    #[prost(message, optional, tag = "3")]
-    transaction: Option<RebootTransactionMethodOptions>,
-    #[prost(message, optional, tag = "4")]
-    workflow: Option<Empty>,
+    // `kind` is a protobuf `oneof`. As with transaction `mode`, malformed
+    // wire containing several alternatives retains the final field, exactly
+    // as Python's generated `MethodOptions` does.
+    #[prost(oneof = "reboot_method_options::Kind", tags = "1, 2, 3, 4")]
+    kind: Option<reboot_method_options::Kind>,
+}
+
+mod reboot_method_options {
+    #[derive(Clone, prost::Oneof)]
+    pub enum Kind {
+        #[prost(message, tag = "1")]
+        Reader(super::RebootReaderMethodOptions),
+        #[prost(message, tag = "2")]
+        Writer(super::RebootWriterMethodOptions),
+        #[prost(message, tag = "3")]
+        Transaction(super::RebootTransactionMethodOptions),
+        #[prost(message, tag = "4")]
+        Workflow(super::Empty),
+    }
 }
 #[derive(Clone, Message)]
 struct Empty {}
 
-#[derive(Message)]
+#[derive(Clone, Message)]
 struct RebootTransactionMethodOptions {
     #[prost(message, optional, tag = "2")]
     constructor: Option<Empty>,
@@ -434,50 +445,32 @@ fn annotations_for_generated_files(
                         "{file_name}: Service `{service_name}` method `{method_name}` has a 'google.api.http' annotation. This is only supported for legacy gRPC services, not for Reboot methods. Let the maintainers know about your use case if you feel this is a limitation!"
                     ));
                 }
-                let kinds = [
-                    option.reader.is_some(),
-                    option.writer.is_some(),
-                    option.transaction.is_some(),
-                    option.workflow.is_some(),
-                ]
-                .into_iter()
-                .filter(|value| *value)
-                .count();
-                if kinds != 1 {
+                let Some(kind) = option.kind else {
                     return Err(format!(
                         "{file_name}: annotated method `{service_name}.{method_name}` has no recognized Reboot method kind"
                     ));
-                }
-                let kind = match (
-                    option.reader.is_some(),
-                    option.writer.is_some(),
-                    option.transaction,
-                ) {
-                    (true, false, None) => {
+                };
+                let kind = match kind {
+                    reboot_method_options::Kind::Reader(reader) => {
                         // Python promotes this option to its `streaming`
                         // feature even when the RPC itself is unary. Rust has
                         // no streaming reader adapter, so reject it at the
                         // raw plugin boundary rather than silently emitting a
                         // unary adapter with incompatible state semantics.
-                        if option
-                            .reader
-                            .as_ref()
-                            .is_some_and(|reader| reader.state == ReaderState::Streaming as i32)
-                        {
+                        if reader.state == ReaderState::Streaming as i32 {
                             return Err(format!(
                                 "{file_name}: service `{service_name}` method `{method_name}` requests streaming state; only unary methods are supported"
                             ));
                         }
                         DurableKind::Reader
                     }
-                    (false, true, None) => DurableKind::Writer(WriterMetadata {
-                        constructor: option
-                            .writer
-                            .expect("writer presence was checked")
-                            .constructor
-                            .is_some(),
-                    }),
-                    (false, false, Some(transaction)) => match transaction.mode {
+                    reboot_method_options::Kind::Writer(writer) => {
+                        DurableKind::Writer(WriterMetadata {
+                            constructor: writer.constructor.is_some(),
+                        })
+                    }
+                    reboot_method_options::Kind::Transaction(transaction) => match transaction.mode
+                    {
                         Some(reboot_transaction_method_options::Mode::Exclusive(_)) => {
                             DurableKind::Transaction(TransactionMetadata {
                                 mode: TransactionMode::Exclusive,
@@ -496,7 +489,11 @@ fn annotations_for_generated_files(
                             ));
                         }
                     },
-                    _ => unreachable!("the oneof kind count was validated above"),
+                    reboot_method_options::Kind::Workflow(_) => {
+                        return Err(format!(
+                            "{file_name}: annotated method `{service_name}.{method_name}` has no recognized Reboot method kind"
+                        ));
+                    }
                 };
                 methods.insert(method_name, kind);
             }
@@ -2064,8 +2061,9 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    writer: Some(RebootWriterMethodOptions::default()),
-                    ..Default::default()
+                    kind: Some(reboot_method_options::Kind::Writer(
+                        RebootWriterMethodOptions::default(),
+                    )),
                 }
                 .encode_to_vec(),
             ),
@@ -2104,8 +2102,9 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(RebootReaderMethodOptions::default()),
-                    ..Default::default()
+                    kind: Some(reboot_method_options::Kind::Reader(
+                        RebootReaderMethodOptions::default(),
+                    )),
                 }
                 .encode_to_vec(),
             ),
@@ -2146,10 +2145,11 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(RebootReaderMethodOptions {
-                        state: ReaderState::Default as i32,
-                    }),
-                    ..Default::default()
+                    kind: Some(reboot_method_options::Kind::Reader(
+                        RebootReaderMethodOptions {
+                            state: ReaderState::Default as i32,
+                        },
+                    )),
                 }
                 .encode_to_vec(),
             ),
@@ -2199,10 +2199,11 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(RebootReaderMethodOptions {
-                        state: ReaderState::Streaming as i32,
-                    }),
-                    ..Default::default()
+                    kind: Some(reboot_method_options::Kind::Reader(
+                        RebootReaderMethodOptions {
+                            state: ReaderState::Streaming as i32,
+                        },
+                    )),
                 }
                 .encode_to_vec(),
             ),
@@ -2242,12 +2243,86 @@ mod tests {
     }
 
     #[test]
+    fn raw_plugin_method_kind_oneof_keeps_the_last_wire_field() {
+        fn push_varint(output: &mut Vec<u8>, mut value: usize) {
+            while value >= 0x80 {
+                output.push((value as u8 & 0x7f) | 0x80);
+                value >>= 7;
+            }
+            output.push(value as u8);
+        }
+
+        // MethodOptions.kind is a oneof in rbt/v1alpha1/options.proto. Build
+        // malformed raw bytes with a streaming reader followed by a writer:
+        // Python's generated descriptor keeps the final writer declaration.
+        let mut reboot_option = RebootMethodOptions {
+            kind: Some(reboot_method_options::Kind::Reader(
+                RebootReaderMethodOptions {
+                    state: ReaderState::Streaming as i32,
+                },
+            )),
+        }
+        .encode_to_vec();
+        let writer = RebootWriterMethodOptions::default().encode_to_vec();
+        reboot_option.push(0x12); // MethodOptions.writer (field 2).
+        push_varint(&mut reboot_option, writer.len());
+        reboot_option.extend(writer);
+        let method_options = ExtensionOptions {
+            reboot: Some(reboot_option),
+        }
+        .encode_to_vec();
+
+        let mut request = request();
+        request.file_to_generate = vec!["tests/reboot/protoc/counter.proto".to_owned()];
+        request.proto_file[0].name = Some("tests/reboot/protoc/counter.proto".to_owned());
+        let mut wire = request.encode_to_vec();
+        let mut method = MethodDescriptorProto {
+            name: Some("Increment".to_owned()),
+            input_type: Some(".tests.reboot.protoc.IncrementRequest".to_owned()),
+            output_type: Some(".tests.reboot.protoc.CounterValue".to_owned()),
+            ..Default::default()
+        }
+        .encode_to_vec();
+        method.push(0x22); // MethodDescriptorProto.options (field 4).
+        push_varint(&mut method, method_options.len());
+        method.extend(method_options);
+        let mut service = RawService {
+            name: Some("CounterWritesMethods".to_owned()),
+            methods: vec![],
+            options: None,
+        }
+        .encode_to_vec();
+        service.push(0x12); // ServiceDescriptorProto.method (field 2).
+        push_varint(&mut service, method.len());
+        service.extend(method);
+        let mut raw_file = RawFile {
+            name: Some("tests/reboot/protoc/counter.proto".to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            messages: vec![],
+            services: vec![],
+        }
+        .encode_to_vec();
+        raw_file.push(0x32); // FileDescriptorProto.service (field 6).
+        push_varint(&mut raw_file, service.len());
+        raw_file.extend(service);
+        // The overlay is also decoded by CodeGeneratorRequest; preserve the
+        // ordinary field used by generated-file syntax validation.
+        raw_file.extend([0x62, 0x06, b'p', b'r', b'o', b't', b'o', b'3']);
+        wire.push(0x7a); // CodeGeneratorRequest.proto_file (field 15).
+        push_varint(&mut wire, raw_file.len());
+        wire.extend(raw_file);
+
+        assert!(generate_from_wire(&wire).error.is_none());
+    }
+
+    #[test]
     fn annotated_reboot_method_must_start_with_uppercase() {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    writer: Some(RebootWriterMethodOptions::default()),
-                    ..Default::default()
+                    kind: Some(reboot_method_options::Kind::Writer(
+                        RebootWriterMethodOptions::default(),
+                    )),
                 }
                 .encode_to_vec(),
             ),
@@ -2291,8 +2366,9 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(RebootReaderMethodOptions::default()),
-                    ..Default::default()
+                    kind: Some(reboot_method_options::Kind::Reader(
+                        RebootReaderMethodOptions::default(),
+                    )),
                 }
                 .encode_to_vec(),
             ),
@@ -2351,8 +2427,9 @@ mod tests {
         let mut method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(RebootReaderMethodOptions::default()),
-                    ..Default::default()
+                    kind: Some(reboot_method_options::Kind::Reader(
+                        RebootReaderMethodOptions::default(),
+                    )),
                 }
                 .encode_to_vec(),
             ),
@@ -2399,8 +2476,9 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(RebootReaderMethodOptions::default()),
-                    ..Default::default()
+                    kind: Some(reboot_method_options::Kind::Reader(
+                        RebootReaderMethodOptions::default(),
+                    )),
                 }
                 .encode_to_vec(),
             ),
@@ -2469,8 +2547,9 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(RebootReaderMethodOptions::default()),
-                    ..Default::default()
+                    kind: Some(reboot_method_options::Kind::Reader(
+                        RebootReaderMethodOptions::default(),
+                    )),
                 }
                 .encode_to_vec(),
             ),
@@ -2557,8 +2636,9 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(RebootReaderMethodOptions::default()),
-                    ..Default::default()
+                    kind: Some(reboot_method_options::Kind::Reader(
+                        RebootReaderMethodOptions::default(),
+                    )),
                 }
                 .encode_to_vec(),
             ),
@@ -2627,8 +2707,9 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    writer: Some(RebootWriterMethodOptions::default()),
-                    ..Default::default()
+                    kind: Some(reboot_method_options::Kind::Writer(
+                        RebootWriterMethodOptions::default(),
+                    )),
                 }
                 .encode_to_vec(),
             ),
@@ -2706,8 +2787,9 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(RebootReaderMethodOptions::default()),
-                    ..Default::default()
+                    kind: Some(reboot_method_options::Kind::Reader(
+                        RebootReaderMethodOptions::default(),
+                    )),
                 }
                 .encode_to_vec(),
             ),
@@ -2777,8 +2859,9 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(RebootReaderMethodOptions::default()),
-                    ..Default::default()
+                    kind: Some(reboot_method_options::Kind::Reader(
+                        RebootReaderMethodOptions::default(),
+                    )),
                 }
                 .encode_to_vec(),
             ),
@@ -2873,8 +2956,9 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    reader: Some(RebootReaderMethodOptions::default()),
-                    ..Default::default()
+                    kind: Some(reboot_method_options::Kind::Reader(
+                        RebootReaderMethodOptions::default(),
+                    )),
                 }
                 .encode_to_vec(),
             ),
@@ -3099,18 +3183,21 @@ mod tests {
             ExtensionOptions {
                 reboot: Some(
                     RebootMethodOptions {
-                        transaction: Some(RebootTransactionMethodOptions {
-                            constructor: factory.then_some(Empty {}),
-                            mode: match mode {
-                                TransactionMode::Exclusive => Some(
-                                    reboot_transaction_method_options::Mode::Exclusive(Empty {}),
-                                ),
-                                TransactionMode::Shared => {
-                                    Some(reboot_transaction_method_options::Mode::Shared(Empty {}))
-                                }
+                        kind: Some(reboot_method_options::Kind::Transaction(
+                            RebootTransactionMethodOptions {
+                                constructor: factory.then_some(Empty {}),
+                                mode: match mode {
+                                    TransactionMode::Exclusive => {
+                                        Some(reboot_transaction_method_options::Mode::Exclusive(
+                                            Empty {},
+                                        ))
+                                    }
+                                    TransactionMode::Shared => Some(
+                                        reboot_transaction_method_options::Mode::Shared(Empty {}),
+                                    ),
+                                },
                             },
-                        }),
-                        ..Default::default()
+                        )),
                     }
                     .encode_to_vec(),
                 ),
@@ -3171,11 +3258,12 @@ mod tests {
             let method_option = ExtensionOptions {
                 reboot: Some(
                     RebootMethodOptions {
-                        transaction: Some(RebootTransactionMethodOptions {
-                            constructor: Some(Empty {}),
-                            mode,
-                        }),
-                        ..Default::default()
+                        kind: Some(reboot_method_options::Kind::Transaction(
+                            RebootTransactionMethodOptions {
+                                constructor: Some(Empty {}),
+                                mode,
+                            },
+                        )),
                     }
                     .encode_to_vec(),
                 ),
@@ -3434,8 +3522,9 @@ mod tests {
         let method_options = ExtensionOptions {
             reboot: Some(
                 RebootMethodOptions {
-                    transaction: Some(RebootTransactionMethodOptions::default()),
-                    ..Default::default()
+                    kind: Some(reboot_method_options::Kind::Transaction(
+                        RebootTransactionMethodOptions::default(),
+                    )),
                 }
                 .encode_to_vec(),
             ),
