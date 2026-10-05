@@ -233,13 +233,21 @@ fn annotations(
                 let Some(method_name) = method.name else {
                     continue;
                 };
+                // Python classifies a service with the service option as Reboot,
+                // then requires every member to carry a method option
+                // (`protoc_gen_reboot_generic.py:_check_services`). Do not emit a
+                // partial durable adapter when a descriptor violates that contract.
                 let Some(options) = method.options else {
-                    continue;
+                    return Err(format!(
+                        "{file_name}: Missing Reboot method annotation for `{service_name}/{method_name}`"
+                    ));
                 };
                 let extension = ExtensionOptions::decode(options.as_slice())
                     .map_err(|error| format!("{file_name}: invalid method options: {error}"))?;
                 let Some(bytes) = extension.reboot else {
-                    continue;
+                    return Err(format!(
+                        "{file_name}: Missing Reboot method annotation for `{service_name}/{method_name}`"
+                    ));
                 };
                 let option = RebootMethodOptions::decode(bytes.as_slice()).map_err(|error| {
                     format!("{file_name}: invalid rbt.v1alpha1.method option: {error}")
@@ -1212,6 +1220,44 @@ mod tests {
             assert!(content.contains("store.writer_async_for_method::<CounterDurableState"));
             assert!(content.contains("\"tests.reboot.protoc.CounterWrites.Increment\", request"));
             assert!(!content.contains("\"Counter\", request"));
+        }
+    }
+
+    #[test]
+    fn annotated_service_requires_every_method_to_have_a_reboot_annotation() {
+        let service_options = ExtensionOptions {
+            reboot: Some(
+                RebootServiceOptions {
+                    state: "Counter".to_owned(),
+                    default_constructible: true,
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+
+        for method_options in [
+            None,
+            Some(ExtensionOptions { reboot: None }.encode_to_vec()),
+        ] {
+            let error = match annotations(vec![RawFile {
+                name: Some("counter.proto".to_owned()),
+                services: vec![RawService {
+                    name: Some("CounterMethods".to_owned()),
+                    options: Some(service_options.clone()),
+                    methods: vec![RawMethod {
+                        name: Some("Increment".to_owned()),
+                        options: method_options,
+                    }],
+                }],
+            }]) {
+                Err(error) => error,
+                Ok(_) => panic!("unannotated Reboot method unexpectedly accepted"),
+            };
+            assert_eq!(
+                error,
+                "counter.proto: Missing Reboot method annotation for `CounterMethods/Increment`"
+            );
         }
     }
 
