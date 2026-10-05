@@ -11,11 +11,13 @@ use std::{
     fmt,
     future::Future,
     net::SocketAddr,
+    pin::Pin,
     sync::Arc,
     task::{Context, Poll},
 };
 
 use http::Request as HttpRequest;
+use tokio::task::JoinSet;
 use tonic::{
     Request,
     body::BoxBody,
@@ -28,9 +30,222 @@ use tower::{
     layer::util::{Identity, Stack},
 };
 
-type TrustedIngressStack = Stack<TrustedApplicationIngress, Identity>;
+type RecoveryIngressStack = Stack<RecoveryIngressLayer, Identity>;
 
-use crate::APPLICATION_ID_HEADER;
+use crate::{
+    APPLICATION_ID_HEADER,
+    durable_coordinator::{
+        CoordinatorRecovery, CoordinatorSidecar, DurableRootCoordinator, ParticipantResolver,
+    },
+    durable_participant::{DurableActorParticipant, ParticipantRecovery, ParticipantSidecar},
+    legacy_coordinator::CoordinatorWatchEndpoint,
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecoveryState {
+    Recovering,
+    Ready,
+    Failed,
+}
+
+#[derive(Clone, Debug)]
+pub struct RecoveryReadiness {
+    state: tokio::sync::watch::Receiver<RecoveryState>,
+}
+impl RecoveryReadiness {
+    fn state(&self) -> RecoveryState {
+        *self.state.borrow()
+    }
+}
+
+/// Host-owned cancellation root for supervised recovery work.
+#[derive(Clone, Debug)]
+pub struct RecoveryCancellation {
+    state: Arc<tokio::sync::watch::Sender<bool>>,
+}
+impl RecoveryCancellation {
+    fn new() -> Self {
+        let (state, _) = tokio::sync::watch::channel(false);
+        Self {
+            state: Arc::new(state),
+        }
+    }
+    pub fn cancel(&self) {
+        self.state.send_replace(true);
+    }
+    pub async fn cancelled(&self) {
+        let mut receiver = self.state.subscribe();
+        while !*receiver.borrow() {
+            let _ = receiver.changed().await;
+        }
+    }
+}
+
+/// Runs after the host has bound its fixed router. Implementations add all
+/// durable background work to this registry; the host cancels and joins it.
+#[tonic::async_trait]
+pub trait HostRecovery: Send + Sync + 'static {
+    async fn start(
+        &self,
+        supervisor: &mut JoinSet<Result<(), tonic::Status>>,
+        cancel: RecoveryCancellation,
+    ) -> Result<(), tonic::Status>;
+}
+
+/// Exact durable metadata for one generated adapter's injected local actor and
+/// coordinator. The application topology supplies it; recovery does not infer
+/// actor identity or construct a resolver from a durable record.
+#[derive(Clone, Debug)]
+pub struct LegacyRecoveryMetadata {
+    pub participant: ParticipantRecovery,
+    pub coordinator: CoordinatorRecovery,
+}
+
+/// Recovers the local participant and coordinator already injected into one
+/// generated adapter, then supervises its explicitly supplied Watch route.
+///
+/// This is intentionally not a registry: the existing participant, coordinator
+/// (and its resolver), sidecars, and Watch endpoint remain the only authority.
+pub struct LegacyDurableRecovery<P, C, R, W>
+where
+    P: ParticipantSidecar,
+    C: CoordinatorSidecar,
+    R: ParticipantResolver,
+    W: CoordinatorWatchEndpoint,
+{
+    participant: DurableActorParticipant<P>,
+    coordinator: DurableRootCoordinator<C, R>,
+    metadata: LegacyRecoveryMetadata,
+    watch: Arc<W>,
+}
+
+impl<P, C, R, W> LegacyDurableRecovery<P, C, R, W>
+where
+    P: ParticipantSidecar,
+    C: CoordinatorSidecar,
+    R: ParticipantResolver,
+    W: CoordinatorWatchEndpoint,
+{
+    pub fn new(
+        participant: DurableActorParticipant<P>,
+        coordinator: DurableRootCoordinator<C, R>,
+        metadata: LegacyRecoveryMetadata,
+        watch: Arc<W>,
+    ) -> Result<Self, tonic::Status> {
+        if metadata.coordinator.coordinator_state_ref.is_empty() {
+            return Err(tonic::Status::invalid_argument(
+                "generated recovery requires the exact coordinator state reference",
+            ));
+        }
+        Ok(Self {
+            participant,
+            coordinator,
+            metadata,
+            watch,
+        })
+    }
+}
+
+#[tonic::async_trait]
+impl<P, C, R, W> HostRecovery for LegacyDurableRecovery<P, C, R, W>
+where
+    P: ParticipantSidecar,
+    C: CoordinatorSidecar,
+    R: ParticipantResolver,
+    W: CoordinatorWatchEndpoint,
+{
+    async fn start(
+        &self,
+        supervisor: &mut JoinSet<Result<(), tonic::Status>>,
+        cancel: RecoveryCancellation,
+    ) -> Result<(), tonic::Status> {
+        self.participant
+            .recover_ownership(self.metadata.participant.clone())
+            .await?;
+        self.coordinator
+            .recover(self.metadata.coordinator.clone())
+            .await?;
+
+        let participant = self.participant.clone();
+        let watch = Arc::clone(&self.watch);
+        supervisor.spawn(async move {
+            tokio::select! {
+                result = participant.watch_recovered(watch.as_ref()) => {
+                    // A recovered participant may have no durable pending
+                    // record, or its Watch may immediately deliver the
+                    // terminal decision. Both are successful convergence, not
+                    // supervisor failure; remain owned until host shutdown.
+                    result?;
+                    cancel.cancelled().await;
+                    Ok(())
+                },
+                _ = cancel.cancelled() => Ok(()),
+            }
+        });
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RecoveryIngressLayer {
+    context: TrustedApplicationContext,
+    readiness: RecoveryReadiness,
+}
+impl RecoveryIngressLayer {
+    fn new(application_id: String, readiness: RecoveryReadiness) -> Self {
+        Self {
+            context: TrustedApplicationContext { application_id },
+            readiness,
+        }
+    }
+}
+impl<S> Layer<S> for RecoveryIngressLayer {
+    type Service = RecoveryIngressService<S>;
+    fn layer(&self, inner: S) -> Self::Service {
+        RecoveryIngressService {
+            inner,
+            context: self.context.clone(),
+            readiness: self.readiness.clone(),
+        }
+    }
+}
+#[derive(Clone, Debug)]
+pub struct RecoveryIngressService<S> {
+    inner: S,
+    context: TrustedApplicationContext,
+    readiness: RecoveryReadiness,
+}
+impl<S, B> Service<HttpRequest<B>> for RecoveryIngressService<S>
+where
+    S: Service<HttpRequest<B>, Response = HttpResponse<BoxBody>> + Send + 'static,
+    S::Future: Send + 'static,
+    B: Send + 'static,
+{
+    type Response = HttpResponse<BoxBody>;
+    type Error = S::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+    fn call(&mut self, mut request: HttpRequest<B>) -> Self::Future {
+        let control = request
+            .uri()
+            .path()
+            .starts_with("/rbt.v1alpha1.Participant/")
+            || request
+                .uri()
+                .path()
+                .starts_with("/rbt.v1alpha1.Coordinator/");
+        request.headers_mut().remove(APPLICATION_ID_HEADER);
+        request.extensions_mut().insert(self.context.clone());
+        if !control && self.readiness.state() != RecoveryState::Ready {
+            return Box::pin(async {
+                Ok(tonic::Status::unavailable("application recovery in progress").into_http())
+            });
+        }
+        Box::pin(self.inner.call(request))
+    }
+}
 
 /// A host-owned lifecycle component.
 ///
@@ -71,6 +286,7 @@ pub enum ApplicationHostError {
         component: usize,
         source: tonic::Status,
     },
+    RecoveryTask(tonic::Status),
     Transport(tonic::transport::Error),
 }
 
@@ -85,6 +301,9 @@ impl fmt::Display for ApplicationHostError {
                 formatter,
                 "application lifecycle component {component} failed during {phase:?}: {source}"
             ),
+            Self::RecoveryTask(source) => {
+                write!(formatter, "application recovery task failed: {source}")
+            }
             Self::Transport(source) => {
                 write!(formatter, "application host transport failed: {source}")
             }
@@ -96,6 +315,7 @@ impl Error for ApplicationHostError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Lifecycle { source, .. } => Some(source),
+            Self::RecoveryTask(source) => Some(source),
             Self::Transport(source) => Some(source),
         }
     }
@@ -134,7 +354,7 @@ pub struct TrustedApplicationIngress {
 }
 
 impl TrustedApplicationIngress {
-    fn new(application_id: String) -> Self {
+    pub fn new(application_id: String) -> Self {
         Self {
             context: TrustedApplicationContext { application_id },
         }
@@ -184,8 +404,10 @@ where
 /// service routes until [`Self::add_service`] is called.
 pub struct ApplicationHost {
     application_id: String,
-    server: Server<TrustedIngressStack>,
+    server: Server<RecoveryIngressStack>,
     lifecycle: Vec<Arc<dyn ApplicationLifecycle>>,
+    recovery: Vec<Arc<dyn HostRecovery>>,
+    readiness: tokio::sync::watch::Sender<RecoveryState>,
 }
 
 impl ApplicationHost {
@@ -197,10 +419,16 @@ impl ApplicationHost {
             !application_id.is_empty(),
             "application ID must not be empty"
         );
+        let (readiness, state) = tokio::sync::watch::channel(RecoveryState::Ready);
         Self {
-            server: Server::builder().layer(TrustedApplicationIngress::new(application_id.clone())),
+            server: Server::builder().layer(RecoveryIngressLayer::new(
+                application_id.clone(),
+                RecoveryReadiness { state },
+            )),
             application_id,
             lifecycle: Vec::new(),
+            recovery: Vec::new(),
+            readiness,
         }
     }
 
@@ -213,6 +441,12 @@ impl ApplicationHost {
     /// this host listens for RPCs.
     pub fn with_lifecycle(mut self, lifecycle: impl ApplicationLifecycle) -> Self {
         self.lifecycle.push(Arc::new(lifecycle));
+        self
+    }
+
+    pub fn with_host_recovery(mut self, recovery: impl HostRecovery) -> Self {
+        self.recovery.push(Arc::new(recovery));
+        self.readiness.send_replace(RecoveryState::Recovering);
         self
     }
 
@@ -229,8 +463,36 @@ impl ApplicationHost {
         RunningApplicationHost {
             application_id: self.application_id,
             lifecycle: self.lifecycle,
+            recovery: self.recovery,
+            readiness: self.readiness,
             router: self.server.add_service(service),
         }
+    }
+
+    /// Registers a public service, which remains unavailable while recovery is running.
+    pub fn add_public_service<S>(self, service: S) -> RunningApplicationHost
+    where
+        S: Service<http::Request<BoxBody>, Response = HttpResponse<BoxBody>, Error = Infallible>
+            + NamedService
+            + Clone
+            + Send
+            + 'static,
+        S::Future: Send + 'static,
+    {
+        self.add_service(service)
+    }
+
+    /// Registers a fixed legacy control route reachable during recovery.
+    pub fn add_legacy_control_service<S>(self, service: S) -> RunningApplicationHost
+    where
+        S: Service<http::Request<BoxBody>, Response = HttpResponse<BoxBody>, Error = Infallible>
+            + NamedService
+            + Clone
+            + Send
+            + 'static,
+        S::Future: Send + 'static,
+    {
+        self.add_service(service)
     }
 }
 
@@ -238,7 +500,9 @@ impl ApplicationHost {
 pub struct RunningApplicationHost {
     application_id: String,
     lifecycle: Vec<Arc<dyn ApplicationLifecycle>>,
-    router: Router<TrustedIngressStack>,
+    recovery: Vec<Arc<dyn HostRecovery>>,
+    readiness: tokio::sync::watch::Sender<RecoveryState>,
+    router: Router<RecoveryIngressStack>,
 }
 
 impl RunningApplicationHost {
@@ -260,8 +524,34 @@ impl RunningApplicationHost {
         Self {
             application_id: self.application_id,
             lifecycle: self.lifecycle,
+            recovery: self.recovery,
+            readiness: self.readiness,
             router: self.router.add_service(service),
         }
+    }
+
+    pub fn add_public_service<S>(self, service: S) -> Self
+    where
+        S: Service<http::Request<BoxBody>, Response = HttpResponse<BoxBody>, Error = Infallible>
+            + NamedService
+            + Clone
+            + Send
+            + 'static,
+        S::Future: Send + 'static,
+    {
+        self.add_service(service)
+    }
+
+    pub fn add_legacy_control_service<S>(self, service: S) -> Self
+    where
+        S: Service<http::Request<BoxBody>, Response = HttpResponse<BoxBody>, Error = Infallible>
+            + NamedService
+            + Clone
+            + Send
+            + 'static,
+        S::Future: Send + 'static,
+    {
+        self.add_service(service)
     }
 
     /// Starts every registered service. The host consumes itself so its trusted
@@ -282,12 +572,67 @@ impl RunningApplicationHost {
         F: Future<Output = ()> + Send + 'static,
     {
         let RunningApplicationHost {
-            lifecycle, router, ..
+            lifecycle,
+            recovery,
+            readiness,
+            router,
+            ..
         } = self;
         Self::start_lifecycle(&lifecycle).await?;
-        let serving = router.serve_with_shutdown(address, shutdown).await;
-        // Tonic has stopped accepting RPCs before lifecycle resources are torn
-        // down. Run cleanup even if serving itself returned an error.
+        let cancel = RecoveryCancellation::new();
+        let serving_cancel = cancel.clone();
+        // Poll the fixed router before recovery. Control services were part of
+        // that router at construction; public routes remain gated below.
+        let mut serving = tokio::spawn(async move {
+            router
+                .serve_with_shutdown(address, async move { serving_cancel.cancelled().await })
+                .await
+        });
+        tokio::task::yield_now().await;
+        let mut supervisor = JoinSet::new();
+        for (component, registration) in recovery.iter().enumerate() {
+            if let Err(source) = registration.start(&mut supervisor, cancel.clone()).await {
+                readiness.send_replace(RecoveryState::Failed);
+                cancel.cancel();
+                supervisor.abort_all();
+                while supervisor.join_next().await.is_some() {}
+                let _ = serving.await;
+                Self::shutdown_lifecycle(&lifecycle).await?;
+                return Err(ApplicationHostError::Lifecycle {
+                    phase: ApplicationLifecyclePhase::Recover,
+                    component,
+                    source,
+                });
+            }
+        }
+        readiness.send_replace(RecoveryState::Ready);
+        tokio::select! {
+            _ = shutdown => cancel.cancel(),
+            result = supervisor.join_next(), if !supervisor.is_empty() => {
+                let source = match result {
+                    Some(Ok(Err(source))) => source,
+                    Some(Err(error)) => tonic::Status::internal(format!("application recovery task failed to join: {error}")),
+                    Some(Ok(Ok(()))) => tonic::Status::failed_precondition("application recovery task ended unexpectedly"),
+                    None => unreachable!("non-empty JoinSet returned no task"),
+                };
+                readiness.send_replace(RecoveryState::Failed);
+                cancel.cancel();
+                supervisor.abort_all();
+                while supervisor.join_next().await.is_some() {}
+                let _ = serving.await;
+                Self::shutdown_lifecycle(&lifecycle).await?;
+                return Err(ApplicationHostError::RecoveryTask(source));
+            }
+            result = &mut serving => {
+                let result = result.expect("application serving task panicked");
+                Self::shutdown_lifecycle(&lifecycle).await?;
+                return result.map_err(ApplicationHostError::Transport);
+            }
+        }
+        readiness.send_replace(RecoveryState::Failed);
+        supervisor.abort_all();
+        while supervisor.join_next().await.is_some() {}
+        let serving = serving.await.expect("application serving task panicked");
         Self::shutdown_lifecycle(&lifecycle).await?;
         serving.map_err(ApplicationHostError::Transport)
     }

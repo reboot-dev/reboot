@@ -19,7 +19,7 @@ path = "src/bin/protoc-gen-reboot_rust.rs"
 
 [features]
 build = ["dep:protoc-bin-vendored", "dep:tonic-build"]
-test-support = ["dep:tokio-stream"]
+test-support = []
 
 [dependencies]
 base64 = "0.22"
@@ -40,8 +40,9 @@ tonic = "0.12"
 tower = "0.5"
 tonic-build = { version = "0.12", optional = true }
 uuid = { version = "1", features = ["v4", "v7"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
-tokio-stream = { version = "0.1", features = ["net"], optional = true }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+
 
 [build-dependencies]
 protoc-bin-vendored = "3"

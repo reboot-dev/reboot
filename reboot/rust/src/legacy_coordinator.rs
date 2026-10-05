@@ -31,6 +31,19 @@ pub struct TonicCoordinatorWatchEndpoint {
 }
 
 impl TonicCoordinatorWatchEndpoint {
+    /// Selects a Coordinator route without contacting it. This lets an
+    /// [`ApplicationHost`](crate::application_host::ApplicationHost) register
+    /// recovery before binding its listener; the first `Watch` RPC opens the
+    /// connection only after listener-first startup has begun.
+    pub fn lazy(endpoint: impl AsRef<str>) -> Result<Self, tonic::transport::Error> {
+        Ok(Self {
+            client: tokio::sync::Mutex::new(proto::coordinator_client::CoordinatorClient::new(
+                tonic::transport::Endpoint::from_shared(endpoint.as_ref().to_owned())?
+                    .connect_lazy(),
+            )),
+        })
+    }
+
     pub async fn connect(endpoint: impl AsRef<str>) -> Result<Self, tonic::transport::Error> {
         Ok(Self {
             client: tokio::sync::Mutex::new(

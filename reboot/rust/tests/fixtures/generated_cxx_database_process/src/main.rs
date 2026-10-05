@@ -2,23 +2,21 @@ use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
 
 use prost::Message;
 use reboot::{
-    database_proto as database,
+    application_host::{ApplicationHost, LegacyRecoveryMetadata},
+
     durable_coordinator::{
         CoordinatorRecovery, ParticipantResolver, ParticipantTarget, TonicCoordinatorSidecar,
         TonicParticipantEndpoint,
     },
-    durable_participant::{
-        DurableActorParticipant, DurableActorParticipantHost, ParticipantRecovery,
-        TonicParticipantSidecar,
-    },
-    legacy_coordinator::{DurableCoordinatorWatchHost, TonicCoordinatorWatchEndpoint},
+    durable_participant::{DurableActorParticipant, ParticipantRecovery, TonicParticipantSidecar},
+    legacy_coordinator::TonicCoordinatorWatchEndpoint,
     runtime::{
         DatabaseActorStore, InboundTransactionStartFactory, RootTransactionStart,
         RootTransactionStartFactory, TransactionContext, TransactionExecution,
         TransactionalChannelResolver,
     },
 };
-use tonic::transport::{Channel, Server};
+use tonic::transport::Channel;
 use uuid::Uuid;
 
 pub mod proto {
@@ -279,7 +277,6 @@ async fn main() {
         "tests.reboot.protoc.TransactionCounter",
         state_ref.clone(),
     );
-    let participant_host = DurableActorParticipantHost::new(participant.clone());
     let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
         Arc::clone(&coordinator_sidecar),
         Arc::new(routes.clone()),
@@ -289,12 +286,7 @@ async fn main() {
     // real C++ sidecar, not a process-local coordinator map.
     let coordinator_state_ref =
         optional_arg("--coordinator-state-ref").unwrap_or_else(|| "root".into());
-    let coordinator_watch = DurableCoordinatorWatchHost::new(
-        coordinator_sidecar,
-        "tests.reboot.protoc.TransactionCounter",
-        &coordinator_state_ref,
-    )
-    .unwrap();
+
     let starts = Starts {
         root: root_id,
         child: Uuid::from_u128(2),
@@ -317,16 +309,45 @@ async fn main() {
         handler,
     );
     let address = listen.parse().unwrap();
+    // The generated adapter, rather than fixture-only construction, supplies
+    // the exact injected Participant and Coordinator control services. For
+    // recovery the host owns their listener-first lifecycle and receives the
+    // same explicit C++ Database recovery metadata the old fixture passed by
+    // hand: the one configured shard, no state-tag filter, and this actor's
+    // exact coordinator state reference.
+    let mut host = ApplicationHost::new("generated-cxx-database-process");
+    if has("--recover") {
+        let endpoint = format!("http://{listen}");
+        let watch = Arc::new(TonicCoordinatorWatchEndpoint::lazy(endpoint).unwrap());
+        let recovery = adapter
+            .legacy_recovery_registration(
+                LegacyRecoveryMetadata {
+                    participant: ParticipantRecovery {
+                        shard_ids: vec!["s000000000".into()],
+                        ..Default::default()
+                    },
+                    coordinator: CoordinatorRecovery {
+                        shard_ids: vec!["s000000000".into()],
+                        coordinator_state_ref: coordinator_state_ref.clone(),
+                        ..Default::default()
+                    },
+                },
+                watch,
+            )
+            .unwrap();
+        host = host.with_host_recovery(recovery);
+    }
     let server = tokio::spawn(async move {
-        Server::builder()
-            .layer(reboot::successful_trailers::SuccessfulParticipantTrailerLayer)
-            .add_service(database::participant_server::ParticipantServer::new(
-                participant_host,
-            ))
-            .add_service(database::coordinator_server::CoordinatorServer::new(
-                coordinator_watch,
-            ))
-            .add_service(
+        host.add_legacy_control_service(adapter.legacy_participant_control_service())
+            .add_legacy_control_service(
+                adapter
+                    .legacy_coordinator_control_service(
+                        "tests.reboot.protoc.TransactionCounter",
+                        coordinator_state_ref,
+                    )
+                    .unwrap(),
+            )
+            .add_public_service(
                 proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(
                     adapter,
                 ),
@@ -366,48 +387,6 @@ async fn main() {
         }
         if has("--exit-after-invoke") {
             return;
-        }
-    }
-    if has("--recover") {
-        // The server task and recovery path start together. Retry our own
-        // Coordinator route until the Tonic listener is bound; connection
-        // refusal is startup timing, not a terminal Watch result.
-        let endpoint = format!("http://{listen}");
-        let watch = loop {
-            match TonicCoordinatorWatchEndpoint::connect(endpoint.clone()).await {
-                Ok(watch) => break watch,
-                Err(_) => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
-            }
-        };
-        participant
-            .recover_and_watch(
-                ParticipantRecovery {
-                    shard_ids: vec!["s000000000".into()],
-                    ..Default::default()
-                },
-                &watch,
-            )
-            .await
-            .unwrap();
-        if role == "target" {
-            reboot::durable_participant::test_support::signal_watch_terminalized().unwrap();
-        }
-        if role == "root" {
-            reboot::durable_coordinator::DurableRootCoordinator::new(
-                Arc::new(
-                    TonicCoordinatorSidecar::connect(&database_endpoint)
-                        .await
-                        .unwrap(),
-                ),
-                Arc::new(routes),
-            )
-            .recover(CoordinatorRecovery {
-                shard_ids: vec!["s000000000".into()],
-                coordinator_state_ref: coordinator_state_ref.clone(),
-                ..Default::default()
-            })
-            .await
-            .unwrap();
         }
     }
     server.await.unwrap();

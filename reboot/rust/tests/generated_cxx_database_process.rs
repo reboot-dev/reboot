@@ -419,7 +419,7 @@ fn generated_root_exclusive_idempotency_is_durable_replayed_and_collision_safe()
 
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
-fn generated_root_exclusive_idempotency_recovers_exactly_once_after_decision() {
+fn generated_application_host_recovers_idempotent_root_exactly_once_after_decision() {
     let database_binary =
         std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

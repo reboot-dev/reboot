@@ -1411,6 +1411,8 @@ async fn generated_durable_counter_replays_after_service_recreation() {
     let status = Command::new("cargo")
         .arg("test")
         .arg("--offline")
+        .arg("--")
+        .arg("--test-threads=1")
         .current_dir(&fixture)
         .status()
         .unwrap();
@@ -1526,6 +1528,8 @@ mod tests {
     let status = Command::new("cargo")
         .arg("test")
         .arg("--offline")
+        .arg("--")
+        .arg("--test-threads=1")
         .current_dir(&fixture)
         .status()
         .unwrap();

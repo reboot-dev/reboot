@@ -1,5 +1,7 @@
 use std::{
+    future::Future,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
+    pin::Pin,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -8,14 +10,111 @@ use reboot_rust_schema::{
     RebootHeaders,
     application_host::{
         ApplicationHost, ApplicationHostError, ApplicationLifecycle, ApplicationLifecyclePhase,
-        TrustedApplicationContext,
+        HostRecovery, RecoveryCancellation, TrustedApplicationContext,
     },
+    database_proto as database,
+    durable_coordinator::CoordinatorSidecar,
+    legacy_coordinator::DurableCoordinatorWatchHost,
     proto,
 };
 
 const APPLICATION_ID_HEADER: &str = "x-reboot-application-id";
 const STATE_REF_HEADER: &str = "x-reboot-state-ref";
 use tonic::{Request, Response, Status};
+
+struct BlockingRecovery {
+    started: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    release: tokio::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+}
+
+struct FailingRecoveryTask {
+    started: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+}
+
+struct DurableDecisionSidecar;
+type SidecarFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, Status>> + Send + 'a>>;
+
+impl CoordinatorSidecar for DurableDecisionSidecar {
+    fn coordinator_prepare(
+        &self,
+        _: database::TransactionCoordinatorPrepareRequest,
+    ) -> SidecarFuture<'_, database::TransactionCoordinatorPrepareResponse> {
+        Box::pin(async { Err(Status::unimplemented("not used")) })
+    }
+    fn coordinator_prepared(
+        &self,
+        _: database::TransactionCoordinatorPreparedRequest,
+    ) -> SidecarFuture<'_, database::TransactionCoordinatorPreparedResponse> {
+        Box::pin(async { Err(Status::unimplemented("not used")) })
+    }
+    fn coordinator_cleanup(
+        &self,
+        _: database::TransactionCoordinatorCleanupRequest,
+    ) -> SidecarFuture<'_, database::TransactionCoordinatorCleanupResponse> {
+        Box::pin(async { Err(Status::unimplemented("not used")) })
+    }
+    fn recover(
+        &self,
+        _: database::RecoverRequest,
+    ) -> SidecarFuture<'_, Vec<database::RecoverResponse>> {
+        Box::pin(async { Err(Status::unimplemented("not used")) })
+    }
+    fn decision_get(
+        &self,
+        request: database::TransactionCoordinatorDecisionGetRequest,
+    ) -> SidecarFuture<'_, database::TransactionCoordinatorDecisionGetResponse> {
+        Box::pin(async move {
+            if request.coordinator_state_ref != "coordinator/root" {
+                return Err(Status::data_loss("wrong coordinator identity"));
+            }
+            Ok(database::TransactionCoordinatorDecisionGetResponse {
+                decision: Some(database::TransactionCoordinatorDecision {
+                    coordinator_state_ref: request.coordinator_state_ref,
+                    outcome: database::transaction_coordinator_decision::Outcome::Abort as i32,
+                    participants: None,
+                }),
+            })
+        })
+    }
+}
+
+#[tonic::async_trait]
+impl HostRecovery for BlockingRecovery {
+    async fn start(
+        &self,
+        _: &mut tokio::task::JoinSet<Result<(), Status>>,
+        _: RecoveryCancellation,
+    ) -> Result<(), Status> {
+        self.started
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap()
+            .send(())
+            .unwrap();
+        self.release.lock().await.take().unwrap().await.unwrap();
+        Ok(())
+    }
+}
+
+#[tonic::async_trait]
+impl HostRecovery for FailingRecoveryTask {
+    async fn start(
+        &self,
+        supervisor: &mut tokio::task::JoinSet<Result<(), Status>>,
+        _: RecoveryCancellation,
+    ) -> Result<(), Status> {
+        self.started
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap()
+            .send(())
+            .unwrap();
+        supervisor.spawn(async { Err(Status::aborted("recovered Watch failed")) });
+        Ok(())
+    }
+}
 
 struct IdentityEcho;
 
@@ -233,4 +332,138 @@ async fn recovery_failure_closes_initialized_components_without_opening_a_listen
             "shutdown:broken",
         ]
     );
+}
+
+#[tokio::test]
+async fn public_ingress_is_unavailable_until_host_recovery_succeeds() {
+    let address = unused_local_address();
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let host = ApplicationHost::new("server-owned-app")
+        .with_host_recovery(BlockingRecovery {
+            started: Mutex::new(Some(started_tx)),
+            release: tokio::sync::Mutex::new(Some(release_rx)),
+        })
+        .add_public_service(proto::echo_methods_server::EchoMethodsServer::new(
+            IdentityEcho,
+        ));
+    let server = tokio::spawn(async move {
+        host.serve_with_shutdown(address, async move { shutdown_rx.await.unwrap() })
+            .await
+            .unwrap()
+    });
+    started_rx.await.unwrap();
+    let mut client =
+        proto::echo_methods_client::EchoMethodsClient::connect(format!("http://{address}"))
+            .await
+            .unwrap();
+    assert_eq!(
+        client
+            .reply(proto::Text {
+                content: "held".into()
+            })
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unavailable
+    );
+    release_tx.send(()).unwrap();
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    let mut open = Request::new(proto::Text {
+        content: "open".into(),
+    });
+    open.metadata_mut()
+        .insert(STATE_REF_HEADER, "example/identity".parse().unwrap());
+    assert_eq!(
+        client.reply(open).await.unwrap().into_inner().content,
+        "server-owned-app;spoof-visible=false"
+    );
+    shutdown_tx.send(()).unwrap();
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn supervised_recovery_task_failure_closes_the_host() {
+    let address = unused_local_address();
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let host = ApplicationHost::new("server-owned-app")
+        .with_host_recovery(FailingRecoveryTask {
+            started: Mutex::new(Some(started_tx)),
+        })
+        .add_public_service(proto::echo_methods_server::EchoMethodsServer::new(
+            IdentityEcho,
+        ));
+    let server = tokio::spawn(async move { host.serve(address).await });
+    started_rx.await.unwrap();
+    let result = server.await.unwrap();
+    match result {
+        Err(ApplicationHostError::RecoveryTask(status)) => {
+            assert_eq!(status.code(), tonic::Code::Aborted);
+        }
+        other => panic!("expected supervised recovery task failure, got {other:?}"),
+    }
+    assert!(std::net::TcpStream::connect_timeout(&address, Duration::from_millis(50)).is_err());
+}
+
+#[tokio::test]
+async fn legacy_coordinator_watch_is_reachable_while_public_ingress_is_gated() {
+    let address = unused_local_address();
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let coordinator = DurableCoordinatorWatchHost::new(
+        Arc::new(DurableDecisionSidecar),
+        "tests.Counter",
+        "coordinator/root",
+    )
+    .unwrap();
+    let host = ApplicationHost::new("server-owned-app")
+        .with_host_recovery(BlockingRecovery {
+            started: Mutex::new(Some(started_tx)),
+            release: tokio::sync::Mutex::new(Some(release_rx)),
+        })
+        .add_legacy_control_service(database::coordinator_server::CoordinatorServer::new(
+            coordinator,
+        ))
+        .add_public_service(proto::echo_methods_server::EchoMethodsServer::new(
+            IdentityEcho,
+        ));
+    let server = tokio::spawn(async move {
+        host.serve_with_shutdown(address, async move { shutdown_rx.await.unwrap() })
+            .await
+            .unwrap()
+    });
+    started_rx.await.unwrap();
+    let endpoint = format!("http://{address}");
+    let mut control = database::coordinator_client::CoordinatorClient::connect(endpoint.clone())
+        .await
+        .unwrap();
+    let watched = control
+        .watch(database::WatchRequest {
+            transaction_id: uuid::Uuid::nil().as_bytes().to_vec(),
+            state_type: "tests.Counter".into(),
+            state_ref: "counter/1".into(),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(watched.aborted);
+
+    let mut public = proto::echo_methods_client::EchoMethodsClient::connect(endpoint)
+        .await
+        .unwrap();
+    assert_eq!(
+        public
+            .reply(proto::Text {
+                content: "held".into()
+            })
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unavailable
+    );
+    release_tx.send(()).unwrap();
+    shutdown_tx.send(()).unwrap();
+    server.await.unwrap();
 }

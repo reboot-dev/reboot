@@ -908,7 +908,22 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         recovery: ParticipantRecovery,
         watch: &W,
     ) -> Result<(), Status> {
-        self.recover(recovery).await?;
+        self.recover_ownership(recovery).await?;
+        self.watch_recovered(watch).await
+    }
+
+    /// Rebuild only the durable local ownership. Hosts call this before
+    /// publishing recovery readiness, then supervise [`Self::watch_recovered`]
+    /// separately so restarting a Watch never repeats the sidecar scan.
+    pub async fn recover_ownership(&self, recovery: ParticipantRecovery) -> Result<(), Status> {
+        self.recover(recovery).await
+    }
+
+    /// Watches a transaction already installed by [`Self::recover_ownership`].
+    pub async fn watch_recovered<W: CoordinatorWatchEndpoint>(
+        &self,
+        watch: &W,
+    ) -> Result<(), Status> {
         let pending = self.pending.lock().await;
         let Some(current) = pending.as_ref() else {
             return Ok(());
