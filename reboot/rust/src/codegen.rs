@@ -268,6 +268,15 @@ fn annotations_for_generated_files(
     for file in raw_files {
         let Some(file_name) = file.name else { continue };
         let mut services = HashMap::new();
+        // Python calls `_check_services` only from `process_file` for the
+        // descriptor currently being generated. A linked dependency stays
+        // opaque to these service-local checks until it is itself listed in
+        // `file_to_generate`; relationship lookups below retain their own
+        // source-specific pool scope.
+        if !generated_files.contains(&file_name) {
+            output.insert(file_name, services);
+            continue;
+        }
         for service in file.services {
             let Some(service_name) = service.name else {
                 continue;
@@ -2448,6 +2457,76 @@ mod tests {
             generate_from_wire(&generated_dependency).error.as_deref(),
             Some(
                 "Reboot service 'tests.reboot.protoc.CounterApi' has illegal name: all Reboot service names must end in 'Methods', since (unlike basic gRPC) they provide methods to Reboot states"
+            )
+        );
+    }
+
+    #[test]
+    fn raw_plugin_scopes_service_local_option_validation_to_generated_files() {
+        fn append_raw_file(wire: &mut Vec<u8>, file: RawFile) {
+            let mut descriptor = file.encode_to_vec();
+            // This raw option overlay is also decoded as a normal descriptor.
+            // Keep syntax so it cannot change the ordinary validation subject.
+            descriptor.extend([0x62, 0x06, b'p', b'r', b'o', b't', b'o', b'3']);
+            wire.push(0x7a); // CodeGeneratorRequest.proto_file (field 15).
+            wire.push(u8::try_from(descriptor.len()).expect("small raw descriptor"));
+            wire.extend(descriptor);
+        }
+
+        let method_options = ExtensionOptions {
+            reboot: Some(
+                RebootMethodOptions {
+                    writer: Some(RebootWriterMethodOptions::default()),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let dependency = RawFile {
+            name: Some("tests/reboot/protoc/dependency.proto".to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            messages: vec![],
+            services: vec![RawService {
+                name: Some("CounterMethods".to_owned()),
+                options: None,
+                methods: vec![RawMethod {
+                    name: Some("increment".to_owned()),
+                    options: Some(method_options),
+                }],
+            }],
+        };
+        let request = |file_to_generate: &str| CodeGeneratorRequest {
+            parameter: Some("module=reboot_rust_schema::proto".to_owned()),
+            file_to_generate: vec![file_to_generate.to_owned()],
+            proto_file: vec![
+                FileDescriptorProto {
+                    name: Some("tests/reboot/protoc/main.proto".to_owned()),
+                    package: Some("tests.reboot.protoc".to_owned()),
+                    syntax: Some("proto3".to_owned()),
+                    ..Default::default()
+                },
+                FileDescriptorProto {
+                    name: Some("tests/reboot/protoc/dependency.proto".to_owned()),
+                    package: Some("tests.reboot.protoc".to_owned()),
+                    syntax: Some("proto3".to_owned()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        let mut dependency_only = request("tests/reboot/protoc/main.proto").encode_to_vec();
+        append_raw_file(&mut dependency_only, dependency.clone());
+        assert!(generate_from_wire(&dependency_only).error.is_none());
+
+        let mut generated_dependency =
+            request("tests/reboot/protoc/dependency.proto").encode_to_vec();
+        append_raw_file(&mut generated_dependency, dependency);
+        assert_eq!(
+            generate_from_wire(&generated_dependency).error.as_deref(),
+            Some(
+                "tests/reboot/protoc/dependency.proto: Reboot method `CounterMethods/increment` has illegal name: all Reboot RPC method names must start with an uppercase letter."
             )
         );
     }
