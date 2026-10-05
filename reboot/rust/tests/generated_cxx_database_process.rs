@@ -256,6 +256,54 @@ fn exclusive_host(
         .unwrap()
 }
 
+fn rich_error_remote_host(binary: &std::path::Path, listen: u16) -> Child {
+    Command::new(binary)
+        .args([
+            "--role",
+            "error-remote",
+            "--listen",
+            &format!("127.0.0.1:{listen}"),
+        ])
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap()
+}
+
+fn rich_error_root_host(
+    binary: &std::path::Path,
+    database: &str,
+    state_ref: &str,
+    target: &str,
+    root_id: Uuid,
+    amount: i64,
+) -> std::process::ExitStatus {
+    let listen = port();
+    Command::new(binary)
+        .args([
+            "--role",
+            "root",
+            "--listen",
+            &format!("127.0.0.1:{listen}"),
+            "--database",
+            database,
+            "--root",
+            &format!("http://127.0.0.1:{listen}"),
+            "--target",
+            target,
+            "--root-id",
+            &root_id.to_string(),
+            "--state-ref",
+            state_ref,
+            "--invoke",
+            "--exit-after-invoke",
+            "--amount",
+            &amount.to_string(),
+        ])
+        .status()
+        .unwrap()
+}
+
 /// Invokes the generated root-exclusive adapter in a fresh fixture process
 /// with a caller-owned idempotency key. A non-success exit is its fail-closed
 /// observable result.
@@ -340,6 +388,129 @@ fn idempotent_factory_host(
         pause_after_decision,
         true,
     )
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_root_declared_outbound_errors_commit_or_abort_durably_through_real_cxx_database() {
+    let database_binary =
+        std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let mut db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let remote_port = port();
+    let mut remote = rich_error_remote_host(&binary, remote_port);
+    wait(remote_port);
+    let remote_endpoint = format!("http://127.0.0.1:{remote_port}");
+
+    let committed = "declared-rich-error-commits";
+    runtime.block_on(store_counter(&db.endpoint(), committed, 5));
+    assert!(
+        rich_error_root_host(
+            &binary,
+            &db.endpoint(),
+            committed,
+            &remote_endpoint,
+            Uuid::from_u128(0x110),
+            100,
+        )
+        .success()
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), committed)),
+        Some(vec![0x08, 105])
+    );
+
+    for (index, amount) in [101_i64, 102, 103].into_iter().enumerate() {
+        let state_ref = format!("declared-rich-error-aborts-{amount}");
+        runtime.block_on(store_counter(&db.endpoint(), &state_ref, 5));
+        assert!(
+            !rich_error_root_host(
+                &binary,
+                &db.endpoint(),
+                &state_ref,
+                &remote_endpoint,
+                Uuid::from_u128(0x120 + index as u128),
+                amount,
+            )
+            .success(),
+            "remote shape {amount} must fail the root"
+        );
+        assert_eq!(
+            runtime.block_on(load_state(&db.endpoint(), &state_ref)),
+            Some(vec![0x08, 5])
+        );
+    }
+
+    let transport = "declared-rich-error-transport-aborts";
+    runtime.block_on(store_counter(&db.endpoint(), transport, 5));
+    assert!(
+        !rich_error_root_host(
+            &binary,
+            &db.endpoint(),
+            transport,
+            &format!("http://127.0.0.1:{}", port()),
+            Uuid::from_u128(0x130),
+            100,
+        )
+        .success()
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), transport)),
+        Some(vec![0x08, 5])
+    );
+
+    // Reopen RocksDB before the final assertions: no in-process state or mock
+    // sidecar can satisfy these reads.
+    db.restart();
+    let recovery_port = port();
+    let mut recovered = host(
+        &binary,
+        "root",
+        recovery_port,
+        &db.endpoint(),
+        recovery_port,
+        recovery_port,
+        "00000000-0000-0000-0000-000000000111",
+        true,
+        false,
+        None,
+        None,
+        Some(committed),
+        Some(committed),
+    );
+    wait(recovery_port);
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), committed)),
+        Some(vec![0x08, 105])
+    );
+    for amount in [101_i64, 102, 103] {
+        assert_eq!(
+            runtime.block_on(load_state(
+                &db.endpoint(),
+                &format!("declared-rich-error-aborts-{amount}")
+            )),
+            Some(vec![0x08, 5]),
+        );
+    }
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), transport)),
+        Some(vec![0x08, 5])
+    );
+    let _ = recovered.kill();
+    let _ = recovered.wait();
+    let _ = remote.kill();
+    let _ = remote.wait();
 }
 
 #[test]

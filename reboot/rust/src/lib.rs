@@ -1279,7 +1279,14 @@ pub fn declared_error_details(
     if status.details().is_empty() {
         return Ok(None);
     }
-    googleapis_tonic_google_rpc::google::rpc::Status::decode(status.details()).map(Some)
+    let rich_status = googleapis_tonic_google_rpc::google::rpc::Status::decode(status.details())?;
+    // `grpc-status-details-bin` is an alternate encoding of this status, not
+    // an independent error. A conflicting inner envelope must not authorize a
+    // generated declared-error conversion.
+    if rich_status.code != status.code() as i32 || rich_status.message != status.message() {
+        return Ok(None);
+    }
+    Ok(Some(rich_status))
 }
 
 /// The portable, code-only subset of Python's generated gRPC error markers.
@@ -2226,6 +2233,33 @@ mod tests {
                 Err(ExternalEndpointError::HasPathQueryOrFragment)
                     | Err(ExternalEndpointError::InvalidUrl)
             ));
+        }
+    }
+
+    #[test]
+    fn declared_error_details_rejects_conflicting_inner_envelope() {
+        let detail = prost_types::Any {
+            type_url: "type.googleapis.com/test.Declared".into(),
+            value: vec![1],
+        };
+        for inner in [
+            googleapis_tonic_google_rpc::google::rpc::Status {
+                code: tonic::Code::Unknown as i32,
+                message: "outer".into(),
+                details: vec![detail.clone()],
+            },
+            googleapis_tonic_google_rpc::google::rpc::Status {
+                code: tonic::Code::InvalidArgument as i32,
+                message: "inner".into(),
+                details: vec![detail.clone()],
+            },
+        ] {
+            let outer = tonic::Status::with_details(
+                tonic::Code::InvalidArgument,
+                "outer",
+                inner.encode_to_vec().into(),
+            );
+            assert_eq!(declared_error_details(&outer).unwrap(), None);
         }
     }
 

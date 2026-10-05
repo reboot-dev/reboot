@@ -526,9 +526,18 @@ fn annotations_for_generated_files(
                         ));
                     }
                 };
-                if !method_declared_errors.is_empty() && !matches!(kind, DurableKind::Writer(_)) {
+                if !method_declared_errors.is_empty()
+                    && !matches!(
+                        kind,
+                        DurableKind::Writer(_)
+                            | DurableKind::Transaction(TransactionMetadata {
+                                mode: TransactionMode::Exclusive,
+                                factory: false
+                            })
+                    )
+                {
                     return Err(format!(
-                        "{file_name}: service `{service_name}` method `{method_name}` declares errors, but declared errors are supported only on writer methods"
+                        "{file_name}: service `{service_name}` method `{method_name}` declares errors, but declared errors are supported only on writer methods and non-factory exclusive transactions"
                     ));
                 }
                 methods.insert(method_name.clone(), kind);
@@ -1300,7 +1309,27 @@ fn emit_durable(
         }
         output.push_str("}\n\n");
     }
-    emit_transactional_client(output, service_name, &state, runtime_module, &methods)?;
+    for (kind, method, _, _, method_identity) in &methods {
+        let declared_errors = declared_transactional_errors(annotation, kind, method_identity);
+        if !declared_errors.is_empty() {
+            emit_declared_error_enum(
+                output,
+                service_name,
+                method,
+                package,
+                declared_errors,
+                runtime_module,
+            );
+        }
+    }
+    emit_transactional_client(
+        output,
+        service_name,
+        &state,
+        runtime_module,
+        annotation,
+        &methods,
+    )?;
     emit_external_client(
         output,
         service_name,
@@ -1328,6 +1357,28 @@ fn declared_writer_errors<'a>(
     method_identity: &str,
 ) -> &'a [String] {
     if !matches!(kind, DurableKind::Writer(_)) {
+        return &[];
+    }
+    method_identity
+        .rsplit('.')
+        .next()
+        .and_then(|method| annotation.declared_errors.get(method))
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+}
+
+fn declared_transactional_errors<'a>(
+    annotation: &'a DurableService,
+    kind: &DurableKind,
+    method_identity: &str,
+) -> &'a [String] {
+    if !matches!(
+        kind,
+        DurableKind::Transaction(TransactionMetadata {
+            mode: TransactionMode::Exclusive,
+            factory: false
+        })
+    ) {
         return &[];
     }
     method_identity
@@ -1421,6 +1472,7 @@ fn emit_transactional_client(
     service_name: &str,
     state: &str,
     runtime_module: &str,
+    annotation: &DurableService,
     methods: &[(&DurableKind, String, String, String, String)],
 ) -> Result<(), String> {
     let client = format!("{service_name}Client");
@@ -1428,8 +1480,14 @@ fn emit_transactional_client(
     let declaration = format!("{state}DurableState");
     let client_module = format!("{}_client", snake_case(service_name));
     output.push_str(&format!("/// Typed target state reference for `{service_name}`.\n///\n/// This value is passed unchanged to the host-owned resolver; it is not an\n/// address, placement hint, UUID, or SDK-generated identity.\n#[derive(Clone, Debug, Eq, PartialEq)]\npub struct {target} {{ state_ref: String }}\nimpl {target} {{ pub fn new(state_ref: impl Into<String>) -> Self {{ Self {{ state_ref: state_ref.into() }} }} pub fn state_ref(&self) -> &str {{ &self.state_ref }} }}\n\n/// Generated typed outbound client for `{service_name}`.\n///\n/// This is an outbound-only transaction foundation. It preserves the validated\n/// transaction path and coordinator headers, replaces only the target state\n/// reference, and delegates routing to the injected resolver. It does not\n/// execute nested inbound transactions, collect participants, or provide\n/// cross-actor atomicity.\npub struct {client}<R> {{ resolver: std::sync::Arc<R> }}\nimpl<R> Clone for {client}<R> {{ fn clone(&self) -> Self {{ Self {{ resolver: self.resolver.clone() }} }} }}\nimpl<R> {client}<R> where R: {runtime_module}::runtime::TransactionalChannelResolver {{ pub fn new(resolver: R) -> Self {{ Self {{ resolver: std::sync::Arc::new(resolver) }} }}\n"));
-    for (_, method, request, response, _) in methods {
-        output.push_str(&format!("    pub async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, target: &{target}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionalCallResponse<proto::{response}>, tonic::Status> {{ let (channel, request) = {runtime_module}::runtime::transactional_outbound_request(self.resolver.as_ref(), context, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, target.state_ref(), request).await?; let response = proto::{client_module}::{service_name}Client::new(channel).{method}(request).await?; let returned_participants = {runtime_module}::successful_trailers::ReturnedParticipants::from_metadata(response.metadata()).map_err(|error| tonic::Status::failed_precondition(error.to_string()))?; context.enlist_returned_participants(&returned_participants); Ok({runtime_module}::runtime::TransactionalCallResponse::new(response, returned_participants)) }}\n"));
+    for (kind, method, request, response, method_identity) in methods {
+        let declared_errors = declared_transactional_errors(annotation, kind, method_identity);
+        if declared_errors.is_empty() {
+            output.push_str(&format!("    pub async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, target: &{target}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionalCallResponse<proto::{response}>, tonic::Status> {{ let (channel, request) = {runtime_module}::runtime::transactional_outbound_request(self.resolver.as_ref(), context, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, target.state_ref(), request).await.map_err(|status| {{ context.doom(status.clone()); status }})?; let response = proto::{client_module}::{service_name}Client::new(channel).{method}(request).await.map_err(|status| {{ context.doom(status.clone()); status }})?; let returned_participants = {runtime_module}::successful_trailers::ReturnedParticipants::from_metadata(response.metadata()).map_err(|error| {{ let status = tonic::Status::failed_precondition(error.to_string()); context.doom(status.clone()); status }})?; context.enlist_returned_participants(&returned_participants); Ok({runtime_module}::runtime::TransactionalCallResponse::new(response, returned_participants)) }}\n"));
+        } else {
+            let error = declared_error_type(service_name, method);
+            output.push_str(&format!("    pub async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, target: &{target}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionalCallResponse<proto::{response}>, {error}> {{ let (channel, request) = {runtime_module}::runtime::transactional_outbound_request(self.resolver.as_ref(), context, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, target.state_ref(), request).await.map_err(|status| {{ context.doom(status.clone()); {error}::Grpc(status) }})?; let response = match proto::{client_module}::{service_name}Client::new(channel).{method}(request).await {{ Ok(response) => response, Err(status) => {{ let error = {error}::from_status(status); if let {error}::Grpc(status) = &error {{ context.doom(status.clone()); }} return Err(error); }} }}; let returned_participants = {runtime_module}::successful_trailers::ReturnedParticipants::from_metadata(response.metadata()).map_err(|error| {{ let status = tonic::Status::failed_precondition(error.to_string()); context.doom(status.clone()); {error}::Grpc(status) }})?; context.enlist_returned_participants(&returned_participants); Ok({runtime_module}::runtime::TransactionalCallResponse::new(response, returned_participants)) }}\n"));
+        }
     }
     output.push_str("}\n\n");
     Ok(())
@@ -1550,7 +1608,7 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
     let read_only = mode == "Shared";
     output.push_str(&format!("{prefix}{context}\n{prefix}if {read_only} {{ context.enable_read_only_aware(); }}\n{prefix}let transaction_id = context.transaction_root_id();\n{prefix}let automatic_idempotency = {automatic_idempotency} {{ Some(context.idempotency(\"{method_identity}\", request.get_ref())?) }} else {{ None }};\n{prefix}if let Some(idempotency) = &automatic_idempotency {{ let recovered = self.participant.sidecar().recover_idempotent_mutations({runtime_module}::database_proto::RecoverIdempotentMutationsRequest {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone(), idempotency_key: Some(idempotency.key().as_bytes().to_vec()), workflow_id: None, workflow_iteration: None }}).await?; for recovered in recovered {{ for mutation in recovered.idempotent_mutations {{ if let Some(response) = idempotency.replay::<proto::{response}>(&mutation)? {{ return Ok(tonic::Response::new(response)); }} }} }} }}\n"));
     output.push_str(&format!("{prefix}let participant_metadata = {participant_metadata};\n{prefix}let loaded = self.participant.start({runtime_module}::durable_participant::ActorTransactionStart {{ transaction_ids: context.transaction_ids().to_vec(), transaction_path: {transaction_path}, coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: {read_only}, factory: {factory}, state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}).await?;\n{prefix}// A duplicate may have waited for local actor admission while the original\n{prefix}// root transaction committed. Re-check durable replay before invoking the handler.\n{prefix}if let Some(idempotency) = &automatic_idempotency {{ let replay_after_admission = async {{ let recovered = self.participant.sidecar().recover_idempotent_mutations({runtime_module}::database_proto::RecoverIdempotentMutationsRequest {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone(), idempotency_key: Some(idempotency.key().as_bytes().to_vec()), workflow_id: None, workflow_iteration: None }}).await?; for recovered in recovered {{ for mutation in recovered.idempotent_mutations {{ if let Some(response) = idempotency.replay::<proto::{response}>(&mutation)? {{ return Ok(Some(response)); }} }} }} Ok::<Option<proto::{response}>, tonic::Status>(None) }}.await; match replay_after_admission {{ Ok(Some(response)) => {{ self.participant.abort(transaction_id).await?; return Ok(tonic::Response::new(response)); }}, Ok(None) => {{}}, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(error); }} }} }}\n{prefix}let mut state = match loaded {{ Some(_) if {factory} => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"factory transaction requires an absent actor state\")); }}, Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes.as_slice()) {{ Ok(state) => state, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(format!(\"stored actor state is not a valid {state}: {{error}}\"))); }} }}, None if {factory} => proto::{state}::default(), None => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"non-factory transaction requires an existing actor state\")); }} }};\n"));
-    output.push_str(&format!("{prefix}let execution = match self.handler.{method}(&context, &mut state, request.into_inner()).await {{ Ok(execution) => execution, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(error); }} }};\n{prefix}if automatic_idempotency.is_some() && !execution.idempotent_mutations.is_empty() {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"root-local idempotency stages exactly one automatic mutation\")); }}\n{prefix}let automatic_mutations = automatic_idempotency.as_ref().map(|idempotency| idempotency.mutation(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, context.headers().state_ref.clone(), &execution.response)).into_iter().collect::<Vec<_>>();\n{prefix}if let Err(error) = self.participant.stage(transaction_id, {runtime_module}::durable_participant::PendingActorEffects {{ state: if {factory} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else {{ execution.final_state.clone() }}, task_upserts: execution.task_upserts.clone(), idempotent_mutations: if automatic_idempotency.is_some() {{ automatic_mutations }} else {{ execution.idempotent_mutations.clone() }} }}).await {{ self.participant.abort(transaction_id).await?; return Err(error); }}\n"));
+    output.push_str(&format!("{prefix}let execution = match self.handler.{method}(&context, &mut state, request.into_inner()).await {{ Ok(execution) => execution, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(error); }} }};\n{prefix}if let Some(status) = context.doomed_status() {{ self.participant.abort(transaction_id).await?; return Err(status); }}\n{prefix}if automatic_idempotency.is_some() && !execution.idempotent_mutations.is_empty() {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"root-local idempotency stages exactly one automatic mutation\")); }}\n{prefix}let automatic_mutations = automatic_idempotency.as_ref().map(|idempotency| idempotency.mutation(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, context.headers().state_ref.clone(), &execution.response)).into_iter().collect::<Vec<_>>();\n{prefix}if let Err(error) = self.participant.stage(transaction_id, {runtime_module}::durable_participant::PendingActorEffects {{ state: if {factory} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else {{ execution.final_state.clone() }}, task_upserts: execution.task_upserts.clone(), idempotent_mutations: if automatic_idempotency.is_some() {{ automatic_mutations }} else {{ execution.idempotent_mutations.clone() }} }}).await {{ self.participant.abort(transaction_id).await?; return Err(error); }}\n"));
     if shared_root_ownership_seam {
         output.push_str(&format!("{prefix}// Local-only shared-root ownership is intentionally not activated: the\n{prefix}// current coordinator accepts only the read-only shared classification.\n"));
     }
@@ -3526,11 +3584,11 @@ mod tests {
             output.extend(value);
         }
 
-        let raw_request = |mode, errors: Vec<String>| {
+        let raw_request = |mode, factory: bool, errors: Vec<String>| {
             let mut reboot_option = RebootMethodOptions {
                 kind: Some(reboot_method_options::Kind::Transaction(
                     RebootTransactionMethodOptions {
-                        constructor: Some(Empty {}),
+                        constructor: factory.then_some(Empty {}),
                         mode,
                     },
                 )),
@@ -3580,11 +3638,11 @@ mod tests {
             reboot_transaction_method_options::Mode::Exclusive(Empty {}),
             reboot_transaction_method_options::Mode::Shared(Empty {}),
         ] {
-            let response = generate_from_wire(&raw_request(Some(mode), vec![]));
+            let response = generate_from_wire(&raw_request(Some(mode), false, vec![]));
             assert!(response.error.is_none(), "{response:?}");
         }
         assert_eq!(
-            generate_from_wire(&raw_request(None, vec![]))
+            generate_from_wire(&raw_request(None, false, vec![]))
                 .error
                 .as_deref(),
             Some(
@@ -3594,14 +3652,44 @@ mod tests {
         assert_eq!(
             generate_from_wire(&raw_request(
                 Some(reboot_transaction_method_options::Mode::Exclusive(Empty {})),
+                true,
                 vec![".tests.reboot.protoc.CounterError".to_owned()],
             ))
             .error
             .as_deref(),
             Some(
-                "tests/reboot/protoc/counter.proto: service `CounterWritesMethods` method `Increment` declares errors, but declared errors are supported only on writer methods"
+                "tests/reboot/protoc/counter.proto: service `CounterWritesMethods` method `Increment` declares errors, but declared errors are supported only on writer methods and non-factory exclusive transactions"
             )
         );
+        assert!(
+            generate_from_wire(&raw_request(
+                Some(reboot_transaction_method_options::Mode::Exclusive(Empty {})),
+                false,
+                vec![".tests.reboot.protoc.CounterError".to_owned()],
+            ))
+            .error
+            .is_none()
+        );
+        for (mode, factory) in [
+            (
+                reboot_transaction_method_options::Mode::Shared(Empty {}),
+                false,
+            ),
+            (
+                reboot_transaction_method_options::Mode::Shared(Empty {}),
+                true,
+            ),
+        ] {
+            assert!(
+                generate_from_wire(&raw_request(
+                    Some(mode),
+                    factory,
+                    vec![".tests.reboot.protoc.CounterError".to_owned()],
+                ))
+                .error
+                .is_some()
+            );
+        }
     }
 
     #[test]
@@ -3634,9 +3722,9 @@ mod tests {
         assert!(content.contains("pub struct CounterWritesMethodsTarget"));
         assert!(content.contains("TransactionalChannelResolver"));
         assert!(content.contains("transactional_outbound_request"));
-        assert!(
-            content.contains("CounterWritesMethodsClient::new(channel).increment(request).await?")
-        );
+        assert!(content.contains(
+            "CounterWritesMethodsClient::new(channel).increment(request).await.map_err(|status|"
+        ));
         assert!(content.contains("ReturnedParticipants::from_metadata(response.metadata())"));
         assert!(content.contains("TransactionalCallResponse<proto::CounterValue>"));
         assert!(content.contains("context: &reboot_rust_schema::runtime::TransactionContext"));

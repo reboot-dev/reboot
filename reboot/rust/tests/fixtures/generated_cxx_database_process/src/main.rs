@@ -118,13 +118,17 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
     ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
         state.value += request.amount;
         if let Self::Root(root) = self {
-            root.client
+            match root.client
                 .increment(
                     context,
                     &generated::TransactionCounterWritesMethodsTarget::new("target"),
                     request.clone(),
                 )
-                .await?;
+                .await
+            {
+                Ok(_) | Err(generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(_)) => {}
+                Err(generated::TransactionCounterWritesMethodsIncrementError::Grpc(error)) => return Err(error),
+            }
         }
         let mut result =
             TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
@@ -162,13 +166,17 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         }
         state.value += request.amount;
         if let Self::Root(root) = self {
-            root.client
+            match root.client
                 .increment(
                     context,
                     &generated::TransactionCounterWritesMethodsTarget::new("target"),
                     request.clone(),
                 )
-                .await?;
+                .await
+            {
+                Ok(_) | Err(generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(_)) => {}
+                Err(generated::TransactionCounterWritesMethodsIncrementError::Grpc(error)) => return Err(error),
+            }
         }
         Ok(TransactionExecution::new(proto::TransactionCounterValue {
             value: state.value,
@@ -198,6 +206,84 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
 }
 struct Root {
     client: generated::TransactionCounterWritesMethodsClient<Routes>,
+}
+
+/// A deliberately small, separately hosted service used only by the C++
+/// Database process test. The root still calls it through the generated
+/// transactional client; this server owns only the remote error wire shape.
+struct TransactionRichErrorService;
+
+#[tonic::async_trait]
+impl proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods
+    for TransactionRichErrorService
+{
+    async fn query(
+        &self,
+        _: tonic::Request<proto::TransactionIncrementRequest>,
+    ) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> {
+        Err(tonic::Status::unimplemented("fixture"))
+    }
+    async fn apply(
+        &self,
+        _: tonic::Request<proto::TransactionIncrementRequest>,
+    ) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> {
+        Err(tonic::Status::unimplemented("fixture"))
+    }
+    async fn increment(
+        &self,
+        request: tonic::Request<proto::TransactionIncrementRequest>,
+    ) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> {
+        let declared = prost_types::Any {
+            type_url: "type.googleapis.com/tests.reboot.protoc.TransactionLimitExceeded".into(),
+            value: proto::TransactionLimitExceeded { limit: 9 }.encode_to_vec(),
+        };
+        let status = match request.into_inner().amount {
+            100 => googleapis_tonic_google_rpc::google::rpc::Status {
+                code: tonic::Code::InvalidArgument as i32,
+                message: "remote fixture".into(),
+                details: vec![declared],
+            },
+            // The rich outer code disagrees with the gRPC status code.
+            101 => googleapis_tonic_google_rpc::google::rpc::Status {
+                code: tonic::Code::Unknown as i32,
+                message: "remote fixture".into(),
+                details: vec![declared],
+            },
+            // A trailer which cannot decode as google.rpc.Status.
+            102 => {
+                return Err(tonic::Status::with_details(
+                    tonic::Code::InvalidArgument,
+                    "remote fixture",
+                    vec![0xff].into(),
+                ));
+            }
+            // A normal gRPC error with no rich status trailer.
+            _ => return Err(tonic::Status::not_found("remote no trailer")),
+        };
+        Err(tonic::Status::with_details(
+            tonic::Code::InvalidArgument,
+            "remote fixture",
+            status.encode_to_vec().into(),
+        ))
+    }
+    async fn factory_increment(
+        &self,
+        _: tonic::Request<proto::TransactionIncrementRequest>,
+    ) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> {
+        Err(tonic::Status::unimplemented("fixture"))
+    }
+    async fn factory_increment_target(
+        &self,
+        _: tonic::Request<proto::TransactionIncrementRequest>,
+    ) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> {
+        Err(tonic::Status::unimplemented("fixture"))
+    }
+    async fn shared_read(
+        &self,
+        _: tonic::Request<proto::TransactionIncrementRequest>,
+    ) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> {
+        Err(tonic::Status::unimplemented("fixture"))
+    }
 }
 
 fn arg(name: &str) -> String {
@@ -250,6 +336,18 @@ async fn shared_barrier(transaction_id: Uuid) -> Result<(), tonic::Status> {
 async fn main() {
     let role = arg("--role");
     let listen = arg("--listen");
+    if role == "error-remote" {
+        tonic::transport::Server::builder()
+            .add_service(
+                proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(
+                    TransactionRichErrorService,
+                ),
+            )
+            .serve(listen.parse().unwrap())
+            .await
+            .unwrap();
+        return;
+    }
     let database_endpoint = arg("--database");
     let root_endpoint = arg("--root");
     let target_endpoint = arg("--target");

@@ -19,6 +19,10 @@ message TransactionCounterValue {
   int64 value = 1;
 }
 
+message TransactionLimitExceeded {
+  int64 limit = 1;
+}
+
 service TransactionCounterWritesMethods {
   option (rbt.v1alpha1.service) = {
     state: "tests.reboot.protoc.TransactionCounter"
@@ -33,8 +37,9 @@ service TransactionCounterWritesMethods {
   }
 
   rpc Increment(TransactionIncrementRequest) returns (TransactionCounterValue) {
-    option (rbt.v1alpha1.method).transaction = {
-      exclusive: {}
+    option (rbt.v1alpha1.method) = {
+      transaction: { exclusive: {} }
+      errors: ".tests.reboot.protoc.TransactionLimitExceeded"
     };
   }
 

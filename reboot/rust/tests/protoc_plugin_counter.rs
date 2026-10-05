@@ -209,6 +209,14 @@ impl proto::counter_writes_methods_server::CounterWritesMethods for RichErrorSer
             2 => vec![prost_types::Any { type_url: "type.googleapis.com/tests.reboot.protoc.CounterLimitExceeded".into(), value: vec![0xff] }],
             3 => vec![prost_types::Any { type_url: "type.googleapis.com/example.Unknown".into(), value: vec![1] }],
             4 => return Err(tonic::Status::with_details(tonic::Code::InvalidArgument, "malformed rich status", vec![0xff].into())),
+            5 => {
+                let status = googleapis_tonic_google_rpc::google::rpc::Status { code: tonic::Code::Unknown as i32, message: "fixture".into(), details: vec![known] };
+                return Err(tonic::Status::with_details(tonic::Code::InvalidArgument, "fixture", status.encode_to_vec().into()));
+            }
+            6 => {
+                let status = googleapis_tonic_google_rpc::google::rpc::Status { code: tonic::Code::InvalidArgument as i32, message: "inner fixture".into(), details: vec![known] };
+                return Err(tonic::Status::with_details(tonic::Code::InvalidArgument, "fixture", status.encode_to_vec().into()));
+            }
             _ => return Err(tonic::Status::not_found("ordinary grpc")),
         };
         let status = googleapis_tonic_google_rpc::google::rpc::Status { code: tonic::Code::InvalidArgument as i32, message: "fixture".into(), details };
@@ -233,6 +241,7 @@ impl map_generated::MapCounterWritesMethodsDatabaseHandler for MapCounter {
 struct TransactionCounter {
     trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
     fail: bool,
+    downstream: Option<transaction_generated::TransactionCounterWritesMethodsClient<FixedChannelResolver>>,
 }
 
 #[tonic::async_trait]
@@ -258,13 +267,24 @@ impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler fo
 
     async fn increment(
         &self,
-        _: &reboot::runtime::TransactionContext,
+        context: &reboot::runtime::TransactionContext,
         state: &mut proto::TransactionCounter,
         request: proto::TransactionIncrementRequest,
     ) -> Result<reboot::runtime::TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
         self.trace.lock().unwrap().push("handler");
         if self.fail {
             return Err(tonic::Status::invalid_argument("handler rejected request"));
+        }
+        if let Some(client) = &self.downstream {
+            match client.increment(
+                context,
+                &transaction_generated::TransactionCounterWritesMethodsTarget::new("remote-transaction-counter"),
+                request.clone(),
+            ).await {
+                Err(transaction_generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(_)) => self.trace.lock().unwrap().push("caught declared"),
+                Err(transaction_generated::TransactionCounterWritesMethodsIncrementError::Grpc(_)) => self.trace.lock().unwrap().push("caught grpc"),
+                Ok(_) => return Err(tonic::Status::internal("fixture remote was expected to fail")),
+            }
         }
         state.value += request.amount;
         let mut execution = reboot::runtime::TransactionExecution::new(
@@ -379,6 +399,31 @@ impl reboot::durable_participant::ParticipantSidecar for TransactionParticipantS
 
 struct TransactionCoordinatorSidecar {
     trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+}
+
+struct TransactionRichErrorService;
+
+#[tonic::async_trait]
+impl proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods for TransactionRichErrorService {
+    async fn query(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("fixture")) }
+    async fn apply(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("fixture")) }
+    async fn increment(&self, request: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> {
+        let declared = prost_types::Any {
+            type_url: "type.googleapis.com/tests.reboot.protoc.TransactionLimitExceeded".into(),
+            value: proto::TransactionLimitExceeded { limit: 9 }.encode_to_vec(),
+        };
+        let status = match request.into_inner().amount {
+            100 => googleapis_tonic_google_rpc::google::rpc::Status { code: tonic::Code::InvalidArgument as i32, message: "remote fixture".into(), details: vec![declared] },
+            101 => googleapis_tonic_google_rpc::google::rpc::Status { code: tonic::Code::Unknown as i32, message: "remote fixture".into(), details: vec![declared] },
+            102 => googleapis_tonic_google_rpc::google::rpc::Status { code: tonic::Code::InvalidArgument as i32, message: "remote fixture".into(), details: vec![prost_types::Any { type_url: "type.googleapis.com/example.Unknown".into(), value: vec![1] }] },
+            103 => return Err(tonic::Status::with_details(tonic::Code::InvalidArgument, "remote fixture", vec![0xff].into())),
+            _ => return Err(tonic::Status::not_found("remote no trailer")),
+        };
+        Err(tonic::Status::with_details(tonic::Code::InvalidArgument, "remote fixture", status.encode_to_vec().into()))
+    }
+    async fn factory_increment(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("fixture")) }
+    async fn factory_increment_target(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("fixture")) }
+    async fn shared_read(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("fixture")) }
 }
 
 impl reboot::durable_coordinator::CoordinatorSidecar for TransactionCoordinatorSidecar {
@@ -516,7 +561,39 @@ fn transaction_adapter_with_store_and_idempotent_recovery(
         participant,
         coordinator,
         TransactionStartFactory,
-        TransactionCounter { trace, fail },
+        TransactionCounter { trace, fail, downstream: None },
+    )
+}
+
+fn transaction_adapter_with_downstream(
+    trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+    channel: tonic::transport::Channel,
+) -> transaction_generated::TransactionCounterWritesMethodsTransactionAdapter<
+    TransactionCounter,
+    TransactionParticipantSidecar,
+    TransactionCoordinatorSidecar,
+    reboot::durable_coordinator::SingleParticipantResolver<TransactionParticipantSidecar>,
+    TransactionStartFactory,
+> {
+    let participant = reboot::durable_participant::DurableActorParticipant::new(
+        Arc::new(TransactionParticipantSidecar {
+            trace: Arc::clone(&trace), state: Some(proto::TransactionCounter { value: 4 }),
+            staged_states: Arc::new(std::sync::Mutex::new(Vec::new())),
+            idempotent_recovery: Arc::new(std::sync::Mutex::new(VecDeque::new())),
+        }),
+        "tests.reboot.protoc.TransactionCounter", "transaction-counter",
+    );
+    let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
+        Arc::new(TransactionCoordinatorSidecar { trace: Arc::clone(&trace) }),
+        Arc::new(reboot::durable_coordinator::SingleParticipantResolver::new(
+            reboot::durable_coordinator::ParticipantTarget { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: "transaction-counter".into() },
+            reboot::durable_participant::DurableActorParticipantHost::new(participant.clone()),
+        ).unwrap()),
+    );
+    transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(
+        DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(), participant, coordinator,
+        TransactionStartFactory,
+        TransactionCounter { trace, fail: false, downstream: Some(transaction_generated::TransactionCounterWritesMethodsClient::new(FixedChannelResolver(channel))) },
     )
 }
 
@@ -558,7 +635,7 @@ fn factory_transaction_adapter(
         participant,
         coordinator,
         TransactionStartFactory,
-        TransactionCounter { trace, fail },
+        TransactionCounter { trace, fail, downstream: None },
     )
 }
 
@@ -573,7 +650,7 @@ impl reboot::runtime::TransactionalChannelResolver for FixedChannelResolver {
         state_ref: &str,
     ) -> Result<tonic::transport::Channel, tonic::Status> {
         assert_eq!(state_type, "tests.reboot.protoc.TransactionCounter");
-        assert_eq!(state_ref, "transaction-counter");
+        assert!(matches!(state_ref, "transaction-counter" | "remote-transaction-counter"));
         Ok(self.0.clone())
     }
 }
@@ -623,6 +700,48 @@ async fn generated_transaction_adapter_aborts_when_handler_rejects() {
     .unwrap_err();
     assert_eq!(error.code(), tonic::Code::InvalidArgument);
     assert_eq!(*trace.lock().unwrap(), ["participant load", "handler", "participant abort"]);
+}
+
+#[tokio::test]
+async fn generated_transaction_declared_downstream_error_commits_and_unrecoverable_shapes_abort() {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+
+    let remote_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let remote_address = remote_listener.local_addr().unwrap();
+    let remote_server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(TransactionRichErrorService))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(remote_listener))
+            .await
+            .unwrap();
+    });
+    let channel = tonic::transport::Channel::from_shared(format!("http://{remote_address}"))
+        .unwrap().connect().await.unwrap();
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let adapter = transaction_adapter_with_downstream(Arc::clone(&trace), channel);
+
+    let mut declared = tonic::Request::new(proto::TransactionIncrementRequest { amount: 100 });
+    *declared.metadata_mut() = reboot::RebootHeaders::new("transaction-counter").to_metadata().unwrap();
+    assert_eq!(TransactionCounterWritesMethods::increment(&adapter, declared).await.unwrap().into_inner().value, 104);
+    assert_eq!(*trace.lock().unwrap(), [
+        "participant load", "handler", "caught declared", "coordinator DB prepare", "participant prepare",
+        "coordinator DB prepared", "coordinator DB decision", "participant commit", "coordinator DB cleanup",
+    ]);
+
+    for amount in [101, 102, 103, 104] {
+        trace.lock().unwrap().clear();
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount });
+        *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter").to_metadata().unwrap();
+        assert!(TransactionCounterWritesMethods::increment(&adapter, request).await.is_err());
+        assert_eq!(*trace.lock().unwrap(), ["participant load", "handler", "caught grpc", "participant abort"], "amount {amount} must abort before coordinator completion");
+    }
+
+    trace.lock().unwrap().clear();
+    let mut retry = tonic::Request::new(proto::TransactionIncrementRequest { amount: 100 });
+    *retry.metadata_mut() = reboot::RebootHeaders::new("transaction-counter").to_metadata().unwrap();
+    assert_eq!(TransactionCounterWritesMethods::increment(&adapter, retry).await.unwrap().into_inner().value, 104);
+    assert_eq!(trace.lock().unwrap()[..3], ["participant load", "handler", "caught declared"]);
+    remote_server.abort();
 }
 
 #[tokio::test]
@@ -1083,7 +1202,11 @@ async fn generated_outbound_client_does_not_enlist_failed_rpc() {
         )
         .await
         .unwrap_err();
-    assert_eq!(error.code(), tonic::Code::InvalidArgument);
+    assert!(matches!(
+        error,
+        transaction_generated::TransactionCounterWritesMethodsIncrementError::Grpc(status)
+            if status.code() == tonic::Code::InvalidArgument
+    ));
     assert!(root.transaction().take_returned_participants().is_empty());
     server.abort();
 }
@@ -1234,9 +1357,21 @@ async fn generated_external_client_decodes_ordered_declared_errors_and_preserves
         Err(generated::CounterWritesMethodsIncrementError::Grpc(status))
             if status.code() == tonic::Code::InvalidArgument
     ));
-    // No rich trailer preserves the ordinary transport status.
+    // A known declared detail cannot override the outer transport code.
     assert!(matches!(
         client.increment(proto::IncrementRequest { amount: 5 }).await,
+        Err(generated::CounterWritesMethodsIncrementError::Grpc(status))
+            if status.code() == tonic::Code::InvalidArgument && status.message() == "fixture"
+    ));
+    // Nor can it override the outer transport message.
+    assert!(matches!(
+        client.increment(proto::IncrementRequest { amount: 6 }).await,
+        Err(generated::CounterWritesMethodsIncrementError::Grpc(status))
+            if status.code() == tonic::Code::InvalidArgument && status.message() == "fixture"
+    ));
+    // No rich trailer preserves the ordinary transport status.
+    assert!(matches!(
+        client.increment(proto::IncrementRequest { amount: 7 }).await,
         Err(generated::CounterWritesMethodsIncrementError::Grpc(status))
             if status.code() == tonic::Code::NotFound
     ));

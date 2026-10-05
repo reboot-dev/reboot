@@ -168,6 +168,9 @@ pub struct TransactionContext {
     /// have no root aggregation authority.
     returned_participants:
         Option<Arc<Mutex<BTreeMap<crate::durable_coordinator::ParticipantTarget, bool>>>>,
+    /// First outbound failure whose transport outcome is not known recoverable.
+    /// A handler may catch it, but a root must still abort rather than commit.
+    doomed: Arc<Mutex<Option<Status>>>,
 }
 
 impl PartialEq for TransactionContext {
@@ -347,7 +350,28 @@ impl TransactionContext {
             headers,
             mode,
             returned_participants: None,
+            doomed: Arc::new(Mutex::new(None)),
         })
+    }
+
+    /// Records the first non-declared outbound failure. This is sticky so
+    /// catching an uncertain RPC error cannot make a transaction committable.
+    pub fn doom(&self, status: Status) {
+        let mut doomed = self
+            .doomed
+            .lock()
+            .expect("transaction outcome mutex poisoned");
+        if doomed.is_none() {
+            *doomed = Some(status);
+        }
+    }
+
+    /// Returns the first latched unrecoverable outbound status, if any.
+    pub fn doomed_status(&self) -> Option<Status> {
+        self.doomed
+            .lock()
+            .expect("transaction outcome mutex poisoned")
+            .clone()
     }
 
     fn with_returned_participant_collection(mut self) -> Self {
@@ -475,6 +499,7 @@ impl TransactionContext {
             mode: self.mode,
             // Nested inbound contexts must not retain root aggregation state.
             returned_participants: None,
+            doomed: Arc::clone(&self.doomed),
         })
     }
 }
