@@ -1,7 +1,11 @@
-# Experimental Rust schema input
+# Rust Reboot SDK
 
-This is a deliberately small spike for a third Reboot SDK language. It proves
-two real boundaries without importing Python or Node.js:
+The crate began as a schema/proto spike and now contains several durable Rust
+runtime slices. It is not yet full Python SDK parity; the evidence-backed
+implementation status and pending sidecar acceptances live in
+[`PARITY.md`](PARITY.md).
+
+It proves two real boundaries without importing Python or Node.js:
 
 1. Rust can describe Reboot state/method semantics and emit the existing
    language-neutral Reboot `.proto` contract.
