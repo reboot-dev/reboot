@@ -550,28 +550,17 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 )),
             })
             .await?;
-        for (participant, read_only) in participants.prepare() {
-            let endpoint = self.resolver.resolve(participant).await?;
-            let response = endpoint
-                .prepare(
-                    &participant.state_ref,
-                    database::PrepareRequest {
-                        transaction_id: transaction_id.as_bytes().to_vec(),
-                        abort_via_response: true,
-                        read_only_aware: true,
-                        read_only,
-                    },
-                )
+        if self
+            .prepare_participants(transaction_id, participants.prepare())
+            .await?
+        {
+            self.persist_abort(transaction_id, &start.coordinator_state_ref)
                 .await?;
-            if response.abort {
-                self.persist_abort(transaction_id, &start.coordinator_state_ref)
-                    .await?;
-                self.terminal_all(transaction_id, &participants.should_commit, false)
-                    .await?;
-                return self
-                    .cleanup(transaction_id, &start.coordinator_state_ref)
-                    .await;
-            }
+            self.terminal_all(transaction_id, &participants.should_commit, false)
+                .await?;
+            return self
+                .cleanup(transaction_id, &start.coordinator_state_ref)
+                .await;
         }
         self.sidecar
             .coordinator_prepared(database::TransactionCoordinatorPreparedRequest {
@@ -629,29 +618,18 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             })?;
             let participants = Self::participants_from_record(&record)?;
             if record.preparing {
-                let mut abort = false;
                 // Read-only actors released their lock after the original Prepare;
                 // a recovered coordinator must never re-prepare them.
-                for participant in &participants.should_commit {
-                    let read_only = false;
-                    let endpoint = self.resolver.resolve(participant).await?;
-                    let response = endpoint
-                        .prepare(
-                            &participant.state_ref,
-                            database::PrepareRequest {
-                                transaction_id: transaction_id.as_bytes().to_vec(),
-                                abort_via_response: true,
-                                read_only_aware: true,
-                                read_only,
-                            },
-                        )
-                        .await?;
-                    if response.abort {
-                        abort = true;
-                        break;
-                    }
-                }
-                if abort {
+                if self
+                    .prepare_participants(
+                        transaction_id,
+                        participants
+                            .should_commit
+                            .iter()
+                            .map(|participant| (participant, false)),
+                    )
+                    .await?
+                {
                     self.persist_abort(transaction_id, &record.state_ref)
                         .await?;
                     self.terminal_all(transaction_id, &participants.should_commit, false)
@@ -794,6 +772,57 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             ));
         }
         Ok(())
+    }
+
+    /// Fans out Prepare only after the Database sidecar has durably recorded
+    /// the complete participant set. Every RPC is allowed to settle before a
+    /// definitive abort is acted on: a transport failure is ambiguous, so it
+    /// leaves the sealed record intact for recovery rather than cancelling
+    /// other prepares or converting uncertainty into Abort.
+    async fn prepare_participants<'a>(
+        &self,
+        transaction_id: Uuid,
+        participants: impl Iterator<Item = (&'a ParticipantTarget, bool)>,
+    ) -> Result<bool, Status> {
+        let mut prepares = tokio::task::JoinSet::new();
+        for (participant, read_only) in participants {
+            let participant = participant.clone();
+            let resolver = Arc::clone(&self.resolver);
+            prepares.spawn(async move {
+                let endpoint = resolver.resolve(&participant).await?;
+                endpoint
+                    .prepare(
+                        &participant.state_ref,
+                        database::PrepareRequest {
+                            transaction_id: transaction_id.as_bytes().to_vec(),
+                            abort_via_response: true,
+                            read_only_aware: true,
+                            read_only,
+                        },
+                    )
+                    .await
+            });
+        }
+
+        let mut definitive_abort = false;
+        let mut ambiguous_failure = None;
+        while let Some(result) = prepares.join_next().await {
+            match result {
+                Ok(Ok(response)) => definitive_abort |= response.abort,
+                Ok(Err(status)) => {
+                    ambiguous_failure.get_or_insert(status);
+                }
+                Err(error) => {
+                    ambiguous_failure.get_or_insert_with(|| {
+                        Status::internal(format!("Prepare task failed: {error}"))
+                    });
+                }
+            }
+        }
+        if let Some(status) = ambiguous_failure {
+            return Err(status);
+        }
+        Ok(definitive_abort)
     }
 
     fn validate_start(start: &RootCoordinatorStart) -> Result<(), Status> {
@@ -974,6 +1003,10 @@ mod tests {
     use super::*;
     use std::collections::VecDeque;
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    use tokio::sync::Barrier;
 
     use crate::durable_participant::{
         ActorTransactionStart, DurableActorParticipant, ParticipantStartMode, PendingActorEffects,
@@ -1093,6 +1126,55 @@ mod tests {
         fn resolve(&self, _: &ParticipantTarget) -> CoordinatorFuture<'_, Arc<Self::Endpoint>> {
             let e = Arc::clone(&self.endpoint);
             Box::pin(async move { Ok(e) })
+        }
+    }
+
+    struct ConcurrentPrepareEndpoint {
+        barrier: Arc<Barrier>,
+        prepares: AtomicUsize,
+    }
+
+    impl ParticipantEndpoint for ConcurrentPrepareEndpoint {
+        fn prepare(
+            &self,
+            _: &str,
+            _: database::PrepareRequest,
+        ) -> CoordinatorFuture<'_, database::PrepareResponse> {
+            self.prepares.fetch_add(1, Ordering::SeqCst);
+            let barrier = Arc::clone(&self.barrier);
+            Box::pin(async move {
+                barrier.wait().await;
+                Ok(Default::default())
+            })
+        }
+
+        fn commit(
+            &self,
+            _: &str,
+            _: database::CommitRequest,
+        ) -> CoordinatorFuture<'_, database::CommitResponse> {
+            Box::pin(async { Ok(Default::default()) })
+        }
+
+        fn abort(
+            &self,
+            _: &str,
+            _: database::AbortRequest,
+        ) -> CoordinatorFuture<'_, database::AbortResponse> {
+            Box::pin(async { Ok(Default::default()) })
+        }
+    }
+
+    struct ConcurrentPrepareResolver {
+        endpoint: Arc<ConcurrentPrepareEndpoint>,
+    }
+
+    impl ParticipantResolver for ConcurrentPrepareResolver {
+        type Endpoint = ConcurrentPrepareEndpoint;
+
+        fn resolve(&self, _: &ParticipantTarget) -> CoordinatorFuture<'_, Arc<Self::Endpoint>> {
+            let endpoint = Arc::clone(&self.endpoint);
+            Box::pin(async move { Ok(endpoint) })
         }
     }
 
@@ -1405,6 +1487,41 @@ mod tests {
             ]
         );
     }
+
+    #[tokio::test]
+    async fn seals_before_concurrently_preparing_every_participant() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let endpoint = Arc::new(ConcurrentPrepareEndpoint {
+            barrier: Arc::new(Barrier::new(2)),
+            prepares: AtomicUsize::new(0),
+        });
+        let coordinator = DurableRootCoordinator::new(
+            Arc::clone(&sidecar),
+            Arc::new(ConcurrentPrepareResolver {
+                endpoint: Arc::clone(&endpoint),
+            }),
+        );
+        let id = Uuid::from_u128(77);
+        let remote = ParticipantTarget {
+            state_type: "example.Remote".into(),
+            state_ref: "remote/1".into(),
+        };
+
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            coordinator.complete_with_returned_participants(start(id), vec![remote]),
+        )
+        .await
+        .expect("both Prepare calls must enter the fan-out together")
+        .unwrap();
+
+        assert_eq!(endpoint.prepares.load(Ordering::SeqCst), 2);
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().first(),
+            Some(Call::DbPrepare(request)) if request.transaction_id == id.as_bytes()
+        ));
+    }
+
     #[tokio::test]
     async fn shared_local_promotion_persists_and_controls_the_single_writer_in_exact_order() {
         let trace = Arc::new(Mutex::new(Vec::new()));
