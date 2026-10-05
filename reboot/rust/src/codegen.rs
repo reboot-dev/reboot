@@ -415,7 +415,60 @@ fn annotations(
     }
     check_service_state_annotations(&state_files)?;
     check_state_service_consistency(&state_files)?;
+    check_duplicate_state_methods(&state_files, &output)?;
     Ok(output)
+}
+
+/// Mirrors Python `_check_no_duplicate_methods`: all services supplying a
+/// state share one generated client surface, so an RPC name may occur only
+/// once across services for the same state in one generated descriptor file.
+/// The state message itself may be outside the descriptor set.
+fn check_duplicate_state_methods(
+    raw_files: &[RawFile],
+    annotations: &HashMap<String, HashMap<String, DurableService>>,
+) -> Result<(), String> {
+    for file in raw_files {
+        let Some(file_name) = file.name.as_deref() else {
+            continue;
+        };
+        let package = file.package.as_deref().unwrap_or_default();
+        let Some(services) = annotations.get(file_name) else {
+            continue;
+        };
+        let mut seen = HashMap::<(String, String), String>::new();
+        for service in &file.services {
+            let Some(service_name) = service.name.as_deref() else {
+                continue;
+            };
+            let Some(annotation) = services.get(service_name) else {
+                continue;
+            };
+            let state = if annotation.state.contains('.') {
+                annotation.state.clone()
+            } else {
+                qualify(package, &annotation.state)
+            };
+            let service_full_name = qualify(package, service_name);
+            for method in &service.methods {
+                let Some(method_name) = method.name.as_deref() else {
+                    continue;
+                };
+                // `annotations` has already established that this is a Reboot
+                // method with a recognized kind.
+                if !annotation.methods.contains_key(method_name) {
+                    continue;
+                }
+                let key = (state.clone(), method_name.to_owned());
+                let method_full_name = format!("{service_full_name}.{method_name}");
+                if let Some(previous) = seen.insert(key, method_full_name.clone()) {
+                    return Err(format!(
+                        "Reboot state '{state}' has conflicting methods named '{method_name}': one from '{previous}', another from '{method_full_name}'. Each method name may only be used once per state type."
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Mirrors Python `_check_services`' optional service-to-state annotation
@@ -1891,6 +1944,62 @@ mod tests {
         assert_eq!(
             error,
             "counter.proto: Service `CounterMethods` method `Get` has a 'google.api.http' annotation. This is only supported for legacy gRPC services, not for Reboot methods. Let the maintainers know about your use case if you feel this is a limitation!"
+        );
+    }
+
+    #[test]
+    fn raw_descriptors_reject_duplicate_reboot_method_names_for_one_state() {
+        let method_options = ExtensionOptions {
+            reboot: Some(
+                RebootMethodOptions {
+                    reader: Some(Empty {}),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let service_options = |state: &str| {
+            ExtensionOptions {
+                reboot: Some(
+                    RebootServiceOptions {
+                        state: state.to_owned(),
+                        default_constructible: false,
+                    }
+                    .encode_to_vec(),
+                ),
+            }
+            .encode_to_vec()
+        };
+        let error = match annotations(vec![RawFile {
+            name: Some("counter.proto".to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            messages: vec![],
+            services: vec![
+                RawService {
+                    name: Some("CounterMethods".to_owned()),
+                    options: Some(service_options("Counter")),
+                    methods: vec![RawMethod {
+                        name: Some("Get".to_owned()),
+                        options: Some(method_options.clone()),
+                    }],
+                },
+                RawService {
+                    name: Some("CounterAdminMethods".to_owned()),
+                    options: Some(service_options("Counter")),
+                    methods: vec![RawMethod {
+                        name: Some("Get".to_owned()),
+                        options: Some(method_options),
+                    }],
+                },
+            ],
+        }]) {
+            Err(error) => error,
+            Ok(_) => panic!("duplicate Reboot state method unexpectedly accepted"),
+        };
+        assert_eq!(
+            error,
+            "Reboot state 'tests.reboot.protoc.Counter' has conflicting methods named 'Get': one from 'tests.reboot.protoc.CounterMethods.Get', another from 'tests.reboot.protoc.CounterAdminMethods.Get'. Each method name may only be used once per state type."
         );
     }
 
