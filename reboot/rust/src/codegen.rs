@@ -2448,51 +2448,96 @@ mod tests {
     }
 
     #[test]
-    fn raw_descriptors_reject_google_api_http_on_reboot_methods() {
-        let mut method_options = ExtensionOptions {
-            reboot: Some(
-                RebootMethodOptions {
-                    kind: Some(reboot_method_options::Kind::Reader(
-                        RebootReaderMethodOptions::default(),
-                    )),
+    fn raw_plugin_rejects_google_api_http_only_on_reboot_methods() {
+        fn push_varint(output: &mut Vec<u8>, mut value: usize) {
+            while value >= 0x80 {
+                output.push((value as u8 & 0x7f) | 0x80);
+                value >>= 7;
+            }
+            output.push(value as u8);
+        }
+
+        fn request_with_http_method(reboot: bool) -> Vec<u8> {
+            let mut method_options = if reboot {
+                ExtensionOptions {
+                    reboot: Some(
+                        RebootMethodOptions {
+                            kind: Some(reboot_method_options::Kind::Reader(
+                                RebootReaderMethodOptions::default(),
+                            )),
+                        }
+                        .encode_to_vec(),
+                    ),
+                }
+                .encode_to_vec()
+            } else {
+                Vec::new()
+            };
+            // Presence is all Python's HasExtension check needs; the Rust
+            // generator intentionally does not parse an HttpRule.
+            method_options.extend(
+                GoogleApiMethodOptions {
+                    google_api_http: Some(vec![
+                        0x12, 0x08, b'/', b'c', b'o', b'u', b'n', b't', b'e', b'r',
+                    ]),
                 }
                 .encode_to_vec(),
-            ),
-        }
-        .encode_to_vec();
-        // Presence is all Python's HasExtension check needs; the Rust
-        // generator intentionally does not parse an HttpRule.
-        method_options.extend(
-            GoogleApiMethodOptions {
-                google_api_http: Some(vec![
-                    0x12, 0x08, b'/', b'c', b'o', b'u', b'n', b't', b'e', b'r',
-                ]),
+            );
+
+            let mut method = MethodDescriptorProto {
+                name: Some("Get".to_owned()),
+                input_type: Some(".tests.reboot.protoc.GetRequest".to_owned()),
+                output_type: Some(".tests.reboot.protoc.GetResponse".to_owned()),
+                ..Default::default()
             }
-            .encode_to_vec(),
-        );
-        let raw = RawRequest {
-            files: vec![RawFile {
-                name: Some("counter.proto".to_owned()),
+            .encode_to_vec();
+            method.push(0x22); // MethodDescriptorProto.options (field 4).
+            push_varint(&mut method, method_options.len());
+            method.extend(method_options);
+
+            let mut service = ServiceDescriptorProto {
+                name: Some("CounterMethods".to_owned()),
+                ..Default::default()
+            }
+            .encode_to_vec();
+            service.push(0x12); // ServiceDescriptorProto.method (field 2).
+            push_varint(&mut service, method.len());
+            service.extend(method);
+
+            let mut file = FileDescriptorProto {
+                name: Some("tests/reboot/protoc/counter.proto".to_owned()),
                 package: Some("tests.reboot.protoc".to_owned()),
-                messages: vec![],
-                services: vec![RawService {
-                    name: Some("CounterMethods".to_owned()),
-                    options: None,
-                    methods: vec![RawMethod {
-                        name: Some("Get".to_owned()),
-                        options: Some(method_options),
-                    }],
-                }],
-            }],
+                syntax: Some("proto3".to_owned()),
+                ..Default::default()
+            }
+            .encode_to_vec();
+            file.push(0x32); // FileDescriptorProto.service (field 6).
+            push_varint(&mut file, service.len());
+            file.extend(service);
+
+            let mut request = CodeGeneratorRequest {
+                parameter: Some("module=reboot_rust_schema::proto".to_owned()),
+                file_to_generate: vec!["tests/reboot/protoc/counter.proto".to_owned()],
+                ..Default::default()
+            }
+            .encode_to_vec();
+            request.push(0x7a); // CodeGeneratorRequest.proto_file (field 15).
+            push_varint(&mut request, file.len());
+            request.extend(file);
+            request
         }
-        .encode_to_vec();
-        let error = match annotations(RawRequest::decode(raw.as_slice()).unwrap().files) {
-            Err(error) => error,
-            Ok(_) => panic!("Reboot method with google.api.http unexpectedly accepted"),
-        };
+
         assert_eq!(
-            error,
-            "counter.proto: Service `CounterMethods` method `Get` has a 'google.api.http' annotation. This is only supported for legacy gRPC services, not for Reboot methods. Let the maintainers know about your use case if you feel this is a limitation!"
+            generate_from_wire(&request_with_http_method(false)).error,
+            None
+        );
+        assert_eq!(
+            generate_from_wire(&request_with_http_method(true))
+                .error
+                .as_deref(),
+            Some(
+                "tests/reboot/protoc/counter.proto: Service `CounterMethods` method `Get` has a 'google.api.http' annotation. This is only supported for legacy gRPC services, not for Reboot methods. Let the maintainers know about your use case if you feel this is a limitation!"
+            )
         );
     }
 
