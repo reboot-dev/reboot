@@ -413,8 +413,98 @@ fn annotations(
         }
         output.insert(file_name, services);
     }
+    check_service_state_annotations(&state_files)?;
     check_state_service_consistency(&state_files)?;
     Ok(output)
+}
+
+/// Mirrors Python `_check_services`' optional service-to-state annotation
+/// validation. A service may refer to a state compiled outside this descriptor
+/// set, but when the message is present it must carry the Reboot state option.
+fn check_service_state_annotations(raw_files: &[RawFile]) -> Result<(), String> {
+    let mut states = HashMap::new();
+    for file in raw_files {
+        let package = file.package.as_deref().unwrap_or_default();
+        for message in &file.messages {
+            let Some(message_name) = message.name.as_deref() else {
+                continue;
+            };
+            let is_reboot_state = message
+                .options
+                .as_deref()
+                .map(ExtensionOptions::decode)
+                .transpose()
+                .map_err(|error| {
+                    format!(
+                        "{}: invalid message options: {error}",
+                        file.name.as_deref().unwrap_or("<unnamed>")
+                    )
+                })?
+                .and_then(|extension| extension.reboot)
+                .is_some();
+            states.insert(qualify(package, message_name), is_reboot_state);
+        }
+    }
+
+    for file in raw_files {
+        let file_name = file.name.as_deref().unwrap_or("<unnamed>");
+        let package = file.package.as_deref().unwrap_or_default();
+        for service in &file.services {
+            let Some(service_name) = service.name.as_deref() else {
+                continue;
+            };
+            let service_options = service
+                .options
+                .as_deref()
+                .map(ExtensionOptions::decode)
+                .transpose()
+                .map_err(|error| format!("{file_name}: invalid service options: {error}"))?;
+            let has_service_option = service_options
+                .as_ref()
+                .and_then(|options| options.reboot.as_ref())
+                .is_some();
+            let has_method_option = service.methods.iter().try_fold(
+                false,
+                |found, method| -> Result<bool, String> {
+                    let Some(options) = method.options.as_deref() else {
+                        return Ok(found);
+                    };
+                    let extension = ExtensionOptions::decode(options)
+                        .map_err(|error| format!("{file_name}: invalid method options: {error}"))?;
+                    Ok(found || extension.reboot.is_some())
+                },
+            )?;
+            if !has_service_option && !has_method_option {
+                continue;
+            }
+            let explicit_state = service_options
+                .and_then(|options| options.reboot)
+                .map(|bytes| RebootServiceOptions::decode(bytes.as_slice()))
+                .transpose()
+                .map_err(|error| {
+                    format!("{file_name}: invalid rbt.v1alpha1.service option: {error}")
+                })?
+                .map(|options| options.state)
+                .filter(|state| !state.is_empty());
+            let state_name = explicit_state
+                .or_else(|| service_name.strip_suffix("Methods").map(ToOwned::to_owned));
+            let Some(state_name) = state_name else {
+                continue;
+            };
+            let state_full_name = if state_name.contains('.') {
+                state_name
+            } else {
+                qualify(package, &state_name)
+            };
+            if matches!(states.get(&state_full_name), Some(false)) {
+                return Err(format!(
+                    "{file_name}: Reboot service `{}` is linked to state message `{state_full_name}`, but that message is not annotated as a Reboot state; all Reboot states must have the `rbt.v1alpha1.state` annotation.",
+                    qualify(package, service_name)
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Mirrors Python's descriptor-only `_check_states` relationship validation.
@@ -1792,6 +1882,85 @@ mod tests {
             mismatch,
             "state.proto: Reboot state message `tests.reboot.protoc.Counter` is expecting to get methods from service `tests.reboot.protoc.CounterMethods`, but that service is providing methods for a state message named `tests.reboot.protoc.Other` instead."
         );
+    }
+
+    #[test]
+    fn reboot_services_require_present_linked_states_to_be_annotated() {
+        let method_options = ExtensionOptions {
+            reboot: Some(
+                RebootMethodOptions {
+                    reader: Some(Empty {}),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let service_file = RawFile {
+            name: Some("methods.proto".to_owned()),
+            package: Some("tests.reboot.methods".to_owned()),
+            messages: vec![],
+            services: vec![RawService {
+                name: Some("CounterMethods".to_owned()),
+                options: Some(
+                    ExtensionOptions {
+                        reboot: Some(
+                            RebootServiceOptions {
+                                state: "tests.reboot.states.Counter".to_owned(),
+                                default_constructible: false,
+                            }
+                            .encode_to_vec(),
+                        ),
+                    }
+                    .encode_to_vec(),
+                ),
+                methods: vec![RawMethod {
+                    name: Some("Get".to_owned()),
+                    options: Some(method_options),
+                }],
+            }],
+        };
+        let unannotated_state = RawFile {
+            name: Some("state.proto".to_owned()),
+            package: Some("tests.reboot.states".to_owned()),
+            messages: vec![RawMessage {
+                name: Some("Counter".to_owned()),
+                options: None,
+            }],
+            services: vec![],
+        };
+        let error = match annotations(vec![service_file.clone(), unannotated_state]) {
+            Err(error) => error,
+            Ok(_) => panic!("present linked state without a Reboot annotation was accepted"),
+        };
+        assert_eq!(
+            error,
+            "methods.proto: Reboot service `tests.reboot.methods.CounterMethods` is linked to state message `tests.reboot.states.Counter`, but that message is not annotated as a Reboot state; all Reboot states must have the `rbt.v1alpha1.state` annotation."
+        );
+
+        let annotated_state = RawFile {
+            name: Some("state.proto".to_owned()),
+            package: Some("tests.reboot.states".to_owned()),
+            messages: vec![RawMessage {
+                name: Some("Counter".to_owned()),
+                options: Some(
+                    ExtensionOptions {
+                        reboot: Some(
+                            RebootStateOptions {
+                                implements: vec!["tests.reboot.methods.CounterMethods".to_owned()],
+                            }
+                            .encode_to_vec(),
+                        ),
+                    }
+                    .encode_to_vec(),
+                ),
+            }],
+            services: vec![],
+        };
+        assert!(annotations(vec![service_file.clone(), annotated_state]).is_ok());
+        // Python only validates a linked message if it is in the descriptor
+        // pool, so a service compiled without its state remains valid.
+        assert!(annotations(vec![service_file]).is_ok());
     }
 
     #[test]
