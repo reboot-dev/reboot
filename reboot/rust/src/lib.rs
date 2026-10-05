@@ -1228,6 +1228,90 @@ pub fn is_retryable_status(status: &tonic::Status) -> bool {
     is_retryable_status_code(status.code())
 }
 
+/// The portable, code-only subset of Python's generated gRPC error markers.
+///
+/// Python's `Aborted.error_from_google_rpc_status_code` and
+/// `error_from_grpc_aio_rpc_error` turn each non-OK gRPC code into a distinct
+/// protobuf marker. Rust does not generate those marker messages, so this enum
+/// preserves only their public classification and round-trip code semantics.
+/// It deliberately does not claim to decode `google.rpc.Status` details or
+/// Reboot-specific declared errors.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GrpcStatusError {
+    Cancelled,
+    Unknown,
+    InvalidArgument,
+    DeadlineExceeded,
+    NotFound,
+    AlreadyExists,
+    PermissionDenied,
+    ResourceExhausted,
+    FailedPrecondition,
+    Aborted,
+    OutOfRange,
+    Unimplemented,
+    Internal,
+    Unavailable,
+    DataLoss,
+    Unauthenticated,
+}
+
+impl GrpcStatusError {
+    /// Returns the Tonic code represented by this error classification.
+    pub const fn code(self) -> tonic::Code {
+        match self {
+            Self::Cancelled => tonic::Code::Cancelled,
+            Self::Unknown => tonic::Code::Unknown,
+            Self::InvalidArgument => tonic::Code::InvalidArgument,
+            Self::DeadlineExceeded => tonic::Code::DeadlineExceeded,
+            Self::NotFound => tonic::Code::NotFound,
+            Self::AlreadyExists => tonic::Code::AlreadyExists,
+            Self::PermissionDenied => tonic::Code::PermissionDenied,
+            Self::ResourceExhausted => tonic::Code::ResourceExhausted,
+            Self::FailedPrecondition => tonic::Code::FailedPrecondition,
+            Self::Aborted => tonic::Code::Aborted,
+            Self::OutOfRange => tonic::Code::OutOfRange,
+            Self::Unimplemented => tonic::Code::Unimplemented,
+            Self::Internal => tonic::Code::Internal,
+            Self::Unavailable => tonic::Code::Unavailable,
+            Self::DataLoss => tonic::Code::DataLoss,
+            Self::Unauthenticated => tonic::Code::Unauthenticated,
+        }
+    }
+
+    /// Classifies a Tonic status code like Python's code-only fallback.
+    ///
+    /// Python falls back to `Unknown` for `google.rpc.Code.OK` because it is
+    /// converting an error status. Tonic's finite public code enum has no
+    /// other unknown value, so `Ok` is the sole fallback case.
+    pub const fn from_code(code: tonic::Code) -> Self {
+        match code {
+            tonic::Code::Cancelled => Self::Cancelled,
+            tonic::Code::Unknown => Self::Unknown,
+            tonic::Code::InvalidArgument => Self::InvalidArgument,
+            tonic::Code::DeadlineExceeded => Self::DeadlineExceeded,
+            tonic::Code::NotFound => Self::NotFound,
+            tonic::Code::AlreadyExists => Self::AlreadyExists,
+            tonic::Code::PermissionDenied => Self::PermissionDenied,
+            tonic::Code::ResourceExhausted => Self::ResourceExhausted,
+            tonic::Code::FailedPrecondition => Self::FailedPrecondition,
+            tonic::Code::Aborted => Self::Aborted,
+            tonic::Code::OutOfRange => Self::OutOfRange,
+            tonic::Code::Unimplemented => Self::Unimplemented,
+            tonic::Code::Internal => Self::Internal,
+            tonic::Code::Unavailable => Self::Unavailable,
+            tonic::Code::DataLoss => Self::DataLoss,
+            tonic::Code::Unauthenticated => Self::Unauthenticated,
+            tonic::Code::Ok => Self::Unknown,
+        }
+    }
+
+    /// Classifies a Tonic status like Python's code-only RPC-error fallback.
+    pub fn from_status(status: &tonic::Status) -> Self {
+        Self::from_code(status.code())
+    }
+}
+
 /// Small, executable runtime slice: serialized actor state plus write
 /// idempotency. It intentionally uses process-local memory; durable storage,
 /// distributed locks, and multi-actor transactions remain separate layers.
@@ -2106,6 +2190,58 @@ mod tests {
         ] {
             assert!(!is_retryable_status_code(code));
         }
+    }
+
+    #[test]
+    fn grpc_status_error_matches_python_code_only_fallback() {
+        let cases = [
+            (tonic::Code::Cancelled, GrpcStatusError::Cancelled),
+            (tonic::Code::Unknown, GrpcStatusError::Unknown),
+            (
+                tonic::Code::InvalidArgument,
+                GrpcStatusError::InvalidArgument,
+            ),
+            (
+                tonic::Code::DeadlineExceeded,
+                GrpcStatusError::DeadlineExceeded,
+            ),
+            (tonic::Code::NotFound, GrpcStatusError::NotFound),
+            (tonic::Code::AlreadyExists, GrpcStatusError::AlreadyExists),
+            (
+                tonic::Code::PermissionDenied,
+                GrpcStatusError::PermissionDenied,
+            ),
+            (
+                tonic::Code::ResourceExhausted,
+                GrpcStatusError::ResourceExhausted,
+            ),
+            (
+                tonic::Code::FailedPrecondition,
+                GrpcStatusError::FailedPrecondition,
+            ),
+            (tonic::Code::Aborted, GrpcStatusError::Aborted),
+            (tonic::Code::OutOfRange, GrpcStatusError::OutOfRange),
+            (tonic::Code::Unimplemented, GrpcStatusError::Unimplemented),
+            (tonic::Code::Internal, GrpcStatusError::Internal),
+            (tonic::Code::Unavailable, GrpcStatusError::Unavailable),
+            (tonic::Code::DataLoss, GrpcStatusError::DataLoss),
+            (
+                tonic::Code::Unauthenticated,
+                GrpcStatusError::Unauthenticated,
+            ),
+        ];
+        for (code, error) in cases {
+            assert_eq!(GrpcStatusError::from_code(code), error);
+            assert_eq!(error.code(), code);
+        }
+        assert_eq!(
+            GrpcStatusError::from_code(tonic::Code::Ok),
+            GrpcStatusError::Unknown
+        );
+        assert_eq!(
+            GrpcStatusError::from_status(&tonic::Status::not_found("missing")),
+            GrpcStatusError::NotFound
+        );
     }
 
     #[test]
