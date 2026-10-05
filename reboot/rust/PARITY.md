@@ -89,6 +89,26 @@ on downgrade; readers arriving after that writer are not; cancelled readers and
 writers are removed safely; no two exclusive leases coexist; and an upgrader
 never jumps the queue or deadlocks while retaining its snapshot.
 
+## Pending: workflow-scoped idempotency aliases and seeds
+
+**Use case:** Python can derive stable idempotency keys from a human alias, an
+optional control-loop iteration, and nested workflow seed scopes. Identical
+seeded calls must retain the same UUID across process restarts and SDK versions;
+inner seed entries override outer keys.
+
+**Why it is pending:** Rust has only a caller-supplied UUID for generated
+root-exclusive transactions. Python derives its seed UUID with UUIDv5 over the
+hex of a protocol-4 Python pickle of sorted entries (`aio/idempotency.py:34-134`).
+Replacing that with `serde`, a debug string, or Rust's default hasher would
+silently generate incompatible keys, which is worse than no API. Workflow and
+iteration ownership are also absent from the Rust runtime.
+
+**Required acceptance coverage:** cross-language vectors for alias-only,
+iteration-only, alias-plus-iteration, nested seed override/restoration, and
+seeded UUID derivation; then a real sidecar replay acceptance across a Rust
+process restart. No Rust public alias/seeds API should be exposed before those
+vectors and workflow context semantics exist.
+
 ## Other known parity gaps
 
 These are not blockers for the local promotion slice and should be tackled
