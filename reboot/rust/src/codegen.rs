@@ -44,26 +44,28 @@ struct TransactionMetadata {
     factory: bool,
 }
 
-#[derive(Message)]
+#[derive(Clone, Message)]
 struct RawRequest {
     #[prost(message, repeated, tag = "15")]
     files: Vec<RawFile>,
 }
-#[derive(Message)]
+#[derive(Clone, Message)]
 struct RawDescriptorSet {
     #[prost(message, repeated, tag = "1")]
     files: Vec<RawFile>,
 }
-#[derive(Message)]
+#[derive(Clone, Message)]
 struct RawFile {
     #[prost(string, optional, tag = "1")]
     name: Option<String>,
     #[prost(string, optional, tag = "2")]
     package: Option<String>,
+    #[prost(message, repeated, tag = "4")]
+    messages: Vec<RawMessage>,
     #[prost(message, repeated, tag = "6")]
     services: Vec<RawService>,
 }
-#[derive(Message)]
+#[derive(Clone, Message)]
 struct RawService {
     #[prost(string, optional, tag = "1")]
     name: Option<String>,
@@ -72,11 +74,21 @@ struct RawService {
     #[prost(bytes = "vec", optional, tag = "3")]
     options: Option<Vec<u8>>,
 }
-#[derive(Message)]
+#[derive(Clone, Message)]
 struct RawMethod {
     #[prost(string, optional, tag = "1")]
     name: Option<String>,
     #[prost(bytes = "vec", optional, tag = "4")]
+    options: Option<Vec<u8>>,
+}
+/// The top-level portion of `DescriptorProto` needed for Python's Reboot-state
+/// checks. Nested messages are deliberately absent: Python's
+/// `file.message_types_by_name` only considers top-level state declarations.
+#[derive(Clone, Message)]
+struct RawMessage {
+    #[prost(string, optional, tag = "1")]
+    name: Option<String>,
+    #[prost(bytes = "vec", optional, tag = "7")]
     options: Option<Vec<u8>>,
 }
 #[derive(Message)]
@@ -99,6 +111,11 @@ struct RebootServiceOptions {
     state: String,
     #[prost(bool, tag = "2")]
     default_constructible: bool,
+}
+#[derive(Message)]
+struct RebootStateOptions {
+    #[prost(string, repeated, tag = "1")]
+    implements: Vec<String>,
 }
 #[derive(Message)]
 struct RebootWriterMethodOptions {
@@ -214,6 +231,7 @@ fn error_response(error: String) -> CodeGeneratorResponse {
 fn annotations(
     raw_files: Vec<RawFile>,
 ) -> Result<HashMap<String, HashMap<String, DurableService>>, String> {
+    let state_files = raw_files.clone();
     let mut output = HashMap::new();
     for file in raw_files {
         let Some(file_name) = file.name else { continue };
@@ -395,7 +413,121 @@ fn annotations(
         }
         output.insert(file_name, services);
     }
+    check_state_service_consistency(&state_files)?;
     Ok(output)
+}
+
+/// Mirrors Python's descriptor-only `_check_states` relationship validation.
+/// Only top-level messages participate, matching `file.message_types_by_name`.
+fn check_state_service_consistency(raw_files: &[RawFile]) -> Result<(), String> {
+    let mut services = HashMap::new();
+    for file in raw_files {
+        let package = file.package.as_deref().unwrap_or_default();
+        for service in &file.services {
+            let Some(name) = service.name.as_deref() else {
+                continue;
+            };
+            let full_name = qualify(package, name);
+            let explicit_state = service
+                .options
+                .as_deref()
+                .map(ExtensionOptions::decode)
+                .transpose()
+                .map_err(|error| {
+                    format!(
+                        "{}: invalid service options: {error}",
+                        file.name.as_deref().unwrap_or("<unnamed>")
+                    )
+                })?
+                .and_then(|extension| extension.reboot)
+                .map(|bytes| RebootServiceOptions::decode(bytes.as_slice()))
+                .transpose()
+                .map_err(|error| {
+                    format!(
+                        "{}: invalid rbt.v1alpha1.service option: {error}",
+                        file.name.as_deref().unwrap_or("<unnamed>")
+                    )
+                })?
+                .map(|options| options.state);
+            let state = match explicit_state {
+                Some(state) if !state.is_empty() => {
+                    if state.contains('.') {
+                        state
+                    } else {
+                        qualify(package, &state)
+                    }
+                }
+                _ => match name.strip_suffix("Methods") {
+                    Some(state) => qualify(package, state),
+                    None => continue,
+                },
+            };
+            services.insert(full_name, state);
+        }
+    }
+
+    for file in raw_files {
+        let Some(file_name) = file.name.as_deref() else {
+            continue;
+        };
+        let package = file.package.as_deref().unwrap_or_default();
+        for message in &file.messages {
+            let Some(message_name) = message.name.as_deref() else {
+                continue;
+            };
+            let Some(options) = message.options.as_deref() else {
+                continue;
+            };
+            let state_options = ExtensionOptions::decode(options)
+                .map_err(|error| format!("{file_name}: invalid message options: {error}"))?
+                .reboot
+                .map(|bytes| RebootStateOptions::decode(bytes.as_slice()))
+                .transpose()
+                .map_err(|error| {
+                    format!("{file_name}: invalid rbt.v1alpha1.state option: {error}")
+                })?;
+            let Some(state_options) = state_options else {
+                continue;
+            };
+            let state_full_name = qualify(package, message_name);
+            let implements = if state_options.implements.is_empty() {
+                vec![format!("{state_full_name}Methods")]
+            } else {
+                state_options
+                    .implements
+                    .into_iter()
+                    .map(|service| {
+                        if service.contains('.') {
+                            service
+                        } else {
+                            qualify(package, &service)
+                        }
+                    })
+                    .collect()
+            };
+            for service_full_name in implements {
+                let Some(service_state) = services.get(&service_full_name) else {
+                    return Err(format!(
+                        "{file_name}: Missing Reboot service named `{service_full_name}`; expected by state message `{state_full_name}` defined in `{file_name}`."
+                    ));
+                };
+                if service_state != &state_full_name {
+                    return Err(format!(
+                        "{file_name}: Reboot state message `{state_full_name}` is expecting to get methods from service `{service_full_name}`, but that service is providing methods for a state message named `{service_state}` instead."
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn qualify(package: &str, name: &str) -> String {
+    if package.is_empty() {
+        name.to_owned()
+    } else {
+        format!("{package}.{name}")
+    }
 }
 
 fn generate_inner(
@@ -1326,6 +1458,7 @@ mod tests {
             let error = match annotations(vec![RawFile {
                 name: Some("counter.proto".to_owned()),
                 package: None,
+                messages: vec![],
                 services: vec![RawService {
                     name: Some("CounterMethods".to_owned()),
                     options: Some(service_options.clone()),
@@ -1363,6 +1496,7 @@ mod tests {
             files: vec![RawFile {
                 name: Some("counter.proto".to_owned()),
                 package: None,
+                messages: vec![],
                 services: vec![RawService {
                     name: Some("CounterMethods".to_owned()),
                     options: None,
@@ -1399,6 +1533,7 @@ mod tests {
         let error = match annotations(vec![RawFile {
             name: Some("counter.proto".to_owned()),
             package: None,
+            messages: vec![],
             services: vec![RawService {
                 name: Some("CounterReads".to_owned()),
                 options: None,
@@ -1432,6 +1567,7 @@ mod tests {
         let error = match annotations(vec![RawFile {
             name: Some("counter.proto".to_owned()),
             package: None,
+            messages: vec![],
             services: vec![RawService {
                 name: Some("CounterMethods".to_owned()),
                 options: Some(
@@ -1477,6 +1613,7 @@ mod tests {
             files: vec![RawFile {
                 name: Some("counter.proto".to_owned()),
                 package: Some("tests.reboot.protoc".to_owned()),
+                messages: vec![],
                 services: vec![RawService {
                     name: Some("CounterMethods".to_owned()),
                     options: None,
@@ -1501,6 +1638,7 @@ mod tests {
             files: vec![RawFile {
                 name: Some("secrets.proto".to_owned()),
                 package: Some("rbt.cloud.v1alpha1.secrets".to_owned()),
+                messages: vec![],
                 services: vec![RawService {
                     name: Some("SecretMethods".to_owned()),
                     options: None,
@@ -1545,6 +1683,7 @@ mod tests {
             files: vec![RawFile {
                 name: Some("counter.proto".to_owned()),
                 package: Some("tests.reboot.protoc".to_owned()),
+                messages: vec![],
                 services: vec![RawService {
                     name: Some("CounterMethods".to_owned()),
                     options: None,
@@ -1563,6 +1702,95 @@ mod tests {
         assert_eq!(
             error,
             "counter.proto: Service `CounterMethods` method `Get` has a 'google.api.http' annotation. This is only supported for legacy gRPC services, not for Reboot methods. Let the maintainers know about your use case if you feel this is a limitation!"
+        );
+    }
+
+    #[test]
+    fn state_annotations_require_existing_services_that_point_back_to_the_state() {
+        let state_options = ExtensionOptions {
+            reboot: Some(
+                RebootStateOptions {
+                    implements: vec!["CounterMethods".to_owned()],
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let state_file = RawFile {
+            name: Some("state.proto".to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            messages: vec![RawMessage {
+                name: Some("Counter".to_owned()),
+                options: Some(state_options),
+            }],
+            services: vec![],
+        };
+        let method_options = ExtensionOptions {
+            reboot: Some(
+                RebootMethodOptions {
+                    reader: Some(Empty {}),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let service_file = |state: &str| RawFile {
+            name: Some("methods.proto".to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            messages: vec![],
+            services: vec![RawService {
+                name: Some("CounterMethods".to_owned()),
+                options: Some(
+                    ExtensionOptions {
+                        reboot: Some(
+                            RebootServiceOptions {
+                                state: state.to_owned(),
+                                default_constructible: false,
+                            }
+                            .encode_to_vec(),
+                        ),
+                    }
+                    .encode_to_vec(),
+                ),
+                methods: vec![RawMethod {
+                    name: Some("Get".to_owned()),
+                    options: Some(method_options.clone()),
+                }],
+            }],
+        };
+
+        assert!(annotations(vec![state_file.clone(), service_file("Counter")]).is_ok());
+        let default_state_file = RawFile {
+            name: Some("default_state.proto".to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            messages: vec![RawMessage {
+                name: Some("Counter".to_owned()),
+                options: Some(
+                    ExtensionOptions {
+                        reboot: Some(RebootStateOptions::default().encode_to_vec()),
+                    }
+                    .encode_to_vec(),
+                ),
+            }],
+            services: vec![],
+        };
+        assert!(annotations(vec![default_state_file, service_file("Counter")]).is_ok());
+        let missing = match annotations(vec![state_file.clone()]) {
+            Err(error) => error,
+            Ok(_) => panic!("state with a missing service unexpectedly accepted"),
+        };
+        assert_eq!(
+            missing,
+            "state.proto: Missing Reboot service named `tests.reboot.protoc.CounterMethods`; expected by state message `tests.reboot.protoc.Counter` defined in `state.proto`."
+        );
+        let mismatch = match annotations(vec![state_file, service_file("Other")]) {
+            Err(error) => error,
+            Ok(_) => panic!("state with a mismatched service unexpectedly accepted"),
+        };
+        assert_eq!(
+            mismatch,
+            "state.proto: Reboot state message `tests.reboot.protoc.Counter` is expecting to get methods from service `tests.reboot.protoc.CounterMethods`, but that service is providing methods for a state message named `tests.reboot.protoc.Other` instead."
         );
     }
 
@@ -1597,6 +1825,7 @@ mod tests {
         let parsed = annotations(vec![RawFile {
             name: Some("counter.proto".to_owned()),
             package: None,
+            messages: vec![],
             services: vec![RawService {
                 name: Some("CounterMethods".to_owned()),
                 options: Some(service_options),
@@ -1839,6 +2068,7 @@ mod tests {
         let result = annotations(vec![RawFile {
             name: Some("counter.proto".to_owned()),
             package: None,
+            messages: vec![],
             services: vec![RawService {
                 name: Some("CounterMethods".to_owned()),
                 options: Some(
