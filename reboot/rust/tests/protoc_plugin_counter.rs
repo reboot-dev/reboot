@@ -999,11 +999,7 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
     let (address, server) = start_counter_adapters(&database_endpoint).await;
     let context = ExternalContext::new("generated-external-counter")
         .with_caller_id(CallerId::new("a1234567890", None).unwrap());
-    let automatic_channel = tonic::transport::Channel::from_shared(address.clone())
-        .unwrap()
-        .connect()
-        .await
-        .unwrap();
+    let automatic_channel = context.connect(address.clone()).await.unwrap();
     let mut writes = generated::CounterWritesExternalClient::new(automatic_channel, context.clone());
     assert_eq!(
         writes
@@ -1036,11 +1032,7 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
         "an explicit idempotency key must replay the first writer response"
     );
 
-    let reader_channel = tonic::transport::Channel::from_shared(address)
-        .unwrap()
-        .connect()
-        .await
-        .unwrap();
+    let reader_channel = context.connect(address).await.unwrap();
     let mut reads = generated::CounterReadsExternalClient::new(reader_channel, context);
     assert_eq!(
         reads.get(proto::Empty {}).await.unwrap().into_inner().value,

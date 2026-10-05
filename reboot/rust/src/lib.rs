@@ -984,6 +984,19 @@ impl ExternalContext {
         }
     }
 
+    /// Connects one caller-specified external Tonic endpoint.
+    ///
+    /// This intentionally provides no pooling, placement, retries, or routing;
+    /// those remain separate application concerns.
+    pub async fn connect(
+        &self,
+        endpoint: impl Into<String>,
+    ) -> Result<tonic::transport::Channel, tonic::transport::Error> {
+        tonic::transport::Endpoint::from_shared(endpoint.into())?
+            .connect()
+            .await
+    }
+
     pub fn with_bearer_token(mut self, bearer_token: impl Into<String>) -> Self {
         self.headers.bearer_token = Some(bearer_token.into());
         self
@@ -1871,6 +1884,15 @@ mod tests {
             .unwrap();
         assert!(status.success());
         assert!(descriptor.is_file());
+    }
+
+    #[tokio::test]
+    async fn external_context_rejects_an_invalid_endpoint() {
+        let error = ExternalContext::new("opaque-state-ref")
+            .connect("not a valid endpoint")
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("invalid URI"));
     }
 
     #[test]
