@@ -1340,7 +1340,7 @@ fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<
     // This intentionally retains the established combined fresh/inbound
     // exclusive flow. Shared transactions are rendered by their own emitter.
     output.push_str(&format!(
-        "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_metadata(request.metadata()).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;\n        let inbound = headers.transaction_ids.is_some();\n        if inbound && {} {{ return Err(tonic::Status::unimplemented(\"factory transactions must be exclusive root transactions\")); }}\n",
+        "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;\n        let inbound = headers.transaction_ids.is_some();\n        if inbound && {} {{ return Err(tonic::Status::unimplemented(\"factory transactions must be exclusive root transactions\")); }}\n",
         flow.method, flow.request, flow.response, flow.runtime_module, flow.factory,
     ));
     emit_transaction_flow(output, flow);
@@ -1348,7 +1348,7 @@ fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<
 }
 fn emit_shared_transaction_method(output: &mut String, flow: TransactionFlow<'_>) {
     output.push_str(&format!(
-        "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_metadata(request.metadata()).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;\n        let inbound = headers.transaction_ids.is_some();\n        if inbound {{\n            // Shared inbound execution remains read-only; it never promotes.\n", flow.method, flow.request, flow.response, flow.runtime_module
+        "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;\n        let inbound = headers.transaction_ids.is_some();\n        if inbound {{\n            // Shared inbound execution remains read-only; it never promotes.\n", flow.method, flow.request, flow.response, flow.runtime_module
     ));
     emit_transaction_flow(
         output,

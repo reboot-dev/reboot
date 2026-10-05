@@ -13,6 +13,7 @@
 //! scoped Tonic service adapters for executable testing; [`native_2pc`] remains
 //! an explicitly non-executable control-plane boundary.
 
+pub mod application_host;
 #[cfg(feature = "build")]
 pub mod build;
 pub mod codegen;
@@ -787,6 +788,16 @@ impl RebootHeaders {
             internal_call: false,
             coordinator_read_only_aware: false,
         }
+    }
+
+    pub fn from_request<T>(request: &tonic::Request<T>) -> Result<Self, ContextError> {
+        let mut headers = Self::from_metadata(request.metadata())?;
+        if let Some(context) =
+            crate::application_host::TrustedApplicationContext::from_request(request)
+        {
+            headers.application_id = Some(context.application_id().to_owned());
+        }
+        Ok(headers)
     }
 
     pub fn from_metadata(metadata: &tonic::metadata::MetadataMap) -> Result<Self, ContextError> {
