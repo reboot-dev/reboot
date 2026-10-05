@@ -187,6 +187,16 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
             value: state.value,
         }))
     }
+
+    async fn shared_read_fresh_shared(
+        &self,
+        _: &reboot::runtime::SharedLocalTransactionContext,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<proto::TransactionCounterValue, tonic::Status> {
+        state.value += request.amount;
+        Ok(proto::TransactionCounterValue { value: state.value })
+    }
 }
 struct Root {
     client: generated::TransactionCounterWritesMethodsClient<Routes>,

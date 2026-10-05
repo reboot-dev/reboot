@@ -182,6 +182,48 @@ fn shared_host(
     command.spawn().unwrap()
 }
 
+/// Runs the generated fresh shared-root local path in its own process. The
+/// handler changes state, requiring the generated adapter to promote its local
+/// read lease into a durable writer.
+fn fresh_shared_promotion_host(
+    binary: &std::path::Path,
+    database: &str,
+    state_ref: &str,
+    root_id: &str,
+    pause_after_decision: Option<&std::path::Path>,
+) -> Child {
+    let listen = port();
+    let mut command = Command::new(binary);
+    command
+        .args([
+            "--role",
+            "target",
+            "--listen",
+            &format!("127.0.0.1:{listen}"),
+            "--database",
+            database,
+            "--root",
+            &format!("http://127.0.0.1:{listen}"),
+            "--target",
+            &format!("http://127.0.0.1:{listen}"),
+            "--root-id",
+            root_id,
+            "--state-ref",
+            state_ref,
+            "--invoke",
+            "--shared-invoke",
+            "--exit-after-invoke",
+            "--amount",
+            "7",
+        ])
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    if let Some(marker) = pause_after_decision {
+        command.env("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE", marker);
+    }
+    command.spawn().unwrap()
+}
+
 fn exclusive_host(
     binary: &std::path::Path,
     database: &str,
@@ -785,6 +827,78 @@ fn generated_shared_root_recovers_after_empty_commit_decision_before_cleanup() {
     assert_eq!(
         runtime.block_on(load_state(&db.endpoint(), "root")),
         Some(vec![0x08, 0x05])
+    );
+    let _ = recovered.kill();
+    let _ = recovered.wait();
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_fresh_shared_local_promotion_recovers_after_durable_decision() {
+    let database_binary =
+        std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let mut db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let state_ref = "fresh-shared-promotion-root";
+    let root_id = "00000000-0000-0000-0000-000000000107";
+    runtime.block_on(store_counter(&db.endpoint(), state_ref, 5));
+
+    let marker_dir = tempfile::tempdir().unwrap();
+    let marker = marker_dir.path().join("decision-sealed");
+    let mut root =
+        fresh_shared_promotion_host(&binary, &db.endpoint(), state_ref, root_id, Some(&marker));
+    for _ in 0..100 {
+        if marker.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(
+        marker.exists(),
+        "fresh shared promotion never persisted its commit decision"
+    );
+    let _ = root.kill();
+    let _ = root.wait();
+    db.restart();
+
+    let recovery_port = port();
+    let mut recovered = host(
+        &binary,
+        "root",
+        recovery_port,
+        &db.endpoint(),
+        recovery_port,
+        recovery_port,
+        root_id,
+        true,
+        false,
+        None,
+        None,
+        Some(state_ref),
+        Some(state_ref),
+    );
+    wait(recovery_port);
+    let expected = Some(vec![0x08, 0x0c]);
+    for _ in 0..100 {
+        if runtime.block_on(load_state(&db.endpoint(), state_ref)) == expected {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), state_ref)),
+        expected
     );
     let _ = recovered.kill();
     let _ = recovered.wait();
