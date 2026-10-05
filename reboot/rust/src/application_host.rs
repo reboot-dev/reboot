@@ -292,6 +292,16 @@ where
     }
 }
 
+/// Only the two legacy recovery services bypass public readiness. Any other
+/// `NamedService` passed through the control-route builder remains public and
+/// must be represented in placement completeness.
+fn is_legacy_control_service(service_name: &str) -> bool {
+    matches!(
+        service_name,
+        "rbt.v1alpha1.Participant" | "rbt.v1alpha1.Coordinator"
+    )
+}
+
 /// A host-owned lifecycle component.
 ///
 /// Components run in registration order. The host runs every `initialize`,
@@ -561,6 +571,10 @@ impl ApplicationHost {
             + 'static,
         S::Future: Send + 'static,
     {
+        let mut public_services = BTreeSet::new();
+        if !is_legacy_control_service(S::NAME) {
+            public_services.insert(S::NAME.to_owned());
+        }
         RunningApplicationHost {
             application_id: self.application_id,
             lifecycle: self.lifecycle,
@@ -568,7 +582,7 @@ impl ApplicationHost {
             readiness: self.readiness,
             placement_gate: self.placement_gate,
             placement_requirement: self.placement_requirement,
-            public_services: BTreeSet::new(),
+            public_services,
             router: self.server.add_service(service),
         }
     }
@@ -627,7 +641,7 @@ impl RunningApplicationHost {
         self.add_service(service)
     }
 
-    pub fn add_legacy_control_service<S>(self, service: S) -> Self
+    pub fn add_legacy_control_service<S>(mut self, service: S) -> Self
     where
         S: Service<http::Request<BoxBody>, Response = HttpResponse<BoxBody>, Error = Infallible>
             + NamedService
@@ -636,6 +650,9 @@ impl RunningApplicationHost {
             + 'static,
         S::Future: Send + 'static,
     {
+        if !is_legacy_control_service(S::NAME) {
+            self.public_services.insert(S::NAME.to_owned());
+        }
         Self {
             application_id: self.application_id,
             lifecycle: self.lifecycle,

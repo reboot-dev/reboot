@@ -519,7 +519,9 @@ async fn placement_readiness_waits_for_a_valid_newer_plan_declaring_public_servi
             started: Mutex::new(Some(started_tx)),
             release: tokio::sync::Mutex::new(Some(release_rx)),
         })
-        .add_public_service(proto::echo_methods_server::EchoMethodsServer::new(
+        // A generic public service cannot escape placement completeness by
+        // being passed through the convenience control-route builder.
+        .add_legacy_control_service(proto::echo_methods_server::EchoMethodsServer::new(
             IdentityEcho,
         ));
     let server = tokio::spawn(async move {
