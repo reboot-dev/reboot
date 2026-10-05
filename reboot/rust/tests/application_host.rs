@@ -2,9 +2,14 @@ use std::{
     future::Future,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
+
+use tokio::sync::mpsc;
 
 use reboot_rust_schema::{
     RebootHeaders,
@@ -631,4 +636,237 @@ async fn placement_readiness_waits_for_a_valid_newer_plan_declaring_public_servi
     );
     shutdown_tx.send(()).unwrap();
     server.await.unwrap();
+}
+
+#[derive(Clone)]
+struct ScriptedPlacementPlanner {
+    state: Arc<ScriptedPlacementPlannerState>,
+}
+
+struct ScriptedPlacementPlannerState {
+    sessions:
+        Mutex<std::collections::VecDeque<Vec<Result<placement::ListenForPlanResponse, Status>>>>,
+    connections: AtomicUsize,
+    // Keep an intentionally idle stream alive after the scripted responses.
+    held_streams: Mutex<Vec<mpsc::Sender<Result<placement::ListenForPlanResponse, Status>>>>,
+}
+
+impl ScriptedPlacementPlanner {
+    fn new(sessions: Vec<Vec<Result<placement::ListenForPlanResponse, Status>>>) -> Self {
+        Self {
+            state: Arc::new(ScriptedPlacementPlannerState {
+                sessions: Mutex::new(sessions.into()),
+                connections: AtomicUsize::new(0),
+                held_streams: Mutex::new(Vec::new()),
+            }),
+        }
+    }
+
+    async fn wait_for_connections(&self, expected: usize) {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while self.state.connections.load(Ordering::SeqCst) < expected {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+}
+
+#[tonic::async_trait]
+impl placement::placement_planner_server::PlacementPlanner for ScriptedPlacementPlanner {
+    type ListenForPlanStream = Pin<
+        Box<
+            dyn tokio_stream::Stream<Item = Result<placement::ListenForPlanResponse, Status>>
+                + Send
+                + 'static,
+        >,
+    >;
+
+    async fn listen_for_plan(
+        &self,
+        _: Request<placement::ListenForPlanRequest>,
+    ) -> Result<Response<Self::ListenForPlanStream>, Status> {
+        self.state.connections.fetch_add(1, Ordering::SeqCst);
+        let session = self
+            .state
+            .sessions
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_default();
+        let (sender, receiver) = mpsc::channel(8);
+        if session.is_empty() {
+            self.state.held_streams.lock().unwrap().push(sender);
+        } else {
+            tokio::spawn(async move {
+                for response in session {
+                    if sender.send(response).await.is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        Ok(Response::new(Box::pin(
+            tokio_stream::wrappers::ReceiverStream::new(receiver),
+        )))
+    }
+}
+
+async fn scripted_planner(
+    planner: ScriptedPlacementPlanner,
+) -> (
+    SocketAddr,
+    tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+) {
+    let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    let address = listener.local_addr().unwrap();
+    let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(placement::placement_planner_server::PlacementPlannerServer::new(planner))
+            .serve_with_incoming(incoming)
+            .await
+    });
+    (address, server)
+}
+
+async fn wait_for_echo_ready(
+    client: &mut proto::echo_methods_client::EchoMethodsClient<tonic::transport::Channel>,
+) {
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let mut request = Request::new(proto::Text {
+                content: "ready".into(),
+            });
+            request
+                .metadata_mut()
+                .insert(STATE_REF_HEADER, "example/identity".parse().unwrap());
+            if client.reply(request).await.is_ok() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn placement_planner_stream_installs_initial_plan_and_opens_host_ingress() {
+    let planner = ScriptedPlacementPlanner::new(vec![vec![Ok(planner_snapshot(
+        1,
+        "tests.reboot.protoc.EchoMethods",
+    ))]]);
+    let (planner_address, planner_server) = scripted_planner(planner.clone()).await;
+    let address = unused_local_address();
+    let placement = PlanOnlyLegacyPlacement::new();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let recovery = reboot_rust_schema::application_host::PlacementPlannerRecovery::new(
+        format!("http://{planner_address}"),
+        placement.clone(),
+    )
+    .unwrap();
+    let host = ApplicationHost::new("server-owned-app")
+        .with_legacy_placement_readiness(placement.clone())
+        .with_host_recovery(recovery)
+        .add_public_service(proto::echo_methods_server::EchoMethodsServer::new(
+            IdentityEcho,
+        ));
+    let server = tokio::spawn(async move {
+        host.serve_with_shutdown(address, async move { shutdown_rx.await.unwrap() })
+            .await
+    });
+
+    planner.wait_for_connections(1).await;
+    let mut client =
+        proto::echo_methods_client::EchoMethodsClient::connect(format!("http://{address}"))
+            .await
+            .unwrap();
+    wait_for_echo_ready(&mut client).await;
+    assert_eq!(placement.snapshot().unwrap().version(), 1);
+
+    shutdown_tx.send(()).unwrap();
+    assert!(server.await.unwrap().is_ok());
+    planner_server.abort();
+}
+
+#[tokio::test]
+async fn placement_planner_reconnects_unavailable_and_retains_last_good_snapshot() {
+    let mut invalid = planner_snapshot(2, "tests.reboot.protoc.EchoMethods");
+    invalid.plan.as_mut().unwrap().applications[0].shards[0].range = None;
+    let planner = ScriptedPlacementPlanner::new(vec![
+        vec![
+            Ok(planner_snapshot(1, "tests.reboot.protoc.EchoMethods")),
+            Ok(invalid),
+            Err(Status::unavailable("planner restarting")),
+        ],
+        vec![],
+    ]);
+    let (planner_address, planner_server) = scripted_planner(planner.clone()).await;
+    let address = unused_local_address();
+    let placement = PlanOnlyLegacyPlacement::new();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let recovery = reboot_rust_schema::application_host::PlacementPlannerRecovery::new(
+        format!("http://{planner_address}"),
+        placement.clone(),
+    )
+    .unwrap()
+    .with_reconnect_backoff(Duration::from_millis(1), Duration::from_millis(5))
+    .unwrap();
+    let host = ApplicationHost::new("server-owned-app")
+        .with_legacy_placement_readiness(placement.clone())
+        .with_host_recovery(recovery)
+        .add_public_service(proto::echo_methods_server::EchoMethodsServer::new(
+            IdentityEcho,
+        ));
+    let server = tokio::spawn(async move {
+        host.serve_with_shutdown(address, async move { shutdown_rx.await.unwrap() })
+            .await
+    });
+
+    planner.wait_for_connections(2).await;
+    assert_eq!(placement.snapshot().unwrap().version(), 1);
+    let mut client =
+        proto::echo_methods_client::EchoMethodsClient::connect(format!("http://{address}"))
+            .await
+            .unwrap();
+    wait_for_echo_ready(&mut client).await;
+
+    shutdown_tx.send(()).unwrap();
+    assert!(server.await.unwrap().is_ok());
+    planner_server.abort();
+}
+
+#[tokio::test]
+async fn fatal_placement_planner_status_is_supervised_and_closes_host() {
+    let planner = ScriptedPlacementPlanner::new(vec![vec![Err(Status::permission_denied(
+        "planner rejected host",
+    ))]]);
+    let (planner_address, planner_server) = scripted_planner(planner.clone()).await;
+    let address = unused_local_address();
+    let recovery = reboot_rust_schema::application_host::PlacementPlannerRecovery::new(
+        format!("http://{planner_address}"),
+        PlanOnlyLegacyPlacement::new(),
+    )
+    .unwrap();
+    let host = ApplicationHost::new("server-owned-app")
+        .with_host_recovery(recovery)
+        .add_public_service(proto::echo_methods_server::EchoMethodsServer::new(
+            IdentityEcho,
+        ));
+    let server = tokio::spawn(async move { host.serve(address).await });
+
+    planner.wait_for_connections(1).await;
+    match server.await.unwrap() {
+        Err(ApplicationHostError::RecoveryTask(status)) => {
+            assert_eq!(status.code(), tonic::Code::PermissionDenied);
+        }
+        other => panic!("expected fatal planner status to fail host, got {other:?}"),
+    }
+    assert_eq!(planner.state.connections.load(Ordering::SeqCst), 1);
+    assert!(std::net::TcpStream::connect_timeout(&address, Duration::from_millis(50)).is_err());
+    planner_server.abort();
 }

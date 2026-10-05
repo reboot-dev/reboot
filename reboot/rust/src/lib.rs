@@ -23,8 +23,8 @@ pub mod legacy_coordinator;
 pub mod legacy_placement;
 pub mod native_2pc;
 pub mod placement;
-/// Planner DTOs only: the Rust SDK deliberately does not expose planner gRPC
-/// clients/servers or own the planner stream lifecycle.
+/// Canonical PlacementPlanner transport DTOs and generated Tonic client/server
+/// bindings. The application host owns the bounded stream lifecycle.
 pub mod placement_proto {
     include!(concat!(env!("OUT_DIR"), "/placement_proto/rbt.v1alpha1.rs"));
 }

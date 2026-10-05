@@ -27,8 +27,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &[repository.clone(), vendored_include.clone()],
         )?;
     tonic_build::configure()
-        .build_client(false)
-        .build_server(false)
+        .build_client(true)
+        .build_server(true)
         .out_dir(placement_output)
         .compile_protos(
             &[repository.join("rbt/v1alpha1/placement_planner.proto")],

@@ -24,7 +24,7 @@ use tonic::{
     body::BoxBody,
     codegen::http::Response as HttpResponse,
     server::NamedService,
-    transport::{Server, server::Router},
+    transport::{Endpoint, Server, server::Router},
 };
 use tower::{
     Layer, Service,
@@ -41,6 +41,7 @@ use crate::{
     durable_participant::{DurableActorParticipant, ParticipantRecovery, ParticipantSidecar},
     legacy_coordinator::CoordinatorWatchEndpoint,
     legacy_placement::{LegacyApplicationId, PlanOnlyLegacyPlacement},
+    placement_proto,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -125,6 +126,110 @@ pub trait HostRecovery: Send + Sync + 'static {
         supervisor: &mut JoinSet<Result<(), tonic::Status>>,
         cancel: RecoveryCancellation,
     ) -> Result<(), tonic::Status>;
+}
+
+/// Host-owned `PlacementPlanner.ListenForPlan` stream lifecycle for the legacy
+/// application plane. It retains the last valid snapshot, reconnects only
+/// after `Unavailable`, and is always supervised by `RunningApplicationHost`.
+#[derive(Clone)]
+pub struct PlacementPlannerRecovery {
+    endpoint: Endpoint,
+    placement: PlanOnlyLegacyPlacement,
+    initial_backoff: std::time::Duration,
+    max_backoff: std::time::Duration,
+}
+
+impl PlacementPlannerRecovery {
+    pub fn new(
+        planner_endpoint: impl AsRef<str>,
+        placement: PlanOnlyLegacyPlacement,
+    ) -> Result<Self, tonic::Status> {
+        let endpoint =
+            Endpoint::from_shared(planner_endpoint.as_ref().to_owned()).map_err(|_| {
+                tonic::Status::invalid_argument("placement planner endpoint is not a valid URI")
+            })?;
+        Ok(Self {
+            endpoint,
+            placement,
+            initial_backoff: std::time::Duration::from_millis(10),
+            max_backoff: std::time::Duration::from_secs(1),
+        })
+    }
+
+    /// Reconnect remains bounded and retries only `Code::Unavailable`.
+    pub fn with_reconnect_backoff(
+        mut self,
+        initial: std::time::Duration,
+        maximum: std::time::Duration,
+    ) -> Result<Self, tonic::Status> {
+        if initial.is_zero() || maximum.is_zero() || initial > maximum {
+            return Err(tonic::Status::invalid_argument(
+                "placement planner reconnect backoff must be nonzero and ordered",
+            ));
+        }
+        self.initial_backoff = initial;
+        self.max_backoff = maximum;
+        Ok(self)
+    }
+
+    async fn run(&self, cancel: RecoveryCancellation) -> Result<(), tonic::Status> {
+        let mut backoff = self.initial_backoff;
+        loop {
+            match self.listen_once(cancel.clone()).await {
+                Ok(()) => return Ok(()),
+                Err(status) if status.code() == tonic::Code::Unavailable => {
+                    tokio::select! {
+                        _ = cancel.cancelled() => return Ok(()),
+                        _ = tokio::time::sleep(backoff) => {}
+                    }
+                    backoff = backoff.saturating_mul(2).min(self.max_backoff);
+                }
+                Err(status) => return Err(status),
+            }
+        }
+    }
+
+    async fn listen_once(&self, cancel: RecoveryCancellation) -> Result<(), tonic::Status> {
+        let connect = self.endpoint.connect();
+        tokio::pin!(connect);
+        let channel = tokio::select! {
+            _ = cancel.cancelled() => return Ok(()),
+            result = &mut connect => result.map_err(|_| tonic::Status::unavailable("placement planner was unavailable"))?,
+        };
+        let mut client =
+            placement_proto::placement_planner_client::PlacementPlannerClient::new(channel);
+        let stream = tokio::select! {
+            _ = cancel.cancelled() => return Ok(()),
+            result = client.listen_for_plan(placement_proto::ListenForPlanRequest {}) => result?,
+        };
+        let mut stream = stream.into_inner();
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => return Ok(()),
+                next = stream.message() => match next? {
+                    Some(response) => {
+                        // Bad or stale responses leave the last-good snapshot
+                        // intact; they are not a fatal stream lifecycle error.
+                        let _ = self.placement.install(response);
+                    }
+                    None => return Err(tonic::Status::unavailable("placement planner stream ended")),
+                },
+            }
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl HostRecovery for PlacementPlannerRecovery {
+    async fn start(
+        &self,
+        supervisor: &mut JoinSet<Result<(), tonic::Status>>,
+        cancel: RecoveryCancellation,
+    ) -> Result<(), tonic::Status> {
+        let recovery = self.clone();
+        supervisor.spawn(async move { recovery.run(cancel).await });
+        Ok(())
+    }
 }
 
 /// Exact durable metadata for one generated adapter's injected local actor and
