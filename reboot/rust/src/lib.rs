@@ -679,6 +679,37 @@ const INTERNAL_CALL_HEADER: &str = "x-reboot-internal-call";
 const TRANSACTION_COORDINATOR_READ_ONLY_AWARE_HEADER: &str =
     "x-reboot-transaction-coordinator-read-only-aware";
 
+/// Parses the explicit-offset schedule wire forms shared by Python and
+/// `DateTime<FixedOffset>`.
+///
+/// Python's `datetime.fromisoformat` accepts a basic `+HHMM`/`-HHMM` offset,
+/// whereas Chrono's RFC 3339 parser requires the colon. Normalize only that
+/// final, integral-minute offset, then retain Chrono as the calendar, time,
+/// separator, and offset-range validator. In particular, this does not infer a
+/// local timezone for Python's naive/date-only forms or round Python offsets
+/// containing fractional seconds.
+fn parse_task_schedule(value: &str) -> Result<DateTime<FixedOffset>, chrono::ParseError> {
+    DateTime::parse_from_rfc3339(value).or_else(|original_error| {
+        let Some(offset_start) = value.len().checked_sub(5) else {
+            return Err(original_error);
+        };
+        let offset = &value[offset_start..];
+        if !matches!(offset.as_bytes().first(), Some(b'+' | b'-'))
+            || !offset.as_bytes()[1..].iter().all(u8::is_ascii_digit)
+        {
+            return Err(original_error);
+        }
+
+        let normalized = format!(
+            "{}{}:{}",
+            &value[..offset_start],
+            &offset[..3],
+            &offset[3..]
+        );
+        DateTime::parse_from_rfc3339(&normalized)
+    })
+}
+
 /// Reboot metadata that is safe to forward to a downstream Reboot call.
 ///
 /// This mirrors `reboot.aio.headers.Headers`: unknown inbound metadata is
@@ -843,8 +874,7 @@ impl RebootHeaders {
                     if value.is_empty() {
                         Ok(Utc::now().fixed_offset())
                     } else {
-                        DateTime::parse_from_rfc3339(&value)
-                            .map_err(|_| ContextError::InvalidMetadata)
+                        parse_task_schedule(&value).map_err(|_| ContextError::InvalidMetadata)
                     }
                 })
                 .transpose()?,
@@ -2439,6 +2469,64 @@ mod tests {
             RebootHeaders::from_metadata(&malformed),
             Err(ContextError::InvalidMetadata)
         );
+    }
+
+    #[test]
+    fn task_schedule_accepts_python_basic_offsets_without_widening_timezone_rules() {
+        // Source: `time.py:74-80` delegates schedule strings to
+        // `datetime.fromisoformat`, and `aio/headers.py:346-352` uses that
+        // conversion only for inbound x-reboot-task-schedule metadata.
+        // Python 3.11.15 vector output:
+        //   2026-10-03T12:00:00+0200  -> 2026-10-03T12:00:00+02:00
+        //   2026-10-03T12:00:00-0530  -> 2026-10-03T12:00:00-05:30
+        // Chrono RFC 3339 rejects those two basic offsets, although the
+        // normalized values are exact `DateTime<FixedOffset>` values.
+        let vectors = [
+            ("2026-10-03T12:00:00+0200", "2026-10-03T12:00:00+02:00"),
+            ("2026-10-03T12:00:00-0530", "2026-10-03T12:00:00-05:30"),
+        ];
+        for (wire, expected) in vectors {
+            let mut metadata = tonic::metadata::MetadataMap::new();
+            metadata.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+            metadata.insert(TASK_SCHEDULE_HEADER, wire.parse().unwrap());
+            let headers = RebootHeaders::from_metadata(&metadata).unwrap();
+            assert_eq!(
+                headers.task_schedule.unwrap().to_rfc3339(),
+                expected,
+                "{wire}"
+            );
+            // Schedule metadata remains inbound-only after normalization.
+            assert!(
+                headers
+                    .to_metadata()
+                    .unwrap()
+                    .get(TASK_SCHEDULE_HEADER)
+                    .is_none()
+            );
+        }
+
+        // Python also accepts offset seconds, fractional offset seconds, and
+        // arbitrary one-character date/time separators. FixedOffset can retain
+        // whole offset seconds but not fractional ones; this bounded parser
+        // intentionally adds only basic ±HHMM and lets Chrono reject the rest
+        // rather than widening the schedule wire grammar piecemeal. `Z` and a
+        // space separator are already accepted by Chrono's RFC 3339 parser.
+        for wire in [
+            "2026-10-03T12:00:00+02:00:30",
+            "2026-10-03T12:00:00+02:00:30.5",
+            "2026-10-03T12:00:00+020030",
+            "2026-10-03T12:00:00+020030.5",
+            "2026-10-03T12:00:00+02.5",
+            "2026-10-03T12:00:00+02:30.5",
+            "2026-10-03X12:00:00+0200",
+            "2026-10-03T12:00:00",
+            "2026-10-03",
+        ] {
+            assert!(parse_task_schedule(wire).is_err(), "{wire}");
+        }
+        for wire in ["2026-10-03T12:00:00Z", "2026-10-03 12:00:00+02:00"] {
+            assert!(parse_task_schedule(wire).is_ok(), "{wire}");
+        }
     }
 
     #[test]
