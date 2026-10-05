@@ -116,7 +116,19 @@ struct RebootServiceOptions {
 struct RebootStateOptions {
     #[prost(string, repeated, tag = "1")]
     implements: Vec<String>,
+    #[prost(enumeration = "AutoConstruct", tag = "3")]
+    auto_construct: i32,
 }
+
+/// Wire values of `rbt.v1alpha1.AutoConstruct` needed by the generic
+/// generator's required-method check. Unknown nonzero enum values deliberately
+/// take the same branch as Python's `!= AUTO_CONSTRUCT_UNSPECIFIED` comparison.
+#[derive(Clone, Copy, Debug, prost::Enumeration)]
+enum AutoConstruct {
+    Unspecified = 0,
+    PerUserId = 1,
+}
+
 #[derive(Message)]
 struct RebootWriterMethodOptions {
     #[prost(message, optional, tag = "2")]
@@ -431,6 +443,7 @@ fn annotations_for_generated_files(
     }
     check_service_state_annotations(&state_files)?;
     check_state_service_consistency(&state_files)?;
+    check_auto_construct_required_methods(&state_files, generated_files)?;
     check_duplicate_state_methods(&state_files, &output, generated_files)?;
     Ok(output)
 }
@@ -683,6 +696,93 @@ fn check_state_service_consistency(raw_files: &[RawFile]) -> Result<(), String> 
                         "{file_name}: Reboot state message `{state_full_name}` is expecting to get methods from service `{service_full_name}`, but that service is providing methods for a state message named `{service_state}` instead."
                     ));
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Mirrors the required-method portion of Python `_base_services_for_state`.
+///
+/// Python reaches this while building `BaseState`s for one `file_to_generate`;
+/// its descriptor pool supplies the named services, including dependencies.
+/// Therefore an auto-constructed state in a dependency is not checked merely
+/// because it is linked into this request, while its `Create` and `SetClaims`
+/// methods may themselves be declared in dependency files.
+fn check_auto_construct_required_methods(
+    raw_files: &[RawFile],
+    generated_files: &HashSet<String>,
+) -> Result<(), String> {
+    let mut services = HashMap::<String, &RawService>::new();
+    for file in raw_files {
+        let package = file.package.as_deref().unwrap_or_default();
+        for service in &file.services {
+            if let Some(name) = service.name.as_deref() {
+                services.insert(qualify(package, name), service);
+            }
+        }
+    }
+
+    for file in raw_files {
+        let Some(file_name) = file.name.as_deref() else {
+            continue;
+        };
+        if !generated_files.contains(file_name) {
+            continue;
+        }
+        let package = file.package.as_deref().unwrap_or_default();
+        for message in &file.messages {
+            let Some(state_name) = message.name.as_deref() else {
+                continue;
+            };
+            let Some(options) = message.options.as_deref() else {
+                continue;
+            };
+            let state_options = ExtensionOptions::decode(options)
+                .map_err(|error| format!("{file_name}: invalid message options: {error}"))?
+                .reboot
+                .map(|bytes| RebootStateOptions::decode(bytes.as_slice()))
+                .transpose()
+                .map_err(|error| {
+                    format!("{file_name}: invalid rbt.v1alpha1.state option: {error}")
+                })?;
+            let Some(state_options) = state_options else {
+                continue;
+            };
+            if state_options.auto_construct == AutoConstruct::Unspecified as i32 {
+                continue;
+            }
+            let state_full_name = qualify(package, state_name);
+            let implements = if state_options.implements.is_empty() {
+                vec![format!("{state_full_name}Methods")]
+            } else {
+                state_options
+                    .implements
+                    .into_iter()
+                    .map(|service| {
+                        if service.contains('.') {
+                            service
+                        } else {
+                            qualify(package, &service)
+                        }
+                    })
+                    .collect()
+            };
+            let method_names: HashSet<&str> = implements
+                .iter()
+                .filter_map(|service_name| services.get(service_name))
+                .flat_map(|service| service.methods.iter())
+                .filter_map(|method| method.name.as_deref())
+                .collect();
+            if !method_names.contains("Create") {
+                return Err(format!(
+                    "State type '{state_name}' requires a 'Create' Transaction method. Add to your service:\n  rpc Create(google.protobuf.Empty) returns (google.protobuf.Empty) {{\n    option (rbt.v1alpha1.method) = {{ transaction: {{}} }};\n  }}"
+                ));
+            }
+            if !method_names.contains("SetClaims") {
+                return Err(format!(
+                    "State type '{state_name}' requires a 'SetClaims' Transaction method through which the framework delivers each user's verified identity claims. Add to your service:\n  rpc SetClaims({state_name}SetClaimsRequest) returns (google.protobuf.Empty) {{\n    option (rbt.v1alpha1.method) = {{ transaction: {{}} }};\n  }}\nwhere '{state_name}SetClaimsRequest' is a message with a 'map<string, google.protobuf.Value> claims = 1;' field."
+                ));
             }
         }
     }
@@ -2121,6 +2221,7 @@ mod tests {
             reboot: Some(
                 RebootStateOptions {
                     implements: vec!["CounterMethods".to_owned()],
+                    auto_construct: 0,
                 }
                 .encode_to_vec(),
             ),
@@ -2268,6 +2369,7 @@ mod tests {
                         reboot: Some(
                             RebootStateOptions {
                                 implements: vec!["tests.reboot.methods.CounterMethods".to_owned()],
+                                auto_construct: 0,
                             }
                             .encode_to_vec(),
                         ),
@@ -2281,6 +2383,97 @@ mod tests {
         // Python only validates a linked message if it is in the descriptor
         // pool, so a service compiled without its state remains valid.
         assert!(annotations(vec![service_file]).is_ok());
+    }
+
+    #[test]
+    fn raw_auto_construct_states_require_framework_method_names() {
+        fn append_raw_file(wire: &mut Vec<u8>, file: RawFile) {
+            let mut descriptor = file.encode_to_vec();
+            // The raw overlay is also a normal FileDescriptorProto decoded by
+            // `generate_from_wire`; preserve its syntax when it shadows the
+            // ordinary descriptor used for code emission.
+            descriptor.extend([0x62, 0x06, b'p', b'r', b'o', b't', b'o', b'3']);
+            wire.push(0x7a); // CodeGeneratorRequest.proto_file (field 15).
+            wire.push(u8::try_from(descriptor.len()).expect("small raw descriptor"));
+            wire.extend(descriptor);
+        }
+
+        let state_options = ExtensionOptions {
+            reboot: Some(
+                RebootStateOptions {
+                    implements: vec!["UserMethods".to_owned()],
+                    auto_construct: AutoConstruct::PerUserId as i32,
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let state = RawFile {
+            name: Some("state.proto".to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            messages: vec![RawMessage {
+                name: Some("User".to_owned()),
+                options: Some(state_options),
+            }],
+            services: vec![],
+        };
+        let request = CodeGeneratorRequest {
+            parameter: Some("module=reboot_rust_schema::proto".to_owned()),
+            file_to_generate: vec!["state.proto".to_owned()],
+            proto_file: vec![
+                FileDescriptorProto {
+                    name: Some("state.proto".to_owned()),
+                    package: Some("tests.reboot.protoc".to_owned()),
+                    syntax: Some("proto3".to_owned()),
+                    ..Default::default()
+                },
+                FileDescriptorProto {
+                    name: Some("methods.proto".to_owned()),
+                    package: Some("tests.reboot.protoc".to_owned()),
+                    syntax: Some("proto3".to_owned()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let generate = |methods: &[&str]| {
+            let mut wire = request.encode_to_vec();
+            append_raw_file(&mut wire, state.clone());
+            append_raw_file(
+                &mut wire,
+                RawFile {
+                    name: Some("methods.proto".to_owned()),
+                    package: Some("tests.reboot.protoc".to_owned()),
+                    messages: vec![],
+                    services: vec![RawService {
+                        name: Some("UserMethods".to_owned()),
+                        options: None,
+                        methods: methods
+                            .iter()
+                            .map(|name| RawMethod {
+                                name: Some((*name).to_owned()),
+                                options: None,
+                            })
+                            .collect(),
+                    }],
+                },
+            );
+            generate_from_wire(&wire)
+        };
+
+        assert_eq!(
+            generate(&["SetClaims"]).error.as_deref(),
+            Some(
+                "State type 'User' requires a 'Create' Transaction method. Add to your service:\n  rpc Create(google.protobuf.Empty) returns (google.protobuf.Empty) {\n    option (rbt.v1alpha1.method) = { transaction: {} };\n  }"
+            )
+        );
+        assert_eq!(
+            generate(&["Create"]).error.as_deref(),
+            Some(
+                "State type 'User' requires a 'SetClaims' Transaction method through which the framework delivers each user's verified identity claims. Add to your service:\n  rpc SetClaims(UserSetClaimsRequest) returns (google.protobuf.Empty) {\n    option (rbt.v1alpha1.method) = { transaction: {} };\n  }\nwhere 'UserSetClaimsRequest' is a message with a 'map<string, google.protobuf.Value> claims = 1;' field."
+            )
+        );
+        assert!(generate(&["Create", "SetClaims"]).error.is_none());
     }
 
     #[test]
