@@ -198,7 +198,7 @@ struct TransactionCounter {
 
 #[tonic::async_trait]
 impl transaction_generated::TransactionCounterWritesTransactionHandler for TransactionCounter {
-    async fn read(
+    async fn query(
         &self,
         state: &proto::TransactionCounter,
         _: proto::TransactionIncrementRequest,
@@ -207,7 +207,7 @@ impl transaction_generated::TransactionCounterWritesTransactionHandler for Trans
         Ok(proto::TransactionCounterValue { value: state.value })
     }
 
-    async fn write(
+    async fn apply(
         &self,
         state: &mut proto::TransactionCounter,
         request: proto::TransactionIncrementRequest,
@@ -822,7 +822,7 @@ async fn generated_mixed_service_mounts_and_dispatches_database_and_transaction_
     let context = ExternalContext::new("transaction-counter");
     assert_eq!(
         client
-            .read(context.reader(proto::TransactionIncrementRequest { amount: 0 }).unwrap())
+            .query(context.reader(proto::TransactionIncrementRequest { amount: 0 }).unwrap())
             .await
             .unwrap()
             .into_inner()
@@ -831,7 +831,7 @@ async fn generated_mixed_service_mounts_and_dispatches_database_and_transaction_
     );
     assert_eq!(
         client
-            .write(
+            .apply(
                 context
                     .writer_with_key(proto::TransactionIncrementRequest { amount: 2 }, Uuid::from_u128(301))
                     .unwrap(),

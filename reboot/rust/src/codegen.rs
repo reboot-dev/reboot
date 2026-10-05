@@ -58,6 +58,8 @@ struct RawDescriptorSet {
 struct RawFile {
     #[prost(string, optional, tag = "1")]
     name: Option<String>,
+    #[prost(string, optional, tag = "2")]
+    package: Option<String>,
     #[prost(message, repeated, tag = "6")]
     services: Vec<RawService>,
 }
@@ -211,6 +213,12 @@ fn annotations(
             let Some(service_name) = service.name else {
                 continue;
             };
+            let service_full_name = file
+                .package
+                .as_deref()
+                .filter(|package| !package.is_empty())
+                .map(|package| format!("{package}.{service_name}"))
+                .unwrap_or_else(|| service_name.clone());
             let service_option = service
                 .options
                 .as_deref()
@@ -292,6 +300,18 @@ fn annotations(
                 if method_name.chars().next().is_some_and(char::is_lowercase) {
                     return Err(format!(
                         "{file_name}: Reboot method `{service_name}/{method_name}` has illegal name: all Reboot RPC method names must start with an uppercase letter."
+                    ));
+                }
+                // Python reserves generated handler member names for every
+                // Reboot service except the historical SecretMethods API.
+                if service_full_name != "rbt.cloud.v1alpha1.secrets.SecretMethods"
+                    && matches!(
+                        method_name.as_str(),
+                        "Read" | "Write" | "Delete" | "State" | "Schedule" | "Spawn"
+                    )
+                {
+                    return Err(format!(
+                        "{file_name}: Reboot method `{service_full_name}/{method_name}` has illegal name: {method_name} is reserved"
                     ));
                 }
                 let kinds = [
@@ -1284,6 +1304,7 @@ mod tests {
         ] {
             let error = match annotations(vec![RawFile {
                 name: Some("counter.proto".to_owned()),
+                package: None,
                 services: vec![RawService {
                     name: Some("CounterMethods".to_owned()),
                     options: Some(service_options.clone()),
@@ -1320,6 +1341,7 @@ mod tests {
         let raw = RawRequest {
             files: vec![RawFile {
                 name: Some("counter.proto".to_owned()),
+                package: None,
                 services: vec![RawService {
                     name: Some("CounterMethods".to_owned()),
                     options: None,
@@ -1355,6 +1377,7 @@ mod tests {
         .encode_to_vec();
         let error = match annotations(vec![RawFile {
             name: Some("counter.proto".to_owned()),
+            package: None,
             services: vec![RawService {
                 name: Some("CounterReads".to_owned()),
                 options: None,
@@ -1387,6 +1410,7 @@ mod tests {
         .encode_to_vec();
         let error = match annotations(vec![RawFile {
             name: Some("counter.proto".to_owned()),
+            package: None,
             services: vec![RawService {
                 name: Some("CounterMethods".to_owned()),
                 options: Some(
@@ -1414,6 +1438,64 @@ mod tests {
             error,
             "counter.proto: Reboot method `CounterMethods/increment` has illegal name: all Reboot RPC method names must start with an uppercase letter."
         );
+    }
+
+    #[test]
+    fn raw_descriptors_reject_reserved_method_names_except_secret_methods() {
+        let method_options = ExtensionOptions {
+            reboot: Some(
+                RebootMethodOptions {
+                    reader: Some(Empty {}),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let raw = RawRequest {
+            files: vec![RawFile {
+                name: Some("counter.proto".to_owned()),
+                package: Some("tests.reboot.protoc".to_owned()),
+                services: vec![RawService {
+                    name: Some("CounterMethods".to_owned()),
+                    options: None,
+                    methods: vec![RawMethod {
+                        name: Some("Read".to_owned()),
+                        options: Some(method_options.clone()),
+                    }],
+                }],
+            }],
+        }
+        .encode_to_vec();
+        let error = match annotations(RawRequest::decode(raw.as_slice()).unwrap().files) {
+            Err(error) => error,
+            Ok(_) => panic!("reserved Reboot method unexpectedly accepted"),
+        };
+        assert_eq!(
+            error,
+            "counter.proto: Reboot method `tests.reboot.protoc.CounterMethods/Read` has illegal name: Read is reserved"
+        );
+
+        let secret_raw = RawRequest {
+            files: vec![RawFile {
+                name: Some("secrets.proto".to_owned()),
+                package: Some("rbt.cloud.v1alpha1.secrets".to_owned()),
+                services: vec![RawService {
+                    name: Some("SecretMethods".to_owned()),
+                    options: None,
+                    methods: vec![RawMethod {
+                        name: Some("Read".to_owned()),
+                        options: Some(method_options),
+                    }],
+                }],
+            }],
+        }
+        .encode_to_vec();
+        let parsed = annotations(RawRequest::decode(secret_raw.as_slice()).unwrap().files).unwrap();
+        assert!(matches!(
+            parsed["secrets.proto"]["SecretMethods"].methods["Read"],
+            DurableKind::Reader
+        ));
     }
 
     #[test]
@@ -1446,6 +1528,7 @@ mod tests {
         };
         let parsed = annotations(vec![RawFile {
             name: Some("counter.proto".to_owned()),
+            package: None,
             services: vec![RawService {
                 name: Some("CounterMethods".to_owned()),
                 options: Some(service_options),
@@ -1687,6 +1770,7 @@ mod tests {
         .encode_to_vec();
         let result = annotations(vec![RawFile {
             name: Some("counter.proto".to_owned()),
+            package: None,
             services: vec![RawService {
                 name: Some("CounterMethods".to_owned()),
                 options: Some(

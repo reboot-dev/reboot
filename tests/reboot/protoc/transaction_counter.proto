@@ -24,11 +24,11 @@ service TransactionCounterWrites {
     state: "tests.reboot.protoc.TransactionCounter"
   };
 
-  rpc Read(TransactionIncrementRequest) returns (TransactionCounterValue) {
+  rpc Query(TransactionIncrementRequest) returns (TransactionCounterValue) {
     option (rbt.v1alpha1.method).reader = {};
   }
 
-  rpc Write(TransactionIncrementRequest) returns (TransactionCounterValue) {
+  rpc Apply(TransactionIncrementRequest) returns (TransactionCounterValue) {
     option (rbt.v1alpha1.method).writer = {};
   }
 

@@ -95,7 +95,7 @@ enum Handler {
 }
 #[tonic::async_trait]
 impl generated::TransactionCounterWritesTransactionHandler for Handler {
-    async fn read(
+    async fn query(
         &self,
         state: &proto::TransactionCounter,
         _: proto::TransactionIncrementRequest,
@@ -103,7 +103,7 @@ impl generated::TransactionCounterWritesTransactionHandler for Handler {
         Ok(proto::TransactionCounterValue { value: state.value })
     }
 
-    async fn write(
+    async fn apply(
         &self,
         state: &mut proto::TransactionCounter,
         request: proto::TransactionIncrementRequest,
