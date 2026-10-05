@@ -158,6 +158,15 @@ struct RebootMethodOptions {
     kind: Option<reboot_method_options::Kind>,
 }
 
+/// The part of `MethodOptions` used only to derive Python's generic `error`
+/// feature. Keep it separate from the `kind` oneof mirror so existing focused
+/// option vectors do not need to manufacture irrelevant fields.
+#[derive(Message)]
+struct RebootMethodErrorOptions {
+    #[prost(string, repeated, tag = "7")]
+    errors: Vec<String>,
+}
+
 mod reboot_method_options {
     #[derive(Clone, prost::Oneof)]
     pub enum Kind {
@@ -416,6 +425,22 @@ fn annotations_for_generated_files(
                 let option = RebootMethodOptions::decode(bytes.as_slice()).map_err(|error| {
                     format!("{file_name}: invalid rbt.v1alpha1.method option: {error}")
                 })?;
+                // Rust has neither generated declared-error types nor the rich
+                // gRPC status/detail boundary they require. Python derives the
+                // generic `error` feature from this non-empty declaration, so
+                // reject at this generated-file service boundary rather than
+                // emitting an adapter that drops the contract.
+                if !RebootMethodErrorOptions::decode(bytes.as_slice())
+                    .map_err(|error| {
+                        format!("{file_name}: invalid rbt.v1alpha1.method option: {error}")
+                    })?
+                    .errors
+                    .is_empty()
+                {
+                    return Err(format!(
+                        "{file_name}: service `{service_name}` method `{method_name}` requests declared errors; this generator supports only methods without declared errors"
+                    ));
+                }
                 if method_name.chars().next().is_some_and(char::is_lowercase) {
                     return Err(format!(
                         "{file_name}: Reboot method `{service_name}/{method_name}` has illegal name: all Reboot RPC method names must start with an uppercase letter."
@@ -3242,7 +3267,7 @@ mod tests {
     }
 
     #[test]
-    fn raw_plugin_transaction_mode_options_match_python_oneof_and_diagnostic() {
+    fn raw_plugin_transaction_mode_and_declared_error_options_match_python_features() {
         fn push_length_delimited(output: &mut Vec<u8>, field: u8, value: &[u8]) {
             output.push(field);
             let mut length = value.len();
@@ -3254,19 +3279,19 @@ mod tests {
             output.extend(value);
         }
 
-        let raw_request = |mode| {
+        let raw_request = |mode, errors: Vec<String>| {
+            let mut reboot_option = RebootMethodOptions {
+                kind: Some(reboot_method_options::Kind::Transaction(
+                    RebootTransactionMethodOptions {
+                        constructor: Some(Empty {}),
+                        mode,
+                    },
+                )),
+            }
+            .encode_to_vec();
+            reboot_option.extend(RebootMethodErrorOptions { errors }.encode_to_vec());
             let method_option = ExtensionOptions {
-                reboot: Some(
-                    RebootMethodOptions {
-                        kind: Some(reboot_method_options::Kind::Transaction(
-                            RebootTransactionMethodOptions {
-                                constructor: Some(Empty {}),
-                                mode,
-                            },
-                        )),
-                    }
-                    .encode_to_vec(),
-                ),
+                reboot: Some(reboot_option),
             }
             .encode_to_vec();
             // Raw option overlays must remain full ordinary descriptors too:
@@ -3308,13 +3333,26 @@ mod tests {
             reboot_transaction_method_options::Mode::Exclusive(Empty {}),
             reboot_transaction_method_options::Mode::Shared(Empty {}),
         ] {
-            let response = generate_from_wire(&raw_request(Some(mode)));
+            let response = generate_from_wire(&raw_request(Some(mode), vec![]));
             assert!(response.error.is_none(), "{response:?}");
         }
         assert_eq!(
-            generate_from_wire(&raw_request(None)).error.as_deref(),
+            generate_from_wire(&raw_request(None, vec![]))
+                .error
+                .as_deref(),
             Some(
                 "tests/reboot/protoc/counter.proto: Transaction 'Increment' does not say how it holds the lock on its own state while it runs. Every transaction must declare one of:\n  exclusive: {} takes the lock exclusive from the start, so that concurrent callers of the same state queue behind it. The choice for a transaction that writes its own state, which is most of them.\n  shared: {} takes the lock shared and upgrades it to exclusive only if the transaction writes its own state, so that callers proceed concurrently while none of them writes it. The choice for a transaction that mostly reads its own state while writing others.\nFor example:\n  option (rbt.v1alpha1.method) = {\n    transaction: { exclusive: {} },\n  };"
+            )
+        );
+        assert_eq!(
+            generate_from_wire(&raw_request(
+                Some(reboot_transaction_method_options::Mode::Exclusive(Empty {})),
+                vec!["CounterError".to_owned()],
+            ))
+            .error
+            .as_deref(),
+            Some(
+                "tests/reboot/protoc/counter.proto: service `CounterWritesMethods` method `Increment` requests declared errors; this generator supports only methods without declared errors"
             )
         );
     }
