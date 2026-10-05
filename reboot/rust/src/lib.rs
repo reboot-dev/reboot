@@ -27,6 +27,7 @@ pub mod placement_proto {
     include!(concat!(env!("OUT_DIR"), "/placement_proto/rbt.v1alpha1.rs"));
 }
 pub mod runtime;
+pub mod state_ref;
 pub mod successful_trailers;
 
 use std::collections::HashMap;

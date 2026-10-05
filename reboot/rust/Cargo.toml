@@ -22,6 +22,7 @@ build = ["dep:protoc-bin-vendored", "dep:tonic-build"]
 test-support = ["dep:tokio-stream"]
 
 [dependencies]
+base64 = "0.22"
 bytes = "1"
 heck = "0.5"
 http = "1"
