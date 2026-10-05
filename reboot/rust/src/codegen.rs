@@ -84,6 +84,15 @@ struct ExtensionOptions {
     #[prost(bytes = "vec", optional, tag = "50000")]
     reboot: Option<Vec<u8>>,
 }
+/// The `google.api.http` MethodOptions extension (field 72295728).
+///
+/// It deliberately has its own decoder so the existing Reboot-option test
+/// vectors stay focused on extension 50000. Reboot needs only its presence.
+#[derive(Message)]
+struct GoogleApiMethodOptions {
+    #[prost(bytes = "vec", optional, tag = "72295728")]
+    google_api_http: Option<Vec<u8>>,
+}
 #[derive(Message)]
 struct RebootServiceOptions {
     #[prost(string, tag = "1")]
@@ -312,6 +321,18 @@ fn annotations(
                 {
                     return Err(format!(
                         "{file_name}: Reboot method `{service_full_name}/{method_name}` has illegal name: {method_name} is reserved"
+                    ));
+                }
+                // Python rejects `google.api.http` on Reboot methods. It is
+                // valid only for legacy gRPC services because a Reboot method
+                // has no HTTP adapter surface yet.
+                if GoogleApiMethodOptions::decode(options.as_slice())
+                    .map_err(|error| format!("{file_name}: invalid method options: {error}"))?
+                    .google_api_http
+                    .is_some()
+                {
+                    return Err(format!(
+                        "{file_name}: Service `{service_name}` method `{method_name}` has a 'google.api.http' annotation. This is only supported for legacy gRPC services, not for Reboot methods. Let the maintainers know about your use case if you feel this is a limitation!"
                     ));
                 }
                 let kinds = [
@@ -1496,6 +1517,53 @@ mod tests {
             parsed["secrets.proto"]["SecretMethods"].methods["Read"],
             DurableKind::Reader
         ));
+    }
+
+    #[test]
+    fn raw_descriptors_reject_google_api_http_on_reboot_methods() {
+        let mut method_options = ExtensionOptions {
+            reboot: Some(
+                RebootMethodOptions {
+                    reader: Some(Empty {}),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        // Presence is all Python's HasExtension check needs; the Rust
+        // generator intentionally does not parse an HttpRule.
+        method_options.extend(
+            GoogleApiMethodOptions {
+                google_api_http: Some(vec![
+                    0x12, 0x08, b'/', b'c', b'o', b'u', b'n', b't', b'e', b'r',
+                ]),
+            }
+            .encode_to_vec(),
+        );
+        let raw = RawRequest {
+            files: vec![RawFile {
+                name: Some("counter.proto".to_owned()),
+                package: Some("tests.reboot.protoc".to_owned()),
+                services: vec![RawService {
+                    name: Some("CounterMethods".to_owned()),
+                    options: None,
+                    methods: vec![RawMethod {
+                        name: Some("Get".to_owned()),
+                        options: Some(method_options),
+                    }],
+                }],
+            }],
+        }
+        .encode_to_vec();
+        let error = match annotations(RawRequest::decode(raw.as_slice()).unwrap().files) {
+            Err(error) => error,
+            Ok(_) => panic!("Reboot method with google.api.http unexpectedly accepted"),
+        };
+        assert_eq!(
+            error,
+            "counter.proto: Service `CounterMethods` method `Get` has a 'google.api.http' annotation. This is only supported for legacy gRPC services, not for Reboot methods. Let the maintainers know about your use case if you feel this is a limitation!"
+        );
     }
 
     #[test]
