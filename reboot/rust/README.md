@@ -3,7 +3,8 @@
 The crate began as a schema/proto spike and now contains several durable Rust
 runtime slices. It is not yet full Python SDK parity; the evidence-backed
 implementation status and pending sidecar acceptances live in
-[`PARITY.md`](PARITY.md).
+[`PARITY.md`](PARITY.md), and the source-to-source capability inventory is in
+[`PARITY-MAP.md`](PARITY-MAP.md).
 
 It proves two real boundaries without importing Python or Node.js:
 
