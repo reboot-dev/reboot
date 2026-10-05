@@ -1038,6 +1038,51 @@ impl ExternalEndpoint {
     }
 }
 
+/// A reusable, endpoint-bound cache for one lazily connected Tonic channel.
+///
+/// Clones returned by [`Self::channel`] share Tonic's cheap, buffered
+/// `Channel` handle. The manager is immutable, so it is safe to share between
+/// concurrent callers. It deliberately has no connectivity state inspection or
+/// explicit reconnect operation: Tonic 0.12 does not expose a sound public
+/// channel shutdown/health state for a cache to act on. Connection lifecycle is
+/// therefore left to Tonic's channel implementation when an RPC is made.
+///
+/// This is only an endpoint cache. It does not resolve services, select
+/// placement, retry RPCs, or make an RPC outcome decision. HTTP(S) scheme
+/// handling is whatever Tonic's endpoint supports; this type makes no broader
+/// TLS-equivalence claim.
+#[derive(Clone)]
+pub struct ExternalChannelManager {
+    endpoint: ExternalEndpoint,
+    channel: tonic::transport::Channel,
+}
+
+impl ExternalChannelManager {
+    /// Creates a cache for one already validated external endpoint.
+    ///
+    /// The channel is lazy: this performs URI construction but does not open a
+    /// network connection. The first RPC through a clone returned by
+    /// [`Self::channel`] initiates transport use.
+    pub fn new(endpoint: ExternalEndpoint) -> Result<Self, ExternalEndpointError> {
+        let tonic_endpoint = tonic::transport::Endpoint::from_shared(endpoint.as_str().to_owned())
+            .map_err(|_| ExternalEndpointError::InvalidUrl)?;
+        Ok(Self {
+            endpoint,
+            channel: tonic_endpoint.connect_lazy(),
+        })
+    }
+
+    /// Returns the endpoint bound to this cache.
+    pub fn endpoint(&self) -> &ExternalEndpoint {
+        &self.endpoint
+    }
+
+    /// Returns a cheap clone of the one cached Tonic channel.
+    pub fn channel(&self) -> tonic::transport::Channel {
+        self.channel.clone()
+    }
+}
+
 /// The portable subset of Reboot's external-call context.
 ///
 /// `state_ref` must already be a valid encoded Reboot state reference. Encoding
@@ -2397,6 +2442,94 @@ mod tests {
             .unwrap()
             .into_inner();
         assert_eq!(reply.content, "hello from rust");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn external_channel_manager_reuses_one_lazy_channel_and_preserves_context() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        use tokio_stream::StreamExt;
+
+        #[derive(Default)]
+        struct Echo;
+
+        #[tonic::async_trait]
+        impl proto::echo_methods_server::EchoMethods for Echo {
+            async fn reply(
+                &self,
+                request: tonic::Request<proto::Text>,
+            ) -> Result<tonic::Response<proto::Text>, tonic::Status> {
+                if request
+                    .metadata()
+                    .get("x-reboot-state-ref")
+                    .and_then(|value| value.to_str().ok())
+                    != Some("cached-echo")
+                {
+                    return Err(tonic::Status::unauthenticated("missing Reboot context"));
+                }
+                Ok(tonic::Response::new(request.into_inner()))
+            }
+
+            async fn last_message(
+                &self,
+                _request: tonic::Request<proto::Empty>,
+            ) -> Result<tonic::Response<proto::Text>, tonic::Status> {
+                Ok(tonic::Response::new(proto::Text::default()))
+            }
+        }
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let connections = Arc::new(AtomicUsize::new(0));
+        let accepted_connections = Arc::clone(&connections);
+        let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener).map(move |item| {
+            accepted_connections.fetch_add(1, Ordering::SeqCst);
+            item
+        });
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(proto::echo_methods_server::EchoMethodsServer::new(Echo))
+                .serve_with_incoming(incoming)
+                .await
+                .unwrap();
+        });
+
+        let manager = Arc::new(
+            ExternalChannelManager::new(
+                ExternalEndpoint::parse(format!("http://{address}")).unwrap(),
+            )
+            .unwrap(),
+        );
+        assert_eq!(manager.endpoint().as_str(), format!("http://{address}"));
+
+        let mut requests = Vec::new();
+        for number in 0..16 {
+            let manager = Arc::clone(&manager);
+            requests.push(tokio::spawn(async move {
+                let mut client =
+                    proto::echo_methods_client::EchoMethodsClient::new(manager.channel());
+                let context = ExternalContext::new("cached-echo");
+                let response = client
+                    .reply(
+                        context
+                            .reader(proto::Text {
+                                content: number.to_string(),
+                            })
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap()
+                    .into_inner();
+                assert_eq!(response.content, number.to_string());
+            }));
+        }
+        for request in requests {
+            request.await.unwrap();
+        }
+        assert_eq!(connections.load(Ordering::SeqCst), 1);
         server.abort();
     }
 
