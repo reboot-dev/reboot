@@ -967,6 +967,77 @@ impl RebootHeaders {
     }
 }
 
+/// Rejection reason for a Python-compatible external endpoint URL.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExternalEndpointError {
+    InvalidUrl,
+    MissingScheme,
+    UnsupportedScheme(String),
+    MissingAuthority,
+    HasPathQueryOrFragment,
+}
+
+impl std::fmt::Display for ExternalEndpointError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidUrl => f.write_str("external endpoint is not a valid URL"),
+            Self::MissingScheme => {
+                f.write_str("external endpoint requires an explicit http or https scheme")
+            }
+            Self::UnsupportedScheme(scheme) => write!(
+                f,
+                "external endpoint scheme `{scheme}` must be http or https"
+            ),
+            Self::MissingAuthority => f.write_str("external endpoint requires an authority"),
+            Self::HasPathQueryOrFragment => {
+                f.write_str("external endpoint must not contain a path, query, or fragment")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ExternalEndpointError {}
+
+/// A validated HTTP(S) external endpoint URL.
+///
+/// This matches the URL contract Python's `ExternalContext` accepts. It is a
+/// one-endpoint value, not a channel manager, resolver, retry policy, or
+/// placement claim.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternalEndpoint(String);
+
+impl ExternalEndpoint {
+    pub fn parse(endpoint: impl Into<String>) -> Result<Self, ExternalEndpointError> {
+        let endpoint = endpoint.into();
+        let uri = endpoint
+            .parse::<http::Uri>()
+            .map_err(|_| ExternalEndpointError::InvalidUrl)?;
+        let scheme = uri
+            .scheme_str()
+            .ok_or(ExternalEndpointError::MissingScheme)?;
+        if !matches!(scheme, "http" | "https") {
+            return Err(ExternalEndpointError::UnsupportedScheme(scheme.into()));
+        }
+        if uri.authority().is_none() {
+            return Err(ExternalEndpointError::MissingAuthority);
+        }
+        // `http::Uri` normalizes an omitted path to `/`, so inspect the source
+        // spelling to preserve Python's stricter no-path contract.
+        let authority_and_suffix = endpoint
+            .split_once("://")
+            .expect("validated URL scheme must include ://")
+            .1;
+        if authority_and_suffix.contains(['/', '?', '#']) {
+            return Err(ExternalEndpointError::HasPathQueryOrFragment);
+        }
+        Ok(Self(endpoint))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// The portable subset of Reboot's external-call context.
 ///
 /// `state_ref` must already be a valid encoded Reboot state reference. Encoding
@@ -995,6 +1066,14 @@ impl ExternalContext {
         tonic::transport::Endpoint::from_shared(endpoint.into())?
             .connect()
             .await
+    }
+
+    /// Connects a URL that was validated against Python's external URL contract.
+    pub async fn connect_validated(
+        &self,
+        endpoint: &ExternalEndpoint,
+    ) -> Result<tonic::transport::Channel, tonic::transport::Error> {
+        self.connect(endpoint.as_str()).await
     }
 
     pub fn with_bearer_token(mut self, bearer_token: impl Into<String>) -> Self {
@@ -1908,6 +1987,32 @@ mod tests {
             .await
             .unwrap_err();
         assert!(error.to_string().contains("invalid URI"));
+    }
+
+    #[test]
+    fn external_endpoint_matches_python_url_contract() {
+        let endpoint = ExternalEndpoint::parse("https://example.test:8443").unwrap();
+        assert_eq!(endpoint.as_str(), "https://example.test:8443");
+        assert_eq!(
+            ExternalEndpoint::parse("example.test").unwrap_err(),
+            ExternalEndpointError::MissingScheme
+        );
+        assert_eq!(
+            ExternalEndpoint::parse("grpc://example.test").unwrap_err(),
+            ExternalEndpointError::UnsupportedScheme("grpc".into())
+        );
+        for invalid in [
+            "http://example.test/",
+            "http://example.test/path",
+            "http://example.test?query=value",
+            "http://example.test#fragment",
+        ] {
+            assert!(matches!(
+                ExternalEndpoint::parse(invalid),
+                Err(ExternalEndpointError::HasPathQueryOrFragment)
+                    | Err(ExternalEndpointError::InvalidUrl)
+            ));
+        }
     }
 
     #[test]
