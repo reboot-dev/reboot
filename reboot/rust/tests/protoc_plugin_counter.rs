@@ -142,7 +142,7 @@ mod tests {
     use prost::Message;
     use reboot::{
         runtime::{test_support::start_database, DatabaseActorStore},
-        ExternalContext,
+        CallerId, ExternalContext,
     };
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
@@ -997,7 +997,8 @@ async fn start_counter_adapters(
 async fn generated_external_clients_attach_reader_and_writer_context() {
     let (database_endpoint, database, database_server) = start_database().await;
     let (address, server) = start_counter_adapters(&database_endpoint).await;
-    let context = ExternalContext::new("generated-external-counter");
+    let context = ExternalContext::new("generated-external-counter")
+        .with_caller_id(CallerId::new("a1234567890", None).unwrap());
     let automatic_channel = tonic::transport::Channel::from_shared(address.clone())
         .unwrap()
         .connect()

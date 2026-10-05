@@ -989,6 +989,14 @@ impl ExternalContext {
         self
     }
 
+    /// Attaches the validated external application identity to every request.
+    ///
+    /// This never creates transaction or internal-call metadata.
+    pub fn with_caller_id(mut self, caller_id: CallerId) -> Self {
+        self.headers.caller_id = Some(caller_id);
+        self
+    }
+
     pub fn with_headers(headers: RebootHeaders) -> Self {
         Self { headers }
     }
@@ -1867,7 +1875,10 @@ mod tests {
 
     #[test]
     fn external_context_attaches_reboot_metadata() {
-        let context = ExternalContext::new("opaque-state-ref").with_bearer_token("test-token");
+        let caller_id = CallerId::new("a1234567890", Some("s1234567890".into())).unwrap();
+        let context = ExternalContext::new("opaque-state-ref")
+            .with_bearer_token("test-token")
+            .with_caller_id(caller_id.clone());
         let before_writer = std::time::SystemTime::now();
         let request = context
             .writer(proto::Text {
@@ -1899,6 +1910,16 @@ mod tests {
             automatic_expiry <= after_writer + std::time::Duration::from_secs(7 * 24 * 60 * 60 + 1)
         );
         assert_eq!(metadata.get("authorization").unwrap(), "Bearer test-token");
+        assert_eq!(
+            metadata
+                .get("x-reboot-caller-id")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            caller_id.to_string()
+        );
+        assert!(metadata.get("x-reboot-internal-call").is_none());
+        assert!(metadata.get("x-reboot-transaction-ids").is_none());
 
         let retry_key = uuid::Uuid::from_u128(42);
         let retry = context
