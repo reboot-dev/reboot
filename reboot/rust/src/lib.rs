@@ -849,9 +849,15 @@ impl RebootHeaders {
                 })
                 .transpose()
         };
+        // `x-reboot-application-id` is target/server identity, not caller
+        // authority. Python replaces the wire value with identity injected by
+        // its server interceptor. This Rust SDK has no equivalent host
+        // lifecycle, so accepting the client-supplied value here would make
+        // untrusted metadata appear trusted (and could forward it downstream).
+        // Keep it absent until a server-owned injection boundary exists.
         Ok(Self {
             state_ref,
-            application_id: get(metadata, APPLICATION_ID_HEADER)?,
+            application_id: None,
             server_id: get(metadata, SERVER_ID_HEADER)?,
             workflow_id: parse_uuid(WORKFLOW_ID_HEADER)?,
             workflow_iteration: get(metadata, WORKFLOW_ITERATION_HEADER)?
@@ -2316,7 +2322,7 @@ mod tests {
     }
 
     #[test]
-    fn reboot_headers_round_trip_known_metadata_and_drop_unknown_headers() {
+    fn reboot_headers_drop_untrusted_application_identity_and_unknown_headers() {
         let mut headers = RebootHeaders::new("actor/opaque-ref");
         headers.application_id = Some("application-id".into());
         headers.server_id = Some("server-id".into());
@@ -2350,13 +2356,19 @@ mod tests {
         );
 
         let parsed = RebootHeaders::from_metadata(&inbound).unwrap();
-        assert_eq!(parsed, headers);
+        let mut expected = headers.clone();
+        expected.application_id = None;
+        assert_eq!(parsed, expected);
         let emitted = parsed.to_metadata().unwrap();
         assert!(emitted.get("x-example-unknown").is_none());
+        // Python's server interceptor supplies application identity; an inbound
+        // client header must never be admitted or forwarded as trusted Rust
+        // context before that host lifecycle exists.
+        assert!(emitted.get(APPLICATION_ID_HEADER).is_none());
         // Python reads `x-reboot-task-schedule` on inbound task delivery but
         // deliberately does not propagate it to downstream RPC metadata.
         assert!(emitted.get(TASK_SCHEDULE_HEADER).is_none());
-        assert_eq!(emitted.len(), inbound.len() - 2);
+        assert_eq!(emitted.len(), inbound.len() - 3);
     }
 
     #[test]
