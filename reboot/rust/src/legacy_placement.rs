@@ -14,7 +14,7 @@ use std::{
 use sha1::{Digest as _, Sha1};
 use tonic::Status;
 
-use crate::{placement_proto as proto, state_ref::StateRef};
+use crate::placement_proto as proto;
 
 /// Explicit application identity for legacy application-plane placement.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -134,11 +134,14 @@ impl LegacyPlacementSnapshot {
     pub fn route(
         &self,
         application: &LegacyApplicationId,
-        state_ref: &StateRef,
+        state_ref: &str,
     ) -> Result<LegacyRoute, Status> {
         let application_placement = self.application(application)?;
+        // Legacy transaction state references are existing opaque durable wire
+        // identities. Python selects their first wire component; requiring the
+        // newer typed StateRef codec here would reject those identities and
+        // silently make established actors unroutable.
         let first_component = state_ref
-            .as_str()
             .split('/')
             .next()
             .filter(|component| !component.is_empty())
@@ -352,7 +355,7 @@ impl PlanOnlyLegacyPlacement {
     pub fn route(
         &self,
         application: &LegacyApplicationId,
-        state_ref: &StateRef,
+        state_ref: &str,
     ) -> Result<LegacyRoute, Status> {
         self.snapshot()?.route(application, state_ref)
     }
@@ -417,9 +420,9 @@ mod tests {
 
     #[test]
     fn extracts_a_valid_snapshot_and_routes_python_first_component_boundaries() {
-        let first = StateRef::from_id("example.Parent", "parent").unwrap();
-        let colocated = first.colocate("example.Child", "child").unwrap();
-        let hash = Sha1::digest(first.as_str().as_bytes()).to_vec();
+        let first = "AEyp_5wmAiADZg:parent";
+        let colocated = "AEyp_5wmAiADZg:parent/AAcExYZDHb-mAw:child";
+        let hash = Sha1::digest(first.as_bytes()).to_vec();
         let placement = PlanOnlyLegacyPlacement::new();
         placement
             .install(response(
@@ -439,13 +442,13 @@ mod tests {
             snapshot.state_type_names(&app).unwrap(),
             ["", "example.v1.CounterState"]
         );
-        let route = placement.route(&app, &colocated).unwrap();
+        let route = placement.route(&app, colocated).unwrap();
         assert_eq!(route.shard_id, "shard-1");
         assert_eq!(route.server_id, "server-1");
         assert_eq!(route.address.as_str(), "planner.internal:5001");
 
-        let before = StateRef::from_id("example.Parent", "before").unwrap();
-        let first_hash = Sha1::digest(before.as_str().as_bytes()).to_vec();
+        let before = "AEyp_5wmAiADZg:before";
+        let first_hash = Sha1::digest(before.as_bytes()).to_vec();
         let boundary = vec![vec![], first_hash.clone()];
         let boundary_placement = PlanOnlyLegacyPlacement::new();
         boundary_placement
@@ -457,7 +460,7 @@ mod tests {
             "shard-0"
         };
         assert_eq!(
-            boundary_placement.route(&app, &first).unwrap().shard_id,
+            boundary_placement.route(&app, first).unwrap().shard_id,
             expected
         );
     }
@@ -466,7 +469,7 @@ mod tests {
     fn invalid_update_keeps_the_last_good_snapshot() {
         let placement = PlanOnlyLegacyPlacement::new();
         let app = LegacyApplicationId::new("app").unwrap();
-        let state_ref = StateRef::from_id("example.State", "actor").unwrap();
+        let state_ref = "legacy-transaction-actor";
         placement
             .install(response(1, vec![vec![]], "one.internal:5001"))
             .unwrap();
@@ -477,7 +480,7 @@ mod tests {
             tonic::Code::InvalidArgument
         );
         assert_eq!(
-            placement.route(&app, &state_ref).unwrap().address.as_str(),
+            placement.route(&app, state_ref).unwrap().address.as_str(),
             "one.internal:5001"
         );
     }
@@ -486,7 +489,7 @@ mod tests {
     fn stale_version_is_rejected_without_rolling_back_last_good_snapshot() {
         let placement = PlanOnlyLegacyPlacement::new();
         let app = LegacyApplicationId::new("app").unwrap();
-        let state_ref = StateRef::from_id("example.State", "actor").unwrap();
+        let state_ref = "legacy-transaction-actor";
         placement
             .install(response(3, vec![vec![]], "three.internal:5003"))
             .unwrap();
@@ -500,7 +503,7 @@ mod tests {
             );
         }
         assert_eq!(
-            placement.route(&app, &state_ref).unwrap().address.as_str(),
+            placement.route(&app, state_ref).unwrap().address.as_str(),
             "three.internal:5003"
         );
     }
