@@ -459,8 +459,8 @@ fn annotations_for_generated_files(
         }
         output.insert(file_name, services);
     }
-    check_service_state_annotations(&state_files)?;
-    check_state_service_consistency(&state_files)?;
+    check_service_state_annotations(&state_files, generated_files)?;
+    check_state_service_consistency(&state_files, generated_files)?;
     check_auto_construct_required_methods(&state_files, generated_files)?;
     check_duplicate_state_methods(&state_files, &output, generated_files)?;
     Ok(output)
@@ -529,7 +529,10 @@ fn check_duplicate_state_methods(
 /// Mirrors Python `_check_services`' optional service-to-state annotation
 /// validation. A service may refer to a state compiled outside this descriptor
 /// set, but when the message is present it must carry the Reboot state option.
-fn check_service_state_annotations(raw_files: &[RawFile]) -> Result<(), String> {
+fn check_service_state_annotations(
+    raw_files: &[RawFile],
+    generated_files: &HashSet<String>,
+) -> Result<(), String> {
     let mut states = HashMap::new();
     for file in raw_files {
         let package = file.package.as_deref().unwrap_or_default();
@@ -556,6 +559,12 @@ fn check_service_state_annotations(raw_files: &[RawFile]) -> Result<(), String> 
 
     for file in raw_files {
         let file_name = file.name.as_deref().unwrap_or("<unnamed>");
+        // `_check_services` is reached from `_base_data` while processing one
+        // requested descriptor. Its linked messages come from the whole pool,
+        // but a dependency service is not itself checked until generated.
+        if !generated_files.contains(file_name) {
+            continue;
+        }
         let package = file.package.as_deref().unwrap_or_default();
         for service in &file.services {
             let Some(service_name) = service.name.as_deref() else {
@@ -617,7 +626,10 @@ fn check_service_state_annotations(raw_files: &[RawFile]) -> Result<(), String> 
 
 /// Mirrors Python's descriptor-only `_check_states` relationship validation.
 /// Only top-level messages participate, matching `file.message_types_by_name`.
-fn check_state_service_consistency(raw_files: &[RawFile]) -> Result<(), String> {
+fn check_state_service_consistency(
+    raw_files: &[RawFile],
+    generated_files: &HashSet<String>,
+) -> Result<(), String> {
     let mut services = HashMap::new();
     for file in raw_files {
         let package = file.package.as_deref().unwrap_or_default();
@@ -668,6 +680,12 @@ fn check_state_service_consistency(raw_files: &[RawFile]) -> Result<(), String> 
         let Some(file_name) = file.name.as_deref() else {
             continue;
         };
+        // `_check_states` is also called only while building the generated
+        // file's BaseState list. It resolves services through the descriptor
+        // pool, without validating state declarations in dependencies.
+        if !generated_files.contains(file_name) {
+            continue;
+        }
         let package = file.package.as_deref().unwrap_or_default();
         for message in &file.messages {
             let Some(message_name) = message.name.as_deref() else {
@@ -2602,6 +2620,146 @@ mod tests {
         // Python only validates a linked message if it is in the descriptor
         // pool, so a service compiled without its state remains valid.
         assert!(annotations(vec![service_file]).is_ok());
+    }
+
+    #[test]
+    fn raw_plugin_scopes_linked_state_and_service_relationship_checks_to_generated_files() {
+        fn append_raw_file(wire: &mut Vec<u8>, file: RawFile) {
+            let mut descriptor = file.encode_to_vec();
+            // Raw overlays are also normal descriptors in the first decode.
+            // Preserve syntax so the overlay cannot make a dependency appear
+            // proto2 while testing only the generic-plugin scope boundary.
+            descriptor.extend([0x62, 0x06, b'p', b'r', b'o', b't', b'o', b'3']);
+            wire.push(0x7a); // CodeGeneratorRequest.proto_file (field 15).
+            let mut length = descriptor.len();
+            while length >= 0x80 {
+                wire.push((length as u8 & 0x7f) | 0x80);
+                length >>= 7;
+            }
+            wire.push(length as u8);
+            wire.extend(descriptor);
+        }
+
+        let method_options = ExtensionOptions {
+            reboot: Some(
+                RebootMethodOptions {
+                    reader: Some(Empty {}),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let state_options = ExtensionOptions {
+            reboot: Some(
+                RebootStateOptions {
+                    implements: vec!["CounterMethods".to_owned()],
+                    auto_construct: 0,
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let service_options = ExtensionOptions {
+            reboot: Some(
+                RebootServiceOptions {
+                    state: "Other".to_owned(),
+                    default_constructible: false,
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let dependency = RawFile {
+            name: Some("tests/reboot/protoc/dependency.proto".to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            messages: vec![
+                // A generated service may only link to an annotated state.
+                RawMessage {
+                    name: Some("Other".to_owned()),
+                    options: None,
+                },
+                // A generated state must agree with its linked service.
+                RawMessage {
+                    name: Some("Counter".to_owned()),
+                    options: Some(state_options.clone()),
+                },
+            ],
+            services: vec![RawService {
+                name: Some("CounterMethods".to_owned()),
+                options: Some(service_options.clone()),
+                methods: vec![RawMethod {
+                    name: Some("Get".to_owned()),
+                    options: Some(method_options.clone()),
+                }],
+            }],
+        };
+        let request = |file_to_generate: &str| CodeGeneratorRequest {
+            parameter: Some("module=reboot_rust_schema::proto".to_owned()),
+            file_to_generate: vec![file_to_generate.to_owned()],
+            proto_file: vec![
+                FileDescriptorProto {
+                    name: Some("tests/reboot/protoc/main.proto".to_owned()),
+                    package: Some("tests.reboot.protoc".to_owned()),
+                    syntax: Some("proto3".to_owned()),
+                    ..Default::default()
+                },
+                FileDescriptorProto {
+                    name: Some("tests/reboot/protoc/dependency.proto".to_owned()),
+                    package: Some("tests.reboot.protoc".to_owned()),
+                    syntax: Some("proto3".to_owned()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        let mut dependency_only = request("tests/reboot/protoc/main.proto").encode_to_vec();
+        append_raw_file(&mut dependency_only, dependency.clone());
+        assert!(generate_from_wire(&dependency_only).error.is_none());
+
+        let mut generated_dependency =
+            request("tests/reboot/protoc/dependency.proto").encode_to_vec();
+        append_raw_file(&mut generated_dependency, dependency);
+        assert_eq!(
+            generate_from_wire(&generated_dependency).error.as_deref(),
+            Some(
+                "tests/reboot/protoc/dependency.proto: Reboot service `tests.reboot.protoc.CounterMethods` is linked to state message `tests.reboot.protoc.Other`, but that message is not annotated as a Reboot state; all Reboot states must have the `rbt.v1alpha1.state` annotation."
+            )
+        );
+
+        // Keep the service's linked state absent: Python allows that optional
+        // service-side lookup, leaving only `_check_states` to reject the
+        // state/service back-reference when this descriptor is generated.
+        let relationship_mismatch = RawFile {
+            name: Some("tests/reboot/protoc/dependency.proto".to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            messages: vec![RawMessage {
+                name: Some("Counter".to_owned()),
+                options: Some(state_options),
+            }],
+            services: vec![RawService {
+                name: Some("CounterMethods".to_owned()),
+                options: Some(service_options),
+                methods: vec![RawMethod {
+                    name: Some("Get".to_owned()),
+                    options: Some(method_options),
+                }],
+            }],
+        };
+        let mut dependency_only = request("tests/reboot/protoc/main.proto").encode_to_vec();
+        append_raw_file(&mut dependency_only, relationship_mismatch.clone());
+        assert!(generate_from_wire(&dependency_only).error.is_none());
+
+        let mut generated_dependency =
+            request("tests/reboot/protoc/dependency.proto").encode_to_vec();
+        append_raw_file(&mut generated_dependency, relationship_mismatch);
+        assert_eq!(
+            generate_from_wire(&generated_dependency).error.as_deref(),
+            Some(
+                "tests/reboot/protoc/dependency.proto: Reboot state message `tests.reboot.protoc.Counter` is expecting to get methods from service `tests.reboot.protoc.CounterMethods`, but that service is providing methods for a state message named `tests.reboot.protoc.Other` instead."
+            )
+        );
     }
 
     #[test]
