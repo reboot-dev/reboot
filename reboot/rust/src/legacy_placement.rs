@@ -13,9 +13,12 @@ use std::{
 
 use sha1::{Digest as _, Sha1};
 use tokio::sync::watch;
-use tonic::Status;
+use tonic::{
+    Status,
+    transport::{Channel, Endpoint},
+};
 
-use crate::placement_proto as proto;
+use crate::{placement_proto as proto, runtime::TransactionalChannelResolver};
 
 /// Explicit application identity for legacy application-plane placement.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -398,6 +401,37 @@ impl PlanOnlyLegacyPlacement {
     }
 }
 
+/// Generated transaction-client routing over one fixed legacy application.
+///
+/// Every call is routed against the current last-good application-plane plan.
+/// It deliberately does not cache channels, interpret state types, or grant
+/// actor ownership: legacy placement selects only the first raw state-reference
+/// component under the caller's application.
+#[derive(Clone)]
+pub struct LegacyApplicationResolver {
+    application: LegacyApplicationId,
+    placement: PlanOnlyLegacyPlacement,
+}
+
+impl LegacyApplicationResolver {
+    pub fn new(application: LegacyApplicationId, placement: PlanOnlyLegacyPlacement) -> Self {
+        Self {
+            application,
+            placement,
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl TransactionalChannelResolver for LegacyApplicationResolver {
+    async fn resolve(&self, _state_type: &str, state_ref: &str) -> Result<Channel, Status> {
+        let route = self.placement.route(&self.application, state_ref)?;
+        Endpoint::from_shared(format!("http://{}", route.address.as_str()))
+            .map(|endpoint| endpoint.connect_lazy())
+            .map_err(|_| Status::unavailable("legacy placement route has an invalid endpoint"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -543,5 +577,55 @@ mod tests {
             placement.route(&app, state_ref).unwrap().address.as_str(),
             "three.internal:5003"
         );
+    }
+
+    #[tokio::test]
+    async fn application_resolver_reports_missing_and_malformed_routes_and_reads_new_plans() {
+        let placement = PlanOnlyLegacyPlacement::new();
+        let application = LegacyApplicationId::new("app").unwrap();
+        let resolver = LegacyApplicationResolver::new(application.clone(), placement.clone());
+
+        assert_eq!(
+            resolver
+                .resolve("ignored.state.type", "opaque/child")
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unavailable
+        );
+        placement
+            .install(response(1, vec![vec![]], "one.internal:5001"))
+            .unwrap();
+        for malformed in ["", "/child"] {
+            assert_eq!(
+                resolver
+                    .resolve("ignored.state.type", malformed)
+                    .await
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::InvalidArgument
+            );
+        }
+        resolver
+            .resolve("intentionally.unrelated.State", "opaque/child")
+            .await
+            .unwrap();
+        assert_eq!(
+            placement
+                .route(&application, "opaque/child")
+                .unwrap()
+                .plan_version,
+            1
+        );
+        placement
+            .install(response(2, vec![vec![]], "two.internal:5002"))
+            .unwrap();
+        resolver
+            .resolve("still.unrelated.State", "opaque/child")
+            .await
+            .unwrap();
+        let route = placement.route(&application, "opaque/child").unwrap();
+        assert_eq!(route.plan_version, 2);
+        assert_eq!(route.address.as_str(), "two.internal:5002");
     }
 }

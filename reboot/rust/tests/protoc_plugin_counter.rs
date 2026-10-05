@@ -1538,6 +1538,117 @@ async fn generated_durable_counter_replays_after_service_recreation() {
     server.abort();
     database_server.abort();
 }
+
+#[tokio::test]
+async fn generated_transaction_client_reroutes_through_legacy_application_placement() {
+    use reboot::{
+        legacy_placement::{LegacyApplicationId, LegacyApplicationResolver, PlanOnlyLegacyPlacement},
+        placement_proto,
+        runtime::TransactionalChannelResolver,
+    };
+
+    #[derive(Clone)]
+    struct Endpoint {
+        value: i64,
+        metadata: Arc<std::sync::Mutex<Vec<tonic::metadata::MetadataMap>>>,
+    }
+
+    #[tonic::async_trait]
+    impl proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods for Endpoint {
+        async fn query(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("query")) }
+        async fn apply(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("apply")) }
+        async fn increment(&self, request: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> {
+            self.metadata.lock().unwrap().push(request.metadata().clone());
+            let mut response = tonic::Response::new(proto::TransactionCounterValue { value: self.value });
+            reboot::successful_trailers::stage_successful_participants(
+                &mut response,
+                reboot::successful_trailers::ParticipantMetadata::single(
+                    "tests.reboot.protoc.TransactionCounter",
+                    "opaque/child",
+                )
+                .unwrap(),
+            );
+            Ok(response)
+        }
+        async fn factory_increment(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("factory_increment")) }
+        async fn factory_increment_target(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("factory_increment_target")) }
+        async fn shared_read(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("shared_read")) }
+    }
+
+    async fn serve(value: i64) -> (std::net::SocketAddr, Arc<std::sync::Mutex<Vec<tonic::metadata::MetadataMap>>>, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let metadata = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let server_metadata = Arc::clone(&metadata);
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .layer(reboot::successful_trailers::SuccessfulParticipantTrailerLayer)
+                .add_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(Endpoint { value, metadata: server_metadata }))
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+        (address, metadata, server)
+    }
+
+    fn plan(version: i64, address: std::net::SocketAddr) -> placement_proto::ListenForPlanResponse {
+        let server = placement_proto::Server {
+            id: "server".into(), application_id: "app".into(), revision_number: 0,
+            address: Some(placement_proto::server::Address { host: address.ip().to_string(), port: i32::from(address.port()) }),
+            namespace: String::new(), file_descriptor_set: None, reboot_version: String::new(),
+        };
+        placement_proto::ListenForPlanResponse {
+            plan: Some(placement_proto::Plan { version, applications: vec![placement_proto::plan::Application {
+                id: "app".into(),
+                services: vec![placement_proto::plan::application::Service { full_name: "tests.reboot.protoc.TransactionCounterWritesMethods".into(), state_type_full_name: "tests.reboot.protoc.TransactionCounter".into() }],
+                // The root range is selected through the raw first-component SHA-1 route.
+                shards: vec![placement_proto::plan::application::Shard { id: "hash-root".into(), range: Some(placement_proto::plan::application::shard::KeyRange { first_key: Vec::new() }), server_id: "server".into(), replica_index: 0 }],
+            }] }),
+            servers: vec![server],
+        }
+    }
+
+    let (first_address, first_metadata, first_server) = serve(11).await;
+    let (second_address, second_metadata, second_server) = serve(22).await;
+    let placement = PlanOnlyLegacyPlacement::new();
+    let resolver = LegacyApplicationResolver::new(LegacyApplicationId::new("app").unwrap(), placement.clone());
+    assert_eq!(resolver.resolve("ignored", "opaque/child").await.unwrap_err().code(), tonic::Code::Unavailable);
+    placement.install(plan(1, first_address)).unwrap();
+    assert_eq!(resolver.resolve("ignored", "").await.unwrap_err().code(), tonic::Code::InvalidArgument);
+    assert_eq!(resolver.resolve("ignored", "/malformed").await.unwrap_err().code(), tonic::Code::InvalidArgument);
+
+    let mut headers = reboot::RebootHeaders::new("source/state");
+    headers.idempotency_key = Some(Uuid::from_u128(901));
+    headers.traceparent = Some("00-0123456789abcdef0123456789abcdef-0123456789abcdef-01".into());
+    headers.internal_call = true;
+    let root = reboot::runtime::RootTransactionContext::start(headers, "tests.reboot.protoc.Root", reboot::runtime::TransactionMode::Exclusive, Uuid::from_u128(902), prost_types::Timestamp::default()).unwrap();
+    let client = transaction_generated::TransactionCounterWritesMethodsClient::new(resolver);
+    let target = transaction_generated::TransactionCounterWritesMethodsTarget::new("opaque/child");
+    assert_eq!(client.increment(root.transaction(), &target, proto::TransactionIncrementRequest { amount: 1 }).await.unwrap().response().get_ref().value, 11);
+    {
+        let received_metadata = first_metadata.lock().unwrap();
+        let metadata = received_metadata.first().unwrap();
+        assert_eq!(metadata.get("x-reboot-state-ref").unwrap(), "opaque/child");
+        assert_eq!(
+            metadata
+                .get("x-reboot-idempotency-key")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            Uuid::from_u128(901).to_string()
+        );
+        assert_eq!(metadata.get("traceparent").unwrap(), "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01");
+        assert_eq!(metadata.get("x-reboot-internal-call").unwrap(), "true");
+        assert_eq!(metadata.get("x-reboot-transaction-coordinator-state-ref").unwrap(), "source/state");
+    }
+
+    placement.install(plan(2, second_address)).unwrap();
+    assert_eq!(client.increment(root.transaction(), &target, proto::TransactionIncrementRequest { amount: 2 }).await.unwrap().response().get_ref().value, 22);
+    assert_eq!(first_metadata.lock().unwrap().len(), 1);
+    assert_eq!(second_metadata.lock().unwrap().len(), 1);
+    first_server.abort();
+    second_server.abort();
+}
 }
 "#,
     )
