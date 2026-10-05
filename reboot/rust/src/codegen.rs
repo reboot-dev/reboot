@@ -10,7 +10,7 @@ use prost_types::compiler::{CodeGeneratorRequest, CodeGeneratorResponse, code_ge
 use prost_types::{
     FileDescriptorProto, FileDescriptorSet, MethodDescriptorProto, ServiceDescriptorProto,
 };
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 const MODULE_PARAMETER_PREFIX: &str = "module=";
 const RUNTIME_MODULE_PARAMETER_PREFIX: &str = "runtime_module=";
@@ -169,7 +169,8 @@ pub fn generate_from_wire(input: &[u8]) -> CodeGeneratorResponse {
         Ok(value) => value,
         Err(error) => return error_response(error.to_string()),
     };
-    let annotations = match annotations(raw.files) {
+    let generated_files: HashSet<_> = request.file_to_generate.iter().cloned().collect();
+    let annotations = match annotations_for_generated_files(raw.files, &generated_files) {
         Ok(value) => value,
         Err(error) => return error_response(error),
     };
@@ -195,7 +196,8 @@ pub fn generate_from_descriptor_set_wire(
         Ok(value) => value,
         Err(error) => return error_response(error.to_string()),
     };
-    let annotations = match annotations(raw.files) {
+    let generated_files: HashSet<_> = file_to_generate.iter().cloned().collect();
+    let annotations = match annotations_for_generated_files(raw.files, &generated_files) {
         Ok(value) => value,
         Err(error) => return error_response(error),
     };
@@ -228,8 +230,22 @@ fn error_response(error: String) -> CodeGeneratorResponse {
     }
 }
 
+#[cfg(test)]
 fn annotations(
     raw_files: Vec<RawFile>,
+) -> Result<HashMap<String, HashMap<String, DurableService>>, String> {
+    // Unit-level annotation tests intentionally model every supplied file as
+    // generated. Plugin entry points use the scoped helper below.
+    let generated_files = raw_files
+        .iter()
+        .filter_map(|file| file.name.clone())
+        .collect();
+    annotations_for_generated_files(raw_files, &generated_files)
+}
+
+fn annotations_for_generated_files(
+    raw_files: Vec<RawFile>,
+    generated_files: &HashSet<String>,
 ) -> Result<HashMap<String, HashMap<String, DurableService>>, String> {
     let state_files = raw_files.clone();
     let mut output = HashMap::new();
@@ -415,7 +431,7 @@ fn annotations(
     }
     check_service_state_annotations(&state_files)?;
     check_state_service_consistency(&state_files)?;
-    check_duplicate_state_methods(&state_files, &output)?;
+    check_duplicate_state_methods(&state_files, &output, generated_files)?;
     Ok(output)
 }
 
@@ -426,11 +442,19 @@ fn annotations(
 fn check_duplicate_state_methods(
     raw_files: &[RawFile],
     annotations: &HashMap<String, HashMap<String, DurableService>>,
+    generated_files: &HashSet<String>,
 ) -> Result<(), String> {
     for file in raw_files {
         let Some(file_name) = file.name.as_deref() else {
             continue;
         };
+        // Python invokes `_base_clients` (and therefore
+        // `_check_no_duplicate_methods`) while processing each
+        // `file_to_generate`; the descriptor pool supplies linked symbols but
+        // does not itself make a dependency a generated client surface.
+        if !generated_files.contains(file_name) {
+            continue;
+        }
         let package = file.package.as_deref().unwrap_or_default();
         let Some(services) = annotations.get(file_name) else {
             continue;
@@ -2000,6 +2024,94 @@ mod tests {
         assert_eq!(
             error,
             "Reboot state 'tests.reboot.protoc.Counter' has conflicting methods named 'Get': one from 'tests.reboot.protoc.CounterMethods.Get', another from 'tests.reboot.protoc.CounterAdminMethods.Get'. Each method name may only be used once per state type."
+        );
+    }
+
+    #[test]
+    fn raw_duplicate_method_validation_is_scoped_to_generated_files() {
+        fn append_raw_file(wire: &mut Vec<u8>, file: RawFile) {
+            let mut descriptor = file.encode_to_vec();
+            // Preserve the ordinary descriptor field consumed by `generate_file`.
+            descriptor.extend([0x62, 0x06, b'p', b'r', b'o', b't', b'o', b'3']);
+            wire.push(0x7a); // CodeGeneratorRequest.proto_file (field 15).
+            let mut length = descriptor.len();
+            while length >= 0x80 {
+                wire.push((length as u8 & 0x7f) | 0x80);
+                length >>= 7;
+            }
+            wire.push(length as u8);
+            wire.extend(descriptor);
+        }
+
+        let method_options = ExtensionOptions {
+            reboot: Some(
+                RebootMethodOptions {
+                    reader: Some(Empty {}),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let service_options = |state: &str| {
+            ExtensionOptions {
+                reboot: Some(
+                    RebootServiceOptions {
+                        state: state.to_owned(),
+                        default_constructible: false,
+                    }
+                    .encode_to_vec(),
+                ),
+            }
+            .encode_to_vec()
+        };
+        let dependency = RawFile {
+            name: Some("dependency.proto".to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            messages: vec![],
+            services: vec![
+                RawService {
+                    name: Some("CounterMethods".to_owned()),
+                    options: Some(service_options("Counter")),
+                    methods: vec![RawMethod {
+                        name: Some("Get".to_owned()),
+                        options: Some(method_options.clone()),
+                    }],
+                },
+                RawService {
+                    name: Some("CounterAdminMethods".to_owned()),
+                    options: Some(service_options("Counter")),
+                    methods: vec![RawMethod {
+                        name: Some("Get".to_owned()),
+                        options: Some(method_options),
+                    }],
+                },
+            ],
+        };
+        let ordinary = |name: &str| FileDescriptorProto {
+            name: Some(name.to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            syntax: Some("proto3".to_owned()),
+            ..Default::default()
+        };
+        let request = |file_to_generate: &str| CodeGeneratorRequest {
+            parameter: Some("module=reboot_rust_schema::proto".to_owned()),
+            file_to_generate: vec![file_to_generate.to_owned()],
+            proto_file: vec![ordinary("main.proto"), ordinary("dependency.proto")],
+            ..Default::default()
+        };
+
+        let mut dependency_only = request("main.proto").encode_to_vec();
+        append_raw_file(&mut dependency_only, dependency.clone());
+        assert!(generate_from_wire(&dependency_only).error.is_none());
+
+        let mut generated_dependency = request("dependency.proto").encode_to_vec();
+        append_raw_file(&mut generated_dependency, dependency);
+        assert_eq!(
+            generate_from_wire(&generated_dependency).error.as_deref(),
+            Some(
+                "Reboot state 'tests.reboot.protoc.Counter' has conflicting methods named 'Get': one from 'tests.reboot.protoc.CounterMethods.Get', another from 'tests.reboot.protoc.CounterAdminMethods.Get'. Each method name may only be used once per state type."
+            )
         );
     }
 
