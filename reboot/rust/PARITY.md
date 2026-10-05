@@ -25,8 +25,10 @@ in-process fake sidecars are useful but do not establish distributed semantics.
 
 The strict Rust baseline at commit `a4c56672` is `cargo fmt --check`, locked
 all-target/all-feature Clippy with warnings denied, and locked all-target/all-
-feature tests. Native C++ Database acceptances are separately gated by
-`REBOOT_NATIVE2PC_CXX_DATABASE` and are intentionally ignored without it.
+feature tests. On 2026-10-05, all available real C++ Database/RocksDB
+acceptances also passed at `8468ea09`: 10 generated legacy-process tests and 8
+Native2pc transport-process tests. They remain explicitly gated by
+`REBOOT_NATIVE2PC_CXX_DATABASE` for future environments.
 
 ## Pending: fresh local shared-to-exclusive promotion
 

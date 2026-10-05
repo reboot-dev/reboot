@@ -95,23 +95,24 @@ Python `aio/state_managers.py` contains legacy Database Participant/Coordinator
 `Database.Recover`, or legacy participant/coordinator mutators. It is therefore
 **Rust-only bounded functionality**, not evidence of Python transaction parity.
 
-## Real-sidecar gate
+## Real-sidecar evidence
 
-The following tests are intentionally ignored until a reproducible
-`reboot/server/database` artifact is supplied through
-`REBOOT_NATIVE2PC_CXX_DATABASE`:
+The following tests remain `#[ignore]` by default because they require an
+explicit `REBOOT_NATIVE2PC_CXX_DATABASE` artifact, but they were run against a
+fresh real C++ Database/RocksDB process on 2026-10-05 using the artifact built
+from `//reboot/server:database` at PR commit `8468ea09`:
 
-- `rust/tests/generated_cxx_database_process.rs` — generated legacy adapter,
-  factory, idempotency, read-only recovery, and future promotion acceptances.
-- `rust/tests/native_2pc_transport.rs` — native preparation/recovery and
-  materialization acceptances.
+- `rust/tests/generated_cxx_database_process.rs` — **10 passed**: generated
+  legacy adapter, factory, idempotency, read-only recovery, and shared-root
+  acceptance coverage.
+- `rust/tests/native_2pc_transport.rs` — **8 passed**: native
+  preparation/recovery and materialization coverage.
 
-**Current verification blocker (2026-10-05):** the local artifact and
-`REBOOT_NATIVE2PC_CXX_DATABASE` are absent. The prior `maxbucek` verification
-host cannot currently be resolved from this environment, while local free disk
-is below the 40 GiB Bazel guardrail, so rebuilding locally is prohibited.
-Pending evidence is a fresh artifact plus all ignored process/restart tests;
-this is an environment gate, not proof that the sidecar protocol is wrong.
+The remote test host is reachable as `ladin@maxbucek-orignal-omarchy`; its
+user-local test toolchain includes Rust and the compatibility `libcrypt.so.1`
+needed by Bazel's pinned Python. Local free disk remains below the 40 GiB Bazel
+guardrail, so local sidecar rebuilding is still prohibited. Passing unit or
+fake-sidecar tests never substitutes for the recorded process/restart evidence.
 
-Passing unit or fake-sidecar tests never substitutes for those process/restart
-acceptances.
+Future added real-sidecar acceptances remain gated on supplying the artifact
+through `REBOOT_NATIVE2PC_CXX_DATABASE`.
