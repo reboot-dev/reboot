@@ -649,6 +649,15 @@ fn generate_file(
     annotations: Option<&HashMap<String, DurableService>>,
 ) -> Result<code_generator_response::File, String> {
     let file_name = required(&file.name, "file name")?;
+    // Python validates each generated descriptor before inspecting its package
+    // or rendering a template. `descriptor.proto` is the one source-backed
+    // exception: protoc reports no syntax for it although Reboot accepts it.
+    let syntax = file.syntax.as_deref().unwrap_or_default();
+    if syntax != "proto3" && file_name != "google/protobuf/descriptor.proto" {
+        return Err(format!(
+            "Unsupported: not a proto3 file. Reboot only supports proto files that set 'syntax=\"proto3\";', but got 'syntax=\"{syntax}\";'"
+        ));
+    }
     let package = required(&file.package, "protobuf package")?;
     if package.is_empty() {
         return Err(format!("file `{file_name}` has an empty protobuf package"));
@@ -1424,6 +1433,7 @@ mod tests {
             proto_file: vec![FileDescriptorProto {
                 name: Some("counter.proto".into()),
                 package: Some("tests.reboot.protoc".into()),
+                syntax: Some("proto3".into()),
                 service: vec![ServiceDescriptorProto {
                     name: Some("CounterWrites".into()),
                     method: vec![MethodDescriptorProto {
@@ -1444,6 +1454,28 @@ mod tests {
         let content = generate(request()).file.remove(0).content.unwrap();
         assert!(content.contains("CounterWritesHandler"));
         assert!(content.contains("self.handler.increment(request).await"));
+    }
+
+    #[test]
+    fn rejects_non_proto3_generated_files_except_descriptor_proto() {
+        let mut proto2 = request();
+        proto2.proto_file[0].syntax = Some("proto2".to_owned());
+        assert_eq!(
+            generate_from_wire(&proto2.encode_to_vec()).error.as_deref(),
+            Some(
+                "Unsupported: not a proto3 file. Reboot only supports proto files that set 'syntax=\"proto3\";', but got 'syntax=\"proto2\";'"
+            )
+        );
+
+        let mut descriptor = request();
+        descriptor.proto_file[0].name = Some("google/protobuf/descriptor.proto".to_owned());
+        descriptor.file_to_generate = vec!["google/protobuf/descriptor.proto".to_owned()];
+        descriptor.proto_file[0].syntax = None;
+        assert!(
+            generate_from_wire(&descriptor.encode_to_vec())
+                .error
+                .is_none()
+        );
     }
     #[test]
     fn rejects_missing_or_invalid_module_parameter() {
@@ -1598,6 +1630,7 @@ mod tests {
             proto_file: vec![FileDescriptorProto {
                 name: Some("counter.proto".to_owned()),
                 package: Some("tests.reboot.protoc".to_owned()),
+                syntax: Some("proto3".to_owned()),
                 service: vec![ServiceDescriptorProto {
                     name: Some("CounterMethods".to_owned()),
                     method: vec![],
@@ -1608,21 +1641,25 @@ mod tests {
             ..Default::default()
         }
         .encode_to_vec();
-        wire.extend(
-            RawRequest {
-                files: vec![RawFile {
-                    name: Some("counter.proto".to_owned()),
-                    package: Some("tests.reboot.protoc".to_owned()),
-                    messages: vec![],
-                    services: vec![RawService {
-                        name: Some("CounterMethods".to_owned()),
-                        options: Some(service_options),
-                        methods: vec![],
-                    }],
-                }],
-            }
-            .encode_to_vec(),
-        );
+        // The second raw file is also decoded by `CodeGeneratorRequest`; add
+        // its standard `FileDescriptorProto.syntax` field so it remains a
+        // valid proto3 descriptor rather than shadowing the first descriptor
+        // with an unset syntax in this synthetic raw-option fixture.
+        let mut raw_file = RawFile {
+            name: Some("counter.proto".to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            messages: vec![],
+            services: vec![RawService {
+                name: Some("CounterMethods".to_owned()),
+                options: Some(service_options),
+                methods: vec![],
+            }],
+        }
+        .encode_to_vec();
+        raw_file.extend([0x62, 0x06, b'p', b'r', b'o', b't', b'o', b'3']);
+        wire.push(0x7a); // CodeGeneratorRequest.proto_file (field 15).
+        wire.push(u8::try_from(raw_file.len()).expect("small raw test descriptor"));
+        wire.extend(raw_file);
         let error = generate_from_wire(&wire).error.unwrap();
         assert_eq!(
             error,
