@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::{
     database_proto as database,
-    durable_participant::{DurableActorParticipantHost, ParticipantSidecar, SharedPromotion},
+    durable_participant::{DurableActorParticipantHost, ParticipantSidecar, SharedLocalPromotion},
     runtime::TransactionMode,
 };
 
@@ -520,18 +520,58 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
 
     /// Completes the one writer created by a local shared-to-exclusive promotion.
     ///
-    /// This intentionally does not broaden the generic completion path: the
-    /// opaque proof must match the sole root participant exactly, and no remote
-    /// participants can be enlisted through this seam.
-    pub async fn complete_shared_local_promotion(
+    /// The supplied capability owns the already-started local actor and is the
+    /// only direct control path here: this seam never resolves or routes that
+    /// actor again. It is disarmed only after durable coordinator Prepare, so
+    /// cancellation before that boundary releases undurable local ownership.
+    pub async fn complete_shared_local_promotion<P: ParticipantSidecar>(
         &self,
         start: RootCoordinatorStart,
-        promotion: SharedPromotion,
+        mut local: SharedLocalPromotion<P>,
     ) -> Result<(), Status> {
-        Self::validate_shared_local_promotion(&start, &promotion)?;
+        Self::validate_shared_local_promotion(&start, &local)?;
+        let transaction_id = start.transaction_ids[0];
         let mut participants = ParticipantSet::default();
         participants.add(start.participant.clone(), false);
-        self.complete_participants(start, participants).await
+
+        self.sidecar
+            .coordinator_prepare(database::TransactionCoordinatorPrepareRequest {
+                transaction_id: transaction_id.as_bytes().to_vec(),
+                transaction_coordinator: Some(Self::record(
+                    &start.coordinator_state_ref,
+                    &participants,
+                    true,
+                )),
+            })
+            .await?;
+        local.disarm_after_durable_prepare();
+
+        if local.prepare().await? {
+            self.persist_abort(transaction_id, &start.coordinator_state_ref)
+                .await?;
+            local.abort().await?;
+            return self
+                .cleanup(transaction_id, &start.coordinator_state_ref)
+                .await;
+        }
+        self.sidecar
+            .coordinator_prepared(database::TransactionCoordinatorPreparedRequest {
+                transaction_id: transaction_id.as_bytes().to_vec(),
+                transaction_coordinator: Some(Self::record(
+                    &start.coordinator_state_ref,
+                    &participants,
+                    false,
+                )),
+                ..Default::default()
+            })
+            .await?;
+        self.persist_commit(transaction_id, &start.coordinator_state_ref, &participants)
+            .await?;
+        #[cfg(feature = "test-support")]
+        test_support::pause_after_durable_decision()?;
+        local.commit().await?;
+        self.cleanup(transaction_id, &start.coordinator_state_ref)
+            .await
     }
 
     async fn complete_participants(
@@ -724,9 +764,9 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             Ok(())
         })
     }
-    fn validate_shared_local_promotion(
+    fn validate_shared_local_promotion<P: ParticipantSidecar>(
         start: &RootCoordinatorStart,
-        promotion: &SharedPromotion,
+        local: &SharedLocalPromotion<P>,
     ) -> Result<(), Status> {
         if start.transaction_ids.len() != 1 {
             return Err(Status::unimplemented(
@@ -762,7 +802,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 "coordinator and participant identity must be specified",
             ));
         }
-        if !promotion.matches(
+        if !local.matches(
             start.transaction_ids[0],
             &start.participant.state_type,
             &start.participant.state_ref,
@@ -1212,8 +1252,24 @@ mod tests {
         value
     }
 
-    async fn shared_promotion(id: Uuid) -> SharedPromotion {
-        let sidecar = Arc::new(InProcessSidecar::default());
+    async fn shared_local_promotion(
+        id: Uuid,
+        trace: Arc<Mutex<Vec<&'static str>>>,
+    ) -> SharedLocalPromotion<InProcessSidecar> {
+        shared_local_promotion_with_sidecar(id, trace).await.0
+    }
+
+    async fn shared_local_promotion_with_sidecar(
+        id: Uuid,
+        trace: Arc<Mutex<Vec<&'static str>>>,
+    ) -> (
+        SharedLocalPromotion<InProcessSidecar>,
+        Arc<InProcessSidecar>,
+    ) {
+        let sidecar = Arc::new(InProcessSidecar {
+            trace,
+            ..Default::default()
+        });
         *sidecar.load_state.lock().unwrap() = Some(vec![0]);
         let participant =
             DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
@@ -1234,14 +1290,16 @@ mod tests {
             )
             .await
             .unwrap();
-        started
+        let promotion = started
             .stage(PendingActorEffects {
                 state: Some(vec![1]),
                 ..Default::default()
             })
             .await
             .unwrap()
-            .expect("changed shared state must atomically produce a promotion proof")
+            .expect("changed shared state must atomically produce a promotion proof");
+        let local = started.into_shared_local_promotion(promotion).unwrap();
+        (local, sidecar)
     }
 
     fn coordinator(
@@ -1254,7 +1312,9 @@ mod tests {
     #[derive(Default)]
     struct InProcessSidecar {
         calls: Mutex<Vec<&'static str>>,
+        trace: Arc<Mutex<Vec<&'static str>>>,
         load_state: Mutex<Option<Vec<u8>>>,
+        prepares: Mutex<VecDeque<Result<database::TransactionParticipantPrepareResponse, Status>>>,
     }
 
     impl ParticipantSidecar for InProcessSidecar {
@@ -1278,7 +1338,14 @@ mod tests {
             _: database::TransactionParticipantPrepareRequest,
         ) -> CoordinatorFuture<'_, database::TransactionParticipantPrepareResponse> {
             self.calls.lock().unwrap().push("prepare");
-            Box::pin(async { Ok(Default::default()) })
+            self.trace.lock().unwrap().push("participant.prepare");
+            let response = self
+                .prepares
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(Ok(Default::default()));
+            Box::pin(async move { response })
         }
 
         fn commit(
@@ -1286,6 +1353,7 @@ mod tests {
             _: database::TransactionParticipantCommitRequest,
         ) -> CoordinatorFuture<'_, database::TransactionParticipantCommitResponse> {
             self.calls.lock().unwrap().push("commit");
+            self.trace.lock().unwrap().push("participant.commit");
             Box::pin(async { Ok(Default::default()) })
         }
 
@@ -1294,6 +1362,7 @@ mod tests {
             _: database::TransactionParticipantAbortRequest,
         ) -> CoordinatorFuture<'_, database::TransactionParticipantAbortResponse> {
             self.calls.lock().unwrap().push("abort");
+            self.trace.lock().unwrap().push("participant.abort");
             Box::pin(async { Ok(Default::default()) })
         }
 
@@ -1536,7 +1605,10 @@ mod tests {
         let id = Uuid::from_u128(900);
 
         coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
-            .complete_shared_local_promotion(shared_start(id), shared_promotion(id).await)
+            .complete_shared_local_promotion(
+                shared_start(id),
+                shared_local_promotion(id, Arc::clone(&trace)).await,
+            )
             .await
             .unwrap();
 
@@ -1554,12 +1626,7 @@ mod tests {
                         decision.outcome == database::transaction_coordinator_decision::Outcome::Commit as i32)
                     && cleanup.transaction_id == id.as_bytes()
         ));
-        assert!(matches!(
-            endpoint.calls.lock().unwrap().as_slice(),
-            [Call::Prepare(prepare), Call::Commit(commit)]
-                if !prepare.read_only && prepare.read_only_aware && prepare.transaction_id == id.as_bytes()
-                    && commit.transaction_id == id.as_bytes()
-        ));
+        assert!(endpoint.calls.lock().unwrap().is_empty());
         assert_eq!(
             trace.lock().unwrap().as_slice(),
             [
@@ -1570,6 +1637,46 @@ mod tests {
                 "participant.commit",
                 "database.cleanup",
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn shared_local_promotion_keeps_durable_prepare_on_direct_prepare_transport_ambiguity() {
+        let trace = Arc::new(Mutex::new(Vec::new()));
+        let sidecar = Arc::new(MockSidecar {
+            trace: Arc::clone(&trace),
+            ..Default::default()
+        });
+        let endpoint = Arc::new(MockEndpoint {
+            trace: Arc::clone(&trace),
+            ..Default::default()
+        });
+        let id = Uuid::from_u128(905);
+        let (local, local_sidecar) =
+            shared_local_promotion_with_sidecar(id, Arc::clone(&trace)).await;
+        local_sidecar
+            .prepares
+            .lock()
+            .unwrap()
+            .push_back(Err(Status::unavailable("lost direct Prepare reply")));
+
+        assert_eq!(
+            coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
+                .complete_shared_local_promotion(shared_start(id), local)
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unavailable
+        );
+
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::DbPrepare(prepare)] if prepare.transaction_id == id.as_bytes()
+        ));
+        assert!(endpoint.calls.lock().unwrap().is_empty());
+        assert_eq!(
+            trace.lock().unwrap().as_slice(),
+            ["database.prepare", "participant.prepare"]
         );
     }
 
@@ -1606,7 +1713,11 @@ mod tests {
             let endpoint = Arc::new(MockEndpoint::default());
             assert_eq!(
                 coordinator(Arc::clone(&sidecar), endpoint)
-                    .complete_shared_local_promotion(invalid, shared_promotion(promotion_id).await)
+                    .complete_shared_local_promotion(
+                        invalid,
+                        shared_local_promotion(promotion_id, Arc::new(Mutex::new(Vec::new())),)
+                            .await,
+                    )
                     .await
                     .unwrap_err()
                     .code(),

@@ -333,10 +333,87 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         self.participant.stage(self.transaction_id, effects).await
     }
 
+    /// Consumes this started transaction into the one-shot direct-local
+    /// promotion capability after [`Self::stage`] returned its proof.
+    ///
+    /// A failed conversion drops the still-armed started transaction, releasing
+    /// only undurable local ownership and never issuing a sidecar terminal RPC.
+    pub fn into_shared_local_promotion(
+        self,
+        promotion: SharedPromotion,
+    ) -> Result<SharedLocalPromotion<C>, Status> {
+        if !promotion.matches(
+            self.transaction_id,
+            &self.participant.state_type,
+            &self.participant.state_ref,
+        ) {
+            return Err(Status::failed_precondition(
+                "shared promotion does not match the started local transaction",
+            ));
+        }
+        Ok(SharedLocalPromotion {
+            started: self,
+            promotion,
+        })
+    }
+
     /// Marks that a durable Prepare boundary has been crossed. A future
     /// coordinator integration must call this only after Prepare succeeds.
     pub fn disarm_after_durable_prepare(&mut self) {
         self.armed = false;
+    }
+}
+
+/// One-shot authority to drive the actor already held by a staged shared-local
+/// promotion. It cannot be cloned or recreated from actor identity, and its
+/// terminal methods consume it so it is unavailable after direct Commit/Abort.
+pub struct SharedLocalPromotion<C: ParticipantSidecar> {
+    started: StartedLocalTransaction<C>,
+    promotion: SharedPromotion,
+}
+
+impl<C: ParticipantSidecar> SharedLocalPromotion<C> {
+    pub(crate) fn matches(&self, root_id: Uuid, state_type: &str, state_ref: &str) -> bool {
+        self.promotion.matches(root_id, state_type, state_ref)
+    }
+
+    /// Transfers cancellation handling to durable recovery after coordinator
+    /// Prepare has acknowledged the complete participant record.
+    pub fn disarm_after_durable_prepare(&mut self) {
+        self.started.disarm_after_durable_prepare();
+    }
+
+    /// Sends Prepare directly to the actor held by this capability. `true` is
+    /// the only definitive local Abort result; RPC errors remain ambiguous.
+    pub async fn prepare(&mut self) -> Result<bool, Status> {
+        match self
+            .started
+            .participant
+            .prepare(self.started.transaction_id, true, false)
+            .await?
+        {
+            PrepareOutcome::Prepared => Ok(false),
+            PrepareOutcome::DefinitiveAbort => Ok(true),
+        }
+    }
+
+    /// Sends direct Commit and consumes this authority regardless of transport
+    /// result. After durable Prepare, a failure intentionally leaves recovery
+    /// ownership in the participant rather than converting ambiguity to Abort.
+    pub async fn commit(self) -> Result<(), Status> {
+        self.started
+            .participant
+            .terminal(self.started.transaction_id, true)
+            .await
+    }
+
+    /// Sends direct Abort and consumes this authority. As with Commit, an RPC
+    /// failure leaves the durable participant recoverable.
+    pub async fn abort(self) -> Result<(), Status> {
+        self.started
+            .participant
+            .terminal(self.started.transaction_id, false)
+            .await
     }
 }
 
