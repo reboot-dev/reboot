@@ -252,6 +252,11 @@ fn annotations(
                 let option = RebootMethodOptions::decode(bytes.as_slice()).map_err(|error| {
                     format!("{file_name}: invalid rbt.v1alpha1.method option: {error}")
                 })?;
+                if method_name.chars().next().is_some_and(char::is_lowercase) {
+                    return Err(format!(
+                        "{file_name}: Reboot method `{service_name}/{method_name}` has illegal name: all Reboot RPC method names must start with an uppercase letter."
+                    ));
+                }
                 let kinds = [
                     option.reader.is_some(),
                     option.writer.is_some(),
@@ -1259,6 +1264,49 @@ mod tests {
                 "counter.proto: Missing Reboot method annotation for `CounterMethods/Increment`"
             );
         }
+    }
+
+    #[test]
+    fn annotated_reboot_method_must_start_with_uppercase() {
+        let method_options = ExtensionOptions {
+            reboot: Some(
+                RebootMethodOptions {
+                    writer: Some(RebootWriterMethodOptions::default()),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let error = match annotations(vec![RawFile {
+            name: Some("counter.proto".to_owned()),
+            services: vec![RawService {
+                name: Some("CounterWrites".to_owned()),
+                options: Some(
+                    ExtensionOptions {
+                        reboot: Some(
+                            RebootServiceOptions {
+                                state: "Counter".to_owned(),
+                                default_constructible: true,
+                            }
+                            .encode_to_vec(),
+                        ),
+                    }
+                    .encode_to_vec(),
+                ),
+                methods: vec![RawMethod {
+                    name: Some("increment".to_owned()),
+                    options: Some(method_options),
+                }],
+            }],
+        }]) {
+            Err(error) => error,
+            Ok(_) => panic!("lowercase Reboot method unexpectedly accepted"),
+        };
+        assert_eq!(
+            error,
+            "counter.proto: Reboot method `CounterWrites/increment` has illegal name: all Reboot RPC method names must start with an uppercase letter."
+        );
     }
 
     #[test]
