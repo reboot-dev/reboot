@@ -30,6 +30,7 @@ pub mod runtime;
 pub mod state_ref;
 pub mod successful_trailers;
 
+use chrono::{DateTime, FixedOffset, Utc};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -598,7 +599,7 @@ pub struct RebootHeaders {
     pub transaction_retry_age: Option<uuid::Uuid>,
     pub idempotency_key: Option<uuid::Uuid>,
     pub bearer_token: Option<String>,
-    pub task_schedule: Option<String>,
+    pub task_schedule: Option<DateTime<FixedOffset>>,
     pub cookie: Option<String>,
     pub caller_id: Option<String>,
     pub traceparent: Option<String>,
@@ -701,7 +702,16 @@ impl RebootHeaders {
             idempotency_key: parse_uuid(IDEMPOTENCY_KEY_HEADER)?,
             bearer_token: get(metadata, AUTHORIZATION_HEADER)?
                 .map(|value| value.strip_prefix("Bearer ").unwrap_or(&value).to_owned()),
-            task_schedule: get(metadata, TASK_SCHEDULE_HEADER)?,
+            task_schedule: get(metadata, TASK_SCHEDULE_HEADER)?
+                .map(|value| {
+                    if value.is_empty() {
+                        Ok(Utc::now().fixed_offset())
+                    } else {
+                        DateTime::parse_from_rfc3339(&value)
+                            .map_err(|_| ContextError::InvalidMetadata)
+                    }
+                })
+                .transpose()?,
             cookie: get(metadata, COOKIE_HEADER)?,
             caller_id: get(metadata, CALLER_ID_HEADER)?,
             traceparent: get(metadata, TRACEPARENT_HEADER)?,
@@ -794,13 +804,16 @@ impl RebootHeaders {
             insert(&mut metadata, IDEMPOTENCY_KEY_HEADER, key.to_string())?;
         }
         for (name, value) in [
-            (TRACEPARENT_HEADER, &self.traceparent),
-            (TRACESTATE_HEADER, &self.tracestate),
-            (CALLER_ID_HEADER, &self.caller_id),
-            (TASK_SCHEDULE_HEADER, &self.task_schedule),
+            (TRACEPARENT_HEADER, self.traceparent.clone()),
+            (TRACESTATE_HEADER, self.tracestate.clone()),
+            (CALLER_ID_HEADER, self.caller_id.clone()),
+            (
+                TASK_SCHEDULE_HEADER,
+                self.task_schedule.as_ref().map(DateTime::to_rfc3339),
+            ),
         ] {
             if let Some(value) = value {
-                insert(&mut metadata, name, value.clone())?;
+                insert(&mut metadata, name, value)?;
             }
         }
         if self.internal_call {
@@ -1769,7 +1782,8 @@ mod tests {
         headers.transaction_retry_age = Some(uuid::Uuid::from_u128(4));
         headers.idempotency_key = Some(uuid::Uuid::from_u128(5));
         headers.bearer_token = Some("bearer-token".into());
-        headers.task_schedule = Some("2026-10-03T12:00:00+00:00".into());
+        headers.task_schedule =
+            Some(DateTime::parse_from_rfc3339("2026-10-03T12:00:00+00:00").unwrap());
         headers.cookie = Some("session=abc".into());
         headers.caller_id = Some("caller/application".into());
         headers.traceparent =
@@ -1790,6 +1804,47 @@ mod tests {
         let emitted = parsed.to_metadata().unwrap();
         assert!(emitted.get("x-example-unknown").is_none());
         assert_eq!(emitted.len(), inbound.len() - 1);
+    }
+
+    #[test]
+    fn task_schedule_is_typed_validated_and_defaults_empty_metadata_to_now() {
+        let mut scheduled = tonic::metadata::MetadataMap::new();
+        scheduled.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        scheduled.insert(
+            TASK_SCHEDULE_HEADER,
+            "2026-10-03T12:00:00+02:00".parse().unwrap(),
+        );
+        let parsed = RebootHeaders::from_metadata(&scheduled).unwrap();
+        assert_eq!(
+            parsed.task_schedule,
+            Some(DateTime::parse_from_rfc3339("2026-10-03T12:00:00+02:00").unwrap())
+        );
+        assert_eq!(
+            parsed
+                .to_metadata()
+                .unwrap()
+                .get(TASK_SCHEDULE_HEADER)
+                .unwrap(),
+            "2026-10-03T12:00:00+02:00"
+        );
+
+        let mut empty = tonic::metadata::MetadataMap::new();
+        empty.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        empty.insert(TASK_SCHEDULE_HEADER, "".parse().unwrap());
+        assert!(
+            RebootHeaders::from_metadata(&empty)
+                .unwrap()
+                .task_schedule
+                .is_some()
+        );
+
+        let mut malformed = tonic::metadata::MetadataMap::new();
+        malformed.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        malformed.insert(TASK_SCHEDULE_HEADER, "tomorrow-ish".parse().unwrap());
+        assert_eq!(
+            RebootHeaders::from_metadata(&malformed),
+            Err(ContextError::InvalidMetadata)
+        );
     }
 
     #[test]
