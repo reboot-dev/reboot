@@ -118,6 +118,8 @@ struct RebootStateOptions {
     implements: Vec<String>,
     #[prost(enumeration = "AutoConstruct", tag = "3")]
     auto_construct: i32,
+    #[prost(bool, tag = "4")]
+    trusted_effects: bool,
 }
 
 /// Wire values of `rbt.v1alpha1.AutoConstruct` needed by the generic
@@ -780,6 +782,17 @@ fn check_state_service_consistency(
                 continue;
             };
             let state_full_name = qualify(package, message_name);
+            // Python carries this declaration into generated state middleware,
+            // where it changes whether effect validation re-runs. Rust has no
+            // equivalent effect-validation runtime, so accepting it would
+            // silently weaken a state-level contract. `_proto_state` is only
+            // reached while processing the current generated descriptor;
+            // retain that scope rather than inspecting dependency states.
+            if state_options.trusted_effects {
+                return Err(format!(
+                    "{file_name}: Reboot state `{state_full_name}` requests trusted effects; this generator has no trusted-effect validation runtime"
+                ));
+            }
             let implements = if state_options.implements.is_empty() {
                 vec![format!("{state_full_name}Methods")]
             } else {
@@ -2840,6 +2853,7 @@ mod tests {
                 RebootStateOptions {
                     implements: vec!["CounterMethods".to_owned()],
                     auto_construct: 0,
+                    trusted_effects: false,
                 }
                 .encode_to_vec(),
             ),
@@ -2990,6 +3004,7 @@ mod tests {
                             RebootStateOptions {
                                 implements: vec!["tests.reboot.methods.CounterMethods".to_owned()],
                                 auto_construct: 0,
+                                trusted_effects: false,
                             }
                             .encode_to_vec(),
                         ),
@@ -3039,6 +3054,7 @@ mod tests {
                 RebootStateOptions {
                     implements: vec!["CounterMethods".to_owned()],
                     auto_construct: 0,
+                    trusted_effects: false,
                 }
                 .encode_to_vec(),
             ),
@@ -3164,6 +3180,7 @@ mod tests {
                 RebootStateOptions {
                     implements: vec!["UserMethods".to_owned()],
                     auto_construct: AutoConstruct::PerUserId as i32,
+                    trusted_effects: false,
                 }
                 .encode_to_vec(),
             ),
@@ -3235,6 +3252,78 @@ mod tests {
             )
         );
         assert!(generate(&["Create", "SetClaims"]).error.is_none());
+    }
+
+    #[test]
+    fn raw_plugin_rejects_trusted_effects_only_for_generated_state_files() {
+        fn push_length_delimited(output: &mut Vec<u8>, field: u8, value: &[u8]) {
+            output.push(field);
+            let mut length = value.len();
+            while length >= 0x80 {
+                output.push((length as u8 & 0x7f) | 0x80);
+                length >>= 7;
+            }
+            output.push(length as u8);
+            output.extend(value);
+        }
+
+        let state_options = ExtensionOptions {
+            reboot: Some(
+                RebootStateOptions {
+                    implements: vec![],
+                    auto_construct: AutoConstruct::Unspecified as i32,
+                    trusted_effects: true,
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        let mut state = RawMessage {
+            name: Some("Counter".to_owned()),
+            options: None,
+        }
+        .encode_to_vec();
+        push_length_delimited(&mut state, 0x3a, &state_options);
+        let mut dependency = RawFile {
+            name: Some("tests/reboot/protoc/dependency.proto".to_owned()),
+            package: Some("tests.reboot.protoc".to_owned()),
+            messages: vec![],
+            services: vec![],
+        }
+        .encode_to_vec();
+        push_length_delimited(&mut dependency, 0x22, &state);
+        // The raw overlay also feeds the ordinary descriptor decode.
+        dependency.extend([0x62, 0x06, b'p', b'r', b'o', b't', b'o', b'3']);
+
+        let request = |file_to_generate: &str| CodeGeneratorRequest {
+            parameter: Some("module=reboot_rust_schema::proto".to_owned()),
+            file_to_generate: vec![file_to_generate.to_owned()],
+            proto_file: ["main.proto", "dependency.proto"]
+                .into_iter()
+                .map(|name| FileDescriptorProto {
+                    name: Some(format!("tests/reboot/protoc/{name}")),
+                    package: Some("tests.reboot.protoc".to_owned()),
+                    syntax: Some("proto3".to_owned()),
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let generate = |file_to_generate: &str| {
+            let mut wire = request(file_to_generate).encode_to_vec();
+            push_length_delimited(&mut wire, 0x7a, &dependency);
+            generate_from_wire(&wire)
+        };
+
+        assert!(generate("tests/reboot/protoc/main.proto").error.is_none());
+        assert_eq!(
+            generate("tests/reboot/protoc/dependency.proto")
+                .error
+                .as_deref(),
+            Some(
+                "tests/reboot/protoc/dependency.proto: Reboot state `tests.reboot.protoc.Counter` requests trusted effects; this generator has no trusted-effect validation runtime"
+            )
+        );
     }
 
     #[test]
