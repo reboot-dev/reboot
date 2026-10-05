@@ -15,7 +15,8 @@ use reboot_rust_schema::{
     database_proto as database,
     durable_coordinator::CoordinatorSidecar,
     legacy_coordinator::DurableCoordinatorWatchHost,
-    proto,
+    legacy_placement::PlanOnlyLegacyPlacement,
+    placement_proto as placement, proto,
 };
 
 const APPLICATION_ID_HEADER: &str = "x-reboot-application-id";
@@ -412,6 +413,7 @@ async fn legacy_coordinator_watch_is_reachable_while_public_ingress_is_gated() {
     let (started_tx, started_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let placement = PlanOnlyLegacyPlacement::new();
     let coordinator = DurableCoordinatorWatchHost::new(
         Arc::new(DurableDecisionSidecar),
         "tests.Counter",
@@ -419,6 +421,7 @@ async fn legacy_coordinator_watch_is_reachable_while_public_ingress_is_gated() {
     )
     .unwrap();
     let host = ApplicationHost::new("server-owned-app")
+        .with_legacy_placement_readiness(placement)
         .with_host_recovery(BlockingRecovery {
             started: Mutex::new(Some(started_tx)),
             release: tokio::sync::Mutex::new(Some(release_rx)),
@@ -464,6 +467,166 @@ async fn legacy_coordinator_watch_is_reachable_while_public_ingress_is_gated() {
         tonic::Code::Unavailable
     );
     release_tx.send(()).unwrap();
+    shutdown_tx.send(()).unwrap();
+    server.await.unwrap();
+}
+
+fn planner_snapshot(version: i64, service_name: &str) -> placement::ListenForPlanResponse {
+    placement::ListenForPlanResponse {
+        plan: Some(placement::Plan {
+            version,
+            applications: vec![placement::plan::Application {
+                id: "server-owned-app".into(),
+                services: vec![placement::plan::application::Service {
+                    full_name: service_name.into(),
+                    state_type_full_name: String::new(),
+                }],
+                shards: vec![placement::plan::application::Shard {
+                    id: "root".into(),
+                    range: Some(placement::plan::application::shard::KeyRange {
+                        first_key: vec![],
+                    }),
+                    server_id: "server".into(),
+                    replica_index: 0,
+                }],
+            }],
+        }),
+        servers: vec![placement::Server {
+            id: "server".into(),
+            application_id: "server-owned-app".into(),
+            revision_number: 0,
+            address: Some(placement::server::Address {
+                host: "127.0.0.1".into(),
+                port: 5001,
+            }),
+            namespace: String::new(),
+            file_descriptor_set: None,
+            reboot_version: String::new(),
+        }],
+    }
+}
+
+#[tokio::test]
+async fn placement_readiness_waits_for_a_valid_newer_plan_declaring_public_service() {
+    let address = unused_local_address();
+    let placement = PlanOnlyLegacyPlacement::new();
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let host = ApplicationHost::new("server-owned-app")
+        .with_legacy_placement_readiness(placement.clone())
+        .with_host_recovery(BlockingRecovery {
+            started: Mutex::new(Some(started_tx)),
+            release: tokio::sync::Mutex::new(Some(release_rx)),
+        })
+        .add_public_service(proto::echo_methods_server::EchoMethodsServer::new(
+            IdentityEcho,
+        ));
+    let server = tokio::spawn(async move {
+        host.serve_with_shutdown(address, async move { shutdown_rx.await.unwrap() })
+            .await
+            .unwrap()
+    });
+    started_rx.await.unwrap();
+    let mut client =
+        proto::echo_methods_client::EchoMethodsClient::connect(format!("http://{address}"))
+            .await
+            .unwrap();
+    assert_eq!(
+        client
+            .reply(proto::Text {
+                content: "recovering".into()
+            })
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unavailable
+    );
+    release_tx.send(()).unwrap();
+    tokio::task::yield_now().await;
+    assert_eq!(
+        client
+            .reply(proto::Text {
+                content: "no plan".into()
+            })
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unavailable
+    );
+
+    let mut invalid = planner_snapshot(1, "tests.reboot.protoc.EchoMethods");
+    invalid.plan.as_mut().unwrap().applications[0].shards[0].range = None;
+    assert_eq!(
+        placement.install(invalid).unwrap_err().code(),
+        tonic::Code::InvalidArgument
+    );
+    assert_eq!(
+        client
+            .reply(proto::Text {
+                content: "invalid".into()
+            })
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unavailable
+    );
+
+    placement
+        .install(planner_snapshot(2, "other.Service"))
+        .unwrap();
+    tokio::task::yield_now().await;
+    assert_eq!(
+        client
+            .reply(proto::Text {
+                content: "missing".into()
+            })
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unavailable
+    );
+    assert_eq!(
+        placement
+            .install(planner_snapshot(2, "tests.reboot.protoc.EchoMethods"))
+            .unwrap_err()
+            .code(),
+        tonic::Code::FailedPrecondition
+    );
+    assert_eq!(
+        client
+            .reply(proto::Text {
+                content: "stale".into()
+            })
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unavailable
+    );
+
+    placement
+        .install(planner_snapshot(3, "tests.reboot.protoc.EchoMethods"))
+        .unwrap();
+    let response = tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let mut request = Request::new(proto::Text {
+                content: "ready".into(),
+            });
+            request
+                .metadata_mut()
+                .insert(STATE_REF_HEADER, "example/identity".parse().unwrap());
+            if let Ok(response) = client.reply(request).await {
+                break response;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        response.into_inner().content,
+        "server-owned-app;spoof-visible=false"
+    );
     shutdown_tx.send(()).unwrap();
     server.await.unwrap();
 }

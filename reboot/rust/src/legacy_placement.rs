@@ -12,6 +12,7 @@ use std::{
 };
 
 use sha1::{Digest as _, Sha1};
+use tokio::sync::watch;
 use tonic::Status;
 
 use crate::placement_proto as proto;
@@ -315,14 +316,31 @@ impl TryFrom<proto::ListenForPlanResponse> for LegacyPlacementSnapshot {
 
 /// Atomically replaces only with complete, valid, strictly newer snapshots.
 /// Rejected updates leave the prior last-good snapshot unchanged.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct PlanOnlyLegacyPlacement {
     snapshot: Arc<RwLock<Option<Arc<LegacyPlacementSnapshot>>>>,
+    accepted_versions: Arc<watch::Sender<i64>>,
+}
+
+impl Default for PlanOnlyLegacyPlacement {
+    fn default() -> Self {
+        let (accepted_versions, _) = watch::channel(-1);
+        Self {
+            snapshot: Arc::new(RwLock::new(None)),
+            accepted_versions: Arc::new(accepted_versions),
+        }
+    }
 }
 
 impl PlanOnlyLegacyPlacement {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Receives a new value only after a complete, valid, strictly newer
+    /// snapshot has been installed and made visible to readers.
+    pub fn accepted_versions(&self) -> watch::Receiver<i64> {
+        self.accepted_versions.subscribe()
     }
 
     pub fn install(&self, response: proto::ListenForPlanResponse) -> Result<i64, Status> {
@@ -341,6 +359,8 @@ impl PlanOnlyLegacyPlacement {
             ));
         }
         *current = Some(next);
+        drop(current);
+        self.accepted_versions.send_replace(version);
         Ok(version)
     }
 
@@ -358,6 +378,23 @@ impl PlanOnlyLegacyPlacement {
         state_ref: &str,
     ) -> Result<LegacyRoute, Status> {
         self.snapshot()?.route(application, state_ref)
+    }
+
+    /// Checks only whether the last accepted snapshot declares every supplied
+    /// service under one application. It is not an ownership check.
+    pub fn declares_services(
+        &self,
+        application: &LegacyApplicationId,
+        services: &BTreeSet<String>,
+    ) -> bool {
+        self.snapshot()
+            .and_then(|snapshot| {
+                let declared = snapshot.service_names(application)?;
+                Ok(services
+                    .iter()
+                    .all(|service| declared.binary_search(&service.as_str()).is_ok()))
+            })
+            .unwrap_or(false)
     }
 }
 

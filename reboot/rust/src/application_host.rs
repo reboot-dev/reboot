@@ -6,6 +6,7 @@
 //! through `x-reboot-application-id` metadata.
 
 use std::{
+    collections::BTreeSet,
     convert::Infallible,
     error::Error,
     fmt,
@@ -39,6 +40,7 @@ use crate::{
     },
     durable_participant::{DurableActorParticipant, ParticipantRecovery, ParticipantSidecar},
     legacy_coordinator::CoordinatorWatchEndpoint,
+    legacy_placement::{LegacyApplicationId, PlanOnlyLegacyPlacement},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -56,6 +58,39 @@ impl RecoveryReadiness {
     fn state(&self) -> RecoveryState {
         *self.state.borrow()
     }
+}
+
+/// Host-owned public-ingress gate driven by accepted legacy placement updates.
+/// It is true by default so hosts that do not opt in preserve prior behavior.
+#[derive(Clone, Debug)]
+struct LegacyPlacementGate {
+    state: tokio::sync::watch::Receiver<bool>,
+    sender: tokio::sync::watch::Sender<bool>,
+}
+
+impl LegacyPlacementGate {
+    fn new() -> Self {
+        let (sender, state) = tokio::sync::watch::channel(true);
+        Self { state, sender }
+    }
+
+    fn ready(&self) -> bool {
+        *self.state.borrow()
+    }
+
+    fn require_placement(&self) {
+        self.sender.send_replace(false);
+    }
+
+    fn set_ready(&self, ready: bool) {
+        self.sender.send_replace(ready);
+    }
+}
+
+#[derive(Clone)]
+struct LegacyPlacementRequirement {
+    placement: PlanOnlyLegacyPlacement,
+    application: LegacyApplicationId,
 }
 
 /// Host-owned cancellation root for supervised recovery work.
@@ -190,12 +225,18 @@ where
 pub struct RecoveryIngressLayer {
     context: TrustedApplicationContext,
     readiness: RecoveryReadiness,
+    placement_gate: LegacyPlacementGate,
 }
 impl RecoveryIngressLayer {
-    fn new(application_id: String, readiness: RecoveryReadiness) -> Self {
+    fn new(
+        application_id: String,
+        readiness: RecoveryReadiness,
+        placement_gate: LegacyPlacementGate,
+    ) -> Self {
         Self {
             context: TrustedApplicationContext { application_id },
             readiness,
+            placement_gate,
         }
     }
 }
@@ -206,6 +247,7 @@ impl<S> Layer<S> for RecoveryIngressLayer {
             inner,
             context: self.context.clone(),
             readiness: self.readiness.clone(),
+            placement_gate: self.placement_gate.clone(),
         }
     }
 }
@@ -214,6 +256,7 @@ pub struct RecoveryIngressService<S> {
     inner: S,
     context: TrustedApplicationContext,
     readiness: RecoveryReadiness,
+    placement_gate: LegacyPlacementGate,
 }
 impl<S, B> Service<HttpRequest<B>> for RecoveryIngressService<S>
 where
@@ -238,7 +281,9 @@ where
                 .starts_with("/rbt.v1alpha1.Coordinator/");
         request.headers_mut().remove(APPLICATION_ID_HEADER);
         request.extensions_mut().insert(self.context.clone());
-        if !control && self.readiness.state() != RecoveryState::Ready {
+        if !control
+            && (self.readiness.state() != RecoveryState::Ready || !self.placement_gate.ready())
+        {
             return Box::pin(async {
                 Ok(tonic::Status::unavailable("application recovery in progress").into_http())
             });
@@ -408,6 +453,8 @@ pub struct ApplicationHost {
     lifecycle: Vec<Arc<dyn ApplicationLifecycle>>,
     recovery: Vec<Arc<dyn HostRecovery>>,
     readiness: tokio::sync::watch::Sender<RecoveryState>,
+    placement_gate: LegacyPlacementGate,
+    placement_requirement: Option<LegacyPlacementRequirement>,
 }
 
 impl ApplicationHost {
@@ -420,15 +467,19 @@ impl ApplicationHost {
             "application ID must not be empty"
         );
         let (readiness, state) = tokio::sync::watch::channel(RecoveryState::Ready);
+        let placement_gate = LegacyPlacementGate::new();
         Self {
             server: Server::builder().layer(RecoveryIngressLayer::new(
                 application_id.clone(),
                 RecoveryReadiness { state },
+                placement_gate.clone(),
             )),
             application_id,
             lifecycle: Vec::new(),
             recovery: Vec::new(),
             readiness,
+            placement_gate,
+            placement_requirement: None,
         }
     }
 
@@ -450,6 +501,19 @@ impl ApplicationHost {
         self
     }
 
+    /// Requires an accepted legacy snapshot to declare every public generated
+    /// Tonic service registered under this host's server-owned application ID.
+    /// Hosts that do not opt in retain their recovery-only readiness behavior.
+    pub fn with_legacy_placement_readiness(mut self, placement: PlanOnlyLegacyPlacement) -> Self {
+        self.placement_gate.require_placement();
+        self.placement_requirement = Some(LegacyPlacementRequirement {
+            placement,
+            application: LegacyApplicationId::new(self.application_id.clone())
+                .expect("ApplicationHost rejects empty application IDs"),
+        });
+        self
+    }
+
     /// Registers the first generated Tonic service and returns a serving host.
     pub fn add_service<S>(mut self, service: S) -> RunningApplicationHost
     where
@@ -460,11 +524,16 @@ impl ApplicationHost {
             + 'static,
         S::Future: Send + 'static,
     {
+        let mut public_services = BTreeSet::new();
+        public_services.insert(S::NAME.to_owned());
         RunningApplicationHost {
             application_id: self.application_id,
             lifecycle: self.lifecycle,
             recovery: self.recovery,
             readiness: self.readiness,
+            placement_gate: self.placement_gate,
+            placement_requirement: self.placement_requirement,
+            public_services,
             router: self.server.add_service(service),
         }
     }
@@ -483,7 +552,7 @@ impl ApplicationHost {
     }
 
     /// Registers a fixed legacy control route reachable during recovery.
-    pub fn add_legacy_control_service<S>(self, service: S) -> RunningApplicationHost
+    pub fn add_legacy_control_service<S>(mut self, service: S) -> RunningApplicationHost
     where
         S: Service<http::Request<BoxBody>, Response = HttpResponse<BoxBody>, Error = Infallible>
             + NamedService
@@ -492,7 +561,16 @@ impl ApplicationHost {
             + 'static,
         S::Future: Send + 'static,
     {
-        self.add_service(service)
+        RunningApplicationHost {
+            application_id: self.application_id,
+            lifecycle: self.lifecycle,
+            recovery: self.recovery,
+            readiness: self.readiness,
+            placement_gate: self.placement_gate,
+            placement_requirement: self.placement_requirement,
+            public_services: BTreeSet::new(),
+            router: self.server.add_service(service),
+        }
     }
 }
 
@@ -502,6 +580,9 @@ pub struct RunningApplicationHost {
     lifecycle: Vec<Arc<dyn ApplicationLifecycle>>,
     recovery: Vec<Arc<dyn HostRecovery>>,
     readiness: tokio::sync::watch::Sender<RecoveryState>,
+    placement_gate: LegacyPlacementGate,
+    placement_requirement: Option<LegacyPlacementRequirement>,
+    public_services: BTreeSet<String>,
     router: Router<RecoveryIngressStack>,
 }
 
@@ -512,7 +593,7 @@ impl RunningApplicationHost {
     }
 
     /// Registers another generated Tonic service on the same trusted ingress.
-    pub fn add_service<S>(self, service: S) -> Self
+    pub fn add_service<S>(mut self, service: S) -> Self
     where
         S: Service<http::Request<BoxBody>, Response = HttpResponse<BoxBody>, Error = Infallible>
             + NamedService
@@ -521,11 +602,15 @@ impl RunningApplicationHost {
             + 'static,
         S::Future: Send + 'static,
     {
+        self.public_services.insert(S::NAME.to_owned());
         Self {
             application_id: self.application_id,
             lifecycle: self.lifecycle,
             recovery: self.recovery,
             readiness: self.readiness,
+            placement_gate: self.placement_gate,
+            placement_requirement: self.placement_requirement,
+            public_services: self.public_services,
             router: self.router.add_service(service),
         }
     }
@@ -551,7 +636,16 @@ impl RunningApplicationHost {
             + 'static,
         S::Future: Send + 'static,
     {
-        self.add_service(service)
+        Self {
+            application_id: self.application_id,
+            lifecycle: self.lifecycle,
+            recovery: self.recovery,
+            readiness: self.readiness,
+            placement_gate: self.placement_gate,
+            placement_requirement: self.placement_requirement,
+            public_services: self.public_services,
+            router: self.router.add_service(service),
+        }
     }
 
     /// Starts every registered service. The host consumes itself so its trusted
@@ -575,6 +669,9 @@ impl RunningApplicationHost {
             lifecycle,
             recovery,
             readiness,
+            placement_gate,
+            placement_requirement,
+            public_services,
             router,
             ..
         } = self;
@@ -604,6 +701,26 @@ impl RunningApplicationHost {
                     source,
                 });
             }
+        }
+        if let Some(requirement) = placement_requirement {
+            let mut accepted_versions = requirement.placement.accepted_versions();
+            let gate = placement_gate.clone();
+            let cancel = cancel.clone();
+            supervisor.spawn(async move {
+                loop {
+                    gate.set_ready(
+                        requirement
+                            .placement
+                            .declares_services(&requirement.application, &public_services),
+                    );
+                    tokio::select! {
+                        _ = cancel.cancelled() => return Ok(()),
+                        changed = accepted_versions.changed() => {
+                            changed.map_err(|_| tonic::Status::internal("legacy placement update channel closed"))?;
+                        }
+                    }
+                }
+            });
         }
         readiness.send_replace(RecoveryState::Ready);
         tokio::select! {
