@@ -663,6 +663,15 @@ fn generate_file(
         if let Some(annotation) =
             annotations.and_then(|value| service.name.as_ref().and_then(|name| value.get(name)))
         {
+            // Python's generic `process_file` rejects an empty service only
+            // when it produces this file's Reboot client. Keep the check at
+            // the same output boundary rather than rejecting dependencies.
+            if service.method.is_empty() {
+                let service_name = required(&service.name, "service name")?;
+                return Err(format!(
+                    "Service '{service_name}' has no rpc methods specified. Complete your proto file."
+                ));
+            }
             emit_durable(
                 &mut content,
                 file_name,
@@ -1566,6 +1575,59 @@ mod tests {
                 "counter.proto: Missing Reboot method annotation for `CounterMethods/Increment`"
             );
         }
+    }
+
+    #[test]
+    fn raw_descriptor_rejects_annotated_reboot_service_without_rpcs() {
+        let service_options = ExtensionOptions {
+            reboot: Some(
+                RebootServiceOptions {
+                    state: "Counter".to_owned(),
+                    default_constructible: false,
+                }
+                .encode_to_vec(),
+            ),
+        }
+        .encode_to_vec();
+        // Build the raw descriptor field separately: `prost_types` discards
+        // custom option extensions, while the executable plugin retains them
+        // through its second RawRequest decode.
+        let mut wire = CodeGeneratorRequest {
+            parameter: Some("module=reboot_rust_schema::proto".to_owned()),
+            file_to_generate: vec!["counter.proto".to_owned()],
+            proto_file: vec![FileDescriptorProto {
+                name: Some("counter.proto".to_owned()),
+                package: Some("tests.reboot.protoc".to_owned()),
+                service: vec![ServiceDescriptorProto {
+                    name: Some("CounterMethods".to_owned()),
+                    method: vec![],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+        .encode_to_vec();
+        wire.extend(
+            RawRequest {
+                files: vec![RawFile {
+                    name: Some("counter.proto".to_owned()),
+                    package: Some("tests.reboot.protoc".to_owned()),
+                    messages: vec![],
+                    services: vec![RawService {
+                        name: Some("CounterMethods".to_owned()),
+                        options: Some(service_options),
+                        methods: vec![],
+                    }],
+                }],
+            }
+            .encode_to_vec(),
+        );
+        let error = generate_from_wire(&wire).error.unwrap();
+        assert_eq!(
+            error,
+            "Service 'CounterMethods' has no rpc methods specified. Complete your proto file."
+        );
     }
 
     #[test]
