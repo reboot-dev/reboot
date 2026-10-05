@@ -528,6 +528,7 @@ pub const RBT_V1ALPHA1_DESCRIPTOR_SET: &[u8] =
 pub enum ContextError {
     EmptyStateRef,
     InvalidMetadata,
+    InvalidCallerId,
     MissingTransactionMetadata,
     MissingTransactionCoordinatorMetadata,
     EmptyTransactionIds,
@@ -540,6 +541,7 @@ impl std::fmt::Display for ContextError {
         match self {
             Self::EmptyStateRef => write!(f, "Reboot state reference must not be empty"),
             Self::InvalidMetadata => write!(f, "Reboot metadata value is invalid"),
+            Self::InvalidCallerId => write!(f, "Reboot caller ID is invalid"),
             Self::MissingTransactionMetadata => {
                 write!(f, "transaction context requires transaction metadata")
             }
@@ -559,6 +561,91 @@ impl std::fmt::Display for ContextError {
 }
 
 impl std::error::Error for ContextError {}
+
+/// Identifies an application caller in Reboot metadata.
+///
+/// The wire form is Python-compatible: `application_id=<id>` with an optional
+/// leading `space_id=<id>,`. Unknown key/value pairs are ignored for forward
+/// compatibility, while malformed or missing required values are rejected.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallerId {
+    application_id: String,
+    space_id: Option<String>,
+}
+
+impl CallerId {
+    pub fn new(
+        application_id: impl Into<String>,
+        space_id: Option<String>,
+    ) -> Result<Self, ContextError> {
+        let application_id = application_id.into();
+        if !is_valid_application_id(&application_id)
+            || space_id.as_deref().is_some_and(|id| !is_valid_space_id(id))
+        {
+            return Err(ContextError::InvalidCallerId);
+        }
+        Ok(Self {
+            application_id,
+            space_id,
+        })
+    }
+
+    pub fn application_id(&self) -> &str {
+        &self.application_id
+    }
+
+    pub fn space_id(&self) -> Option<&str> {
+        self.space_id.as_deref()
+    }
+}
+
+impl std::fmt::Display for CallerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(space_id) = &self.space_id {
+            write!(f, "space_id={space_id},")?;
+        }
+        write!(f, "application_id={}", self.application_id)
+    }
+}
+
+impl std::str::FromStr for CallerId {
+    type Err = ContextError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let mut application_id = None;
+        let mut space_id = None;
+        for part in value.split(',').filter(|part| !part.is_empty()) {
+            let (key, value) = part.split_once('=').ok_or(ContextError::InvalidCallerId)?;
+            match key {
+                "application_id" => application_id = Some(value.to_owned()),
+                "space_id" => space_id = Some(value.to_owned()),
+                _ => {}
+            }
+        }
+        Self::new(
+            application_id.ok_or(ContextError::InvalidCallerId)?,
+            space_id,
+        )
+    }
+}
+
+fn is_valid_id_suffix(value: &str) -> bool {
+    value
+        .bytes()
+        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+}
+
+fn is_valid_space_id(value: &str) -> bool {
+    value.len() == 11 && value.starts_with('s') && is_valid_id_suffix(&value[1..])
+}
+
+fn is_valid_application_id(value: &str) -> bool {
+    value == "cloud"
+        || (value.len() == 11 && value.starts_with('a') && is_valid_id_suffix(&value[1..]))
+        || value
+            .strip_suffix("-facilitator")
+            .is_some_and(is_valid_application_id)
+}
 
 const APPLICATION_ID_HEADER: &str = "x-reboot-application-id";
 const STATE_REF_HEADER: &str = "x-reboot-state-ref";
@@ -601,7 +688,7 @@ pub struct RebootHeaders {
     pub bearer_token: Option<String>,
     pub task_schedule: Option<DateTime<FixedOffset>>,
     pub cookie: Option<String>,
-    pub caller_id: Option<String>,
+    pub caller_id: Option<CallerId>,
     pub traceparent: Option<String>,
     pub tracestate: Option<String>,
     pub internal_call: bool,
@@ -713,7 +800,9 @@ impl RebootHeaders {
                 })
                 .transpose()?,
             cookie: get(metadata, COOKIE_HEADER)?,
-            caller_id: get(metadata, CALLER_ID_HEADER)?,
+            caller_id: get(metadata, CALLER_ID_HEADER)?
+                .map(|value| value.parse().map_err(|_| ContextError::InvalidCallerId))
+                .transpose()?,
             traceparent: get(metadata, TRACEPARENT_HEADER)?,
             tracestate: get(metadata, TRACESTATE_HEADER)?,
             internal_call: get(metadata, INTERNAL_CALL_HEADER)?
@@ -806,7 +895,10 @@ impl RebootHeaders {
         for (name, value) in [
             (TRACEPARENT_HEADER, self.traceparent.clone()),
             (TRACESTATE_HEADER, self.tracestate.clone()),
-            (CALLER_ID_HEADER, self.caller_id.clone()),
+            (
+                CALLER_ID_HEADER,
+                self.caller_id.as_ref().map(ToString::to_string),
+            ),
             (
                 TASK_SCHEDULE_HEADER,
                 self.task_schedule.as_ref().map(DateTime::to_rfc3339),
@@ -1785,7 +1877,7 @@ mod tests {
         headers.task_schedule =
             Some(DateTime::parse_from_rfc3339("2026-10-03T12:00:00+00:00").unwrap());
         headers.cookie = Some("session=abc".into());
-        headers.caller_id = Some("caller/application".into());
+        headers.caller_id = Some("application_id=cloud".parse().unwrap());
         headers.traceparent =
             Some("00-0123456789abcdef0123456789abcdef-0123456789abcdef-01".into());
         headers.tracestate = Some("vendor=value".into());
@@ -1804,6 +1896,45 @@ mod tests {
         let emitted = parsed.to_metadata().unwrap();
         assert!(emitted.get("x-example-unknown").is_none());
         assert_eq!(emitted.len(), inbound.len() - 1);
+    }
+
+    #[test]
+    fn caller_id_matches_python_wire_validation_and_forward_compatibility() {
+        let caller: CallerId = "unknown=value,space_id=sabc123def4,application_id=aabc123def4"
+            .parse()
+            .unwrap();
+        assert_eq!(caller.application_id(), "aabc123def4");
+        assert_eq!(caller.space_id(), Some("sabc123def4"));
+        assert_eq!(
+            caller.to_string(),
+            "space_id=sabc123def4,application_id=aabc123def4"
+        );
+
+        let duplicate: CallerId = "application_id=cloud,application_id=aabc123def4"
+            .parse()
+            .unwrap();
+        assert_eq!(duplicate.application_id(), "aabc123def4");
+        assert!("space_id=sabc123def4".parse::<CallerId>().is_err());
+        assert!("application_id=invalid".parse::<CallerId>().is_err());
+        assert!("application_id=aABC123def4".parse::<CallerId>().is_err());
+        assert!(
+            "application_id=aabc123def4,space_id=invalid"
+                .parse::<CallerId>()
+                .is_err()
+        );
+
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        metadata.insert(
+            CALLER_ID_HEADER,
+            "space_id=sabc123def4,application_id=aabc123def4"
+                .parse()
+                .unwrap(),
+        );
+        assert_eq!(
+            RebootHeaders::from_metadata(&metadata).unwrap().caller_id,
+            Some(caller)
+        );
     }
 
     #[test]
