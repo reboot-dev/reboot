@@ -88,6 +88,7 @@ async fn prove_routed_task_result_refresh(binary: &std::path::Path, host_port: u
     assert_eq!(std::fs::read_to_string(result).unwrap(), "12");
     assert_eq!(counters[0].load(std::sync::atomic::Ordering::SeqCst), 1);
     assert_eq!(counters[1].load(std::sync::atomic::Ordering::SeqCst), 1, "routed client retained the first channel");
+    planner.stop();
     servers.abort_all();
     while servers.join_next().await.is_some() {}
 }
