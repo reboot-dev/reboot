@@ -1,6 +1,6 @@
 # Python → Rust SDK parity map
 
-**Baseline:** `bae3e7c9` (2026-10-05). This is a capability map, not a claim
+**Baseline:** `05c5d3cc` (2026-10-06). This is a capability map, not a claim
 that similarly named APIs have the same distributed semantics.
 
 ## Evidence rules
@@ -13,10 +13,12 @@ that similarly named APIs have the same distributed semantics.
   `REBOOT_NATIVE2PC_CXX_DATABASE`.
 - Native2pc is a separate Rust protocol island, not Python legacy-2PC parity.
 
-The baseline Rust suite passed `cargo fmt --check` and locked all-target,
-all-feature tests: 151 library tests, 4 codegen/build integration tests, 5
-successful-trailer tests, and 5 native transport tests. Eighteen C++ Database
-acceptances were skipped because the sidecar binary was not supplied.
+The baseline Rust suite passed `cargo fmt --all -- --check`, locked
+all-target/all-feature tests, strict Clippy, and `git diff --check`: 202 unit
+and 9 host tests, plus the 18-test generated downstream fixture and its
+one-test default-helper fixture. The ordinary locked suite skips 13 C++
+Database acceptances when `REBOOT_NATIVE2PC_CXX_DATABASE` is absent; their
+real-sidecar evidence is recorded in the individual capability rows.
 
 ## Delivery order
 
