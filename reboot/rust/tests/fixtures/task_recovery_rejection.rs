@@ -3,6 +3,22 @@ use super::*;
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_recovery_rejects_entire_malformed_batch_before_dispatch() {
+    prove_recovered_batch_boundary(None);
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
+fn generated_reader_task_recovery_accepts_1024_pending_tasks_without_loss() {
+    prove_recovered_batch_boundary(Some(1024));
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
+fn generated_reader_task_recovery_rejects_1025_before_any_dispatch_without_loss() {
+    prove_recovered_batch_boundary(Some(1025));
+}
+
+fn prove_recovered_batch_boundary(capacity: Option<usize>) {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/generated_cxx_database_process");
     assert!(
@@ -13,14 +29,15 @@ fn generated_reader_task_recovery_rejects_entire_malformed_batch_before_dispatch
             .unwrap()
             .success()
     );
-    let target = std::env::var_os("CARGO_TARGET_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| fixture.join("target"));
-    let binary = target.join("debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let mut db = CxxDatabase::start(std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").unwrap());
     let runtime = tokio::runtime::Runtime::new().unwrap();
     runtime.block_on(store_counter(&db.endpoint(), "root", 5));
-    let tasks: Vec<database::Task> = ["Query", "UnknownReader"]
+    let methods: Vec<&str> = capacity.map_or_else(
+        || vec!["Query", "UnknownReader"],
+        |count| vec!["Query"; count],
+    );
+    let tasks: Vec<database::Task> = methods
         .into_iter()
         .map(|method| {
             database::Task {
@@ -31,8 +48,10 @@ fn generated_reader_task_recovery_rejects_entire_malformed_batch_before_dispatch
                 }),
                 method: method.into(),
                 status: database::task::Status::Pending as i32,
-                // The known Query's empty protobuf request is valid.
-                request: vec![],
+                // Enter the observable reader branch in every vector, including
+                // malformed batches: an accidentally early valid delivery must
+                // leave a marker instead of silently completing unnoticed.
+                request: [0x08, 0xa8, 0x46].to_vec(), // TransactionIncrementRequest.amount = 9000
                 timestamp: None,
                 iteration: 0,
                 response_or_error: None,
@@ -88,32 +107,51 @@ fn generated_reader_task_recovery_rejects_entire_malformed_batch_before_dispatch
             "--amount",
             "7",
             "--recover",
+            "--block-task",
         ])
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::from(
+            std::fs::File::create(markers.path().join("host-stderr")).unwrap(),
+        ))
         .spawn()
         .unwrap();
     let mut exit = None;
     for _ in 0..200 {
         exit = host.try_wait().unwrap();
-        if exit.is_some() {
+        if exit.is_some() || (capacity == Some(1024) && marker.exists()) {
             break;
         }
         std::thread::sleep(Duration::from_millis(25));
     }
-    if exit.is_none() {
+    if capacity == Some(1024) {
+        // The real reader cannot begin until complete-batch validation and
+        // public readiness pass. Crash it while the first handler is parked;
+        // no result may be invented for any of the 1024 pending tasks.
+        let accepted = marker.exists() && exit.is_none();
         let _ = host.kill();
         let _ = host.wait();
-        panic!("host did not reject malformed recovered batch within five seconds");
+        assert!(accepted, "1024-task recovery did not admit the real reader");
+        assert_eq!(std::fs::read_to_string(&marker).unwrap(), "5");
+    } else {
+        if exit.is_none() {
+            let _ = host.kill();
+            let _ = host.wait();
+            panic!("host did not reject unsupported recovered batch within five seconds");
+        }
+        assert!(
+            !exit.unwrap().success(),
+            "unsupported recovery must fail startup"
+        );
+        assert!(!marker.exists(), "reader ran before whole batch validation");
+        if capacity == Some(1025) {
+            let stderr = std::fs::read_to_string(markers.path().join("host-stderr")).unwrap();
+            assert!(
+                stderr.contains("ResourceExhausted")
+                    && stderr.contains("durable pending task admission exceeds 1024"),
+                "startup failed for the wrong reason: {stderr}",
+            );
+        }
     }
-    assert!(
-        !exit.unwrap().success(),
-        "unsupported recovery must fail startup"
-    );
-    assert!(
-        !marker.exists(),
-        "valid task ran before whole batch validation"
-    );
     assert_eq!(
         runtime.block_on(load_state(&db.endpoint(), "root")),
         Some(vec![0x08, 5])
