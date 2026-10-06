@@ -1,6 +1,6 @@
 # Python → Rust SDK parity map
 
-**Baseline:** `05c5d3cc` (2026-10-06). This is a capability map, not a claim
+**Baseline:** `c32bf6da` (2026-10-06). This is a capability map, not a claim
 that similarly named APIs have the same distributed semantics.
 
 ## Evidence rules
@@ -14,9 +14,9 @@ that similarly named APIs have the same distributed semantics.
 - Native2pc is a separate Rust protocol island, not Python legacy-2PC parity.
 
 The baseline Rust suite passed `cargo fmt --all -- --check`, locked
-all-target/all-feature tests, strict Clippy, and `git diff --check`: 202 unit
-and 9 host tests, plus the 18-test generated downstream fixture and its
-one-test default-helper fixture. The ordinary locked suite skips 13 C++
+all-target/all-feature tests, strict Clippy, and `git diff --check`: 204 unit
+and 10 host tests, plus the 26-test generated downstream fixture and its
+one-test default-helper fixture. The ordinary locked suite skips 18 C++
 Database acceptances when `REBOOT_NATIVE2PC_CXX_DATABASE` is absent; their
 real-sidecar evidence is recorded in the individual capability rows.
 
