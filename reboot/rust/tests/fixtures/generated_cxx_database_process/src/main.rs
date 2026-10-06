@@ -77,7 +77,16 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 std::fs::write(format!("{marker}.started-at"), std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos().to_string()).unwrap();
                 std::fs::write(marker, state.value.to_string()).unwrap();
-                if *block { std::future::pending::<()>().await; }
+                if *block {
+                    struct ReaderDrop(String);
+                    impl Drop for ReaderDrop {
+                        fn drop(&mut self) {
+                            std::fs::write(format!("{}.reader-dropped", self.0), "actual reader future dropped").unwrap();
+                        }
+                    }
+                    let _drop = ReaderDrop(marker.clone());
+                    std::future::pending::<()>().await;
+                }
             }
         }
         Ok(proto::TransactionCounterValue { value: state.value })
@@ -877,7 +886,13 @@ async fn main() {
                 ),
             );
         let host = if let Some(service) = wait_service { host.add_public_service(service) } else { host };
-        let result = host.serve(address).await;
+        let result = host.serve_with_shutdown(address, async {
+            if let Some(path) = optional_arg("--task-shutdown-file") {
+                while !std::path::Path::new(&path).exists() {
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+            } else { std::future::pending::<()>().await; }
+        }).await;
         if let Some(marker) = std::env::var_os("REBOOT_TEST_COMPETING_ADMISSION") {
             assert!(matches!(result, Err(reboot::application_host::ApplicationHostError::RecoveryTask(_))));
             std::fs::write(format!("{}.host-returned", marker.to_string_lossy()), "supervised host failure returned with open competing client").unwrap();

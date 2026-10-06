@@ -187,7 +187,17 @@ with ResourceExhausted before either handler enters, despite both owner-local
 counts being below 1024. Full pending records and both actor states survive a
 further RocksDB restart. Removing only the shared cumulative capacity check fails
 the 1025 rejection regression. This is bounded recovery capacity, not shared
-transaction scheduling or live cross-actor admission authority. Global staged-capacity reservations,
+transaction scheduling or live cross-actor admission authority. Graceful shared
+host-stop acceptance follows Python tasks_dispatcher.py:410-451: interrupt a
+running reader without marking its durable task cancelled, and permit redelivery.
+The real host exits successfully within two seconds (before the five-second
+fallback abort); a Drop marker at the actual generated handler await proves the
+parked reader future was dropped. Both full Pending records and actor states
+survive RocksDB restart, canonical Wait then returns both typed completions, and
+another completed restart preserves records without replay. Append-only logs
+allow precisely one extra entry for the interrupted reader. Removing only shared
+worker cancellation fails the shutdown bound. This is host shutdown/redelivery,
+not the public CancelTask API or exactly-once handler side effects. Global staged-capacity reservations,
 second-actor transaction control/recovery registration, task auth/errors/retries,
 and distributed dispatcher fencing/migration remain outside this slice. Source: aio/internals/tasks_servicer.py:48-126 and
 templates/reboot.py.j2:4697-4775. Earlier durable RPC cancellation windows still need dedicated
