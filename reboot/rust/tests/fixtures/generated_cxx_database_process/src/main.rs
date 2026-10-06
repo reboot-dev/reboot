@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use prost::Message;
@@ -222,6 +225,30 @@ impl generated::ExternalConstructorMethodsDatabaseHandler for ExternalConstructo
     }
 }
 
+/// Converts the first successful generated adapter response into `Unavailable`.
+struct FirstSuccessfulExternalConstructorUnavailable {
+    inner: generated::ExternalConstructorMethodsDatabaseAdapter<ExternalConstructorHandler>,
+    surfaced: AtomicBool,
+}
+
+#[tonic::async_trait]
+impl proto::external_constructor_methods_server::ExternalConstructorMethods
+    for FirstSuccessfulExternalConstructorUnavailable
+{
+    async fn construct(
+        &self,
+        request: tonic::Request<proto::ExternalConstructorRequest>,
+    ) -> Result<tonic::Response<proto::ExternalConstructorValue>, tonic::Status> {
+        let response = self.inner.construct(request).await?;
+        if !self.surfaced.swap(true, Ordering::SeqCst) {
+            return Err(tonic::Status::unavailable(
+                "first successful generated adapter response",
+            ));
+        }
+        Ok(response)
+    }
+}
+
 /// A deliberately small, separately hosted service used only by the C++
 /// Database process test. The root still calls it through the generated
 /// transactional client; this server owns only the remote error wire shape.
@@ -415,16 +442,24 @@ async fn main() {
             ExternalConstructorHandler,
         );
         let address = listen.parse().unwrap();
+        let surface_first_success_unavailable = has("--surface-first-success-unavailable");
         let server = tokio::spawn(async move {
-            tonic::transport::Server::builder()
-                .add_service(
-                    proto::external_constructor_methods_server::ExternalConstructorMethodsServer::new(
-                        adapter,
-                    ),
-                )
-                .serve(address)
-                .await
-                .unwrap();
+            let mut server = tonic::transport::Server::builder();
+            if surface_first_success_unavailable {
+                server
+                    .add_service(proto::external_constructor_methods_server::ExternalConstructorMethodsServer::new(
+                        FirstSuccessfulExternalConstructorUnavailable { inner: adapter, surfaced: AtomicBool::new(false) },
+                    ))
+                    .serve(address)
+                    .await
+                    .unwrap();
+            } else {
+                server
+                    .add_service(proto::external_constructor_methods_server::ExternalConstructorMethodsServer::new(adapter))
+                    .serve(address)
+                    .await
+                    .unwrap();
+            }
         });
         if has("--invoke") {
             let endpoint = format!("http://{listen}");

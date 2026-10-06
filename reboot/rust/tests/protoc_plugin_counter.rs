@@ -55,11 +55,24 @@ fn protoc_plugin_emits_durable_counter_adapters() {
     assert!(content.contains("reboot::runtime::DatabaseActorStore"));
     assert!(content.contains("pub struct CounterWritesMethodsExternalClient"));
     assert!(content.contains("context: reboot::ExternalContext"));
-    assert!(content.contains("self.context.writer(request)"));
+    assert!(content.contains(
+        "let original_request = prost::Message::encode_to_vec(&request); let mut retry_backoff"
+    ));
+    assert!(content.contains(
+        "<proto::IncrementRequest as prost::Message>::decode(original_request.as_slice())"
+    ));
+    assert!(content.contains("ExternalUnaryRetryBackoff::new()"));
+    assert!(
+        content
+            .contains("is_retryable_status(&status) => { retry_backoff.wait().await; continue }")
+    );
+    assert!(content.contains("let idempotency_key = self.context.new_idempotency_key();"));
     assert!(content.contains("pub async fn increment_with_key"));
     assert!(content.contains("self.context.writer_with_key(request, idempotency_key)"));
     assert!(content.contains("pub struct CounterReadsMethodsExternalClient"));
-    assert!(content.contains("self.context.reader(request)"));
+    assert!(
+        content.contains("<proto::Empty as prost::Message>::decode(original_request.as_slice())")
+    );
     let declared_error = content
         .find("pub enum CounterWritesMethodsIncrementError")
         .unwrap();
@@ -75,9 +88,11 @@ fn protoc_plugin_emits_durable_counter_adapters() {
     assert!(content.contains("system.error.into_status(system.message)"));
     assert!(content.contains("SystemAbort { error, message }"));
     assert!(content.contains("async fn get(&self, state: &proto::Counter, request: proto::Empty) -> Result<proto::CounterValue, CounterReadsMethodsGetError>;"));
-    assert!(content.contains(
-        "self.client.get(request).await.map_err(CounterReadsMethodsGetError::from_status)"
-    ));
+    assert!(
+        content.contains(
+            "Err(status) => return Err(CounterReadsMethodsGetError::from_status(status))"
+        )
+    );
 }
 
 #[test]
@@ -340,11 +355,12 @@ impl constructor_generated::ConstructorCounterWritesMethodsDatabaseHandler for C
     }
 }
 
-struct RichErrorService;
+struct RichErrorService(Arc<AtomicUsize>);
 
 #[tonic::async_trait]
 impl proto::counter_writes_methods_server::CounterWritesMethods for RichErrorService {
     async fn increment(&self, request: tonic::Request<proto::IncrementRequest>) -> Result<tonic::Response<proto::CounterValue>, tonic::Status> {
+        self.0.fetch_add(1, Ordering::SeqCst);
         let known = prost_types::Any { type_url: "type.googleapis.com/tests.reboot.protoc.CounterLimitExceeded".into(), value: proto::CounterLimitExceeded { limit: 9 }.encode_to_vec() };
         let secondary = prost_types::Any { type_url: "type.googleapis.com/tests.reboot.protoc.CounterSecondaryExceeded".into(), value: proto::CounterSecondaryExceeded { limit: 10 }.encode_to_vec() };
         let details = match request.into_inner().amount {
@@ -367,6 +383,74 @@ impl proto::counter_writes_methods_server::CounterWritesMethods for RichErrorSer
         let status = googleapis_tonic_google_rpc::google::rpc::Status { code: tonic::Code::InvalidArgument as i32, message: "fixture".into(), details };
         Err(tonic::Status::with_details(tonic::Code::InvalidArgument, "fixture", status.encode_to_vec().into()))
     }
+}
+
+#[derive(Clone)]
+struct UnaryRetryScript {
+    outcomes: Arc<std::sync::Mutex<VecDeque<tonic::Code>>>,
+    requests: Arc<std::sync::Mutex<Vec<(Vec<u8>, reboot::RebootHeaders)>>>,
+}
+
+impl UnaryRetryScript {
+    fn next(&self) -> tonic::Code {
+        self.outcomes
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("script must contain one outcome per RPC attempt")
+    }
+
+    fn record<M: prost::Message>(&self, request: &tonic::Request<M>) {
+        self.requests.lock().unwrap().push((
+            request.get_ref().encode_to_vec(),
+            reboot::RebootHeaders::from_metadata(request.metadata()).unwrap(),
+        ));
+    }
+}
+
+#[tonic::async_trait]
+impl proto::counter_writes_methods_server::CounterWritesMethods for UnaryRetryScript {
+    async fn increment(
+        &self,
+        request: tonic::Request<proto::IncrementRequest>,
+    ) -> Result<tonic::Response<proto::CounterValue>, tonic::Status> {
+        self.record(&request);
+        match self.next() {
+            tonic::Code::Ok => Ok(tonic::Response::new(proto::CounterValue { value: 77 })),
+            code => Err(tonic::Status::new(code, "scripted unary status")),
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl proto::counter_reads_methods_server::CounterReadsMethods for UnaryRetryScript {
+    async fn get(
+        &self,
+        request: tonic::Request<proto::Empty>,
+    ) -> Result<tonic::Response<proto::CounterValue>, tonic::Status> {
+        self.record(&request);
+        match self.next() {
+            tonic::Code::Ok => Ok(tonic::Response::new(proto::CounterValue { value: 78 })),
+            code => Err(tonic::Status::new(code, "scripted unary status")),
+        }
+    }
+}
+
+async fn start_unary_retry_server(
+    writer: UnaryRetryScript,
+    reader: UnaryRetryScript,
+) -> (String, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(proto::counter_writes_methods_server::CounterWritesMethodsServer::new(writer))
+            .add_service(proto::counter_reads_methods_server::CounterReadsMethodsServer::new(reader))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+    (format!("http://{address}"), server)
 }
 
 struct MapCounter;
@@ -1778,6 +1862,77 @@ async fn start_counter_adapters(
 }
 
 #[tokio::test]
+async fn generated_external_unary_clients_retry_only_unavailable_with_canonical_requests_and_metadata() {
+    fn script(outcomes: Vec<tonic::Code>) -> UnaryRetryScript {
+        UnaryRetryScript {
+            outcomes: Arc::new(std::sync::Mutex::new(outcomes.into())),
+            requests: Arc::new(std::sync::Mutex::new(Vec::new())),
+        }
+    }
+
+    let writer = script(vec![tonic::Code::Unavailable, tonic::Code::Ok]);
+    let reader = script(vec![tonic::Code::Unavailable, tonic::Code::Ok]);
+    let writer_requests = Arc::clone(&writer.requests);
+    let reader_requests = Arc::clone(&reader.requests);
+    let (address, server) = start_unary_retry_server(writer, reader).await;
+    let context = ExternalContext::new("retry-canonical")
+        .with_bearer_token("retry-token")
+        .with_caller_id(CallerId::new("a1234567890", None).unwrap());
+    let mut writes = generated::CounterWritesMethodsExternalClient::new(
+        context.connect(address.clone()).await.unwrap(),
+        context.clone(),
+    );
+    assert_eq!(
+        writes
+            .increment(proto::IncrementRequest { amount: 44 })
+            .await
+            .unwrap()
+            .into_inner()
+            .value,
+        77
+    );
+    let writer_requests = writer_requests.lock().unwrap();
+    assert_eq!(writer_requests.len(), 2);
+    assert_eq!(writer_requests[0], writer_requests[1]);
+    let writer_headers = &writer_requests[0].1;
+    let writer_key = writer_headers.idempotency_key.expect("automatic writer key");
+    assert_eq!(writer_key.get_version_num(), 7);
+    drop(writer_requests);
+
+    let mut reads = generated::CounterReadsMethodsExternalClient::new(
+        context.connect(address.clone()).await.unwrap(),
+        context,
+    );
+    assert_eq!(reads.get(proto::Empty {}).await.unwrap().into_inner().value, 78);
+    let reader_requests = reader_requests.lock().unwrap();
+    assert_eq!(reader_requests.len(), 2);
+    assert_eq!(reader_requests[0], reader_requests[1]);
+    assert!(
+        reader_requests[0].1.idempotency_key.is_none(),
+        "readers must not acquire writer idempotency metadata"
+    );
+    drop(reader_requests);
+    server.abort();
+
+    let writer = script(vec![tonic::Code::InvalidArgument]);
+    let reader = script(vec![tonic::Code::Ok]);
+    let non_unavailable_requests = Arc::clone(&writer.requests);
+    let (address, server) = start_unary_retry_server(writer, reader).await;
+    let context = ExternalContext::new("retry-non-unavailable");
+    let mut writes = generated::CounterWritesMethodsExternalClient::new(
+        context.connect(address).await.unwrap(),
+        context,
+    );
+    assert!(matches!(
+        writes.increment(proto::IncrementRequest { amount: 1 }).await,
+        Err(generated::CounterWritesMethodsIncrementError::Grpc(status))
+            if status.code() == tonic::Code::InvalidArgument
+    ));
+    assert_eq!(non_unavailable_requests.lock().unwrap().len(), 1);
+    server.abort();
+}
+
+#[tokio::test]
 async fn generated_external_clients_attach_reader_and_writer_context() {
     let (database_endpoint, database, database_server) = start_database().await;
     let (address, server) = start_counter_adapters(&database_endpoint).await;
@@ -2149,7 +2304,9 @@ async fn generated_external_constructor_declared_errors_round_trip_without_creat
 async fn generated_external_client_decodes_ordered_declared_errors_and_preserves_grpc_fallbacks() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let server = tokio::spawn(async move { tonic::transport::Server::builder().add_service(proto::counter_writes_methods_server::CounterWritesMethodsServer::new(RichErrorService)).serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener)).await.unwrap(); });
+    let calls = Arc::new(AtomicUsize::new(0));
+    let calls_for_server = Arc::clone(&calls);
+    let server = tokio::spawn(async move { tonic::transport::Server::builder().add_service(proto::counter_writes_methods_server::CounterWritesMethodsServer::new(RichErrorService(calls_for_server))).serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener)).await.unwrap(); });
     let context = ExternalContext::new("rich-error-counter");
     let channel = context.connect(format!("http://{address}")).await.unwrap();
     let mut client = generated::CounterWritesMethodsExternalClient::new(channel, context);
@@ -2194,6 +2351,7 @@ async fn generated_external_client_decodes_ordered_declared_errors_and_preserves
         Err(generated::CounterWritesMethodsIncrementError::Grpc(status))
             if status.code() == tonic::Code::NotFound
     ));
+    assert_eq!(calls.load(Ordering::SeqCst), 7, "declared and rich errors must be returned after their first attempt");
     server.abort();
 }
 

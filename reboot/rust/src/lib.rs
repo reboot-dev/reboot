@@ -1201,6 +1201,15 @@ impl ExternalContext {
     /// before retrying across a process boundary; use `writer_with_key` for
     /// subsequent attempts.
     pub fn writer<T>(&self, message: T) -> Result<tonic::Request<T>, ContextError> {
+        self.writer_with_key(message, self.new_idempotency_key())
+    }
+
+    /// Creates the automatic key for one logical external writer call.
+    ///
+    /// Generated external clients retain this value while transparently
+    /// retrying an `Unavailable` unary call, rather than allocating a key per
+    /// transport attempt.
+    pub fn new_idempotency_key(&self) -> uuid::Uuid {
         let expiry = std::time::SystemTime::now()
             .checked_add(std::time::Duration::from_secs(7 * 24 * 60 * 60))
             .expect("idempotency expiry must fit SystemTime")
@@ -1208,7 +1217,7 @@ impl ExternalContext {
             .expect("idempotency expiry must be after the Unix epoch");
         let timestamp =
             uuid::Timestamp::from_unix(uuid::NoContext, expiry.as_secs(), expiry.subsec_nanos());
-        self.writer_with_key(message, uuid::Uuid::new_v7(timestamp))
+        uuid::Uuid::new_v7(timestamp)
     }
 
     /// Builds a retry-safe writer call using a caller-owned idempotency key.
@@ -1246,6 +1255,42 @@ pub fn is_retryable_status_code(code: tonic::Code) -> bool {
 /// Returns whether a Tonic status has Python-compatible retryable transport code.
 pub fn is_retryable_status(status: &tonic::Status) -> bool {
     is_retryable_status_code(status.code())
+}
+
+/// Cancellation-safe exponential delay for generated external unary retries.
+///
+/// This preserves the Python `aio.backoff.Backoff` envelope (one second,
+/// doubled after each retry, capped at thirty seconds). Rust deliberately uses
+/// the upper bound rather than Python's random jitter because generated code
+/// must not need another randomness dependency. Awaiting Tokio's sleep is
+/// cancellation-safe: dropping the external-call future cancels a pending
+/// delay and no later transport attempt is issued.
+#[derive(Debug, Clone)]
+pub struct ExternalUnaryRetryBackoff {
+    next_delay: std::time::Duration,
+}
+
+impl Default for ExternalUnaryRetryBackoff {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ExternalUnaryRetryBackoff {
+    pub fn new() -> Self {
+        Self {
+            next_delay: std::time::Duration::from_secs(1),
+        }
+    }
+
+    pub fn next_delay(&self) -> std::time::Duration {
+        self.next_delay
+    }
+
+    pub async fn wait(&mut self) {
+        tokio::time::sleep(self.next_delay).await;
+        self.next_delay = (self.next_delay * 2).min(std::time::Duration::from_secs(30));
+    }
 }
 
 /// Encodes one declared protobuf error in a standard `google.rpc.Status`

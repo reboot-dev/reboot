@@ -700,6 +700,7 @@ fn external_constructor_host(
     idempotency_key: Uuid,
     amount: i64,
     expect_declared_error: bool,
+    surface_first_success_unavailable: bool,
 ) -> std::process::ExitStatus {
     let listen = port();
     let mut command = Command::new(binary);
@@ -726,6 +727,9 @@ fn external_constructor_host(
         .stderr(Stdio::inherit());
     if expect_declared_error {
         command.arg("--expect-declared-constructor-error");
+    }
+    if surface_first_success_unavailable {
+        command.arg("--surface-first-success-unavailable");
     }
     command.status().unwrap()
 }
@@ -754,7 +758,8 @@ fn generated_external_constructor_declared_error_leaves_real_cxx_database_empty_
     let key = Uuid::parse_str("00000000-0000-4000-8000-000000000108").unwrap();
 
     assert!(
-        external_constructor_host(&binary, &db.endpoint(), state_ref, key, -1, true).success(),
+        external_constructor_host(&binary, &db.endpoint(), state_ref, key, -1, true, false)
+            .success(),
         "the generated Tonic client must observe the adapter's declared-error trailer"
     );
     assert_eq!(
@@ -788,7 +793,10 @@ fn generated_external_constructor_declared_error_leaves_real_cxx_database_empty_
             .is_empty()
     );
 
-    assert!(external_constructor_host(&binary, &db.endpoint(), state_ref, key, 7, false).success());
+    assert!(
+        external_constructor_host(&binary, &db.endpoint(), state_ref, key, 7, false, false)
+            .success()
+    );
     assert_eq!(
         runtime.block_on(load_external_constructor_state(&db.endpoint(), state_ref)),
         Some(vec![0x08, 0x07])
@@ -802,7 +810,10 @@ fn generated_external_constructor_declared_error_leaves_real_cxx_database_empty_
     assert_eq!(mutations[0].response, vec![0x08, 0x07]);
 
     // A same-key replay keeps the one actor and one durable mutation.
-    assert!(external_constructor_host(&binary, &db.endpoint(), state_ref, key, 7, false).success());
+    assert!(
+        external_constructor_host(&binary, &db.endpoint(), state_ref, key, 7, false, false)
+            .success()
+    );
     assert_eq!(
         runtime.block_on(load_external_constructor_state(&db.endpoint(), state_ref)),
         Some(vec![0x08, 0x07])
@@ -817,6 +828,61 @@ fn generated_external_constructor_declared_error_leaves_real_cxx_database_empty_
             .len(),
         1
     );
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_external_unavailable_retry_replays_once_through_restarted_real_cxx_rocksdb() {
+    let database_binary = std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").unwrap();
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let mut db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let state_ref = "external-unavailable-retry";
+    let key = Uuid::parse_str("00000000-0000-4000-8000-000000000109").unwrap();
+
+    assert!(
+        external_constructor_host(&binary, &db.endpoint(), state_ref, key, 7, false, true)
+            .success()
+    );
+    assert_eq!(
+        runtime.block_on(load_external_constructor_state(&db.endpoint(), state_ref)),
+        Some(vec![0x08, 0x07])
+    );
+    assert_eq!(
+        runtime
+            .block_on(recover_external_constructor_idempotency(
+                &db.endpoint(),
+                state_ref,
+                key
+            ))
+            .len(),
+        1
+    );
+
+    // Restart proves both the adapter's first committed response and its retry
+    // record were stored in C++ Database/RocksDB rather than the host process.
+    db.restart();
+    assert_eq!(
+        runtime.block_on(load_external_constructor_state(&db.endpoint(), state_ref)),
+        Some(vec![0x08, 0x07])
+    );
+    let mutations = runtime.block_on(recover_external_constructor_idempotency(
+        &db.endpoint(),
+        state_ref,
+        key,
+    ));
+    assert_eq!(mutations.len(), 1);
+    assert_eq!(mutations[0].response, vec![0x08, 0x07]);
 }
 
 #[test]
