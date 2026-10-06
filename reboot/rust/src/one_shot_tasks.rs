@@ -430,6 +430,25 @@ impl HostRecovery for OneShotTaskRecovery {
     }
 }
 
+#[cfg(feature = "test-support")]
+struct WaitLoadTestBarrier {
+    marker: std::path::PathBuf,
+    armed: bool,
+}
+#[cfg(feature = "test-support")]
+impl Drop for WaitLoadTestBarrier {
+    fn drop(&mut self) {
+        if self.armed {
+            // Evidence of the actual server future being dropped while parked,
+            // not merely the client ceasing to observe it.
+            let _ = std::fs::write(
+                self.marker.with_extension("dropped"),
+                "server Wait future dropped after real Database Load",
+            );
+        }
+    }
+}
+
 /// Read-only canonical task result retrieval for one host-owned local actor.
 #[derive(Clone)]
 pub struct ReaderTaskWaitService {
@@ -505,10 +524,19 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
                     // checking the current plan or returning a loaded result.
                     std::fs::write(marker, "real Database Load completed")
                         .map_err(|error| Status::internal(error.to_string()))?;
+                    let mut parked = WaitLoadTestBarrier {
+                        marker: marker.to_path_buf(),
+                        armed: true,
+                    };
                     let release = marker.with_extension("release");
-                    while !release.exists() {
-                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-                    }
+                    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                        while !release.exists() {
+                            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                        }
+                    })
+                    .await
+                    .map_err(|_| Status::deadline_exceeded("test Wait Load barrier expired"))?;
+                    parked.armed = false;
                 }
             }
             // Loading can await while a newer plan moves this actor. Never

@@ -66,6 +66,14 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
     ) -> Result<proto::TransactionCounterValue, tonic::Status> {
         if let Self::Tasks { marker, block, .. } = self {
             if request.amount == 9000 {
+                // Append per invocation: an identical overwritten result cannot
+                // hide replay across Wait calls or host recovery.
+                {
+                    use std::io::Write;
+                    let mut calls = std::fs::OpenOptions::new().create(true).append(true)
+                        .open(format!("{marker}.invocations")).unwrap();
+                    writeln!(calls, "query").unwrap();
+                }
                 std::fs::write(format!("{marker}.started-at"), std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos().to_string()).unwrap();
                 std::fs::write(marker, state.value.to_string()).unwrap();

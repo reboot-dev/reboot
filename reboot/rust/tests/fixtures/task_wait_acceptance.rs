@@ -1,3 +1,19 @@
+// Own only the fixture child; dropping the guard after an assertion failure
+// must not leave a serving host behind. Real sidecars keep their own guards.
+struct WaitHostGuard(Child);
+impl std::ops::Deref for WaitHostGuard {
+    type Target = Child;
+    fn deref(&self) -> &Child { &self.0 }
+}
+impl std::ops::DerefMut for WaitHostGuard {
+    fn deref_mut(&mut self) -> &mut Child { &mut self.0 }
+}
+impl Drop for WaitHostGuard {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
 fn reader_task_wait_request(
     task_id: Option<database::TaskId>,
 ) -> tonic::Request<database::WaitRequest> {
@@ -37,7 +53,7 @@ fn generated_canonical_reader_task_wait_deadline_and_typed_result() {
     let marker = markers.path().join("handler");
     let ack = markers.path().join("root-ack");
     let vector = format!("delayed:{}", chrono::Utc::now().timestamp() + 4);
-    let mut host = task_host(TaskHostOptions {
+    let mut host = WaitHostGuard(task_host(TaskHostOptions {
         binary: &binary,
         database: &db.endpoint(),
         planner: &planner.endpoint,
@@ -48,12 +64,13 @@ fn generated_canonical_reader_task_wait_deadline_and_typed_result() {
         block: false,
         recover: false,
         vector: Some(&vector),
-    });
+    }));
     await_marker(&ack, &mut host);
     let pending = runtime.block_on(pending_tasks(&db.endpoint()));
     assert_eq!(pending.len(), 1);
     let task = pending[0].clone();
     let id = task.task_id.clone().unwrap();
+    let invocations = markers.path().join("handler.invocations");
     runtime.block_on(async {
         let channel = tonic::transport::Channel::from_shared(format!("http://127.0.0.1:{listen}"))
             .unwrap()
@@ -345,12 +362,13 @@ fn generated_canonical_reader_task_wait_deadline_and_typed_result() {
     // Wait after its actual C++ Database Load reply. Move authority before
     // releasing it, without changing public service declarations/readiness.
     let loaded = markers.path().join("wait-loaded");
-    let mut host = task_host_command(TaskHostOptions {
+    let mut host = WaitHostGuard(task_host_command(TaskHostOptions {
         binary: &binary, database: &db.endpoint(), planner: &planner.endpoint,
         port: listen, marker: &marker, ack: &ack,
         invoke: false, block: false, recover: true, vector: None,
-    }).env("REBOOT_TEST_TASK_WAIT_LOADED", &loaded).spawn().unwrap();
+    }).env("REBOOT_TEST_TASK_WAIT_LOADED", &loaded).spawn().unwrap());
     let marker_before = std::fs::read(&marker).unwrap();
+    assert_eq!(std::fs::read(&invocations).unwrap(), b"query\n", "task ran more than once before recovery");
     runtime.block_on(async {
         let channel = tonic::transport::Channel::from_shared(format!("http://127.0.0.1:{listen}"))
             .unwrap().connect_lazy();
@@ -406,6 +424,50 @@ fn generated_canonical_reader_task_wait_deadline_and_typed_result() {
     });
     assert_eq!(std::fs::read(&marker).unwrap(), marker_before,
         "Wait replayed a completed task handler");
+    assert_eq!(std::fs::read(&invocations).unwrap(), b"query\n",
+        "completed task was replayed by Wait or recovery");
+    assert!(host.try_wait().unwrap().is_none());
+    host.kill().unwrap();
+    host.wait().unwrap();
+
+    // A real canonical RPC deadline must drop the actual parked server future,
+    // not just its client observer; another Wait must remain usable afterward.
+    let cancelled = markers.path().join("deadline-loaded");
+    let mut host = WaitHostGuard(task_host_command(TaskHostOptions {
+        binary: &binary, database: &db.endpoint(), planner: &planner.endpoint,
+        port: listen, marker: &marker, ack: &ack,
+        invoke: false, block: false, recover: true, vector: None,
+    }).env("REBOOT_TEST_TASK_WAIT_LOADED", &cancelled).spawn().unwrap());
+    runtime.block_on(async {
+        let channel = tonic::transport::Channel::from_shared(format!("http://127.0.0.1:{listen}"))
+            .unwrap().connect_lazy();
+        let mut client = database::tasks_client::TasksClient::new(channel);
+        let error = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let mut request = reader_task_wait_request(Some(id.clone()));
+                request.set_timeout(Duration::from_millis(250));
+                match client.wait(request).await {
+                    Err(error) if error.code() == tonic::Code::Unavailable && !cancelled.exists() =>
+                        tokio::time::sleep(Duration::from_millis(10)).await,
+                    result => break result.unwrap_err(),
+                }
+            }
+        }).await.unwrap();
+        assert!(matches!(error.code(), tonic::Code::Cancelled | tonic::Code::DeadlineExceeded));
+        assert!(cancelled.exists(), "deadline never reached the post-Load barrier");
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !cancelled.with_extension("dropped").exists() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }).await.expect("server Wait future survived its RPC deadline");
+        assert!(!cancelled.with_extension("release").exists(), "barrier was manually released");
+        assert_eq!(load_task(&db.endpoint(), id.clone()).await, completed);
+        let mut request = reader_task_wait_request(Some(id.clone()));
+        request.set_timeout(Duration::from_secs(1));
+        client.wait(request).await.unwrap();
+    });
+    assert_eq!(std::fs::read(&invocations).unwrap(), b"query\n",
+        "Wait deadline or recovery replayed the completed handler");
     assert!(host.try_wait().unwrap().is_none());
     host.kill().unwrap();
     host.wait().unwrap();

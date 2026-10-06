@@ -73,8 +73,16 @@ Wait after its real C++ Database Load reply, confirms a moved accepted plan thro
 a second request, then releases the first: it must reject the already-loaded
 completion without changing the record or invoking the handler. Removing only the
 post-Load check returns the stale result and fails this regression. The barrier is
-behind test-support and a process-specific environment variable.
-This is read-serving authority only, not
+behind test-support and a process-specific environment variable, with a 10-second
+fallback bound. Another restart vector uses a real 250ms Wait deadline and confirms
+the parked server future is dropped within two seconds, without releasing the
+barrier or changing durable completion; a subsequent Wait still succeeds.
+An append-only handler invocation log remains exactly one entry through result
+retrieval, host recovery and deadline cancellation. Deliberately replaying the real
+generated reader from completed Wait makes that assertion fail. Fixture host guards
+kill and reap children on assertion failure as well as successful cleanup.
+This proves no replay in these exercised completed-result paths, not exactly-once
+task side effects generally. This is read-serving authority only, not
 ownership fencing of the dispatcher or a guarantee against concurrent plan changes
 after the final synchronous check.
 ListTasks/streaming/CancelTask return Unimplemented; task authorization, typed
