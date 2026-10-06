@@ -89,6 +89,8 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 .await
             {
                 Ok(_) | Err(generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(_)) => {}
+                Err(generated::TransactionCounterWritesMethodsIncrementError::System(error)) if error.is_recoverable() => {}
+                Err(generated::TransactionCounterWritesMethodsIncrementError::System(error)) => return Err(tonic::Status::unavailable(format!("unrecoverable remote system abort: {error:?}"))),
                 Err(generated::TransactionCounterWritesMethodsIncrementError::Grpc(error)) => return Err(error),
             }
         }
@@ -137,6 +139,8 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 .await
             {
                 Ok(_) | Err(generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(_)) => {}
+                Err(generated::TransactionCounterWritesMethodsIncrementError::System(error)) if error.is_recoverable() => {}
+                Err(generated::TransactionCounterWritesMethodsIncrementError::System(error)) => return Err(tonic::Status::unavailable(format!("unrecoverable remote system abort: {error:?}"))),
                 Err(generated::TransactionCounterWritesMethodsIncrementError::Grpc(error)) => return Err(error),
             }
         }
@@ -164,10 +168,9 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
     ) -> Result<proto::TransactionCounterValue, tonic::Status> {
         if std::env::var_os("REBOOT_TEST_FRESH_SHARED_NOOP").is_some() {
             if let Some(root) = std::env::var_os("REBOOT_TEST_SHARED_BARRIER_ID") {
-                let root = root
-                    .to_string_lossy()
-                    .parse()
-                    .map_err(|error| tonic::Status::invalid_argument(format!("invalid shared barrier id: {error}")))?;
+                let root = root.to_string_lossy().parse().map_err(|error| {
+                    tonic::Status::invalid_argument(format!("invalid shared barrier id: {error}"))
+                })?;
                 shared_barrier(root).await?;
             }
             return Ok(proto::TransactionCounterValue { value: state.value });
@@ -221,6 +224,29 @@ impl proto::transaction_counter_writes_methods_server::TransactionCounterWritesM
                 message: "remote fixture".into(),
                 details: vec![declared],
             },
+            // A Reboot backend error that Python permits callers to catch
+            // while the root transaction continues.
+            104 => googleapis_tonic_google_rpc::google::rpc::Status {
+                code: tonic::Code::NotFound as i32,
+                message: "remote state is absent".into(),
+                details: vec![prost_types::Any {
+                    type_url: "type.googleapis.com/rbt.v1alpha1.NotFound".into(),
+                    value: reboot::database_proto::NotFound {}.encode_to_vec(),
+                }],
+            },
+            // Reboot sourced this outcome, but it still requires the whole
+            // root transaction to retry rather than committing through it.
+            105 => googleapis_tonic_google_rpc::google::rpc::Status {
+                code: tonic::Code::Unavailable as i32,
+                message: "remote transaction must retry".into(),
+                details: vec![prost_types::Any {
+                    type_url: "type.googleapis.com/rbt.v1alpha1.TransactionShouldRetry".into(),
+                    value: reboot::database_proto::TransactionShouldRetry {
+                        reason: reboot::database_proto::transaction_should_retry::Reason::RestartDetected as i32,
+                        retry_age: "fixture".into(),
+                    }.encode_to_vec(),
+                }],
+            },
             // A trailer which cannot decode as google.rpc.Status.
             102 => {
                 return Err(tonic::Status::with_details(
@@ -232,9 +258,15 @@ impl proto::transaction_counter_writes_methods_server::TransactionCounterWritesM
             // A normal gRPC error with no rich status trailer.
             _ => return Err(tonic::Status::not_found("remote no trailer")),
         };
+        let code = match status.code {
+            5 => tonic::Code::NotFound,
+            14 => tonic::Code::Unavailable,
+            _ => tonic::Code::InvalidArgument,
+        };
+        let message = status.message.clone();
         Err(tonic::Status::with_details(
-            tonic::Code::InvalidArgument,
-            "remote fixture",
+            code,
+            message,
             status.encode_to_vec().into(),
         ))
     }
@@ -402,12 +434,14 @@ async fn main() {
     let mut host = ApplicationHost::new("generated-cxx-database-process")
         .with_legacy_placement_readiness(placement.clone());
     if has("--recover") {
-        let watch = Arc::new(LegacyApplicationCoordinatorWatchEndpoint::new(
-            application,
-            placement,
-            watch_coordinator_state_ref,
-        )
-        .unwrap());
+        let watch = Arc::new(
+            LegacyApplicationCoordinatorWatchEndpoint::new(
+                application,
+                placement,
+                watch_coordinator_state_ref,
+            )
+            .unwrap(),
+        );
         let recovery = adapter
             .legacy_recovery_registration(
                 LegacyRecoveryMetadata {

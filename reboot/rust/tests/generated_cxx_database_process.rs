@@ -575,7 +575,26 @@ fn generated_root_declared_outbound_errors_commit_or_abort_durably_through_real_
         Some(vec![0x08, 105])
     );
 
-    for (index, amount) in [101_i64, 102, 103].into_iter().enumerate() {
+    let recoverable_system = "system-rich-error-commits";
+    runtime.block_on(store_counter(&db.endpoint(), recoverable_system, 5));
+    assert!(
+        rich_error_root_host(
+            &binary,
+            &db.endpoint(),
+            recoverable_system,
+            &remote_endpoint,
+            Uuid::from_u128(0x111),
+            104,
+        )
+        .success(),
+        "a recognized recoverable Reboot backend error may be caught"
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), recoverable_system)),
+        Some(vec![0x08, 109])
+    );
+
+    for (index, amount) in [101_i64, 102, 103, 105].into_iter().enumerate() {
         let state_ref = format!("declared-rich-error-aborts-{amount}");
         runtime.block_on(store_counter(&db.endpoint(), &state_ref, 5));
         assert!(
@@ -638,7 +657,7 @@ fn generated_root_declared_outbound_errors_commit_or_abort_durably_through_real_
         runtime.block_on(load_state(&db.endpoint(), committed)),
         Some(vec![0x08, 105])
     );
-    for amount in [101_i64, 102, 103] {
+    for amount in [101_i64, 102, 103, 105] {
         assert_eq!(
             runtime.block_on(load_state(
                 &db.endpoint(),
@@ -647,6 +666,10 @@ fn generated_root_declared_outbound_errors_commit_or_abort_durably_through_real_
             Some(vec![0x08, 5]),
         );
     }
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), recoverable_system)),
+        Some(vec![0x08, 109])
+    );
     assert_eq!(
         runtime.block_on(load_state(&db.endpoint(), transport)),
         Some(vec![0x08, 5])

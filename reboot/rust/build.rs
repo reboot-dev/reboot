@@ -21,6 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 repository.join("tests/reboot/protoc/map_counter.proto"),
                 repository.join("tests/reboot/protoc/shared.proto"),
                 repository.join("rbt/v1alpha1/database.proto"),
+                repository.join("rbt/v1alpha1/errors.proto"),
                 repository.join("rbt/v1alpha1/transactions.proto"),
                 repository.join("rbt/v1alpha1/native_2pc.proto"),
             ],

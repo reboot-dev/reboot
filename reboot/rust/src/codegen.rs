@@ -1250,6 +1250,7 @@ fn emit_durable(
                     package,
                     declared_errors,
                     runtime_module,
+                    false,
                 );
             }
         }
@@ -1329,6 +1330,7 @@ fn emit_durable(
                 package,
                 declared_errors,
                 runtime_module,
+                true,
             );
         }
     }
@@ -1410,12 +1412,18 @@ fn emit_declared_error_enum(
     package: &str,
     declared_errors: &[String],
     runtime_module: &str,
+    include_system_aborts: bool,
 ) {
     let error_type = declared_error_type(service_name, method);
     output.push_str(&format!("/// Declared errors for `{service_name}.{method}`, in `.proto` declaration order.\n#[derive(Debug)]\npub enum {error_type} {{\n"));
     for declared_error in declared_errors {
         let variant = declared_error.to_upper_camel_case();
         output.push_str(&format!("    {variant}(proto::{variant}),\n"));
+    }
+    if include_system_aborts {
+        output.push_str(&format!(
+            "    /// A source-defined Reboot backend abort.\n    System({runtime_module}::SystemAborted),\n"
+        ));
     }
     output.push_str("    /// A non-declared transport failure.\n    Grpc(tonic::Status),\n}\n");
     output.push_str(&format!(
@@ -1425,11 +1433,26 @@ fn emit_declared_error_enum(
         let variant = declared_error.to_upper_camel_case();
         output.push_str(&format!("        Self::{variant}(error) => {runtime_module}::declared_error_status(tonic::Code::Unknown, \"declared error\", \"type.googleapis.com/{package}.{declared_error}\", &error),\n"));
     }
-    output.push_str("        Self::Grpc(status) => status,\n    } }\n    fn from_status(status: tonic::Status) -> Self {\n");
+    if include_system_aborts {
+        output.push_str("        Self::System(_) => tonic::Status::unknown(\"system aborts are received from remote backends only\"),\n");
+    }
+    output.push_str("        Self::Grpc(status) => status,\n    } }\n");
+    if include_system_aborts {
+        output.push_str("    fn is_recoverable_transaction_abort(&self) -> bool { match self {\n");
+        for declared_error in declared_errors {
+            let variant = declared_error.to_upper_camel_case();
+            output.push_str(&format!("        Self::{variant}(_) => true,\n"));
+        }
+        output.push_str("        Self::System(error) => error.is_recoverable(),\n        Self::Grpc(_) => false,\n    } }\n");
+    }
+    output.push_str("    fn from_status(status: tonic::Status) -> Self {\n");
     output.push_str(&format!("        let Ok(Some(rich_status)) = {runtime_module}::declared_error_details(&status) else {{ return Self::Grpc(status); }};\n        for detail in rich_status.details {{\n"));
     for declared_error in declared_errors {
         let variant = declared_error.to_upper_camel_case();
         output.push_str(&format!("            if detail.type_url == \"type.googleapis.com/{package}.{declared_error}\" {{ match <proto::{variant} as prost::Message>::decode(detail.value.as_slice()) {{ Ok(error) => return Self::{variant}(error), Err(_) => return Self::Grpc(status), }} }}\n"));
+    }
+    if include_system_aborts {
+        output.push_str(&format!("            match {runtime_module}::system_aborted_from_detail(&detail) {{ Ok(Some(error)) => return Self::System(error), Ok(None) => {{}}, Err(_) => return Self::Grpc(status), }}\n"));
     }
     output.push_str("        }\n        Self::Grpc(status)\n    }\n}\n\n");
 }
@@ -1506,7 +1529,7 @@ fn emit_transactional_client(
             output.push_str(&format!("    pub async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, target: &{target}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionalCallResponse<proto::{response}>, tonic::Status> {{ let (channel, request) = {runtime_module}::runtime::transactional_outbound_request(self.resolver.as_ref(), context, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, target.state_ref(), request).await.map_err(|status| {{ context.doom(status.clone()); status }})?; let response = proto::{client_module}::{service_name}Client::new(channel).{method}(request).await.map_err(|status| {{ context.doom(status.clone()); status }})?; let returned_participants = {runtime_module}::successful_trailers::ReturnedParticipants::from_metadata(response.metadata()).map_err(|error| {{ let status = tonic::Status::failed_precondition(error.to_string()); context.doom(status.clone()); status }})?; context.enlist_returned_participants(&returned_participants); Ok({runtime_module}::runtime::TransactionalCallResponse::new(response, returned_participants)) }}\n"));
         } else {
             let error = declared_error_type(service_name, method);
-            output.push_str(&format!("    pub async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, target: &{target}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionalCallResponse<proto::{response}>, {error}> {{ let (channel, request) = {runtime_module}::runtime::transactional_outbound_request(self.resolver.as_ref(), context, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, target.state_ref(), request).await.map_err(|status| {{ context.doom(status.clone()); {error}::Grpc(status) }})?; let response = match proto::{client_module}::{service_name}Client::new(channel).{method}(request).await {{ Ok(response) => response, Err(status) => {{ let error = {error}::from_status(status); if let {error}::Grpc(status) = &error {{ context.doom(status.clone()); }} return Err(error); }} }}; let returned_participants = {runtime_module}::successful_trailers::ReturnedParticipants::from_metadata(response.metadata()).map_err(|error| {{ let status = tonic::Status::failed_precondition(error.to_string()); context.doom(status.clone()); {error}::Grpc(status) }})?; context.enlist_returned_participants(&returned_participants); Ok({runtime_module}::runtime::TransactionalCallResponse::new(response, returned_participants)) }}\n"));
+            output.push_str(&format!("    pub async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, target: &{target}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionalCallResponse<proto::{response}>, {error}> {{ let (channel, request) = {runtime_module}::runtime::transactional_outbound_request(self.resolver.as_ref(), context, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, target.state_ref(), request).await.map_err(|status| {{ context.doom(status.clone()); {error}::Grpc(status) }})?; let response = match proto::{client_module}::{service_name}Client::new(channel).{method}(request).await {{ Ok(response) => response, Err(status) => {{ let status_for_outcome = status.clone(); let error = {error}::from_status(status); if !error.is_recoverable_transaction_abort() {{ context.doom(status_for_outcome); }} return Err(error); }} }}; let returned_participants = {runtime_module}::successful_trailers::ReturnedParticipants::from_metadata(response.metadata()).map_err(|error| {{ let status = tonic::Status::failed_precondition(error.to_string()); context.doom(status.clone()); {error}::Grpc(status) }})?; context.enlist_returned_participants(&returned_participants); Ok({runtime_module}::runtime::TransactionalCallResponse::new(response, returned_participants)) }}\n"));
         }
     }
     output.push_str("}\n\n");

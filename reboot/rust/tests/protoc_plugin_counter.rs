@@ -358,6 +358,8 @@ impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler fo
                 request.clone(),
             ).await {
                 Err(transaction_generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(_)) => self.trace.lock().unwrap().push("caught declared"),
+                Err(transaction_generated::TransactionCounterWritesMethodsIncrementError::System(error)) if error.is_recoverable() => self.trace.lock().unwrap().push("caught recoverable system"),
+                Err(transaction_generated::TransactionCounterWritesMethodsIncrementError::System(error)) => return Err(tonic::Status::unavailable(format!("unrecoverable system abort: {error:?}"))),
                 Err(transaction_generated::TransactionCounterWritesMethodsIncrementError::Grpc(_)) => self.trace.lock().unwrap().push("caught grpc"),
                 Ok(_) => return Err(tonic::Status::internal("fixture remote was expected to fail")),
             }

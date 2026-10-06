@@ -1291,6 +1291,114 @@ pub fn declared_error_details(
     Ok(Some(rich_status))
 }
 
+/// A source-defined rich abort emitted by a Reboot backend.
+///
+/// This is intentionally only a classification primitive: transaction callers
+/// decide whether they can continue. Unknown or malformed details never become
+/// this type, because their outcome is uncertain.
+#[derive(Debug)]
+pub enum SystemAborted {
+    StateAlreadyConstructed(database_proto::StateAlreadyConstructed),
+    StateNotConstructed(database_proto::StateNotConstructed),
+    InvalidArgument(database_proto::InvalidArgument),
+    NotFound(database_proto::NotFound),
+    AlreadyExists(database_proto::AlreadyExists),
+    FailedPrecondition(database_proto::FailedPrecondition),
+    Aborted(database_proto::Aborted),
+    OutOfRange(database_proto::OutOfRange),
+    DataLoss(database_proto::DataLoss),
+    TransactionShouldRetry(database_proto::TransactionShouldRetry),
+    /// Rust has no nested transaction reissue owner yet, so this remains
+    /// recognized-but-unrecoverable rather than pretending it can continue.
+    NestedTransactionShouldRetry(database_proto::NestedTransactionShouldRetry),
+}
+
+impl SystemAborted {
+    /// Mirrors Python's `FROM_BACKEND_AND_RECOVERABLE_ERROR_TYPES` for the
+    /// bounded generated transaction-client path. Nested reissue is excluded.
+    pub fn is_recoverable(&self) -> bool {
+        !matches!(
+            self,
+            Self::TransactionShouldRetry(_) | Self::NestedTransactionShouldRetry(_)
+        )
+    }
+}
+
+/// Decodes one known Reboot system-abort detail.
+///
+/// An unknown type URL is not a system abort. A matching type URL with invalid
+/// payload is deliberately an error so callers conservatively retain the raw
+/// gRPC outcome rather than committing after an uncertain remote result.
+pub fn system_aborted_from_detail(
+    detail: &prost_types::Any,
+) -> Result<Option<SystemAborted>, prost::DecodeError> {
+    macro_rules! decode {
+        ($type_url:literal, $variant:ident, $message:ty) => {
+            if detail.type_url == $type_url {
+                return <$message as prost::Message>::decode(detail.value.as_slice())
+                    .map(SystemAborted::$variant)
+                    .map(Some);
+            }
+        };
+    }
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.StateAlreadyConstructed",
+        StateAlreadyConstructed,
+        database_proto::StateAlreadyConstructed
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.StateNotConstructed",
+        StateNotConstructed,
+        database_proto::StateNotConstructed
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.InvalidArgument",
+        InvalidArgument,
+        database_proto::InvalidArgument
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.NotFound",
+        NotFound,
+        database_proto::NotFound
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.AlreadyExists",
+        AlreadyExists,
+        database_proto::AlreadyExists
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.FailedPrecondition",
+        FailedPrecondition,
+        database_proto::FailedPrecondition
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.Aborted",
+        Aborted,
+        database_proto::Aborted
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.OutOfRange",
+        OutOfRange,
+        database_proto::OutOfRange
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.DataLoss",
+        DataLoss,
+        database_proto::DataLoss
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.TransactionShouldRetry",
+        TransactionShouldRetry,
+        database_proto::TransactionShouldRetry
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.NestedTransactionShouldRetry",
+        NestedTransactionShouldRetry,
+        database_proto::NestedTransactionShouldRetry
+    );
+    Ok(None)
+}
+
 /// The portable, code-only subset of Python's generated gRPC error markers.
 ///
 /// Python's `Aborted.error_from_google_rpc_status_code` and
