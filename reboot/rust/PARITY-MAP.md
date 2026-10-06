@@ -1,5 +1,87 @@
 # Python → Rust SDK parity map
 
+## Live registered-root abandonment and exclusive inbound leaf Watch
+
+**Partial, fixed-owner live vertical, not coordinator-crash or general tree recovery.**
+Python registers the root before Load (`reboot/aio/state_managers.py:5101–5116`)
+and activates participant Watch only after the actual method ends (`4255–4291`).
+Canonical Abort carries no membership (`rbt/v1alpha1/database.proto:611–643`);
+C++ immutably stores the decision under GetForUpdate (`reboot/server/database.cc:3457–3517`).
+Rust couples generated `RegisteredRoot::before_load`, the admitted exact local
+incarnation, consuming pre-CoordinatorPrepare revocation, and `LiveParticipantOwner`.
+Registration reserves an active host permit and a unique execution token before
+actor Load/state authorization/handler effects. Token verification retains its
+existing earlier external ordering. An unfinished Load has **no admitted actor
+capability**: cancellation drops its actual future/gate and registration, performs
+no actor terminal RPC, and fabricates no decision. Real Watch remains Unavailable.
+
+After admitted execution, failure/cancellation synchronously CLOSEs outbound
+admission, transfers the registration token and permit into the bounded host
+worker, validates the exact local actor/root/incarnation, and publishes immutable
+Abort before known fanout/local terminal delivery. Unknown membership stays sticky
+and never authorizes Commit; ACKed known fanout does not enumerate unknown actors.
+The old confirmed-only explicit-Abort helpers retain their stricter seal contract.
+The root registration lives through queued/running cleanup, not a caller boolean.
+DecisionPut/terminal uncertainty retains ownership and fails supervision; no blind
+actor-only retry is introduced. Live participants additionally latch the first
+terminal attempt. Ownerless/recovered legacy terminal behavior is unchanged.
+
+Target adapters opt in with `with_live_participant_owner`, an exact host-selected
+coordinator identity, placement-backed Watch endpoint, and the same owner's
+`live_participant_recovery_registration` on ApplicationHost. Only a non-idempotent,
+non-factory exclusive **direct-root inbound leaf** is supported. Generated supplied
+contexts reject outbound calls before resolver/network, public outbound-request
+helpers, manual enlistment, deeper nesting and unsupported scopes before effects.
+This is a cooperative generated-handler contract, not security against trusted
+handlers reconstructing headers or issuing arbitrary raw Tonic RPCs. Inbound task
+staging remains rejected; delivered root-local tasks with confirmed remote members
+are unchanged. No subtree/remote scheduling gate is lifted.
+
+The exact local incarnation owns an execution barrier spanning handler/staging.
+Every direct Prepare/terminal control respects quiescence; staging after Prepare
+or terminal uncertainty is rejected. Watch is activated only after real future
+completion/Drop, retries read-only observation with bounded exponential backoff,
+validates its incarnation under the mutex held through terminal ACK, and is
+interrupted by direct acknowledged release. Queued+running permits bound lifetime;
+host cancellation aborts and joins workers without speculative ownership release.
+Missing decisions remain Unavailable: no presumed-absence Abort, proto extension,
+pre-Prepare coordinator-crash recovery, migration fencing, or exactly-once claim.
+
+Acceptance source: `tests/fixtures/live_root_abandonment_acceptance.rs` uses two
+independent C++ sidecars and canonical planner routing. Four vectors exercise lost
+successful trailers after **actual remote staging**, deadline and actual caught
+failure, both actors' unchanged-state/task exclusive live readmission, Abort across
+RocksDB restart, a separately parked target handler protected from direct Abort
+and Prepare until actual future completion, and registered unfinished Load with
+real nonterminal Watch/early cancellation. Unit vectors separately cover stale
+same-UUID active replacement, retained lost terminal ACK, direct control barriers,
+registered lost DecisionPut/terminal ACK, and queued token lifetime/shutdown.
+Registered admission atomically reserves cancellation and active execution under
+one pending mutex, with no second await between disarming local Drop and guard
+construction. A deterministic FIFO-mutex unit vector cancels admission while
+contended (no decision, successful readmission), queues Prepare behind admission
+(one-poll guard construction and Prepare blocked before effects), and stops the
+host during admission (no handler/terminal effects, exact ownership retained).
+Restoring the original two-lock reservation fails this same nonzero test at
+`admission disarmed then suspended behind queued Prepare`.
+Capacity-one competitors now fail before Load with the exact registered-owner
+ResourceExhausted status; the process test retains unchanged handler identity,
+no premature decision, unchanged state/tasks, and successful post-cleanup actor
+readmission. This is bounded pre-Load rejection, not two admitted concurrent roots.
+RED no-Watch, uncertain-abandonment rejection, stale-incarnation wait, and removed
+quiescence controls are recorded separately from restored-source verification in
+`/tmp/live-root-abandonment-*.log`. This acceptance does not claim broad subtree
+retry or durable registration before Prepare.
+
+Final restored-source verification for this candidate: locked all-features
+strict Clippy/all-targets, 247 library unit tests, 26 generated downstream tests,
+all 57 ignored generated C++ Database/RocksDB process tests, and all 8 ignored
+Native2pc transport sidecar tests passed. Native2pc remains a separate protocol,
+not legacy Python transaction evidence. Stage logs are
+`/tmp/live-root-abandonment-final-{fmt,clippy,alltargets,cxx57,native8}.log`;
+the deterministic seam GREEN and original two-lock RED logs are separately
+`/tmp/live-root-abandonment-atomic-{green,red}.log`.
+
 ## Owned distributed roots with root-local reader tasks
 
 **Partial, bounded executable vertical.** A fresh, exclusive, non-factory,
@@ -45,13 +127,18 @@ independent C++ Database/RocksDB sidecars**, and actual generated reader binding
 - Deadline after real CoordinatorPrepare ACK preserves full root/remote membership,
   fails the supervised host, and writes no competing Abort. Restart of that
   pre-participant-Prepare state yields Abort and no task, not invented Commit.
-- Unfinished outbound and a genuinely caught uncertain RPC remain sticky, fail
-  supervision and write no synthetic decision. Unknown remote leases are retained;
-  restart cleanup of unknown membership is not implemented.
-- A competing scheduling root times out before handler entry while the first owns
-  admission. This is admission serialization plus overflow rejection, not a new
-  shared cross-actor capacity reservation or a two-successful-batch concurrency
-  proof. Existing singleton 1023+1/1024+1 real-sidecar vectors remain applicable.
+- Unfinished outbound and a genuinely caught uncertain RPC remain sticky. The
+  newer registered-root/live-leaf vertical above can publish authoritative Abort
+  and let an unenumerated live leaf discover it. Ownerless targets and coordinator
+  crash before durable handoff still lack unknown-membership restart recovery.
+- A competing scheduling root receives exact `ResourceExhausted` from bounded
+  pre-Load registration before handler entry while the first owns capacity one.
+  Unchanged handler identity/no premature decision and successful exclusive Apply
+  on both actors after cleanup prove no competing effects and actor readmission,
+  not a second registered Increment lifecycle. This is bounded admission plus
+  overflow rejection, not a shared cross-actor capacity reservation or a
+  two-successful-batch concurrency proof. Existing singleton 1023+1/1024+1
+  real-sidecar vectors remain applicable.
 
 Final restored-source verification: locked all-features/all-targets, formatting
 and strict Clippy pass; **53 generated ignored CXX tests** (48 baseline plus five

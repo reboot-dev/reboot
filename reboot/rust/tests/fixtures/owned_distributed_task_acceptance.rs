@@ -850,13 +850,11 @@ fn owned_distributed_reader_task_roots_serialize_before_scheduling_admission() {
         let id_before =
             std::fs::read_to_string(format!("{}.task-id", fixture.marker().display())).unwrap();
         let second = increment(fixture.root_port, Duration::from_millis(250)).await;
-        assert!(
-            matches!(
-                second.code(),
-                tonic::Code::Cancelled | tonic::Code::DeadlineExceeded
-            ),
-            "competing root passed actor admission: {second}"
-        );
+        // The bounded live-root owner now reserves BEFORE actor Load. With
+        // capacity one the competitor must fail there, not wait at the actor
+        // gate. Retain the handler, decision, state and task invariants below.
+        assert_eq!(second.code(), tonic::Code::ResourceExhausted);
+        assert_eq!(second.message(), "registered root owner is full");
         assert_eq!(
             std::fs::read_to_string(format!("{}.task-id", fixture.marker().display())).unwrap(),
             id_before,
@@ -925,7 +923,7 @@ fn owned_distributed_reader_task_validation_deadline_cleanup_and_postprepare_ret
         let barrier = fixture.markers.path().join("barrier");
         let mut target_command = fixture.command(false);
         if matches!(scenario, "unknown" | "caught") {
-            target_command.env("REBOOT_TEST_TARGET_UNFINISHED_OUTBOUND", &barrier);
+            target_command.args(["--live-watch", "--watch-coordinator-state-ref", "root"]).env("REBOOT_TEST_TARGET_UNFINISHED_OUTBOUND", &barrier);
         }
         if scenario == "caught" {
             target_command.arg("--unfinished-outbound-error");
@@ -979,9 +977,9 @@ fn owned_distributed_reader_task_validation_deadline_cleanup_and_postprepare_ret
                 "{error}"
             );
         }
-        if matches!(scenario, "handler" | "validation" | "staging") {
+        if matches!(scenario, "handler" | "validation" | "staging" | "unknown" | "caught") {
             await_marker(
-                &barrier.with_extension(if scenario == "handler" {
+                &barrier.with_extension(if matches!(scenario, "handler" | "unknown" | "caught") {
                     "handler-dropped"
                 } else {
                     "future-dropped"
@@ -990,7 +988,7 @@ fn owned_distributed_reader_task_validation_deadline_cleanup_and_postprepare_ret
             );
             assert!(
                 barrier
-                    .with_extension(if scenario == "handler" {
+                    .with_extension(if matches!(scenario, "handler" | "unknown" | "caught") {
                         "handler-dropped"
                     } else {
                         "future-dropped"

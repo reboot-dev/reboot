@@ -24,6 +24,7 @@ pub mod explicit_abort;
 pub mod http_host;
 pub mod legacy_coordinator;
 pub mod legacy_placement;
+pub mod live_participant;
 pub mod native_2pc;
 pub mod one_shot_tasks;
 pub mod placement;

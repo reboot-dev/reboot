@@ -578,6 +578,26 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         Ok(())
     }
 
+    pub(crate) fn validate_root_registration<P: ParticipantSidecar>(
+        &self,
+        participant: &crate::durable_participant::DurableActorParticipant<P>,
+        context: &crate::runtime::TransactionContext,
+    ) -> Result<(), Status> {
+        let identity = self.require_identity()?;
+        if !context.is_fresh_root()
+            || identity.state_type != context.transaction_coordinator_state_type()
+            || identity.state_ref != context.transaction_coordinator_state_ref()
+            || identity.state_ref != context.headers().state_ref
+            || self.sidecar.database_endpoint().is_none()
+            || self.sidecar.database_endpoint() != participant.sidecar().database_endpoint()
+        {
+            return Err(Status::failed_precondition(
+                "registered root authority does not match admitted Database",
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) fn validate_explicit_abort<P: ParticipantSidecar>(
         &self,
         local: &crate::durable_participant::StartedLocalTransaction<P>,
@@ -611,8 +631,31 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
 
     pub(crate) async fn own_explicit_abort<P: ParticipantSidecar>(
         self,
+        local: crate::durable_participant::StartedLocalTransaction<P>,
+        context: crate::runtime::TransactionContext,
+    ) -> Result<
+        std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Status>> + Send>>,
+        Status,
+    > {
+        self.own_root_abort(local, context, false).await
+    }
+
+    pub(crate) async fn own_registered_abandonment<P: ParticipantSidecar>(
+        self,
+        local: crate::durable_participant::StartedLocalTransaction<P>,
+        context: crate::runtime::TransactionContext,
+    ) -> Result<
+        std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Status>> + Send>>,
+        Status,
+    > {
+        self.own_root_abort(local, context, true).await
+    }
+
+    async fn own_root_abort<P: ParticipantSidecar>(
+        self,
         mut local: crate::durable_participant::StartedLocalTransaction<P>,
         context: crate::runtime::TransactionContext,
+        abandonment: bool,
     ) -> Result<
         std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Status>> + Send>>,
         Status,
@@ -621,7 +664,12 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             local.handoff_to_durable_recovery();
             return Err(error);
         }
-        let returned = match local.begin_explicit_root_abort(&context).await {
+        let transition = if abandonment {
+            local.begin_registered_abandonment(&context).await
+        } else {
+            local.begin_explicit_root_abort(&context).await
+        };
+        let returned = match transition {
             Ok(returned) => returned,
             Err(error) => {
                 local.handoff_to_durable_recovery();
@@ -679,7 +727,11 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             self.terminal_all(context.transaction_root_id(), &targets, false)
                 .await?;
             local.acknowledge_explicit_root_abort().await?;
-            context.finish_explicit_abort()?;
+            // Unknown membership stays sticky. This ACK covers only known fanout
+            // and the exact local token; unknown participants own their Watch.
+            if !abandonment {
+                context.finish_explicit_abort()?;
+            }
             Ok(())
         }))
     }
@@ -1269,6 +1321,343 @@ mod tests {
     use crate::durable_participant::{
         ActorTransactionStart, DurableActorParticipant, ParticipantStartMode, PendingActorEffects,
     };
+
+    #[tokio::test]
+    async fn registered_unknown_abort_lost_decision_or_terminal_ack_is_once_retained() {
+        use crate::{
+            RebootHeaders,
+            application_host::{HostRecovery, RecoveryCancellation},
+            explicit_abort::{ExplicitAbortOwner, RegisteredRoot},
+            runtime::RootTransactionContext,
+        };
+        for decision_error in [true, false] {
+            let trace = Arc::new(Mutex::new(Vec::new()));
+            let sidecar = Arc::new(MockSidecar {
+                decision_error,
+                trace: trace.clone(),
+                ..Default::default()
+            });
+            let local_sidecar = Arc::new(InProcessSidecar {
+                abort_error: !decision_error,
+                trace: trace.clone(),
+                ..Default::default()
+            });
+            let participant =
+                DurableActorParticipant::new(local_sidecar.clone(), "example.Actor", "actor/1");
+            let id = Uuid::new_v4();
+            let start = ActorTransactionStart {
+                transaction_ids: vec![id],
+                transaction_path: crate::durable_participant::TransactionPathContract::RootOnly,
+                coordinator_state_type: "example.Actor".into(),
+                coordinator_state_ref: "actor/1".into(),
+                mode: TransactionMode::Exclusive,
+                read_only: false,
+                factory: false,
+                state_type: "example.Actor".into(),
+                state_ref: "actor/1".into(),
+            };
+            let context = RootTransactionContext::start(
+                RebootHeaders::new("actor/1"),
+                "example.Actor",
+                TransactionMode::Exclusive,
+                id,
+                prost_types::Timestamp::default(),
+            )
+            .unwrap()
+            .transaction()
+            .clone();
+            let owner = ExplicitAbortOwner::new(2).unwrap();
+            let mut supervisor = tokio::task::JoinSet::new();
+            owner
+                .recovery_registration()
+                .start(&mut supervisor, RecoveryCancellation::new())
+                .await
+                .unwrap();
+            let coordinator = coordinator(sidecar.clone(), Arc::new(MockEndpoint::default()));
+            let registration = RegisteredRoot::before_load(
+                &participant,
+                context.clone(),
+                coordinator.clone(),
+                Some(&owner),
+            )
+            .unwrap();
+            let local = participant
+                .start_local(start.clone(), ParticipantStartMode::Exclusive)
+                .await
+                .unwrap();
+            let guard = registration.admitted(local).await.unwrap();
+            drop(context.begin_generated_outbound().unwrap()); // sticky unknown, not enumeration authority
+            assert!(guard.abort_explicit().await.is_err());
+            assert!(supervisor.join_next().await.unwrap().unwrap().is_err());
+            assert_eq!(
+                sidecar
+                    .calls
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|call| matches!(call, Call::DecisionPut(_)))
+                    .count(),
+                1
+            );
+            assert_eq!(
+                local_sidecar
+                    .calls
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|call| **call == "abort")
+                    .count(),
+                usize::from(!decision_error)
+            );
+            assert!(
+                tokio::time::timeout(
+                    Duration::from_millis(10),
+                    participant.start_local(start, ParticipantStartMode::Exclusive)
+                )
+                .await
+                .is_err()
+            );
+            assert!(context.begin_generated_outbound().is_err());
+            assert!(context.seal_explicit_abort().is_err());
+        }
+    }
+    #[tokio::test]
+    async fn registered_token_stays_owned_while_cleanup_is_parked_and_shutdown_does_not_deadlock() {
+        use crate::{
+            RebootHeaders,
+            application_host::{HostRecovery, RecoveryCancellation},
+            explicit_abort::{ExplicitAbortOwner, RegisteredRoot},
+            runtime::RootTransactionContext,
+        };
+        let sidecar = Arc::new(MockSidecar {
+            park_decision: true,
+            ..Default::default()
+        });
+        let local_sidecar = Arc::new(InProcessSidecar::default());
+        let participant =
+            DurableActorParticipant::new(local_sidecar.clone(), "example.Actor", "actor/1");
+        let id = Uuid::new_v4();
+        let start = ActorTransactionStart {
+            transaction_ids: vec![id],
+            transaction_path: crate::durable_participant::TransactionPathContract::RootOnly,
+            coordinator_state_type: "example.Actor".into(),
+            coordinator_state_ref: "actor/1".into(),
+            mode: TransactionMode::Exclusive,
+            read_only: false,
+            factory: false,
+            state_type: "example.Actor".into(),
+            state_ref: "actor/1".into(),
+        };
+        let context = RootTransactionContext::start(
+            RebootHeaders::new("actor/1"),
+            "example.Actor",
+            TransactionMode::Exclusive,
+            id,
+            prost_types::Timestamp::default(),
+        )
+        .unwrap()
+        .transaction()
+        .clone();
+        let owner = ExplicitAbortOwner::new(2).unwrap();
+        let cancel = RecoveryCancellation::new();
+        let mut supervisor = tokio::task::JoinSet::new();
+        owner
+            .recovery_registration()
+            .start(&mut supervisor, cancel.clone())
+            .await
+            .unwrap();
+        let coordinator = coordinator(sidecar.clone(), Arc::new(MockEndpoint::default()));
+        let registration = RegisteredRoot::before_load(
+            &participant,
+            context.clone(),
+            coordinator.clone(),
+            Some(&owner),
+        )
+        .unwrap();
+        let local = participant
+            .start_local(start, ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        drop(registration.admitted(local).await.unwrap());
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while sidecar.calls.lock().unwrap().is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(
+            RegisteredRoot::before_load(&participant, context, coordinator, Some(&owner)).is_err(),
+            "same UUID registration raced queued cleanup"
+        );
+        cancel.cancel();
+        tokio::time::timeout(Duration::from_secs(1), supervisor.join_next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn registered_admission_atomic_under_mutex_contention_cancel_prepare_and_host_stop() {
+        use crate::{
+            RebootHeaders,
+            application_host::{HostRecovery, RecoveryCancellation},
+            explicit_abort::{ExplicitAbortOwner, RegisteredRoot},
+            runtime::RootTransactionContext,
+        };
+        use std::{future::Future, task::Poll};
+        for scenario in ["cancel", "prepare", "stop"] {
+            let sidecar = Arc::new(MockSidecar::default());
+            let local_sidecar = Arc::new(InProcessSidecar::default());
+            let participant =
+                DurableActorParticipant::new(local_sidecar.clone(), "example.Actor", "actor/1");
+            let id = Uuid::new_v4();
+            let start = ActorTransactionStart {
+                transaction_ids: vec![id],
+                transaction_path: crate::durable_participant::TransactionPathContract::RootOnly,
+                coordinator_state_type: "example.Actor".into(),
+                coordinator_state_ref: "actor/1".into(),
+                mode: TransactionMode::Exclusive,
+                read_only: false,
+                factory: false,
+                state_type: "example.Actor".into(),
+                state_ref: "actor/1".into(),
+            };
+            let context = RootTransactionContext::start(
+                RebootHeaders::new("actor/1"),
+                "example.Actor",
+                TransactionMode::Exclusive,
+                id,
+                prost_types::Timestamp::default(),
+            )
+            .unwrap()
+            .transaction()
+            .clone();
+            let owner = ExplicitAbortOwner::new(1).unwrap();
+            let cancel = RecoveryCancellation::new();
+            let mut supervisor = tokio::task::JoinSet::new();
+            owner
+                .recovery_registration()
+                .start(&mut supervisor, cancel.clone())
+                .await
+                .unwrap();
+            let coordinator = coordinator(sidecar.clone(), Arc::new(MockEndpoint::default()));
+            let registration = RegisteredRoot::before_load(
+                &participant,
+                context.clone(),
+                coordinator.clone(),
+                Some(&owner),
+            )
+            .unwrap();
+            let local = participant
+                .start_local(start.clone(), ParticipantStartMode::Exclusive)
+                .await
+                .unwrap();
+            let (entered, wait_entered) = tokio::sync::oneshot::channel();
+            let (release, wait_release) = tokio::sync::oneshot::channel();
+            let locked = participant.clone();
+            let lock = tokio::spawn(async move {
+                locked.hold_pending_for_test(entered, wait_release).await;
+            });
+            wait_entered.await.unwrap();
+            let mut admission = Box::pin(registration.admitted(local));
+            // Poll, rather than sleep: establish that this exact future queued
+            // on the mutex while speculative local Drop is still armed.
+            assert!(
+                std::future::poll_fn(|cx| Poll::Ready(admission.as_mut().poll(cx).is_pending()))
+                    .await
+            );
+            if scenario == "cancel" {
+                drop(admission);
+                assert!(sidecar.calls.lock().unwrap().is_empty());
+                release.send(()).unwrap();
+                lock.await.unwrap();
+                let retry = tokio::time::timeout(
+                    Duration::from_secs(1),
+                    participant.start_local(start.clone(), ParticipantStartMode::Exclusive),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+                assert!(
+                    sidecar.calls.lock().unwrap().is_empty(),
+                    "pre-reservation cancellation fabricated a decision"
+                );
+                drop(retry);
+                RegisteredRoot::before_load(&participant, context, coordinator, Some(&owner))
+                    .unwrap();
+            } else if scenario == "prepare" {
+                // Tokio mutex FIFO queues Prepare immediately AFTER admission.
+                // A two-lock disarm/reacquire implementation must suspend behind
+                // this waiter. Atomic admission must return Ready in one poll.
+                let mut prepare = Box::pin(participant.prepare_for_test(id));
+                assert!(
+                    std::future::poll_fn(|cx| Poll::Ready(prepare.as_mut().poll(cx).is_pending()))
+                        .await
+                );
+                release.send(()).unwrap();
+                lock.await.unwrap();
+                let guard = std::future::poll_fn(|cx| {
+                    Poll::Ready(match admission.as_mut().poll(cx) {
+                        Poll::Ready(result) => Some(result.unwrap()),
+                        Poll::Pending => None,
+                    })
+                })
+                .await
+                .expect("admission disarmed then suspended behind queued Prepare");
+                assert!(
+                    std::future::poll_fn(|cx| Poll::Ready(prepare.as_mut().poll(cx).is_pending()))
+                        .await,
+                    "Prepare bypassed registered execution barrier"
+                );
+                assert!(!local_sidecar.calls.lock().unwrap().contains(&"prepare"));
+                drop(prepare);
+                drop(guard);
+                let retry = tokio::time::timeout(
+                    Duration::from_secs(1),
+                    participant.start_local(start.clone(), ParticipantStartMode::Exclusive),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+                assert_eq!(
+                    sidecar
+                        .calls
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .filter(|c| matches!(c, Call::DecisionPut(_)))
+                        .count(),
+                    1
+                );
+                drop(retry);
+            } else {
+                cancel.cancel();
+                supervisor.join_next().await.unwrap().unwrap().unwrap();
+                release.send(()).unwrap();
+                lock.await.unwrap();
+                assert!(
+                    matches!(admission.await, Err(error) if error.code() == tonic::Code::Unavailable)
+                );
+                assert!(sidecar.calls.lock().unwrap().is_empty());
+                assert!(!local_sidecar.calls.lock().unwrap().contains(&"abort"));
+                assert!(
+                    tokio::time::timeout(
+                        Duration::from_millis(20),
+                        participant.start_local(start, ParticipantStartMode::Exclusive)
+                    )
+                    .await
+                    .is_err(),
+                    "stopped host released reserved incarnation"
+                );
+                continue;
+            }
+            cancel.cancel();
+            supervisor.join_next().await.unwrap().unwrap().unwrap();
+        }
+    }
 
     #[derive(Clone, Debug, PartialEq)]
     enum Call {

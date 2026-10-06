@@ -10,12 +10,12 @@ fn owned_root_postprepare_deadline_retains_without_competing_abort() {
 }
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
-fn owned_root_unfinished_outbound_deadline_has_no_synthetic_abort() {
+fn owned_root_unfinished_outbound_deadline_publishes_authoritative_abort() {
     coupled_root_acceptance("unknown");
 }
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
-fn owned_root_caught_outbound_failure_empty_membership_has_no_synthetic_abort() {
+fn owned_root_caught_outbound_failure_empty_membership_publishes_authoritative_abort() {
     coupled_root_acceptance("caught");
 }
 
@@ -58,7 +58,7 @@ fn coupled_root_acceptance(scenario: &str) {
     let id = Uuid::new_v4();
     let mut target_command = Command::new(&binary);
     if matches!(scenario, "unknown" | "caught") {
-        target_command.env("REBOOT_TEST_TARGET_UNFINISHED_OUTBOUND", &outbound);
+        target_command.args(["--live-watch", "--watch-coordinator-state-ref", "root"]).env("REBOOT_TEST_TARGET_UNFINISHED_OUTBOUND", &outbound);
     }
     if scenario == "caught" {
         target_command.arg("--unfinished-outbound-error");
@@ -200,6 +200,24 @@ fn coupled_root_acceptance(scenario: &str) {
         assert_eq!(result.unwrap().into_inner().value, 6);
         assert!(root.try_wait().unwrap().is_none());
         assert_eq!(probe().unwrap().into_inner().value, 21);
+    } else if matches!(scenario, "unknown" | "caught") {
+        let status = result.unwrap_err();
+        if scenario == "caught" { assert!(caught.exists()); }
+        else { assert!(matches!(status.code(), tonic::Code::Cancelled | tonic::Code::DeadlineExceeded)); }
+        await_marker(&outbound.with_extension("handler-dropped"), &mut target);
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            let decision = runtime.block_on(async {
+                database::database_client::DatabaseClient::connect(root_db.endpoint()).await.unwrap()
+                    .transaction_coordinator_decision_get(database::TransactionCoordinatorDecisionGetRequest {
+                        root_transaction_id: id.as_bytes().to_vec(), coordinator_state_ref: "root".into(),
+                    }).await.unwrap().into_inner().decision
+            });
+            if decision.is_some() { break; }
+            assert!(std::time::Instant::now() < deadline); std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(root.try_wait().unwrap().is_none());
+        assert_eq!(probe().unwrap().into_inner().value, 20);
     } else {
         let status = result.unwrap_err();
         if scenario != "caught" {
@@ -270,7 +288,9 @@ fn coupled_root_acceptance(scenario: &str) {
         }).await.unwrap().into_inner().decision;
         if scenario == "success" {
             assert_eq!(decision.unwrap().outcome, database::transaction_coordinator_decision::Outcome::Commit as i32);
-        } else { assert!(decision.is_none(), "uncertainty must not manufacture Abort"); }
+        } else if matches!(scenario, "unknown" | "caught") {
+            assert_eq!(decision.unwrap().outcome, database::transaction_coordinator_decision::Outcome::Abort as i32);
+        } else { assert!(decision.is_none(), "post-handoff uncertainty must not manufacture Abort"); }
         let mut recovered = database.recover(database::RecoverRequest {
             shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true, ..Default::default()
         }).await.unwrap().into_inner();

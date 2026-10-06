@@ -332,6 +332,9 @@ enum PendingDisposition {
 }
 
 struct Pending {
+    execution_active: bool,
+    terminal_attempted: bool,
+    no_terminal_retry: bool,
     local_owner: Option<Uuid>,
     root_id: Uuid,
     transaction_ids: Vec<Uuid>,
@@ -406,6 +409,21 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         &mut self,
         context: &crate::runtime::TransactionContext,
     ) -> Result<Vec<crate::durable_coordinator::ReturnedParticipant>, Status> {
+        self.begin_root_abort(context, false).await
+    }
+
+    pub(crate) async fn begin_registered_abandonment(
+        &mut self,
+        context: &crate::runtime::TransactionContext,
+    ) -> Result<Vec<crate::durable_coordinator::ReturnedParticipant>, Status> {
+        self.begin_root_abort(context, true).await
+    }
+
+    async fn begin_root_abort(
+        &mut self,
+        context: &crate::runtime::TransactionContext,
+        abandonment: bool,
+    ) -> Result<Vec<crate::durable_coordinator::ReturnedParticipant>, Status> {
         let pending = self.participant.pending.lock().await;
         if !context.is_fresh_root()
             || !self.admitted_explicit_root_scope
@@ -433,7 +451,11 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         // ownership through Drop once explicit cleanup has begun.
         self.armed = false;
         self.cancellation_authority = false;
-        let returned = context.seal_explicit_abort()?;
+        let returned = if abandonment {
+            context.returned_participants_snapshot()
+        } else {
+            context.seal_explicit_abort()?
+        };
         Ok(returned)
     }
 
@@ -444,7 +466,22 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         &mut self,
         context: &crate::runtime::TransactionContext,
     ) -> Result<(), Status> {
-        let pending = self.participant.pending.lock().await;
+        self.reserve_cancellation(context, false).await
+    }
+
+    pub(crate) async fn reserve_registered_execution(
+        &mut self,
+        context: &crate::runtime::TransactionContext,
+    ) -> Result<(), Status> {
+        self.reserve_cancellation(context, true).await
+    }
+
+    async fn reserve_cancellation(
+        &mut self,
+        context: &crate::runtime::TransactionContext,
+        execution: bool,
+    ) -> Result<(), Status> {
+        let mut pending = self.participant.pending.lock().await;
         if !self.armed
             || !context.is_fresh_root()
             || !self.admitted_explicit_root_scope
@@ -465,6 +502,13 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
             return Err(Status::failed_precondition(
                 "handler cancellation requires live fresh root ownership",
             ));
+        }
+        // One lock transition: there is no disarmed capability awaiting a
+        // second mutex acquisition before its execution barrier/guard exists.
+        if execution {
+            let current = pending.as_mut().unwrap();
+            current.execution_active = true;
+            current.no_terminal_retry = true;
         }
         self.armed = false;
         self.cancellation_authority = true;
@@ -487,6 +531,67 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         self.participant
             .terminal_owned(self.transaction_id, false, Some(self.local_owner))
             .await
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(crate) async fn assert_staged_for_test(&self) -> Result<(), Status> {
+        let pending = self.participant.pending.lock().await;
+        if !pending.as_ref().is_some_and(|current| {
+            current.root_id == self.transaction_id
+                && current.local_owner == Some(self.local_owner)
+                && current.staged
+        }) {
+            return Err(Status::internal(
+                "live response hook must follow actual staging",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn reserve_live_execution(
+        &mut self,
+        context: &crate::runtime::TransactionContext,
+    ) -> Result<LiveExecution<C>, Status> {
+        let mut pending = self.participant.pending.lock().await;
+        let current = pending
+            .as_mut()
+            .ok_or_else(|| Status::failed_precondition("live participant missing"))?;
+        if current.local_owner != Some(self.local_owner)
+            || current.transaction_ids != context.transaction_ids()
+            || current.coordinator_state_type != context.transaction_coordinator_state_type()
+            || current.coordinator_state_ref != context.transaction_coordinator_state_ref()
+            || self.participant.state_ref != context.headers().state_ref
+            || current.disposition == PendingDisposition::ReadOnly
+            || current.root_id != self.transaction_id
+            || current.prepared
+            || current.execution_active
+            || current.terminal_attempted
+        {
+            return Err(Status::failed_precondition(
+                "live participant incarnation unavailable",
+            ));
+        }
+        current.execution_active = true;
+        current.no_terminal_retry = true;
+        self.armed = false;
+        Ok(LiveExecution {
+            participant: self.participant.clone(),
+            root: self.transaction_id,
+            owner: self.local_owner,
+        })
+    }
+
+    pub(crate) async fn end_execution(&self) -> Result<(), Status> {
+        let mut pending = self.participant.pending.lock().await;
+        let current = pending
+            .as_mut()
+            .ok_or_else(|| Status::failed_precondition("execution ownership missing"))?;
+        if current.root_id != self.transaction_id || current.local_owner != Some(self.local_owner) {
+            return Err(Status::failed_precondition("execution incarnation differs"));
+        }
+        current.execution_active = false;
+        self.participant.changed.notify_waiters();
+        Ok(())
     }
 
     pub(crate) fn was_handed_off(&self) -> bool {
@@ -519,6 +624,78 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         self.handed_off = true;
         self.cancellation_authority = false;
         self.armed = false;
+    }
+}
+
+pub(crate) struct LiveExecution<C: ParticipantSidecar> {
+    participant: DurableActorParticipant<C>,
+    root: Uuid,
+    owner: Uuid,
+}
+impl<C: ParticipantSidecar> LiveExecution<C> {
+    pub(crate) async fn watch(
+        self,
+        watch: Arc<dyn CoordinatorWatchEndpoint>,
+    ) -> Result<(), Status> {
+        let participant = &self.participant;
+        #[cfg(feature = "test-support")]
+        if let Some(path) = std::env::var_os("REBOOT_TEST_LIVE_INBOUND_RESPONSE") {
+            assert!(
+                std::path::PathBuf::from(path)
+                    .with_extension("future-dropped")
+                    .exists(),
+                "actual staging/response future must drop before live Watch activation"
+            );
+        }
+        {
+            let mut pending = participant.pending.lock().await;
+            let Some(current) = pending.as_mut() else {
+                return Ok(());
+            };
+            if current.root_id != self.root || current.local_owner != Some(self.owner) {
+                return Ok(());
+            }
+            current.execution_active = false;
+            participant.changed.notify_waiters();
+        }
+        let mut backoff = std::time::Duration::from_millis(10);
+        loop {
+            let notified = participant.changed.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            {
+                let pending = participant.pending.lock().await;
+                if !pending.as_ref().is_some_and(|current| {
+                    current.root_id == self.root && current.local_owner == Some(self.owner)
+                }) {
+                    return Ok(());
+                }
+            }
+            let response = tokio::select! {
+                _ = &mut notified => continue,
+                response = watch.watch(database::WatchRequest { transaction_id: self.root.as_bytes().to_vec(),
+                    state_type: participant.state_type.clone(), state_ref: participant.state_ref.clone() }) => response,
+            };
+            match response {
+                Ok(response) => {
+                    let acknowledged = participant
+                        .terminal_live(self.root, self.owner, !response.aborted)
+                        .await?;
+                    #[cfg(feature = "test-support")]
+                    if acknowledged {
+                        test_support::signal_watch_terminalized()?;
+                    }
+                    #[cfg(not(feature = "test-support"))]
+                    let _ = acknowledged;
+                    return Ok(());
+                }
+                Err(error) if terminal_watch_failure(&error) => return Err(error),
+                Err(_) => {
+                    tokio::select! { _ = &mut notified => {}, _ = tokio::time::sleep(backoff) => {} }
+                    backoff = (backoff * 2).min(std::time::Duration::from_secs(1));
+                }
+            }
+        }
     }
 }
 
@@ -607,6 +784,7 @@ pub struct DurableActorParticipant<C: ParticipantSidecar> {
     state_ref: String,
     lock: ActorGate,
     pending: Arc<tokio::sync::Mutex<Option<Pending>>>,
+    changed: Arc<tokio::sync::Notify>,
 }
 
 impl<C: ParticipantSidecar> Clone for DurableActorParticipant<C> {
@@ -617,6 +795,7 @@ impl<C: ParticipantSidecar> Clone for DurableActorParticipant<C> {
             state_ref: self.state_ref.clone(),
             lock: self.lock.clone(),
             pending: Arc::clone(&self.pending),
+            changed: self.changed.clone(),
         }
     }
 }
@@ -638,6 +817,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             state_type,
             state_ref,
             pending: Arc::new(tokio::sync::Mutex::new(None)),
+            changed: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
@@ -741,12 +921,34 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 task_ids: vec![],
             })
             .await?;
+        #[cfg(feature = "test-support")]
+        if let Some(path) = std::env::var_os("REBOOT_TEST_REGISTERED_LOAD_PENDING") {
+            struct LoadDrop(std::path::PathBuf);
+            impl Drop for LoadDrop {
+                fn drop(&mut self) {
+                    std::fs::write(
+                        self.0.with_extension("future-dropped"),
+                        b"actual start_owned Load future dropped before Pending",
+                    )
+                    .unwrap();
+                }
+            }
+            let path = std::path::PathBuf::from(path);
+            std::fs::write(&path, b"real Load ACK; local admission not completed").unwrap();
+            let _drop = LoadDrop(path.clone());
+            while !path.with_extension("release").exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        }
         let state = response
             .actors
             .into_iter()
             .next()
             .and_then(|actor| actor.state);
         *pending = Some(Pending {
+            execution_active: false,
+            terminal_attempted: false,
+            no_terminal_retry: false,
             local_owner,
             root_id: start.transaction_ids[0],
             transaction_ids: start.transaction_ids,
@@ -766,7 +968,11 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         Ok(state)
     }
 
-    /// Starts a local handler with cancellation-safe pre-durable cleanup.
+    #[cfg(test)]
+    pub(crate) async fn prepare_for_test(&self, id: Uuid) -> Result<(), Status> {
+        self.prepare(id, false, false).await.map(|_| ())
+    }
+
     #[cfg(test)]
     pub(crate) async fn hold_pending_for_test(
         &self,
@@ -778,6 +984,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         release.await.unwrap();
     }
 
+    /// Starts a local handler with cancellation-safe pre-durable cleanup.
     pub async fn start_local(
         &self,
         start: ActorTransactionStart,
@@ -840,6 +1047,11 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         if current.root_id != transaction_id {
             return Err(Status::failed_precondition(
                 "pending transaction ID differs",
+            ));
+        }
+        if current.terminal_attempted || current.prepared {
+            return Err(Status::failed_precondition(
+                "staging after terminal uncertainty or Prepare is forbidden",
             ));
         }
         let changes_read_only_state = match (&current.loaded_state, &effects.state) {
@@ -1002,12 +1214,29 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         read_only_aware: bool,
         read_only: bool,
     ) -> Result<PrepareOutcome, Status> {
-        let mut pending = self.pending.lock().await;
+        let mut pending = loop {
+            let notified = self.changed.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            let pending = self.pending.lock().await;
+            if !pending.as_ref().is_some_and(|current| {
+                current.root_id == transaction_id && current.execution_active
+            }) {
+                break pending;
+            }
+            drop(pending);
+            notified.await;
+        };
         let Some(current) = pending.as_mut() else {
             return Ok(PrepareOutcome::DefinitiveAbort);
         };
         if current.root_id != transaction_id {
             return Ok(PrepareOutcome::DefinitiveAbort);
+        }
+        if current.terminal_attempted {
+            return Err(Status::unavailable(
+                "Prepare after ambiguous terminal ACK is forbidden",
+            ));
         }
         if current.disposition == PendingDisposition::ReadOnly {
             if !(read_only_aware && read_only) {
@@ -1131,6 +1360,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             ));
         }
         *pending = Some(Pending {
+            execution_active: false,
+            terminal_attempted: false,
+            no_terminal_retry: false,
             local_owner: None,
             root_id,
             transaction_ids,
@@ -1242,12 +1474,49 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         commit: bool,
         expected_local_owner: Option<Uuid>,
     ) -> Result<(), Status> {
-        let mut pending = self.pending.lock().await;
+        self.terminal_checked(transaction_id, commit, expected_local_owner, false)
+            .await
+            .map(|_| ())
+    }
+
+    async fn terminal_live(&self, root: Uuid, owner: Uuid, commit: bool) -> Result<bool, Status> {
+        self.terminal_checked(root, commit, Some(owner), true).await
+    }
+
+    async fn terminal_checked(
+        &self,
+        transaction_id: Uuid,
+        commit: bool,
+        expected_local_owner: Option<Uuid>,
+        live: bool,
+    ) -> Result<bool, Status> {
+        let mut pending = loop {
+            let notified = self.changed.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            let pending = self.pending.lock().await;
+            if !pending.as_ref().is_some_and(|current| {
+                current.root_id == transaction_id
+                    && current.execution_active
+                    && expected_local_owner.is_none_or(|owner| current.local_owner == Some(owner))
+            }) {
+                break pending;
+            }
+            drop(pending);
+            notified.await;
+        };
+        if live
+            && !pending.as_ref().is_some_and(|current| {
+                current.root_id == transaction_id && current.local_owner == expected_local_owner
+            })
+        {
+            return Ok(false);
+        }
         if let Some(owner) = expected_local_owner
             && !pending.as_ref().is_some_and(|current| {
                 current.root_id == transaction_id
                     && current.local_owner == Some(owner)
-                    && !current.prepared
+                    && (live || !current.prepared)
             })
         {
             return Err(Status::failed_precondition(
@@ -1262,18 +1531,41 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         // abort the complete set.  There is nothing to persist or release for
         // this actor in that case.  A duplicate terminal RPC after a prior
         // successful terminal response has the same outcome.
-        let Some(current) = pending.as_ref() else {
-            return Ok(());
+        let Some(current) = pending.as_mut() else {
+            return Ok(false);
         };
         if current.root_id != transaction_id {
             // This actor may already be serving a later root transaction.
             // Never terminalize that transaction for a stale control RPC.
-            return Ok(());
+            return Ok(false);
+        }
+        if current.terminal_attempted {
+            return Err(Status::unavailable(
+                "terminal ACK uncertain; ownership retained, no retry",
+            ));
+        }
+        if live && commit && !current.prepared {
+            return Err(Status::failed_precondition(
+                "live Commit requires exact prepared ownership",
+            ));
         }
         if current.disposition == PendingDisposition::ReadOnly {
             *pending = None;
-            return Ok(());
+            self.changed.notify_waiters();
+            return Ok(true);
         }
+        #[cfg(feature = "test-support")]
+        if current.no_terminal_retry
+            && let Some(path) = std::env::var_os("REBOOT_TEST_TARGET_UNFINISHED_OUTBOUND")
+        {
+            assert!(
+                std::path::PathBuf::from(path)
+                    .with_extension("handler-dropped")
+                    .exists(),
+                "actual handler must finish/drop before terminal RPC"
+            );
+        }
+        current.terminal_attempted = current.no_terminal_retry;
         let force_abort = commit && !current.prepared;
         if commit && !force_abort {
             self.sidecar
@@ -1292,12 +1584,13 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         }
         // Only an acknowledged terminal RPC makes release truthful.
         *pending = None;
+        self.changed.notify_waiters();
         if force_abort {
             return Err(Status::failed_precondition(
                 "commit requires the matching prepared transaction; transaction was aborted",
             ));
         }
-        Ok(())
+        Ok(true)
     }
 }
 
@@ -1458,6 +1751,169 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::durable_coordinator::{InProcessParticipantEndpoint, ParticipantEndpoint};
+
+    fn execution_context(id: Uuid) -> crate::runtime::TransactionContext {
+        let mut headers = crate::RebootHeaders::new("actor/1");
+        headers.transaction_ids = Some(vec![id]);
+        headers.transaction_coordinator_state_type = Some("example.Coordinator".into());
+        headers.transaction_coordinator_state_ref = Some("coordinator/1".into());
+        crate::runtime::TransactionContext::from_headers(headers, TransactionMode::Exclusive)
+            .unwrap()
+    }
+    #[tokio::test]
+    async fn live_execution_blocks_all_controls_and_staging_after_prepare() {
+        for prepare in [false, true] {
+            let sidecar = Arc::new(MockSidecar::default());
+            let participant =
+                DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+            let id = Uuid::new_v4();
+            let mut local = participant
+                .start_local(start(id), ParticipantStartMode::Exclusive)
+                .await
+                .unwrap();
+            let _execution = local
+                .reserve_live_execution(&execution_context(id))
+                .await
+                .unwrap();
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(10), async {
+                    if prepare {
+                        participant.prepare(id, false, false).await.map(|_| ())
+                    } else {
+                        participant.terminal(id, false).await
+                    }
+                })
+                .await
+                .is_err()
+            );
+            assert!(matches!(
+                sidecar.calls.lock().unwrap().as_slice(),
+                [Call::Load(_)]
+            ));
+            local
+                .stage(PendingActorEffects {
+                    state: Some(vec![7]),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            local.end_execution().await.unwrap();
+            if prepare {
+                participant.prepare(id, false, false).await.unwrap();
+                assert!(
+                    participant
+                        .stage(id, PendingActorEffects::default())
+                        .await
+                        .is_err()
+                );
+                assert!(
+                    matches!(&sidecar.calls.lock().unwrap()[1], Call::Prepare(request) if request.state.as_deref() == Some(&[7]))
+                );
+            } else {
+                participant.terminal(id, false).await.unwrap();
+            }
+        }
+    }
+    #[tokio::test]
+    async fn live_terminal_lost_ack_is_once_retained_and_prepare_staging_rejected() {
+        let sidecar = Arc::new(MockSidecar::default());
+        sidecar
+            .terminal_results
+            .lock()
+            .unwrap()
+            .push_back(Err(Status::unavailable("lost ACK")));
+        let participant = DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+        let id = Uuid::new_v4();
+        let mut local = participant
+            .start_local(start(id), ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        let _execution = local
+            .reserve_live_execution(&execution_context(id))
+            .await
+            .unwrap();
+        local.end_execution().await.unwrap();
+        for _ in 0..2 {
+            assert!(
+                participant
+                    .terminal_live(id, local.local_owner, false)
+                    .await
+                    .is_err()
+            );
+        }
+        assert!(participant.prepare(id, false, false).await.is_err());
+        assert!(
+            participant
+                .stage(id, PendingActorEffects::default())
+                .await
+                .is_err()
+        );
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Load(_), Call::Abort(_)]
+        ));
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(10),
+                participant.start(start(Uuid::new_v4()))
+            )
+            .await
+            .is_err()
+        );
+    }
+    #[tokio::test]
+    async fn stale_live_terminal_does_not_wait_on_same_uuid_active_replacement() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant = DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+        let id = Uuid::new_v4();
+        let mut old = participant
+            .start_local(start(id), ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        let _execution = old
+            .reserve_live_execution(&execution_context(id))
+            .await
+            .unwrap();
+        old.end_execution().await.unwrap();
+        participant
+            .terminal_live(id, old.local_owner, false)
+            .await
+            .unwrap();
+        let mut replacement = participant
+            .start_local(start(id), ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        let _execution = replacement
+            .reserve_live_execution(&execution_context(id))
+            .await
+            .unwrap();
+        assert!(
+            !tokio::time::timeout(
+                std::time::Duration::from_millis(10),
+                participant.terminal_live(id, old.local_owner, false)
+            )
+            .await
+            .unwrap()
+            .unwrap()
+        );
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Load(_), Call::Abort(_), Call::Load(_)]
+        ));
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(10),
+                participant.start(start(Uuid::new_v4()))
+            )
+            .await
+            .is_err()
+        );
+        replacement.end_execution().await.unwrap();
+        participant
+            .terminal_live(id, replacement.local_owner, false)
+            .await
+            .unwrap();
+    }
 
     #[derive(Clone, Debug, PartialEq)]
     enum Call {

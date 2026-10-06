@@ -170,6 +170,7 @@ pub struct TransactionContext {
     /// First outbound failure whose transport outcome is not known recoverable.
     /// A handler may catch it, but a root must still abort rather than commit.
     doomed: Arc<Mutex<Option<Status>>>,
+    live_leaf: bool,
 }
 
 #[derive(Debug, Default)]
@@ -347,6 +348,7 @@ where
             "target state type and reference must not be empty",
         ));
     }
+    context.require_outbound_allowed()?;
     let mut headers = context.headers().clone();
     headers.state_ref = state_ref.to_owned();
     let metadata = headers
@@ -386,6 +388,7 @@ impl TransactionContext {
             mode,
             returned_participants: None,
             doomed: Arc::new(Mutex::new(None)),
+            live_leaf: false,
         })
     }
 
@@ -420,9 +423,35 @@ impl TransactionContext {
         self.returned_participants.is_some() && self.transaction_ids().len() == 1
     }
 
+    /// A live participant owner permits only a direct-root exclusive leaf.
+    /// Restriction is monotonic and survives context cloning/nesting.
+    #[doc(hidden)]
+    pub fn enforce_live_leaf(&mut self) -> Result<(), Status> {
+        if self.is_fresh_root()
+            || self.mode != TransactionMode::Exclusive
+            || self.transaction_ids().len() != 2
+            || self.headers.idempotency_key.is_some()
+        {
+            return Err(Status::failed_precondition(
+                "live Watch requires a direct-root exclusive non-idempotent leaf",
+            ));
+        }
+        self.live_leaf = true;
+        Ok(())
+    }
+    fn require_outbound_allowed(&self) -> Result<(), Status> {
+        if self.live_leaf {
+            let status = Status::failed_precondition("live inbound leaf cannot call descendants");
+            self.doom(status.clone());
+            return Err(status);
+        }
+        Ok(())
+    }
+
     /// Acquires generated outbound admission before any resolver or network call.
     #[doc(hidden)]
     pub fn begin_generated_outbound(&self) -> Result<TransactionalOutboundScope, Status> {
+        self.require_outbound_allowed()?;
         if let Some(collection) = &self.returned_participants {
             let mut state = collection
                 .lock()
@@ -467,6 +496,35 @@ impl TransactionContext {
             .collect())
     }
 
+    /// Abandonment closes generated outbound admission atomically. Unlike a
+    /// Commit seal, this does not assert complete membership or clear uncertainty.
+    pub(crate) fn close_for_abandonment(
+        &self,
+    ) -> Result<Vec<crate::durable_coordinator::ReturnedParticipant>, Status> {
+        let collection = self.returned_participants.as_ref().ok_or_else(|| {
+            Status::failed_precondition("abandonment requires fresh root provenance")
+        })?;
+        let mut state = collection
+            .lock()
+            .expect("returned participant mutex poisoned");
+        if state.sealed {
+            return Err(Status::failed_precondition(
+                "root already handed off or closed",
+            ));
+        }
+        state.sealed = true;
+        Ok(state
+            .participants
+            .iter()
+            .map(
+                |(target, read_only)| crate::durable_coordinator::ReturnedParticipant {
+                    target: target.clone(),
+                    read_only: *read_only,
+                },
+            )
+            .collect())
+    }
+
     pub(crate) fn finish_explicit_abort(&self) -> Result<(), Status> {
         let collection = self
             .returned_participants
@@ -492,6 +550,12 @@ impl TransactionContext {
         &self,
         returned: &crate::successful_trailers::ReturnedParticipants,
     ) {
+        if self.live_leaf {
+            self.doom(Status::failed_precondition(
+                "live inbound leaf cannot enlist descendants",
+            ));
+            return;
+        }
         if let Some(participants) = &self.returned_participants {
             let mut collected = participants
                 .lock()
@@ -640,6 +704,7 @@ impl TransactionContext {
             // Nested inbound contexts must not retain root aggregation state.
             returned_participants: None,
             doomed: Arc::clone(&self.doomed),
+            live_leaf: self.live_leaf,
         })
     }
 }

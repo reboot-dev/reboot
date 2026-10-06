@@ -124,10 +124,14 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         state.value += request.amount;
         if let Some(path) = std::env::var_os("REBOOT_TEST_TARGET_UNFINISHED_OUTBOUND") {
             std::fs::write(&path, b"target admitted, no successful trailers").unwrap();
-            if has("--unfinished-outbound-error") {
-                return Err(tonic::Status::unavailable("unfinished outbound transport outcome"));
-            }
-            std::future::pending::<()>().await;
+            struct HandlerDrop(std::path::PathBuf);
+            impl Drop for HandlerDrop { fn drop(&mut self) { std::fs::write(self.0.with_extension("handler-dropped"), b"actual target handler future ended").unwrap(); } }
+            let path = std::path::PathBuf::from(path);
+            let _drop = HandlerDrop(path.clone());
+            if has("--unfinished-outbound-error") { return Err(tonic::Status::unavailable("unfinished outbound transport outcome")); }
+            if has("--release-parked-target") {
+                while !path.with_extension("release").exists() { tokio::time::sleep(std::time::Duration::from_millis(10)).await; }
+            } else { std::future::pending::<()>().await; }
         }
         if let Self::Root(root) = self {
             // The ordinary legacy recovery acceptance uses the first target.
@@ -808,6 +812,11 @@ async fn main() {
     let adapter = if has("--owned-explicit-abort") {
         adapter.with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(1).unwrap())
     } else { adapter };
+    let adapter = if has("--live-watch") {
+        adapter.with_live_participant_owner(reboot::live_participant::LiveParticipantOwner::new(8,
+            reboot::durable_coordinator::ParticipantTarget { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: watch_coordinator_state_ref.clone() },
+            Arc::new(LegacyApplicationCoordinatorWatchEndpoint::new(application.clone(), placement.clone(), watch_coordinator_state_ref.clone()).unwrap())).unwrap())
+    } else { adapter };
     if has("--prove-cancel-before-durable") {
         use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
         let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: -9000 });
@@ -830,6 +839,7 @@ async fn main() {
         host = host.with_host_recovery(planner_recovery);
     }
     if has("--owned-explicit-abort") { host = host.with_host_recovery(adapter.explicit_abort_recovery_registration().unwrap()); }
+    if has("--live-watch") { host = host.with_host_recovery(adapter.live_participant_recovery_registration().unwrap()); }
     if has("--recover") {
         let watch = Arc::new(
             LegacyApplicationCoordinatorWatchEndpoint::new(
