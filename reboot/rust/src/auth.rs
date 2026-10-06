@@ -127,20 +127,20 @@ impl AuthorizationPolicy {
         }
     }
 
+    /// Authorizes a generated external call against either canonical existing
+    /// state or an absent-state constructor admission. Callers must not expose
+    /// existence before this boundary has accepted the request.
     pub async fn authorize(
         &self,
         context: &AuthorizationContext,
         auth: Option<&Auth>,
-        state: &[u8],
+        state: Option<&[u8]>,
         request: &[u8],
     ) -> Result<(), tonic::Status> {
         let Some(authorizer) = &self.authorizer else {
             return Ok(());
         };
-        match authorizer
-            .authorize(context, auth, Some(state), request)
-            .await
-        {
+        match authorizer.authorize(context, auth, state, request).await {
             AuthorizationDecision::Allow => Ok(()),
             AuthorizationDecision::Unauthenticated { message } => {
                 Err(tonic::Status::unauthenticated(message))

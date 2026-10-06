@@ -1924,7 +1924,7 @@ impl DatabaseActorStore {
                 .authorize(
                     context,
                     auth.as_ref(),
-                    &state.encode_to_vec(),
+                    Some(&state.encode_to_vec()),
                     &request.get_ref().encode_to_vec(),
                 )
                 .await?;
@@ -2093,6 +2093,94 @@ impl DatabaseActorStore {
         Ok(Response::new(response))
     }
 
+    /// Runs a generated external constructor writer with bearer verification
+    /// before replay/load and authorization before existence is exposed.
+    pub async fn constructor_writer_async_for_method_authorized<
+        Declaration,
+        RequestBody,
+        ResponseBody,
+        F,
+    >(
+        &self,
+        method_identity: &str,
+        authorization: &crate::auth::AuthorizationPolicy,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        Declaration: DurableStateDeclaration,
+        RequestBody: Message + Send + 'static,
+        ResponseBody: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut Declaration::State,
+            RequestBody,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
+        let (context, auth) = authorization
+            .verify(
+                crate::RebootHeaders::from_request(&request)
+                    .map_err(|error| Status::invalid_argument(error.to_string()))?,
+                Declaration::STATE_TYPE,
+                method_identity,
+            )
+            .await?;
+        let fingerprint = request_fingerprint(method_identity, request.get_ref());
+        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
+        let key = idempotency_key(&request)?;
+        let lock = self.lock_for_type(Declaration::STATE_TYPE, &state_ref);
+        let _guard = lock.exclusive().await;
+        if let Some(response) = self
+            .replay_type(Declaration::STATE_TYPE, &state_ref, key, Some(&fingerprint))
+            .await?
+        {
+            return Ok(Response::new(response));
+        }
+        let state = self
+            .load_type::<Declaration::State>(Declaration::STATE_TYPE, &state_ref)
+            .await?;
+        let state_bytes = state.as_ref().map(prost::Message::encode_to_vec);
+        authorization
+            .authorize(
+                &context,
+                auth.as_ref(),
+                state_bytes.as_deref(),
+                &request.get_ref().encode_to_vec(),
+            )
+            .await?;
+        if state.is_some() {
+            return Err(Status::failed_precondition(
+                "actor state has already been constructed",
+            ));
+        }
+        let mut state = Declaration::State::default();
+        let response = invoke(&mut state, request.into_inner()).await?;
+        let mut database = self.database.clone();
+        database
+            .create_actor(database::CreateActorRequest {
+                actor: Some(database::Actor {
+                    state_type: Declaration::STATE_TYPE.to_owned(),
+                    state_ref: state_ref.clone(),
+                    state: Some(state.encode_to_vec()),
+                }),
+                idempotent_mutation: Some(database::IdempotentMutation {
+                    state_type: Declaration::STATE_TYPE.to_owned(),
+                    state_ref,
+                    key: key.as_bytes().to_vec(),
+                    response: response.encode_to_vec(),
+                    task_ids: vec![],
+                    workflow_id: None,
+                    workflow_iteration: None,
+                    request_fingerprint: Some(fingerprint),
+                }),
+                sync: true,
+            })
+            .await
+            .map_err(database_status)?;
+        Ok(Response::new(response))
+    }
+
     /// Runs a synchronous reader callback after loading the actor state.
     pub async fn reader<State, RequestBody, ResponseBody, F>(
         &self,
@@ -2208,7 +2296,7 @@ impl DatabaseActorStore {
             .authorize(
                 &context,
                 auth.as_ref(),
-                &state.encode_to_vec(),
+                Some(&state.encode_to_vec()),
                 &request.get_ref().encode_to_vec(),
             )
             .await?;

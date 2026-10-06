@@ -1281,8 +1281,8 @@ fn emit_durable(
         for (kind, method, request, response, method_identity) in &database_methods {
             let (envelope, prefix) = match kind {
                 DurableKind::Writer(WriterMetadata { constructor: true }) => (
-                    "constructor_writer_async_for_method",
-                    format!("\"{method_identity}\", "),
+                    "constructor_writer_async_for_method_authorized",
+                    format!("\"{method_identity}\", &self.authorization, "),
                 ),
                 DurableKind::Reader if requires_constructor => (
                     "reader_async_for_with_admission_authorized",
@@ -4037,7 +4037,12 @@ mod tests {
         );
         assert!(content.contains("&self.authorization, request"));
         assert!(content.contains("StateAdmission::RequireExisting"));
-        assert!(content.contains("constructor_writer_async_for_method::<CounterDurableState"));
+        assert!(
+            content
+                .contains("constructor_writer_async_for_method_authorized::<CounterDurableState")
+        );
+        assert!(content.contains("&self.authorization, request"));
+        assert!(!content.contains("constructor_writer_async_for_method::<CounterDurableState"));
         assert!(!content.contains("constructor writers are not supported"));
     }
 
