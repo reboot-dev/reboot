@@ -13,9 +13,13 @@ use tokio::sync::mpsc;
 use tonic_health::pb::{
     HealthCheckRequest, health_check_response::ServingStatus, health_client::HealthClient,
 };
+use tonic_reflection::pb::v1::{
+    ServerReflectionRequest, server_reflection_client::ServerReflectionClient,
+    server_reflection_request::MessageRequest, server_reflection_response::MessageResponse,
+};
 
 use reboot_rust_schema::{
-    RebootHeaders,
+    RBT_V1ALPHA1_DESCRIPTOR_SET, RebootHeaders,
     application_host::{
         ApplicationHost, ApplicationHostError, ApplicationLifecycle, ApplicationLifecyclePhase,
         HostRecovery, RecoveryCancellation, TrustedApplicationContext,
@@ -306,6 +310,83 @@ async fn lifecycle_recovers_before_two_generated_services_listen_then_shuts_down
             "shutdown:second",
         ]
     );
+}
+
+#[tokio::test]
+async fn host_reflection_lists_only_mounted_services_and_resolves_their_symbols() {
+    let address = unused_local_address();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let host = ApplicationHost::new("server-owned-app")
+        .with_reflection_descriptor_set(RBT_V1ALPHA1_DESCRIPTOR_SET)
+        .add_service(proto::echo_methods_server::EchoMethodsServer::new(
+            IdentityEcho,
+        ));
+    let server = tokio::spawn(async move {
+        host.serve_with_shutdown(address, async move { shutdown_rx.await.unwrap() })
+            .await
+            .unwrap()
+    });
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if std::net::TcpStream::connect_timeout(&address, Duration::from_millis(10)).is_ok() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let channel = tonic::transport::Endpoint::from_shared(format!("http://{address}"))
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let mut reflection = ServerReflectionClient::new(channel);
+    let mut listed = reflection
+        .server_reflection_info(Request::new(tokio_stream::once(ServerReflectionRequest {
+            host: String::new(),
+            message_request: Some(MessageRequest::ListServices(String::new())),
+        })))
+        .await
+        .unwrap()
+        .into_inner();
+    let response = listed.message().await.unwrap().unwrap();
+    let MessageResponse::ListServicesResponse(services) = response.message_response.unwrap() else {
+        panic!("expected reflection service list");
+    };
+    let names = services
+        .service
+        .into_iter()
+        .map(|service| service.name)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        names,
+        std::collections::BTreeSet::from([
+            "grpc.reflection.v1.ServerReflection".to_owned(),
+            "tests.reboot.protoc.EchoMethods".to_owned(),
+        ])
+    );
+
+    let mut symbols = reflection
+        .server_reflection_info(Request::new(tokio_stream::once(ServerReflectionRequest {
+            host: String::new(),
+            message_request: Some(MessageRequest::FileContainingSymbol(
+                "tests.reboot.protoc.EchoMethods".to_owned(),
+            )),
+        })))
+        .await
+        .unwrap()
+        .into_inner();
+    let response = symbols.message().await.unwrap().unwrap();
+    let MessageResponse::FileDescriptorResponse(descriptors) = response.message_response.unwrap()
+    else {
+        panic!("expected descriptor for mounted service");
+    };
+    assert!(!descriptors.file_descriptor_proto.is_empty());
+
+    shutdown_tx.send(()).unwrap();
+    server.await.unwrap();
 }
 
 #[tokio::test]

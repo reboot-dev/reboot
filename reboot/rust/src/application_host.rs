@@ -504,6 +504,7 @@ pub enum ApplicationHostError {
         source: tonic::Status,
     },
     RecoveryTask(tonic::Status),
+    Reflection(tonic_reflection::server::Error),
     Bind(std::io::Error),
     Transport(tonic::transport::Error),
 }
@@ -522,6 +523,12 @@ impl fmt::Display for ApplicationHostError {
             Self::RecoveryTask(source) => {
                 write!(formatter, "application recovery task failed: {source}")
             }
+            Self::Reflection(source) => {
+                write!(
+                    formatter,
+                    "application reflection configuration failed: {source}"
+                )
+            }
             Self::Bind(source) => write!(
                 formatter,
                 "application host could not bind listener: {source}"
@@ -538,6 +545,7 @@ impl Error for ApplicationHostError {
         match self {
             Self::Lifecycle { source, .. } => Some(source),
             Self::RecoveryTask(source) => Some(source),
+            Self::Reflection(source) => Some(source),
             Self::Bind(source) => Some(source),
             Self::Transport(source) => Some(source),
         }
@@ -633,6 +641,7 @@ pub struct ApplicationHost {
     readiness: tokio::sync::watch::Sender<RecoveryState>,
     placement_gate: LegacyPlacementGate,
     placement_requirement: Option<LegacyPlacementRequirement>,
+    reflection_descriptor_sets: Vec<&'static [u8]>,
 }
 
 impl ApplicationHost {
@@ -668,6 +677,7 @@ impl ApplicationHost {
             readiness,
             placement_gate,
             placement_requirement: None,
+            reflection_descriptor_sets: Vec::new(),
         }
     }
 
@@ -686,6 +696,23 @@ impl ApplicationHost {
     pub fn with_host_recovery(mut self, recovery: impl HostRecovery) -> Self {
         self.recovery.push(Arc::new(recovery));
         self.readiness.send_replace(RecoveryState::Recovering);
+        self
+    }
+
+    /// Serves reflection from this generated descriptor set. The descriptor
+    /// remains caller-owned and is never written to placement metadata.
+    pub fn with_reflection_descriptor_set(mut self, descriptor_set: &'static [u8]) -> Self {
+        self.reflection_descriptor_sets.push(descriptor_set);
+        self
+    }
+
+    /// Registers authoritative generated descriptor sets for host reflection.
+    /// Only actually mounted public service names are advertised.
+    pub fn with_reflection_descriptor_sets(
+        mut self,
+        descriptor_sets: impl IntoIterator<Item = &'static [u8]>,
+    ) -> Self {
+        self.reflection_descriptor_sets.extend(descriptor_sets);
         self
     }
 
@@ -721,6 +748,7 @@ impl ApplicationHost {
             readiness: self.readiness,
             placement_gate: self.placement_gate,
             placement_requirement: self.placement_requirement,
+            reflection_descriptor_sets: self.reflection_descriptor_sets,
             public_services,
             router: self.router.add_service(service),
         }
@@ -760,6 +788,7 @@ impl ApplicationHost {
             readiness: self.readiness,
             placement_gate: self.placement_gate,
             placement_requirement: self.placement_requirement,
+            reflection_descriptor_sets: self.reflection_descriptor_sets,
             public_services,
             router: self.router.add_service(service),
         }
@@ -774,6 +803,7 @@ pub struct RunningApplicationHost {
     readiness: tokio::sync::watch::Sender<RecoveryState>,
     placement_gate: LegacyPlacementGate,
     placement_requirement: Option<LegacyPlacementRequirement>,
+    reflection_descriptor_sets: Vec<&'static [u8]>,
     public_services: BTreeSet<String>,
     router: Router<RecoveryIngressStack>,
 }
@@ -802,6 +832,7 @@ impl RunningApplicationHost {
             readiness: self.readiness,
             placement_gate: self.placement_gate,
             placement_requirement: self.placement_requirement,
+            reflection_descriptor_sets: self.reflection_descriptor_sets,
             public_services: self.public_services,
             router: self.router.add_service(service),
         }
@@ -838,6 +869,7 @@ impl RunningApplicationHost {
             readiness: self.readiness,
             placement_gate: self.placement_gate,
             placement_requirement: self.placement_requirement,
+            reflection_descriptor_sets: self.reflection_descriptor_sets,
             public_services: self.public_services,
             router: self.router.add_service(service),
         }
@@ -866,10 +898,30 @@ impl RunningApplicationHost {
             readiness,
             placement_gate,
             placement_requirement,
+            reflection_descriptor_sets,
             public_services,
             router,
             ..
         } = self;
+        let router = if reflection_descriptor_sets.is_empty() {
+            router
+        } else {
+            let mut reflection = tonic_reflection::server::Builder::configure();
+            for descriptor_set in reflection_descriptor_sets {
+                reflection = reflection.register_encoded_file_descriptor_set(descriptor_set);
+            }
+            for service_name in &public_services {
+                reflection = reflection.with_service_name(service_name);
+            }
+            // Explicit service-name mode requires the standard reflection name
+            // to be added separately; its descriptor is supplied by Tonic.
+            reflection = reflection.with_service_name("grpc.reflection.v1.ServerReflection");
+            router.add_service(
+                reflection
+                    .build_v1()
+                    .map_err(ApplicationHostError::Reflection)?,
+            )
+        };
         Self::start_lifecycle(&lifecycle).await?;
         // Bind before recovery so peers can reach the fixed Participant and
         // Coordinator control routes while public generated routes remain
