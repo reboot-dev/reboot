@@ -149,6 +149,9 @@ const config: Config = {
           trackingID: "G-T7HDGQM7JJ",
           anonymizeIP: true,
         },
+        googleTagManager: {
+          containerId: "GTM-PQKF62M9",
+        },
         docs: {
           routeBasePath: "/",
           sidebarPath: require.resolve("./sidebars.js"),
