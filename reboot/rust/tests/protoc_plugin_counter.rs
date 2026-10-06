@@ -245,7 +245,7 @@ struct AuthProbe {
     handler_calls: Arc<AtomicUsize>,
     decision: AuthorizationDecision,
     contexts: Arc<std::sync::Mutex<Vec<AuthorizationContext>>>,
-    snapshots: Arc<std::sync::Mutex<Vec<(Vec<u8>, Vec<u8>)>>>,
+    snapshots: Arc<std::sync::Mutex<Vec<(Option<Vec<u8>>, Vec<u8>)>>>,
 }
 
 impl TokenVerifier for AuthProbe {
@@ -265,7 +265,7 @@ impl Authorizer for AuthProbe {
     fn authorize<'a>(&'a self, context: &'a AuthorizationContext, _: Option<&'a Auth>, state: Option<&'a [u8]>, request: &'a [u8]) -> reboot::auth::AuthorizeFuture<'a> {
         self.authorizer_calls.fetch_add(1, Ordering::SeqCst);
         self.contexts.lock().unwrap().push(context.clone());
-        self.snapshots.lock().unwrap().push((state.unwrap().to_vec(), request.to_vec()));
+        self.snapshots.lock().unwrap().push((state.map(ToOwned::to_owned), request.to_vec()));
         let decision = self.decision.clone();
         Box::pin(async move { decision })
     }
@@ -871,8 +871,103 @@ async fn generated_fresh_exclusive_transaction_authorization_verifies_before_rep
     assert_eq!(contexts[0].headers.bearer_token.as_deref(), Some("allow"));
     drop(contexts);
     let snapshots = allowed.snapshots.lock().unwrap();
-    assert_eq!(proto::TransactionCounter::decode(snapshots[0].0.as_slice()).unwrap(), proto::TransactionCounter { value: 4 });
+    assert_eq!(proto::TransactionCounter::decode(snapshots[0].0.as_ref().unwrap().as_slice()).unwrap(), proto::TransactionCounter { value: 4 });
     assert_eq!(proto::TransactionIncrementRequest::decode(snapshots[0].1.as_slice()).unwrap(), proto::TransactionIncrementRequest { amount: 3 });
+}
+
+#[tokio::test]
+async fn generated_fresh_exclusive_factory_transaction_authorization_uses_absent_state_and_tonic_cleanup() {
+    use proto::transaction_counter_writes_methods_client::TransactionCounterWritesMethodsClient;
+
+    fn probe(decision: AuthorizationDecision) -> Arc<AuthProbe> {
+        Arc::new(AuthProbe {
+            verifier_calls: Arc::new(AtomicUsize::new(0)),
+            authorizer_calls: Arc::new(AtomicUsize::new(0)),
+            handler_calls: Arc::new(AtomicUsize::new(0)),
+            decision,
+            contexts: Arc::new(std::sync::Mutex::new(Vec::new())),
+            snapshots: Arc::new(std::sync::Mutex::new(Vec::new())),
+        })
+    }
+    fn request(token: &str) -> tonic::Request<proto::TransactionIncrementRequest> {
+        let mut headers = reboot::RebootHeaders::new("transaction-counter");
+        headers.bearer_token = Some(token.into());
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+        *request.metadata_mut() = headers.to_metadata().unwrap();
+        request
+    }
+
+    let rejected_trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let rejected = probe(AuthorizationDecision::Allow);
+    let adapter = factory_transaction_adapter(
+        Arc::clone(&rejected_trace), None, Arc::new(std::sync::Mutex::new(Vec::new())), false,
+    )
+    .with_authorization(AuthorizationPolicy::new(Some(rejected.clone()), Some(rejected.clone())));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(adapter))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+    let mut client = TransactionCounterWritesMethodsClient::connect(format!("http://{address}")).await.unwrap();
+    assert_eq!(client.factory_increment(request("reject")).await.unwrap_err().code(), tonic::Code::Unauthenticated);
+    assert_eq!(rejected.verifier_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(rejected.authorizer_calls.load(Ordering::SeqCst), 0);
+    assert!(rejected_trace.lock().unwrap().is_empty());
+    server.abort();
+
+    let denied_trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let denied = probe(AuthorizationDecision::PermissionDenied { message: "denied".into() });
+    let adapter = factory_transaction_adapter(
+        Arc::clone(&denied_trace), None, Arc::new(std::sync::Mutex::new(Vec::new())), false,
+    )
+    .with_authorization(AuthorizationPolicy::new(Some(denied.clone()), Some(denied.clone())));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(adapter))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+    let mut client = TransactionCounterWritesMethodsClient::connect(format!("http://{address}")).await.unwrap();
+    assert_eq!(client.factory_increment(request("allow")).await.unwrap_err().code(), tonic::Code::PermissionDenied);
+    assert_eq!(*denied_trace.lock().unwrap(), ["participant load", "participant abort"]);
+    assert_eq!(denied.snapshots.lock().unwrap()[0].0, None);
+    server.abort();
+
+    let allowed_trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let allowed = probe(AuthorizationDecision::Allow);
+    let adapter = factory_transaction_adapter(
+        Arc::clone(&allowed_trace), None, Arc::new(std::sync::Mutex::new(Vec::new())), false,
+    )
+    .with_authorization(AuthorizationPolicy::new(Some(allowed.clone()), Some(allowed.clone())));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(adapter))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+    let mut client = TransactionCounterWritesMethodsClient::connect(format!("http://{address}")).await.unwrap();
+    assert_eq!(client.factory_increment(request("allow")).await.unwrap().into_inner().value, 3);
+    assert_eq!(allowed.contexts.lock().unwrap()[0].method, "tests.reboot.protoc.TransactionCounterWritesMethods.FactoryIncrement");
+    assert_eq!(allowed.contexts.lock().unwrap()[0].headers.bearer_token.as_deref(), Some("allow"));
+    let snapshots = allowed.snapshots.lock().unwrap();
+    assert_eq!(snapshots[0].0, None);
+    assert_eq!(proto::TransactionIncrementRequest::decode(snapshots[0].1.as_slice()).unwrap(), proto::TransactionIncrementRequest { amount: 3 });
+    drop(snapshots);
+    assert_eq!(*allowed_trace.lock().unwrap(), [
+        "participant load", "factory handler", "coordinator DB prepare", "participant prepare",
+        "coordinator DB prepared", "coordinator DB decision", "participant commit", "coordinator DB cleanup",
+    ]);
+    server.abort();
 }
 
 #[tokio::test]
@@ -1722,9 +1817,9 @@ async fn generated_external_authentication_and_authorization_gate_handlers_and_s
     drop(contexts);
     let snapshots = allowed.snapshots.lock().unwrap();
     assert_eq!(snapshots.len(), 2);
-    assert_eq!(proto::Counter::decode(snapshots[0].0.as_slice()).unwrap(), proto::Counter { value: 0 });
+    assert_eq!(proto::Counter::decode(snapshots[0].0.as_ref().unwrap().as_slice()).unwrap(), proto::Counter { value: 0 });
     assert_eq!(proto::IncrementRequest::decode(snapshots[0].1.as_slice()).unwrap(), proto::IncrementRequest { amount: 5 });
-    assert_eq!(proto::Counter::decode(snapshots[1].0.as_slice()).unwrap(), proto::Counter { value: 5 });
+    assert_eq!(proto::Counter::decode(snapshots[1].0.as_ref().unwrap().as_slice()).unwrap(), proto::Counter { value: 5 });
     assert_eq!(proto::Empty::decode(snapshots[1].1.as_slice()).unwrap(), proto::Empty {});
     assert_eq!(database.store_requests().len(), 1, "denied writers must not persist state");
     allowed_server.abort();
