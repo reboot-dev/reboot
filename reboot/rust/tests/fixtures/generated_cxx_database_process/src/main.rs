@@ -108,10 +108,11 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 }
             }
         }
-        let mut result =
-            TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
-        result.final_state = Some(state.encode_to_vec());
-        Ok(result)
+        // Deliberately leave final_state unset: the fresh exclusive generated
+        // adapter must durably materialize the handler-mutated state.
+        Ok(TransactionExecution::new(proto::TransactionCounterValue {
+            value: state.value,
+        }))
     }
     async fn factory_increment(
         &self,
@@ -635,22 +636,29 @@ async fn main() {
             .unwrap_or(7);
         let idempotency_key = optional_arg("--idempotency-key")
             .map(|key| Uuid::parse_str(&key).expect("--idempotency-key must be a UUID"));
+        let expected_response = optional_arg("--expect-response")
+            .map(|value| value.parse::<i64>().expect("--expect-response must be i64"));
         for attempt in 0..100 {
             let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount });
             let mut headers = reboot::RebootHeaders::new(&state_ref);
             headers.idempotency_key = idempotency_key;
             *request.metadata_mut() = headers.to_metadata().unwrap();
             let result = if has("--shared-invoke") {
-                client.shared_read(request).await.map(|_| ())
+                client.shared_read(request).await
             } else if has("--factory-target-invoke") {
-                client.factory_increment_target(request).await.map(|_| ())
+                client.factory_increment_target(request).await
             } else if has("--factory-invoke") {
-                client.factory_increment(request).await.map(|_| ())
+                client.factory_increment(request).await
             } else {
-                client.increment(request).await.map(|_| ())
+                client.increment(request).await
             };
             match result {
-                Ok(()) => break,
+                Ok(response) => {
+                    if let Some(expected) = expected_response {
+                        assert_eq!(response.into_inner().value, expected);
+                    }
+                    break;
+                }
                 Err(status)
                     if has("--placement-planner") && status.code() == tonic::Code::Unavailable =>
                 {

@@ -556,6 +556,8 @@ fn exclusive_host(
             "--exit-after-invoke",
             "--amount",
             &amount.to_string(),
+            "--expect-response",
+            "12",
         ])
         .status()
         .unwrap()
@@ -2039,6 +2041,71 @@ fn generated_factory_root_recovers_target_across_two_cxx_database_processes() {
     let _ = root.wait();
     let _ = target.kill();
     let _ = target.wait();
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_fresh_exclusive_default_state_persists_through_live_placement_planner() {
+    let database_binary =
+        std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(store_counter(&db.endpoint(), "root", 5));
+    let listen = port();
+    let plan = placement_proto::ListenForPlanResponse::decode(
+        URL_SAFE_NO_PAD
+            .decode(legacy_plan_for(&[("root", listen)]))
+            .unwrap()
+            .as_slice(),
+    )
+    .unwrap();
+    let planner = LivePlannerServer::start(&runtime, plan);
+    let status = Command::new(&binary)
+        .args([
+            "--role",
+            "target",
+            "--listen",
+            &format!("127.0.0.1:{listen}"),
+            "--database",
+            &db.endpoint(),
+            "--placement-planner",
+            &planner.endpoint,
+            "--root-id",
+            "00000000-0000-0000-0000-000000000104",
+            "--state-ref",
+            "root",
+            "--invoke",
+            "--exit-after-invoke",
+            "--amount",
+            "7",
+            "--expect-response",
+            "12",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    for _ in 0..100 {
+        if runtime.block_on(load_state(&db.endpoint(), "root")) == Some(vec![0x08, 0x0c]) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), "root")),
+        Some(vec![0x08, 0x0c])
+    );
+    planner.stop();
 }
 
 #[test]

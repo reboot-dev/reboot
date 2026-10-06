@@ -471,6 +471,7 @@ struct TransactionCounter {
     trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
     fail: bool,
     downstream: Option<transaction_generated::TransactionCounterWritesMethodsClient<FixedChannelResolver>>,
+    final_state_override: Option<i64>,
 }
 
 #[tonic::async_trait]
@@ -521,7 +522,9 @@ impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler fo
         let mut execution = reboot::runtime::TransactionExecution::new(
             proto::TransactionCounterValue { value: state.value },
         );
-        execution.final_state = Some(state.encode_to_vec());
+        if let Some(value) = self.final_state_override {
+            execution.final_state = Some(proto::TransactionCounter { value }.encode_to_vec());
+        }
         Ok(execution)
     }
 
@@ -792,7 +795,7 @@ fn transaction_adapter_with_store_and_idempotent_recovery(
         participant,
         coordinator,
         TransactionStartFactory,
-        TransactionCounter { trace, fail, downstream: None },
+        TransactionCounter { trace, fail, downstream: None, final_state_override: None },
     )
 }
 
@@ -824,7 +827,7 @@ fn transaction_adapter_with_downstream(
     transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(
         DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(), participant, coordinator,
         TransactionStartFactory,
-        TransactionCounter { trace, fail: false, downstream: Some(transaction_generated::TransactionCounterWritesMethodsClient::new(FixedChannelResolver(channel))) },
+        TransactionCounter { trace, fail: false, downstream: Some(transaction_generated::TransactionCounterWritesMethodsClient::new(FixedChannelResolver(channel))), final_state_override: None },
     )
 }
 
@@ -833,6 +836,7 @@ fn factory_transaction_adapter(
     initial_state: Option<proto::TransactionCounter>,
     staged_states: Arc<std::sync::Mutex<Vec<Option<Vec<u8>>>>>,
     fail: bool,
+    final_state_override: Option<i64>,
 ) -> transaction_generated::TransactionCounterWritesMethodsTransactionAdapter<
     TransactionCounter,
     TransactionParticipantSidecar,
@@ -866,7 +870,7 @@ fn factory_transaction_adapter(
         participant,
         coordinator,
         TransactionStartFactory,
-        TransactionCounter { trace, fail, downstream: None },
+        TransactionCounter { trace, fail, downstream: None, final_state_override },
     )
 }
 
@@ -1034,7 +1038,7 @@ async fn generated_fresh_exclusive_factory_transaction_authorization_uses_absent
     let rejected_trace = Arc::new(std::sync::Mutex::new(Vec::new()));
     let rejected = probe(AuthorizationDecision::Allow);
     let adapter = factory_transaction_adapter(
-        Arc::clone(&rejected_trace), None, Arc::new(std::sync::Mutex::new(Vec::new())), false,
+        Arc::clone(&rejected_trace), None, Arc::new(std::sync::Mutex::new(Vec::new())), false, None,
     )
     .with_authorization(AuthorizationPolicy::new(Some(rejected.clone()), Some(rejected.clone())));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1056,7 +1060,7 @@ async fn generated_fresh_exclusive_factory_transaction_authorization_uses_absent
     let denied_trace = Arc::new(std::sync::Mutex::new(Vec::new()));
     let denied = probe(AuthorizationDecision::PermissionDenied { message: "denied".into() });
     let adapter = factory_transaction_adapter(
-        Arc::clone(&denied_trace), None, Arc::new(std::sync::Mutex::new(Vec::new())), false,
+        Arc::clone(&denied_trace), None, Arc::new(std::sync::Mutex::new(Vec::new())), false, None,
     )
     .with_authorization(AuthorizationPolicy::new(Some(denied.clone()), Some(denied.clone())));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1077,7 +1081,7 @@ async fn generated_fresh_exclusive_factory_transaction_authorization_uses_absent
     let allowed_trace = Arc::new(std::sync::Mutex::new(Vec::new()));
     let allowed = probe(AuthorizationDecision::Allow);
     let adapter = factory_transaction_adapter(
-        Arc::clone(&allowed_trace), None, Arc::new(std::sync::Mutex::new(Vec::new())), false,
+        Arc::clone(&allowed_trace), None, Arc::new(std::sync::Mutex::new(Vec::new())), false, None,
     )
     .with_authorization(AuthorizationPolicy::new(Some(allowed.clone()), Some(allowed.clone())));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1284,7 +1288,7 @@ async fn generated_factory_transaction_materializes_default_state_and_rejects_ex
         .to_metadata()
         .unwrap();
     let response = TransactionCounterWritesMethods::factory_increment(
-        &factory_transaction_adapter(Arc::clone(&trace), None, Arc::clone(&staged_states), false),
+        &factory_transaction_adapter(Arc::clone(&trace), None, Arc::clone(&staged_states), false, None),
         request,
     )
     .await
@@ -1316,7 +1320,7 @@ async fn generated_factory_transaction_materializes_default_state_and_rejects_ex
         .to_metadata()
         .unwrap();
     let error = TransactionCounterWritesMethods::increment(
-        &factory_transaction_adapter(Arc::clone(&trace), None, Arc::clone(&staged_states), false),
+        &factory_transaction_adapter(Arc::clone(&trace), None, Arc::clone(&staged_states), false, None),
         request,
     )
     .await
@@ -1337,6 +1341,7 @@ async fn generated_factory_transaction_materializes_default_state_and_rejects_ex
             Some(proto::TransactionCounter { value: 9 }),
             Arc::clone(&staged_states),
             false,
+            None,
         ),
         request,
     )
@@ -1353,7 +1358,7 @@ async fn generated_factory_transaction_materializes_default_state_and_rejects_ex
         .to_metadata()
         .unwrap();
     let error = TransactionCounterWritesMethods::factory_increment(
-        &factory_transaction_adapter(Arc::clone(&trace), None, Arc::clone(&staged_states), true),
+        &factory_transaction_adapter(Arc::clone(&trace), None, Arc::clone(&staged_states), true, None),
         request,
     )
     .await
@@ -1361,6 +1366,43 @@ async fn generated_factory_transaction_materializes_default_state_and_rejects_ex
     assert_eq!(error.code(), tonic::Code::InvalidArgument);
     assert!(staged_states.lock().unwrap().is_empty(), "aborted factory must not prepare state");
     assert_eq!(*trace.lock().unwrap(), ["participant load", "factory handler", "participant abort"]);
+}
+
+#[tokio::test]
+async fn generated_tonic_fresh_exclusive_stages_handler_mutation_by_default_and_honors_override() {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer;
+
+    for (override_value, expected_state) in [(None, 7), (Some(99), 99)] {
+        let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let staged_states = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let adapter = factory_transaction_adapter(
+            Arc::clone(&trace),
+            Some(proto::TransactionCounter { value: 4 }),
+            Arc::clone(&staged_states),
+            false,
+            override_value,
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(TransactionCounterWritesMethodsServer::new(adapter))
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+        let mut client = proto::transaction_counter_writes_methods_client::TransactionCounterWritesMethodsClient::connect(format!("http://{address}")).await.unwrap();
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+        *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter")
+            .to_metadata()
+            .unwrap();
+        assert_eq!(client.increment(request).await.unwrap().into_inner().value, 7);
+        assert_eq!(
+            proto::TransactionCounter::decode(staged_states.lock().unwrap()[0].as_deref().unwrap()).unwrap(),
+            proto::TransactionCounter { value: expected_state },
+        );
+        server.abort();
+    }
 }
 
 #[tokio::test]
