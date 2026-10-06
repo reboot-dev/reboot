@@ -2568,6 +2568,7 @@ pub mod test_support {
         actors: HashMap<(String, String), Vec<u8>>,
         mutations: HashMap<(String, String, Vec<u8>), database::IdempotentMutation>,
         store_requests: Vec<database::StoreRequest>,
+        create_requests: Vec<database::CreateActorRequest>,
     }
 
     impl FakeDatabase {
@@ -2576,6 +2577,14 @@ pub mod test_support {
                 .lock()
                 .expect("fake database mutex poisoned")
                 .store_requests
+                .clone()
+        }
+
+        pub fn create_requests(&self) -> Vec<database::CreateActorRequest> {
+            self.state
+                .lock()
+                .expect("fake database mutex poisoned")
+                .create_requests
                 .clone()
         }
     }
@@ -2694,6 +2703,7 @@ pub mod test_support {
             let request = request.into_inner();
             let actor = request
                 .actor
+                .clone()
                 .ok_or_else(|| Status::invalid_argument("missing actor"))?;
             let actor_state = actor
                 .state
@@ -2701,6 +2711,7 @@ pub mod test_support {
                 .ok_or_else(|| Status::invalid_argument("actor has no state"))?;
             let mutation = request
                 .idempotent_mutation
+                .clone()
                 .ok_or_else(|| Status::invalid_argument("missing idempotent mutation"))?;
             if !request.sync
                 || mutation.state_type != actor.state_type
@@ -2724,6 +2735,7 @@ pub mod test_support {
                 ),
                 mutation,
             );
+            state.create_requests.push(request);
             Ok(Response::new(database::CreateActorResponse::default()))
         }
 

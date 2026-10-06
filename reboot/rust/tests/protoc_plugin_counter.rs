@@ -134,7 +134,7 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     std::fs::write(
         fixture.join("build.rs"),
         format!(
-            "fn main() {{\n    let repository = std::path::Path::new(\"{}\");\n    reboot::build::compile_protos_with_runtime(\n        &[\n            repository.join(\"tests/reboot/protoc/counter.proto\"),\n            repository.join(\"tests/reboot/protoc/map_counter.proto\"),\n            repository.join(\"tests/reboot/protoc/transaction_counter.proto\"),\n        ],\n        &[repository],\n        \"crate::proto\",\n        \"reboot\",\n    ).unwrap();\n}}\n",
+            "fn main() {{\n    let repository = std::path::Path::new(\"{}\");\n    reboot::build::compile_protos_with_runtime(\n        &[\n            repository.join(\"tests/reboot/protoc/counter.proto\"),\n            repository.join(\"tests/reboot/protoc/constructor_counter.proto\"),\n            repository.join(\"tests/reboot/protoc/map_counter.proto\"),\n            repository.join(\"tests/reboot/protoc/transaction_counter.proto\"),\n        ],\n        &[repository],\n        \"crate::proto\",\n        \"reboot\",\n    ).unwrap();\n}}\n",
             repository.display()
         ),
     )
@@ -160,6 +160,11 @@ mod generated {
 }
 
 #[allow(dead_code)]
+mod constructor_generated {
+    include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/constructor_counter.reboot.rs"));
+}
+
+#[allow(dead_code)]
 mod map_generated {
     include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/map_counter.reboot.rs"));
 }
@@ -171,7 +176,7 @@ mod transaction_generated {
 
 #[cfg(test)]
 mod tests {
-    use super::{generated, map_generated, proto, transaction_generated};
+    use super::{constructor_generated, generated, map_generated, proto, transaction_generated};
     use prost::Message;
     use reboot::{
         application_host::ApplicationHost,
@@ -287,6 +292,21 @@ impl generated::CounterReadsMethodsDatabaseHandler for AuthCounter {
     async fn get(&self, state: &proto::Counter, _: proto::Empty) -> Result<proto::CounterValue, generated::CounterReadsMethodsGetError> {
         self.0.fetch_add(1, Ordering::SeqCst);
         Ok(proto::CounterValue { value: state.value })
+    }
+}
+
+struct ConstructorCounter(Arc<AtomicUsize>);
+
+#[tonic::async_trait]
+impl constructor_generated::ConstructorCounterWritesMethodsDatabaseHandler for ConstructorCounter {
+    async fn create(
+        &self,
+        state: &mut proto::ConstructorCounter,
+        request: proto::ConstructorCreateRequest,
+    ) -> Result<proto::ConstructorCounterValue, tonic::Status> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        state.value = request.initial_value;
+        Ok(proto::ConstructorCounterValue { value: state.value })
     }
 }
 
@@ -1931,6 +1951,116 @@ async fn generated_external_authentication_and_authorization_gate_handlers_and_s
     database_server.abort();
 }
 
+#[tokio::test]
+async fn generated_external_constructor_authorization_hides_absence_and_authorizes_existing_state() {
+    fn probe(decision: AuthorizationDecision) -> Arc<AuthProbe> {
+        Arc::new(AuthProbe {
+            verifier_calls: Arc::new(AtomicUsize::new(0)),
+            authorizer_calls: Arc::new(AtomicUsize::new(0)),
+            handler_calls: Arc::new(AtomicUsize::new(0)),
+            decision,
+            contexts: Arc::new(std::sync::Mutex::new(Vec::new())),
+            snapshots: Arc::new(std::sync::Mutex::new(Vec::new())),
+        })
+    }
+    fn request(state_ref: &str, token: &str, initial_value: i64) -> tonic::Request<proto::ConstructorCreateRequest> {
+        let mut headers = reboot::RebootHeaders::new(state_ref);
+        headers.bearer_token = Some(token.into());
+        headers.idempotency_key = Some(Uuid::new_v4());
+        let mut request = tonic::Request::new(proto::ConstructorCreateRequest { initial_value });
+        *request.metadata_mut() = headers.to_metadata().unwrap();
+        request
+    }
+    async fn start(
+        database_endpoint: &str,
+        authorization: AuthorizationPolicy,
+        handler_calls: Arc<AtomicUsize>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let adapter = constructor_generated::ConstructorCounterWritesMethodsDatabaseAdapter::new(
+            DatabaseActorStore::connect(database_endpoint).await.unwrap(),
+            ConstructorCounter(handler_calls),
+        )
+        .with_authorization(authorization);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(proto::constructor_counter_writes_methods_server::ConstructorCounterWritesMethodsServer::new(adapter))
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+        (format!("http://{address}"), server)
+    }
+
+    let (database_endpoint, database, database_server) = start_database().await;
+    let rejected = probe(AuthorizationDecision::Allow);
+    let (address, server) = start(
+        &database_endpoint,
+        AuthorizationPolicy::new(Some(rejected.clone()), Some(rejected.clone())),
+        Arc::clone(&rejected.handler_calls),
+    )
+    .await;
+    let mut client = proto::constructor_counter_writes_methods_client::ConstructorCounterWritesMethodsClient::connect(address).await.unwrap();
+    assert_eq!(client.create(request("constructor-rejected", "reject", 3)).await.unwrap_err().code(), tonic::Code::Unauthenticated);
+    assert_eq!(rejected.verifier_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(rejected.authorizer_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(rejected.handler_calls.load(Ordering::SeqCst), 0);
+    assert!(database.create_requests().is_empty(), "verifier rejection must not create an actor or idempotency mutation");
+    server.abort();
+
+    let denied = probe(AuthorizationDecision::PermissionDenied { message: "denied".into() });
+    let (address, server) = start(
+        &database_endpoint,
+        AuthorizationPolicy::new(Some(denied.clone()), Some(denied.clone())),
+        Arc::clone(&denied.handler_calls),
+    )
+    .await;
+    let mut client = proto::constructor_counter_writes_methods_client::ConstructorCounterWritesMethodsClient::connect(address).await.unwrap();
+    assert_eq!(client.create(request("constructor-denied", "allow", 5)).await.unwrap_err().code(), tonic::Code::PermissionDenied);
+    assert_eq!(denied.authorizer_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(denied.handler_calls.load(Ordering::SeqCst), 0);
+    assert!(database.create_requests().is_empty(), "absent-state denial must not create an actor or idempotency mutation");
+    let denied_snapshots = denied.snapshots.lock().unwrap();
+    assert_eq!(denied_snapshots.as_slice(), &[(None, proto::ConstructorCreateRequest { initial_value: 5 }.encode_to_vec())]);
+    drop(denied_snapshots);
+    server.abort();
+
+    let allowed = probe(AuthorizationDecision::Allow);
+    let (address, server) = start(
+        &database_endpoint,
+        AuthorizationPolicy::new(Some(allowed.clone()), Some(allowed.clone())),
+        Arc::clone(&allowed.handler_calls),
+    )
+    .await;
+    let mut client = proto::constructor_counter_writes_methods_client::ConstructorCounterWritesMethodsClient::connect(address).await.unwrap();
+    assert_eq!(client.create(request("constructor-denied", "allow", 5)).await.unwrap().into_inner().value, 5);
+    assert_eq!(client.create(request("constructor-denied", "allow", 9)).await.unwrap_err().code(), tonic::Code::FailedPrecondition);
+    assert_eq!(allowed.handler_calls.load(Ordering::SeqCst), 1, "denial and existing-actor conflict must not invoke the constructor handler");
+    assert_eq!(database.create_requests().len(), 1, "only the allowed constructor may atomically create its actor and idempotency mutation");
+    let contexts = allowed.contexts.lock().unwrap();
+    assert_eq!(contexts.len(), 2);
+    assert!(contexts.iter().all(|context| {
+        context.state_type == "tests.reboot.protoc.ConstructorCounter"
+            && context.method == "tests.reboot.protoc.ConstructorCounterWritesMethods.Create"
+            && context.headers.bearer_token.as_deref() == Some("allow")
+            && context.headers.idempotency_key.is_none()
+            && !context.headers.internal_call
+    }));
+    drop(contexts);
+    let snapshots = allowed.snapshots.lock().unwrap();
+    assert_eq!(snapshots.len(), 2);
+    assert_eq!(snapshots[0], (None, proto::ConstructorCreateRequest { initial_value: 5 }.encode_to_vec()));
+    assert_eq!(
+        proto::ConstructorCounter::decode(snapshots[1].0.as_ref().unwrap().as_slice()).unwrap(),
+        proto::ConstructorCounter { value: 5 },
+        "the existing actor is authorized from its immutable loaded state before the conflict is disclosed",
+    );
+    assert_eq!(snapshots[1].1, proto::ConstructorCreateRequest { initial_value: 9 }.encode_to_vec());
+    drop(snapshots);
+    server.abort();
+    database_server.abort();
+}
 
 #[tokio::test]
 async fn generated_external_client_decodes_ordered_declared_errors_and_preserves_grpc_fallbacks() {

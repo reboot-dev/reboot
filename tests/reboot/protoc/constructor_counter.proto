@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+
+package tests.reboot.protoc;
+
+message ConstructorCounter {
+  option (rbt.v1alpha1.state) = {
+    implements: ["tests.reboot.protoc.ConstructorCounterWritesMethods"]
+  };
+  int64 value = 1;
+}
+
+message ConstructorCreateRequest {
+  int64 initial_value = 1;
+}
+
+message ConstructorCounterValue {
+  int64 value = 1;
+}
+
+service ConstructorCounterWritesMethods {
+  option (rbt.v1alpha1.service) = {
+    state: "tests.reboot.protoc.ConstructorCounter"
+  };
+
+  rpc Create(ConstructorCreateRequest) returns (ConstructorCounterValue) {
+    option (rbt.v1alpha1.method).writer = { constructor: {} };
+  }
+}
