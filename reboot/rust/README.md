@@ -1,5 +1,8 @@
 # Rust Reboot SDK
 
+Generated transaction adapters can opt into host-owned explicit Abort cleanup after
+queue acceptance; see [scope, registration and limits](PARITY-MAP.md#host-owned-explicit-abort-after-queue-acceptance).
+
 ## Explicit pre-handoff transaction-tree failure checkpoint
 
 Bounded prerequisite for distributed tasks: generated fresh, non-idempotent,

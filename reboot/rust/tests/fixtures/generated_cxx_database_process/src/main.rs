@@ -760,6 +760,9 @@ async fn main() {
         } else {
             (adapter, None)
         };
+    let adapter = if has("--owned-explicit-abort") {
+        adapter.with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(8).unwrap())
+    } else { adapter };
     if has("--prove-cancel-before-durable") {
         use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
         let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: -9000 });
@@ -781,6 +784,7 @@ async fn main() {
     if let Some(planner_recovery) = planner_recovery {
         host = host.with_host_recovery(planner_recovery);
     }
+    if has("--owned-explicit-abort") { host = host.with_host_recovery(adapter.explicit_abort_recovery_registration().unwrap()); }
     if has("--recover") {
         let watch = Arc::new(
             LegacyApplicationCoordinatorWatchEndpoint::new(

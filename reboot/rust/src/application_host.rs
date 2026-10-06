@@ -155,7 +155,7 @@ pub struct RecoveryCancellation {
     placement: Option<tokio::sync::watch::Receiver<bool>>,
 }
 impl RecoveryCancellation {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let (state, _) = tokio::sync::watch::channel(false);
         Self {
             state: Arc::new(state),

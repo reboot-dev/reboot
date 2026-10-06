@@ -2,16 +2,22 @@
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn distributed_task_admission_failure_must_release_remote_actor() {
-    explicit_distributed_root_failure_acceptance(false);
+    explicit_distributed_root_failure_acceptance(false, false);
 }
 
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn distributed_direct_handler_failure_must_release_remote_actor() {
-    explicit_distributed_root_failure_acceptance(true);
+    explicit_distributed_root_failure_acceptance(true, false);
 }
 
-fn explicit_distributed_root_failure_acceptance(handler_error: bool) {
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
+fn owned_explicit_abort_survives_generated_rpc_deadline() {
+    explicit_distributed_root_failure_acceptance(true, true);
+}
+
+fn explicit_distributed_root_failure_acceptance(handler_error: bool, cancelled: bool) {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/generated_cxx_database_process");
     assert!(
@@ -69,7 +75,7 @@ fn explicit_distributed_root_failure_acceptance(handler_error: bool) {
     );
     wait(target_port);
     planner.wait_for_connections(1);
-    let probe = || {
+    let probe_once = || {
         runtime.block_on(async {
             let channel =
                 tonic::transport::Endpoint::from_shared(format!("http://127.0.0.1:{target_port}"))
@@ -98,13 +104,24 @@ fn explicit_distributed_root_failure_acceptance(handler_error: bool) {
                 .map_err(Box::new)
         })
     };
+    let probe = || {
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            let result = probe_once();
+            if matches!(&result, Err(status) if matches!(status.code(), tonic::Code::Unavailable | tonic::Code::DeadlineExceeded | tonic::Code::Cancelled)) && std::time::Instant::now() < deadline { std::thread::sleep(Duration::from_millis(20)); continue; }
+            break result;
+        }
+    };
     assert_eq!(
         probe().unwrap().into_inner().value,
         20,
         "baseline generated target reader"
     );
+    let park = markers.path().join("abort-park");
+    let mut root_command = Command::new(&binary);
+    if cancelled { root_command.env("REBOOT_TEST_EXPLICIT_ABORT_PARK", &park).arg("--owned-explicit-abort"); }
     let mut root = WaitHostGuard(
-        Command::new(&binary)
+        root_command
             .args([
                 "--role",
                 "root",
@@ -134,14 +151,51 @@ fn explicit_distributed_root_failure_acceptance(handler_error: bool) {
                     "no-owner"
                 },
                 "--expect-task-error",
-                "--exit-after-invoke",
-                "--invoke",
+                if cancelled { "--no-invoke" } else { "--exit-after-invoke" },
+                if cancelled { "--no-invoke" } else { "--invoke" },
                 "--invoke-marker",
                 ack.to_str().unwrap(),
             ])
             .spawn()
             .unwrap(),
     );
+    if cancelled {
+        wait(root_port);
+        planner.wait_for_connections(2);
+        runtime.block_on(async {
+            let channel = tonic::transport::Endpoint::from_shared(format!("http://127.0.0.1:{root_port}")).unwrap().connect_lazy();
+            let mut client = tonic::client::Grpc::new(channel);
+            tokio::time::timeout(Duration::from_secs(3), async {
+                loop {
+                    client.ready().await.unwrap();
+                    let mut request = tonic::Request::new(TaskQueryRequest { amount: 1 });
+                    request.metadata_mut().insert("x-reboot-state-ref", "root".parse().unwrap());
+                    request.set_timeout(Duration::from_millis(500));
+                    let error = client.unary::<_, TaskQueryResponse, _>(request, "/tests.reboot.protoc.TransactionCounterWritesMethods/Increment".parse().unwrap(), tonic::codec::ProstCodec::default()).await.unwrap_err();
+                    if error.code() == tonic::Code::Unavailable && !park.exists() { tokio::time::sleep(Duration::from_millis(20)).await; continue; }
+                    assert!(matches!(error.code(), tonic::Code::Cancelled | tonic::Code::DeadlineExceeded), "expected actual deadline: {error}");
+                    break;
+                }
+            }).await.unwrap();
+        });
+        for _ in 0..100 { if park.with_extension("observer-dropped").exists() { break; } std::thread::sleep(Duration::from_millis(10)); }
+        assert!(park.exists(), "real DecisionPut ACK barrier not reached");
+        assert!(park.with_extension("observer-dropped").exists(), "actual generated response observer was not dropped by Tonic deadline");
+        std::fs::write(park.with_extension("release"), b"release owned cleanup").unwrap();
+        assert_eq!(probe().expect("owned cleanup did not release remote").into_inner().value, 20);
+        runtime.block_on(async {
+            let channel = tonic::transport::Endpoint::from_shared(format!("http://127.0.0.1:{root_port}")).unwrap().connect_lazy();
+            let mut client = tonic::client::Grpc::new(channel);
+            client.ready().await.unwrap();
+            let mut request = tonic::Request::new(TaskQueryRequest { amount: 0 });
+            request.metadata_mut().insert("x-reboot-state-ref", "root".parse().unwrap());
+            request.metadata_mut().insert("x-reboot-idempotency-key", Uuid::new_v4().to_string().parse().unwrap());
+            request.set_timeout(Duration::from_secs(1));
+            assert_eq!(client.unary::<_, TaskQueryResponse, _>(request, "/tests.reboot.protoc.TransactionCounterWritesMethods/Apply".parse().unwrap(), tonic::codec::ProstCodec::default()).await.expect("root exclusive re-admission failed").into_inner().value, 5);
+        });
+        assert!(root.try_wait().unwrap().is_none());
+        root.kill().unwrap(); root.wait().unwrap();
+    } else {
     for _ in 0..200 {
         if root.try_wait().unwrap().is_some() {
             break;
@@ -154,6 +208,7 @@ fn explicit_distributed_root_failure_acceptance(handler_error: bool) {
             .expect("root denial did not return")
             .success()
     );
+    }
     assert!(!reader.exists());
     assert!(
         std::path::Path::new(&format!("{}.task-id", reader.display())).exists(),

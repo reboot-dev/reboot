@@ -20,6 +20,7 @@ pub mod build;
 pub mod codegen;
 pub mod durable_coordinator;
 pub mod durable_participant;
+pub mod explicit_abort;
 pub mod http_host;
 pub mod legacy_coordinator;
 pub mod legacy_placement;

@@ -1,5 +1,45 @@
 # Python → Rust SDK parity map
 
+## Host-owned explicit Abort after queue acceptance
+
+**Partial transaction-tree cancellation prerequisite**, not distributed-task or
+crash-recovery parity. Python's root error path and participant watcher fallback
+are in `reboot/aio/state_managers.py:5179–5215,5869–5979`; Rust instead explicitly
+owns an acknowledged Abort fanout in `src/explicit_abort.rs` and the generated
+error/admission branches in `src/codegen.rs`.
+
+Attach one `ExplicitAbortOwner::new(capacity)` with the generated adapter's
+`with_explicit_abort_owner`, and register that same adapter's
+`explicit_abort_recovery_registration()` through `ApplicationHost::with_host_recovery`.
+The owner is inactive until registration. Capacity must be 1..=1024 total queued
+plus running jobs; one serial worker owns execution. Confirmed remote targets are
+capped at 1024. Each running job has a 30-second default deadline, configurable
+with `with_timeout` to a nonzero duration of at most 300 seconds.
+
+The guarantee starts **only after successful queue acceptance**: fresh-root,
+Database/coordinator and live-incarnation checks seal membership and disarm local
+Drop before the owned future is submitted without another await. Dropping the
+RPC response observer cannot cancel that future. Immutable Abort ACK precedes
+remote terminal ACKs and exact-incarnation local ACK. There are no terminal RPC
+retries. A timeout, lost ACK or admission uncertainty fails host supervision and
+retains incomplete ownership; it does not establish restart convergence. Shutdown
+cancels and joins the worker and drops queued sealed jobs without speculative release.
+
+An unfinished generated outbound scope permanently marks membership uncertain,
+even when its active count reaches zero; explicit sealing rejects that state.
+Successful calls mark the scope complete only after decoding/enlisting trailers.
+This does not discover lost participants or make every empty-membership error path safe.
+Cancellation during the handler, preseal pending-mutex await, and before queue
+acceptance remains outside this guarantee. Crash-durable membership, automatic
+cleanup retry, remote scheduling and general root lifetime ownership remain missing.
+
+Acceptance: a real generated Tonic deadline drops the server response observer
+while a host-owned worker is parked after real C++ Database DecisionPut ACK;
+after release both original actors exclusively re-admit without restart, state
+and tasks remain unchanged, and Abort survives RocksDB restart. Unit tests cover
+observer independence, bounded admission, queued-unpolled shutdown, sticky
+uncertainty, fatal watch state, and lost-local-ACK/timeout one-attempt retention.
+
 ## Explicit pre-handoff transaction-tree failure checkpoint
 
 Bounded prerequisite for distributed tasks: generated fresh, non-idempotent,

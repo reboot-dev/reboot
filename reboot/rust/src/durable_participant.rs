@@ -1595,7 +1595,9 @@ mod tests {
                 .await
                 .is_err()
         );
-        assert!(root.transaction().begin_generated_outbound().is_ok());
+        let mut outbound = root.transaction().begin_generated_outbound().unwrap();
+        outbound.completed();
+        drop(outbound);
         participant
             .pending
             .lock()

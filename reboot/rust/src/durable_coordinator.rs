@@ -547,6 +547,42 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         local: &mut crate::durable_participant::StartedLocalTransaction<P>,
         context: &crate::runtime::TransactionContext,
     ) -> Result<(), Status> {
+        #[cfg(feature = "test-support")]
+        let _observer_drop = crate::explicit_abort::ObserverDrop::new();
+        self.validate_explicit_abort(local, context)?;
+        let identity = self.require_identity()?;
+        let returned = local.begin_explicit_root_abort(context).await?;
+        let mut targets = BTreeSet::new();
+        for participant in returned {
+            if participant.target.state_type.is_empty() || participant.target.state_ref.is_empty() {
+                return Err(Status::invalid_argument(
+                    "participant identity must be specified",
+                ));
+            }
+            // Local control is delivered only by the owner-token checked ACK.
+            if &participant.target != identity {
+                targets.insert(participant.target);
+            }
+        }
+        self.persist_abort(
+            context.transaction_root_id(),
+            context.transaction_coordinator_state_ref(),
+        )
+        .await?;
+        #[cfg(feature = "test-support")]
+        crate::explicit_abort::park_after_decision().await;
+        self.terminal_all(context.transaction_root_id(), &targets, false)
+            .await?;
+        local.acknowledge_explicit_root_abort().await?;
+        context.finish_explicit_abort()?;
+        Ok(())
+    }
+
+    fn validate_explicit_abort<P: ParticipantSidecar>(
+        &self,
+        local: &crate::durable_participant::StartedLocalTransaction<P>,
+        context: &crate::runtime::TransactionContext,
+    ) -> Result<(), Status> {
         if context.transaction_ids().len() != 1
             || context.mode() != TransactionMode::Exclusive
             || context.headers().idempotency_key.is_some()
@@ -570,7 +606,34 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 "explicit root abort requires the same verified Database authority",
             ));
         }
-        let returned = local.begin_explicit_root_abort(context).await?;
+        Ok(())
+    }
+
+    pub(crate) async fn own_explicit_abort<P: ParticipantSidecar>(
+        self,
+        mut local: crate::durable_participant::StartedLocalTransaction<P>,
+        context: crate::runtime::TransactionContext,
+    ) -> Result<
+        std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Status>> + Send>>,
+        Status,
+    > {
+        if let Err(error) = self.validate_explicit_abort(&local, &context) {
+            local.handoff_to_durable_recovery();
+            return Err(error);
+        }
+        let returned = match local.begin_explicit_root_abort(&context).await {
+            Ok(returned) => returned,
+            Err(error) => {
+                local.handoff_to_durable_recovery();
+                return Err(error);
+            }
+        };
+        if returned.len() > 1024 {
+            return Err(Status::resource_exhausted(
+                "explicit Abort participant limit exceeded; ownership retained",
+            ));
+        }
+        let identity = self.require_identity()?;
         let mut targets = BTreeSet::new();
         for participant in returned {
             if participant.target.state_type.is_empty() || participant.target.state_ref.is_empty() {
@@ -578,21 +641,24 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                     "participant identity must be specified",
                 ));
             }
-            // Local control is delivered only by the owner-token checked ACK.
             if &participant.target != identity {
                 targets.insert(participant.target);
             }
         }
-        self.persist_abort(
-            context.transaction_root_id(),
-            context.transaction_coordinator_state_ref(),
-        )
-        .await?;
-        self.terminal_all(context.transaction_root_id(), &targets, false)
+        Ok(Box::pin(async move {
+            self.persist_abort(
+                context.transaction_root_id(),
+                context.transaction_coordinator_state_ref(),
+            )
             .await?;
-        local.acknowledge_explicit_root_abort().await?;
-        context.finish_explicit_abort()?;
-        Ok(())
+            #[cfg(feature = "test-support")]
+            crate::explicit_abort::park_after_decision().await;
+            self.terminal_all(context.transaction_root_id(), &targets, false)
+                .await?;
+            local.acknowledge_explicit_root_abort().await?;
+            context.finish_explicit_abort()?;
+            Ok(())
+        }))
     }
 
     /// Completes a root transaction with no remote transactional calls.
@@ -1733,6 +1799,168 @@ mod tests {
             } else {
                 assert!(calls.is_empty(), "handoff must forbid synthetic Abort");
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn owned_explicit_abort_lost_local_ack_and_timeout_never_retry_or_release() {
+        use crate::{
+            RebootHeaders,
+            application_host::{HostRecovery, RecoveryCancellation},
+            explicit_abort::ExplicitAbortOwner,
+            runtime::RootTransactionContext,
+        };
+        for scenario in ["lost-ack", "timeout", "inactive", "unpolled"] {
+            let parked = scenario == "timeout";
+            let trace = Arc::new(Mutex::new(Vec::new()));
+            let sidecar = Arc::new(MockSidecar {
+                trace: trace.clone(),
+                ..Default::default()
+            });
+            let endpoint = Arc::new(MockEndpoint {
+                trace: trace.clone(),
+                ..Default::default()
+            });
+            let local_sidecar = Arc::new(InProcessSidecar {
+                trace: trace.clone(),
+                abort_error: !parked,
+                park_abort: parked,
+                ..Default::default()
+            });
+            let participant =
+                DurableActorParticipant::new(local_sidecar.clone(), "example.Actor", "actor/1");
+            let id = Uuid::new_v4();
+            let start = ActorTransactionStart {
+                transaction_ids: vec![id],
+                transaction_path: crate::durable_participant::TransactionPathContract::RootOnly,
+                coordinator_state_type: "example.Actor".into(),
+                coordinator_state_ref: "actor/1".into(),
+                mode: TransactionMode::Exclusive,
+                read_only: false,
+                factory: false,
+                state_type: "example.Actor".into(),
+                state_ref: "actor/1".into(),
+            };
+            let local = participant
+                .start_local(start.clone(), ParticipantStartMode::Exclusive)
+                .await
+                .unwrap();
+            let root = RootTransactionContext::start(
+                RebootHeaders::new("actor/1"),
+                "example.Actor",
+                TransactionMode::Exclusive,
+                id,
+                prost_types::Timestamp::default(),
+            )
+            .unwrap();
+            let context = root.transaction().clone();
+            let mut metadata = tonic::metadata::MetadataMap::new();
+            metadata.insert(
+                crate::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER,
+                r#"{"example.Remote":["remote/writer"]}"#.parse().unwrap(),
+            );
+            context.enlist_returned_participants(
+                &crate::successful_trailers::ReturnedParticipants::from_metadata(&metadata)
+                    .unwrap(),
+            );
+            let confirmed = context.returned_participants_snapshot();
+            let owner = ExplicitAbortOwner::new(1)
+                .unwrap()
+                .with_timeout(Duration::from_millis(30))
+                .unwrap();
+            if scenario == "inactive" || scenario == "unpolled" {
+                let coordinator = coordinator(sidecar.clone(), endpoint.clone());
+                if scenario == "inactive" {
+                    assert_eq!(
+                        owner
+                            .abort(local, context.clone(), coordinator)
+                            .await
+                            .unwrap_err()
+                            .code(),
+                        tonic::Code::FailedPrecondition
+                    );
+                } else {
+                    let work = coordinator
+                        .own_explicit_abort(local, context.clone())
+                        .await
+                        .unwrap();
+                    drop(work);
+                }
+                tokio::task::yield_now().await;
+                assert!(
+                    trace.lock().unwrap().is_empty(),
+                    "unaccepted/unpolled work must issue no RPC"
+                );
+                assert_eq!(context.returned_participants_snapshot(), confirmed);
+                assert!(
+                    tokio::time::timeout(
+                        Duration::from_millis(20),
+                        participant.start_local(start, ParticipantStartMode::Exclusive)
+                    )
+                    .await
+                    .is_err()
+                );
+                continue;
+            }
+            let mut supervisor = tokio::task::JoinSet::new();
+            owner
+                .recovery_registration()
+                .start(&mut supervisor, RecoveryCancellation::new())
+                .await
+                .unwrap();
+            let expected = if parked {
+                tonic::Code::DeadlineExceeded
+            } else {
+                tonic::Code::Unavailable
+            };
+            let result = tokio::time::timeout(
+                Duration::from_secs(1),
+                owner.abort(
+                    local,
+                    context.clone(),
+                    coordinator(sidecar.clone(), endpoint.clone()),
+                ),
+            )
+            .await
+            .unwrap()
+            .unwrap_err();
+            assert_eq!(result.code(), expected);
+            let failure = tokio::time::timeout(Duration::from_secs(1), supervisor.join_next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap()
+                .unwrap_err();
+            assert_eq!(failure.code(), expected);
+            assert_eq!(
+                local_sidecar
+                    .calls
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|c| **c == "abort")
+                    .count(),
+                1,
+                "actor-only Abort must not be retried after lost ACK or timeout"
+            );
+            assert_eq!(
+                *trace.lock().unwrap(),
+                vec![
+                    "database.decision",
+                    "participant.abort",
+                    "participant.abort"
+                ]
+            );
+            assert_eq!(context.returned_participants_snapshot(), confirmed);
+            assert!(
+                tokio::time::timeout(
+                    Duration::from_millis(20),
+                    participant.start_local(start, ParticipantStartMode::Exclusive)
+                )
+                .await
+                .is_err(),
+                "owner failure must retain local incarnation"
+            );
         }
     }
 

@@ -178,22 +178,32 @@ struct ReturnedParticipantCollection {
     sealed: bool,
     active: usize,
     late_enlistment: bool,
+    membership_uncertain: bool,
 }
 
 /// Generated clients retain this guard from before routing through enlistment.
 /// It tracks quiescence only; cancellation does not recover unknown trailers.
 #[doc(hidden)]
 pub struct TransactionalOutboundScope {
+    completed: bool,
     collection: Option<Arc<Mutex<ReturnedParticipantCollection>>>,
 }
 
+impl TransactionalOutboundScope {
+    pub fn completed(&mut self) {
+        self.completed = true;
+    }
+}
 impl Drop for TransactionalOutboundScope {
     fn drop(&mut self) {
         if let Some(collection) = &self.collection {
-            collection
+            let mut state = collection
                 .lock()
-                .expect("returned participant mutex poisoned")
-                .active -= 1;
+                .expect("returned participant mutex poisoned");
+            state.active -= 1;
+            if !self.completed {
+                state.membership_uncertain = true;
+            }
         }
     }
 }
@@ -425,6 +435,7 @@ impl TransactionContext {
             state.active += 1;
         }
         Ok(TransactionalOutboundScope {
+            completed: false,
             collection: self.returned_participants.clone(),
         })
     }
@@ -438,7 +449,7 @@ impl TransactionContext {
         let mut state = collection
             .lock()
             .expect("returned participant mutex poisoned");
-        if state.sealed || state.active != 0 {
+        if state.sealed || state.active != 0 || state.membership_uncertain {
             return Err(Status::failed_precondition(
                 "unsupported explicit-abort uncertainty: collection sealed or generated outbound calls still active; ownership retained",
             ));
@@ -3047,8 +3058,9 @@ mod tests {
         )
         .unwrap();
         let context = root.transaction();
-        let active = context.begin_generated_outbound().unwrap();
+        let mut active = context.begin_generated_outbound().unwrap();
         assert!(context.seal_explicit_abort().is_err());
+        active.completed();
         drop(active);
         assert!(context.seal_explicit_abort().unwrap().is_empty());
         assert!(context.clone().begin_generated_outbound().is_err());
@@ -3064,6 +3076,31 @@ mod tests {
         assert!(context.finish_explicit_abort().is_err());
         assert!(context.take_returned_participants().is_empty());
         assert_eq!(context.returned_participants_snapshot().len(), 1);
+    }
+
+    #[test]
+    fn unfinished_outbound_drop_retains_membership_uncertainty() {
+        let root = RootTransactionContext::start(
+            RebootHeaders::new("actor/1"),
+            "example.Actor",
+            TransactionMode::Exclusive,
+            Uuid::new_v4(),
+            prost_types::Timestamp::default(),
+        )
+        .unwrap();
+        let context = root.transaction();
+        drop(context.begin_generated_outbound().unwrap());
+        assert_eq!(
+            context
+                .returned_participants
+                .as_ref()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .active,
+            0
+        );
+        assert!(context.seal_explicit_abort().is_err());
     }
 
     #[test]
@@ -3090,12 +3127,15 @@ mod tests {
             barrier.wait();
             let sealed = context.seal_explicit_abort();
             barrier.wait();
-            let outbound = worker.join().unwrap();
+            let mut outbound = worker.join().unwrap();
             assert_ne!(
                 sealed.is_ok(),
                 outbound.is_ok(),
                 "seal and active outbound must never both win"
             );
+            if let Ok(scope) = &mut outbound {
+                scope.completed();
+            }
             drop(outbound);
             if sealed.is_ok() {
                 assert!(context.begin_generated_outbound().is_err());
