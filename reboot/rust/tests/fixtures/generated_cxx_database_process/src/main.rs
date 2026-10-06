@@ -3,7 +3,7 @@ use std::sync::Arc;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use prost::Message;
 use reboot::{
-    application_host::{ApplicationHost, LegacyRecoveryMetadata},
+    application_host::{ApplicationHost, LegacyRecoveryMetadata, PlacementPlannerRecovery},
     durable_coordinator::{CoordinatorRecovery, TonicCoordinatorSidecar},
     durable_participant::{DurableActorParticipant, ParticipantRecovery, TonicParticipantSidecar},
     legacy_coordinator::LegacyApplicationCoordinatorWatchEndpoint,
@@ -305,18 +305,23 @@ fn optional_arg(name: &str) -> Option<String> {
     None
 }
 
-fn placement() -> PlanOnlyLegacyPlacement {
+fn placement() -> (PlanOnlyLegacyPlacement, Option<PlacementPlannerRecovery>) {
+    let placement = PlanOnlyLegacyPlacement::new();
+    if let Some(endpoint) = optional_arg("--placement-planner") {
+        let recovery = PlacementPlannerRecovery::new(endpoint, placement.clone())
+            .expect("--placement-planner must be a valid URI");
+        return (placement, Some(recovery));
+    }
     let encoded = arg("--legacy-placement-plan");
     let bytes = URL_SAFE_NO_PAD
         .decode(encoded)
         .expect("--legacy-placement-plan must be URL-safe base64 without padding");
     let plan = reboot::placement_proto::ListenForPlanResponse::decode(bytes.as_slice())
         .expect("--legacy-placement-plan must contain ListenForPlanResponse bytes");
-    let placement = PlanOnlyLegacyPlacement::new();
     placement
         .install(plan)
         .expect("--legacy-placement-plan must be accepted");
-    placement
+    (placement, None)
 }
 
 /// Test-only cross-process barrier proving shared handlers overlap before
@@ -365,7 +370,7 @@ async fn main() {
     let database_endpoint = arg("--database");
     let root_id = Uuid::parse_str(&arg("--root-id")).unwrap();
     let state_ref = optional_arg("--state-ref").unwrap_or_else(|| role.clone());
-    let placement = placement();
+    let (placement, planner_recovery) = placement();
     let application = LegacyApplicationId::new("generated-cxx-database-process").unwrap();
     let participant_sidecar = Arc::new(
         TonicParticipantSidecar::connect(&database_endpoint)
@@ -429,6 +434,9 @@ async fn main() {
     // exact coordinator state reference.
     let mut host = ApplicationHost::new("generated-cxx-database-process")
         .with_legacy_placement_readiness(placement.clone());
+    if let Some(planner_recovery) = planner_recovery {
+        host = host.with_host_recovery(planner_recovery);
+    }
     if has("--recover") {
         let watch = Arc::new(
             LegacyApplicationCoordinatorWatchEndpoint::new(
@@ -490,19 +498,34 @@ async fn main() {
         let amount = optional_arg("--amount")
             .map(|amount| amount.parse().expect("--amount must be i64"))
             .unwrap_or(7);
-        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount });
-        let mut headers = reboot::RebootHeaders::new(&state_ref);
-        headers.idempotency_key = optional_arg("--idempotency-key")
+        let idempotency_key = optional_arg("--idempotency-key")
             .map(|key| Uuid::parse_str(&key).expect("--idempotency-key must be a UUID"));
-        *request.metadata_mut() = headers.to_metadata().unwrap();
-        if has("--shared-invoke") {
-            client.shared_read(request).await.unwrap();
-        } else if has("--factory-target-invoke") {
-            client.factory_increment_target(request).await.unwrap();
-        } else if has("--factory-invoke") {
-            client.factory_increment(request).await.unwrap();
-        } else {
-            client.increment(request).await.unwrap();
+        for attempt in 0..100 {
+            let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount });
+            let mut headers = reboot::RebootHeaders::new(&state_ref);
+            headers.idempotency_key = idempotency_key;
+            *request.metadata_mut() = headers.to_metadata().unwrap();
+            let result = if has("--shared-invoke") {
+                client.shared_read(request).await.map(|_| ())
+            } else if has("--factory-target-invoke") {
+                client.factory_increment_target(request).await.map(|_| ())
+            } else if has("--factory-invoke") {
+                client.factory_increment(request).await.map(|_| ())
+            } else {
+                client.increment(request).await.map(|_| ())
+            };
+            match result {
+                Ok(()) => break,
+                Err(status)
+                    if has("--placement-planner") && status.code() == tonic::Code::Unavailable =>
+                {
+                    if attempt == 99 {
+                        panic!("fixture invocation never became ready: {status}");
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                Err(status) => panic!("fixture invocation failed: {status}"),
+            }
         }
         if has("--exit-after-invoke") {
             return;

@@ -1,6 +1,11 @@
 use std::{
     net::{SocketAddr, TcpListener},
+    pin::Pin,
     process::{Child, Command, Stdio},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
@@ -9,6 +14,97 @@ use prost::Message;
 use reboot_rust_schema::{database_proto as database, placement_proto};
 use sha1::{Digest as _, Sha1};
 use uuid::Uuid;
+
+type PlacementPlanResult = Result<placement_proto::ListenForPlanResponse, tonic::Status>;
+type PlannerStreams = Arc<Mutex<Vec<tokio::sync::mpsc::Sender<PlacementPlanResult>>>>;
+
+#[derive(Clone)]
+struct LivePlacementPlanner {
+    response: placement_proto::ListenForPlanResponse,
+    connections: Arc<AtomicUsize>,
+    streams: PlannerStreams,
+}
+
+#[tonic::async_trait]
+impl placement_proto::placement_planner_server::PlacementPlanner for LivePlacementPlanner {
+    type ListenForPlanStream = Pin<
+        Box<
+            dyn tokio_stream::Stream<
+                    Item = Result<placement_proto::ListenForPlanResponse, tonic::Status>,
+                > + Send
+                + 'static,
+        >,
+    >;
+
+    async fn listen_for_plan(
+        &self,
+        _: tonic::Request<placement_proto::ListenForPlanRequest>,
+    ) -> Result<tonic::Response<Self::ListenForPlanStream>, tonic::Status> {
+        self.connections.fetch_add(1, Ordering::SeqCst);
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        sender
+            .send(Ok(self.response.clone()))
+            .await
+            .expect("fresh planner stream receiver must be open");
+        self.streams.lock().unwrap().push(sender);
+        Ok(tonic::Response::new(Box::pin(
+            tokio_stream::wrappers::ReceiverStream::new(receiver),
+        )))
+    }
+}
+
+struct LivePlannerServer {
+    endpoint: String,
+    connections: Arc<AtomicUsize>,
+    server: tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+}
+
+impl LivePlannerServer {
+    fn start(
+        runtime: &tokio::runtime::Runtime,
+        response: placement_proto::ListenForPlanResponse,
+    ) -> Self {
+        runtime.block_on(async move {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let connections = Arc::new(AtomicUsize::new(0));
+            let planner = LivePlacementPlanner {
+                response,
+                connections: Arc::clone(&connections),
+                streams: Arc::new(Mutex::new(Vec::new())),
+            };
+            let server = tokio::spawn(async move {
+                tonic::transport::Server::builder()
+                    .add_service(
+                        placement_proto::placement_planner_server::PlacementPlannerServer::new(
+                            planner,
+                        ),
+                    )
+                    .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                    .await
+            });
+            Self {
+                endpoint: format!("http://{address}"),
+                connections,
+                server,
+            }
+        })
+    }
+
+    fn wait_for_connections(&self, expected: usize) {
+        for _ in 0..100 {
+            if self.connections.load(Ordering::SeqCst) >= expected {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        panic!("live PlacementPlanner did not receive {expected} host streams");
+    }
+
+    fn stop(self) {
+        self.server.abort();
+    }
+}
 
 struct CxxDatabase {
     state: tempfile::TempDir,
@@ -219,6 +315,69 @@ fn spawn_host(options: HostOptions<'_>) -> Child {
     }
     if options.invoke {
         command.arg("--invoke");
+    }
+    if let Some(state_ref) = options.state_ref {
+        command.args(["--state-ref", state_ref]);
+    }
+    if let Some(coordinator_state_ref) = options.coordinator_state_ref {
+        command.args(["--coordinator-state-ref", coordinator_state_ref]);
+    }
+    if let Some(coordinator_state_ref) = options.watch_coordinator_state_ref {
+        command.args(["--watch-coordinator-state-ref", coordinator_state_ref]);
+    }
+    if let Some(marker) = options.marker {
+        command.env("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE", marker);
+    }
+    if let Some(marker) = options.watch_terminalized {
+        command.env("REBOOT_TEST_TARGET_WATCH_TERMINALIZED", marker);
+    }
+    command.spawn().unwrap()
+}
+
+/// Launch configuration for the one acceptance that exercises the host-owned
+/// canonical PlacementPlanner stream instead of the fixture's static plan.
+struct LiveHostOptions<'a> {
+    binary: &'a std::path::Path,
+    role: &'a str,
+    port: u16,
+    database: &'a str,
+    planner: &'a str,
+    root_id: &'a str,
+    recover: bool,
+    invoke: bool,
+    factory_target_invoke: bool,
+    marker: Option<&'a std::path::Path>,
+    watch_terminalized: Option<&'a std::path::Path>,
+    state_ref: Option<&'a str>,
+    coordinator_state_ref: Option<&'a str>,
+    watch_coordinator_state_ref: Option<&'a str>,
+}
+
+fn spawn_live_host(options: LiveHostOptions<'_>) -> Child {
+    let mut command = Command::new(options.binary);
+    command
+        .args([
+            "--role",
+            options.role,
+            "--listen",
+            &format!("127.0.0.1:{}", options.port),
+            "--database",
+            options.database,
+            "--placement-planner",
+            options.planner,
+            "--root-id",
+            options.root_id,
+        ])
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    if options.recover {
+        command.arg("--recover");
+    }
+    if options.invoke {
+        command.arg("--invoke");
+    }
+    if options.factory_target_invoke {
+        command.args(["--factory-target-invoke", "--amount", "7"]);
     }
     if let Some(state_ref) = options.state_ref {
         command.args(["--state-ref", state_ref]);
@@ -1688,6 +1847,181 @@ fn generated_factory_root_recovers_target_across_two_cxx_database_processes() {
     let _ = root.wait();
     let _ = target.kill();
     let _ = target.wait();
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_factory_root_recovers_target_through_live_placement_planner_across_two_cxx_database_processes()
+ {
+    let database_binary =
+        std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let mut root_db = CxxDatabase::start(database_binary.clone());
+    let mut target_db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(store_counter(&target_db.endpoint(), "target", 5));
+    let root_port = port();
+    let target_port = port();
+    let root_id = "00000000-0000-0000-0000-000000000005";
+    let initial_plan = placement_proto::ListenForPlanResponse::decode(
+        URL_SAFE_NO_PAD
+            .decode(legacy_plan_for(&[
+                ("factory-root", root_port),
+                ("target", target_port),
+            ]))
+            .unwrap()
+            .as_slice(),
+    )
+    .unwrap();
+    let initial_planner = LivePlannerServer::start(&runtime, initial_plan);
+    let marker_dir = tempfile::tempdir().unwrap();
+    let marker = marker_dir.path().join("sealed");
+    let mut target = spawn_live_host(LiveHostOptions {
+        binary: &binary,
+        role: "target",
+        port: target_port,
+        database: &target_db.endpoint(),
+        planner: &initial_planner.endpoint,
+        root_id,
+        recover: false,
+        invoke: false,
+        factory_target_invoke: false,
+        marker: None,
+        watch_terminalized: None,
+        state_ref: None,
+        coordinator_state_ref: Some("factory-root"),
+        watch_coordinator_state_ref: None,
+    });
+    wait(target_port);
+    initial_planner.wait_for_connections(1);
+    let mut root = spawn_live_host(LiveHostOptions {
+        binary: &binary,
+        role: "root",
+        port: root_port,
+        database: &root_db.endpoint(),
+        planner: &initial_planner.endpoint,
+        root_id,
+        recover: false,
+        invoke: true,
+        factory_target_invoke: true,
+        marker: Some(&marker),
+        watch_terminalized: None,
+        state_ref: Some("factory-root"),
+        coordinator_state_ref: Some("factory-root"),
+        watch_coordinator_state_ref: None,
+    });
+    wait(root_port);
+    initial_planner.wait_for_connections(2);
+    for _ in 0..100 {
+        if marker.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(
+        marker.exists(),
+        "factory root never sealed its real C++ coordinator record"
+    );
+    let _ = root.kill();
+    let _ = root.wait();
+    let _ = target.kill();
+    let _ = target.wait();
+    initial_planner.stop();
+    root_db.restart();
+    target_db.restart();
+
+    let watch_terminalized = marker_dir.path().join("target-watch-terminalized");
+    let recovered_root_port = port();
+    let recovered_plan = placement_proto::ListenForPlanResponse::decode(
+        URL_SAFE_NO_PAD
+            .decode(legacy_plan_for(&[
+                ("factory-root", recovered_root_port),
+                ("target", target_port),
+            ]))
+            .unwrap()
+            .as_slice(),
+    )
+    .unwrap();
+    let recovered_planner = LivePlannerServer::start(&runtime, recovered_plan);
+    target = spawn_live_host(LiveHostOptions {
+        binary: &binary,
+        role: "target",
+        port: target_port,
+        database: &target_db.endpoint(),
+        planner: &recovered_planner.endpoint,
+        root_id,
+        recover: true,
+        invoke: false,
+        factory_target_invoke: false,
+        marker: None,
+        watch_terminalized: Some(&watch_terminalized),
+        state_ref: None,
+        coordinator_state_ref: Some("target"),
+        watch_coordinator_state_ref: Some("factory-root"),
+    });
+    wait(target_port);
+    recovered_planner.wait_for_connections(1);
+    root = spawn_live_host(LiveHostOptions {
+        binary: &binary,
+        role: "root",
+        port: recovered_root_port,
+        database: &root_db.endpoint(),
+        planner: &recovered_planner.endpoint,
+        root_id,
+        recover: true,
+        invoke: false,
+        factory_target_invoke: false,
+        marker: None,
+        watch_terminalized: None,
+        state_ref: Some("factory-root"),
+        coordinator_state_ref: Some("factory-root"),
+        watch_coordinator_state_ref: Some("factory-root"),
+    });
+    wait(recovered_root_port);
+    recovered_planner.wait_for_connections(2);
+    for _ in 0..100 {
+        if watch_terminalized.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(
+        watch_terminalized.exists(),
+        "target did not Watch the factory-root decision and terminalize"
+    );
+    for _ in 0..100 {
+        if runtime.block_on(load_state(&root_db.endpoint(), "factory-root"))
+            == Some(vec![0x08, 0x07])
+            && runtime.block_on(load_state(&target_db.endpoint(), "target"))
+                == Some(vec![0x08, 0x0c])
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert_eq!(
+        runtime.block_on(load_state(&root_db.endpoint(), "factory-root")),
+        Some(vec![0x08, 0x07])
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&target_db.endpoint(), "target")),
+        Some(vec![0x08, 0x0c])
+    );
+    let _ = root.kill();
+    let _ = root.wait();
+    let _ = target.kill();
+    let _ = target.wait();
+    recovered_planner.stop();
 }
 
 fn factory_target_root_host(
