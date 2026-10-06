@@ -104,6 +104,13 @@ impl OneShotTasks {
         }
         Ok(())
     }
+    /// Canonical Wait for this registered local actor. Mount as a PUBLIC
+    /// service under ApplicationHost readiness; not a recovery/control route.
+    pub fn wait_service(&self) -> db::tasks_server::TasksServer<ReaderTaskWaitService> {
+        db::tasks_server::TasksServer::new(ReaderTaskWaitService {
+            tasks: self.clone(),
+        })
+    }
     /// Scheduling is usable only after host registration has taken ownership.
     pub async fn validate_staged(&self, tasks: &[db::Task]) -> Result<(), Status> {
         if !self.inner.active.load(std::sync::atomic::Ordering::Acquire) {
@@ -410,6 +417,124 @@ impl HostRecovery for OneShotTaskRecovery {
             result
         });
         Ok(())
+    }
+}
+
+/// Read-only canonical task result retrieval for one host-owned local actor.
+#[derive(Clone)]
+pub struct ReaderTaskWaitService {
+    tasks: OneShotTasks,
+}
+#[tonic::async_trait]
+impl db::tasks_server::Tasks for ReaderTaskWaitService {
+    async fn wait(
+        &self,
+        request: tonic::Request<db::WaitRequest>,
+    ) -> Result<tonic::Response<db::WaitResponse>, Status> {
+        let headers = crate::RebootHeaders::from_request(&request)
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        let id = request
+            .into_inner()
+            .task_id
+            .ok_or_else(|| Status::invalid_argument("missing task ID"))?;
+        if id.state_ref != headers.state_ref {
+            return Err(Status::invalid_argument(
+                "task ID does not match routed state ref",
+            ));
+        }
+        if id.state_type != self.tasks.inner.state_type
+            || id.state_ref != self.tasks.inner.state_ref
+            || uuid::Uuid::from_slice(&id.task_uuid).map_or(true, |id| {
+                id.get_version_num() != 4 || id.get_variant() != uuid::Variant::RFC4122
+            })
+        {
+            return Err(Status::invalid_argument(
+                "task must name the registered local actor and UUIDv4",
+            ));
+        }
+        loop {
+            if !self
+                .tasks
+                .inner
+                .active
+                .load(std::sync::atomic::Ordering::Acquire)
+            {
+                return Err(Status::unavailable("task dispatcher is not active"));
+            }
+            let loaded = self
+                .tasks
+                .inner
+                .store
+                .task_database()
+                .load(db::LoadRequest {
+                    actors: vec![],
+                    task_ids: vec![id.clone()],
+                })
+                .await?
+                .into_inner();
+            if loaded.tasks.is_empty() {
+                return Err(Status::not_found("task not found"));
+            }
+            if loaded.tasks.len() != 1 || loaded.tasks[0].task_id.as_ref() != Some(&id) {
+                return Err(Status::data_loss(
+                    "task lookup returned a different identity",
+                ));
+            }
+            let task = &loaded.tasks[0];
+            if task.iteration != 0 {
+                return Err(Status::failed_precondition(
+                    "task iterations are unsupported",
+                ));
+            }
+            scheduled_at(task)?;
+            self.tasks.inner.binding.validate(task)?;
+            match db::task::Status::try_from(task.status) {
+                Ok(db::task::Status::Pending) => self.tasks.validate(std::slice::from_ref(task))?,
+                Ok(db::task::Status::Completed) => {
+                    let result = match task.response_or_error.clone() {
+                        Some(db::task::ResponseOrError::Response(response)) => {
+                            db::task_response_or_error::ResponseOrError::Response(response)
+                        }
+                        Some(db::task::ResponseOrError::Error(error)) => {
+                            db::task_response_or_error::ResponseOrError::Error(error)
+                        }
+                        None => return Err(Status::data_loss("completed task has no result")),
+                    };
+                    return Ok(tonic::Response::new(db::WaitResponse {
+                        response_or_error: Some(db::TaskResponseOrError {
+                            response_or_error: Some(result),
+                        }),
+                    }));
+                }
+                _ => return Err(Status::failed_precondition("unsupported task status")),
+            }
+            // The RPC future owns this read-only wait. Tonic deadlines and host
+            // failed-readiness cancellation drop it; no detached waiter or write.
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+    async fn list_tasks(
+        &self,
+        _: tonic::Request<db::ListTasksRequest>,
+    ) -> Result<tonic::Response<db::ListTasksResponse>, Status> {
+        Err(Status::unimplemented(
+            "task listing is outside the reader-only Wait slice",
+        ))
+    }
+    type ListTasksStreamStream = tonic::codegen::tokio_stream::wrappers::ReceiverStream<
+        Result<db::ListTasksResponse, Status>,
+    >;
+    async fn list_tasks_stream(
+        &self,
+        _: tonic::Request<db::ListTasksRequest>,
+    ) -> Result<tonic::Response<Self::ListTasksStreamStream>, Status> {
+        Err(Status::unimplemented("task subscriptions are unsupported"))
+    }
+    async fn cancel_task(
+        &self,
+        _: tonic::Request<db::CancelTaskRequest>,
+    ) -> Result<tonic::Response<db::CancelTaskResponse>, Status> {
+        Err(Status::unimplemented("task cancellation is unsupported"))
     }
 }
 

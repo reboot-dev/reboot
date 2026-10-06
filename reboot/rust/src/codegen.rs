@@ -1755,6 +1755,7 @@ fn emit_reader_tasks(
     let binding = format!("{service_name}ReaderTaskBinding");
     let scheduler = format!("{service_name}Tasks");
     let mut scheduled_methods = String::new();
+    let mut wait_methods = String::new();
     output.push_str(&format!("/// Immediate same-actor reader task scheduling; method views come from RPC descriptors, not task annotations.\npub struct {scheduler};\nimpl {scheduler} {{\n"));
     for method in &service.method {
         let name = method.name.as_deref().unwrap();
@@ -1777,10 +1778,24 @@ fn emit_reader_tasks(
             .to_upper_camel_case();
         output.push_str(&format!("    pub fn {rust_name}(state_ref: &str, request: &proto::{request}) -> {runtime_module}::database_proto::Task {{ {runtime_module}::database_proto::Task {{ task_id: Some({runtime_module}::database_proto::TaskId {{ state_type: <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: state_ref.to_owned(), task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec() }}), method: \"{name}\".to_owned(), status: {runtime_module}::database_proto::task::Status::Pending as i32, request: <proto::{request} as prost::Message>::encode_to_vec(request), timestamp: None, iteration: 0, response_or_error: None }} }}\n"));
         scheduled_methods.push_str(&format!("    /// Schedule at a canonical absolute UTC protobuf timestamp.\n    pub fn {rust_name}(state_ref: &str, request: &proto::{request}, schedule: prost_types::Timestamp) -> {runtime_module}::database_proto::Task {{ let mut task = {scheduler}::{rust_name}(state_ref, request); task.timestamp = Some(schedule); task }}\n"));
+        let response_full = method
+            .output_type
+            .as_deref()
+            .unwrap()
+            .trim_start_matches('.');
+        let response = response_full
+            .rsplit('.')
+            .next()
+            .unwrap()
+            .to_upper_camel_case();
+        wait_methods.push_str(&format!("    /// Wait via the canonical public Tasks RPC. Request metadata/deadline is preserved.\n    pub async fn {rust_name}(channel: tonic::transport::Channel, mut request: tonic::Request<{runtime_module}::database_proto::TaskId>) -> Result<proto::{response}, tonic::Status> {{ if request.get_ref().state_type != <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE {{ return Err(tonic::Status::invalid_argument(\"task state type does not match generated method\")); }} if request.metadata().get(\"x-reboot-state-ref\").is_none() {{ let state_ref = request.get_ref().state_ref.parse().map_err(|_| tonic::Status::invalid_argument(\"invalid routed task state ref\"))?; request.metadata_mut().insert(\"x-reboot-state-ref\", state_ref); }} let result = {runtime_module}::database_proto::tasks_client::TasksClient::new(channel).wait(request.map(|task_id| {runtime_module}::database_proto::WaitRequest {{ task_id: Some(task_id) }})).await?.into_inner(); match result.response_or_error.and_then(|result| result.response_or_error) {{ Some({runtime_module}::database_proto::task_response_or_error::ResponseOrError::Response(response)) if response.type_url == \"type.googleapis.com/{response_full}\" => <proto::{response} as prost::Message>::decode(response.value.as_slice()).map_err(|_| tonic::Status::data_loss(\"malformed typed task response\")), Some({runtime_module}::database_proto::task_response_or_error::ResponseOrError::Error(_)) => Err(tonic::Status::unimplemented(\"typed task errors are outside this slice\")), _ => Err(tonic::Status::data_loss(\"missing or mismatched typed task response\")) }} }}\n"));
     }
     output.push_str("}\n");
     output.push_str(&format!(
         "pub struct {scheduler}At;\nimpl {scheduler}At {{\n{scheduled_methods}}}\n"
+    ));
+    output.push_str(&format!(
+        "pub struct {scheduler}Wait;\nimpl {scheduler}Wait {{\n{wait_methods}}}\n"
     ));
     output.push_str(&format!("struct {binding}<H> {{ handler: std::sync::Arc<H>, store: {runtime_module}::runtime::DatabaseActorStore }}\n#[tonic::async_trait]\nimpl<H: {handler}> {runtime_module}::one_shot_tasks::ReaderTaskBinding for {binding}<H> {{\n    fn validate(&self, task: &{runtime_module}::database_proto::Task) -> Result<(), tonic::Status> {{ match task.method.as_str() {{\n"));
     for method in &service.method {
@@ -2228,6 +2243,8 @@ mod tests {
         assert!(output.contains("pub fn query(state_ref:"));
         assert!(output.contains("pub struct ActorMethodsTasksAt;"));
         assert!(output.contains("schedule: prost_types::Timestamp"));
+        assert!(output.contains("pub struct ActorMethodsTasksWait;"));
+        assert!(output.contains("request.map(|task_id|"));
         assert_eq!(
             output.matches("\"Query\" =>").count(),
             2,

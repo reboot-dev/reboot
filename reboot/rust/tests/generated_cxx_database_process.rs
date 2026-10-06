@@ -249,10 +249,16 @@ fn legacy_plan_for(routes: &[(&str, u16)]) -> String {
                 version: 1,
                 applications: vec![placement_proto::plan::Application {
                     id: "generated-cxx-database-process".into(),
-                    services: vec![placement_proto::plan::application::Service {
-                        full_name: "tests.reboot.protoc.TransactionCounterWritesMethods".into(),
-                        state_type_full_name: "tests.reboot.protoc.TransactionCounter".into(),
-                    }],
+                    services: vec![
+                        placement_proto::plan::application::Service {
+                            full_name: "tests.reboot.protoc.TransactionCounterWritesMethods".into(),
+                            state_type_full_name: "tests.reboot.protoc.TransactionCounter".into(),
+                        },
+                        placement_proto::plan::application::Service {
+                            full_name: "rbt.v1alpha1.Tasks".into(),
+                            state_type_full_name: "tests.reboot.protoc.TransactionCounter".into(),
+                        },
+                    ],
                     shards,
                 }],
             }),

@@ -482,6 +482,25 @@ async fn shared_barrier(transaction_id: Uuid) -> Result<(), tonic::Status> {
 async fn main() {
     let role = arg("--role");
     let listen = arg("--listen");
+    if role == "wait-result" {
+        let id = reboot::database_proto::TaskId {
+            state_type: optional_arg("--wait-state-type").unwrap_or_else(|| "tests.reboot.protoc.TransactionCounter".into()),
+            state_ref: arg("--state-ref"),
+            task_uuid: uuid::Uuid::parse_str(&arg("--task-uuid")).unwrap().as_bytes().to_vec(),
+        };
+        let channel = tonic::transport::Endpoint::from_shared(format!("http://{listen}")).unwrap().connect().await.unwrap();
+        let mut request = tonic::Request::new(id);
+        request.set_timeout(std::time::Duration::from_millis(optional_arg("--wait-timeout-ms").map(|value| value.parse().unwrap()).unwrap_or(8000)));
+        let result = generated::TransactionCounterWritesMethodsTasksWait::query(channel, request).await;
+        let output = if let Some(expected) = optional_arg("--expect-wait-error") {
+            let error = result.unwrap_err();
+            if expected == "Deadline" { assert!(matches!(error.code(), tonic::Code::Cancelled | tonic::Code::DeadlineExceeded)); }
+            else { assert_eq!(format!("{:?}", error.code()), expected); }
+            expected
+        } else { result.unwrap().value.to_string() };
+        std::fs::write(arg("--result-marker"), output).unwrap();
+        return;
+    }
     if role == "error-remote" {
         tonic::transport::Server::builder()
             .add_service(
@@ -675,6 +694,7 @@ async fn main() {
             .unwrap();
         host = host.with_host_recovery(recovery);
     }
+    let wait_service = tasks.as_ref().map(|tasks| tasks.wait_service());
     if let Some(tasks) = tasks {
         host = host.with_host_recovery(tasks.recovery(reboot::database_proto::RecoverRequest {
             state_tags_by_state_type: [("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())].into(),
@@ -682,7 +702,7 @@ async fn main() {
         }));
     }
     let server = tokio::spawn(async move {
-        let result = host.add_legacy_control_service(adapter.legacy_participant_control_service())
+        let host = host.add_legacy_control_service(adapter.legacy_participant_control_service())
             .add_legacy_control_service(
                 adapter
                     .legacy_coordinator_control_service(
@@ -695,9 +715,9 @@ async fn main() {
                 proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(
                     adapter,
                 ),
-            )
-            .serve(address)
-            .await;
+            );
+        let host = if let Some(service) = wait_service { host.add_public_service(service) } else { host };
+        let result = host.serve(address).await;
         if let Some(marker) = std::env::var_os("REBOOT_TEST_COMPETING_ADMISSION") {
             assert!(matches!(result, Err(reboot::application_host::ApplicationHostError::RecoveryTask(_))));
             std::fs::write(format!("{}.host-returned", marker.to_string_lossy()), "supervised host failure returned with open competing client").unwrap();
