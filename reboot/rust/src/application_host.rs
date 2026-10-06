@@ -1047,16 +1047,40 @@ impl RunningApplicationHost {
                 .await
         });
         tokio::task::yield_now().await;
-        let mut supervisor = JoinSet::new();
+        enum StartupEvent {
+            Shutdown,
+            Registration(Result<(), tonic::Status>),
+            ChildFailure(tonic::Status),
+        }
+        let mut supervisor = vec![JoinSet::new()];
         tokio::pin!(shutdown);
         for (component, registration) in recovery.iter().enumerate() {
             // Startup can await a remote Recover stream indefinitely. Keep the
             // same shutdown future live before Ready; dropping this start future
             // revokes its local RAII owners before draining registered children.
-            let started = tokio::select! {
+            let mut starting_children = JoinSet::new();
+            let event = tokio::select! {
                 biased;
-                _ = &mut shutdown => None,
-                result = registration.start(&mut supervisor, cancel.clone()) => Some(result),
+                _ = &mut shutdown => StartupEvent::Shutdown,
+                result = Self::next_recovery_child(&mut supervisor), if supervisor.iter().any(|group| !group.is_empty()) =>
+                    StartupEvent::ChildFailure(Self::recovery_child_failure(result)),
+                result = registration.start(&mut starting_children, cancel.clone()) => StartupEvent::Registration(result),
+            };
+            // Keep each registration's children owned separately: start needs
+            // mutable access to its own set while previous sets are supervised.
+            // Even an interrupted/failed start may have registered children.
+            supervisor.push(starting_children);
+            let started = match event {
+                StartupEvent::Shutdown => None,
+                StartupEvent::Registration(result) => Some(result),
+                StartupEvent::ChildFailure(source) => {
+                    readiness.send_replace(RecoveryState::Failed);
+                    cancel.cancel();
+                    Self::join_cancelled_recovery(&mut supervisor).await;
+                    let _ = serving.await;
+                    Self::shutdown_lifecycle(&lifecycle).await?;
+                    return Err(ApplicationHostError::RecoveryTask(source));
+                }
             };
             let Some(started) = started else {
                 readiness.send_replace(RecoveryState::Failed);
@@ -1083,7 +1107,7 @@ impl RunningApplicationHost {
             let mut accepted_versions = requirement.placement.accepted_versions();
             let gate = placement_gate.clone();
             let cancel = cancel.clone();
-            supervisor.spawn(async move {
+            supervisor[0].spawn(async move {
                 loop {
                     gate.set_ready(
                         requirement
@@ -1102,13 +1126,8 @@ impl RunningApplicationHost {
         readiness.send_replace(RecoveryState::Ready);
         tokio::select! {
             _ = &mut shutdown => cancel.cancel(),
-            result = supervisor.join_next(), if !supervisor.is_empty() => {
-                let source = match result {
-                    Some(Ok(Err(source))) => source,
-                    Some(Err(error)) => tonic::Status::internal(format!("application recovery task failed to join: {error}")),
-                    Some(Ok(Ok(()))) => tonic::Status::failed_precondition("application recovery task ended unexpectedly"),
-                    None => unreachable!("non-empty JoinSet returned no task"),
-                };
+            result = Self::next_recovery_child(&mut supervisor), if supervisor.iter().any(|group| !group.is_empty()) => {
+                let source = Self::recovery_child_failure(result);
                 readiness.send_replace(RecoveryState::Failed);
                 cancel.cancel();
                 Self::join_cancelled_recovery(&mut supervisor).await;
@@ -1132,17 +1151,57 @@ impl RunningApplicationHost {
         serving.map_err(ApplicationHostError::Transport)
     }
 
-    async fn join_cancelled_recovery(supervisor: &mut JoinSet<Result<(), tonic::Status>>) {
+    fn recovery_child_failure(
+        result: Option<Result<Result<(), tonic::Status>, tokio::task::JoinError>>,
+    ) -> tonic::Status {
+        match result {
+            Some(Ok(Err(source))) => source,
+            Some(Err(error)) => tonic::Status::internal(format!(
+                "application recovery task failed to join: {error}"
+            )),
+            Some(Ok(Ok(()))) => {
+                tonic::Status::failed_precondition("application recovery task ended unexpectedly")
+            }
+            None => unreachable!("non-empty JoinSet returned no task"),
+        }
+    }
+
+    async fn next_recovery_child(
+        groups: &mut [JoinSet<Result<(), tonic::Status>>],
+    ) -> Option<Result<Result<(), tonic::Status>, tokio::task::JoinError>> {
+        std::future::poll_fn(|cx| {
+            let mut pending = false;
+            for group in groups.iter_mut() {
+                match group.poll_join_next(cx) {
+                    std::task::Poll::Ready(Some(result)) => {
+                        return std::task::Poll::Ready(Some(result));
+                    }
+                    std::task::Poll::Ready(None) => {}
+                    std::task::Poll::Pending => pending = true,
+                }
+            }
+            if pending {
+                std::task::Poll::Pending
+            } else {
+                std::task::Poll::Ready(None)
+            }
+        })
+        .await
+    }
+
+    async fn join_cancelled_recovery(supervisor: &mut [JoinSet<Result<(), tonic::Status>>]) {
         // Give cancellation-aware owners time to cancel and join their children
         // before the bounded fallback aborts an uncooperative component.
         if tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            while supervisor.join_next().await.is_some() {}
+            while Self::next_recovery_child(supervisor).await.is_some() {}
         })
         .await
         .is_err()
         {
-            supervisor.abort_all();
-            while supervisor.join_next().await.is_some() {}
+            for group in supervisor.iter_mut() {
+                group.abort_all();
+            }
+            while Self::next_recovery_child(supervisor).await.is_some() {}
         }
     }
 

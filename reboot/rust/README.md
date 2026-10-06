@@ -207,7 +207,17 @@ Unavailable public ingress, then proves graceful shutdown, exactly one owner Dro
 cooperative child join, lifecycle cleanup and closed listener within one second.
 The old implementation fails this regression. This proves local host ownership,
 not a new C++ durable recovery outcome; lifecycle initialize/recover hooks before
-listener bind remain outside this cancellation slice. Global staged-capacity reservations,
+listener bind remain outside this cancellation slice. Startup also supervises
+children from earlier completed registrations while a later registration awaits.
+Per-registration JoinSets keep current-start mutation separate from polling earlier
+children; all groups, including children created by an interrupted start, remain
+owned and are cancelled/joined through the existing fallback. Live Tonic acceptance
+fails an earlier child after a later start is demonstrably parked, then checks
+precise RecoveryTask/Aborted propagation, gated ingress, startup owner Drop,
+cooperative child join, skipped subsequent registration and closed listener. The
+old implementation ignores that failure and fails the bounded regression. Children
+created by the currently pending start are not independently polled until it
+returns; this is not full concurrent startup or a durable transaction outcome. Global staged-capacity reservations,
 second-actor transaction control/recovery registration, task auth/errors/retries,
 and distributed dispatcher fencing/migration remain outside this slice. Source: aio/internals/tasks_servicer.py:48-126 and
 templates/reboot.py.j2:4697-4775. Earlier durable RPC cancellation windows still need dedicated

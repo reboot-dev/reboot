@@ -1011,6 +1011,98 @@ async fn fatal_placement_planner_status_is_supervised_and_closes_host() {
     planner_server.abort();
 }
 
+struct ControlledStartupFailure {
+    fail: tokio::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+}
+#[tonic::async_trait]
+impl HostRecovery for ControlledStartupFailure {
+    async fn start(
+        &self,
+        supervisor: &mut tokio::task::JoinSet<Result<(), Status>>,
+        _: RecoveryCancellation,
+    ) -> Result<(), Status> {
+        let fail = self.fail.lock().await.take().unwrap();
+        supervisor.spawn(async move {
+            fail.await.unwrap();
+            Err(Status::aborted("earlier startup child failed"))
+        });
+        Ok(())
+    }
+}
+#[tokio::test]
+async fn recovery_child_failure_interrupts_later_stalled_start_and_cleans_host() {
+    let address = unused_local_address();
+    let trace = Arc::new(Mutex::new(Vec::new()));
+    let dropped = Arc::new(AtomicUsize::new(0));
+    let joined = Arc::new(AtomicUsize::new(0));
+    let (fail_tx, fail_rx) = tokio::sync::oneshot::channel();
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (later_tx, later_rx) = tokio::sync::oneshot::channel();
+    let (_release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let host = ApplicationHost::new("server-owned-app")
+        .with_lifecycle(lifecycle("startup-failure", trace.clone(), false, None))
+        .with_host_recovery(ControlledStartupFailure {
+            fail: tokio::sync::Mutex::new(Some(fail_rx)),
+        })
+        .with_host_recovery(StalledStartupRecovery {
+            started: Mutex::new(Some(started_tx)),
+            future_dropped: dropped.clone(),
+            child_joined: joined.clone(),
+        })
+        .with_host_recovery(BlockingRecovery {
+            started: Mutex::new(Some(later_tx)),
+            release: tokio::sync::Mutex::new(Some(release_rx)),
+        })
+        .add_public_service(proto::echo_methods_server::EchoMethodsServer::new(
+            IdentityEcho,
+        ));
+    let mut server = tokio::spawn(async move { host.serve(address).await });
+    tokio::time::timeout(Duration::from_secs(2), started_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut client =
+        proto::echo_methods_client::EchoMethodsClient::connect(format!("http://{address}"))
+            .await
+            .unwrap();
+    let mut request = Request::new(proto::Text {
+        content: "must remain gated".into(),
+    });
+    request
+        .metadata_mut()
+        .insert(STATE_REF_HEADER, "actor".parse().unwrap());
+    assert_eq!(
+        client.reply(request).await.unwrap_err().code(),
+        tonic::Code::Unavailable
+    );
+    fail_tx.send(()).unwrap();
+    let result = tokio::time::timeout(Duration::from_secs(1), &mut server).await;
+    if result.is_err() {
+        server.abort();
+        let _ = server.await;
+        panic!("earlier recovery failure ignored during later stalled start");
+    }
+    match result.unwrap().unwrap() {
+        Err(ApplicationHostError::RecoveryTask(status)) => {
+            assert_eq!(status.code(), tonic::Code::Aborted);
+            assert_eq!(status.message(), "earlier startup child failed");
+        }
+        other => panic!("wrong startup failure result: {other:?}"),
+    }
+    assert_eq!(dropped.load(Ordering::SeqCst), 1);
+    assert_eq!(joined.load(Ordering::SeqCst), 1);
+    assert!(later_rx.await.is_err());
+    assert_eq!(
+        *trace.lock().unwrap(),
+        vec![
+            "initialize:startup-failure",
+            "recover:startup-failure",
+            "shutdown:startup-failure"
+        ]
+    );
+    assert!(std::net::TcpStream::connect_timeout(&address, Duration::from_millis(50)).is_err());
+}
+
 struct StalledStartupRecovery {
     started: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     future_dropped: Arc<AtomicUsize>,
