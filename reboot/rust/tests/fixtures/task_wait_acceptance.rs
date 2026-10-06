@@ -23,6 +23,74 @@ fn reader_task_wait_request(
         .insert("x-reboot-state-ref", "root".parse().unwrap());
     request
 }
+// Probe only channel selection/metadata; every result is forwarded from the
+// actual authoritative generated host and real C++ Database. These endpoints
+// are not a simulated dispatcher migration or actor ownership transfer.
+#[derive(Clone)]
+struct WaitRouteProbe {
+    upstream: tonic::transport::Channel,
+    seen: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+#[tonic::async_trait]
+impl database::tasks_server::Tasks for WaitRouteProbe {
+    async fn wait(&self, request: tonic::Request<database::WaitRequest>) -> Result<tonic::Response<database::WaitResponse>, tonic::Status> {
+        assert_eq!(request.metadata().get("x-wait-route-proof").unwrap(), "preserved");
+        assert_eq!(request.metadata().get("x-reboot-state-ref").unwrap(), "root");
+        assert!(request.metadata().get("grpc-timeout").is_some(), "routed request lost deadline");
+        self.seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        database::tasks_client::TasksClient::new(self.upstream.clone()).wait(request).await
+    }
+    async fn list_tasks(&self, _: tonic::Request<database::ListTasksRequest>) -> Result<tonic::Response<database::ListTasksResponse>, tonic::Status> {
+        Err(tonic::Status::unimplemented("route probe"))
+    }
+    type ListTasksStreamStream = tokio_stream::wrappers::ReceiverStream<Result<database::ListTasksResponse, tonic::Status>>;
+    async fn list_tasks_stream(&self, _: tonic::Request<database::ListTasksRequest>) -> Result<tonic::Response<Self::ListTasksStreamStream>, tonic::Status> {
+        Err(tonic::Status::unimplemented("route probe"))
+    }
+    async fn cancel_task(&self, _: tonic::Request<database::CancelTaskRequest>) -> Result<tonic::Response<database::CancelTaskResponse>, tonic::Status> {
+        Err(tonic::Status::unimplemented("route probe"))
+    }
+}
+async fn prove_routed_task_result_refresh(binary: &std::path::Path, host_port: u16, id: &database::TaskId, plan: &placement_proto::ListenForPlanResponse, markers: &std::path::Path) {
+    let upstream = tonic::transport::Endpoint::from_shared(format!("http://127.0.0.1:{host_port}")).unwrap().connect_lazy();
+    let mut servers = tokio::task::JoinSet::new();
+    let mut addresses = Vec::new();
+    let mut counters = Vec::new();
+    for _ in 0..2 {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        addresses.push(listener.local_addr().unwrap().port());
+        let seen = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        counters.push(seen.clone());
+        let service = WaitRouteProbe { upstream: upstream.clone(), seen };
+        servers.spawn(tonic::transport::Server::builder()
+            .add_service(database::tasks_server::TasksServer::new(service))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener)));
+    }
+    // Separate canonical client planner: server authority stays unchanged.
+    let mut first = plan.clone();
+    first.plan.as_mut().unwrap().version = 1;
+    first.servers[0].address.as_mut().unwrap().port = i32::from(addresses[0]);
+    let planner = LivePlannerServer::start_async(first.clone()).await;
+    let result = markers.join("routed-refresh");
+    let mut child = WaitHostGuard(Command::new(binary).args([
+        "--role", "wait-result", "--listen", &format!("127.0.0.1:{host_port}"),
+        "--state-ref", "root", "--task-uuid", &Uuid::from_slice(&id.task_uuid).unwrap().to_string(),
+        "--result-marker", result.to_str().unwrap(), "--wait-planner", &planner.endpoint,
+        "--prove-route-refresh",
+    ]).spawn().unwrap());
+    await_marker(&std::path::PathBuf::from(format!("{}.first", result.display())), &mut child);
+    let mut next = first;
+    next.plan.as_mut().unwrap().version = 2;
+    next.servers[0].address.as_mut().unwrap().port = i32::from(addresses[1]);
+    planner.publish(next).await;
+    await_marker(&result, &mut child);
+    assert!(child.wait().unwrap().success());
+    assert_eq!(std::fs::read_to_string(result).unwrap(), "12");
+    assert_eq!(counters[0].load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(counters[1].load(std::sync::atomic::Ordering::SeqCst), 1, "routed client retained the first channel");
+    servers.abort_all();
+    while servers.join_next().await.is_some() {}
+}
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_canonical_reader_task_wait_deadline_and_typed_result() {
@@ -170,6 +238,8 @@ fn generated_canonical_reader_task_wait_deadline_and_typed_result() {
             &Uuid::from_slice(&id.task_uuid).unwrap().to_string(),
             "--result-marker",
             deadline_marker.to_str().unwrap(),
+            "--wait-planner",
+            &planner.endpoint,
             "--expect-wait-error",
             "Deadline",
             "--wait-timeout-ms",
@@ -196,6 +266,8 @@ fn generated_canonical_reader_task_wait_deadline_and_typed_result() {
             &Uuid::from_slice(&id.task_uuid).unwrap().to_string(),
             "--result-marker",
             typed.to_str().unwrap(),
+            "--wait-planner",
+            &planner.endpoint,
         ])
         .spawn()
         .unwrap();
@@ -205,6 +277,7 @@ fn generated_canonical_reader_task_wait_deadline_and_typed_result() {
     let completed = runtime.block_on(load_task(&db.endpoint(), id.clone()));
     assert_eq!(completed.status, database::task::Status::Completed as i32);
     assert_eq!(completed.timestamp, task.timestamp);
+    runtime.block_on(prove_routed_task_result_refresh(&binary, listen, &id, &plan, markers.path()));
     // A completed task can also be retrieved again without dispatcher execution.
     runtime.block_on(async {
         let channel = tonic::transport::Channel::from_shared(format!("http://127.0.0.1:{listen}"))

@@ -83,33 +83,32 @@ impl LivePlannerServer {
         runtime: &tokio::runtime::Runtime,
         response: placement_proto::ListenForPlanResponse,
     ) -> Self {
-        runtime.block_on(async move {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let address = listener.local_addr().unwrap();
-            let connections = Arc::new(AtomicUsize::new(0));
-            let streams = Arc::new(Mutex::new(Vec::new()));
-            let planner = LivePlacementPlanner {
-                response,
-                connections: Arc::clone(&connections),
-                streams: Arc::clone(&streams),
-            };
-            let server = tokio::spawn(async move {
-                tonic::transport::Server::builder()
-                    .add_service(
-                        placement_proto::placement_planner_server::PlacementPlannerServer::new(
-                            planner,
-                        ),
-                    )
-                    .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
-                    .await
-            });
-            Self {
-                endpoint: format!("http://{address}"),
-                streams,
-                connections,
-                server,
-            }
-        })
+        runtime.block_on(Self::start_async(response))
+    }
+    async fn start_async(response: placement_proto::ListenForPlanResponse) -> Self {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let connections = Arc::new(AtomicUsize::new(0));
+        let streams = Arc::new(Mutex::new(Vec::new()));
+        let planner = LivePlacementPlanner {
+            response,
+            connections: Arc::clone(&connections),
+            streams: Arc::clone(&streams),
+        };
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(
+                    placement_proto::placement_planner_server::PlacementPlannerServer::new(planner),
+                )
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+        });
+        Self {
+            endpoint: format!("http://{address}"),
+            streams,
+            connections,
+            server,
+        }
     }
 
     fn wait_for_connections(&self, expected: usize) {

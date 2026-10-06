@@ -1756,6 +1756,7 @@ fn emit_reader_tasks(
     let scheduler = format!("{service_name}Tasks");
     let mut scheduled_methods = String::new();
     let mut wait_methods = String::new();
+    let mut routed_wait_methods = String::new();
     output.push_str(&format!("/// Immediate same-actor reader task scheduling; method views come from RPC descriptors, not task annotations.\npub struct {scheduler};\nimpl {scheduler} {{\n"));
     for method in &service.method {
         let name = method.name.as_deref().unwrap();
@@ -1789,6 +1790,7 @@ fn emit_reader_tasks(
             .unwrap()
             .to_upper_camel_case();
         wait_methods.push_str(&format!("    /// Wait via the canonical public Tasks RPC. Request metadata/deadline is preserved.\n    pub async fn {rust_name}(channel: tonic::transport::Channel, mut request: tonic::Request<{runtime_module}::database_proto::TaskId>) -> Result<proto::{response}, tonic::Status> {{ if request.get_ref().state_type != <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE {{ return Err(tonic::Status::invalid_argument(\"task state type does not match generated method\")); }} if request.metadata().get(\"x-reboot-state-ref\").is_none() {{ let state_ref = request.get_ref().state_ref.parse().map_err(|_| tonic::Status::invalid_argument(\"invalid routed task state ref\"))?; request.metadata_mut().insert(\"x-reboot-state-ref\", state_ref); }} let result = {runtime_module}::database_proto::tasks_client::TasksClient::new(channel).wait(request.map(|task_id| {runtime_module}::database_proto::WaitRequest {{ task_id: Some(task_id) }})).await?.into_inner(); match result.response_or_error.and_then(|result| result.response_or_error) {{ Some({runtime_module}::database_proto::task_response_or_error::ResponseOrError::Response(response)) if response.type_url == \"type.googleapis.com/{response_full}\" => <proto::{response} as prost::Message>::decode(response.value.as_slice()).map_err(|_| tonic::Status::data_loss(\"malformed typed task response\")), Some({runtime_module}::database_proto::task_response_or_error::ResponseOrError::Error(_)) => Err(tonic::Status::unimplemented(\"typed task errors are outside this slice\")), _ => Err(tonic::Status::data_loss(\"missing or mismatched typed task response\")) }} }}\n"));
+        routed_wait_methods.push_str(&format!("    /// Resolve each task-result call afresh; no channel cache or RPC retries.\n    pub async fn {rust_name}(&self, request: tonic::Request<{runtime_module}::database_proto::TaskId>) -> Result<proto::{response}, tonic::Status> {{ if request.get_ref().state_type != <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE {{ return Err(tonic::Status::invalid_argument(\"task state type does not match generated method\")); }} let id = request.get_ref(); let channel = self.resolver.resolve(&id.state_type, &id.state_ref).await?; {scheduler}Wait::{rust_name}(channel, request).await }}\n"));
     }
     output.push_str("}\n");
     output.push_str(&format!(
@@ -1797,6 +1799,7 @@ fn emit_reader_tasks(
     output.push_str(&format!(
         "pub struct {scheduler}Wait;\nimpl {scheduler}Wait {{\n{wait_methods}}}\n"
     ));
+    output.push_str(&format!("/// Placement-aware task results using an explicit caller-owned resolver.\n/// With LegacyApplicationResolver this follows the latest accepted legacy plan.\npub struct {scheduler}WaitRouted<R> {{ resolver: R }}\nimpl<R: {runtime_module}::runtime::TransactionalChannelResolver> {scheduler}WaitRouted<R> {{ pub fn new(resolver: R) -> Self {{ Self {{ resolver }} }}\n{routed_wait_methods}}}\n"));
     output.push_str(&format!("struct {binding}<H> {{ handler: std::sync::Arc<H>, store: {runtime_module}::runtime::DatabaseActorStore }}\n#[tonic::async_trait]\nimpl<H: {handler}> {runtime_module}::one_shot_tasks::ReaderTaskBinding for {binding}<H> {{\n    fn validate(&self, task: &{runtime_module}::database_proto::Task) -> Result<(), tonic::Status> {{ match task.method.as_str() {{\n"));
     for method in &service.method {
         let name = method.name.as_deref().unwrap();
@@ -2244,6 +2247,9 @@ mod tests {
         assert!(output.contains("pub struct ActorMethodsTasksAt;"));
         assert!(output.contains("schedule: prost_types::Timestamp"));
         assert!(output.contains("pub struct ActorMethodsTasksWait;"));
+        assert!(output.contains("pub struct ActorMethodsTasksWaitRouted<R>"));
+        assert!(output.contains("self.resolver.resolve(&id.state_type, &id.state_ref).await?"));
+        assert!(!output.contains("pub async fn query_error("));
         assert!(output.contains("request.map(|task_id|"));
         assert_eq!(
             output.matches("\"Query\" =>").count(),

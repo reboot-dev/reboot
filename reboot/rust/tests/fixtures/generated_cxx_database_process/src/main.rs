@@ -496,10 +496,35 @@ async fn main() {
             state_ref: arg("--state-ref"),
             task_uuid: uuid::Uuid::parse_str(&arg("--task-uuid")).unwrap().as_bytes().to_vec(),
         };
-        let channel = tonic::transport::Endpoint::from_shared(format!("http://{listen}")).unwrap().connect().await.unwrap();
-        let mut request = tonic::Request::new(id);
+        let mut request = tonic::Request::new(id.clone());
         request.set_timeout(std::time::Duration::from_millis(optional_arg("--wait-timeout-ms").map(|value| value.parse().unwrap()).unwrap_or(8000)));
-        let result = generated::TransactionCounterWritesMethodsTasksWait::query(channel, request).await;
+        let result = if let Some(endpoint) = optional_arg("--wait-planner") {
+            let placement = PlanOnlyLegacyPlacement::new();
+            let client = generated::TransactionCounterWritesMethodsTasksWaitRouted::new(
+                LegacyApplicationResolver::new(
+                    LegacyApplicationId::new("generated-cxx-database-process").unwrap(), placement.clone()));
+            assert_eq!(client.query(tonic::Request::new(id.clone())).await.unwrap_err().code(), tonic::Code::Unavailable);
+            let mut wrong = id.clone(); wrong.state_type = "example.Wrong".into();
+            assert_eq!(client.query(tonic::Request::new(wrong)).await.unwrap_err().code(), tonic::Code::InvalidArgument);
+            let mut planner = reboot::placement_proto::placement_planner_client::PlacementPlannerClient::connect(endpoint).await.unwrap();
+            let mut stream = planner.listen_for_plan(reboot::placement_proto::ListenForPlanRequest {}).await.unwrap().into_inner();
+            let first = tokio::time::timeout(std::time::Duration::from_secs(3), stream.message()).await.unwrap().unwrap().unwrap();
+            placement.install(first).unwrap();
+            if has("--prove-route-refresh") {
+                request.metadata_mut().insert("x-wait-route-proof", "preserved".parse().unwrap());
+                assert_eq!(client.query(request).await.unwrap().value, 12);
+                std::fs::write(format!("{}.first", arg("--result-marker")), "first route").unwrap();
+                let next = tokio::time::timeout(std::time::Duration::from_secs(3), stream.message()).await.unwrap().unwrap().unwrap();
+                placement.install(next).unwrap();
+                let mut request = tonic::Request::new(id);
+                request.set_timeout(std::time::Duration::from_secs(2));
+                request.metadata_mut().insert("x-wait-route-proof", "preserved".parse().unwrap());
+                client.query(request).await
+            } else { client.query(request).await }
+        } else {
+            let channel = tonic::transport::Endpoint::from_shared(format!("http://{listen}")).unwrap().connect().await.unwrap();
+            generated::TransactionCounterWritesMethodsTasksWait::query(channel, request).await
+        };
         let output = if let Some(expected) = optional_arg("--expect-wait-error") {
             let error = result.unwrap_err();
             if expected == "Deadline" { assert!(matches!(error.code(), tonic::Code::Cancelled | tonic::Code::DeadlineExceeded)); }

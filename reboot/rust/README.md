@@ -82,11 +82,28 @@ retrieval, host recovery and deadline cancellation. Deliberately replaying the r
 generated reader from completed Wait makes that assertion fail. Fixture host guards
 kill and reap children on assertion failure as well as successful cleanup.
 This proves no replay in these exercised completed-result paths, not exactly-once
-task side effects generally. This is read-serving authority only, not
+task side effects generally.
+
+Generated `*TasksWaitRouted<R>` owns an explicit `TransactionalChannelResolver`.
+With `LegacyApplicationResolver`, every typed Wait resolves its TaskId against the
+latest accepted plan for the caller-selected application before using the existing
+canonical helper; metadata, routing headers and RPC timeout are preserved.
+This matches the channel-selection portion of `templates/reboot.py.j2:4736-4759`,
+not Python's retried-call or cross-application machinery. The resolver does not
+cache a channel or retry an RPC; a custom resolver's own execution/deadline policy
+remains the caller's responsibility. Real-process acceptance reuses one generated
+client across two canonical client-planner snapshots and observes exactly one call
+at each selected forwarding endpoint; responses come from the authoritative
+generated host and actual C++ Database. The server's plan does not move: this is
+client route selection, not dispatcher/actor migration. Deliberate channel caching
+fails the endpoint-count assertion. Routed pending deadlines and typed completion
+also run through the live canonical planner.
+
+This is read-serving authority only, not
 ownership fencing of the dispatcher or a guarantee against concurrent plan changes
 after the final synchronous check.
 ListTasks/streaming/CancelTask return Unimplemented; task authorization, typed
-terminal errors, automatic client placement, and a multi-actor Wait registry remain
+terminal errors, external/cross-application task routing, and a multi-actor Wait registry remain
 outside this slice. Source: aio/internals/tasks_servicer.py:48-126 and
 templates/reboot.py.j2:4697-4775. Earlier durable RPC cancellation windows still need dedicated
 acceptance. No exactly-once
