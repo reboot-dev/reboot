@@ -1,4 +1,4 @@
-## Candidate supervised successful-return descendant trees (not yet delivered)
+## Supervised successful-return descendant trees
 
 Explicit generated `with_supervised_transaction_tree()` is separate from default
 leaf task ownership. It requires actual registered fresh-root execution or an
@@ -53,7 +53,8 @@ Native2pc remains independent protocol regression, not Python legacy parity.
 The sealed-root cancellation regression executed one invariant-specific original
 source RED (stranded readmission), followed by fixed-source GREEN; an independent
 delta source review found no new blocker. Review did not independently rerun tests.
-This remains an uncommitted candidate, not delivery/push certification. See
+Delivered in commit `7e91e2e1994f2ad9e73a23d6517f3706063a1373` on PR #1.
+The delivered tree was verified identical to the exercised candidate. See
 `/tmp/supervised-descendant-trees-checkpoint.md` for exact source/log identities,
 review provenance, scope boundaries and sole-build-owner release status.
 
