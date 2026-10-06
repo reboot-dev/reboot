@@ -743,6 +743,56 @@ async fn main() {
             .unwrap();
         host = host.with_host_recovery(recovery);
     }
+    if let Some(task_uuid) = optional_arg("--transition-task-uuid") {
+        let owner = tasks.as_ref().expect("transition requires generated task owner");
+        let (prime_placement, prime_planner) = crate::placement();
+        let prime = ApplicationHost::new("generated-cxx-database-process")
+            .with_legacy_placement_readiness(prime_placement.clone())
+            .with_host_recovery(prime_planner.expect("transition requires live planner"))
+            .with_host_recovery(owner.recovery(reboot::database_proto::RecoverRequest {
+                state_tags_by_state_type: [("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())].into(),
+                shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
+            }))
+            .add_public_service(owner.wait_service(application.clone(), "server-0", prime_placement));
+        let (shutdown, stopped) = tokio::sync::oneshot::channel();
+        let singleton = tokio::spawn(prime.serve_with_shutdown(address, async { let _ = stopped.await; }));
+        let channel = tonic::transport::Endpoint::from_shared(format!("http://{listen}")).unwrap().connect_lazy();
+        let mut client = reboot::database_proto::tasks_client::TasksClient::new(channel);
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let mut request = tonic::Request::new(reboot::database_proto::WaitRequest {
+                    task_id: Some(reboot::database_proto::TaskId {
+                        state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: state_ref.clone(),
+                        task_uuid: Uuid::parse_str(&task_uuid).unwrap().as_bytes().to_vec(),
+                    }),
+                });
+                request.metadata_mut().insert("x-reboot-state-ref", state_ref.parse().unwrap());
+                request.set_timeout(std::time::Duration::from_secs(1));
+                match client.wait(request).await {
+                    Ok(response) => {
+                        let result = response.into_inner().response_or_error.unwrap().response_or_error.unwrap();
+                        let reboot::database_proto::task_response_or_error::ResponseOrError::Response(result) = result else { panic!("singleton task error"); };
+                        assert_eq!(result.type_url, "type.googleapis.com/tests.reboot.protoc.TransactionCounterValue");
+                        assert_eq!(proto::TransactionCounterValue::decode(result.value.as_slice()).unwrap().value, 12);
+                        break;
+                    }
+                    Err(status) if status.code() == tonic::Code::Unavailable => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+                    Err(status) => panic!("singleton transition Wait: {status}"),
+                }
+            }
+        }).await.expect("singleton task did not complete");
+        shutdown.send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), singleton).await.unwrap().unwrap().unwrap();
+        let marker = arg("--invoke-marker");
+        std::fs::write(format!("{marker}.singleton-stopped"), "real singleton host returned and joined").unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            while !std::path::Path::new(&format!("{marker}.shared-release")).exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        }).await.expect("shared transition release absent");
+        // Reuse the exact owner from above, including its consumed singleton
+        // notification receiver. Shared recovery owns its own serial rescan.
+    }
     let mut wait_owners: Vec<_> = tasks.iter().cloned().collect();
     if let Some(endpoint) = optional_arg("--second-task-database") {
         // An independently recovered actor/database, not a filtered shared

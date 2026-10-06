@@ -4,12 +4,12 @@
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_wait_registry_routes_two_independent_actors() {
-    run_task_wait_registry(false, false, None);
+    run_task_wait_registry(false, false, None, false);
 }
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_wait_registry_routes_heterogeneous_same_ref_and_uuid() {
-    run_task_wait_registry(true, false, None);
+    run_task_wait_registry(true, false, None, false);
 }
 #[derive(Clone, PartialEq, prost::Message)]
 struct TaskGaugeResponse {
@@ -33,24 +33,29 @@ fn registry_result(response: database::WaitResponse, id: &database::TaskId) -> S
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_wait_registry_recovers_shared_shard_actors() {
-    run_task_wait_registry(false, true, None);
+    run_task_wait_registry(false, true, None, false);
 }
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_wait_registry_recovers_shared_shard_heterogeneous() {
-    run_task_wait_registry(true, true, None);
+    run_task_wait_registry(true, true, None, false);
 }
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_shared_registry_rejects_unknown_owner_before_any_dispatch() {
-    run_task_wait_registry(true, true, Some(false));
+    run_task_wait_registry(true, true, Some(false), false);
 }
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_shared_registry_rejects_malformed_binding_before_any_dispatch() {
-    run_task_wait_registry(true, true, Some(true));
+    run_task_wait_registry(true, true, Some(true), false);
 }
-fn run_task_wait_registry(heterogeneous: bool, shared: bool, reject: Option<bool>) {
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
+fn generated_reader_task_registry_reuses_owner_after_singleton_host_shutdown() {
+    run_task_wait_registry(true, true, None, true);
+}
+fn run_task_wait_registry(heterogeneous: bool, shared: bool, reject: Option<bool>, transition: bool) {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/generated_cxx_database_process");
     assert!(Command::new("cargo").args(["build", "--locked"]).current_dir(&fixture).status().unwrap().success());
@@ -76,6 +81,7 @@ fn run_task_wait_registry(heterogeneous: bool, shared: bool, reject: Option<bool
             (db.endpoint(), "root", 12, first.clone()),
             (if shared { db.endpoint() } else { second_db.endpoint() }, if heterogeneous { "root" } else { "second" }, 42, second.clone()),
         ] {
+            if transition && task.task_id.as_ref().unwrap().state_type == "tests.reboot.protoc.RegistryGauge" { continue; }
             database::database_client::DatabaseClient::connect(endpoint).await.unwrap()
                 .store(database::StoreRequest {
                     actor_upserts: vec![database::Actor {
@@ -103,6 +109,18 @@ fn run_task_wait_registry(heterogeneous: bool, shared: bool, reject: Option<bool
     let marker = markers.path().join("first");
     let second_marker = markers.path().join("second");
     let ack = markers.path().join("unused-ack");
+    let wait_marker = |path: &std::path::Path, host: &mut Child| {
+        for _ in 0..200 {
+            if path.exists() { return; }
+            if let Some(exit) = host.try_wait().unwrap() {
+                panic!("registry host exited {exit} before {}: {}", path.display(),
+                    std::fs::read_to_string(markers.path().join("stderr")).unwrap());
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        panic!("registry marker {} absent within five seconds: {}", path.display(),
+            std::fs::read_to_string(markers.path().join("stderr")).unwrap());
+    };
     let first_endpoint = db.endpoint();
     let second_endpoint = if shared { db.endpoint() } else { second_db.endpoint() };
     let start_host = || {
@@ -117,10 +135,22 @@ fn run_task_wait_registry(heterogeneous: bool, shared: bool, reject: Option<bool
         command.arg("--shared-task-recovery");
         if reject.is_none() { command.args(["--invoke", "--expect-task-error", "--task-vector", "no-owner"]); }
     }
+    if transition { command.args(["--transition-task-uuid", &uuid.to_string()]); }
     command.stderr(Stdio::from(std::fs::File::create(markers.path().join("stderr")).unwrap()));
     WaitHostGuard(command.spawn().unwrap())
     };
     let mut host = start_host();
+    if transition {
+        wait_marker(&ack.with_extension("singleton-stopped"), &mut host);
+        runtime.block_on(async {
+            database::database_client::DatabaseClient::connect(db.endpoint()).await.unwrap()
+                .store(database::StoreRequest {
+                    actor_upserts: vec![database::Actor { state_type: second.task_id.as_ref().unwrap().state_type.clone(), state_ref: "root".into(), state: Some(TaskQueryResponse { value: 42 }.encode_to_vec()) }],
+                    task_upserts: vec![second.clone()], sync: true, ..Default::default()
+                }).await.unwrap();
+        });
+        std::fs::write(ack.with_extension("shared-release"), "foreign task persisted after singleton joined").unwrap();
+    }
     if let Some(rejected) = rejected {
         let exit = (0..200).find_map(|_| {
             let exit = host.try_wait().unwrap();
@@ -144,10 +174,10 @@ fn run_task_wait_registry(heterogeneous: bool, shared: bool, reject: Option<bool
         planner.stop();
         return;
     }
-    await_marker(&marker, &mut host);
-    await_marker(&second_marker, &mut host);
+    wait_marker(&marker, &mut host);
+    wait_marker(&second_marker, &mut host);
     if shared {
-        await_marker(&ack, &mut host);
+        wait_marker(&ack, &mut host);
         assert_eq!(runtime.block_on(load_state(&db.endpoint(), "root")), Some(vec![0x08, 12]), "shared registry accidentally enabled scheduling mutation");
     }
     let ids = [first.task_id.clone().unwrap(), second.task_id.clone().unwrap()];
@@ -176,9 +206,17 @@ fn run_task_wait_registry(heterogeneous: bool, shared: bool, reject: Option<bool
     });
     host.kill().unwrap(); host.wait().unwrap();
     if shared { std::fs::remove_file(&ack).unwrap(); }
+    if transition {
+        std::fs::remove_file(ack.with_extension("singleton-stopped")).unwrap();
+        std::fs::remove_file(ack.with_extension("shared-release")).unwrap();
+    }
     db.restart();
     second_db.restart();
     let mut host = start_host();
+    if transition {
+        wait_marker(&ack.with_extension("singleton-stopped"), &mut host);
+        std::fs::write(ack.with_extension("shared-release"), "retain completed records after restart").unwrap();
+    }
     runtime.block_on(async {
         let channel = tonic::transport::Endpoint::from_shared(format!("http://127.0.0.1:{listen}")).unwrap().connect_lazy();
         let mut client = database::tasks_client::TasksClient::new(channel);
@@ -205,7 +243,7 @@ fn run_task_wait_registry(heterogeneous: bool, shared: bool, reject: Option<bool
         assert_eq!(load_task(&second_endpoint, ids[1].clone()).await, completions[1]);
     });
     if shared {
-        await_marker(&ack, &mut host);
+        wait_marker(&ack, &mut host);
         assert_eq!(runtime.block_on(load_state(&db.endpoint(), "root")), Some(vec![0x08, 12]));
     }
     for path in [&marker, &second_marker] {

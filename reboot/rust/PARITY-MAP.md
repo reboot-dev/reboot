@@ -169,7 +169,17 @@ transaction task scheduling/admission. It intentionally does not install an
 individual scheduling recovery request. Shared activation explicitly clears any
 stale singleton admission request before publishing active ownership, and owner
 Drop clears that request before releasing the local claim. A lifecycle regression
-plus stale-request RED exercise this reuse boundary. Global staged-capacity reservations,
+plus stale-request RED exercise this reuse boundary. Real-process acceptance now
+also completes a generated reader under a singleton ApplicationHost, gracefully
+stops and joins that host, then reuses the SAME OneShotTasks owner (including its
+consumed singleton notification receiver) in shared recovery. Only after the
+singleton returns does the parent persist the second generated actor/task in the
+same RocksDB shard; shared recovery returns both distinct typed results and denies
+actual generated scheduling without mutation. After Database/host restart, both
+host phases repeat against unchanged completed records with one handler entry
+each. Removing BOTH activation and teardown admission revocation makes generated
+scheduling succeed and fails this regression. This proves the actual host reuse
+transition, not only a seeded unit-metadata approximation. Global staged-capacity reservations,
 second-actor transaction control/recovery registration, task auth/errors/retries,
 and distributed dispatcher fencing/migration remain outside this slice. Source: aio/internals/tasks_servicer.py:48-126 and
 templates/reboot.py.j2:4697-4775. Earlier durable RPC cancellation windows still need dedicated
