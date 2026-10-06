@@ -1,5 +1,72 @@
 # Python → Rust SDK parity map
 
+## Owned distributed roots with root-local reader tasks
+
+**Partial, bounded executable vertical.** A fresh, exclusive, non-factory,
+non-idempotent single-root generated transaction may commit successfully returned
+remote participants while staging **only its own actor's unary reader tasks**.
+The distributed gate requires `RootHandlerGuard::cancellation_owned()`: an actual
+pre-handler reserved permit from an active host registration, not merely an
+attached builder. Keep the generated adapter's singleton reader-task owner and
+register both its task recovery and `explicit_abort_recovery_registration()` with
+`ApplicationHost`. Inbound/remote task staging, foreign actor identities,
+shared-registry scheduling, factory/shared/idempotent distributed roots and
+ownerless distributed scheduling remain rejected. The fresh-shared response-only
+handler cannot return tasks.
+
+Python coupling: `aio/state_managers.py:6261,6586–6593,6848–6867` validates tasks
+before Prepare, dispatches after committed state, and collects recovery before
+dispatch; `aio/internals/tasks_dispatcher.py:93–107` requires serialized validation.
+Rust source: `src/codegen.rs::emit_transaction_flow`,
+`src/explicit_abort.rs::RootHandlerGuard`, `src/one_shot_tasks.rs::validate_staged`,
+and durable participant/coordinator staging and recovery. No new wire RPC or
+standalone scheduling helper is introduced. Actor-exclusive admission serializes
+staging, while canonical pending plus the staged batch is capped at 1024.
+
+Executed through generated Tonic adapters, a live canonical planner, **two
+independent C++ Database/RocksDB sidecars**, and actual generated reader bindings
+(`tests/fixtures/owned_distributed_task_acceptance.rs`):
+
+- Immediate and absolute-UTC delayed tasks commit root/remote state and return the
+  typed canonical Wait result; the target sidecar never receives the root task.
+- Immutable Commit is read before killing hosts prior to terminal delivery.
+  Restart starts target recovery first, converges both actor states, interrupts a
+  genuine pending reader delivery, redelivers after RocksDB restart, completes,
+  then restarts again with unchanged completion and append-only no-replay counts.
+- Malformed request, duplicate/persisted identity, foreign actor, oversized batch,
+  1024 pending plus one staged, missing/inactive owner, shared registry and
+  ownerless denials preserve states/records and re-admit **both actors exclusively
+  in the live hosts**, without restart. Factory, inbound/shared-inbound and
+  idempotent negatives also execute their real generated paths; unsupported
+  idempotent distributed cleanup is not promised.
+- Actual Tonic deadlines during handler, validation and staging destroy the real
+  awaited future; cleanup checks its Drop marker **before DecisionPut**, then
+  owned immutable Abort/remote/local ACKs permit both actors' live re-admission.
+- Deadline after real CoordinatorPrepare ACK preserves full root/remote membership,
+  fails the supervised host, and writes no competing Abort. Restart of that
+  pre-participant-Prepare state yields Abort and no task, not invented Commit.
+- Unfinished outbound and a genuinely caught uncertain RPC remain sticky, fail
+  supervision and write no synthetic decision. Unknown remote leases are retained;
+  restart cleanup of unknown membership is not implemented.
+- A competing scheduling root times out before handler entry while the first owns
+  admission. This is admission serialization plus overflow rejection, not a new
+  shared cross-actor capacity reservation or a two-successful-batch concurrency
+  proof. Existing singleton 1023+1/1024+1 real-sidecar vectors remain applicable.
+
+Final restored-source verification: locked all-features/all-targets, formatting
+and strict Clippy pass; **53 generated ignored CXX tests** (48 baseline plus five
+coupled tests) and **8 separate Native2pc ignored CXX tests** pass. Restoring only
+the old blanket returned-membership gate makes the new Commit test fail with
+FailedPrecondition (one actual test), then the bounded gate is restored before
+all broad execution. Logs: `/tmp/owned-distributed-tasks-{fmt,clippy,all-targets,full-ignored,native-ignored,red-gate}.log`.
+Native2pc remains a separate protocol, not Python legacy parity.
+
+This requires fixed actor ownership and one process dispatcher. It provides no
+migration/overlapping-owner fencing, remote-actor scheduling, general tree retry,
+unknown-membership enumeration, task auth/errors/workflows, or exactly-once reader
+side effects. Host supervision and canonical recovery must not be replaced by
+speculative local release or blind actor-only terminal retries.
+
 ## Bounded generated root handler cancellation
 
 **Partial transaction-tree ownership vertical.** Python source authority is
@@ -13,8 +80,9 @@ Scope is only an **owner-attached fresh non-idempotent exclusive non-factory roo
 Use generated `with_explicit_abort_owner(ExplicitAbortOwner::new(capacity)?)` and
 register the same adapter's `explicit_abort_recovery_registration()` with
 `ApplicationHost::with_host_recovery`. Unsupported/inbound/shared/factory/idempotent
-and ownerless paths do not acquire this cancellation authority. Distributed task
-staging remains disabled; returned remote participants still reject root tasks.
+and ownerless paths do not acquire this cancellation authority. Root-local reader
+tasks with confirmed remote membership require this reserved ownership; see the
+[bounded task extension](#owned-distributed-roots-with-root-local-reader-tasks).
 
 Before handler effects, the guard reserves one bounded host permit, verifies the
 same normalized Database/coordinator authority and exact admitted live local
@@ -126,8 +194,9 @@ uncertainty, fatal watch state, and lost-local-ACK/timeout one-attempt retention
 
 Bounded prerequisite for distributed tasks: generated fresh, non-idempotent,
 exclusive, non-factory roots now clean up confirmed returned participants on
-explicit handler, task-admission or staging rejection. Task scheduling with
-returned participants remains rejected; this does not enable cross-actor tasks.
+explicit handler, task-admission or staging rejection. Ownerless scheduling with returned participants remains rejected. The
+[owned root-local reader extension](PARITY-MAP.md#owned-distributed-roots-with-root-local-reader-tasks)
+does not enable remote-actor tasks.
 
 The capability validates fresh-root provenance, admitted scope, exact local
 incarnation and actor/coordinator identity, and matching normalized Database

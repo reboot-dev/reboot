@@ -75,7 +75,10 @@ application RPC is the typed execution envelope.
 
 ## Current boundary
 
-The Rust SDK currently supports only a fresh same-actor root transaction. It
-must continue rejecting inbound/nested and multi-actor shapes until steps 1-4
-are implemented and tested. `family-tasks` must not claim Household -> Task
-atomicity before that point.
+Generated legacy application RPCs now support bounded exclusive inbound
+participants, confirmed trailer membership, complete-set coordinator recovery,
+and [owned distributed roots with root-local reader tasks](PARITY-MAP.md#owned-distributed-roots-with-root-local-reader-tasks).
+This is not general nested-tree retry or remote task scheduling. Unknown/lost
+trailer membership, abandoned pre-Prepare root recovery and dispatcher fencing
+remain separate gaps; `family-tasks` must not infer Household -> remote Task
+scheduling atomicity from the root-local reader subset.

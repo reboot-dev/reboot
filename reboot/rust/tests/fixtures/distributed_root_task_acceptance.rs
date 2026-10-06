@@ -1,4 +1,4 @@
-// Bounded explicit pre-handoff tree failure; distributed task staging stays rejected.
+// Explicit pre-handoff tree failure; ownerless distributed task staging stays rejected.
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn distributed_task_admission_failure_must_release_remote_actor() {

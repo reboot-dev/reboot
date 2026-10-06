@@ -655,6 +655,20 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                     "handler future must be destroyed before Abort DecisionPut"
                 );
             }
+            #[cfg(feature = "test-support")]
+            for variable in [
+                "REBOOT_TEST_TASK_ADMISSION_CANCEL",
+                "REBOOT_TEST_TASK_STAGING_CANCEL",
+            ] {
+                if let Some(path) = std::env::var_os(variable) {
+                    assert!(
+                        std::path::PathBuf::from(path)
+                            .with_extension("future-dropped")
+                            .exists(),
+                        "validation/staging future must be destroyed before Abort DecisionPut"
+                    );
+                }
+            }
             self.persist_abort(
                 context.transaction_root_id(),
                 context.transaction_coordinator_state_ref(),

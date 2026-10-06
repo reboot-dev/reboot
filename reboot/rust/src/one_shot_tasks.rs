@@ -163,6 +163,16 @@ impl OneShotTasks {
                     "canonical Recover complete; admission Load not staged",
                 )
                 .map_err(|error| Status::internal(error.to_string()))?;
+                struct AdmissionDrop(std::path::PathBuf);
+                impl Drop for AdmissionDrop {
+                    fn drop(&mut self) {
+                        let _ = std::fs::write(
+                            self.0.with_extension("future-dropped"),
+                            b"actual validation future dropped",
+                        );
+                    }
+                }
+                let _drop = AdmissionDrop(marker.to_path_buf());
                 std::future::pending::<()>().await;
             }
         }

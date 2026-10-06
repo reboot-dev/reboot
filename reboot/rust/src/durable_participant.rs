@@ -814,6 +814,25 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         transaction_id: Uuid,
         effects: PendingActorEffects,
     ) -> Result<Option<SharedPromotion>, Status> {
+        #[cfg(feature = "test-support")]
+        if !effects.task_upserts.is_empty()
+            && let Some(path) = std::env::var_os("REBOOT_TEST_TASK_STAGING_CANCEL")
+        {
+            struct StagingDrop(std::path::PathBuf);
+            impl Drop for StagingDrop {
+                fn drop(&mut self) {
+                    let _ = std::fs::write(
+                        self.0.with_extension("future-dropped"),
+                        b"actual staging future dropped",
+                    );
+                }
+            }
+            let path = std::path::PathBuf::from(path);
+            std::fs::write(&path, b"staging entered before effects/Prepare")
+                .map_err(|error| Status::internal(error.to_string()))?;
+            let _drop = StagingDrop(path);
+            std::future::pending::<()>().await;
+        }
         let mut pending = self.pending.lock().await;
         let current = pending
             .as_mut()

@@ -2,7 +2,9 @@
 
 Generated adapters can opt into bounded host-owned root handler cancellation;
 see [scope, registration, safety limits and executed evidence](PARITY-MAP.md#bounded-generated-root-handler-cancellation).
-Distributed tasks and unknown-membership recovery remain unsupported.
+Root-local readers can be staged by
+[owned distributed roots](PARITY-MAP.md#owned-distributed-roots-with-root-local-reader-tasks);
+remote-actor scheduling and unknown-membership recovery remain unsupported.
 
 For the narrower explicit-error cleanup contract, see the canonical
 [pre-handoff failure checkpoint](PARITY-MAP.md#explicit-pre-handoff-transaction-tree-failure-checkpoint).

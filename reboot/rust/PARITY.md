@@ -4,8 +4,9 @@
 
 Bounded prerequisite for distributed tasks: generated fresh, non-idempotent,
 exclusive, non-factory roots now clean up confirmed returned participants on
-explicit handler, task-admission or staging rejection. Task scheduling with
-returned participants remains rejected; this does not enable cross-actor tasks.
+explicit handler, task-admission or staging rejection. Ownerless scheduling with returned participants remains rejected. The
+[owned root-local reader extension](PARITY-MAP.md#owned-distributed-roots-with-root-local-reader-tasks)
+does not enable remote-actor tasks.
 
 The capability validates fresh-root provenance, admitted scope, exact local
 incarnation and actor/coordinator identity, and matching normalized Database

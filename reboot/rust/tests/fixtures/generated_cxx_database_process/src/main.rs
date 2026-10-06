@@ -233,6 +233,20 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 if has("--root-task-invalid") {
                     task.method = "Missing".into();
                 }
+                let vector = optional_arg("--task-vector").unwrap_or_default();
+                if let Some(seconds) = vector.strip_prefix("delayed:") {
+                    task.timestamp = Some(prost_types::Timestamp { seconds: seconds.parse().unwrap(), nanos: 0 });
+                }
+                if let Some(id) = vector.strip_prefix("reuse:") {
+                    task.task_id.as_mut().unwrap().task_uuid = Uuid::parse_str(id).unwrap().as_bytes().to_vec();
+                }
+                match vector.as_str() {
+                    "malformed" => task.request = vec![0xff],
+                    "identity" => task.task_id.as_mut().unwrap().state_ref = "target".into(),
+                    "duplicate" => execution.task_upserts.push(task.clone()),
+                    "capacity" => execution.task_upserts = (0..1024).map(|_| generated::TransactionCounterWritesMethodsTasks::query(&context.headers().state_ref, &proto::TransactionIncrementRequest { amount: 9000 })).collect(),
+                    _ => {},
+                }
                 std::fs::write(
                     format!("{}.task-id", root.task_marker.as_ref().unwrap()),
                     Uuid::from_slice(&task.task_id.as_ref().unwrap().task_uuid)
@@ -258,6 +272,10 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 execution.task_upserts.push(task);
             }
         }
+        if matches!(self, Self::Target) && has("--negative-task-shape") {
+            execution.task_upserts.push(generated::TransactionCounterWritesMethodsTasks::query(&context.headers().state_ref, &proto::TransactionIncrementRequest { amount: 9000 }));
+            std::fs::write(arg("--negative-shape-marker"), b"actual inbound handler returned task").unwrap();
+        }
         Ok(execution)
     }
     async fn factory_increment(
@@ -280,9 +298,12 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         state.value += request.amount;
         // Deliberately leave final_state unset: the generated factory adapter
         // must durably materialize the state it gave the handler.
-        Ok(TransactionExecution::new(proto::TransactionCounterValue {
-            value: state.value,
-        }))
+        let mut execution = TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
+        if has("--negative-task-shape") {
+            execution.task_upserts.push(generated::TransactionCounterWritesMethodsTasks::query(&arg("--state-ref"), &proto::TransactionIncrementRequest { amount: 9000 }));
+            std::fs::write(arg("--negative-shape-marker"), b"actual factory handler returned task").unwrap();
+        }
+        Ok(execution)
     }
     async fn factory_increment_target(
         &self,
@@ -322,9 +343,12 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         _: proto::TransactionIncrementRequest,
     ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
         shared_barrier(context.transaction_root_id()).await?;
-        Ok(TransactionExecution::new(proto::TransactionCounterValue {
-            value: state.value,
-        }))
+        let mut execution = TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
+        if has("--negative-task-shape") {
+            execution.task_upserts.push(generated::TransactionCounterWritesMethodsTasks::query(&context.headers().state_ref, &proto::TransactionIncrementRequest { amount: 9000 }));
+            std::fs::write(arg("--negative-shape-marker"), b"actual shared inbound handler returned task").unwrap();
+        }
+        Ok(execution)
     }
 
     async fn shared_read_fresh_shared(
@@ -945,7 +969,7 @@ async fn main() {
             reboot::one_shot_tasks::ReaderTaskWaitService::new(wait_owners,
                 application.clone(), optional_arg("--server-id").unwrap_or_else(|| "server-0".into()),
                 placement.clone()).unwrap())) };
-    if let Some(tasks) = tasks.filter(|_| !has("--shared-task-recovery")) {
+    if let Some(tasks) = tasks.filter(|_| !has("--shared-task-recovery") && !has("--inactive-task-owner")) {
         host = host.with_host_recovery(tasks.recovery(reboot::database_proto::RecoverRequest {
             state_tags_by_state_type: [("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())].into(),
             shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
