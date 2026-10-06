@@ -25,6 +25,9 @@ struct TaskHostOptions<'a> {
     vector: Option<&'a str>,
 }
 fn task_host(options: TaskHostOptions<'_>) -> Child {
+    task_host_command(options).spawn().unwrap()
+}
+fn task_host_command(options: TaskHostOptions<'_>) -> Command {
     let mut command = Command::new(options.binary);
     command.args([
         "--role",
@@ -93,11 +96,8 @@ fn task_host(options: TaskHostOptions<'_>) -> Child {
             command.arg("--no-task-owner");
         }
     }
+    command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
     command
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .unwrap()
 }
 fn await_marker(path: &std::path::Path, child: &mut Child) {
     for _ in 0..200 {

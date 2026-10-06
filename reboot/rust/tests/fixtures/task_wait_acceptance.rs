@@ -333,11 +333,80 @@ fn generated_canonical_reader_task_wait_deadline_and_typed_result() {
             }
         }).await.unwrap();
     });
-    assert_eq!(runtime.block_on(load_task(&db.endpoint(), id)), completed);
+    assert_eq!(runtime.block_on(load_task(&db.endpoint(), id.clone())), completed);
     assert!(
         host.try_wait().unwrap().is_none(),
         "Wait failure killed dispatcher host"
     );
+    host.kill().unwrap();
+    host.wait().unwrap();
+
+    // Deterministic post-Load race: a restarted host pauses a completed-result
+    // Wait after its actual C++ Database Load reply. Move authority before
+    // releasing it, without changing public service declarations/readiness.
+    let loaded = markers.path().join("wait-loaded");
+    let mut host = task_host_command(TaskHostOptions {
+        binary: &binary, database: &db.endpoint(), planner: &planner.endpoint,
+        port: listen, marker: &marker, ack: &ack,
+        invoke: false, block: false, recover: true, vector: None,
+    }).env("REBOOT_TEST_TASK_WAIT_LOADED", &loaded).spawn().unwrap();
+    let marker_before = std::fs::read(&marker).unwrap();
+    runtime.block_on(async {
+        let channel = tonic::transport::Channel::from_shared(format!("http://127.0.0.1:{listen}"))
+            .unwrap().connect_lazy();
+        let mut client = database::tasks_client::TasksClient::new(channel.clone());
+        let waiting_id = id.clone();
+        let waiting_loaded = loaded.clone();
+        let mut waiter_client = database::tasks_client::TasksClient::new(channel);
+        let waiter = tokio::spawn(async move {
+            tokio::time::timeout(Duration::from_secs(8), async {
+                loop {
+                    let mut request = reader_task_wait_request(Some(waiting_id.clone()));
+                    request.set_timeout(Duration::from_secs(5));
+                    match waiter_client.wait(request).await {
+                        Err(error) if error.code() == tonic::Code::Unavailable => {
+                            // Only startup errors are retried. After the Load
+                            // marker appears, propagate the final result.
+                            if waiting_loaded.exists() { return Err(error); }
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                        }
+                        result => return result,
+                    }
+                }
+            }).await.unwrap()
+        });
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while !loaded.exists() {
+                assert!(!waiter.is_finished(), "Wait ended before the Load barrier");
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }).await.expect("Wait did not reach real Database Load");
+        let mut moved = plan.clone();
+        moved.plan.as_mut().unwrap().version = 4;
+        moved.plan.as_mut().unwrap().applications[0].shards[0].server_id = "other-server".into();
+        moved.servers[0].id = "other-server".into();
+        planner.publish(moved).await;
+        // The hook is one-shot: this second request bypasses it and confirms
+        // the new plan is installed while the first still owns its loaded data.
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                match client.wait(reader_task_wait_request(Some(id.clone()))).await {
+                    Err(error) if error.code() == tonic::Code::Unavailable => break,
+                    Ok(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+                    Err(error) => panic!("unexpected moved authority status: {error}"),
+                }
+            }
+        }).await.unwrap();
+        assert!(!waiter.is_finished(), "Load barrier was not retained");
+        std::fs::write(loaded.with_extension("release"), "release").unwrap();
+        assert_eq!(tokio::time::timeout(Duration::from_secs(2), waiter)
+            .await.unwrap().unwrap().unwrap_err().code(), tonic::Code::Unavailable,
+            "post-Load authority check returned stale completed result");
+        assert_eq!(load_task(&db.endpoint(), id.clone()).await, completed);
+    });
+    assert_eq!(std::fs::read(&marker).unwrap(), marker_before,
+        "Wait replayed a completed task handler");
+    assert!(host.try_wait().unwrap().is_none());
     host.kill().unwrap();
     host.wait().unwrap();
 }

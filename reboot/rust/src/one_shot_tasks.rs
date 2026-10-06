@@ -497,6 +497,20 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
                 })
                 .await?
                 .into_inner();
+            #[cfg(feature = "test-support")]
+            if let Some(marker) = std::env::var_os("REBOOT_TEST_TASK_WAIT_LOADED") {
+                let marker = std::path::Path::new(&marker);
+                if !marker.exists() {
+                    // Test-only barrier after the real Database reply, before
+                    // checking the current plan or returning a loaded result.
+                    std::fs::write(marker, "real Database Load completed")
+                        .map_err(|error| Status::internal(error.to_string()))?;
+                    let release = marker.with_extension("release");
+                    while !release.exists() {
+                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                    }
+                }
+            }
             // Loading can await while a newer plan moves this actor. Never
             // return a result under the authority checked before that await.
             self.require_authority(&id.state_ref)?;

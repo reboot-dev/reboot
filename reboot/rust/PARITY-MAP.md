@@ -68,7 +68,13 @@ and fail-closed wrong-type/malformed responses while the host remains running.
 A newer live planner snapshot moving the actor revokes pending Wait and denies
 completed retrieval on the old host without changing records; restoring authority
 with a still newer plan allows retrieval without restart. Removing authority checks
-fails this real-process regression. This is read-serving authority only, not
+fails this real-process regression. A deterministic restart vector also pauses
+Wait after its real C++ Database Load reply, confirms a moved accepted plan through
+a second request, then releases the first: it must reject the already-loaded
+completion without changing the record or invoking the handler. Removing only the
+post-Load check returns the stale result and fails this regression. The barrier is
+behind test-support and a process-specific environment variable.
+This is read-serving authority only, not
 ownership fencing of the dispatcher or a guarantee against concurrent plan changes
 after the final synchronous check.
 ListTasks/streaming/CancelTask return Unimplemented; task authorization, typed

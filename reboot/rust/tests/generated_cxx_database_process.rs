@@ -125,9 +125,20 @@ impl LivePlannerServer {
     async fn publish(&self, plan: placement_proto::ListenForPlanResponse) {
         let streams = self.streams.lock().unwrap().clone();
         assert!(!streams.is_empty(), "no connected planner consumers");
+        let mut delivered = 0;
         for sender in streams {
-            sender.send(Ok(plan.clone())).await.unwrap();
+            if tokio::time::timeout(Duration::from_secs(2), sender.send(Ok(plan.clone())))
+                .await
+                .expect("planner consumer stopped receiving")
+                .is_ok()
+            {
+                delivered += 1;
+            }
         }
+        assert!(
+            delivered > 0,
+            "no live planner consumers received the update"
+        );
     }
 
     fn stop(self) {
