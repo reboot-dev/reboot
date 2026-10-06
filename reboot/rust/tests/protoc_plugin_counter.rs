@@ -39,9 +39,17 @@ fn protoc_plugin_emits_durable_counter_adapters() {
     assert!(content.contains("pub struct CounterDurableState;"));
     assert!(content.contains("type State = proto::Counter;"));
     assert!(content.contains("const STATE_TYPE: &'static str = \"tests.reboot.protoc.Counter\";"));
-    assert!(content.contains("store.writer_async_for_method::<CounterDurableState"));
-    assert!(content.contains("store.reader_async_for::<CounterDurableState"));
-    assert!(content.contains("\"tests.reboot.protoc.CounterWritesMethods.Increment\", request"));
+    assert!(content.contains("authorization: reboot::auth::AuthorizationPolicy"));
+    assert!(content.contains("pub fn with_authorization("));
+    assert!(
+        content.contains(
+            "store.writer_async_for_method_with_admission_authorized::<CounterDurableState"
+        )
+    );
+    assert!(
+        content.contains("store.reader_async_for_with_admission_authorized::<CounterDurableState")
+    );
+    assert!(content.contains("\"tests.reboot.protoc.CounterWritesMethods.Increment\", reboot::runtime::StateAdmission::DefaultOnAbsent, &self.authorization, request"));
     assert!(content.contains("let handler = self.handler.clone();"));
     assert!(content.contains("Box::pin(async move"));
     assert!(content.contains("reboot::runtime::DatabaseActorStore"));
@@ -95,8 +103,13 @@ fn protoc_plugin_canonicalizes_relative_durable_state_annotation() {
     )
     .unwrap();
     assert!(content.contains("pub struct EchoDurableState;"));
-    assert!(content.contains("store.writer_async_for_method::<EchoDurableState"));
-    assert!(content.contains("store.reader_async_for::<EchoDurableState"));
+    assert!(
+        content
+            .contains("store.writer_async_for_method_with_admission_authorized::<EchoDurableState")
+    );
+    assert!(
+        content.contains("store.reader_async_for_with_admission_authorized::<EchoDurableState")
+    );
     assert!(content.contains("const STATE_TYPE: &'static str = \"tests.reboot.protoc.Echo\";"));
     assert!(!content.contains("\"Echo\", request"));
 }
@@ -121,7 +134,7 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     std::fs::write(
         fixture.join("Cargo.toml"),
         format!(
-            "[package]\nname = \"reboot-rust-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\ngoogleapis-tonic-google-rpc = \"0.11\"\nhttp = \"1\"\nprost = \"0.13\"\nprost-types = \"0.13\"\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"test-support\"] }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
+            "[package]\nname = \"reboot-rust-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\ngoogleapis-tonic-google-rpc = \"0.11\"\nhttp = \"1\"\nprost = \"0.13\"\nprost-types = \"0.13\"\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"test-support\"] }}\nserde_json = \"1\"\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
             env!("CARGO_MANIFEST_DIR"),
             env!("CARGO_MANIFEST_DIR")
         ),
@@ -154,9 +167,11 @@ mod tests {
     use prost::Message;
     use reboot::{
         application_host::ApplicationHost,
+        auth::{Auth, AuthorizationContext, AuthorizationDecision, AuthorizationPolicy, Authorizer, TokenVerification, TokenVerifier},
         runtime::{test_support::start_database, DatabaseActorStore},
         CallerId, ExternalContext,
     };
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
@@ -195,6 +210,56 @@ impl generated::CounterReadsMethodsDatabaseHandler for Counter {
     }
 }
 
+struct AuthProbe {
+    verifier_calls: Arc<AtomicUsize>,
+    authorizer_calls: Arc<AtomicUsize>,
+    handler_calls: Arc<AtomicUsize>,
+    decision: AuthorizationDecision,
+    contexts: Arc<std::sync::Mutex<Vec<AuthorizationContext>>>,
+    snapshots: Arc<std::sync::Mutex<Vec<(Vec<u8>, Vec<u8>)>>>,
+}
+
+impl TokenVerifier for AuthProbe {
+    fn verify<'a>(&'a self, _: &'a AuthorizationContext, token: Option<&'a str>) -> reboot::auth::VerifyFuture<'a> {
+        self.verifier_calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move {
+            if token == Some("reject") {
+                TokenVerification::Unauthenticated { message: "rejected bearer".into() }
+            } else {
+                TokenVerification::Authenticated(Auth::new(serde_json::json!({"subject": "fixture"})))
+            }
+        })
+    }
+}
+
+impl Authorizer for AuthProbe {
+    fn authorize<'a>(&'a self, context: &'a AuthorizationContext, _: Option<&'a Auth>, state: Option<&'a [u8]>, request: &'a [u8]) -> reboot::auth::AuthorizeFuture<'a> {
+        self.authorizer_calls.fetch_add(1, Ordering::SeqCst);
+        self.contexts.lock().unwrap().push(context.clone());
+        self.snapshots.lock().unwrap().push((state.unwrap().to_vec(), request.to_vec()));
+        let decision = self.decision.clone();
+        Box::pin(async move { decision })
+    }
+}
+
+struct AuthCounter(Arc<AtomicUsize>);
+
+#[tonic::async_trait]
+impl generated::CounterWritesMethodsDatabaseHandler for AuthCounter {
+    async fn increment(&self, state: &mut proto::Counter, request: proto::IncrementRequest) -> Result<proto::CounterValue, generated::CounterWritesMethodsIncrementError> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        state.value += request.amount;
+        Ok(proto::CounterValue { value: state.value })
+    }
+}
+
+#[tonic::async_trait]
+impl generated::CounterReadsMethodsDatabaseHandler for AuthCounter {
+    async fn get(&self, state: &proto::Counter, _: proto::Empty) -> Result<proto::CounterValue, tonic::Status> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(proto::CounterValue { value: state.value })
+    }
+}
 
 struct RichErrorService;
 
@@ -1218,6 +1283,34 @@ async fn generated_outbound_client_does_not_enlist_failed_rpc() {
     server.abort();
 }
 
+async fn start_authorized_counter_adapters(
+    database_endpoint: &str,
+    authorization: AuthorizationPolicy,
+    handler_calls: Arc<AtomicUsize>,
+) -> (String, tokio::task::JoinHandle<()>) {
+    let writes = generated::CounterWritesMethodsDatabaseAdapter::new(
+        DatabaseActorStore::connect(database_endpoint).await.unwrap(),
+        AuthCounter(Arc::clone(&handler_calls)),
+    )
+    .with_authorization(authorization.clone());
+    let reads = generated::CounterReadsMethodsDatabaseAdapter::new(
+        DatabaseActorStore::connect(database_endpoint).await.unwrap(),
+        AuthCounter(handler_calls),
+    )
+    .with_authorization(authorization);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(proto::counter_writes_methods_server::CounterWritesMethodsServer::new(writes))
+            .add_service(proto::counter_reads_methods_server::CounterReadsMethodsServer::new(reads))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+    (format!("http://{address}"), server)
+}
+
 async fn start_counter_adapters(
     database_endpoint: &str,
 ) -> (String, tokio::task::JoinHandle<()>) {
@@ -1329,6 +1422,96 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
         explicit_key.as_bytes()
     );
     server.abort();
+    database_server.abort();
+}
+
+#[tokio::test]
+async fn generated_external_authentication_and_authorization_gate_handlers_and_state() {
+    fn probe(decision: AuthorizationDecision) -> Arc<AuthProbe> {
+        Arc::new(AuthProbe {
+            verifier_calls: Arc::new(AtomicUsize::new(0)),
+            authorizer_calls: Arc::new(AtomicUsize::new(0)),
+            handler_calls: Arc::new(AtomicUsize::new(0)),
+            decision,
+            contexts: Arc::new(std::sync::Mutex::new(Vec::new())),
+            snapshots: Arc::new(std::sync::Mutex::new(Vec::new())),
+        })
+    }
+    fn policy(probe: Arc<AuthProbe>) -> AuthorizationPolicy {
+        AuthorizationPolicy::new(Some(probe.clone()), Some(probe))
+    }
+    fn writer(state_ref: &str, token: &str) -> tonic::Request<proto::IncrementRequest> {
+        let mut headers = reboot::RebootHeaders::new(state_ref);
+        headers.bearer_token = Some(token.into());
+        headers.idempotency_key = Some(Uuid::new_v4());
+        let mut request = tonic::Request::new(proto::IncrementRequest { amount: 5 });
+        *request.metadata_mut() = headers.to_metadata().unwrap();
+        request
+    }
+    fn reader(state_ref: &str, token: &str) -> tonic::Request<proto::Empty> {
+        let mut headers = reboot::RebootHeaders::new(state_ref);
+        headers.bearer_token = Some(token.into());
+        let mut request = tonic::Request::new(proto::Empty {});
+        *request.metadata_mut() = headers.to_metadata().unwrap();
+        request
+    }
+
+    let (database_endpoint, database, database_server) = start_database().await;
+    let rejected = probe(AuthorizationDecision::Allow);
+    let (rejected_address, rejected_server) = start_authorized_counter_adapters(
+        &database_endpoint, policy(Arc::clone(&rejected)), Arc::clone(&rejected.handler_calls),
+    ).await;
+    let mut rejected_client = proto::counter_writes_methods_client::CounterWritesMethodsClient::connect(rejected_address).await.unwrap();
+    assert_eq!(rejected_client.increment(writer("auth-rejected", "reject")).await.unwrap_err().code(), tonic::Code::Unauthenticated);
+    assert_eq!(rejected.verifier_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(rejected.authorizer_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(rejected.handler_calls.load(Ordering::SeqCst), 0);
+    rejected_server.abort();
+
+    let denied = probe(AuthorizationDecision::PermissionDenied { message: "denied".into() });
+    let (denied_address, denied_server) = start_authorized_counter_adapters(
+        &database_endpoint, policy(Arc::clone(&denied)), Arc::clone(&denied.handler_calls),
+    ).await;
+    let mut denied_client = proto::counter_writes_methods_client::CounterWritesMethodsClient::connect(denied_address).await.unwrap();
+    assert_eq!(denied_client.increment(writer("auth-denied", "allow")).await.unwrap_err().code(), tonic::Code::PermissionDenied);
+    assert_eq!(denied.authorizer_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(denied.handler_calls.load(Ordering::SeqCst), 0);
+    denied_server.abort();
+
+    let unauthenticated = probe(AuthorizationDecision::Unauthenticated { message: "reauthenticate".into() });
+    let (unauthenticated_address, unauthenticated_server) = start_authorized_counter_adapters(
+        &database_endpoint, policy(Arc::clone(&unauthenticated)), Arc::clone(&unauthenticated.handler_calls),
+    ).await;
+    let mut unauthenticated_client = proto::counter_writes_methods_client::CounterWritesMethodsClient::connect(unauthenticated_address).await.unwrap();
+    assert_eq!(unauthenticated_client.increment(writer("auth-unauthenticated", "allow")).await.unwrap_err().code(), tonic::Code::Unauthenticated);
+    assert_eq!(unauthenticated.authorizer_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(unauthenticated.handler_calls.load(Ordering::SeqCst), 0);
+    unauthenticated_server.abort();
+
+    let allowed = probe(AuthorizationDecision::Allow);
+    let (allowed_address, allowed_server) = start_authorized_counter_adapters(
+        &database_endpoint, policy(Arc::clone(&allowed)), Arc::clone(&allowed.handler_calls),
+    ).await;
+    let mut writes = proto::counter_writes_methods_client::CounterWritesMethodsClient::connect(allowed_address.clone()).await.unwrap();
+    assert_eq!(writes.increment(writer("auth-allowed", "allow")).await.unwrap().into_inner().value, 5);
+    let mut reads = proto::counter_reads_methods_client::CounterReadsMethodsClient::connect(allowed_address).await.unwrap();
+    assert_eq!(reads.get(reader("auth-allowed", "allow")).await.unwrap().into_inner().value, 5);
+    assert_eq!(allowed.handler_calls.load(Ordering::SeqCst), 2);
+    let contexts = allowed.contexts.lock().unwrap();
+    assert_eq!(contexts.len(), 2);
+    assert!(contexts.iter().all(|context| context.state_type == "tests.reboot.protoc.Counter"));
+    assert!(contexts.iter().any(|context| context.method == "tests.reboot.protoc.CounterWritesMethods.Increment"));
+    assert!(contexts.iter().any(|context| context.method == "tests.reboot.protoc.CounterReadsMethods.Get"));
+    assert!(contexts.iter().all(|context| context.headers.bearer_token.as_deref() == Some("allow") && !context.headers.internal_call));
+    drop(contexts);
+    let snapshots = allowed.snapshots.lock().unwrap();
+    assert_eq!(snapshots.len(), 2);
+    assert_eq!(proto::Counter::decode(snapshots[0].0.as_slice()).unwrap(), proto::Counter { value: 0 });
+    assert_eq!(proto::IncrementRequest::decode(snapshots[0].1.as_slice()).unwrap(), proto::IncrementRequest { amount: 5 });
+    assert_eq!(proto::Counter::decode(snapshots[1].0.as_slice()).unwrap(), proto::Counter { value: 5 });
+    assert_eq!(proto::Empty::decode(snapshots[1].1.as_slice()).unwrap(), proto::Empty {});
+    assert_eq!(database.store_requests().len(), 1, "denied writers must not persist state");
+    allowed_server.abort();
     database_server.abort();
 }
 

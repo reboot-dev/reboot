@@ -14,6 +14,7 @@
 //! an explicitly non-executable control-plane boundary.
 
 pub mod application_host;
+pub mod auth;
 #[cfg(feature = "build")]
 pub mod build;
 pub mod codegen;

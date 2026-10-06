@@ -1264,7 +1264,7 @@ fn emit_durable(
             }
         }
         output.push_str("}\n\n");
-        output.push_str(&format!("pub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: std::sync::Arc<H> }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ store: self.store.clone(), handler: self.handler.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler: std::sync::Arc::new(handler) }} }} }}\n\n"));
+        output.push_str(&format!("pub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: std::sync::Arc<H>, authorization: {runtime_module}::auth::AuthorizationPolicy }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ store: self.store.clone(), handler: self.handler.clone(), authorization: self.authorization.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler: std::sync::Arc::new(handler), authorization: {runtime_module}::auth::AuthorizationPolicy::default() }} }} pub fn with_authorization(mut self, authorization: {runtime_module}::auth::AuthorizationPolicy) -> Self {{ self.authorization = authorization; self }} }}\n\n"));
         output.push_str("#[tonic::async_trait]\n");
         output.push_str(&format!(
             "impl<H: {handler}> proto::{server}::{service_name} for {adapter}<H> {{\n"
@@ -1283,19 +1283,28 @@ fn emit_durable(
                     format!("\"{method_identity}\", "),
                 ),
                 DurableKind::Reader if requires_constructor => (
-                    "reader_async_for_with_admission",
-                    format!("{runtime_module}::runtime::StateAdmission::RequireExisting, "),
-                ),
-                DurableKind::Reader => ("reader_async_for", String::new()),
-                DurableKind::Writer(_) if requires_constructor => (
-                    "writer_async_for_method_with_admission",
+                    "reader_async_for_with_admission_authorized",
                     format!(
-                        "\"{method_identity}\", {runtime_module}::runtime::StateAdmission::RequireExisting, "
+                        "\"{method_identity}\", {runtime_module}::runtime::StateAdmission::RequireExisting, &self.authorization, "
+                    ),
+                ),
+                DurableKind::Reader => (
+                    "reader_async_for_with_admission_authorized",
+                    format!(
+                        "\"{method_identity}\", {runtime_module}::runtime::StateAdmission::DefaultOnAbsent, &self.authorization, "
+                    ),
+                ),
+                DurableKind::Writer(_) if requires_constructor => (
+                    "writer_async_for_method_with_admission_authorized",
+                    format!(
+                        "\"{method_identity}\", {runtime_module}::runtime::StateAdmission::RequireExisting, &self.authorization, "
                     ),
                 ),
                 DurableKind::Writer(_) => (
-                    "writer_async_for_method",
-                    format!("\"{method_identity}\", "),
+                    "writer_async_for_method_with_admission_authorized",
+                    format!(
+                        "\"{method_identity}\", {runtime_module}::runtime::StateAdmission::DefaultOnAbsent, &self.authorization, "
+                    ),
                 ),
                 DurableKind::Transaction(_) => unreachable!("transactions are filtered above"),
             };
@@ -2159,10 +2168,12 @@ mod tests {
                 content
                     .contains("const STATE_TYPE: &'static str = \"tests.reboot.protoc.Counter\";")
             );
-            assert!(content.contains("store.writer_async_for_method::<CounterDurableState"));
-            assert!(
-                content.contains("\"tests.reboot.protoc.CounterWritesMethods.Increment\", request")
-            );
+            assert!(content.contains(
+                "store.writer_async_for_method_with_admission_authorized::<CounterDurableState"
+            ));
+            assert!(content.contains("AuthorizationPolicy::default()"));
+            assert!(content.contains("pub fn with_authorization("));
+            assert!(content.contains("\"tests.reboot.protoc.CounterWritesMethods.Increment\", reboot_rust_schema::runtime::StateAdmission::DefaultOnAbsent, &self.authorization, request"));
             assert!(!content.contains("\"Counter\", request"));
         }
     }
@@ -3980,8 +3991,15 @@ mod tests {
             .remove(0)
             .content
             .unwrap();
-        assert!(content.contains("writer_async_for_method_with_admission::<CounterDurableState"));
-        assert!(content.contains("reader_async_for_with_admission::<CounterDurableState"));
+        assert!(
+            content.contains(
+                "writer_async_for_method_with_admission_authorized::<CounterDurableState"
+            )
+        );
+        assert!(
+            content.contains("reader_async_for_with_admission_authorized::<CounterDurableState")
+        );
+        assert!(content.contains("&self.authorization, request"));
         assert!(content.contains("StateAdmission::RequireExisting"));
         assert!(content.contains("constructor_writer_async_for_method::<CounterDurableState"));
         assert!(!content.contains("constructor writers are not supported"));

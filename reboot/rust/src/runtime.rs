@@ -1796,6 +1796,77 @@ impl DatabaseActorStore {
             state_type,
             method_identity,
             StateAdmission::DefaultOnAbsent,
+            None,
+            request,
+            invoke,
+        )
+        .await
+    }
+
+    /// Runs a generated writer with bounded external bearer authentication and
+    /// authorization. The policy is evaluated before replay and handler work;
+    /// authorization receives immutable request/state snapshots.
+    pub async fn writer_async_for_method_authorized<Declaration, RequestBody, ResponseBody, F>(
+        &self,
+        method_identity: &'static str,
+        authorization: &crate::auth::AuthorizationPolicy,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        Declaration: DurableStateDeclaration,
+        RequestBody: Message + Send + 'static,
+        ResponseBody: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut Declaration::State,
+            RequestBody,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
+        self.writer_async_with_method_admission(
+            Declaration::STATE_TYPE,
+            method_identity,
+            StateAdmission::DefaultOnAbsent,
+            Some(authorization),
+            request,
+            invoke,
+        )
+        .await
+    }
+
+    /// Runs a generated non-constructor writer with bounded external bearer
+    /// authentication and authorization. The policy is evaluated before the
+    /// handler and persistence; replay remains ahead of state authorization.
+    pub async fn writer_async_for_method_with_admission_authorized<
+        Declaration,
+        RequestBody,
+        ResponseBody,
+        F,
+    >(
+        &self,
+        method_identity: &str,
+        admission: StateAdmission,
+        authorization: &crate::auth::AuthorizationPolicy,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        Declaration: DurableStateDeclaration,
+        RequestBody: Message + Send + 'static,
+        ResponseBody: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut Declaration::State,
+            RequestBody,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
+        self.writer_async_with_method_admission(
+            Declaration::STATE_TYPE,
+            method_identity,
+            admission,
+            Some(authorization),
             request,
             invoke,
         )
@@ -1807,6 +1878,7 @@ impl DatabaseActorStore {
         state_type: &'static str,
         method_identity: &str,
         admission: StateAdmission,
+        authorization: Option<&crate::auth::AuthorizationPolicy>,
         request: Request<RequestBody>,
         invoke: F,
     ) -> Result<Response<ResponseBody>, Status>
@@ -1821,6 +1893,19 @@ impl DatabaseActorStore {
             Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
         >,
     {
+        let verified = match authorization {
+            Some(policy) => Some(
+                policy
+                    .verify(
+                        crate::RebootHeaders::from_request(&request)
+                            .map_err(|error| Status::invalid_argument(error.to_string()))?,
+                        state_type,
+                        method_identity,
+                    )
+                    .await?,
+            ),
+            None => None,
+        };
         let fingerprint = request_fingerprint(method_identity, request.get_ref());
         let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
         let key = idempotency_key(&request)?;
@@ -1832,7 +1917,18 @@ impl DatabaseActorStore {
         {
             return Ok(Response::new(response));
         }
-        let mut state = admit_state(self.load_type(state_type, &state_ref).await?, admission)?;
+        let mut state: State =
+            admit_state(self.load_type(state_type, &state_ref).await?, admission)?;
+        if let (Some(policy), Some((context, auth))) = (authorization, verified.as_ref()) {
+            policy
+                .authorize(
+                    context,
+                    auth.as_ref(),
+                    &state.encode_to_vec(),
+                    &request.get_ref().encode_to_vec(),
+                )
+                .await?;
+        }
         let response = invoke(&mut state, request.into_inner()).await?;
         self.store_type(
             state_type,
@@ -1921,6 +2017,7 @@ impl DatabaseActorStore {
             Declaration::STATE_TYPE,
             method_identity,
             admission,
+            None,
             request,
             invoke,
         )
@@ -2065,6 +2162,57 @@ impl DatabaseActorStore {
     {
         self.reader_async::<Declaration::State, _, _, _>(Declaration::STATE_TYPE, request, invoke)
             .await
+    }
+
+    /// Runs a generated external reader after bearer authentication and
+    /// authorization against immutable protobuf snapshots.
+    pub async fn reader_async_for_with_admission_authorized<
+        Declaration,
+        RequestBody,
+        ResponseBody,
+        F,
+    >(
+        &self,
+        method_identity: &str,
+        admission: StateAdmission,
+        authorization: &crate::auth::AuthorizationPolicy,
+        request: Request<RequestBody>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        Declaration: DurableStateDeclaration,
+        RequestBody: Message + Send + 'static,
+        ResponseBody: Message + Default + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a Declaration::State,
+            RequestBody,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
+        let (context, auth) = authorization
+            .verify(
+                crate::RebootHeaders::from_request(&request)
+                    .map_err(|error| Status::invalid_argument(error.to_string()))?,
+                Declaration::STATE_TYPE,
+                method_identity,
+            )
+            .await?;
+        let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
+        let state = admit_state(
+            self.load_type::<Declaration::State>(Declaration::STATE_TYPE, &state_ref)
+                .await?,
+            admission,
+        )?;
+        authorization
+            .authorize(
+                &context,
+                auth.as_ref(),
+                &state.encode_to_vec(),
+                &request.get_ref().encode_to_vec(),
+            )
+            .await?;
+        Ok(Response::new(invoke(&state, request.into_inner()).await?))
     }
 
     /// Runs a generated reader with an explicit admission policy.
