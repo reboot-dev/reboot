@@ -1,22 +1,21 @@
-use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
+use std::sync::Arc;
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use prost::Message;
 use reboot::{
     application_host::{ApplicationHost, LegacyRecoveryMetadata},
-
-    durable_coordinator::{
-        CoordinatorRecovery, ParticipantResolver, ParticipantTarget, TonicCoordinatorSidecar,
-        TonicParticipantEndpoint,
-    },
+    durable_coordinator::{CoordinatorRecovery, TonicCoordinatorSidecar},
     durable_participant::{DurableActorParticipant, ParticipantRecovery, TonicParticipantSidecar},
-    legacy_coordinator::TonicCoordinatorWatchEndpoint,
+    legacy_coordinator::LegacyApplicationCoordinatorWatchEndpoint,
+    legacy_placement::{
+        LegacyApplicationId, LegacyApplicationParticipantResolver, LegacyApplicationResolver,
+        PlanOnlyLegacyPlacement,
+    },
     runtime::{
         DatabaseActorStore, InboundTransactionStartFactory, RootTransactionStart,
         RootTransactionStartFactory, TransactionContext, TransactionExecution,
-        TransactionalChannelResolver,
     },
 };
-use tonic::transport::Channel;
 use uuid::Uuid;
 
 pub mod proto {
@@ -27,43 +26,6 @@ mod generated {
         env!("OUT_DIR"),
         "/tests/reboot/protoc/transaction_counter.reboot.rs"
     ));
-}
-
-#[derive(Clone)]
-struct Routes {
-    participants: Arc<HashMap<String, String>>,
-}
-#[tonic::async_trait]
-impl TransactionalChannelResolver for Routes {
-    async fn resolve(&self, _: &str, state_ref: &str) -> Result<Channel, tonic::Status> {
-        let endpoint = self
-            .participants
-            .get(state_ref)
-            .cloned()
-            .ok_or_else(|| tonic::Status::not_found("unexpected application route"))?;
-        Channel::from_shared(endpoint)
-            .unwrap()
-            .connect()
-            .await
-            .map_err(|error| tonic::Status::unavailable(error.to_string()))
-    }
-}
-impl ParticipantResolver for Routes {
-    type Endpoint = TonicParticipantEndpoint;
-    fn resolve(
-        &self,
-        participant: &ParticipantTarget,
-    ) -> Pin<Box<dyn Future<Output = Result<Arc<Self::Endpoint>, tonic::Status>> + Send + '_>> {
-        let endpoint = self.participants.get(&participant.state_ref).cloned();
-        Box::pin(async move {
-            let endpoint =
-                endpoint.ok_or_else(|| tonic::Status::not_found("unexpected participant route"))?;
-            TonicParticipantEndpoint::connect(endpoint)
-                .await
-                .map(Arc::new)
-                .map_err(|error| tonic::Status::unavailable(error.to_string()))
-        })
-    }
 }
 
 struct Starts {
@@ -200,12 +162,22 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         state: &mut proto::TransactionCounter,
         request: proto::TransactionIncrementRequest,
     ) -> Result<proto::TransactionCounterValue, tonic::Status> {
+        if std::env::var_os("REBOOT_TEST_FRESH_SHARED_NOOP").is_some() {
+            if let Some(root) = std::env::var_os("REBOOT_TEST_SHARED_BARRIER_ID") {
+                let root = root
+                    .to_string_lossy()
+                    .parse()
+                    .map_err(|error| tonic::Status::invalid_argument(format!("invalid shared barrier id: {error}")))?;
+                shared_barrier(root).await?;
+            }
+            return Ok(proto::TransactionCounterValue { value: state.value });
+        }
         state.value += request.amount;
         Ok(proto::TransactionCounterValue { value: state.value })
     }
 }
 struct Root {
-    client: generated::TransactionCounterWritesMethodsClient<Routes>,
+    client: generated::TransactionCounterWritesMethodsClient<LegacyApplicationResolver>,
 }
 
 /// A deliberately small, separately hosted service used only by the C++
@@ -305,6 +277,20 @@ fn optional_arg(name: &str) -> Option<String> {
     None
 }
 
+fn placement() -> PlanOnlyLegacyPlacement {
+    let encoded = arg("--legacy-placement-plan");
+    let bytes = URL_SAFE_NO_PAD
+        .decode(encoded)
+        .expect("--legacy-placement-plan must be URL-safe base64 without padding");
+    let plan = reboot::placement_proto::ListenForPlanResponse::decode(bytes.as_slice())
+        .expect("--legacy-placement-plan must contain ListenForPlanResponse bytes");
+    let placement = PlanOnlyLegacyPlacement::new();
+    placement
+        .install(plan)
+        .expect("--legacy-placement-plan must be accepted");
+    placement
+}
+
 /// Test-only cross-process barrier proving shared handlers overlap before
 /// either read-only participant is released at Prepare.
 async fn shared_barrier(transaction_id: Uuid) -> Result<(), tonic::Status> {
@@ -349,10 +335,10 @@ async fn main() {
         return;
     }
     let database_endpoint = arg("--database");
-    let root_endpoint = arg("--root");
-    let target_endpoint = arg("--target");
     let root_id = Uuid::parse_str(&arg("--root-id")).unwrap();
     let state_ref = optional_arg("--state-ref").unwrap_or_else(|| role.clone());
+    let placement = placement();
+    let application = LegacyApplicationId::new("generated-cxx-database-process").unwrap();
     let participant_sidecar = Arc::new(
         TonicParticipantSidecar::connect(&database_endpoint)
             .await
@@ -363,13 +349,6 @@ async fn main() {
             .await
             .unwrap(),
     );
-    let mut endpoints = HashMap::new();
-    endpoints.insert("root".into(), root_endpoint.clone());
-    endpoints.insert(state_ref.clone(), root_endpoint);
-    endpoints.insert("target".into(), target_endpoint.clone());
-    let routes = Routes {
-        participants: Arc::new(endpoints),
-    };
     let participant = DurableActorParticipant::new(
         participant_sidecar,
         "tests.reboot.protoc.TransactionCounter",
@@ -377,13 +356,18 @@ async fn main() {
     );
     let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
         Arc::clone(&coordinator_sidecar),
-        Arc::new(routes.clone()),
+        Arc::new(LegacyApplicationParticipantResolver::new(
+            application.clone(),
+            placement.clone(),
+        )),
     );
     // Any recovered participant can host the legacy Coordinator route for this
     // configured coordinator identity. The decision itself is read from the
     // real C++ sidecar, not a process-local coordinator map.
     let coordinator_state_ref =
         optional_arg("--coordinator-state-ref").unwrap_or_else(|| "root".into());
+    let watch_coordinator_state_ref = optional_arg("--watch-coordinator-state-ref")
+        .unwrap_or_else(|| coordinator_state_ref.clone());
 
     let starts = Starts {
         root: root_id,
@@ -391,7 +375,9 @@ async fn main() {
     };
     let handler = if role == "root" {
         Handler::Root(Root {
-            client: generated::TransactionCounterWritesMethodsClient::new(routes.clone()),
+            client: generated::TransactionCounterWritesMethodsClient::new(
+                LegacyApplicationResolver::new(application.clone(), placement.clone()),
+            ),
         })
     } else {
         Handler::Target
@@ -413,10 +399,15 @@ async fn main() {
     // same explicit C++ Database recovery metadata the old fixture passed by
     // hand: the one configured shard, no state-tag filter, and this actor's
     // exact coordinator state reference.
-    let mut host = ApplicationHost::new("generated-cxx-database-process");
+    let mut host = ApplicationHost::new("generated-cxx-database-process")
+        .with_legacy_placement_readiness(placement.clone());
     if has("--recover") {
-        let endpoint = format!("http://{listen}");
-        let watch = Arc::new(TonicCoordinatorWatchEndpoint::lazy(endpoint).unwrap());
+        let watch = Arc::new(LegacyApplicationCoordinatorWatchEndpoint::new(
+            application,
+            placement,
+            watch_coordinator_state_ref,
+        )
+        .unwrap());
         let recovery = adapter
             .legacy_recovery_registration(
                 LegacyRecoveryMetadata {

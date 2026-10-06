@@ -302,6 +302,7 @@ dependencies = [
 name = "generated-cxx-database-process-host"
 version = "0.0.0"
 dependencies = [
+ "base64",
  "googleapis-tonic-google-rpc",
  "prost",
  "prost-types",

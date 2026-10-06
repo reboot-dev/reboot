@@ -8,6 +8,7 @@ publish = false
 reboot = { package = "reboot-rust-schema", path = "../../../", features = ["build"] }
 
 [dependencies]
+base64 = "0.22"
 googleapis-tonic-google-rpc = "0.11"
 prost = "0.13"
 prost-types = "0.13"

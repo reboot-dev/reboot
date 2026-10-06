@@ -1,11 +1,13 @@
 use std::{
-    net::TcpListener,
+    net::{SocketAddr, TcpListener},
     process::{Child, Command, Stdio},
     time::Duration,
 };
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use prost::Message;
-use reboot_rust_schema::database_proto as database;
+use reboot_rust_schema::{database_proto as database, placement_proto};
+use sha1::{Digest as _, Sha1};
 use uuid::Uuid;
 
 struct CxxDatabase {
@@ -78,60 +80,205 @@ fn port() -> u16 {
     drop(listener);
     port
 }
-#[allow(clippy::too_many_arguments)]
-fn host(
-    binary: &std::path::Path,
-    role: &str,
+
+fn legacy_routing_component(state_ref: &str) -> &str {
+    state_ref
+        .split('/')
+        .next()
+        .filter(|component| !component.is_empty())
+        .expect("legacy placement route needs a non-empty first state-reference component")
+}
+
+fn legacy_plan_for(routes: &[(&str, u16)]) -> String {
+    assert!(!routes.is_empty(), "legacy placement plan needs a route");
+    let mut routes = routes.to_vec();
+    routes.sort_by_key(|(state_ref, _)| {
+        Sha1::digest(legacy_routing_component(state_ref).as_bytes()).to_vec()
+    });
+    let servers = routes
+        .iter()
+        .enumerate()
+        .map(|(index, (_, port))| placement_proto::Server {
+            id: format!("server-{index}"),
+            application_id: "generated-cxx-database-process".into(),
+            revision_number: 0,
+            address: Some(placement_proto::server::Address {
+                host: "127.0.0.1".into(),
+                port: i32::from(*port),
+            }),
+            namespace: String::new(),
+            file_descriptor_set: None,
+            reboot_version: String::new(),
+        })
+        .collect();
+    let shards = routes
+        .iter()
+        .enumerate()
+        .map(
+            |(index, (state_ref, _))| placement_proto::plan::application::Shard {
+                id: format!("hash-{index}"),
+                range: Some(placement_proto::plan::application::shard::KeyRange {
+                    first_key: if index == 0 {
+                        vec![]
+                    } else {
+                        Sha1::digest(legacy_routing_component(state_ref).as_bytes()).to_vec()
+                    },
+                }),
+                server_id: format!("server-{index}"),
+                replica_index: 0,
+            },
+        )
+        .collect();
+    URL_SAFE_NO_PAD.encode(
+        placement_proto::ListenForPlanResponse {
+            plan: Some(placement_proto::Plan {
+                version: 1,
+                applications: vec![placement_proto::plan::Application {
+                    id: "generated-cxx-database-process".into(),
+                    services: vec![placement_proto::plan::application::Service {
+                        full_name: "tests.reboot.protoc.TransactionCounterWritesMethods".into(),
+                        state_type_full_name: "tests.reboot.protoc.TransactionCounter".into(),
+                    }],
+                    shards,
+                }],
+            }),
+            servers,
+        }
+        .encode_to_vec(),
+    )
+}
+
+#[test]
+fn legacy_fixture_plan_hashes_only_the_first_opaque_state_ref_component() {
+    let encoded = legacy_plan_for(&[("actor/child", 3001), ("zebra", 3002)]);
+    let response = placement_proto::ListenForPlanResponse::decode(
+        URL_SAFE_NO_PAD.decode(encoded).unwrap().as_slice(),
+    )
+    .unwrap();
+    let shards = &response.plan.unwrap().applications[0].shards;
+    let expected = ["actor", "zebra"]
+        .into_iter()
+        .map(|component| Sha1::digest(component.as_bytes()).to_vec())
+        .max()
+        .unwrap();
+    assert_eq!(
+        shards[0].range.as_ref().unwrap().first_key,
+        Vec::<u8>::new()
+    );
+    assert_eq!(shards[1].range.as_ref().unwrap().first_key, expected);
+}
+
+fn legacy_plan(root: u16, target: u16) -> String {
+    legacy_plan_for(&[("root", root), ("target", target)])
+}
+
+fn endpoint_port(endpoint: &str) -> u16 {
+    endpoint
+        .strip_prefix("http://")
+        .expect("fixture target endpoint must use http")
+        .parse::<SocketAddr>()
+        .expect("fixture target endpoint must be a socket address")
+        .port()
+}
+
+struct HostOptions<'a> {
+    binary: &'a std::path::Path,
+    role: &'a str,
     port: u16,
-    db: &str,
-    root: u16,
-    target: u16,
-    root_id: &str,
+    database: &'a str,
+    plan: &'a str,
+    root_id: &'a str,
     recover: bool,
     invoke: bool,
-    marker: Option<&std::path::Path>,
-    watch_terminalized: Option<&std::path::Path>,
-    state_ref: Option<&str>,
-    coordinator_state_ref: Option<&str>,
-) -> Child {
-    let mut command = Command::new(binary);
+    marker: Option<&'a std::path::Path>,
+    watch_terminalized: Option<&'a std::path::Path>,
+    state_ref: Option<&'a str>,
+    coordinator_state_ref: Option<&'a str>,
+    watch_coordinator_state_ref: Option<&'a str>,
+}
+
+fn spawn_host(options: HostOptions<'_>) -> Child {
+    let mut command = Command::new(options.binary);
     command
         .args([
             "--role",
-            role,
+            options.role,
             "--listen",
-            &format!("127.0.0.1:{port}"),
+            &format!("127.0.0.1:{}", options.port),
             "--database",
-            db,
-            "--root",
-            &format!("http://127.0.0.1:{root}"),
-            "--target",
-            &format!("http://127.0.0.1:{target}"),
+            options.database,
+            "--legacy-placement-plan",
+            options.plan,
             "--root-id",
-            root_id,
+            options.root_id,
         ])
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
-    if recover {
+    if options.recover {
         command.arg("--recover");
     }
-    if invoke {
+    if options.invoke {
         command.arg("--invoke");
     }
-    if let Some(state_ref) = state_ref {
+    if let Some(state_ref) = options.state_ref {
         command.args(["--state-ref", state_ref]);
     }
-    if let Some(coordinator_state_ref) = coordinator_state_ref {
+    if let Some(coordinator_state_ref) = options.coordinator_state_ref {
         command.args(["--coordinator-state-ref", coordinator_state_ref]);
     }
-    if let Some(marker) = marker {
+    if let Some(coordinator_state_ref) = options.watch_coordinator_state_ref {
+        command.args(["--watch-coordinator-state-ref", coordinator_state_ref]);
+    }
+    if let Some(marker) = options.marker {
         command.env("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE", marker);
     }
-    if let Some(marker) = watch_terminalized {
+    if let Some(marker) = options.watch_terminalized {
         command.env("REBOOT_TEST_TARGET_WATCH_TERMINALIZED", marker);
     }
     command.spawn().unwrap()
 }
+
+macro_rules! spawn_with_plan {
+    ($binary:expr, $role:expr, $port:expr, $database:expr, $root:expr, $target:expr, $plan:expr, $root_id:expr, $recover:expr, $invoke:expr, $marker:expr, $watch:expr, $state_ref:expr, $coordinator_state_ref:expr $(,)?) => {
+        spawn_host(HostOptions {
+            binary: $binary,
+            role: $role,
+            port: $port,
+            database: $database,
+            plan: $plan,
+            root_id: $root_id,
+            recover: $recover,
+            invoke: $invoke,
+            marker: $marker,
+            watch_terminalized: $watch,
+            state_ref: $state_ref,
+            coordinator_state_ref: $coordinator_state_ref,
+            watch_coordinator_state_ref: None,
+        })
+    };
+}
+
+macro_rules! host {
+    ($binary:expr, $role:expr, $port:expr, $database:expr, $root:expr, $target:expr, $root_id:expr, $recover:expr, $invoke:expr, $marker:expr, $watch:expr, $state_ref:expr, $coordinator_state_ref:expr $(,)?) => {{
+        let plan = legacy_plan($root, $target);
+        spawn_host(HostOptions {
+            binary: $binary,
+            role: $role,
+            port: $port,
+            database: $database,
+            plan: &plan,
+            root_id: $root_id,
+            recover: $recover,
+            invoke: $invoke,
+            marker: $marker,
+            watch_terminalized: $watch,
+            state_ref: $state_ref,
+            coordinator_state_ref: $coordinator_state_ref,
+            watch_coordinator_state_ref: None,
+        })
+    }};
+}
+
 fn wait(port: u16) {
     for _ in 0..100 {
         if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
@@ -150,6 +297,7 @@ fn shared_host(
     barrier: Option<&std::path::Path>,
     decision_marker: Option<&std::path::Path>,
 ) -> Child {
+    let plan = legacy_plan_for(&[("root", listen)]);
     let mut command = Command::new(binary);
     command
         .args([
@@ -159,10 +307,8 @@ fn shared_host(
             &format!("127.0.0.1:{listen}"),
             "--database",
             database,
-            "--root",
-            &format!("http://127.0.0.1:{listen}"),
-            "--target",
-            &format!("http://127.0.0.1:{listen}"),
+            "--legacy-placement-plan",
+            &plan,
             "--root-id",
             root_id,
             "--state-ref",
@@ -173,6 +319,8 @@ fn shared_host(
         ])
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
+    command.env("REBOOT_TEST_FRESH_SHARED_NOOP", "1");
+    command.env("REBOOT_TEST_SHARED_BARRIER_ID", root_id);
     if let Some(barrier) = barrier {
         command.env("REBOOT_TEST_SHARED_BARRIER_DIR", barrier);
     }
@@ -193,6 +341,7 @@ fn fresh_shared_promotion_host(
     pause_after_decision: Option<&std::path::Path>,
 ) -> Child {
     let listen = port();
+    let plan = legacy_plan_for(&[(state_ref, listen)]);
     let mut command = Command::new(binary);
     command
         .args([
@@ -202,10 +351,8 @@ fn fresh_shared_promotion_host(
             &format!("127.0.0.1:{listen}"),
             "--database",
             database,
-            "--root",
-            &format!("http://127.0.0.1:{listen}"),
-            "--target",
-            &format!("http://127.0.0.1:{listen}"),
+            "--legacy-placement-plan",
+            &plan,
             "--root-id",
             root_id,
             "--state-ref",
@@ -231,6 +378,7 @@ fn exclusive_host(
     amount: i64,
 ) -> std::process::ExitStatus {
     let listen = port();
+    let plan = legacy_plan_for(&[(state_ref, listen)]);
     Command::new(binary)
         .args([
             "--role",
@@ -239,10 +387,8 @@ fn exclusive_host(
             &format!("127.0.0.1:{listen}"),
             "--database",
             database,
-            "--root",
-            &format!("http://127.0.0.1:{listen}"),
-            "--target",
-            &format!("http://127.0.0.1:{listen}"),
+            "--legacy-placement-plan",
+            &plan,
             "--root-id",
             "00000000-0000-0000-0000-000000000104",
             "--state-ref",
@@ -279,6 +425,7 @@ fn rich_error_root_host(
     amount: i64,
 ) -> std::process::ExitStatus {
     let listen = port();
+    let plan = legacy_plan_for(&[(state_ref, listen), ("target", endpoint_port(target))]);
     Command::new(binary)
         .args([
             "--role",
@@ -287,10 +434,8 @@ fn rich_error_root_host(
             &format!("127.0.0.1:{listen}"),
             "--database",
             database,
-            "--root",
-            &format!("http://127.0.0.1:{listen}"),
-            "--target",
-            target,
+            "--legacy-placement-plan",
+            &plan,
             "--root-id",
             &root_id.to_string(),
             "--state-ref",
@@ -317,6 +462,7 @@ fn idempotent_transaction_host(
     factory: bool,
 ) -> Child {
     let listen = port();
+    let plan = legacy_plan_for(&[(state_ref, listen)]);
     let mut command = Command::new(binary);
     command
         .args([
@@ -326,10 +472,8 @@ fn idempotent_transaction_host(
             &format!("127.0.0.1:{listen}"),
             "--database",
             database,
-            "--root",
-            &format!("http://127.0.0.1:{listen}"),
-            "--target",
-            &format!("http://127.0.0.1:{listen}"),
+            "--legacy-placement-plan",
+            &plan,
             "--root-id",
             "00000000-0000-0000-0000-000000000106",
             "--state-ref",
@@ -474,7 +618,7 @@ fn generated_root_declared_outbound_errors_commit_or_abort_durably_through_real_
     // sidecar can satisfy these reads.
     db.restart();
     let recovery_port = port();
-    let mut recovered = host(
+    let mut recovered = host!(
         &binary,
         "root",
         recovery_port,
@@ -629,7 +773,7 @@ fn generated_application_host_recovers_idempotent_root_exactly_once_after_decisi
     db.restart();
 
     let recovery_port = port();
-    let mut recovered = host(
+    let mut recovered = host!(
         &binary,
         "root",
         recovery_port,
@@ -797,7 +941,7 @@ fn generated_factory_root_idempotency_recovers_after_post_decision_crash() {
     db.restart();
 
     let recovery_port = port();
-    let mut recovered = host(
+    let mut recovered = host!(
         &binary,
         "root",
         recovery_port,
@@ -919,7 +1063,7 @@ fn generated_shared_roots_overlap_without_mutation_then_exclusive_works() {
 
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
-fn generated_shared_root_recovers_after_empty_commit_decision_before_cleanup() {
+fn generated_fresh_shared_noop_releases_without_a_durable_recovery_decision() {
     let database_binary = std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").unwrap();
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/generated_cxx_database_process");
@@ -934,28 +1078,12 @@ fn generated_shared_root_recovers_after_empty_commit_decision_before_cleanup() {
     let binary = fixture.join("target/debug/generated-cxx-database-process-host");
     let mut db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    runtime.block_on(async {
-        database::database_client::DatabaseClient::connect(db.endpoint())
-            .await
-            .unwrap()
-            .store(database::StoreRequest {
-                actor_upserts: vec![database::Actor {
-                    state_type: "tests.reboot.protoc.TransactionCounter".into(),
-                    state_ref: "root".into(),
-                    state: Some(vec![0x08, 0x05]),
-                }],
-                task_upserts: vec![],
-                colocated_upserts: vec![],
-                transaction: None,
-                idempotent_mutation: None,
-                ensure_state_types_created: vec![],
-                sync: true,
-            })
-            .await
-            .unwrap();
-    });
+    runtime.block_on(store_counter(&db.endpoint(), "root", 5));
+
+    // A fresh shared no-op is read-only. It must not manufacture a coordinator
+    // decision merely to make a restart fixture look transactional.
     let marker_dir = tempfile::tempdir().unwrap();
-    let marker = marker_dir.path().join("sealed");
+    let marker = marker_dir.path().join("unexpected-decision-sealed");
     let mut root = shared_host(
         &binary,
         &db.endpoint(),
@@ -964,43 +1092,40 @@ fn generated_shared_root_recovers_after_empty_commit_decision_before_cleanup() {
         None,
         Some(&marker),
     );
+    let mut status = None;
     for _ in 0..100 {
         if marker.exists() {
             break;
         }
+        status = root.try_wait().unwrap();
+        if status.is_some() {
+            break;
+        }
         std::thread::sleep(Duration::from_millis(25));
     }
-    assert!(
-        marker.exists(),
-        "shared root never persisted its empty commit decision"
-    );
-    let _ = root.kill();
-    let _ = root.wait();
-    db.restart();
-    let recovery_port = port();
-    let mut recovered = host(
-        &binary,
-        "root",
-        recovery_port,
-        &db.endpoint(),
-        recovery_port,
-        recovery_port,
-        "00000000-0000-0000-0000-000000000103",
-        true,
-        false,
-        None,
-        None,
-        Some("root"),
-        Some("root"),
-    );
-    wait(recovery_port);
-    std::thread::sleep(Duration::from_millis(100));
+    if marker.exists() || status.is_none() {
+        let _ = root.kill();
+        let _ = root.wait();
+        assert!(
+            !marker.exists(),
+            "fresh shared no-op persisted an unexpected durable coordinator decision"
+        );
+        panic!("fresh shared no-op did not finish within the acceptance bound");
+    }
+    assert!(status.unwrap().success());
     assert_eq!(
         runtime.block_on(load_state(&db.endpoint(), "root")),
         Some(vec![0x08, 0x05])
     );
-    let _ = recovered.kill();
-    let _ = recovered.wait();
+
+    // Restarting the authoritative sidecar cannot leave an undurable read lease
+    // behind: a subsequent exclusive root can admit and commit normally.
+    db.restart();
+    assert!(exclusive_host(&binary, &db.endpoint(), "root", 7).success());
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), "root")),
+        Some(vec![0x08, 0x0c])
+    );
 }
 
 #[test]
@@ -1044,7 +1169,7 @@ fn generated_fresh_shared_local_promotion_recovers_after_durable_decision() {
     db.restart();
 
     let recovery_port = port();
-    let mut recovered = host(
+    let mut recovered = host!(
         &binary,
         "root",
         recovery_port,
@@ -1091,43 +1216,24 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
             .success()
     );
     let binary = fixture.join("target/debug/generated-cxx-database-process-host");
-    let mut db = CxxDatabase::start(database_binary);
-    // This slice deliberately covers non-factory transactions.  Seed both
-    // pre-existing actors through the real C++ sidecar; construction belongs
-    // to the separate CreateActor/factory acceptance path.
-    tokio::runtime::Runtime::new().unwrap().block_on(async {
-        database::database_client::DatabaseClient::connect(db.endpoint())
-            .await
-            .unwrap()
-            .store(database::StoreRequest {
-                actor_upserts: ["root", "target"]
-                    .into_iter()
-                    .map(|state_ref| database::Actor {
-                        state_type: "tests.reboot.protoc.TransactionCounter".into(),
-                        state_ref: state_ref.into(),
-                        state: Some(vec![]),
-                    })
-                    .collect(),
-                task_upserts: vec![],
-                colocated_upserts: vec![],
-                transaction: None,
-                idempotent_mutation: None,
-                ensure_state_types_created: vec![],
-                sync: true,
-            })
-            .await
-            .unwrap();
-    });
+    let mut root_db = CxxDatabase::start(database_binary.clone());
+    let mut target_db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(store_counter(&root_db.endpoint(), "root", 0));
+    runtime.block_on(store_counter(&target_db.endpoint(), "target", 0));
+
     let root_port = port();
     let target_port = port();
+    let plan = legacy_plan(root_port, target_port);
     let root_id = "00000000-0000-0000-0000-000000000001";
-    let mut target = host(
+    let mut target = spawn_with_plan!(
         &binary,
         "target",
         target_port,
-        &db.endpoint(),
+        &target_db.endpoint(),
         root_port,
         target_port,
+        &plan,
         root_id,
         false,
         false,
@@ -1139,13 +1245,14 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
     wait(target_port);
     let marker_dir = tempfile::tempdir().unwrap();
     let marker = marker_dir.path().join("sealed");
-    let mut root = host(
+    let mut root = spawn_with_plan!(
         &binary,
         "root",
         root_port,
-        &db.endpoint(),
+        &root_db.endpoint(),
         root_port,
         target_port,
+        &plan,
         root_id,
         false,
         true,
@@ -1169,45 +1276,36 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
     let _ = root.wait();
     let _ = target.kill();
     let _ = target.wait();
-    db.restart();
-    let watch_terminalized = marker_dir.path().join("target-watch-terminalized");
-    target = host(
+    root_db.restart();
+    target_db.restart();
+
+    // Start the target host first. Its Watch is placement-routed to root and
+    // remains pending until the recovered root host begins serving.
+    target = spawn_with_plan!(
         &binary,
         "target",
         target_port,
-        &db.endpoint(),
+        &target_db.endpoint(),
         root_port,
         target_port,
+        &plan,
         root_id,
         true,
         false,
         None,
-        Some(&watch_terminalized),
+        None,
         None,
         None,
     );
     wait(target_port);
-    for _ in 0..100 {
-        if watch_terminalized.exists() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(25));
-    }
-    assert!(
-        watch_terminalized.exists(),
-        "target did not receive a Watch decision and terminalize its prepared participant"
-    );
-    assert!(
-        root.try_wait().unwrap().is_some(),
-        "root recovery must remain stopped until target Watch recovery terminalizes"
-    );
-    root = host(
+    root = spawn_with_plan!(
         &binary,
         "root",
         root_port,
-        &db.endpoint(),
+        &root_db.endpoint(),
         root_port,
         target_port,
+        &plan,
         root_id,
         true,
         false,
@@ -1217,50 +1315,24 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
         None,
     );
     wait(root_port);
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let mut client = runtime
-        .block_on(database::database_client::DatabaseClient::connect(
-            db.endpoint(),
-        ))
-        .unwrap();
-    let states = (0..100)
-        .find_map(|_| {
-            let result = runtime
-                .block_on(client.load(database::LoadRequest {
-                    actors: vec![
-                        database::Actor {
-                            state_type: "tests.reboot.protoc.TransactionCounter".into(),
-                            state_ref: "root".into(),
-                            state: None,
-                        },
-                        database::Actor {
-                            state_type: "tests.reboot.protoc.TransactionCounter".into(),
-                            state_ref: "target".into(),
-                            state: None,
-                        },
-                    ],
-                    task_ids: vec![],
-                }))
-                .unwrap()
-                .into_inner();
-            assert_eq!(result.actors.len(), 2);
-            let states = result
-                .actors
-                .into_iter()
-                .map(|actor| actor.state.unwrap())
-                .collect::<Vec<_>>();
-            if states.iter().all(|state| !state.is_empty()) && states[0] == states[1] {
-                Some(states)
-            } else {
-                std::thread::sleep(Duration::from_millis(25));
-                None
-            }
-        })
-        .expect("root recovery did not commit both actors after target Watch terminalized");
-    // The root was killed after persisting the immutable commit decision but
-    // before terminal fan-out. TCP readiness only proves the recovered root
-    // listener is bound; wait for its durable recovery to commit as well.
-    assert_eq!(states[0], states[1]);
+
+    for _ in 0..100 {
+        if runtime.block_on(load_state(&root_db.endpoint(), "root")) == Some(vec![0x08, 0x07])
+            && runtime.block_on(load_state(&target_db.endpoint(), "target"))
+                == Some(vec![0x08, 0x07])
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert_eq!(
+        runtime.block_on(load_state(&root_db.endpoint(), "root")),
+        Some(vec![0x08, 0x07])
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&target_db.endpoint(), "target")),
+        Some(vec![0x08, 0x07])
+    );
     let _ = root.kill();
     let _ = root.wait();
     let _ = target.kill();
@@ -1352,7 +1424,7 @@ fn generated_exclusive_factory_creates_root_and_commits_existing_target_through_
     });
     let root_port = port();
     let target_port = port();
-    let mut target = host(
+    let mut target = host!(
         &binary,
         "target",
         target_port,
@@ -1451,15 +1523,17 @@ fn generated_exclusive_factory_root_recovers_existing_target_through_real_cxx_da
     let root_port = port();
     let target_port = port();
     let root_id = "00000000-0000-0000-0000-000000000005";
+    let plan = legacy_plan_for(&[("factory-root", root_port), ("target", target_port)]);
     let marker_dir = tempfile::tempdir().unwrap();
     let marker = marker_dir.path().join("sealed");
-    let mut target = host(
+    let mut target = spawn_with_plan!(
         &binary,
         "target",
         target_port,
         &db.endpoint(),
         root_port,
         target_port,
+        &plan,
         root_id,
         false,
         false,
@@ -1496,22 +1570,44 @@ fn generated_exclusive_factory_root_recovers_existing_target_through_real_cxx_da
     db.restart();
 
     let watch_terminalized = marker_dir.path().join("target-watch-terminalized");
-    target = host(
+    let recovered_root_port = port();
+    let recovered_plan = legacy_plan_for(&[
+        ("factory-root", recovered_root_port),
+        ("target", target_port),
+    ]);
+    target = spawn_host(HostOptions {
+        binary: &binary,
+        role: "target",
+        port: target_port,
+        database: &db.endpoint(),
+        plan: &recovered_plan,
+        root_id,
+        recover: true,
+        invoke: false,
+        marker: None,
+        watch_terminalized: Some(&watch_terminalized),
+        state_ref: None,
+        coordinator_state_ref: Some("target"),
+        watch_coordinator_state_ref: Some("factory-root"),
+    });
+    wait(target_port);
+    root = spawn_with_plan!(
         &binary,
-        "target",
-        target_port,
+        "root",
+        recovered_root_port,
         &db.endpoint(),
-        root_port,
+        recovered_root_port,
         target_port,
+        &recovered_plan,
         root_id,
         true,
         false,
         None,
-        Some(&watch_terminalized),
         None,
         Some("factory-root"),
+        Some("factory-root"),
     );
-    wait(target_port);
+    wait(recovered_root_port);
     for _ in 0..100 {
         if watch_terminalized.exists() {
             break;
@@ -1522,23 +1618,6 @@ fn generated_exclusive_factory_root_recovers_existing_target_through_real_cxx_da
         watch_terminalized.exists(),
         "target did not Watch the factory-root decision and terminalize"
     );
-    let recovered_root_port = port();
-    root = host(
-        &binary,
-        "root",
-        recovered_root_port,
-        &db.endpoint(),
-        recovered_root_port,
-        target_port,
-        root_id,
-        true,
-        false,
-        None,
-        None,
-        Some("factory-root"),
-        Some("factory-root"),
-    );
-    wait(recovered_root_port);
     let (root_state, target_state) = wait_for_states(
         &runtime,
         &db.endpoint(),
@@ -1583,6 +1662,7 @@ fn factory_target_root_host(
     state_ref: &str,
     marker: &std::path::Path,
 ) -> Child {
+    let plan = legacy_plan_for(&[(state_ref, root_port), ("target", target_port)]);
     let mut command = Command::new(binary);
     command
         .args([
@@ -1592,10 +1672,8 @@ fn factory_target_root_host(
             &format!("127.0.0.1:{root_port}"),
             "--database",
             database,
-            "--root",
-            &format!("http://127.0.0.1:{root_port}"),
-            "--target",
-            &format!("http://127.0.0.1:{target_port}"),
+            "--legacy-placement-plan",
+            &plan,
             "--root-id",
             root_id,
             "--state-ref",
@@ -1622,6 +1700,7 @@ fn factory_target_host(
     state_ref: &str,
     amount: i64,
 ) -> std::process::ExitStatus {
+    let plan = legacy_plan_for(&[(state_ref, root_port), ("target", target_port)]);
     Command::new(binary)
         .args([
             "--role",
@@ -1630,10 +1709,8 @@ fn factory_target_host(
             &format!("127.0.0.1:{root_port}"),
             "--database",
             database,
-            "--root",
-            &format!("http://127.0.0.1:{root_port}"),
-            "--target",
-            &format!("http://127.0.0.1:{target_port}"),
+            "--legacy-placement-plan",
+            &plan,
             "--root-id",
             "00000000-0000-0000-0000-000000000004",
             "--state-ref",
@@ -1655,6 +1732,7 @@ fn factory_host(
     amount: i64,
 ) -> std::process::ExitStatus {
     let listen = port();
+    let plan = legacy_plan_for(&[(state_ref, listen)]);
     Command::new(binary)
         .args([
             "--role",
@@ -1663,10 +1741,8 @@ fn factory_host(
             &format!("127.0.0.1:{listen}"),
             "--database",
             database,
-            "--root",
-            &format!("http://127.0.0.1:{listen}"),
-            "--target",
-            &format!("http://127.0.0.1:{}", port()),
+            "--legacy-placement-plan",
+            &plan,
             "--root-id",
             "00000000-0000-0000-0000-000000000003",
             "--state-ref",

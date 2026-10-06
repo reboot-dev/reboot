@@ -76,21 +76,35 @@ impl CoordinatorWatchEndpoint for TonicCoordinatorWatchEndpoint {
 
 /// Legacy application-plane routing for Coordinator Watch recovery.
 ///
-/// Every Watch reads the current validated plan using only the raw coordinator
-/// state reference and creates a new lazy Tonic client. This deliberately makes
-/// no cache, retry, connection, ownership, or Native2pc claim.
+/// Every Watch reads the current validated plan using the fixed, host-selected
+/// raw coordinator state reference and creates a new lazy Tonic client. The
+/// participant identity in the request body is forwarded unchanged. This
+/// deliberately makes no cache, retry, connection, ownership, or Native2pc
+/// claim.
 #[derive(Clone)]
 pub struct LegacyApplicationCoordinatorWatchEndpoint {
     application: LegacyApplicationId,
     placement: PlanOnlyLegacyPlacement,
+    coordinator_state_ref: String,
 }
 
 impl LegacyApplicationCoordinatorWatchEndpoint {
-    pub fn new(application: LegacyApplicationId, placement: PlanOnlyLegacyPlacement) -> Self {
-        Self {
+    pub fn new(
+        application: LegacyApplicationId,
+        placement: PlanOnlyLegacyPlacement,
+        coordinator_state_ref: impl Into<String>,
+    ) -> Result<Self, Status> {
+        let result = Self {
             application,
             placement,
+            coordinator_state_ref: coordinator_state_ref.into(),
+        };
+        if result.coordinator_state_ref.is_empty() {
+            return Err(Status::invalid_argument(
+                "legacy coordinator state reference is required",
+            ));
         }
+        Ok(result)
     }
 }
 
@@ -101,7 +115,7 @@ impl CoordinatorWatchEndpoint for LegacyApplicationCoordinatorWatchEndpoint {
     ) -> CoordinatorWatchFuture<'_, proto::WatchResponse> {
         let result = self
             .placement
-            .route(&self.application, &request.state_ref)
+            .route(&self.application, &self.coordinator_state_ref)
             .and_then(|route| {
                 tonic::transport::Endpoint::from_shared(format!(
                     "http://{}",
@@ -215,41 +229,71 @@ impl<C: CoordinatorSidecar> proto::coordinator_server::Coordinator
 mod tests {
     use std::sync::{Arc, Mutex};
 
+    use sha1::{Digest as _, Sha1};
     use tokio_stream::wrappers::TcpListenerStream;
     use tonic::transport::Server;
 
     use super::*;
 
-    fn plan(version: i64, address: &str) -> crate::placement_proto::ListenForPlanResponse {
-        let (host, port) = address.rsplit_once(':').expect("test address has port");
+    fn plan(
+        version: i64,
+        routes: [(&str, &str); 2],
+    ) -> crate::placement_proto::ListenForPlanResponse {
+        let mut routes = routes.map(|(state_ref, address)| {
+            let (host, port) = address.rsplit_once(':').expect("test address has port");
+            (
+                Sha1::digest(
+                    state_ref
+                        .split('/')
+                        .next()
+                        .expect("test state ref has routing component")
+                        .as_bytes(),
+                ),
+                host,
+                port.parse::<i32>().expect("test port"),
+            )
+        });
+        routes.sort_by_key(|route| route.0);
         crate::placement_proto::ListenForPlanResponse {
             plan: Some(crate::placement_proto::Plan {
                 version,
                 applications: vec![crate::placement_proto::plan::Application {
                     id: "app".into(),
                     services: vec![],
-                    shards: vec![crate::placement_proto::plan::application::Shard {
-                        id: "shard".into(),
-                        range: Some(crate::placement_proto::plan::application::shard::KeyRange {
-                            first_key: vec![],
-                        }),
-                        server_id: "server".into(),
-                        replica_index: 0,
-                    }],
+                    shards: routes
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (hash, _, _))| {
+                            crate::placement_proto::plan::application::Shard {
+                                id: format!("shard-{index}"),
+                                range: Some(
+                                    crate::placement_proto::plan::application::shard::KeyRange {
+                                        first_key: if index == 0 { vec![] } else { hash.to_vec() },
+                                    },
+                                ),
+                                server_id: format!("server-{index}"),
+                                replica_index: 0,
+                            }
+                        })
+                        .collect(),
                 }],
             }),
-            servers: vec![crate::placement_proto::Server {
-                id: "server".into(),
-                application_id: "app".into(),
-                revision_number: 0,
-                address: Some(crate::placement_proto::server::Address {
-                    host: host.into(),
-                    port: port.parse().expect("test port"),
-                }),
-                namespace: String::new(),
-                file_descriptor_set: None,
-                reboot_version: String::new(),
-            }],
+            servers: routes
+                .iter()
+                .enumerate()
+                .map(|(index, (_, host, port))| crate::placement_proto::Server {
+                    id: format!("server-{index}"),
+                    application_id: "app".into(),
+                    revision_number: 0,
+                    address: Some(crate::placement_proto::server::Address {
+                        host: (*host).into(),
+                        port: *port,
+                    }),
+                    namespace: String::new(),
+                    file_descriptor_set: None,
+                    reboot_version: String::new(),
+                })
+                .collect(),
         }
     }
 
@@ -300,16 +344,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_application_watch_endpoint_rejects_invalid_routes_and_reroutes_watch() {
+    async fn legacy_application_watch_endpoint_routes_by_fixed_coordinator_and_preserves_participant()
+     {
         let placement = PlanOnlyLegacyPlacement::new();
         let endpoint = LegacyApplicationCoordinatorWatchEndpoint::new(
             LegacyApplicationId::new("app").unwrap(),
             placement.clone(),
-        );
+            "coordinator/root",
+        )
+        .unwrap();
         let request = proto::WatchRequest {
             transaction_id: vec![7; 16],
             state_type: "intentionally.unrelated.State".into(),
-            state_ref: "coordinator/child".into(),
+            state_ref: "participant/child".into(),
         };
 
         assert_eq!(
@@ -318,22 +365,36 @@ mod tests {
         );
 
         let (one_address, one_calls, one_task) = serve_coordinator("one").await;
-        placement.install(plan(1, &one_address)).unwrap();
-        for state_ref in ["", "/child"] {
-            let mut malformed = request.clone();
-            malformed.state_ref = state_ref.into();
-            assert_eq!(
-                endpoint.watch(malformed).await.unwrap_err().code(),
-                tonic::Code::InvalidArgument
-            );
-        }
+        let (two_address, two_calls, two_task) = serve_coordinator("two").await;
+        placement
+            .install(plan(
+                1,
+                [
+                    ("coordinator/root", &one_address),
+                    ("participant/child", &two_address),
+                ],
+            ))
+            .unwrap();
         let unknown = LegacyApplicationCoordinatorWatchEndpoint::new(
             LegacyApplicationId::new("unknown").unwrap(),
             placement.clone(),
-        );
+            "coordinator/root",
+        )
+        .unwrap();
         assert_eq!(
             unknown.watch(request.clone()).await.unwrap_err().code(),
             tonic::Code::NotFound
+        );
+        assert_eq!(
+            LegacyApplicationCoordinatorWatchEndpoint::new(
+                LegacyApplicationId::new("app").unwrap(),
+                placement.clone(),
+                "",
+            )
+            .err()
+            .unwrap()
+            .code(),
+            tonic::Code::InvalidArgument
         );
 
         assert!(!endpoint.watch(request.clone()).await.unwrap().aborted);
@@ -341,9 +402,17 @@ mod tests {
             one_calls.lock().unwrap().as_slice(),
             [("one", request.clone())]
         );
+        assert!(two_calls.lock().unwrap().is_empty());
 
-        let (two_address, two_calls, two_task) = serve_coordinator("two").await;
-        placement.install(plan(2, &two_address)).unwrap();
+        placement
+            .install(plan(
+                2,
+                [
+                    ("coordinator/root", &two_address),
+                    ("participant/child", &one_address),
+                ],
+            ))
+            .unwrap();
         assert!(!endpoint.watch(request.clone()).await.unwrap().aborted);
         assert_eq!(
             one_calls.lock().unwrap().as_slice(),

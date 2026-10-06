@@ -19,6 +19,7 @@ use std::{
 
 use http::Request as HttpRequest;
 use tokio::task::JoinSet;
+use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{
     Request,
     body::BoxBody,
@@ -31,7 +32,14 @@ use tower::{
     layer::util::{Identity, Stack},
 };
 
-type RecoveryIngressStack = Stack<RecoveryIngressLayer, Identity>;
+// Keep recovery/identity ingress outermost so it rejects unavailable public
+// requests before dispatch. The trailer layer only observes successful
+// responses from the generated service and turns their staged metadata into
+// wire trailers.
+type RecoveryIngressStack = Stack<
+    RecoveryIngressLayer,
+    Stack<crate::successful_trailers::SuccessfulParticipantTrailerLayer, Identity>,
+>;
 
 use crate::{
     APPLICATION_ID_HEADER,
@@ -296,7 +304,7 @@ where
 {
     async fn start(
         &self,
-        supervisor: &mut JoinSet<Result<(), tonic::Status>>,
+        _supervisor: &mut JoinSet<Result<(), tonic::Status>>,
         cancel: RecoveryCancellation,
     ) -> Result<(), tonic::Status> {
         self.participant
@@ -306,23 +314,31 @@ where
             .recover(self.metadata.coordinator.clone())
             .await?;
 
-        let participant = self.participant.clone();
-        let watch = Arc::clone(&self.watch);
-        supervisor.spawn(async move {
+        // A public RPC cannot observe a recovered prepared participant before
+        // its authoritative Watch has either terminalized it or confirmed that
+        // there is no pending durable work. Control routes are already bound by
+        // ApplicationHost before it invokes recovery, so this wait never
+        // deadlocks a recovering remote coordinator.
+        let mut retry_delay = std::time::Duration::from_millis(25);
+        loop {
             tokio::select! {
-                result = participant.watch_recovered(watch.as_ref()) => {
-                    // A recovered participant may have no durable pending
-                    // record, or its Watch may immediately deliver the
-                    // terminal decision. Both are successful convergence, not
-                    // supervisor failure; remain owned until host shutdown.
-                    result?;
-                    cancel.cancelled().await;
-                    Ok(())
+                result = self.participant.watch_recovered(self.watch.as_ref()) => match result {
+                    Ok(()) => return Ok(()),
+                    Err(status) if status.code() == tonic::Code::Unavailable => {
+                        // The remote coordinator may still be binding its
+                        // recovery-only control listener. This is non-definitive;
+                        // retain ownership and retry without inventing abort.
+                    }
+                    Err(status) => return Err(status),
                 },
-                _ = cancel.cancelled() => Ok(()),
+                _ = cancel.cancelled() => return Ok(()),
             }
-        });
-        Ok(())
+            tokio::select! {
+                _ = cancel.cancelled() => return Ok(()),
+                _ = tokio::time::sleep(retry_delay) => {}
+            }
+            retry_delay = (retry_delay * 2).min(std::time::Duration::from_secs(1));
+        }
     }
 }
 
@@ -447,6 +463,7 @@ pub enum ApplicationHostError {
         source: tonic::Status,
     },
     RecoveryTask(tonic::Status),
+    Bind(std::io::Error),
     Transport(tonic::transport::Error),
 }
 
@@ -464,6 +481,10 @@ impl fmt::Display for ApplicationHostError {
             Self::RecoveryTask(source) => {
                 write!(formatter, "application recovery task failed: {source}")
             }
+            Self::Bind(source) => write!(
+                formatter,
+                "application host could not bind listener: {source}"
+            ),
             Self::Transport(source) => {
                 write!(formatter, "application host transport failed: {source}")
             }
@@ -476,6 +497,7 @@ impl Error for ApplicationHostError {
         match self {
             Self::Lifecycle { source, .. } => Some(source),
             Self::RecoveryTask(source) => Some(source),
+            Self::Bind(source) => Some(source),
             Self::Transport(source) => Some(source),
         }
     }
@@ -584,11 +606,13 @@ impl ApplicationHost {
         let (readiness, state) = tokio::sync::watch::channel(RecoveryState::Ready);
         let placement_gate = LegacyPlacementGate::new();
         Self {
-            server: Server::builder().layer(RecoveryIngressLayer::new(
-                application_id.clone(),
-                RecoveryReadiness { state },
-                placement_gate.clone(),
-            )),
+            server: Server::builder()
+                .layer(crate::successful_trailers::SuccessfulParticipantTrailerLayer)
+                .layer(RecoveryIngressLayer::new(
+                    application_id.clone(),
+                    RecoveryReadiness { state },
+                    placement_gate.clone(),
+                )),
             application_id,
             lifecycle: Vec::new(),
             recovery: Vec::new(),
@@ -798,13 +822,21 @@ impl RunningApplicationHost {
             ..
         } = self;
         Self::start_lifecycle(&lifecycle).await?;
+        // Bind before recovery so peers can reach the fixed Participant and
+        // Coordinator control routes while public generated routes remain
+        // gated by `RecoveryIngressLayer`.
+        let listener = tokio::net::TcpListener::bind(address)
+            .await
+            .map_err(ApplicationHostError::Bind)?;
         let cancel = RecoveryCancellation::new();
         let serving_cancel = cancel.clone();
         // Poll the fixed router before recovery. Control services were part of
         // that router at construction; public routes remain gated below.
         let mut serving = tokio::spawn(async move {
             router
-                .serve_with_shutdown(address, async move { serving_cancel.cancelled().await })
+                .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async move {
+                    serving_cancel.cancelled().await
+                })
                 .await
         });
         tokio::task::yield_now().await;

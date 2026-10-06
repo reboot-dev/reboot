@@ -153,6 +153,7 @@ mod tests {
     use super::{generated, map_generated, proto, transaction_generated};
     use prost::Message;
     use reboot::{
+        application_host::ApplicationHost,
         runtime::{test_support::start_database, DatabaseActorStore},
         CallerId, ExternalContext,
     };
@@ -904,27 +905,33 @@ async fn generated_transaction_adapter_stages_validated_inbound_participant_in_s
 }
 
 #[tokio::test]
-async fn generated_transaction_adapter_emits_inbound_participant_only_in_raw_success_trailers() {
+async fn application_host_emits_generated_inbound_participant_only_in_raw_success_trailers() {
     let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
+    drop(listener);
     let adapter = transaction_adapter(Arc::clone(&trace), false);
     let server = tokio::spawn(async move {
-        tonic::transport::Server::builder()
-            .layer(reboot::successful_trailers::SuccessfulParticipantTrailerLayer)
-            .add_service(
+        ApplicationHost::new("generated-trailer-host")
+            .add_public_service(
                 proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(adapter),
             )
-            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .serve(address)
             .await
             .unwrap();
     });
 
-    let channel = tonic::transport::Channel::from_shared(format!("http://{address}"))
-        .unwrap()
-        .connect()
-        .await
-        .unwrap();
+    let endpoint = format!("http://{address}");
+    let channel = loop {
+        match tonic::transport::Channel::from_shared(endpoint.clone())
+            .unwrap()
+            .connect()
+            .await
+        {
+            Ok(channel) => break channel,
+            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+        }
+    };
     let mut grpc = tonic::client::Grpc::new(channel);
     grpc.ready().await.unwrap();
     let mut headers = reboot::RebootHeaders::new("transaction-counter");

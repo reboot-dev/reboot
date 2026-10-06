@@ -945,7 +945,12 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 })
                 .await
             {
-                Ok(response) => return self.terminal(root_id, !response.aborted).await,
+                Ok(response) => {
+                    self.terminal(root_id, !response.aborted).await?;
+                    #[cfg(feature = "test-support")]
+                    test_support::signal_watch_terminalized()?;
+                    return Ok(());
+                }
                 // A status is not an authoritative decision. Mirror Python's
                 // Watch loop by retrying every non-validating failure; task
                 // cancellation still cancels this future rather than being
