@@ -99,7 +99,7 @@ fn run_task_wait_registry(heterogeneous: bool) {
             completions.push(task);
         }
         // Unknown actor and wrong type must not fall back to any registered owner.
-        for (state_type, state_ref) in [(ids[0].state_type.clone(), "unknown"), ("example.Wrong".into(), "second")] {
+        for (state_type, state_ref) in [(ids[0].state_type.clone(), "unknown"), ("example.Wrong".into(), ids[1].state_ref.as_str())] {
             let id = database::TaskId { state_type, state_ref: state_ref.into(), task_uuid: uuid.as_bytes().to_vec() };
             let mut request = tonic::Request::new(database::WaitRequest { task_id: Some(id) });
             request.metadata_mut().insert("x-reboot-state-ref", state_ref.parse().unwrap());

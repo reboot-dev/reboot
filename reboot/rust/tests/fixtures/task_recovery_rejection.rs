@@ -3,22 +3,35 @@ use super::*;
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_recovery_rejects_entire_malformed_batch_before_dispatch() {
-    prove_recovered_batch_boundary(None);
+    prove_recovered_batch_boundary(None, None);
 }
 
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_recovery_accepts_1024_pending_tasks_without_loss() {
-    prove_recovered_batch_boundary(Some(1024));
+    prove_recovered_batch_boundary(Some(1024), None);
 }
 
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_recovery_rejects_1025_before_any_dispatch_without_loss() {
-    prove_recovered_batch_boundary(Some(1025));
+    prove_recovered_batch_boundary(Some(1025), None);
 }
 
-fn prove_recovered_batch_boundary(capacity: Option<usize>) {
+// A state-tag map filters actor/transaction recovery, NOT the shard's pending
+// task stream. Both vectors must fail the single-owner startup before dispatch.
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
+fn generated_reader_task_recovery_rejects_shared_shard_foreign_ref_before_dispatch() {
+    prove_recovered_batch_boundary(None, Some(false));
+}
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
+fn generated_reader_task_recovery_rejects_shared_shard_foreign_type_before_dispatch() {
+    prove_recovered_batch_boundary(None, Some(true));
+}
+
+fn prove_recovered_batch_boundary(capacity: Option<usize>, foreign_type: Option<bool>) {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/generated_cxx_database_process");
     assert!(
@@ -37,7 +50,7 @@ fn prove_recovered_batch_boundary(capacity: Option<usize>) {
         || vec!["Query", "UnknownReader"],
         |count| vec!["Query"; count],
     );
-    let tasks: Vec<database::Task> = methods
+    let mut tasks: Vec<database::Task> = methods
         .into_iter()
         .map(|method| {
             database::Task {
@@ -58,6 +71,15 @@ fn prove_recovered_batch_boundary(capacity: Option<usize>) {
             }
         })
         .collect();
+    if let Some(different_type) = foreign_type {
+        tasks[1].method = "Query".into();
+        let id = tasks[1].task_id.as_mut().unwrap();
+        if different_type {
+            id.state_type = "tests.reboot.protoc.RegistryGauge".into();
+        } else {
+            id.state_ref = "second".into();
+        }
+    }
     runtime.block_on(async {
         let mut client = database::database_client::DatabaseClient::connect(db.endpoint())
             .await
@@ -72,6 +94,44 @@ fn prove_recovered_batch_boundary(capacity: Option<usize>) {
             .unwrap();
     });
     db.restart();
+    if foreign_type.is_some() {
+        runtime.block_on(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                let mut stream = database::database_client::DatabaseClient::connect(db.endpoint())
+                    .await
+                    .unwrap()
+                    .recover(database::RecoverRequest {
+                        shard_ids: vec!["s000000000".into()],
+                        state_tags_by_state_type: [(
+                            "tests.reboot.protoc.TransactionCounter".into(),
+                            "TransactionCounter".into(),
+                        )]
+                        .into(),
+                        skip_idempotent_mutations: true,
+                    })
+                    .await
+                    .unwrap()
+                    .into_inner();
+                let mut recovered = Vec::new();
+                while let Some(batch) = stream.message().await.unwrap() {
+                    recovered.extend(batch.pending_tasks);
+                }
+                assert_eq!(
+                    recovered.len(),
+                    tasks.len(),
+                    "state tags must not silently partition canonical task recovery"
+                );
+                for task in &tasks {
+                    assert!(
+                        recovered.contains(task),
+                        "foreign task missing from canonical Recover"
+                    );
+                }
+            })
+            .await
+            .expect("canonical Recover stream did not terminate within five seconds");
+        });
+    }
     let listen = port();
     let plan = placement_proto::ListenForPlanResponse::decode(
         URL_SAFE_NO_PAD
@@ -84,37 +144,39 @@ fn prove_recovered_batch_boundary(capacity: Option<usize>) {
     let markers = tempfile::tempdir().unwrap();
     let marker = markers.path().join("must-not-dispatch-valid-task");
     let ack = markers.path().join("unused-root-ack");
-    let mut host = Command::new(binary)
-        .args([
-            "--role",
-            "tasks",
-            "--database",
-            &db.endpoint(),
-            "--listen",
-            &format!("127.0.0.1:{listen}"),
-            "--placement-planner",
-            &planner.endpoint,
-            "--root-id",
-            &Uuid::new_v4().to_string(),
-            "--state-ref",
-            "root",
-            "--coordinator-state-ref",
-            "root",
-            "--task-marker",
-            marker.to_str().unwrap(),
-            "--invoke-marker",
-            ack.to_str().unwrap(),
-            "--amount",
-            "7",
-            "--recover",
-            "--block-task",
-        ])
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::from(
-            std::fs::File::create(markers.path().join("host-stderr")).unwrap(),
-        ))
-        .spawn()
-        .unwrap();
+    let mut host = WaitHostGuard(
+        Command::new(binary)
+            .args([
+                "--role",
+                "tasks",
+                "--database",
+                &db.endpoint(),
+                "--listen",
+                &format!("127.0.0.1:{listen}"),
+                "--placement-planner",
+                &planner.endpoint,
+                "--root-id",
+                &Uuid::new_v4().to_string(),
+                "--state-ref",
+                "root",
+                "--coordinator-state-ref",
+                "root",
+                "--task-marker",
+                marker.to_str().unwrap(),
+                "--invoke-marker",
+                ack.to_str().unwrap(),
+                "--amount",
+                "7",
+                "--recover",
+                "--block-task",
+            ])
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::from(
+                std::fs::File::create(markers.path().join("host-stderr")).unwrap(),
+            ))
+            .spawn()
+            .unwrap(),
+    );
     let mut exit = None;
     for _ in 0..200 {
         exit = host.try_wait().unwrap();
@@ -143,6 +205,18 @@ fn prove_recovered_batch_boundary(capacity: Option<usize>) {
             "unsupported recovery must fail startup"
         );
         assert!(!marker.exists(), "reader ran before whole batch validation");
+        assert!(
+            !marker.with_extension("invocations").exists(),
+            "handler entered before whole-batch validation"
+        );
+        if foreign_type.is_some() {
+            let stderr = std::fs::read_to_string(markers.path().join("host-stderr")).unwrap();
+            assert!(
+                stderr.contains("InvalidArgument")
+                    && stderr.contains("task must name the registered local actor and a UUID"),
+                "wrong startup rejection: {stderr}"
+            );
+        }
         if capacity == Some(1025) {
             let stderr = std::fs::read_to_string(markers.path().join("host-stderr")).unwrap();
             assert!(
@@ -173,11 +247,12 @@ fn prove_recovered_batch_boundary(capacity: Option<usize>) {
             .into_inner()
             .tasks;
         assert_eq!(loaded.len(), tasks.len());
-        for task in tasks {
+        for task in &tasks {
             assert!(
-                loaded.contains(&task),
+                loaded.contains(task),
                 "rejected pending task changed across restart"
             );
         }
     });
+    planner.stop();
 }

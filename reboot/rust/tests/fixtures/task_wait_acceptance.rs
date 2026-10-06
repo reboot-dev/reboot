@@ -1,19 +1,3 @@
-// Own only the fixture child; dropping the guard after an assertion failure
-// must not leave a serving host behind. Real sidecars keep their own guards.
-struct WaitHostGuard(Child);
-impl std::ops::Deref for WaitHostGuard {
-    type Target = Child;
-    fn deref(&self) -> &Child { &self.0 }
-}
-impl std::ops::DerefMut for WaitHostGuard {
-    fn deref_mut(&mut self) -> &mut Child { &mut self.0 }
-}
-impl Drop for WaitHostGuard {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
 fn reader_task_wait_request(
     task_id: Option<database::TaskId>,
 ) -> tonic::Request<database::WaitRequest> {

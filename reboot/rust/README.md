@@ -133,7 +133,19 @@ or migration. `OneShotTasks::pending` still validates the whole recovered batch
 against its one registered actor; do not register independent owners over a shared
 Recover stream containing both actors. C++ `reboot/server/database.cc:4121-4160`
 recovers pending tasks by shard, without state-tag filtering; changing only each
-Rust owner's state-tag map cannot safely partition the canonical stream. Source: aio/internals/tasks_servicer.py:48-126 and
+Rust owner's state-tag map cannot safely partition the canonical stream.
+Real-sidecar fail-closed acceptance now seeds a valid local Pending task plus a
+foreign-ref or foreign-type Pending task in the SAME shard/database. After a
+RocksDB restart, a primary-type-only canonical Recover request returns BOTH full
+records. Single-owner host startup rejects with the exact identity validation
+error before any reader marker/invocation; actor state and both Pending records
+remain unchanged after another RocksDB restart. A RED silently filtering unknown
+owners admits the host and fails both tests. This is rejection-boundary evidence,
+not successful shared-shard multi-owner recovery. The next implementation must
+collect and validate the whole bounded stream against one exact owner registry
+before opening readiness or dispatching; per-owner scans/skipping unknown tasks
+are not an acceptable substitute. Wrong-type Wait rejection now uses a registered
+state-ref in both registry vectors, isolating the type mismatch. Source: aio/internals/tasks_servicer.py:48-126 and
 templates/reboot.py.j2:4697-4775. Earlier durable RPC cancellation windows still need dedicated
 acceptance. No exactly-once
 handler effects, writer tasks, workflows, distributed task
