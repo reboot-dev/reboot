@@ -1250,7 +1250,7 @@ fn emit_durable(
                     package,
                     declared_errors,
                     runtime_module,
-                    false,
+                    true,
                 );
             }
         }
@@ -1422,7 +1422,7 @@ fn emit_declared_error_enum(
     }
     if include_system_aborts {
         output.push_str(&format!(
-            "    /// A source-defined Reboot backend abort.\n    System({runtime_module}::SystemAborted),\n"
+            "    /// A source-defined Reboot backend abort with its rich status message.\n    System({runtime_module}::SystemAbort),\n"
         ));
     }
     output.push_str("    /// A non-declared transport failure.\n    Grpc(tonic::Status),\n}\n");
@@ -1434,7 +1434,9 @@ fn emit_declared_error_enum(
         output.push_str(&format!("        Self::{variant}(error) => {runtime_module}::declared_error_status(tonic::Code::Unknown, \"declared error\", \"type.googleapis.com/{package}.{declared_error}\", &error),\n"));
     }
     if include_system_aborts {
-        output.push_str("        Self::System(_) => tonic::Status::unknown(\"system aborts are received from remote backends only\"),\n");
+        output.push_str(
+            "        Self::System(system) => system.error.into_status(system.message),\n",
+        );
     }
     output.push_str("        Self::Grpc(status) => status,\n    } }\n");
     if include_system_aborts {
@@ -1443,16 +1445,16 @@ fn emit_declared_error_enum(
             let variant = declared_error.to_upper_camel_case();
             output.push_str(&format!("        Self::{variant}(_) => true,\n"));
         }
-        output.push_str("        Self::System(error) => error.is_recoverable(),\n        Self::Grpc(_) => false,\n    } }\n");
+        output.push_str("        Self::System(system) => system.error.is_recoverable(),\n        Self::Grpc(_) => false,\n    } }\n");
     }
     output.push_str("    fn from_status(status: tonic::Status) -> Self {\n");
-    output.push_str(&format!("        let Ok(Some(rich_status)) = {runtime_module}::declared_error_details(&status) else {{ return Self::Grpc(status); }};\n        for detail in rich_status.details {{\n"));
+    output.push_str(&format!("        let message = status.message().to_owned();\n        let Ok(Some(rich_status)) = {runtime_module}::declared_error_details(&status) else {{ return Self::Grpc(status); }};\n        for detail in rich_status.details {{\n"));
     for declared_error in declared_errors {
         let variant = declared_error.to_upper_camel_case();
         output.push_str(&format!("            if detail.type_url == \"type.googleapis.com/{package}.{declared_error}\" {{ match <proto::{variant} as prost::Message>::decode(detail.value.as_slice()) {{ Ok(error) => return Self::{variant}(error), Err(_) => return Self::Grpc(status), }} }}\n"));
     }
     if include_system_aborts {
-        output.push_str(&format!("            match {runtime_module}::system_aborted_from_detail(&detail) {{ Ok(Some(error)) => return Self::System(error), Ok(None) => {{}}, Err(_) => return Self::Grpc(status), }}\n"));
+        output.push_str(&format!("            match {runtime_module}::system_aborted_from_detail(&detail) {{ Ok(Some(error)) => return Self::System({runtime_module}::SystemAbort {{ error, message }}), Ok(None) => {{}}, Err(_) => return Self::Grpc(status), }}\n"));
     }
     output.push_str("        }\n        Self::Grpc(status)\n    }\n}\n\n");
 }

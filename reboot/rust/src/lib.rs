@@ -1291,6 +1291,23 @@ pub fn declared_error_details(
     Ok(Some(rich_status))
 }
 
+/// A source-defined Reboot backend abort emitted through a generated method
+/// error enum. The message is part of the rich `google.rpc.Status` envelope
+/// and must survive generated server/client round trips.
+#[derive(Debug)]
+pub struct SystemAbort {
+    pub error: SystemAborted,
+    pub message: String,
+}
+
+impl SystemAbort {
+    /// Preserves the generated transaction-client classification API while
+    /// retaining the backend's rich status message.
+    pub fn is_recoverable(&self) -> bool {
+        self.error.is_recoverable()
+    }
+}
+
 /// A source-defined rich abort emitted by a Reboot backend.
 ///
 /// This is intentionally only a classification primitive: transaction callers

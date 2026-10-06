@@ -71,6 +71,9 @@ fn protoc_plugin_emits_durable_counter_adapters() {
         .unwrap();
     assert!(secondary < limit, "declared errors must retain proto order");
     assert!(content.contains("pub enum CounterReadsMethodsGetError"));
+    assert!(content.contains("System(reboot::SystemAbort)"));
+    assert!(content.contains("system.error.into_status(system.message)"));
+    assert!(content.contains("SystemAbort { error, message }"));
     assert!(content.contains("async fn get(&self, state: &proto::Counter, request: proto::Empty) -> Result<proto::CounterValue, CounterReadsMethodsGetError>;"));
     assert!(content.contains(
         "self.client.get(request).await.map_err(CounterReadsMethodsGetError::from_status)"
@@ -193,6 +196,14 @@ impl generated::CounterWritesMethodsDatabaseHandler for Counter {
         request: proto::IncrementRequest,
     ) -> Result<proto::CounterValue, generated::CounterWritesMethodsIncrementError> {
         tokio::task::yield_now().await;
+        if request.amount == -2 {
+            return Err(generated::CounterWritesMethodsIncrementError::System(
+                reboot::SystemAbort {
+                    error: reboot::SystemAborted::NotFound(reboot::database_proto::NotFound {}),
+                    message: "counter is absent".into(),
+                },
+            ));
+        }
         if request.amount < 0 {
             return Err(generated::CounterWritesMethodsIncrementError::CounterLimitExceeded(
                 proto::CounterLimitExceeded { limit: state.value },
@@ -1395,6 +1406,17 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
         Err(generated::CounterWritesMethodsIncrementError::CounterLimitExceeded(error))
             if error.limit == 5
     ));
+    assert!(matches!(
+        writes.increment(proto::IncrementRequest { amount: -2 }).await,
+        Err(generated::CounterWritesMethodsIncrementError::System(system))
+            if matches!(system.error, reboot::SystemAborted::NotFound(_))
+                && system.message == "counter is absent"
+    ));
+    assert_eq!(
+        database.store_requests().len(),
+        1,
+        "a generated writer SystemAbort must not persist mutated state"
+    );
 
     let explicit_key = Uuid::parse_str("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").unwrap();
     assert_eq!(
