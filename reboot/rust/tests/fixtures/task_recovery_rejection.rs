@@ -3,19 +3,19 @@ use super::*;
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_recovery_rejects_entire_malformed_batch_before_dispatch() {
-    prove_recovered_batch_boundary(None, None);
+    prove_recovered_batch_boundary(None, None, false);
 }
 
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_recovery_accepts_1024_pending_tasks_without_loss() {
-    prove_recovered_batch_boundary(Some(1024), None);
+    prove_recovered_batch_boundary(Some(1024), None, false);
 }
 
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_recovery_rejects_1025_before_any_dispatch_without_loss() {
-    prove_recovered_batch_boundary(Some(1025), None);
+    prove_recovered_batch_boundary(Some(1025), None, false);
 }
 
 // A state-tag map filters actor/transaction recovery, NOT the shard's pending
@@ -23,15 +23,29 @@ fn generated_reader_task_recovery_rejects_1025_before_any_dispatch_without_loss(
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_recovery_rejects_shared_shard_foreign_ref_before_dispatch() {
-    prove_recovered_batch_boundary(None, Some(false));
+    prove_recovered_batch_boundary(None, Some(false), false);
 }
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_recovery_rejects_shared_shard_foreign_type_before_dispatch() {
-    prove_recovered_batch_boundary(None, Some(true));
+    prove_recovered_batch_boundary(None, Some(true), false);
 }
 
-fn prove_recovered_batch_boundary(capacity: Option<usize>, foreign_type: Option<bool>) {
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
+fn generated_reader_task_shared_recovery_accepts_global_1024_without_loss() {
+    prove_recovered_batch_boundary(Some(1024), None, true);
+}
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
+fn generated_reader_task_shared_recovery_rejects_global_1025_before_dispatch() {
+    prove_recovered_batch_boundary(Some(1025), None, true);
+}
+fn prove_recovered_batch_boundary(
+    capacity: Option<usize>,
+    foreign_type: Option<bool>,
+    shared: bool,
+) {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/generated_cxx_database_process");
     assert!(
@@ -71,6 +85,28 @@ fn prove_recovered_batch_boundary(capacity: Option<usize>, foreign_type: Option<
             }
         })
         .collect();
+    if shared {
+        runtime.block_on(store_counter(&db.endpoint(), "second", 5));
+        for (index, task) in tasks.iter_mut().enumerate() {
+            if index % 2 == 1 {
+                task.task_id.as_mut().unwrap().state_ref = "second".into();
+            }
+        }
+        assert!(
+            tasks
+                .iter()
+                .filter(|task| task.task_id.as_ref().unwrap().state_ref == "root")
+                .count()
+                < 1024
+        );
+        assert!(
+            tasks
+                .iter()
+                .filter(|task| task.task_id.as_ref().unwrap().state_ref == "second")
+                .count()
+                < 1024
+        );
+    }
     if let Some(different_type) = foreign_type {
         tasks[1].method = "Query".into();
         let id = tasks[1].task_id.as_mut().unwrap();
@@ -144,8 +180,19 @@ fn prove_recovered_batch_boundary(capacity: Option<usize>, foreign_type: Option<
     let markers = tempfile::tempdir().unwrap();
     let marker = markers.path().join("must-not-dispatch-valid-task");
     let ack = markers.path().join("unused-root-ack");
+    let second_marker = markers.path().join("second-reader");
+    let mut command = Command::new(binary);
+    if shared {
+        command.args([
+            "--shared-task-recovery",
+            "--second-task-database",
+            &db.endpoint(),
+            "--second-task-marker",
+            second_marker.to_str().unwrap(),
+        ]);
+    }
     let mut host = WaitHostGuard(
-        Command::new(binary)
+        command
             .args([
                 "--role",
                 "tasks",
@@ -180,7 +227,8 @@ fn prove_recovered_batch_boundary(capacity: Option<usize>, foreign_type: Option<
     let mut exit = None;
     for _ in 0..200 {
         exit = host.try_wait().unwrap();
-        if exit.is_some() || (capacity == Some(1024) && marker.exists()) {
+        if exit.is_some() || (capacity == Some(1024) && (marker.exists() || second_marker.exists()))
+        {
             break;
         }
         std::thread::sleep(Duration::from_millis(25));
@@ -189,11 +237,19 @@ fn prove_recovered_batch_boundary(capacity: Option<usize>, foreign_type: Option<
         // The real reader cannot begin until complete-batch validation and
         // public readiness pass. Crash it while the first handler is parked;
         // no result may be invented for any of the 1024 pending tasks.
-        let accepted = marker.exists() && exit.is_none();
+        let accepted = (marker.exists() || second_marker.exists()) && exit.is_none();
         let _ = host.kill();
         let _ = host.wait();
         assert!(accepted, "1024-task recovery did not admit the real reader");
-        assert_eq!(std::fs::read_to_string(&marker).unwrap(), "5");
+        assert_eq!(
+            std::fs::read_to_string(if marker.exists() {
+                &marker
+            } else {
+                &second_marker
+            })
+            .unwrap(),
+            "5"
+        );
     } else {
         if exit.is_none() {
             let _ = host.kill();
@@ -204,6 +260,8 @@ fn prove_recovered_batch_boundary(capacity: Option<usize>, foreign_type: Option<
             !exit.unwrap().success(),
             "unsupported recovery must fail startup"
         );
+        assert!(!second_marker.exists());
+        assert!(!second_marker.with_extension("invocations").exists());
         assert!(!marker.exists(), "reader ran before whole batch validation");
         assert!(
             !marker.with_extension("invocations").exists(),
@@ -236,6 +294,12 @@ fn prove_recovered_batch_boundary(capacity: Option<usize>, foreign_type: Option<
         Some(vec![0x08, 5]),
         "rejected recovery changed actor state across RocksDB restart"
     );
+    if shared {
+        assert_eq!(
+            runtime.block_on(load_state(&db.endpoint(), "second")),
+            Some(vec![0x08, 5])
+        );
+    }
     runtime.block_on(async {
         let loaded = database::database_client::DatabaseClient::connect(db.endpoint())
             .await

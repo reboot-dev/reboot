@@ -808,7 +808,7 @@ async fn main() {
         let second_adapter = generated::TransactionCounterWritesMethodsTransactionAdapter::new(
             DatabaseActorStore::connect(&endpoint).await.unwrap(), second_participant,
             second_coordinator, Starts { root: Uuid::new_v4(), child: Uuid::new_v4() },
-            Handler::Tasks { state_ref: "second".into(), marker: arg("--second-task-marker"), block: false, vector: String::new() },
+            Handler::Tasks { state_ref: "second".into(), marker: arg("--second-task-marker"), block: has("--block-task"), vector: String::new() },
         );
         let (_, second) = second_adapter.with_one_shot_reader_tasks("second").unwrap();
         if !has("--shared-task-recovery") { host = host.with_host_recovery(second.recovery(reboot::database_proto::RecoverRequest {
