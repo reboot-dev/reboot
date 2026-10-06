@@ -73,6 +73,7 @@ impl placement_proto::placement_planner_server::PlacementPlanner for LivePlaceme
 
 struct LivePlannerServer {
     endpoint: String,
+    streams: PlannerStreams,
     connections: Arc<AtomicUsize>,
     server: tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
 }
@@ -86,10 +87,11 @@ impl LivePlannerServer {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let address = listener.local_addr().unwrap();
             let connections = Arc::new(AtomicUsize::new(0));
+            let streams = Arc::new(Mutex::new(Vec::new()));
             let planner = LivePlacementPlanner {
                 response,
                 connections: Arc::clone(&connections),
-                streams: Arc::new(Mutex::new(Vec::new())),
+                streams: Arc::clone(&streams),
             };
             let server = tokio::spawn(async move {
                 tonic::transport::Server::builder()
@@ -103,6 +105,7 @@ impl LivePlannerServer {
             });
             Self {
                 endpoint: format!("http://{address}"),
+                streams,
                 connections,
                 server,
             }
@@ -117,6 +120,14 @@ impl LivePlannerServer {
             std::thread::sleep(Duration::from_millis(25));
         }
         panic!("live PlacementPlanner did not receive {expected} host streams");
+    }
+
+    async fn publish(&self, plan: placement_proto::ListenForPlanResponse) {
+        let streams = self.streams.lock().unwrap().clone();
+        assert!(!streams.is_empty(), "no connected planner consumers");
+        for sender in streams {
+            sender.send(Ok(plan.clone())).await.unwrap();
+        }
     }
 
     fn stop(self) {

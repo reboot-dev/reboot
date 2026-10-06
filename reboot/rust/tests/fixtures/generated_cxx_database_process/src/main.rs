@@ -670,8 +670,8 @@ async fn main() {
     if has("--recover") {
         let watch = Arc::new(
             LegacyApplicationCoordinatorWatchEndpoint::new(
-                application,
-                placement,
+                application.clone(),
+                placement.clone(),
                 watch_coordinator_state_ref,
             )
             .unwrap(),
@@ -694,7 +694,11 @@ async fn main() {
             .unwrap();
         host = host.with_host_recovery(recovery);
     }
-    let wait_service = tasks.as_ref().map(|tasks| tasks.wait_service());
+    let wait_service = tasks.as_ref().map(|tasks| tasks.wait_service(
+        application.clone(),
+        optional_arg("--server-id").unwrap_or_else(|| "server-0".into()),
+        placement.clone(),
+    ));
     if let Some(tasks) = tasks {
         host = host.with_host_recovery(tasks.recovery(reboot::database_proto::RecoverRequest {
             state_tags_by_state_type: [("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())].into(),

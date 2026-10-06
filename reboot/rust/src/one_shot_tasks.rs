@@ -106,9 +106,19 @@ impl OneShotTasks {
     }
     /// Canonical Wait for this registered local actor. Mount as a PUBLIC
     /// service under ApplicationHost readiness; not a recovery/control route.
-    pub fn wait_service(&self) -> db::tasks_server::TasksServer<ReaderTaskWaitService> {
+    /// Supply the host-owned application/server identity and shared accepted
+    /// placement. This checks read-serving authority, not dispatcher fencing.
+    pub fn wait_service(
+        &self,
+        application: crate::legacy_placement::LegacyApplicationId,
+        server_id: impl Into<String>,
+        placement: crate::legacy_placement::PlanOnlyLegacyPlacement,
+    ) -> db::tasks_server::TasksServer<ReaderTaskWaitService> {
         db::tasks_server::TasksServer::new(ReaderTaskWaitService {
             tasks: self.clone(),
+            application,
+            server_id: server_id.into(),
+            placement,
         })
     }
     /// Scheduling is usable only after host registration has taken ownership.
@@ -424,6 +434,20 @@ impl HostRecovery for OneShotTaskRecovery {
 #[derive(Clone)]
 pub struct ReaderTaskWaitService {
     tasks: OneShotTasks,
+    application: crate::legacy_placement::LegacyApplicationId,
+    server_id: String,
+    placement: crate::legacy_placement::PlanOnlyLegacyPlacement,
+}
+impl ReaderTaskWaitService {
+    fn require_authority(&self, state_ref: &str) -> Result<(), Status> {
+        let route = self.placement.route(&self.application, state_ref)?;
+        if self.server_id.is_empty() || route.server_id != self.server_id {
+            return Err(Status::unavailable(
+                "server is not authoritative for task actor",
+            ));
+        }
+        Ok(())
+    }
 }
 #[tonic::async_trait]
 impl db::tasks_server::Tasks for ReaderTaskWaitService {
@@ -453,6 +477,7 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
             ));
         }
         loop {
+            self.require_authority(&id.state_ref)?;
             if !self
                 .tasks
                 .inner
@@ -472,6 +497,9 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
                 })
                 .await?
                 .into_inner();
+            // Loading can await while a newer plan moves this actor. Never
+            // return a result under the authority checked before that await.
+            self.require_authority(&id.state_ref)?;
             if loaded.tasks.is_empty() {
                 return Err(Status::not_found("task not found"));
             }
@@ -591,6 +619,26 @@ mod tests {
         async fn execute(&self, _: &db::Task) -> Result<prost_types::Any, Status> {
             unreachable!("ownership-only test")
         }
+    }
+    #[tokio::test]
+    async fn wait_authority_without_plan_fails_closed() {
+        let tasks = OneShotTasks::new(
+            DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+            "test.WaitAuthority".into(),
+            "actor".into(),
+            Binding,
+        )
+        .unwrap();
+        let service = ReaderTaskWaitService {
+            tasks,
+            application: crate::legacy_placement::LegacyApplicationId::new("application").unwrap(),
+            server_id: "server".into(),
+            placement: crate::legacy_placement::PlanOnlyLegacyPlacement::new(),
+        };
+        assert_eq!(
+            service.require_authority("actor").unwrap_err().code(),
+            tonic::Code::Unavailable
+        );
     }
     #[tokio::test]
     async fn duplicate_local_owner_rejected_and_drop_releases_registration() {

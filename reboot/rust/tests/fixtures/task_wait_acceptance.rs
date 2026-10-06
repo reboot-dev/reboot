@@ -32,7 +32,7 @@ fn generated_canonical_reader_task_wait_deadline_and_typed_result() {
             .as_slice(),
     )
     .unwrap();
-    let planner = LivePlannerServer::start(&runtime, plan);
+    let planner = LivePlannerServer::start(&runtime, plan.clone());
     let markers = tempfile::tempdir().unwrap();
     let marker = markers.path().join("handler");
     let ack = markers.path().join("root-ack");
@@ -271,6 +271,68 @@ fn generated_canonical_reader_task_wait_deadline_and_typed_result() {
         await_marker(&output, &mut waiter);
         assert!(waiter.wait().unwrap().success());
     }
+    // Python tasks_servicer.py:70-83 rejects a nonauthoritative server.
+    // Keep public services declared so global host readiness cannot mask the
+    // per-actor check. A live pending Wait must also notice the newer plan.
+    runtime.block_on(async {
+        let pending_id = database::TaskId {
+            task_uuid: Uuid::new_v4().as_bytes().to_vec(),
+            ..id.clone()
+        };
+        let pending = database::Task {
+            task_id: Some(pending_id.clone()),
+            timestamp: Some(prost_types::Timestamp {
+                seconds: chrono::Utc::now().timestamp() + 60,
+                nanos: 0,
+            }),
+            ..task.clone()
+        };
+        database::database_client::DatabaseClient::connect(db.endpoint())
+            .await.unwrap().store(database::StoreRequest {
+                task_upserts: vec![pending.clone()], sync: true,
+                ..Default::default()
+            }).await.unwrap();
+        let channel = tonic::transport::Channel::from_shared(format!("http://127.0.0.1:{listen}"))
+            .unwrap().connect().await.unwrap();
+        let mut client = database::tasks_client::TasksClient::new(channel.clone());
+        let mut inflight_client = database::tasks_client::TasksClient::new(channel);
+        let mut request = reader_task_wait_request(Some(pending_id.clone()));
+        request.set_timeout(Duration::from_secs(5));
+        let wait = inflight_client.wait(request);
+        tokio::pin!(wait);
+        tokio::select! {
+            result = &mut wait => panic!("pending Wait ended before placement moved: {result:?}"),
+            () = tokio::time::sleep(Duration::from_millis(150)) => {}
+        }
+        let mut moved = plan.clone();
+        moved.plan.as_mut().unwrap().version = 2;
+        moved.plan.as_mut().unwrap().applications[0].shards[0].server_id = "other-server".into();
+        moved.servers[0].id = "other-server".into();
+        planner.publish(moved).await;
+        assert_eq!(tokio::time::timeout(Duration::from_secs(2), &mut wait)
+            .await.expect("pending Wait ignored placement change")
+            .unwrap_err().code(), tonic::Code::Unavailable);
+        // New requests must not return even an already durable completion.
+        assert_eq!(client.wait(reader_task_wait_request(Some(id.clone())))
+            .await.unwrap_err().code(), tonic::Code::Unavailable);
+        assert_eq!(load_task(&db.endpoint(), pending_id).await, pending);
+        assert_eq!(load_task(&db.endpoint(), id.clone()).await, completed);
+        // Return authority under a strictly newer snapshot: same host becomes
+        // usable without restart, with no task mutation or replay.
+        let mut restored = plan.clone();
+        restored.plan.as_mut().unwrap().version = 3;
+        planner.publish(restored).await;
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                match client.wait(reader_task_wait_request(Some(id.clone()))).await {
+                    Ok(_) => break,
+                    Err(error) if error.code() == tonic::Code::Unavailable =>
+                        tokio::time::sleep(Duration::from_millis(10)).await,
+                    Err(error) => panic!("restored authority failed: {error}"),
+                }
+            }
+        }).await.unwrap();
+    });
     assert_eq!(runtime.block_on(load_task(&db.endpoint(), id)), completed);
     assert!(
         host.try_wait().unwrap().is_none(),

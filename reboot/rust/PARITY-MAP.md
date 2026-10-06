@@ -55,15 +55,24 @@ recovered task completes durably with its timestamp unchanged. Dispatch uses
 host-owned 100ms canonical rescans, not per-task detached timers; handler failure
 still leaves a task pending and fails supervision rather than retrying silently.
 Canonical `rbt.v1alpha1.Tasks.Wait` is mounted as a public readiness-gated
-service for one registered local actor. It validates actor/UUID identity and
-routed-header agreement, waits
+service for one registered local actor. `wait_service(application, server_id,
+placement)` requires server-owned identity and the host's shared accepted legacy
+placement snapshots. It validates actor/UUID identity and routed-header agreement,
+checks per-actor serving authority before and after Database Load and on every
+pending poll, and waits
 read-only for durable completion, and returns NotFound for absent tasks. Generated
 `*TasksWait` helpers preserve Tonic request metadata/deadlines and decode the
 method's exact response Any type. Real C++ acceptance exercises canonical and
 typed deadlines without changing pending records, then typed completion/retrieval
 and fail-closed wrong-type/malformed responses while the host remains running.
+A newer live planner snapshot moving the actor revokes pending Wait and denies
+completed retrieval on the old host without changing records; restoring authority
+with a still newer plan allows retrieval without restart. Removing authority checks
+fails this real-process regression. This is read-serving authority only, not
+ownership fencing of the dispatcher or a guarantee against concurrent plan changes
+after the final synchronous check.
 ListTasks/streaming/CancelTask return Unimplemented; task authorization, typed
-terminal errors, automatic placement, and a multi-actor Wait registry remain
+terminal errors, automatic client placement, and a multi-actor Wait registry remain
 outside this slice. Source: aio/internals/tasks_servicer.py:48-126 and
 templates/reboot.py.j2:4697-4775. Earlier durable RPC cancellation windows still need dedicated
 acceptance. No exactly-once
