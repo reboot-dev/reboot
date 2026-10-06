@@ -800,6 +800,167 @@ async fn generated_transaction_adapter_aborts_when_handler_rejects() {
 }
 
 #[tokio::test]
+async fn generated_fresh_exclusive_transaction_authorization_verifies_before_replay_and_aborts_denial() {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+
+    fn probe(decision: AuthorizationDecision) -> Arc<AuthProbe> {
+        Arc::new(AuthProbe {
+            verifier_calls: Arc::new(AtomicUsize::new(0)),
+            authorizer_calls: Arc::new(AtomicUsize::new(0)),
+            handler_calls: Arc::new(AtomicUsize::new(0)),
+            decision,
+            contexts: Arc::new(std::sync::Mutex::new(Vec::new())),
+            snapshots: Arc::new(std::sync::Mutex::new(Vec::new())),
+        })
+    }
+    fn policy(probe: Arc<AuthProbe>) -> AuthorizationPolicy {
+        AuthorizationPolicy::new(Some(probe.clone()), Some(probe))
+    }
+    fn request(token: &str) -> tonic::Request<proto::TransactionIncrementRequest> {
+        let mut headers = reboot::RebootHeaders::new("transaction-counter");
+        headers.bearer_token = Some(token.into());
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+        *request.metadata_mut() = headers.to_metadata().unwrap();
+        request
+    }
+
+    let rejected_trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let rejected = probe(AuthorizationDecision::Allow);
+    let rejected_adapter = transaction_adapter(Arc::clone(&rejected_trace), false)
+        .with_authorization(policy(Arc::clone(&rejected)));
+    assert_eq!(
+        TransactionCounterWritesMethods::increment(&rejected_adapter, request("reject"))
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unauthenticated
+    );
+    assert_eq!(rejected.verifier_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(rejected.authorizer_calls.load(Ordering::SeqCst), 0);
+    assert!(rejected_trace.lock().unwrap().is_empty());
+
+    let denied_trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let denied = probe(AuthorizationDecision::PermissionDenied { message: "denied".into() });
+    let denied_adapter = transaction_adapter(Arc::clone(&denied_trace), false)
+        .with_authorization(policy(Arc::clone(&denied)));
+    assert_eq!(
+        TransactionCounterWritesMethods::increment(&denied_adapter, request("allow"))
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::PermissionDenied
+    );
+    assert_eq!(denied.authorizer_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(*denied_trace.lock().unwrap(), ["participant load", "participant abort"]);
+
+    let allowed_trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let allowed = probe(AuthorizationDecision::Allow);
+    let allowed_adapter = transaction_adapter(Arc::clone(&allowed_trace), false)
+        .with_authorization(policy(Arc::clone(&allowed)));
+    assert_eq!(
+        TransactionCounterWritesMethods::increment(&allowed_adapter, request("allow"))
+            .await
+            .unwrap()
+            .into_inner()
+            .value,
+        7
+    );
+    let contexts = allowed.contexts.lock().unwrap();
+    assert_eq!(contexts[0].method, "tests.reboot.protoc.TransactionCounterWritesMethods.Increment");
+    assert_eq!(contexts[0].state_type, "tests.reboot.protoc.TransactionCounter");
+    assert_eq!(contexts[0].headers.bearer_token.as_deref(), Some("allow"));
+    drop(contexts);
+    let snapshots = allowed.snapshots.lock().unwrap();
+    assert_eq!(proto::TransactionCounter::decode(snapshots[0].0.as_slice()).unwrap(), proto::TransactionCounter { value: 4 });
+    assert_eq!(proto::TransactionIncrementRequest::decode(snapshots[0].1.as_slice()).unwrap(), proto::TransactionIncrementRequest { amount: 3 });
+}
+
+#[tokio::test]
+async fn generated_fresh_non_factory_exclusive_transaction_replays_durably_after_verification_before_authorization_or_admission() {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+
+    fn probe() -> Arc<AuthProbe> {
+        Arc::new(AuthProbe {
+            verifier_calls: Arc::new(AtomicUsize::new(0)),
+            authorizer_calls: Arc::new(AtomicUsize::new(0)),
+            handler_calls: Arc::new(AtomicUsize::new(0)),
+            decision: AuthorizationDecision::Allow,
+            contexts: Arc::new(std::sync::Mutex::new(Vec::new())),
+            snapshots: Arc::new(std::sync::Mutex::new(Vec::new())),
+        })
+    }
+    fn recovery(key: Uuid) -> reboot::database_proto::RecoverIdempotentMutationsResponse {
+        reboot::database_proto::RecoverIdempotentMutationsResponse {
+            idempotent_mutations: vec![reboot::database_proto::IdempotentMutation {
+                state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                state_ref: "transaction-counter".into(),
+                key: key.as_bytes().to_vec(),
+                response: proto::TransactionCounterValue { value: 99 }.encode_to_vec(),
+                request_fingerprint: Some(reboot::runtime::request_fingerprint(
+                    "tests.reboot.protoc.TransactionCounterWritesMethods.Increment",
+                    &proto::TransactionIncrementRequest { amount: 3 },
+                )),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+    fn request(token: &str, key: Uuid) -> tonic::Request<proto::TransactionIncrementRequest> {
+        let mut headers = reboot::RebootHeaders::new("transaction-counter");
+        headers.bearer_token = Some(token.into());
+        headers.idempotency_key = Some(key);
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+        *request.metadata_mut() = headers.to_metadata().unwrap();
+        request
+    }
+
+    let key = Uuid::from_u128(403);
+    let rejected_recovery = Arc::new(std::sync::Mutex::new(VecDeque::from([Ok(vec![recovery(key)])])));
+    let rejected_trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let rejected = probe();
+    let rejected_adapter = transaction_adapter_with_idempotent_recovery(
+        Arc::clone(&rejected_trace),
+        false,
+        Arc::clone(&rejected_recovery),
+    )
+    .with_authorization(AuthorizationPolicy::new(Some(rejected.clone()), Some(rejected.clone())));
+    assert_eq!(
+        TransactionCounterWritesMethods::increment(&rejected_adapter, request("reject", key))
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unauthenticated
+    );
+    assert_eq!(rejected.verifier_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(rejected.authorizer_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(rejected_recovery.lock().unwrap().len(), 1, "verification must precede recovery");
+    assert!(rejected_trace.lock().unwrap().is_empty());
+
+    let replay_recovery = Arc::new(std::sync::Mutex::new(VecDeque::from([Ok(vec![recovery(key)])])));
+    let replay_trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let replay = probe();
+    let replay_adapter = transaction_adapter_with_idempotent_recovery(
+        Arc::clone(&replay_trace),
+        false,
+        Arc::clone(&replay_recovery),
+    )
+    .with_authorization(AuthorizationPolicy::new(Some(replay.clone()), Some(replay.clone())));
+    assert_eq!(
+        TransactionCounterWritesMethods::increment(&replay_adapter, request("allow", key))
+            .await
+            .unwrap()
+            .into_inner()
+            .value,
+        99
+    );
+    assert_eq!(replay.verifier_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(replay.authorizer_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(replay.handler_calls.load(Ordering::SeqCst), 0);
+    assert!(replay_recovery.lock().unwrap().is_empty(), "matching durable replay must be consumed");
+    assert!(replay_trace.lock().unwrap().is_empty(), "replay must bypass participant admission and handler execution");
+}
+
+#[tokio::test]
 async fn generated_transaction_declared_downstream_error_commits_and_unrecoverable_shapes_abort() {
     use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
 
