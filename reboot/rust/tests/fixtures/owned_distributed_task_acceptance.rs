@@ -244,6 +244,9 @@ impl DistributedTasks {
         self.markers.path().join("reader")
     }
     fn command(&self, root: bool) -> Command {
+        self.command_with_root_tasks(root, true)
+    }
+    fn command_with_root_tasks(&self, root: bool, root_tasks: bool) -> Command {
         let mut command = Command::new(&self.binary);
         command.args([
             "--role",
@@ -273,13 +276,15 @@ impl DistributedTasks {
             if root { "root" } else { "target" },
         ]);
         if root {
-            command.args([
-                "--owned-explicit-abort",
-                "--root-reader-task",
-                self.marker().to_str().unwrap(),
-                "--server-id",
-                &self.server_id,
-            ]);
+            command.arg("--owned-explicit-abort");
+            if root_tasks {
+                command.args([
+                    "--root-reader-task",
+                    self.marker().to_str().unwrap(),
+                    "--server-id",
+                    &self.server_id,
+                ]);
+            }
         }
         command
     }

@@ -4,7 +4,9 @@ Generated adapters can opt into bounded host-owned root handler cancellation;
 see [scope, registration, safety limits and executed evidence](PARITY-MAP.md#bounded-generated-root-handler-cancellation).
 Root-local readers can be staged by
 [owned distributed roots](PARITY-MAP.md#owned-distributed-roots-with-root-local-reader-tasks);
-remote-actor scheduling and unknown-membership recovery remain unsupported.
+A [bounded remote exclusive-leaf reader extension](PARITY-MAP.md#remote-actor-unary-reader-task-checkpoint)
+now stages tasks on the remote actor. General remote task trees, unknown-membership
+enumeration and pre-Prepare coordinator-crash recovery remain unsupported.
 
 For the narrower explicit-error cleanup contract, see the canonical
 [pre-handoff failure checkpoint](PARITY-MAP.md#explicit-pre-handoff-transaction-tree-failure-checkpoint).
@@ -12,7 +14,20 @@ For the narrower explicit-error cleanup contract, see the canonical
 ## Reader-only one-shot task checkpoint
 
 Partial vertical: generated immediate or absolute-UTC-scheduled unary reader tasks without declared errors,
-for the same local actor, scheduled only by fresh exclusive non-factory roots.
+for the same actor, scheduled by fresh exclusive non-factory roots or a guard-owned
+non-idempotent direct-root remote exclusive leaf. The latter requires the generated
+adapter's `with_live_participant_owner(...)` and the same owner's
+`live_participant_recovery_registration()` on `ApplicationHost`, in addition to
+the matching singleton task owner/recovery registration. Builder attachment is
+not active ownership. Shared/factory/idempotent/deeper/descendant shapes and
+shared-registry scheduling remain rejected. Inbound success stages effects only:
+no predecision dispatch hint is emitted; canonical host scans admit/reload the
+durable task after participant terminal ACK. Independent C++ sidecar acceptance
+exercises target-local Commit/Wait, prepared restart/redelivery, no completed
+replay, precise ownership/scope rejection and Drop-before-terminal cancellation.
+Lost coordinator-driven terminal ACK retains ownership and is detected when live
+Watch rechecks its exact participant under the mutex; this is not universal
+immediate detection for an already-pending Watch RPC, nor actor-wire fencing.
 The host owns one dispatcher per normalized Database endpoint/type/reference;
 startup and live canonical recovery scans validate the whole bounded pending set
 before dispatch. Delivery is serialized, notifications are coalesced hints, and

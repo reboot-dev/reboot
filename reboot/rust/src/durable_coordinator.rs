@@ -858,6 +858,19 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 b"real CoordinatorPrepare ACK with complete membership",
             )
             .unwrap();
+            struct HandoffDrop(std::path::PathBuf);
+            impl Drop for HandoffDrop {
+                fn drop(&mut self) {
+                    std::fs::write(
+                        self.0.with_extension("future-dropped"),
+                        b"actual post-CoordinatorPrepare future dropped",
+                    )
+                    .unwrap();
+                }
+            }
+            let _drop = HandoffDrop(std::path::PathBuf::from(
+                std::env::var_os("REBOOT_TEST_ROOT_PREPARE_PARK").unwrap(),
+            ));
             std::future::pending::<()>().await;
         }
         if self

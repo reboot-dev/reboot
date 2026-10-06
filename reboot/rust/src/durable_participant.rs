@@ -125,6 +125,16 @@ impl ParticipantSidecar for TonicParticipantSidecar {
         request: database::TransactionParticipantCommitRequest,
     ) -> SidecarFuture<'_, database::TransactionParticipantCommitResponse> {
         Box::pin(async move {
+            #[cfg(feature = "test-support")]
+            if let Some(marker) = std::env::var_os("REBOOT_TEST_LOST_PARTICIPANT_COMMIT_ACK") {
+                use std::io::Write;
+                let mut log = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(std::path::PathBuf::from(marker).with_extension("attempts"))
+                    .unwrap();
+                writeln!(log, "actual Commit attempt").unwrap();
+            }
             let response = self
                 .client
                 .lock()
@@ -148,6 +158,16 @@ impl ParticipantSidecar for TonicParticipantSidecar {
                     .map_err(|_| {
                         Status::internal("competing public request did not reach actor admission")
                     })?;
+                }
+                if let Some(release) = std::env::var_os("REBOOT_TEST_REMOTE_COMMIT_ACK_RELEASE") {
+                    let release = std::path::PathBuf::from(release);
+                    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                        while !release.exists() {
+                            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                        }
+                    })
+                    .await
+                    .map_err(|_| Status::internal("remote Commit ACK hold not released"))?;
                 }
                 return Err(Status::unavailable("injected lost participant Commit ACK"));
             }
@@ -658,6 +678,19 @@ impl<C: ParticipantSidecar> LiveExecution<C> {
             current.execution_active = false;
             participant.changed.notify_waiters();
         }
+        #[cfg(feature = "test-support")]
+        if let Some(path) = std::env::var_os("REBOOT_TEST_LIVE_WATCH_BEFORE_LOOKUP") {
+            let path = std::path::PathBuf::from(path);
+            std::fs::write(&path, b"live execution ended; Watch lookup parked")
+                .map_err(|error| Status::internal(error.to_string()))?;
+            tokio::time::timeout(std::time::Duration::from_secs(15), async {
+                while !path.with_extension("release").exists() {
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .map_err(|_| Status::deadline_exceeded("Watch lookup park not released"))?;
+        }
         let mut backoff = std::time::Duration::from_millis(10);
         loop {
             let notified = participant.changed.notified();
@@ -665,10 +698,29 @@ impl<C: ParticipantSidecar> LiveExecution<C> {
             notified.as_mut().enable();
             {
                 let pending = participant.pending.lock().await;
-                if !pending.as_ref().is_some_and(|current| {
+                let Some(current) = pending.as_ref().filter(|current| {
                     current.root_id == self.root && current.local_owner == Some(self.owner)
-                }) {
+                }) else {
                     return Ok(());
+                };
+                // A coordinator control RPC can win terminal delivery before
+                // self-Watch. Once its ACK is uncertain, routing/Watch failures
+                // must not hide the retained actor-only terminal attempt. The
+                // pending mutex excludes an in-progress terminal RPC here.
+                if current.terminal_attempted {
+                    #[cfg(feature = "test-support")]
+                    if let Some(path) =
+                        std::env::var_os("REBOOT_TEST_LIVE_WATCH_TERMINAL_UNCERTAINTY")
+                    {
+                        std::fs::write(
+                            path,
+                            b"live owner observed retained terminal attempt; no retry",
+                        )
+                        .map_err(|error| Status::internal(error.to_string()))?;
+                    }
+                    return Err(Status::unavailable(
+                        "terminal ACK uncertain; ownership retained, no retry",
+                    ));
                 }
             }
             let response = tokio::select! {
@@ -1423,6 +1475,14 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             return self.terminal(root_id, false).await;
         }
 
+        #[cfg(feature = "test-support")]
+        if let Some(path) = std::env::var_os("REBOOT_TEST_TARGET_WATCH_TERMINALIZED") {
+            std::fs::write(
+                std::path::PathBuf::from(path).with_extension("watch-ready"),
+                b"durable prepared ownership restored; Watch obligation active",
+            )
+            .map_err(|error| Status::internal(error.to_string()))?;
+        }
         loop {
             match watch
                 .watch(database::WatchRequest {
@@ -1564,6 +1624,22 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                     .exists(),
                 "actual handler must finish/drop before terminal RPC"
             );
+        }
+        #[cfg(feature = "test-support")]
+        if current.no_terminal_retry {
+            for name in [
+                "REBOOT_TEST_TASK_ADMISSION_CANCEL",
+                "REBOOT_TEST_TASK_STAGING_CANCEL",
+                "REBOOT_TEST_LIVE_INBOUND_RESPONSE",
+            ] {
+                if let Some(path) = std::env::var_os(name) {
+                    let path = std::path::PathBuf::from(path);
+                    assert!(
+                        path.with_extension("future-dropped").exists(),
+                        "actual remote {name} future must drop BEFORE terminal sidecar RPC"
+                    );
+                }
+            }
         }
         current.terminal_attempted = current.no_terminal_retry;
         let force_abort = commit && !current.prepared;
@@ -1828,7 +1904,7 @@ mod tests {
             .start_local(start(id), ParticipantStartMode::Exclusive)
             .await
             .unwrap();
-        let _execution = local
+        let execution = local
             .reserve_live_execution(&execution_context(id))
             .await
             .unwrap();
@@ -1860,6 +1936,19 @@ mod tests {
             .await
             .is_err()
         );
+        let watch = Arc::new(MockWatch::default());
+        let error = execution.watch(watch.clone()).await.unwrap_err();
+        assert_eq!(error.code(), tonic::Code::Unavailable);
+        assert_eq!(
+            error.message(),
+            "terminal ACK uncertain; ownership retained, no retry"
+        );
+        assert!(watch.requests.lock().unwrap().is_empty());
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Load(_), Call::Abort(_)]
+        ));
+        assert!(participant.pending.lock().await.is_some());
     }
     #[tokio::test]
     async fn stale_live_terminal_does_not_wait_on_same_uuid_active_replacement() {

@@ -334,6 +334,20 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
     pub fn cancellation_owned(&self) -> bool {
         self.reservation.is_some()
     }
+    /// Task eligibility comes from the exact admitted live execution and its
+    /// reserved Watch obligation, never from a builder or caller-supplied flag.
+    /// Descendant attempts doom the context and cannot regain this authority.
+    #[doc(hidden)]
+    pub fn live_leaf_tasks_owned(&self) -> Result<bool, Status> {
+        let Some((reservation, _execution)) = &self.inbound else {
+            return Ok(false);
+        };
+        reservation.validate_active()?;
+        if let Some(error) = self.context.doomed_status() {
+            return Err(error);
+        }
+        Ok(true)
+    }
     /// Successful completion must also prove quiescence and known membership.
     /// The caller immediately performs synchronous durable handoff afterwards.
     pub(crate) fn seal_for_handoff(

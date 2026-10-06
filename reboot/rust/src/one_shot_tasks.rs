@@ -214,6 +214,10 @@ impl OneShotTasks {
     /// Called only after acknowledged root completion released participant
     /// ownership. Failure to queue never manufactures a durable completion.
     pub fn dispatch_committed(&self, _tasks: Vec<db::Task>) {
+        #[cfg(feature = "test-support")]
+        if let Some(path) = std::env::var_os("REBOOT_TEST_TASK_DISPATCH_HINT") {
+            std::fs::write(path, b"actual generated dispatch notification").unwrap();
+        }
         if self.inner.active.load(std::sync::atomic::Ordering::Acquire) {
             let _ = self.inner.sender.try_send(());
         }

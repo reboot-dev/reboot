@@ -1,5 +1,75 @@
 # Python → Rust SDK parity map
 
+## Remote actor unary-reader task checkpoint
+
+**Partial, bounded executable vertical.** Generated exclusive
+non-factory/non-idempotent direct-root inbound leaves now require actual
+`RootHandlerGuard::live_leaf_tasks_owned()` authority: reserved active Watch
+ownership plus the exact admitted execution token. A builder/empty membership
+is not authority. Existing root-local restrictions remain separate. Task owner
+attachment must match actor and Database identity; active singleton validation
+checks own actor/type, descriptor reader method, payload, duplicate/persisted IDs
+and pending-plus-staged capacity under the participant exclusive actor lease.
+Shared registry scheduling, ownerless inbound, factory/shared/idempotent and
+descendant shapes remain outside this vertical.
+
+Python sources: `aio/state_managers.py:6261–6276,6408–6480,6535–6593` and
+`aio/internals/tasks_dispatcher.py:93–128,410–451`. Rust coupling:
+`src/explicit_abort.rs`, `src/codegen.rs::emit_transaction_flow`, existing
+participant Prepare/terminal/Watch ownership and `src/one_shot_tasks.rs`.
+Inbound RPC success emits **no dispatch notification** and owns no root handoff;
+it only stages effects. The target's host-supervised 100ms canonical rescan,
+actor admission and canonical record reload own delivery after Commit ACK.
+No new C++ RPC, dispatcher or caller-controlled eligibility flag was introduced.
+
+Actual new two-independent-C++-sidecar process acceptance is in
+`tests/fixtures/remote_leaf_{task,failure,scope,uncertainty}_acceptance.rs`:
+- Target mutation plus immediate/delayed typed canonical Wait; no root task.
+- Staged successful trailers and durable prepared target task are separately
+  parked with no reader/no premature inbound hint; immutable Commit precedes
+  target-first canonical recovery, actual blocked reader interruption, Pending
+  redelivery, durable Completed equality and append-only no-replay counts.
+- Malformed/unsupported/foreign actor/type/duplicate/persisted identity,
+  oversized batch, inactive/missing task owner, shared registry and 1024+1
+  overflow reject precisely, with both actors' live exclusive Apply readmission.
+  Missing/inactive/full live-Watch owners reject independently of task ownership;
+  FULL is filled by a real generated auxiliary inbound sharing that owner.
+  A caught generated descendant call remains monotonically doomed. Configured
+  task-producing shared/factory/idempotent/deeper inbound shapes reject before
+  handler effects: fail-closed scope, not unsupported-tree cleanup/recovery.
+  Full preserved Completed and all 1024 seeded Pending records compare after
+  rejection and RocksDB restart; overflow seeds are intentionally future-due.
+- Actual caught lost staged trailers and real handler/validation/staging/
+  pre-trailer deadlines converge through immutable root Abort and target
+  selfWatch. The remote terminal producer asserts actual future Drop BEFORE its
+  sidecar terminal RPC. This is distinct from root DecisionPut ordering.
+- Real CoordinatorPrepare ACK then deadline preserves membership/fails host
+  without competing Abort; canonical restart aborts the unprepared set. Lost
+  real remote Commit ACK retains the lease, blocks an actual exclusive writer,
+  issues one terminal attempt, fails target host, then completes through restart.
+
+Original blanket gate, premature inbound notification, canonical rescan and
+missing selfWatch RED tests are separately exercised. The lost-ACK regression
+additionally parks live Watch after execution quiescence, lets coordinator-driven
+Commit lose its ACK, observes root failure, then resumes Watch. The retained
+terminal-attempt latch must fail the target host without another terminal RPC;
+removing that check fails the independent target-exit assertion before any
+branch-specific marker check. This is not universal immediate uncertainty
+detection: an already-pending Watch rechecks after a response/retry, with the
+existing 300-second owner deadline as fallback. The two-participant recovery
+fixture now proves prepared Watch activation before starting root recovery,
+rather than confusing a listener/planner connection with restored ownership.
+See `/tmp/remote-leaf-reader-tasks-checkpoint.md` for exact final verification
+inventory, including strict checks and independent source review. Final restored
+revision passed formatting, locked strict all-features/all-target Clippy, locked
+all-features/all-target tests (247 library units and 26 generated downstream
+tests), all **62 ignored generated C++ process tests**, and all **8 ignored
+Native2pc transport tests**. Native2pc remains separate evidence, not Python legacy
+transaction parity. Logs: `/tmp/remote-leaf-delivery-{fmt,clippy,alltargets,cxx,native}.log`.
+Fixed actor ownership
+only; no pre-Prepare coordinator-crash guarantee, general descendant recovery,
+migration/fencing, task errors/workflows/auth, or exactly-once handler effects.
+
 ## Live registered-root abandonment and exclusive inbound leaf Watch
 
 **Partial, fixed-owner live vertical, not coordinator-crash or general tree recovery.**
@@ -33,9 +103,10 @@ non-factory exclusive **direct-root inbound leaf** is supported. Generated suppl
 contexts reject outbound calls before resolver/network, public outbound-request
 helpers, manual enlistment, deeper nesting and unsupported scopes before effects.
 This is a cooperative generated-handler contract, not security against trusted
-handlers reconstructing headers or issuing arbitrary raw Tonic RPCs. Inbound task
-staging remains rejected; delivered root-local tasks with confirmed remote members
-are unchanged. No subtree/remote scheduling gate is lifted.
+handlers reconstructing headers or issuing arbitrary raw Tonic RPCs. Delivered
+root-local tasks with confirmed remote members are unchanged. The bounded inbound
+reader task checkpoint above changes only guard-owned singleton leaves; general
+subtree scheduling remains rejected.
 
 The exact local incarnation owns an execution barrier spanning handler/staging.
 Every direct Prepare/terminal control respects quiescence; staging after Prepare
@@ -73,7 +144,7 @@ quiescence controls are recorded separately from restored-source verification in
 `/tmp/live-root-abandonment-*.log`. This acceptance does not claim broad subtree
 retry or durable registration before Prepare.
 
-Final restored-source verification for this candidate: locked all-features
+Prior delivered live-abandonment slice verification: locked all-features
 strict Clippy/all-targets, 247 library unit tests, 26 generated downstream tests,
 all 57 ignored generated C++ Database/RocksDB process tests, and all 8 ignored
 Native2pc transport sidecar tests passed. Native2pc remains a separate protocol,
@@ -91,8 +162,9 @@ The distributed gate requires `RootHandlerGuard::cancellation_owned()`: an actua
 pre-handler reserved permit from an active host registration, not merely an
 attached builder. Keep the generated adapter's singleton reader-task owner and
 register both its task recovery and `explicit_abort_recovery_registration()` with
-`ApplicationHost`. Inbound/remote task staging, foreign actor identities,
-shared-registry scheduling, factory/shared/idempotent distributed roots and
+`ApplicationHost`. Remote staging is covered only by the separate bounded
+live-leaf checkpoint above. Foreign actor identities, shared-registry scheduling,
+factory/shared/idempotent distributed roots and
 ownerless distributed scheduling remain rejected. The fresh-shared response-only
 handler cannot return tasks.
 
@@ -140,7 +212,7 @@ independent C++ Database/RocksDB sidecars**, and actual generated reader binding
   two-successful-batch concurrency proof. Existing singleton 1023+1/1024+1
   real-sidecar vectors remain applicable.
 
-Final restored-source verification: locked all-features/all-targets, formatting
+Prior delivered root-local distributed slice verification: locked all-features/all-targets, formatting
 and strict Clippy pass; **53 generated ignored CXX tests** (48 baseline plus five
 coupled tests) and **8 separate Native2pc ignored CXX tests** pass. Restoring only
 the old blanket returned-membership gate makes the new Commit test fail with
@@ -149,7 +221,7 @@ all broad execution. Logs: `/tmp/owned-distributed-tasks-{fmt,clippy,all-targets
 Native2pc remains a separate protocol, not Python legacy parity.
 
 This requires fixed actor ownership and one process dispatcher. It provides no
-migration/overlapping-owner fencing, remote-actor scheduling, general tree retry,
+migration/overlapping-owner fencing, general remote-actor scheduling/tree retry,
 unknown-membership enumeration, task auth/errors/workflows, or exactly-once reader
 side effects. Host supervision and canonical recovery must not be replaced by
 speculative local release or blind actor-only terminal retries.
@@ -268,7 +340,8 @@ Successful calls mark the scope complete only after decoding/enlisting trailers.
 This does not discover lost participants or make every empty-membership error path safe.
 Cancellation during the handler, preseal pending-mutex await, and before queue
 acceptance remains outside this guarantee. Crash-durable membership, automatic
-cleanup retry, remote scheduling and general root lifetime ownership remain missing.
+cleanup retry and general tree scheduling remain outside that seam; bounded live-root
+ownership and remote-leaf reader scheduling are covered separately above.
 
 Acceptance: a real generated Tonic deadline drops the server response observer
 while a host-owned worker is parked after real C++ Database DecisionPut ACK;
@@ -283,7 +356,8 @@ Bounded prerequisite for distributed tasks: generated fresh, non-idempotent,
 exclusive, non-factory roots now clean up confirmed returned participants on
 explicit handler, task-admission or staging rejection. Ownerless scheduling with returned participants remains rejected. The
 [owned root-local reader extension](PARITY-MAP.md#owned-distributed-roots-with-root-local-reader-tasks)
-does not enable remote-actor tasks.
+does not itself enable remote-actor tasks; the separate
+[guard-owned live-leaf extension](#remote-actor-unary-reader-task-checkpoint) does.
 
 The capability validates fresh-root provenance, admitted scope, exact local
 incarnation and actor/coordinator identity, and matching normalized Database
@@ -305,7 +379,7 @@ unchanged actor/task state, exclusive remote re-admission without peer restart,
 no preparing records, and immutable Abort surviving RocksDB restart.
 
 **Still blocked:** ownerless/general cancellation before cleanup, enumeration of unknown/lost successful trailers,
-inbound task ownership, automatic fanout retry and restart convergence of the
+general inbound task-tree ownership, automatic fanout retry and restart convergence of the
 in-memory enlistment worklist. Interrupted cleanup parks uncertain ownership;
 retention is not durable membership or automatic recovery. Manual late enlistment
 is retained and dooms the context, not silently discarded as acknowledged work.
@@ -313,7 +387,8 @@ is retained and dooms the context, not silently discarded as acknowledged work.
 ## Reader-only one-shot task checkpoint
 
 Partial vertical: generated immediate or absolute-UTC-scheduled unary reader tasks without declared errors,
-for the same local actor, scheduled only by fresh exclusive non-factory roots.
+for the same actor, scheduled by fresh exclusive non-factory roots or the separately
+[guard-owned direct-root remote exclusive leaf](#remote-actor-unary-reader-task-checkpoint).
 The host owns one dispatcher per normalized Database endpoint/type/reference;
 startup and live canonical recovery scans validate the whole bounded pending set
 before dispatch. Delivery is serialized, notifications are coalesced hints, and
@@ -605,9 +680,9 @@ real-sidecar evidence is recorded in the individual capability rows.
 |---|---|---|---|
 | Unary actor admission, read/write, constructors | `aio/state_managers.py:3409-3988,4326-4741,4618-4741` | **Partial.** `DatabaseActorStore`: `src/runtime.rs:1337-1964`. | Durable load/read/write and `RequireExisting`/constructor replay are tested. Missing generic StateManager, authorization callback, broad effects execution, and generated declaration coverage. |
 | Per-actor locking and nested ownership | `aio/state_managers.py:709-947,1711-2237,2873-2913,5454-5520` | **Partial.** local `ActorGate`: `src/runtime.rs:845-1080`; one pending local participant: `src/durable_participant.rs:416-651`. | FIFO exclusive queue, no reader barge, cancellation, and atomic upgrade are tested. Missing transaction-tree ownership, relinquish RPC, snapshots/rollback, sibling deadlock handling, and exclusive→shared downgrade. |
-| Legacy participant prepare/terminal | `aio/state_managers.py:6139-6719` | **Partial.** `src/durable_participant.rs:654-911,998-1046`. | One actor, durable prepare, read-only release, definitive abort and acknowledged terminal paths are covered. Missing task validation/dispatch, streaming effects, and concurrent participant trees. |
+| Legacy participant prepare/terminal | `aio/state_managers.py:6139-6719` | **Partial.** `src/durable_participant.rs:654-911,998-1046`. | One actor, durable prepare, read-only release, definitive abort and acknowledged terminal paths are covered. Task validation/dispatch is coupled for the bounded root and live-leaf reader paths above; streaming effects and general concurrent participant trees remain missing. |
 | Legacy root coordinator and enlistment | `aio/state_managers.py:5011-5980,7066-7183` | **Partial.** `src/durable_coordinator.rs:456-595,799-943`; trailers `src/successful_trailers.rs`. **Prepare fan-out slice (2026-10-05):** Python `_transaction_coordinator_complete` persists the coordinator record while initiating participant Prepare work, and `_transaction_coordinator_prepare` treats only an explicit `abort` response as definitive (`aio/state_managers.py:5535-5649,5665-5820`). Rust now seals the complete participant record in the Database sidecar before concurrently resolving/Preparing every participant, both on initial completion and re-prepare recovery (`src/durable_coordinator.rs:537-672,782-826`). It waits for all started Prepare work; any transport/task failure remains ambiguous and returns with the sealed record untouched—never converted to Abort—while an all-settled explicit abort response drives the established durable abort/terminal/cleanup path. | The barrier-backed unit test proves two Prepare calls enter the fan-out concurrently only after `DbPrepare` (`src/durable_coordinator.rs:1491-1523`); existing process-local fixtures cover ordering and definitive abort. **Real sidecar recovery acceptance (2026-10-06):** `generated_legacy_root_recovers_two_remote_participants_through_live_placement_planner` starts a generated root plus two separately persisted remote actors against three C++ Database/RocksDB sidecars, drives all outbound/control/Watch routes from canonical live `PlacementPlanner.ListenForPlan` streams, kills every host after the durable root decision, restarts every sidecar, starts both recovered participants before the root, and proves each Watch terminalizes once and all three durable states commit. Broader transaction trees, tasks/effects, fencing, and Python's remaining generated-root semantics are still outside this bounded proof. |
-| Coordinator Watch and recovery | `aio/state_managers.py:5982-6127,6823-7183` | **Partial.** `src/legacy_coordinator.rs:20-152`; participant recovery `src/durable_participant.rs:711-855`. | Durable decision lookup and authoritative Watch membership checks are tested. Application lifecycle must create hosts at exact identities and invoke recovery; restart timestamp/task recovery behavior is absent. |
+| Coordinator Watch and recovery | `aio/state_managers.py:5982-6127,6823-7183` | **Partial.** `src/legacy_coordinator.rs:20-152`; participant recovery `src/durable_participant.rs:711-855`. | Durable decision lookup and authoritative Watch membership checks are tested. Application lifecycle must create hosts at exact identities and invoke recovery; the bounded unary-reader task restart proof is above; general transaction-tree and workflow recovery remain absent. |
 | Fresh local shared → exclusive promotion | Python effects classification: `aio/state_managers.py:163-211` plus actor-lock semantics | **Partial, bounded fresh-root vertical (2026-10-05).** `StartedLocalTransaction::into_shared_local_promotion` consumes the exact staged local actor/proof into non-cloneable direct-local authority; `complete_shared_local_promotion` now performs DB prepare → direct local prepare → DB prepared → decision → direct terminal → cleanup without `ParticipantResolver`, while transport ambiguity remains recoverable (`src/durable_participant.rs:333-423`; `src/durable_coordinator.rs:522-592`). The generator uses that path only for a fresh, non-factory shared root on one existing local actor: generated `SharedLocalTransactionContext` exposes no transaction metadata, routing, enlistment, tasks, idempotency, or returned participants; inbound shared execution retains the established `TransactionContext`/read-only path (`src/runtime.rs:71-91`; `src/codegen.rs:1451-1487,1605-1614`). | Unit acceptance proves held-participant direct ordering, resolver non-use, reject-before-I/O, and post-prepare ambiguity preservation. Generated Tonic/downstream acceptance proves unchanged state takes the read-only coordinator path, changed state takes exactly one direct-local promotion, and handler failure releases the undurable lease (`src/durable_coordinator.rs`; `tests/protoc_plugin_counter.rs`). **Real-sidecar recovery (2026-10-05):** `generated_fresh_shared_local_promotion_recovers_after_durable_decision` starts the current generated fixture against C++ Database/RocksDB, changes `5 → 12` through the fresh shared handler, kills the host after the durable coordinator decision, restarts Database, starts recovery, and boundedly observes the committed durable state (`tests/generated_cxx_database_process.rs`). It intentionally excludes factory, inbound, remote/returned-participant, nested/multi-ID, placement, effects/tasks/idempotency and all broader distributed semantics. See [`PARITY.md`](PARITY.md). |
 | Exclusive → shared downgrade | Python lock behavior: `aio/state_managers.py:1711-2237,1936-1961` | **Implemented, process-local.** `ActorGate` uses one ordered reader/writer waiter queue and `ExclusiveActorLease::downgrade(self) -> SharedActorLease`: `src/runtime.rs:854-1160`. | Unit tests prove pre-writer readers are admitted after downgrade, post-writer readers cannot barge, grant-ready reader and queued-writer cancellation are removed safely, and upgrades reject queued work rather than bypassing or deadlocking their snapshot. It remains a process-local gate—not distributed ownership or a durable transaction promotion path. See [`PARITY.md`](PARITY.md). |
 
@@ -615,7 +690,7 @@ real-sidecar evidence is recorded in the individual capability rows.
 
 | Capability | Python reference | Rust status and reference | Evidence / remaining work |
 |---|---|---|---|
-| Tasks, task workflows, responses, dispatch and recovery | `aio/state_managers.py:4743-5009,5431-5438,6408-6416,6586-6593,6848-6867`; generated ownership `templates/reboot.py.j2:420-467,858-1028,2350-2475` | **Partial: bounded generated reader-only one-shot vertical.** `src/codegen.rs` supplies typed immediate/absolute-UTC same-actor unary reader scheduling without declared errors; `src/one_shot_tasks.rs` supplies host-owned serial recovery/dispatch and actor-locked CompleteTask. Fresh exclusive non-factory roots retain consuming local cancellation ownership until coordinator handoff, then a non-cloneable uncertainty guard fails the supervised host on errors/drop without releasing or aborting uncertain participants. | Real C++ Database/RocksDB tests exercise denial, commit/pending, restart/redelivery, terminal response, no redispatch and lost-notification discovery; `generated_task_cancellation_and_lost_commit_ack_fail_host_then_restart_completes` exercises pre-durable handler cancellation followed by new-root admission, genuine durable Commit ACK loss, supervised host failure and task completion after restart with legacy coordinator recovery registered. Real Tonic deadlines additionally exercise cancellation during generated task admission and after durable participant Commit; unchanged pre-durable sidecar records and post-durable supervised restart completion are asserted. Failed readiness revokes already-admitted unary work; the competing-request real-C++ regression proves bounded host termination and restart without cancelling the client. Recovery capacity at 1024/1025 is exercised against real RocksDB with whole-batch rejection and unchanged records across restart. Real live admission additionally exercises 1023+1 commit and 1024+1 rejection, same-host admission release, absent rejected task, and unchanged pending records across restart. Canonical public Tasks.Wait and generated typed wait helpers now exercise routed-header agreement, deadlines that preserve pending records, typed completion/retrieval, and fail-closed response decoding against real C++ Database. Earlier durable RPC cancellation windows need dedicated coverage. Writer tasks, workflows, distributed fencing, task auth and task cancellation APIs remain missing; no exactly-once handler-effects claim. |
+| Tasks, task workflows, responses, dispatch and recovery | `aio/state_managers.py:4743-5009,5431-5438,6408-6416,6586-6593,6848-6867`; generated ownership `templates/reboot.py.j2:420-467,858-1028,2350-2475` | **Partial: bounded generated reader-only one-shot vertical.** `src/codegen.rs` supplies typed immediate/absolute-UTC same-actor unary reader scheduling without declared errors; `src/one_shot_tasks.rs` supplies host-owned serial recovery/dispatch and actor-locked CompleteTask. Fresh exclusive non-factory roots retain consuming local cancellation ownership until coordinator handoff, then a non-cloneable uncertainty guard fails the supervised host on errors/drop without releasing or aborting uncertain participants. | Real C++ Database/RocksDB tests exercise denial, commit/pending, restart/redelivery, terminal response, no redispatch and lost-notification discovery; `generated_task_cancellation_and_lost_commit_ack_fail_host_then_restart_completes` exercises pre-durable handler cancellation followed by new-root admission, genuine durable Commit ACK loss, supervised host failure and task completion after restart with legacy coordinator recovery registered. Real Tonic deadlines additionally exercise cancellation during generated task admission and after durable participant Commit; unchanged pre-durable sidecar records and post-durable supervised restart completion are asserted. Failed readiness revokes already-admitted unary work; the competing-request real-C++ regression proves bounded host termination and restart without cancelling the client. Recovery capacity at 1024/1025 is exercised against real RocksDB with whole-batch rejection and unchanged records across restart. Real live admission additionally exercises 1023+1 commit and 1024+1 rejection, same-host admission release, absent rejected task, and unchanged pending records across restart. Canonical public Tasks.Wait and generated typed wait helpers now exercise routed-header agreement, deadlines that preserve pending records, typed completion/retrieval, and fail-closed response decoding against real C++ Database. The separate bounded direct-root remote exclusive-leaf acceptance also proves target-owned reader staging, no inbound predecision hints, canonical delivery after terminal ACK, prepared restart/redelivery, precise rejection, live exclusive readmission, retained lost-ACK supervision and no completed-task replay against independent sidecars. Earlier durable RPC cancellation windows need dedicated coverage. Writer tasks, workflows, distributed fencing, task auth and task cancellation APIs remain missing; no exactly-once handler-effects claim. |
 | Colocated collections / SortedMap range | `aio/state_managers.py:3739-3816,6721-6820`; `std/collections/v1/sorted_map.py` | **Missing.** Only FakeDatabase test stubs exist. | Requires collection effect model, sidecar range bindings, transaction visibility, and generated collection API. |
 | Streaming and reactive readers | `aio/state_managers.py:4350-4613,6554-6699` | **Missing.** Runtime reader is unary; successful trailers are transport plumbing, not state subscriptions. | Requires lifecycle/backpressure/reconnect/visibility contract and subscription runtime before any generated API. |
 

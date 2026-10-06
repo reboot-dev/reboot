@@ -421,6 +421,12 @@ struct LiveHostOptions<'a> {
     watch_coordinator_state_ref: Option<&'a str>,
 }
 
+fn live_host_log(port: u16) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "reboot-live-host-{}-{port}.stderr",
+        std::process::id()
+    ))
+}
 fn spawn_live_host(options: LiveHostOptions<'_>) -> Child {
     let mut command = Command::new(options.binary);
     command
@@ -437,7 +443,7 @@ fn spawn_live_host(options: LiveHostOptions<'_>) -> Child {
             options.root_id,
         ])
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
+        .stderr(std::fs::File::create(live_host_log(options.port)).unwrap());
     if options.recover {
         command.arg("--recover");
     }
@@ -2686,6 +2692,25 @@ fn generated_legacy_root_recovers_two_remote_participants_through_live_placement
     });
     wait(target_a_port);
     wait(target_b_port);
+    // A listening socket/accepted plan is NOT restored participant ownership.
+    // Ensure both prepared Watch obligations exist before root recovery can
+    // terminalize/remove their durable worklist via ordinary control delivery.
+    for (marker, child, port) in [
+        (&target_a_terminalized, &mut target_a, target_a_port),
+        (&target_b_terminalized, &mut target_b, target_b_port),
+    ] {
+        let ready = marker.with_extension("watch-ready");
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !ready.exists() {
+            let status = child.try_wait().unwrap();
+            assert!(
+                status.is_none() && std::time::Instant::now() < deadline,
+                "prepared Watch obligation missing: {ready:?}; child={status:?}; stderr={}",
+                std::fs::read_to_string(live_host_log(port)).unwrap()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
     root = spawn_live_host(LiveHostOptions {
         binary: &binary,
         role: "multi-root",
@@ -2712,7 +2737,17 @@ fn generated_legacy_root_recovers_two_remote_participants_through_live_placement
         }
         std::thread::sleep(Duration::from_millis(25));
     }
-    for marker in [&target_a_terminalized, &target_b_terminalized] {
+    for (marker, child, port) in [
+        (&target_a_terminalized, &mut target_a, target_a_port),
+        (&target_b_terminalized, &mut target_b, target_b_port),
+    ] {
+        assert!(
+            marker.exists(),
+            "Watch terminal acknowledgement missing: {marker:?}; child={:?}; target stderr={}; root stderr={}",
+            child.try_wait().unwrap(),
+            std::fs::read_to_string(live_host_log(port)).unwrap(),
+            std::fs::read_to_string(live_host_log(recovered_root_port)).unwrap()
+        );
         assert_eq!(
             std::fs::read(marker).unwrap(),
             b"watch-terminalized\n",

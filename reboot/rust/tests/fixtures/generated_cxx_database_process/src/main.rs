@@ -163,7 +163,21 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 }
             }
         }
-        if let Self::Tasks { state_ref, vector, .. } = self {
+        if matches!(self, Self::Root(_)) && let Some(path) = std::env::var_os("REBOOT_TEST_ROOT_AFTER_REMOTE") {
+            let path = std::path::PathBuf::from(path);
+            std::fs::write(&path, b"actual remote successful trailers received; no Prepare").unwrap();
+            while !path.with_extension("release").exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        }
+        if let Self::Tasks { state_ref, vector, marker, .. } = self {
+            if vector == "descendant" {
+                let (placement, _) = crate::placement();
+                let client = generated::TransactionCounterWritesMethodsClient::new(LegacyApplicationResolver::new(LegacyApplicationId::new("generated-cxx-database-process").unwrap(), placement));
+                let error = client.increment(context, &generated::TransactionCounterWritesMethodsTarget::new("root"), request.clone()).await.unwrap_err();
+                assert!(matches!(error, generated::TransactionCounterWritesMethodsIncrementError::Grpc(ref error) if error.code() == tonic::Code::FailedPrecondition && error.message() == "live inbound leaf cannot call descendants"));
+                std::fs::write(format!("{marker}.descendant-caught"), "actual generated descendant rejected and caught before resolver").unwrap();
+            }
             let mut execution = TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
             let mut task = generated::TransactionCounterWritesMethodsTasks::query(state_ref, &proto::TransactionIncrementRequest { amount: 9000 });
             if let Some(seconds) = vector.strip_prefix("delayed:") {
@@ -177,6 +191,7 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 "writer" => task.method = "Apply".into(),
                 "malformed" => task.request = vec![0xff],
                 "identity" => task.task_id.as_mut().unwrap().state_ref = "other".into(),
+                "foreign-type" => task.task_id.as_mut().unwrap().state_type = "other.Actor".into(),
                 "uuid" => task.task_id.as_mut().unwrap().task_uuid = vec![1],
                 "uuid-version" => task.task_id.as_mut().unwrap().task_uuid[6] = 0x70,
                 "uuid-variant" => task.task_id.as_mut().unwrap().task_uuid[8] = 0,
@@ -194,12 +209,16 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 // exclusive admission, so the live dispatcher cannot drain the
                 // durable records before validate_staged counts them.
                 let count = if vector == "saturation" { 1024 } else { 1023 };
-                let pending = (0..count)
+                let pending: Vec<_> = (0..count)
                     .map(|_| {
-                        generated::TransactionCounterWritesMethodsTasks::query(
+                        let mut task = generated::TransactionCounterWritesMethodsTasks::query(
                             state_ref,
                             &proto::TransactionIncrementRequest { amount: 9000 },
-                        )
+                        );
+                        if has("--remote-reader-task") {
+                            task.timestamp = Some(prost_types::Timestamp { seconds: i64::try_from(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()).unwrap() + 3600, nanos: 0 });
+                        }
+                        task
                     })
                     .collect();
                 let mut database =
@@ -210,17 +229,27 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                     .map_err(|error| tonic::Status::unavailable(error.to_string()))?;
                 database
                     .store(reboot::database_proto::StoreRequest {
-                        task_upserts: pending,
+                        task_upserts: pending.clone(),
                         sync: true,
                         ..Default::default()
                     })
                     .await?;
                 if let Self::Tasks { marker, .. } = self {
+                    if has("--remote-reader-task") {
+                        std::fs::write(format!("{marker}.seeded-records"), reboot::database_proto::LoadResponse { actors: vec![], tasks: pending, ..Default::default() }.encode_to_vec()).unwrap();
+                    }
                     std::fs::write(format!("{marker}.staged"), Uuid::from_slice(&task.task_id.as_ref().unwrap().task_uuid).unwrap().to_string()).unwrap();
                 }
             }
             if vector == "duplicate" { execution.task_upserts.push(task.clone()); }
             if vector == "capacity" { execution.task_upserts = vec![task.clone(); 1024]; }
+            if let Self::Tasks { marker, .. } = self
+                && let Ok(id) = Uuid::from_slice(&task.task_id.as_ref().unwrap().task_uuid)
+            {
+                // Malformed IDs remain untouched for canonical validation;
+                // an acceptance marker must not panic before the real gate.
+                std::fs::write(format!("{marker}.task-id"), id.to_string()).unwrap();
+            }
             execution.task_upserts.push(task);
             return Ok(execution);
         }
@@ -372,6 +401,13 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         }
         state.value += request.amount;
         Ok(proto::TransactionCounterValue { value: state.value })
+    }
+}
+struct FullWatchProof(tokio::sync::Mutex<Option<std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), tonic::Status>> + Send>>>>);
+#[tonic::async_trait]
+impl reboot::application_host::HostRecovery for FullWatchProof {
+    async fn start(&self, _: &mut tokio::task::JoinSet<Result<(), tonic::Status>>, _: reboot::application_host::RecoveryCancellation) -> Result<(), tonic::Status> {
+        self.0.lock().await.take().unwrap().await
     }
 }
 struct GaugeTaskHandler { marker: String }
@@ -778,7 +814,7 @@ async fn main() {
         root: root_id,
         child: Uuid::from_u128(2),
     };
-    let handler = if role == "tasks" {
+    let handler = if role == "tasks" || has("--remote-reader-task") {
         Handler::Tasks { state_ref: state_ref.clone(), marker: arg("--task-marker"), block: has("--block-task"), vector: optional_arg("--task-vector").unwrap_or_default() }
     } else if role == "root" || role == "multi-root" {
         Handler::Root(Root {
@@ -798,12 +834,12 @@ async fn main() {
     let adapter = generated::TransactionCounterWritesMethodsTransactionAdapter::new(
         store,
         participant.clone(),
-        coordinator,
+        coordinator.clone(),
         starts,
         handler,
     );
     let (adapter, tasks) =
-        if (role == "tasks" || has("--root-reader-task")) && !has("--no-task-owner") {
+        if (role == "tasks" || has("--root-reader-task") || has("--remote-reader-task")) && !has("--no-task-owner") {
             let (adapter, tasks) = adapter.with_one_shot_reader_tasks(&state_ref).unwrap();
             (adapter, Some(tasks))
         } else {
@@ -812,11 +848,12 @@ async fn main() {
     let adapter = if has("--owned-explicit-abort") {
         adapter.with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(1).unwrap())
     } else { adapter };
-    let adapter = if has("--live-watch") {
-        adapter.with_live_participant_owner(reboot::live_participant::LiveParticipantOwner::new(8,
+    let live_owner = if has("--live-watch") && !has("--no-live-owner") {
+        Some(reboot::live_participant::LiveParticipantOwner::new(if has("--full-live-owner") { 1 } else { 8 },
             reboot::durable_coordinator::ParticipantTarget { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: watch_coordinator_state_ref.clone() },
             Arc::new(LegacyApplicationCoordinatorWatchEndpoint::new(application.clone(), placement.clone(), watch_coordinator_state_ref.clone()).unwrap())).unwrap())
-    } else { adapter };
+    } else { None };
+    let adapter = if let Some(owner) = &live_owner { adapter.with_live_participant_owner(owner.clone()) } else { adapter };
     if has("--prove-cancel-before-durable") {
         use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
         let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: -9000 });
@@ -839,7 +876,26 @@ async fn main() {
         host = host.with_host_recovery(planner_recovery);
     }
     if has("--owned-explicit-abort") { host = host.with_host_recovery(adapter.explicit_abort_recovery_registration().unwrap()); }
-    if has("--live-watch") { host = host.with_host_recovery(adapter.live_participant_recovery_registration().unwrap()); }
+    if live_owner.is_some() && !has("--inactive-live-owner") { host = host.with_host_recovery(adapter.live_participant_recovery_registration().unwrap()); }
+    if has("--full-live-owner") {
+        let auxiliary = "watch-capacity";
+        let mut db = reboot::database_proto::database_client::DatabaseClient::connect(database_endpoint.clone()).await.unwrap();
+        db.store(reboot::database_proto::StoreRequest { actor_upserts: vec![reboot::database_proto::Actor { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: auxiliary.into(), state: Some(proto::TransactionCounter { value: 20 }.encode_to_vec()), ..Default::default() }], sync: true, ..Default::default() }).await.unwrap();
+        let auxiliary_participant = DurableActorParticipant::new(Arc::new(TonicParticipantSidecar::connect(&database_endpoint).await.unwrap()), "tests.reboot.protoc.TransactionCounter", auxiliary);
+        let auxiliary_adapter = generated::TransactionCounterWritesMethodsTransactionAdapter::new(DatabaseActorStore::connect(&database_endpoint).await.unwrap(), auxiliary_participant, coordinator.clone(), Starts { root: root_id, child: Uuid::from_u128(3) }, Handler::Target).with_live_participant_owner(live_owner.clone().unwrap());
+        host = host.with_host_recovery(FullWatchProof(tokio::sync::Mutex::new(Some(Box::pin(async move {
+            use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+            let mut headers = reboot::RebootHeaders::new(auxiliary);
+            headers.transaction_ids = Some(vec![root_id]);
+            headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.TransactionCounter".into());
+            headers.transaction_coordinator_state_ref = Some("root".into());
+            let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 0 });
+            *request.metadata_mut() = headers.to_metadata().unwrap();
+            auxiliary_adapter.increment(request).await?;
+            std::fs::write(format!("{}.watch-full", arg("--task-marker")), "real generated auxiliary inbound returned while owning Watch permit").unwrap();
+            Ok(())
+        })))));
+    }
     if has("--recover") {
         let watch = Arc::new(
             LegacyApplicationCoordinatorWatchEndpoint::new(

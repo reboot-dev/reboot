@@ -6,7 +6,8 @@ Bounded prerequisite for distributed tasks: generated fresh, non-idempotent,
 exclusive, non-factory roots now clean up confirmed returned participants on
 explicit handler, task-admission or staging rejection. Ownerless scheduling with returned participants remains rejected. The
 [owned root-local reader extension](PARITY-MAP.md#owned-distributed-roots-with-root-local-reader-tasks)
-does not enable remote-actor tasks.
+does not itself enable remote-actor tasks; the separate
+[guard-owned direct-root remote reader leaf](PARITY-MAP.md#remote-actor-unary-reader-task-checkpoint) does.
 
 The capability validates fresh-root provenance, admitted scope, exact local
 incarnation and actor/coordinator identity, and matching normalized Database
@@ -27,8 +28,9 @@ and `distributed_direct_handler_failure_must_release_remote_actor` require
 unchanged actor/task state, exclusive remote re-admission without peer restart,
 no preparing records, and immutable Abort surviving RocksDB restart.
 
-**Still blocked:** cancellation before cleanup, unknown/lost successful trailers,
-inbound task ownership, automatic fanout retry and restart convergence of the
+**Still blocked for this seam:** ownerless/general tree cancellation before cleanup,
+enumeration of unknown/lost successful trailers, general inbound task-tree ownership,
+automatic fanout retry and restart convergence of the
 in-memory enlistment worklist. Interrupted cleanup parks uncertain ownership;
 retention is not durable membership or automatic recovery. Manual late enlistment
 is retained and dooms the context, not silently discarded as acknowledged work.
@@ -36,7 +38,14 @@ is retained and dooms the context, not silently discarded as acknowledged work.
 ## Reader-only one-shot task checkpoint
 
 Partial vertical: generated immediate or absolute-UTC-scheduled unary reader tasks without declared errors,
-for the same local actor, scheduled only by fresh exclusive non-factory roots.
+for the same actor, scheduled by fresh exclusive non-factory roots or the separate
+[guard-owned direct-root remote exclusive leaf](PARITY-MAP.md#remote-actor-unary-reader-task-checkpoint).
+The latter requires actual active singleton task and reserved live-Watch ownership,
+not builder attachment. Shared/factory/idempotent/deeper/descendant shapes remain
+rejected. Inbound success stages effects without predecision hints; host canonical
+scans dispatch after terminal ACK. Lost ACK retains ownership without retry; live
+Watch detects the terminal-attempt latch on recheck, not necessarily immediately
+for an already-pending Watch (the existing 300-second owner deadline is fallback).
 The host owns one dispatcher per normalized Database endpoint/type/reference;
 startup and live canonical recovery scans validate the whole bounded pending set
 before dispatch. Delivery is serialized, notifications are coalesced hints, and
