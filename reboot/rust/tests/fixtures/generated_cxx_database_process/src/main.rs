@@ -195,6 +195,33 @@ struct Root {
     multi_participant: bool,
 }
 
+/// The direct external-unary acceptance intentionally does not mount legacy
+/// placement or transaction control routes. Its generated adapter persists
+/// through the real C++ Database sidecar only.
+struct ExternalConstructorHandler;
+
+#[tonic::async_trait]
+impl generated::ExternalConstructorMethodsDatabaseHandler for ExternalConstructorHandler {
+    async fn construct(
+        &self,
+        state: &mut proto::ExternalConstructorCounter,
+        request: proto::ExternalConstructorRequest,
+    ) -> Result<
+        proto::ExternalConstructorValue,
+        generated::ExternalConstructorMethodsConstructError,
+    > {
+        if request.amount < 0 {
+            return Err(
+                generated::ExternalConstructorMethodsConstructError::ExternalConstructorLimitExceeded(
+                    proto::ExternalConstructorLimitExceeded { limit: 9 },
+                ),
+            );
+        }
+        state.value += request.amount;
+        Ok(proto::ExternalConstructorValue { value: state.value })
+    }
+}
+
 /// A deliberately small, separately hosted service used only by the C++
 /// Database process test. The root still calls it through the generated
 /// transactional client; this server owns only the remote error wire shape.
@@ -377,6 +404,66 @@ async fn main() {
             .serve(listen.parse().unwrap())
             .await
             .unwrap();
+        return;
+    }
+    if role == "external-constructor" {
+        let database_endpoint = arg("--database");
+        let state_ref = optional_arg("--state-ref").unwrap_or_else(|| role.clone());
+        let store = DatabaseActorStore::connect(&database_endpoint).await.unwrap();
+        let adapter = generated::ExternalConstructorMethodsDatabaseAdapter::new(
+            store,
+            ExternalConstructorHandler,
+        );
+        let address = listen.parse().unwrap();
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(
+                    proto::external_constructor_methods_server::ExternalConstructorMethodsServer::new(
+                        adapter,
+                    ),
+                )
+                .serve(address)
+                .await
+                .unwrap();
+        });
+        if has("--invoke") {
+            let endpoint = format!("http://{listen}");
+            let context = reboot::ExternalContext::new(&state_ref);
+            let channel = loop {
+                match context.connect(endpoint.clone()).await {
+                    Ok(channel) => break channel,
+                    Err(_) => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+                }
+            };
+            let mut client = generated::ExternalConstructorMethodsExternalClient::new(channel, context);
+            let amount = optional_arg("--amount")
+                .map(|amount| amount.parse().expect("--amount must be i64"))
+                .unwrap_or(7);
+            let key = optional_arg("--idempotency-key")
+                .expect("external constructor requires --idempotency-key")
+                .parse()
+                .expect("--idempotency-key must be a UUID");
+            match client
+                .construct_with_key(proto::ExternalConstructorRequest { amount }, key)
+                .await
+            {
+                Ok(_) if has("--expect-declared-constructor-error") => {
+                    panic!("constructor unexpectedly succeeded")
+                }
+                Ok(_) => {}
+                Err(generated::ExternalConstructorMethodsConstructError::ExternalConstructorLimitExceeded(error))
+                    if has("--expect-declared-constructor-error") =>
+                {
+                    assert_eq!(error, proto::ExternalConstructorLimitExceeded { limit: 9 });
+                }
+                Err(error) => panic!("external constructor invocation failed: {error:?}"),
+            }
+        }
+        if has("--exit-after-invoke") {
+            server.abort();
+            return;
+        }
+        server.await.unwrap();
         return;
     }
     let database_endpoint = arg("--database");

@@ -23,6 +23,25 @@ message TransactionLimitExceeded {
   int64 limit = 1;
 }
 
+message ExternalConstructorCounter {
+  option (rbt.v1alpha1.state) = {
+    implements: ["tests.reboot.protoc.ExternalConstructorMethods"]
+  };
+  int64 value = 1;
+}
+
+message ExternalConstructorRequest {
+  int64 amount = 1;
+}
+
+message ExternalConstructorValue {
+  int64 value = 1;
+}
+
+message ExternalConstructorLimitExceeded {
+  int64 limit = 1;
+}
+
 service TransactionCounterWritesMethods {
   option (rbt.v1alpha1.service) = {
     state: "tests.reboot.protoc.TransactionCounter"
@@ -60,6 +79,21 @@ service TransactionCounterWritesMethods {
   rpc SharedRead(TransactionIncrementRequest) returns (TransactionCounterValue) {
     option (rbt.v1alpha1.method).transaction = {
       shared: {}
+    };
+  }
+}
+
+// This deliberately has no transaction methods. The C++ Database fixture
+// serves it directly through its generated external unary Tonic adapter.
+service ExternalConstructorMethods {
+  option (rbt.v1alpha1.service) = {
+    state: "tests.reboot.protoc.ExternalConstructorCounter"
+  };
+
+  rpc Construct(ExternalConstructorRequest) returns (ExternalConstructorValue) {
+    option (rbt.v1alpha1.method) = {
+      writer: { constructor: {} }
+      errors: ".tests.reboot.protoc.ExternalConstructorLimitExceeded"
     };
   }
 }

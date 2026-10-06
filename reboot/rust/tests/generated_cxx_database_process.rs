@@ -693,6 +693,132 @@ fn idempotent_factory_host(
     )
 }
 
+fn external_constructor_host(
+    binary: &std::path::Path,
+    database: &str,
+    state_ref: &str,
+    idempotency_key: Uuid,
+    amount: i64,
+    expect_declared_error: bool,
+) -> std::process::ExitStatus {
+    let listen = port();
+    let mut command = Command::new(binary);
+    command
+        .args([
+            "--role",
+            "external-constructor",
+            "--listen",
+            &format!("127.0.0.1:{listen}"),
+            "--database",
+            database,
+            "--root-id",
+            "00000000-0000-0000-0000-000000000107",
+            "--state-ref",
+            state_ref,
+            "--invoke",
+            "--exit-after-invoke",
+            "--idempotency-key",
+            &idempotency_key.to_string(),
+            "--amount",
+            &amount.to_string(),
+        ])
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    if expect_declared_error {
+        command.arg("--expect-declared-constructor-error");
+    }
+    command.status().unwrap()
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_external_constructor_declared_error_leaves_real_cxx_database_empty_then_creates_once()
+{
+    let database_binary =
+        std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let mut db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let state_ref = "external-constructor-declared-error";
+    // C++ Database accepts caller-owned RFC UUIDs; make the version explicit.
+    let key = Uuid::parse_str("00000000-0000-4000-8000-000000000108").unwrap();
+
+    assert!(
+        external_constructor_host(&binary, &db.endpoint(), state_ref, key, -1, true).success(),
+        "the generated Tonic client must observe the adapter's declared-error trailer"
+    );
+    assert_eq!(
+        runtime.block_on(load_external_constructor_state(&db.endpoint(), state_ref)),
+        None
+    );
+    assert!(
+        runtime
+            .block_on(recover_external_constructor_idempotency(
+                &db.endpoint(),
+                state_ref,
+                key
+            ))
+            .is_empty()
+    );
+
+    // Reopen RocksDB before retrying: neither absence assertion can be
+    // satisfied by a process-local actor or idempotency registry.
+    db.restart();
+    assert_eq!(
+        runtime.block_on(load_external_constructor_state(&db.endpoint(), state_ref)),
+        None
+    );
+    assert!(
+        runtime
+            .block_on(recover_external_constructor_idempotency(
+                &db.endpoint(),
+                state_ref,
+                key
+            ))
+            .is_empty()
+    );
+
+    assert!(external_constructor_host(&binary, &db.endpoint(), state_ref, key, 7, false).success());
+    assert_eq!(
+        runtime.block_on(load_external_constructor_state(&db.endpoint(), state_ref)),
+        Some(vec![0x08, 0x07])
+    );
+    let mutations = runtime.block_on(recover_external_constructor_idempotency(
+        &db.endpoint(),
+        state_ref,
+        key,
+    ));
+    assert_eq!(mutations.len(), 1);
+    assert_eq!(mutations[0].response, vec![0x08, 0x07]);
+
+    // A same-key replay keeps the one actor and one durable mutation.
+    assert!(external_constructor_host(&binary, &db.endpoint(), state_ref, key, 7, false).success());
+    assert_eq!(
+        runtime.block_on(load_external_constructor_state(&db.endpoint(), state_ref)),
+        Some(vec![0x08, 0x07])
+    );
+    assert_eq!(
+        runtime
+            .block_on(recover_external_constructor_idempotency(
+                &db.endpoint(),
+                state_ref,
+                key
+            ))
+            .len(),
+        1
+    );
+}
+
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
 fn generated_root_declared_outbound_errors_commit_or_abort_durably_through_real_cxx_database() {
@@ -2411,6 +2537,52 @@ async fn recover_idempotent_mutations(
         .unwrap()
         .recover_idempotent_mutations(database::RecoverIdempotentMutationsRequest {
             state_type: "tests.reboot.protoc.TransactionCounter".into(),
+            state_ref: state_ref.into(),
+            idempotency_key: Some(key.as_bytes().to_vec()),
+            workflow_id: None,
+            workflow_iteration: None,
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let mut mutations = Vec::new();
+    while let Some(response) = stream.message().await.unwrap() {
+        mutations.extend(response.idempotent_mutations);
+    }
+    mutations
+}
+
+async fn load_external_constructor_state(endpoint: &str, state_ref: &str) -> Option<Vec<u8>> {
+    database::database_client::DatabaseClient::connect(endpoint.to_owned())
+        .await
+        .unwrap()
+        .load(database::LoadRequest {
+            actors: vec![database::Actor {
+                state_type: "tests.reboot.protoc.ExternalConstructorCounter".into(),
+                state_ref: state_ref.into(),
+                state: None,
+            }],
+            task_ids: vec![],
+        })
+        .await
+        .unwrap()
+        .into_inner()
+        .actors
+        .into_iter()
+        .next()
+        .and_then(|actor| actor.state)
+}
+
+async fn recover_external_constructor_idempotency(
+    endpoint: &str,
+    state_ref: &str,
+    key: Uuid,
+) -> Vec<database::IdempotentMutation> {
+    let mut stream = database::database_client::DatabaseClient::connect(endpoint.to_owned())
+        .await
+        .unwrap()
+        .recover_idempotent_mutations(database::RecoverIdempotentMutationsRequest {
+            state_type: "tests.reboot.protoc.ExternalConstructorCounter".into(),
             state_ref: state_ref.into(),
             idempotency_key: Some(key.as_bytes().to_vec()),
             workflow_id: None,
