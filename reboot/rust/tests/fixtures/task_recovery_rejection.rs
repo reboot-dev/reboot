@@ -231,6 +231,11 @@ fn prove_recovered_batch_boundary(capacity: Option<usize>, foreign_type: Option<
         Some(vec![0x08, 5])
     );
     db.restart();
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), "root")),
+        Some(vec![0x08, 5]),
+        "rejected recovery changed actor state across RocksDB restart"
+    );
     runtime.block_on(async {
         let loaded = database::database_client::DatabaseClient::connect(db.endpoint())
             .await
