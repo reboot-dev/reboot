@@ -1507,7 +1507,7 @@ fn generated_exclusive_factory_creates_root_and_commits_existing_target_through_
 
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
-fn generated_exclusive_factory_root_recovers_existing_target_through_real_cxx_database_processes() {
+fn generated_factory_root_recovers_target_across_two_cxx_database_processes() {
     let database_binary =
         std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1521,10 +1521,13 @@ fn generated_exclusive_factory_root_recovers_existing_target_through_real_cxx_da
             .success()
     );
     let binary = fixture.join("target/debug/generated-cxx-database-process-host");
-    let mut db = CxxDatabase::start(database_binary);
+    // The root factory actor and pre-existing target actor live in separate
+    // C++ Database/RocksDB sidecars; no shared sidecar can mask routing.
+    let mut root_db = CxxDatabase::start(database_binary.clone());
+    let mut target_db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     runtime.block_on(async {
-        database::database_client::DatabaseClient::connect(db.endpoint())
+        database::database_client::DatabaseClient::connect(target_db.endpoint())
             .await
             .unwrap()
             .store(database::StoreRequest {
@@ -1553,7 +1556,7 @@ fn generated_exclusive_factory_root_recovers_existing_target_through_real_cxx_da
         &binary,
         "target",
         target_port,
-        &db.endpoint(),
+        &target_db.endpoint(),
         root_port,
         target_port,
         &plan,
@@ -1568,7 +1571,7 @@ fn generated_exclusive_factory_root_recovers_existing_target_through_real_cxx_da
     wait(target_port);
     let mut root = factory_target_root_host(
         &binary,
-        &db.endpoint(),
+        &root_db.endpoint(),
         root_port,
         target_port,
         root_id,
@@ -1590,7 +1593,8 @@ fn generated_exclusive_factory_root_recovers_existing_target_through_real_cxx_da
     let _ = root.wait();
     let _ = target.kill();
     let _ = target.wait();
-    db.restart();
+    root_db.restart();
+    target_db.restart();
 
     let watch_terminalized = marker_dir.path().join("target-watch-terminalized");
     let recovered_root_port = port();
@@ -1602,7 +1606,7 @@ fn generated_exclusive_factory_root_recovers_existing_target_through_real_cxx_da
         binary: &binary,
         role: "target",
         port: target_port,
-        database: &db.endpoint(),
+        database: &target_db.endpoint(),
         plan: &recovered_plan,
         root_id,
         recover: true,
@@ -1618,7 +1622,7 @@ fn generated_exclusive_factory_root_recovers_existing_target_through_real_cxx_da
         &binary,
         "root",
         recovered_root_port,
-        &db.endpoint(),
+        &root_db.endpoint(),
         recovered_root_port,
         target_port,
         &recovered_plan,
@@ -1637,24 +1641,34 @@ fn generated_exclusive_factory_root_recovers_existing_target_through_real_cxx_da
         }
         std::thread::sleep(Duration::from_millis(25));
     }
+    // The target's marker is produced by durable_participant only after its
+    // placement-routed Watch response has led to successful terminal control.
     assert!(
         watch_terminalized.exists(),
         "target did not Watch the factory-root decision and terminalize"
     );
-    let (root_state, target_state) = wait_for_states(
-        &runtime,
-        &db.endpoint(),
-        "factory-root",
-        vec![0x08, 0x07],
-        "target",
-        vec![0x08, 0x0c],
+    for _ in 0..100 {
+        if runtime.block_on(load_state(&root_db.endpoint(), "factory-root"))
+            == Some(vec![0x08, 0x07])
+            && runtime.block_on(load_state(&target_db.endpoint(), "target"))
+                == Some(vec![0x08, 0x0c])
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert_eq!(
+        runtime.block_on(load_state(&root_db.endpoint(), "factory-root")),
+        Some(vec![0x08, 0x07])
     );
-    assert_eq!(root_state, Some(vec![0x08, 0x07]));
-    assert_eq!(target_state, Some(vec![0x08, 0x0c]));
+    assert_eq!(
+        runtime.block_on(load_state(&target_db.endpoint(), "target")),
+        Some(vec![0x08, 0x0c])
+    );
     assert!(
         !factory_target_host(
             &binary,
-            &db.endpoint(),
+            &root_db.endpoint(),
             root_port,
             target_port,
             "factory-root",
@@ -1663,11 +1677,11 @@ fn generated_exclusive_factory_root_recovers_existing_target_through_real_cxx_da
         .success()
     );
     assert_eq!(
-        runtime.block_on(load_state(&db.endpoint(), "factory-root")),
+        runtime.block_on(load_state(&root_db.endpoint(), "factory-root")),
         Some(vec![0x08, 0x07])
     );
     assert_eq!(
-        runtime.block_on(load_state(&db.endpoint(), "target")),
+        runtime.block_on(load_state(&target_db.endpoint(), "target")),
         Some(vec![0x08, 0x0c])
     );
     let _ = root.kill();
@@ -1778,30 +1792,6 @@ fn factory_host(
         ])
         .status()
         .unwrap()
-}
-
-fn wait_for_states(
-    runtime: &tokio::runtime::Runtime,
-    endpoint: &str,
-    first_ref: &str,
-    expected_first: Vec<u8>,
-    second_ref: &str,
-    expected_second: Vec<u8>,
-) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
-    let mut states = (None, None);
-    for _ in 0..100 {
-        states = (
-            runtime.block_on(load_state(endpoint, first_ref)),
-            runtime.block_on(load_state(endpoint, second_ref)),
-        );
-        if states.0.as_deref() == Some(expected_first.as_slice())
-            && states.1.as_deref() == Some(expected_second.as_slice())
-        {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(25));
-    }
-    states
 }
 
 async fn load_state(endpoint: &str, state_ref: &str) -> Option<Vec<u8>> {
