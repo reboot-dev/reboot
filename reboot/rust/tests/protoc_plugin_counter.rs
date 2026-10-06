@@ -533,10 +533,13 @@ impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler fo
         _: &reboot::runtime::TransactionContext,
         state: &mut proto::TransactionCounter,
         request: proto::TransactionIncrementRequest,
-    ) -> Result<reboot::runtime::TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+    ) -> Result<reboot::runtime::TransactionExecution<proto::TransactionCounterValue>, transaction_generated::TransactionCounterWritesMethodsFactoryIncrementError> {
         self.trace.lock().unwrap().push("factory handler");
+        if request.amount == 13 {
+            return Err(transaction_generated::TransactionCounterWritesMethodsFactoryIncrementError::TransactionLimitExceeded(proto::TransactionLimitExceeded { limit: request.amount }));
+        }
         if self.fail {
-            return Err(tonic::Status::invalid_argument("factory handler rejected request"));
+            return Err(transaction_generated::TransactionCounterWritesMethodsFactoryIncrementError::Grpc(tonic::Status::invalid_argument("factory handler rejected request")));
         }
         state.value += request.amount;
         // Deliberately no final_state: the generated factory adapter must stage
@@ -1094,15 +1097,30 @@ async fn generated_fresh_exclusive_factory_transaction_authorization_uses_absent
             .unwrap();
     });
     let mut client = TransactionCounterWritesMethodsClient::connect(format!("http://{address}")).await.unwrap();
+    let mut declared = request("allow");
+    declared.get_mut().amount = 13;
+    let rich_error = client.factory_increment(declared).await.unwrap_err();
+    assert_eq!(rich_error.code(), tonic::Code::Unknown);
+    let details = reboot::declared_error_details(&rich_error).unwrap().unwrap();
+    assert_eq!(details.details[0].type_url, "type.googleapis.com/tests.reboot.protoc.TransactionLimitExceeded");
+    assert!(!allowed_trace.lock().unwrap().iter().any(|event| event.contains("prepare")), "declared factory failure must not create or prepare a durable actor");
     assert_eq!(client.factory_increment(request("allow")).await.unwrap().into_inner().value, 3);
     assert_eq!(allowed.contexts.lock().unwrap()[0].method, "tests.reboot.protoc.TransactionCounterWritesMethods.FactoryIncrement");
     assert_eq!(allowed.contexts.lock().unwrap()[0].headers.bearer_token.as_deref(), Some("allow"));
     let snapshots = allowed.snapshots.lock().unwrap();
     assert_eq!(snapshots[0].0, None);
-    assert_eq!(proto::TransactionIncrementRequest::decode(snapshots[0].1.as_slice()).unwrap(), proto::TransactionIncrementRequest { amount: 3 });
+    assert_eq!(
+        proto::TransactionIncrementRequest::decode(snapshots[0].1.as_slice()).unwrap(),
+        proto::TransactionIncrementRequest { amount: 13 }
+    );
+    assert_eq!(snapshots[1].0, None);
+    assert_eq!(
+        proto::TransactionIncrementRequest::decode(snapshots[1].1.as_slice()).unwrap(),
+        proto::TransactionIncrementRequest { amount: 3 }
+    );
     drop(snapshots);
     assert_eq!(*allowed_trace.lock().unwrap(), [
-        "participant load", "factory handler", "coordinator DB prepare", "participant prepare",
+        "participant load", "factory handler", "participant abort", "participant load", "factory handler", "coordinator DB prepare", "participant prepare",
         "coordinator DB prepared", "coordinator DB decision", "participant commit", "coordinator DB cleanup",
     ]);
     server.abort();

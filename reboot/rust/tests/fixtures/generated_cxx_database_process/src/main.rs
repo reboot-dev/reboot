@@ -119,11 +119,14 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         _: &TransactionContext,
         state: &mut proto::TransactionCounter,
         request: proto::TransactionIncrementRequest,
-    ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+    ) -> Result<TransactionExecution<proto::TransactionCounterValue>, generated::TransactionCounterWritesMethodsFactoryIncrementError> {
+        if request.amount == 13 {
+            return Err(generated::TransactionCounterWritesMethodsFactoryIncrementError::TransactionLimitExceeded(proto::TransactionLimitExceeded { limit: request.amount }));
+        }
         if request.amount < 0 {
-            return Err(tonic::Status::invalid_argument(
+            return Err(generated::TransactionCounterWritesMethodsFactoryIncrementError::Grpc(tonic::Status::invalid_argument(
                 "factory handler rejected request",
-            ));
+            )));
         }
         state.value += request.amount;
         // Deliberately leave final_state unset: the generated factory adapter
@@ -666,6 +669,22 @@ async fn main() {
                         panic!("fixture invocation never became ready: {status}");
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                Err(status) if has("--expect-declared-factory-error") => {
+                    assert_eq!(status.code(), tonic::Code::Unknown);
+                    let details = reboot::declared_error_details(&status)
+                        .unwrap()
+                        .expect("factory declared error must include rich status details");
+                    assert_eq!(
+                        details.details[0].type_url,
+                        "type.googleapis.com/tests.reboot.protoc.TransactionLimitExceeded"
+                    );
+                    assert_eq!(
+                        proto::TransactionLimitExceeded::decode(details.details[0].value.as_slice())
+                            .unwrap(),
+                        proto::TransactionLimitExceeded { limit: 13 }
+                    );
+                    break;
                 }
                 Err(status) => panic!("fixture invocation failed: {status}"),
             }

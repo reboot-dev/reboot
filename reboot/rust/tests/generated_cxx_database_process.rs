@@ -345,7 +345,9 @@ struct LiveHostOptions<'a> {
     root_id: &'a str,
     recover: bool,
     invoke: bool,
+    factory_invoke: bool,
     factory_target_invoke: bool,
+    expect_factory_declared_error: bool,
     marker: Option<&'a std::path::Path>,
     watch_terminalized: Option<&'a std::path::Path>,
     state_ref: Option<&'a str>,
@@ -376,8 +378,21 @@ fn spawn_live_host(options: LiveHostOptions<'_>) -> Child {
     if options.invoke {
         command.arg("--invoke");
     }
+    if options.factory_invoke {
+        // Factory-process acceptance is one-shot: after either a declared error
+        // or a successful replay, terminate so the parent can inspect RocksDB.
+        command.args([
+            "--factory-invoke",
+            "--exit-after-invoke",
+            "--idempotency-key",
+            "00000000-0000-4000-8000-00000000010a",
+        ]);
+    }
     if options.factory_target_invoke {
         command.args(["--factory-target-invoke", "--amount", "7"]);
+    }
+    if options.expect_factory_declared_error {
+        command.args(["--expect-declared-factory-error", "--amount", "13"]);
     }
     if let Some(state_ref) = options.state_ref {
         command.args(["--state-ref", state_ref]);
@@ -2110,6 +2125,142 @@ fn generated_fresh_exclusive_default_state_persists_through_live_placement_plann
 
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_factory_declared_error_aborts_then_retries_once_through_live_placement_planner() {
+    let database_binary =
+        std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let mut db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let state_ref = "factory-declared-error-live-planner";
+    let key = Uuid::parse_str("00000000-0000-4000-8000-00000000010a").unwrap();
+    let listen = port();
+    // This response is served by the canonical PlacementPlanner stream. Hosts
+    // below receive only --placement-planner, never --legacy-placement-plan.
+    let plan = placement_proto::ListenForPlanResponse::decode(
+        URL_SAFE_NO_PAD
+            .decode(legacy_plan_for(&[(state_ref, listen)]))
+            .unwrap()
+            .as_slice(),
+    )
+    .unwrap();
+    let planner = LivePlannerServer::start(&runtime, plan);
+
+    let mut failed = spawn_live_host(LiveHostOptions {
+        binary: &binary,
+        role: "target",
+        port: listen,
+        database: &db.endpoint(),
+        planner: &planner.endpoint,
+        root_id: "00000000-0000-0000-0000-00000000010a",
+        recover: false,
+        invoke: true,
+        factory_invoke: true,
+        factory_target_invoke: false,
+        expect_factory_declared_error: true,
+        marker: None,
+        watch_terminalized: None,
+        state_ref: Some(state_ref),
+        coordinator_state_ref: Some(state_ref),
+        watch_coordinator_state_ref: None,
+    });
+    assert!(failed.wait().unwrap().success());
+    planner.wait_for_connections(1);
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), state_ref)),
+        None
+    );
+    assert!(
+        runtime
+            .block_on(recover_idempotent_mutations(&db.endpoint(), state_ref, key))
+            .is_empty(),
+        "declared factory failure must abort before a durable idempotency record"
+    );
+
+    // Reopen RocksDB before retrying so cleanup cannot be attributed to the
+    // exited host process.
+    db.restart();
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), state_ref)),
+        None
+    );
+    assert!(
+        runtime
+            .block_on(recover_idempotent_mutations(&db.endpoint(), state_ref, key))
+            .is_empty()
+    );
+
+    let mut created = spawn_live_host(LiveHostOptions {
+        binary: &binary,
+        role: "target",
+        port: listen,
+        database: &db.endpoint(),
+        planner: &planner.endpoint,
+        root_id: "00000000-0000-0000-0000-00000000010a",
+        recover: false,
+        invoke: true,
+        factory_invoke: true,
+        factory_target_invoke: false,
+        expect_factory_declared_error: false,
+        marker: None,
+        watch_terminalized: None,
+        state_ref: Some(state_ref),
+        coordinator_state_ref: Some(state_ref),
+        watch_coordinator_state_ref: None,
+    });
+    assert!(created.wait().unwrap().success());
+    planner.wait_for_connections(2);
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), state_ref)),
+        Some(vec![0x08, 0x07])
+    );
+    let initial = runtime.block_on(recover_idempotent_mutations(&db.endpoint(), state_ref, key));
+    assert_eq!(initial.len(), 1);
+    assert_eq!(initial[0].response, vec![0x08, 0x07]);
+
+    let mut replay = spawn_live_host(LiveHostOptions {
+        binary: &binary,
+        role: "target",
+        port: listen,
+        database: &db.endpoint(),
+        planner: &planner.endpoint,
+        root_id: "00000000-0000-0000-0000-00000000010a",
+        recover: false,
+        invoke: true,
+        factory_invoke: true,
+        factory_target_invoke: false,
+        expect_factory_declared_error: false,
+        marker: None,
+        watch_terminalized: None,
+        state_ref: Some(state_ref),
+        coordinator_state_ref: Some(state_ref),
+        watch_coordinator_state_ref: None,
+    });
+    assert!(replay.wait().unwrap().success());
+    planner.wait_for_connections(3);
+    assert_eq!(
+        runtime.block_on(load_state(&db.endpoint(), state_ref)),
+        Some(vec![0x08, 0x07])
+    );
+    assert_eq!(
+        runtime.block_on(recover_idempotent_mutations(&db.endpoint(), state_ref, key)),
+        initial,
+        "valid retry and same-key replay must create exactly once"
+    );
+    planner.stop();
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
 fn generated_factory_root_recovers_target_through_live_placement_planner_across_two_cxx_database_processes()
  {
     let database_binary =
@@ -2154,7 +2305,9 @@ fn generated_factory_root_recovers_target_through_live_placement_planner_across_
         root_id,
         recover: false,
         invoke: false,
+        factory_invoke: false,
         factory_target_invoke: false,
+        expect_factory_declared_error: false,
         marker: None,
         watch_terminalized: None,
         state_ref: None,
@@ -2172,7 +2325,9 @@ fn generated_factory_root_recovers_target_through_live_placement_planner_across_
         root_id,
         recover: false,
         invoke: true,
+        factory_invoke: false,
         factory_target_invoke: true,
+        expect_factory_declared_error: false,
         marker: Some(&marker),
         watch_terminalized: None,
         state_ref: Some("factory-root"),
@@ -2221,7 +2376,9 @@ fn generated_factory_root_recovers_target_through_live_placement_planner_across_
         root_id,
         recover: true,
         invoke: false,
+        factory_invoke: false,
         factory_target_invoke: false,
+        expect_factory_declared_error: false,
         marker: None,
         watch_terminalized: Some(&watch_terminalized),
         state_ref: None,
@@ -2239,7 +2396,9 @@ fn generated_factory_root_recovers_target_through_live_placement_planner_across_
         root_id,
         recover: true,
         invoke: false,
+        factory_invoke: false,
         factory_target_invoke: false,
+        expect_factory_declared_error: false,
         marker: None,
         watch_terminalized: None,
         state_ref: Some("factory-root"),
@@ -2338,7 +2497,9 @@ fn generated_legacy_root_recovers_two_remote_participants_through_live_placement
         root_id,
         recover: false,
         invoke: false,
+        factory_invoke: false,
         factory_target_invoke: false,
+        expect_factory_declared_error: false,
         marker: None,
         watch_terminalized: None,
         state_ref: Some("target-a"),
@@ -2354,7 +2515,9 @@ fn generated_legacy_root_recovers_two_remote_participants_through_live_placement
         root_id,
         recover: false,
         invoke: false,
+        factory_invoke: false,
         factory_target_invoke: false,
+        expect_factory_declared_error: false,
         marker: None,
         watch_terminalized: None,
         state_ref: Some("target-b"),
@@ -2372,7 +2535,9 @@ fn generated_legacy_root_recovers_two_remote_participants_through_live_placement
         root_id,
         recover: false,
         invoke: true,
+        factory_invoke: false,
         factory_target_invoke: false,
+        expect_factory_declared_error: false,
         marker: Some(&sealed),
         watch_terminalized: None,
         state_ref: Some("multi-root"),
@@ -2426,7 +2591,9 @@ fn generated_legacy_root_recovers_two_remote_participants_through_live_placement
         root_id,
         recover: true,
         invoke: false,
+        factory_invoke: false,
         factory_target_invoke: false,
+        expect_factory_declared_error: false,
         marker: None,
         watch_terminalized: Some(&target_a_terminalized),
         state_ref: Some("target-a"),
@@ -2442,7 +2609,9 @@ fn generated_legacy_root_recovers_two_remote_participants_through_live_placement
         root_id,
         recover: true,
         invoke: false,
+        factory_invoke: false,
         factory_target_invoke: false,
+        expect_factory_declared_error: false,
         marker: None,
         watch_terminalized: Some(&target_b_terminalized),
         state_ref: Some("target-b"),
@@ -2460,7 +2629,9 @@ fn generated_legacy_root_recovers_two_remote_participants_through_live_placement
         root_id,
         recover: true,
         invoke: false,
+        factory_invoke: false,
         factory_target_invoke: false,
+        expect_factory_declared_error: false,
         marker: None,
         watch_terminalized: None,
         state_ref: Some("multi-root"),

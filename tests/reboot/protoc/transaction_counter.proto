@@ -63,9 +63,9 @@ service TransactionCounterWritesMethods {
   }
 
   rpc FactoryIncrement(TransactionIncrementRequest) returns (TransactionCounterValue) {
-    option (rbt.v1alpha1.method).transaction = {
-      constructor: {}
-      exclusive: {}
+    option (rbt.v1alpha1.method) = {
+      transaction: { constructor: {} exclusive: {} }
+      errors: ".tests.reboot.protoc.TransactionLimitExceeded"
     };
   }
 

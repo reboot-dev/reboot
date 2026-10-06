@@ -533,12 +533,12 @@ fn annotations_for_generated_files(
                             | DurableKind::Writer(_)
                             | DurableKind::Transaction(TransactionMetadata {
                                 mode: TransactionMode::Exclusive,
-                                factory: false
+                                ..
                             })
                     )
                 {
                     return Err(format!(
-                        "{file_name}: service `{service_name}` method `{method_name}` declares errors, but declared errors are supported only on unary reader/writer methods and non-factory exclusive transactions"
+                        "{file_name}: service `{service_name}` method `{method_name}` declares errors, but declared errors are supported only on unary reader/writer methods and exclusive transactions"
                     ));
                 }
                 methods.insert(method_name.clone(), kind);
@@ -1354,6 +1354,7 @@ fn emit_durable(
         service_name,
         &state,
         runtime_module,
+        annotation,
         &methods,
         &database_methods,
     )?;
@@ -1388,7 +1389,7 @@ fn declared_transactional_errors<'a>(
         kind,
         DurableKind::Transaction(TransactionMetadata {
             mode: TransactionMode::Exclusive,
-            factory: false
+            ..
         })
     ) {
         return &[];
@@ -1641,6 +1642,7 @@ struct TransactionFlow<'a> {
     runtime_module: &'a str,
     mode: &'a str,
     factory: bool,
+    declared_error: bool,
     inbound: TransactionInbound,
     shared_root_ownership_seam: bool,
     authorize_after_load: bool,
@@ -1659,6 +1661,7 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
         runtime_module,
         mode,
         factory,
+        declared_error,
         inbound,
         shared_root_ownership_seam,
         authorize_after_load,
@@ -1695,7 +1698,12 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
     }
     let default_mutated_state =
         !factory && mode == "Exclusive" && matches!(inbound, TransactionInbound::Dynamic);
-    output.push_str(&format!("{prefix}let execution = match self.handler.{method}(&context, &mut state, request.into_inner()).await {{ Ok(execution) => execution, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(error); }} }};\n{prefix}if let Some(status) = context.doomed_status() {{ self.participant.abort(transaction_id).await?; return Err(status); }}\n{prefix}if automatic_idempotency.is_some() && !execution.idempotent_mutations.is_empty() {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"root-local idempotency stages exactly one automatic mutation\")); }}\n{prefix}let automatic_mutations = automatic_idempotency.as_ref().map(|idempotency| idempotency.mutation(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, context.headers().state_ref.clone(), &execution.response)).into_iter().collect::<Vec<_>>();\n{prefix}if let Err(error) = self.participant.stage(transaction_id, {runtime_module}::durable_participant::PendingActorEffects {{ state: if {factory} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else if {default_mutated_state} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else {{ execution.final_state.clone() }}, task_upserts: execution.task_upserts.clone(), idempotent_mutations: if automatic_idempotency.is_some() {{ automatic_mutations }} else {{ execution.idempotent_mutations.clone() }} }}).await {{ self.participant.abort(transaction_id).await?; return Err(error); }}\n"));
+    let handler_error_map = if declared_error {
+        ".map_err(|error| error.into_status())"
+    } else {
+        ""
+    };
+    output.push_str(&format!("{prefix}let execution = match self.handler.{method}(&context, &mut state, request.into_inner()).await{handler_error_map} {{ Ok(execution) => execution, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(error); }} }};\n{prefix}if let Some(status) = context.doomed_status() {{ self.participant.abort(transaction_id).await?; return Err(status); }}\n{prefix}if automatic_idempotency.is_some() && !execution.idempotent_mutations.is_empty() {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"root-local idempotency stages exactly one automatic mutation\")); }}\n{prefix}let automatic_mutations = automatic_idempotency.as_ref().map(|idempotency| idempotency.mutation(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, context.headers().state_ref.clone(), &execution.response)).into_iter().collect::<Vec<_>>();\n{prefix}if let Err(error) = self.participant.stage(transaction_id, {runtime_module}::durable_participant::PendingActorEffects {{ state: if {factory} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else if {default_mutated_state} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else {{ execution.final_state.clone() }}, task_upserts: execution.task_upserts.clone(), idempotent_mutations: if automatic_idempotency.is_some() {{ automatic_mutations }} else {{ execution.idempotent_mutations.clone() }} }}).await {{ self.participant.abort(transaction_id).await?; return Err(error); }}\n"));
     if shared_root_ownership_seam {
         output.push_str(&format!("{prefix}// Local-only shared-root ownership is intentionally not activated: the\n{prefix}// current coordinator accepts only the read-only shared classification.\n"));
     }
@@ -1720,6 +1728,7 @@ fn emit_transactions(
     service_name: &str,
     state: &str,
     runtime_module: &str,
+    annotation: &DurableService,
     methods: &[(&DurableKind, String, String, String, String)],
     database_methods: &[&(&DurableKind, String, String, String, String)],
 ) -> Result<(), String> {
@@ -1739,7 +1748,7 @@ fn emit_transactions(
     for (kind, method, request, response, _) in database_methods {
         output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n", if matches!(**kind, DurableKind::Writer(_)) { "&mut " } else { "&" }));
     }
-    for (kind, method, request, response, _) in &transactions {
+    for (kind, method, request, response, method_identity) in &transactions {
         let metadata = match kind {
             DurableKind::Transaction(metadata) => metadata,
             _ => unreachable!("transactions are filtered above"),
@@ -1749,7 +1758,13 @@ fn emit_transactions(
             TransactionMode::Shared => "Shared",
         };
         let factory = if metadata.factory { "yes" } else { "no" };
-        output.push_str(&format!("    /// Transaction mode declared by this RPC: {mode}.\n    /// Factory transaction declared by this RPC: {factory}.\n    async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionExecution<proto::{response}>, tonic::Status>;\n"));
+        let declared_errors = declared_transactional_errors(annotation, kind, method_identity);
+        let result_error = if metadata.factory && !declared_errors.is_empty() {
+            declared_error_type(service_name, method)
+        } else {
+            "tonic::Status".to_owned()
+        };
+        output.push_str(&format!("    /// Transaction mode declared by this RPC: {mode}.\n    /// Factory transaction declared by this RPC: {factory}.\n    async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionExecution<proto::{response}>, {result_error}>;\n"));
         if matches!(metadata.mode, TransactionMode::Shared) {
             output.push_str(&format!("    /// Fresh shared-root local execution only; this context has no transaction capabilities.\n    async fn {method}_fresh_shared(&self, context: &{runtime_module}::runtime::SharedLocalTransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n"));
         }
@@ -1838,6 +1853,8 @@ fn emit_transactions(
                 TransactionMode::Shared => "Shared",
             },
             factory: metadata.factory,
+            declared_error: metadata.factory
+                && !declared_transactional_errors(annotation, kind, method_identity).is_empty(),
             inbound: TransactionInbound::Dynamic,
             shared_root_ownership_seam: false,
             authorize_after_load: false,
@@ -3751,17 +3768,15 @@ mod tests {
                 "tests/reboot/protoc/counter.proto: Transaction 'Increment' does not say how it holds the lock on its own state while it runs. Every transaction must declare one of:\n  exclusive: {} takes the lock exclusive from the start, so that concurrent callers of the same state queue behind it. The choice for a transaction that writes its own state, which is most of them.\n  shared: {} takes the lock shared and upgrades it to exclusive only if the transaction writes its own state, so that callers proceed concurrently while none of them writes it. The choice for a transaction that mostly reads its own state while writing others.\nFor example:\n  option (rbt.v1alpha1.method) = {\n    transaction: { exclusive: {} },\n  };"
             )
         );
-        assert_eq!(
+        assert!(
             generate_from_wire(&raw_request(
                 Some(reboot_transaction_method_options::Mode::Exclusive(Empty {})),
                 true,
                 vec![".tests.reboot.protoc.CounterError".to_owned()],
             ))
             .error
-            .as_deref(),
-            Some(
-                "tests/reboot/protoc/counter.proto: service `CounterWritesMethods` method `Increment` declares errors, but declared errors are supported only on unary reader/writer methods and non-factory exclusive transactions"
-            )
+            .is_none(),
+            "exclusive factory transactions accept declared errors like Python"
         );
         assert!(
             generate_from_wire(&raw_request(

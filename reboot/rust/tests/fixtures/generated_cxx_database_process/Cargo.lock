@@ -84,6 +84,8 @@ dependencies = [
  "http",
  "http-body",
  "http-body-util",
+ "hyper",
+ "hyper-util",
  "itoa",
  "matchit",
  "memchr",
@@ -92,10 +94,15 @@ dependencies = [
  "pin-project-lite",
  "rustversion",
  "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "serde_urlencoded",
  "sync_wrapper",
+ "tokio",
  "tower 0.5.3",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -116,6 +123,7 @@ dependencies = [
  "sync_wrapper",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -153,9 +161,9 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "cc"
-version = "1.2.62"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1dce859f0832a7d088c4f1119888ab94ef4b5d6795d1ce05afb7fe159d79f98"
+checksum = "f74872d07caf508b30a21f6836e7d7016a2eaf7d9ff4f48deaa58cd8a0407630"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -243,9 +251,9 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.9"
+version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
 
 [[package]]
 name = "fixedbitset"
@@ -258,6 +266,15 @@ name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
+
+[[package]]
+name = "form_urlencoded"
+version = "1.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+dependencies = [
+ "percent-encoding",
+]
 
 [[package]]
 name = "futures-channel"
@@ -555,9 +572,9 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "js-sys"
-version = "0.3.106"
+version = "0.3.105"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7883d941dae510fb2d978fc3fe018c71c9e2892fd38854de3e8b92c2e5ad9cc5"
+checksum = "ce57d20d1ea864ce2ac172ab472d409214f4fd359f0b2a2775abdf522e2af99e"
 dependencies = [
  "cfg-if",
  "futures-util",
@@ -867,6 +884,7 @@ dependencies = [
 name = "reboot-rust-schema"
 version = "0.0.0"
 dependencies = [
+ "axum",
  "base64",
  "bytes",
  "chrono",
@@ -875,6 +893,8 @@ dependencies = [
  "http",
  "http-body",
  "http-body-util",
+ "hyper",
+ "hyper-util",
  "prost",
  "prost-types",
  "protoc-bin-vendored",
@@ -940,6 +960,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
+name = "ryu"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -982,6 +1008,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_path_to_error"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10a9ff822e371bb5403e391ecd83e182e0e77ba7f6fe0160b795797109d1b457"
+dependencies = [
+ "itoa",
+ "serde",
+ "serde_core",
+]
+
+[[package]]
+name = "serde_urlencoded"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3491c14715ca2294c4d6a88f15e84739788c1d030eed8c110436aafdaa2f3fd"
+dependencies = [
+ "form_urlencoded",
+ "itoa",
+ "ryu",
+ "serde",
+]
+
+[[package]]
 name = "sha1"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1005,9 +1054,9 @@ dependencies = [
 
 [[package]]
 name = "shlex"
-version = "1.3.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
+checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "slab"
@@ -1233,8 +1282,10 @@ dependencies = [
  "futures-util",
  "pin-project-lite",
  "sync_wrapper",
+ "tokio",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -1255,6 +1306,7 @@ version = "0.1.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63e71662fa4b2a2c3a26f570f037eb95bb1f85397f3cd8076caed2f026a6d100"
 dependencies = [
+ "log",
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
@@ -1332,9 +1384,9 @@ checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
 name = "wasm-bindgen"
-version = "0.2.129"
+version = "0.2.128"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bb54f33acc68fd454578d9820b0bde1a1a3d17aa17bb7b6595806d02886d409"
+checksum = "aecb87a33d3b0c5e3b7aa46336eaf486cffafbd281b195e4c8b80d50df2351bf"
 dependencies = [
  "cfg-if",
  "once_cell",
@@ -1345,9 +1397,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro"
-version = "0.2.129"
+version = "0.2.128"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e29d0c35b16e224a7eeb5cd2d25e3e1968fbd65604117b44d3b789d00ee8535"
+checksum = "a690d511e3c1a8b3a55e33511e3c2c00c78415cd23650f32b808627f5696b9ed"
 dependencies = [
  "quote",
  "wasm-bindgen-macro-support",
@@ -1355,9 +1407,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro-support"
-version = "0.2.129"
+version = "0.2.128"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f501a8bc3719dba86ef8ae4728879c08001bea749eb1333ac5b91e040e2a6b7"
+checksum = "411e4887f0071ef2d2164a9d5fdf2d20efbef78fccd3a78b0c10a1dc5295e48a"
 dependencies = [
  "bumpalo",
  "proc-macro2",
@@ -1368,9 +1420,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-shared"
-version = "0.2.129"
+version = "0.2.128"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23f0c9c52aa7cd7d77769a4cfe2a9adb1b331f489a41d912ce14513d5ab995c6"
+checksum = "81941cd78d0c92026c33e5e01312845a4cb1e9af3407f9134b100dd03144103e"
 dependencies = [
  "unicode-ident",
 ]
