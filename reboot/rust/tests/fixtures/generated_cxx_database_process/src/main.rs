@@ -122,6 +122,13 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
             }
         }
         state.value += request.amount;
+        if let Some(path) = std::env::var_os("REBOOT_TEST_TARGET_UNFINISHED_OUTBOUND") {
+            std::fs::write(&path, b"target admitted, no successful trailers").unwrap();
+            if has("--unfinished-outbound-error") {
+                return Err(tonic::Status::unavailable("unfinished outbound transport outcome"));
+            }
+            std::future::pending::<()>().await;
+        }
         if let Self::Root(root) = self {
             // The ordinary legacy recovery acceptance uses the first target.
             // This branch deliberately enlists two independently routed remote
@@ -144,7 +151,11 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                     Ok(_) | Err(generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(_)) => {}
                     Err(generated::TransactionCounterWritesMethodsIncrementError::System(error)) if error.is_recoverable() => {}
                     Err(generated::TransactionCounterWritesMethodsIncrementError::System(error)) => return Err(tonic::Status::unavailable(format!("unrecoverable remote system abort: {error:?}"))),
-                    Err(generated::TransactionCounterWritesMethodsIncrementError::Grpc(error)) => return Err(error),
+                    Err(generated::TransactionCounterWritesMethodsIncrementError::Grpc(error)) => {
+                        if !has("--catch-outbound-error") { return Err(error); }
+                        assert!(context.returned_participants_snapshot().is_empty());
+                        std::fs::write(arg("--outbound-error-marker"), b"caught uncertain generated outbound, empty membership").unwrap();
+                    },
                 }
             }
         }
@@ -229,6 +240,16 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                         .to_string(),
                 )
                 .unwrap();
+                if let Some(path) = std::env::var_os("REBOOT_TEST_ROOT_HANDLER_PARK") {
+                    struct HandlerDrop(std::path::PathBuf);
+                    impl Drop for HandlerDrop {
+                        fn drop(&mut self) { std::fs::write(self.0.with_extension("handler-dropped"), b"handler future dropped").unwrap(); }
+                    }
+                    let path = std::path::PathBuf::from(path);
+                    std::fs::write(&path, b"confirmed remote successful enlistment").unwrap();
+                    let _drop = HandlerDrop(path);
+                    std::future::pending::<()>().await;
+                }
                 if has("--root-handler-error") {
                     return Err(tonic::Status::invalid_argument(
                         "explicit root handler rejection after successful remote enlistment",
@@ -761,7 +782,7 @@ async fn main() {
             (adapter, None)
         };
     let adapter = if has("--owned-explicit-abort") {
-        adapter.with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(8).unwrap())
+        adapter.with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(1).unwrap())
     } else { adapter };
     if has("--prove-cancel-before-durable") {
         use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;

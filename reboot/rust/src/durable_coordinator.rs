@@ -578,7 +578,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         Ok(())
     }
 
-    fn validate_explicit_abort<P: ParticipantSidecar>(
+    pub(crate) fn validate_explicit_abort<P: ParticipantSidecar>(
         &self,
         local: &crate::durable_participant::StartedLocalTransaction<P>,
         context: &crate::runtime::TransactionContext,
@@ -646,6 +646,15 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             }
         }
         Ok(Box::pin(async move {
+            #[cfg(feature = "test-support")]
+            if let Some(path) = std::env::var_os("REBOOT_TEST_ROOT_HANDLER_PARK") {
+                assert!(
+                    std::path::PathBuf::from(path)
+                        .with_extension("handler-dropped")
+                        .exists(),
+                    "handler future must be destroyed before Abort DecisionPut"
+                );
+            }
             self.persist_abort(
                 context.transaction_root_id(),
                 context.transaction_coordinator_state_ref(),
@@ -776,6 +785,15 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 )),
             })
             .await?;
+        #[cfg(feature = "test-support")]
+        if let Some(path) = std::env::var_os("REBOOT_TEST_ROOT_PREPARE_PARK") {
+            std::fs::write(
+                path,
+                b"real CoordinatorPrepare ACK with complete membership",
+            )
+            .unwrap();
+            std::future::pending::<()>().await;
+        }
         if self
             .prepare_participants(transaction_id, participants.prepare())
             .await?
@@ -1800,6 +1818,341 @@ mod tests {
                 assert!(calls.is_empty(), "handoff must forbid synthetic Abort");
             }
         }
+    }
+
+    async fn handler_owner_case(scenario: &str) {
+        use crate::{
+            RebootHeaders,
+            application_host::{HostRecovery, RecoveryCancellation},
+            explicit_abort::{ExplicitAbortOwner, RootHandlerGuard},
+            runtime::RootTransactionContext,
+        };
+        let trace = Arc::new(Mutex::new(Vec::new()));
+        let sidecar = Arc::new(MockSidecar {
+            trace: trace.clone(),
+            unknown_endpoint: scenario == "unknown-db",
+            wrong_endpoint: scenario == "wrong-db",
+            ..Default::default()
+        });
+        let endpoint = Arc::new(MockEndpoint {
+            trace: trace.clone(),
+            ..Default::default()
+        });
+        let local_sidecar = Arc::new(InProcessSidecar {
+            trace: trace.clone(),
+            park_abort: scenario == "deadline",
+            ..Default::default()
+        });
+        let participant =
+            DurableActorParticipant::new(local_sidecar.clone(), "example.Actor", "actor/1");
+        let id = Uuid::new_v4();
+        let start = ActorTransactionStart {
+            transaction_ids: vec![id],
+            transaction_path: crate::durable_participant::TransactionPathContract::RootOnly,
+            coordinator_state_type: "example.Actor".into(),
+            coordinator_state_ref: "actor/1".into(),
+            mode: TransactionMode::Exclusive,
+            read_only: false,
+            factory: false,
+            state_type: "example.Actor".into(),
+            state_ref: "actor/1".into(),
+        };
+        let root = RootTransactionContext::start(
+            RebootHeaders::new("actor/1"),
+            "example.Actor",
+            TransactionMode::Exclusive,
+            id,
+            prost_types::Timestamp::default(),
+        )
+        .unwrap();
+        let context = root.transaction().clone();
+        if scenario != "unknown" && scenario != "active" {
+            let mut metadata = tonic::metadata::MetadataMap::new();
+            metadata.insert(
+                crate::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER,
+                r#"{"example.Remote":["remote/writer"]}"#.parse().unwrap(),
+            );
+            context.enlist_returned_participants(
+                &crate::successful_trailers::ReturnedParticipants::from_metadata(&metadata)
+                    .unwrap(),
+            );
+        }
+        let owner = ExplicitAbortOwner::new(1)
+            .unwrap()
+            .with_timeout(Duration::from_millis(20))
+            .unwrap();
+        let cancel = RecoveryCancellation::new();
+        let mut supervisor = tokio::task::JoinSet::new();
+        if scenario != "inactive" {
+            owner
+                .recovery_registration()
+                .start(&mut supervisor, cancel.clone())
+                .await
+                .unwrap();
+        }
+        let local = participant
+            .start_local(start.clone(), ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        if scenario == "race-stop" || scenario == "race-failure" {
+            let (entered, wait_entered) = tokio::sync::oneshot::channel();
+            let (release, wait_release) = tokio::sync::oneshot::channel();
+            let locked = participant.clone();
+            let lock =
+                tokio::spawn(
+                    async move { locked.hold_pending_for_test(entered, wait_release).await },
+                );
+            wait_entered.await.unwrap();
+            let admission = RootHandlerGuard::before_handler(
+                local,
+                context.clone(),
+                coordinator(sidecar.clone(), endpoint.clone()),
+                Some(&owner),
+            );
+            tokio::pin!(admission);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(10), &mut admission)
+                    .await
+                    .is_err()
+            );
+            if scenario == "race-failure" {
+                owner.fail_for_test();
+            } else {
+                cancel.cancel();
+            }
+            let stopped = supervisor.join_next().await.unwrap().unwrap();
+            assert_eq!(stopped.is_err(), scenario == "race-failure");
+            release.send(()).unwrap();
+            lock.await.unwrap();
+            assert!(
+                matches!(admission.await, Err(error) if error.code() == tonic::Code::Unavailable)
+            );
+            assert!(
+                trace.lock().unwrap().is_empty(),
+                "must reject before handler permission or sidecar effects"
+            );
+            assert!(
+                tokio::time::timeout(
+                    Duration::from_millis(20),
+                    participant.start_local(start, ParticipantStartMode::Exclusive)
+                )
+                .await
+                .is_err()
+            );
+            return;
+        }
+        let result = RootHandlerGuard::before_handler(
+            local,
+            context.clone(),
+            coordinator(sidecar.clone(), endpoint.clone()),
+            Some(&owner),
+        )
+        .await;
+        if matches!(scenario, "inactive" | "unknown-db" | "wrong-db") {
+            assert!(
+                matches!(result, Err(error) if error.code() == tonic::Code::FailedPrecondition)
+            );
+            assert!(trace.lock().unwrap().is_empty());
+            let retry = tokio::time::timeout(
+                Duration::from_millis(100),
+                participant.start_local(start, ParticipantStartMode::Exclusive),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            drop(retry);
+            cancel.cancel();
+            if scenario != "inactive" {
+                assert!(supervisor.join_next().await.unwrap().unwrap().is_ok());
+            }
+            return;
+        }
+        let mut guard = result.unwrap();
+        if scenario == "premature-completion" {
+            assert_eq!(
+                guard.test_completed().unwrap_err().code(),
+                tonic::Code::FailedPrecondition
+            );
+            drop(guard);
+            assert!(supervisor.join_next().await.unwrap().unwrap().is_err());
+            assert!(trace.lock().unwrap().is_empty());
+            assert!(
+                tokio::time::timeout(
+                    Duration::from_millis(20),
+                    participant.start_local(start, ParticipantStartMode::Exclusive)
+                )
+                .await
+                .is_err()
+            );
+            return;
+        }
+        if scenario == "posthandoff-abort" {
+            guard.test_handoff();
+            assert_eq!(
+                guard.abort_explicit().await.unwrap_err().code(),
+                tonic::Code::FailedPrecondition
+            );
+            assert!(supervisor.join_next().await.unwrap().unwrap().is_err());
+            assert!(trace.lock().unwrap().is_empty());
+            return;
+        }
+        if scenario == "capacity" {
+            let other =
+                DurableActorParticipant::new(local_sidecar.clone(), "example.Actor", "actor/1");
+            let local = other
+                .start_local(start.clone(), ParticipantStartMode::Exclusive)
+                .await
+                .unwrap();
+            let rejected = RootHandlerGuard::before_handler(
+                local,
+                context.clone(),
+                coordinator(sidecar.clone(), endpoint.clone()),
+                Some(&owner),
+            )
+            .await;
+            assert!(
+                matches!(rejected, Err(error) if error.code() == tonic::Code::ResourceExhausted)
+            );
+            assert!(trace.lock().unwrap().is_empty());
+        }
+        let active = if scenario == "unknown" || scenario == "active" {
+            Some(context.begin_generated_outbound().unwrap())
+        } else {
+            None
+        };
+        if scenario == "unknown" {
+            drop(active);
+        } else if scenario == "active" {
+            // Seal must fail while a cloned context still owns an outbound scope.
+            assert!(guard.seal_for_handoff().is_err());
+            drop(active);
+        }
+        if scenario == "handoff" || scenario == "completed" {
+            assert!(guard.seal_for_handoff().unwrap().is_some());
+            guard.test_handoff();
+            if scenario == "completed" {
+                guard.test_completed().unwrap();
+            }
+        }
+        if scenario == "shutdown" {
+            cancel.cancel();
+        }
+        drop(guard);
+        if matches!(scenario, "unknown" | "active" | "handoff" | "deadline") {
+            let error = tokio::time::timeout(Duration::from_secs(1), supervisor.join_next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap()
+                .unwrap_err();
+            if scenario == "deadline" {
+                assert_eq!(error.code(), tonic::Code::DeadlineExceeded);
+            } else {
+                assert!(
+                    trace.lock().unwrap().is_empty(),
+                    "unknown or durable handoff must send no Abort"
+                );
+            }
+            assert!(
+                tokio::time::timeout(
+                    Duration::from_millis(20),
+                    participant.start_local(start, ParticipantStartMode::Exclusive)
+                )
+                .await
+                .is_err()
+            );
+        } else if scenario == "shutdown" || scenario == "completed" {
+            cancel.cancel();
+            assert!(supervisor.join_next().await.unwrap().unwrap().is_ok());
+            assert!(trace.lock().unwrap().is_empty());
+            assert!(
+                tokio::time::timeout(
+                    Duration::from_millis(20),
+                    participant.start_local(start, ParticipantStartMode::Exclusive)
+                )
+                .await
+                .is_err()
+            );
+        } else {
+            let local = tokio::time::timeout(
+                Duration::from_secs(1),
+                participant.start_local(start, ParticipantStartMode::Exclusive),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(
+                *trace.lock().unwrap(),
+                vec![
+                    "database.decision",
+                    "participant.abort",
+                    "participant.abort"
+                ]
+            );
+            drop(local);
+            cancel.cancel();
+            assert!(supervisor.join_next().await.unwrap().unwrap().is_ok());
+        }
+    }
+    #[tokio::test]
+    async fn handler_owner_admission_rechecks_stopped_host_after_mutex_wait() {
+        handler_owner_case("race-stop").await;
+    }
+    #[tokio::test]
+    async fn handler_owner_admission_rechecks_sticky_failure_after_mutex_wait() {
+        handler_owner_case("race-failure").await;
+    }
+    #[tokio::test]
+    async fn handler_owner_rejects_unknown_database_authority() {
+        handler_owner_case("unknown-db").await;
+    }
+    #[tokio::test]
+    async fn handler_owner_rejects_wrong_database_authority() {
+        handler_owner_case("wrong-db").await;
+    }
+    #[tokio::test]
+    async fn handler_owner_rejects_premature_completion_and_notifies_host() {
+        handler_owner_case("premature-completion").await;
+    }
+    #[tokio::test]
+    async fn handler_owner_rejects_posthandoff_abort_without_queueing() {
+        handler_owner_case("posthandoff-abort").await;
+    }
+    #[tokio::test]
+    async fn handler_owner_drop_acknowledges_remote_then_local() {
+        handler_owner_case("drop").await;
+    }
+    #[tokio::test]
+    async fn handler_owner_rejects_inactive_before_effects() {
+        handler_owner_case("inactive").await;
+    }
+    #[tokio::test]
+    async fn handler_owner_reserves_capacity_before_effects() {
+        handler_owner_case("capacity").await;
+    }
+    #[tokio::test]
+    async fn handler_owner_unknown_empty_membership_fails_closed() {
+        handler_owner_case("unknown").await;
+    }
+    #[tokio::test]
+    async fn handler_owner_success_rejects_outstanding_membership() {
+        handler_owner_case("active").await;
+    }
+    #[tokio::test]
+    async fn handler_owner_deadline_retains_local_one_attempt() {
+        handler_owner_case("deadline").await;
+    }
+    #[tokio::test]
+    async fn handler_owner_shutdown_drops_unpolled_without_abort() {
+        handler_owner_case("shutdown").await;
+    }
+    #[tokio::test]
+    async fn handler_owner_posthandoff_drop_fatal_without_abort() {
+        handler_owner_case("handoff").await;
+    }
+    #[tokio::test]
+    async fn handler_owner_completed_handoff_never_aborts() {
+        handler_owner_case("completed").await;
     }
 
     #[tokio::test]

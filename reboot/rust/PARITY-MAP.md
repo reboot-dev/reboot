@@ -1,5 +1,87 @@
 # Python → Rust SDK parity map
 
+## Bounded generated root handler cancellation
+
+**Partial transaction-tree ownership vertical.** Python source authority is
+`reboot/aio/state_managers.py:5179–5215,5869–5980` (root failure/Abort and
+participant watcher fallback). Rust couples `src/codegen.rs::emit_transaction_flow`,
+`src/explicit_abort.rs::RootHandlerGuard`, the exact local incarnation in
+`src/durable_participant.rs`, and `src/durable_coordinator.rs::own_explicit_abort`.
+It does not implement Python's general transaction-tree recovery.
+
+Scope is only an **owner-attached fresh non-idempotent exclusive non-factory root**.
+Use generated `with_explicit_abort_owner(ExplicitAbortOwner::new(capacity)?)` and
+register the same adapter's `explicit_abort_recovery_registration()` with
+`ApplicationHost::with_host_recovery`. Unsupported/inbound/shared/factory/idempotent
+and ownerless paths do not acquire this cancellation authority. Distributed task
+staging remains disabled; returned remote participants still reject root tasks.
+
+Before handler effects, the guard reserves one bounded host permit, verifies the
+same normalized Database/coordinator authority and exact admitted live local
+incarnation, and rechecks active/sticky-failure state **after** awaited validation.
+The admitted capability derives eligibility; downstream callers cannot opt out
+with a boolean, dereference the local handle, or separately mark handoff/completion.
+The consuming `complete_root` validates identity, seals actual successful returned
+membership, revokes cancellation before the first potentially durable coordinator
+RPC, and releases the reservation only after real coordinator completion. Both
+local handoff/disarm paths revoke cancellation authority. The consuming local
+Abort helper also checks its exact incarnation under the ACK-held pending mutex.
+
+Dropping an actual awaited handler destroys its outbound futures first. The guard
+then synchronously transfers the parked incarnation/context and **existing** permit
+to the host worker. That worker validates/seals and executes immutable Abort ACK →
+remote Abort ACKs → exact local Abort ACK directly; it never recursively enqueues
+or reacquires capacity. Capacity counts reserved handlers plus queued/running
+cleanup (1..=1024); one serial worker, <=1024 remote targets, configurable bounded
+cleanup timeout, no actor-only ACK retry. There is no imposed handler timeout beyond
+the caller/host cancellation. After handoff, cancellation/error retains ownership
+and fails host supervision instead of issuing a competing Abort.
+
+Outstanding or unfinished generated outbound scopes permanently make membership
+uncertain, **including an empty returned set or a caught outbound failure**. No
+synthetic decision, terminal RPC, or local release is allowed; the host fails and
+ownership stays retained. Typed recoverable error status is not successful-trailer
+membership authority. This does not enumerate lost participants or recover their
+undurable leases. Pre-reservation cancellation is pre-handler/pre-effect only;
+retention is not crash-durable membership, automatic retry, or restart convergence.
+Detached/manual outbound effects and general nested/tree cancellation remain out.
+
+Executed acceptance on the real C++ Database/RocksDB binary, through canonical live
+PlacementPlanner and genuine generated Tonic adapters:
+
+- `owned_root_handler_cancellation_survives_generated_rpc_deadline`: two independent
+  sidecars, park after confirmed generated remote success; actual deadline destroys
+  the handler **before DecisionPut** (asserted at worker entry), immutable Abort ACK,
+  remote/local exclusive readmission without restart, same live hosts, unchanged
+  actor states/no tasks, immutable Abort retained across subsequent RocksDB restart.
+  The owner capacity is **one**.
+- `owned_root_success_commits_confirmed_remote_membership`: successful ACK-backed
+  distributed completion commits both actors and preserves live remote readmission.
+- `owned_root_postprepare_deadline_retains_without_competing_abort`: deadline after
+  real CoordinatorPrepare ACK with full root+remote membership; supervised nonzero
+  host exit, retained remote exclusive lease, unchanged states/tasks, no Abort.
+- `owned_root_unfinished_outbound_deadline_has_no_synthetic_abort` and
+  `owned_root_caught_outbound_failure_empty_membership_has_no_synthetic_abort`:
+  actual generated remote handler reached without success trailers; deadline or
+  caught uncertain error yields fatal supervision with no fabricated decision or
+  coordinator record and unchanged durable states/tasks.
+- Unit coverage includes stopped/sticky-failed admission while the participant
+  mutex is held, stale incarnation and same-UUID replacement (no terminal RPC,
+  competitor still blocked), both handoff revocations, capacity-one rejection and
+  cleanup, unknown/active membership, one-attempt ACK timeout, shutdown, and private
+  lifecycle phase rejection. Generated downstream fixture executes 26 tests.
+
+Verification logs: `/tmp/handler-owner-fmt.log`, `/tmp/handler-owner-clippy.log`,
+`/tmp/handler-owner-all-targets.log`, `/tmp/handler-owner-full-ignored.log`, and
+`/tmp/handler-owner-cxx-paired.log`; explicit locked compile is in
+`/tmp/handler-owner-check.log`. Locked all-features/all-targets suite passes
+**241 unit tests and 27 outer integration tests** (268 total), with **26 + 1
+executed nested generated-fixture tests** separately;
+full ignored process execution passes **48 generated CXX tests** (all original 43
+plus these five) and **8 separate Native2pc CXX tests**. Native2pc remains an isolated
+protocol, not Python legacy parity. Expected deliberately failed fixture children
+are checked by their acceptance tests; they are not ignored test failures.
+
 ## Host-owned explicit Abort after queue acceptance
 
 **Partial transaction-tree cancellation prerequisite**, not distributed-task or
@@ -66,7 +148,7 @@ and `distributed_direct_handler_failure_must_release_remote_actor` require
 unchanged actor/task state, exclusive remote re-admission without peer restart,
 no preparing records, and immutable Abort surviving RocksDB restart.
 
-**Still blocked:** cancellation before cleanup, unknown/lost successful trailers,
+**Still blocked:** ownerless/general cancellation before cleanup, enumeration of unknown/lost successful trailers,
 inbound task ownership, automatic fanout retry and restart convergence of the
 in-memory enlistment worklist. Interrupted cleanup parks uncertain ownership;
 retention is not durable membership or automatic recovery. Manual late enlistment

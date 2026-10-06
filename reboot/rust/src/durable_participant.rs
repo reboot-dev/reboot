@@ -356,6 +356,8 @@ pub struct StartedLocalTransaction<C: ParticipantSidecar> {
     local_owner: Uuid,
     admitted_explicit_root_scope: bool,
     armed: bool,
+    cancellation_authority: bool,
+    handed_off: bool,
 }
 
 impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
@@ -409,7 +411,7 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
             || !self.admitted_explicit_root_scope
             || self.participant.state_type != context.transaction_coordinator_state_type()
             || self.participant.state_ref != context.transaction_coordinator_state_ref()
-            || !self.armed
+            || !(self.armed || self.cancellation_authority)
             || !pending.as_ref().is_some_and(|current| {
                 current.root_id == context.transaction_root_id()
                     && current.root_id == self.transaction_id
@@ -430,8 +432,65 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         // Even rejected active-outbound uncertainty must not release local
         // ownership through Drop once explicit cleanup has begun.
         self.armed = false;
+        self.cancellation_authority = false;
         let returned = context.seal_explicit_abort()?;
         Ok(returned)
+    }
+
+    /// Private cancellation capability: validate the admitted incarnation before
+    /// handler effects, then park speculative Drop. This is not durable handoff
+    /// authority and cannot be reconstructed from headers or rearmed later.
+    pub(crate) async fn reserve_handler_cancellation(
+        &mut self,
+        context: &crate::runtime::TransactionContext,
+    ) -> Result<(), Status> {
+        let pending = self.participant.pending.lock().await;
+        if !self.armed
+            || !context.is_fresh_root()
+            || !self.admitted_explicit_root_scope
+            || self.participant.state_type != context.transaction_coordinator_state_type()
+            || self.participant.state_ref != context.transaction_coordinator_state_ref()
+            || self.participant.state_ref != context.headers().state_ref
+            || !pending.as_ref().is_some_and(|current| {
+                current.root_id == self.transaction_id
+                    && current.root_id == context.transaction_root_id()
+                    && current.local_owner == Some(self.local_owner)
+                    && current.transaction_ids.len() == 1
+                    && !current.prepared
+                    && current.coordinator_state_type
+                        == context.transaction_coordinator_state_type()
+                    && current.coordinator_state_ref == context.transaction_coordinator_state_ref()
+            })
+        {
+            return Err(Status::failed_precondition(
+                "handler cancellation requires live fresh root ownership",
+            ));
+        }
+        self.armed = false;
+        self.cancellation_authority = true;
+        Ok(())
+    }
+
+    pub(crate) fn cancellation_eligible(
+        &self,
+        context: &crate::runtime::TransactionContext,
+    ) -> bool {
+        self.admitted_explicit_root_scope
+            && context.is_fresh_root()
+            && context.mode() == TransactionMode::Exclusive
+            && context.transaction_ids().len() == 1
+            && context.headers().idempotency_key.is_none()
+    }
+
+    pub(crate) async fn abort_legacy(&mut self) -> Result<(), Status> {
+        self.handoff_to_durable_recovery();
+        self.participant
+            .terminal_owned(self.transaction_id, false, Some(self.local_owner))
+            .await
+    }
+
+    pub(crate) fn was_handed_off(&self) -> bool {
+        self.handed_off
     }
 
     pub(crate) fn database_endpoint(&self) -> Option<&str> {
@@ -449,12 +508,16 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
     /// its host-owned uncertainty guard: errors/cancellation require supervised
     /// restart rather than speculative participant release or Abort.
     pub fn handoff_to_durable_recovery(&mut self) {
+        self.handed_off = true;
+        self.cancellation_authority = false;
         self.armed = false;
     }
 
     /// Marks that a durable Prepare boundary has been crossed. A future
     /// coordinator integration must call this only after Prepare succeeds.
     pub fn disarm_after_durable_prepare(&mut self) {
+        self.handed_off = true;
+        self.cancellation_authority = false;
         self.armed = false;
     }
 }
@@ -704,6 +767,17 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
     }
 
     /// Starts a local handler with cancellation-safe pre-durable cleanup.
+    #[cfg(test)]
+    pub(crate) async fn hold_pending_for_test(
+        &self,
+        entered: tokio::sync::oneshot::Sender<()>,
+        release: tokio::sync::oneshot::Receiver<()>,
+    ) {
+        let _pending = self.pending.lock().await;
+        entered.send(()).unwrap();
+        release.await.unwrap();
+    }
+
     pub async fn start_local(
         &self,
         start: ActorTransactionStart,
@@ -730,6 +804,8 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             local_owner,
             admitted_explicit_root_scope,
             armed: true,
+            cancellation_authority: false,
+            handed_off: false,
         })
     }
 
@@ -1496,6 +1572,137 @@ mod tests {
                 .pop_front()
                 .expect("test must provide a Watch response");
             Box::pin(async move { response })
+        }
+    }
+
+    #[tokio::test]
+    async fn consuming_local_abort_rejects_same_uuid_replacement_without_terminal_rpc() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant = DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+        let id = Uuid::new_v4();
+        let mut old = participant
+            .start_local(start(id), ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        let replacement = Uuid::new_v4();
+        participant
+            .pending
+            .lock()
+            .await
+            .as_mut()
+            .unwrap()
+            .local_owner = Some(replacement);
+        assert_eq!(
+            old.abort_legacy().await.unwrap_err().code(),
+            tonic::Code::FailedPrecondition
+        );
+        drop(old);
+        tokio::task::yield_now().await;
+        assert_eq!(
+            participant
+                .pending
+                .lock()
+                .await
+                .as_ref()
+                .unwrap()
+                .local_owner,
+            Some(replacement)
+        );
+        assert!(
+            sidecar
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|call| !matches!(call, Call::Abort(_)))
+        );
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(20),
+                participant.start_local(start(Uuid::new_v4()), ParticipantStartMode::Exclusive)
+            )
+            .await
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn handler_cancellation_rejects_stale_incarnation_and_both_handoff_paths() {
+        for phase in ["stale", "handoff", "prepare"] {
+            let sidecar = Arc::new(MockSidecar::default());
+            let participant =
+                DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+            let id = Uuid::new_v4();
+            let mut root_start = start(id);
+            root_start.coordinator_state_type = "example.Actor".into();
+            root_start.coordinator_state_ref = "actor/1".into();
+            let mut local = participant
+                .start_local(root_start, ParticipantStartMode::Exclusive)
+                .await
+                .unwrap();
+            let root = crate::runtime::RootTransactionContext::start(
+                crate::RebootHeaders::new("actor/1"),
+                "example.Actor",
+                TransactionMode::Exclusive,
+                id,
+                prost_types::Timestamp::default(),
+            )
+            .unwrap();
+            let replacement = Uuid::new_v4();
+            if phase == "stale" {
+                participant
+                    .pending
+                    .lock()
+                    .await
+                    .as_mut()
+                    .unwrap()
+                    .local_owner = Some(replacement);
+                assert!(
+                    local
+                        .reserve_handler_cancellation(root.transaction())
+                        .await
+                        .is_err()
+                );
+                drop(local);
+                tokio::task::yield_now().await;
+                assert_eq!(
+                    participant
+                        .pending
+                        .lock()
+                        .await
+                        .as_ref()
+                        .unwrap()
+                        .local_owner,
+                    Some(replacement)
+                );
+            } else {
+                local
+                    .reserve_handler_cancellation(root.transaction())
+                    .await
+                    .unwrap();
+                if phase == "handoff" {
+                    local.handoff_to_durable_recovery();
+                } else {
+                    local.disarm_after_durable_prepare();
+                }
+                assert!(!local.cancellation_authority);
+                assert!(
+                    local
+                        .begin_explicit_root_abort(root.transaction())
+                        .await
+                        .is_err()
+                );
+                drop(local);
+                assert!(participant.pending.lock().await.is_some());
+            }
+            assert!(
+                sidecar
+                    .calls
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .all(|call| !matches!(call, Call::Abort(_)))
+            );
         }
     }
 

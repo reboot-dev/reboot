@@ -1,6 +1,7 @@
 use super::*;
 include!("task_schedule_acceptance.rs");
 include!("distributed_root_task_acceptance.rs");
+include!("root_handler_cancellation_acceptance.rs");
 include!("task_wait_acceptance.rs");
 include!("task_wait_registry_acceptance.rs");
 #[derive(Clone, PartialEq, prost::Message)]
