@@ -73,6 +73,8 @@ fn task_host(options: TaskHostOptions<'_>) -> Child {
             "REBOOT_TEST_LOST_PARTICIPANT_COMMIT_ACK"
         };
         command.env(fault, options.ack);
+    } else if options.vector == Some("saturation-allowed") {
+        command.args(["--task-vector", "saturation-allowed", "--exit-after-invoke"]);
     } else if let Some(vector) = options.vector {
         command.args([
             "--task-vector",
@@ -140,6 +142,121 @@ async fn load_task(endpoint: &str, id: database::TaskId) -> database::Task {
         .into_inner()
         .tasks
         .remove(0)
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
+fn generated_reader_task_live_pending_plus_staged_capacity_boundary() {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = generated_host_binary(&fixture);
+    for (vector, expected_state, staged_present) in
+        [("saturation-allowed", 12, true), ("saturation", 5, false)]
+    {
+        let mut db = CxxDatabase::start(std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").unwrap());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(store_counter(&db.endpoint(), "root", 5));
+        let listen = port();
+        let plan = placement_proto::ListenForPlanResponse::decode(
+            URL_SAFE_NO_PAD
+                .decode(legacy_plan_for(&[("root", listen)]))
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+        let planner = LivePlannerServer::start(&runtime, plan);
+        let markers = tempfile::tempdir().unwrap();
+        let marker = markers.path().join("task-entry");
+        let ack = markers.path().join("invoke-result");
+        let mut host = task_host(TaskHostOptions {
+            binary: &binary,
+            database: &db.endpoint(),
+            planner: &planner.endpoint,
+            port: listen,
+            marker: &marker,
+            ack: &ack,
+            invoke: true,
+            block: true,
+            recover: false,
+            vector: Some(vector),
+        });
+        await_marker(&ack, &mut host);
+        assert!(
+            host.wait().unwrap().success(),
+            "live capacity vector {vector}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&ack).unwrap(),
+            if staged_present {
+                "acknowledged"
+            } else {
+                "saturation rejected; admission released"
+            }
+        );
+        assert_eq!(
+            runtime.block_on(load_state(&db.endpoint(), "root")),
+            Some(vec![0x08, expected_state])
+        );
+        let staged_id = database::TaskId {
+            state_type: "tests.reboot.protoc.TransactionCounter".into(),
+            state_ref: "root".into(),
+            task_uuid: Uuid::parse_str(
+                &std::fs::read_to_string(format!("{}.staged", marker.display())).unwrap(),
+            )
+            .unwrap()
+            .as_bytes()
+            .to_vec(),
+        };
+        let mut before = runtime.block_on(pending_tasks(&db.endpoint()));
+        assert_eq!(before.len(), 1024);
+        assert_eq!(
+            before
+                .iter()
+                .any(|task| task.task_id.as_ref() == Some(&staged_id)),
+            staged_present
+        );
+        assert!(before.iter().all(|task| task.response_or_error.is_none()));
+        runtime.block_on(async {
+            let loaded = database::database_client::DatabaseClient::connect(db.endpoint())
+                .await
+                .unwrap()
+                .load(database::LoadRequest {
+                    actors: vec![],
+                    task_ids: vec![staged_id],
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!(loaded.tasks.len(), usize::from(staged_present));
+        });
+        db.restart();
+        let mut after = runtime.block_on(pending_tasks(&db.endpoint()));
+        let order = |a: &database::Task, b: &database::Task| {
+            a.task_id
+                .as_ref()
+                .unwrap()
+                .task_uuid
+                .cmp(&b.task_id.as_ref().unwrap().task_uuid)
+        };
+        before.sort_by(order);
+        after.sort_by(order);
+        assert_eq!(
+            after, before,
+            "live capacity outcome lost tasks across RocksDB restart"
+        );
+        assert_eq!(
+            runtime.block_on(load_state(&db.endpoint(), "root")),
+            Some(vec![0x08, expected_state])
+        );
+    }
 }
 
 #[test]

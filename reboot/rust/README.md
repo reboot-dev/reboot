@@ -41,8 +41,12 @@ shutdown hang. Generator regression coverage excludes declared-error readers
 from scheduling and dispatch surfaces. Real RocksDB recovery accepts exactly
 1024 pending tasks and rejects 1025 with ResourceExhausted before any reader
 runs; crash/restart retains every pending record unchanged in both cases.
-Live pending-plus-staged saturation and earlier durable RPC cancellation windows
-still need dedicated acceptance. No exactly-once
+Live admission also exercises 1023 pending plus one staged (committed state and
+task) and 1024 plus one staged (ResourceExhausted, unchanged actor, absent staged
+task). The fixture seeds real Store records while exclusive admission is held;
+a same-host reader proves denied-root admission was released, and RocksDB restart
+preserves all 1024 pending records in both cases. Earlier durable RPC cancellation
+windows still need dedicated acceptance. No exactly-once
 handler effects, writer tasks, workflows, delayed schedules, distributed task
 ownership, task auth, retries, or full Rust/Python task parity are claimed.
 Python sources: templates/reboot.py.j2:420-467,858-1028,2350-2475;

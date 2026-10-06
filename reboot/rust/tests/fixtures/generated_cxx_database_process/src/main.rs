@@ -137,6 +137,22 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 "iteration" => task.iteration = 1,
                 _ => {}
             }
+            if matches!(vector.as_str(), "saturation" | "saturation-allowed") {
+                // Real sidecar seeding occurs while this generated root owns
+                // exclusive admission, so the live dispatcher cannot drain the
+                // durable records before validate_staged counts them.
+                let count = if vector == "saturation" { 1024 } else { 1023 };
+                let pending = (0..count).map(|_| generated::TransactionCounterWritesMethodsTasks::query(
+                    state_ref, &proto::TransactionIncrementRequest { amount: 9000 },
+                )).collect();
+                let mut database = reboot::database_proto::database_client::DatabaseClient::connect(arg("--database")).await.map_err(|error| tonic::Status::unavailable(error.to_string()))?;
+                database.store(reboot::database_proto::StoreRequest {
+                    task_upserts: pending, sync: true, ..Default::default()
+                }).await?;
+                if let Self::Tasks { marker, .. } = self {
+                    std::fs::write(format!("{marker}.staged"), Uuid::from_slice(&task.task_id.as_ref().unwrap().task_uuid).unwrap().to_string()).unwrap();
+                }
+            }
             if vector == "duplicate" { execution.task_upserts.push(task.clone()); }
             if vector == "capacity" { execution.task_upserts = vec![task.clone(); 1024]; }
             execution.task_upserts.push(task);
@@ -783,8 +799,17 @@ async fn main() {
                 }
                 Err(status) if has("--expect-task-error") => {
                     let vector = arg("--task-vector");
-                    let expected = if vector == "capacity" { tonic::Code::ResourceExhausted } else if vector.starts_with("reuse:") { tonic::Code::AlreadyExists } else if vector == "no-owner" { tonic::Code::FailedPrecondition } else { tonic::Code::InvalidArgument };
+                    let expected = if matches!(vector.as_str(), "capacity" | "saturation") { tonic::Code::ResourceExhausted } else if vector.starts_with("reuse:") { tonic::Code::AlreadyExists } else if vector == "no-owner" { tonic::Code::FailedPrecondition } else { tonic::Code::InvalidArgument };
                     assert_eq!(status.code(), expected, "denial vector {vector}: {status}");
+                    if vector == "saturation" {
+                        // Probe the same actor in the same live host: a retained
+                        // exclusive admission would make this reader time out.
+                        let mut probe = tonic::Request::new(proto::TransactionIncrementRequest { amount: 0 });
+                        *probe.metadata_mut() = reboot::RebootHeaders::new(&state_ref).to_metadata().unwrap();
+                        probe.set_timeout(std::time::Duration::from_millis(500));
+                        assert_eq!(client.query(probe).await.unwrap().into_inner().value, 5);
+                        std::fs::write(arg("--invoke-marker"), "saturation rejected; admission released").unwrap();
+                    }
                     break;
                 }
                 Err(status) if has("--expect-declared-factory-error") => {
