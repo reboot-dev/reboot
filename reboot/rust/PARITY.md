@@ -197,7 +197,17 @@ survive RocksDB restart, canonical Wait then returns both typed completions, and
 another completed restart preserves records without replay. Append-only logs
 allow precisely one extra entry for the interrupted reader. Removing only shared
 worker cancellation fails the shutdown bound. This is host shutdown/redelivery,
-not the public CancelTask API or exactly-once handler side effects. Global staged-capacity reservations,
+not the public CancelTask API or exactly-once handler side effects. ApplicationHost
+now also observes its shutdown signal while awaiting each HostRecovery::start,
+not only after all registrations finish. An interrupted startup future drops
+before readiness revocation, root cancellation, child/router joining and lifecycle
+cleanup; later registrations never start and public ingress never opens. A live
+Tonic regression parks an owned startup future plus supervised child, verifies
+Unavailable public ingress, then proves graceful shutdown, exactly one owner Drop,
+cooperative child join, lifecycle cleanup and closed listener within one second.
+The old implementation fails this regression. This proves local host ownership,
+not a new C++ durable recovery outcome; lifecycle initialize/recover hooks before
+listener bind remain outside this cancellation slice. Global staged-capacity reservations,
 second-actor transaction control/recovery registration, task auth/errors/retries,
 and distributed dispatcher fencing/migration remain outside this slice. Source: aio/internals/tasks_servicer.py:48-126 and
 templates/reboot.py.j2:4697-4775. Earlier durable RPC cancellation windows still need dedicated

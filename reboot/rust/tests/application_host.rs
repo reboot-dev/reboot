@@ -1010,3 +1010,109 @@ async fn fatal_placement_planner_status_is_supervised_and_closes_host() {
     assert!(std::net::TcpStream::connect_timeout(&address, Duration::from_millis(50)).is_err());
     planner_server.abort();
 }
+
+struct StalledStartupRecovery {
+    started: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    future_dropped: Arc<AtomicUsize>,
+    child_joined: Arc<AtomicUsize>,
+}
+#[tonic::async_trait]
+impl HostRecovery for StalledStartupRecovery {
+    async fn start(
+        &self,
+        supervisor: &mut tokio::task::JoinSet<Result<(), Status>>,
+        cancel: RecoveryCancellation,
+    ) -> Result<(), Status> {
+        struct StartupDrop(Arc<AtomicUsize>);
+        impl Drop for StartupDrop {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        let _owner = StartupDrop(self.future_dropped.clone());
+        let child_joined = self.child_joined.clone();
+        supervisor.spawn(async move {
+            cancel.cancelled().await;
+            child_joined.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        });
+        self.started
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap()
+            .send(())
+            .unwrap();
+        std::future::pending().await
+    }
+}
+#[tokio::test]
+async fn shutdown_during_recovery_start_drops_owner_joins_child_and_closes_public_ingress() {
+    let address = unused_local_address();
+    let trace = Arc::new(Mutex::new(Vec::new()));
+    let dropped = Arc::new(AtomicUsize::new(0));
+    let joined = Arc::new(AtomicUsize::new(0));
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (later_tx, later_rx) = tokio::sync::oneshot::channel();
+    let (_release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let host = ApplicationHost::new("server-owned-app")
+        .with_lifecycle(lifecycle("startup", trace.clone(), false, None))
+        .with_host_recovery(StalledStartupRecovery {
+            started: Mutex::new(Some(started_tx)),
+            future_dropped: dropped.clone(),
+            child_joined: joined.clone(),
+        })
+        .with_host_recovery(BlockingRecovery {
+            started: Mutex::new(Some(later_tx)),
+            release: tokio::sync::Mutex::new(Some(release_rx)),
+        })
+        .add_public_service(proto::echo_methods_server::EchoMethodsServer::new(
+            IdentityEcho,
+        ));
+    let mut server = tokio::spawn(async move {
+        host.serve_with_shutdown(address, async { shutdown_rx.await.unwrap() })
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(2), started_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut client =
+        proto::echo_methods_client::EchoMethodsClient::connect(format!("http://{address}"))
+            .await
+            .unwrap();
+    let mut request = Request::new(proto::Text {
+        content: "must remain gated".into(),
+    });
+    request
+        .metadata_mut()
+        .insert(STATE_REF_HEADER, "actor".parse().unwrap());
+    assert_eq!(
+        client.reply(request).await.unwrap_err().code(),
+        tonic::Code::Unavailable
+    );
+    shutdown_tx.send(()).unwrap();
+    let result = tokio::time::timeout(Duration::from_secs(1), &mut server).await;
+    if result.is_err() {
+        server.abort();
+        let _ = server.await;
+        panic!("shutdown ignored while recovery start was pending");
+    }
+    result.unwrap().unwrap().unwrap();
+    assert_eq!(dropped.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        joined.load(Ordering::SeqCst),
+        1,
+        "owned recovery child was not cooperatively joined"
+    );
+    assert!(
+        later_rx.await.is_err(),
+        "later recovery registration must not start"
+    );
+    assert_eq!(
+        *trace.lock().unwrap(),
+        vec!["initialize:startup", "recover:startup", "shutdown:startup"]
+    );
+    assert!(std::net::TcpStream::connect_timeout(&address, Duration::from_millis(50)).is_err());
+}

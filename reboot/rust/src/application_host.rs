@@ -1048,8 +1048,25 @@ impl RunningApplicationHost {
         });
         tokio::task::yield_now().await;
         let mut supervisor = JoinSet::new();
+        tokio::pin!(shutdown);
         for (component, registration) in recovery.iter().enumerate() {
-            if let Err(source) = registration.start(&mut supervisor, cancel.clone()).await {
+            // Startup can await a remote Recover stream indefinitely. Keep the
+            // same shutdown future live before Ready; dropping this start future
+            // revokes its local RAII owners before draining registered children.
+            let started = tokio::select! {
+                biased;
+                _ = &mut shutdown => None,
+                result = registration.start(&mut supervisor, cancel.clone()) => Some(result),
+            };
+            let Some(started) = started else {
+                readiness.send_replace(RecoveryState::Failed);
+                cancel.cancel();
+                Self::join_cancelled_recovery(&mut supervisor).await;
+                let serving = serving.await.expect("application serving task panicked");
+                Self::shutdown_lifecycle(&lifecycle).await?;
+                return serving.map_err(ApplicationHostError::Transport);
+            };
+            if let Err(source) = started {
                 readiness.send_replace(RecoveryState::Failed);
                 cancel.cancel();
                 Self::join_cancelled_recovery(&mut supervisor).await;
@@ -1084,7 +1101,7 @@ impl RunningApplicationHost {
         }
         readiness.send_replace(RecoveryState::Ready);
         tokio::select! {
-            _ = shutdown => cancel.cancel(),
+            _ = &mut shutdown => cancel.cancel(),
             result = supervisor.join_next(), if !supervisor.is_empty() => {
                 let source = match result {
                     Some(Ok(Err(source))) => source,
