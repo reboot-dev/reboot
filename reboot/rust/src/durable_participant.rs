@@ -1040,11 +1040,18 @@ pub mod test_support {
         let Ok(marker) = std::env::var("REBOOT_TEST_TARGET_WATCH_TERMINALIZED") else {
             return Ok(());
         };
-        std::fs::write(marker, b"watch-terminalized\n").map_err(|error| {
-            tonic::Status::internal(format!(
-                "cannot create Watch recovery test barrier: {error}"
-            ))
-        })
+        use std::io::Write as _;
+
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(marker)
+            .and_then(|mut marker| marker.write_all(b"watch-terminalized\n"))
+            .map_err(|error| {
+                tonic::Status::internal(format!(
+                    "cannot create Watch recovery test barrier: {error}"
+                ))
+            })
     }
 }
 

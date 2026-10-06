@@ -225,10 +225,15 @@ impl PlacementPlannerRecovery {
         Ok(self)
     }
 
-    async fn run(&self, cancel: RecoveryCancellation) -> Result<(), tonic::Status> {
+    async fn run(
+        &self,
+        cancel: RecoveryCancellation,
+        initial_plan: Option<tokio::sync::oneshot::Sender<Result<(), tonic::Status>>>,
+    ) -> Result<(), tonic::Status> {
+        let mut initial_plan = initial_plan;
         let mut backoff = self.initial_backoff;
         loop {
-            match self.listen_once(cancel.clone()).await {
+            match self.listen_once(cancel.clone(), &mut initial_plan).await {
                 Ok(()) => return Ok(()),
                 Err(status) if status.code() == tonic::Code::Unavailable => {
                     tokio::select! {
@@ -237,12 +242,21 @@ impl PlacementPlannerRecovery {
                     }
                     backoff = backoff.saturating_mul(2).min(self.max_backoff);
                 }
-                Err(status) => return Err(status),
+                Err(status) => {
+                    if let Some(ready) = initial_plan.take() {
+                        let _ = ready.send(Err(status.clone()));
+                    }
+                    return Err(status);
+                }
             }
         }
     }
 
-    async fn listen_once(&self, cancel: RecoveryCancellation) -> Result<(), tonic::Status> {
+    async fn listen_once(
+        &self,
+        cancel: RecoveryCancellation,
+        initial_plan: &mut Option<tokio::sync::oneshot::Sender<Result<(), tonic::Status>>>,
+    ) -> Result<(), tonic::Status> {
         let connect = self.endpoint.connect();
         tokio::pin!(connect);
         let channel = tokio::select! {
@@ -263,7 +277,11 @@ impl PlacementPlannerRecovery {
                     Some(response) => {
                         // Bad or stale responses leave the last-good snapshot
                         // intact; they are not a fatal stream lifecycle error.
-                        let _ = self.placement.install(response);
+                        if self.placement.install(response).is_ok()
+                            && let Some(ready) = initial_plan.take()
+                        {
+                            let _ = ready.send(Ok(()));
+                        }
                     }
                     None => return Err(tonic::Status::unavailable("placement planner stream ended")),
                 },
@@ -280,8 +298,16 @@ impl HostRecovery for PlacementPlannerRecovery {
         cancel: RecoveryCancellation,
     ) -> Result<(), tonic::Status> {
         let recovery = self.clone();
-        supervisor.spawn(async move { recovery.run(cancel).await });
-        Ok(())
+        let task_cancel = cancel.clone();
+        let (ready, initial_plan) = tokio::sync::oneshot::channel();
+        supervisor.spawn(async move { recovery.run(task_cancel, Some(ready)).await });
+        tokio::select! {
+            _ = cancel.cancelled() => Ok(()),
+            result = initial_plan => match result {
+                Ok(result) => result,
+                Err(_) => Err(tonic::Status::internal("placement planner ended before installing an initial plan")),
+            },
+        }
     }
 }
 
@@ -355,9 +381,27 @@ where
         self.participant
             .recover_ownership(self.metadata.participant.clone())
             .await?;
-        self.coordinator
-            .recover(self.metadata.coordinator.clone())
-            .await?;
+        // A restarted root can reach a peer's fixed control listener before
+        // that peer has restored its prepared participant ownership. The
+        // coordinator record remains durable, so an Unavailable terminal
+        // delivery is non-definitive and must be retried from that record
+        // rather than failing the host and stranding recovery.
+        let mut retry_delay = std::time::Duration::from_millis(25);
+        loop {
+            tokio::select! {
+                result = self.coordinator.recover(self.metadata.coordinator.clone()) => match result {
+                    Ok(()) => break,
+                    Err(status) if status.code() == tonic::Code::Unavailable => {}
+                    Err(status) => return Err(status),
+                },
+                _ = cancel.cancelled() => return Ok(()),
+            }
+            tokio::select! {
+                _ = cancel.cancelled() => return Ok(()),
+                _ = tokio::time::sleep(retry_delay) => {}
+            }
+            retry_delay = (retry_delay * 2).min(std::time::Duration::from_secs(1));
+        }
 
         // A public RPC cannot observe a recovered prepared participant before
         // its authoritative Watch has either terminalized it or confirmed that

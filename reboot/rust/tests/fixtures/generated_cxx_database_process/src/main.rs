@@ -80,18 +80,29 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
     ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
         state.value += request.amount;
         if let Self::Root(root) = self {
-            match root.client
-                .increment(
-                    context,
-                    &generated::TransactionCounterWritesMethodsTarget::new("target"),
-                    request.clone(),
-                )
-                .await
-            {
-                Ok(_) | Err(generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(_)) => {}
-                Err(generated::TransactionCounterWritesMethodsIncrementError::System(error)) if error.is_recoverable() => {}
-                Err(generated::TransactionCounterWritesMethodsIncrementError::System(error)) => return Err(tonic::Status::unavailable(format!("unrecoverable remote system abort: {error:?}"))),
-                Err(generated::TransactionCounterWritesMethodsIncrementError::Grpc(error)) => return Err(error),
+            // The ordinary legacy recovery acceptance uses the first target.
+            // This branch deliberately enlists two independently routed remote
+            // actors so the root coordinator's concurrent Prepare fan-out and
+            // post-decision recovery retain the whole durable participant set.
+            let targets: &[&str] = if root.multi_participant {
+                &["target-a", "target-b"]
+            } else {
+                &["target"]
+            };
+            for target in targets {
+                match root.client
+                    .increment(
+                        context,
+                        &generated::TransactionCounterWritesMethodsTarget::new(*target),
+                        request.clone(),
+                    )
+                    .await
+                {
+                    Ok(_) | Err(generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(_)) => {}
+                    Err(generated::TransactionCounterWritesMethodsIncrementError::System(error)) if error.is_recoverable() => {}
+                    Err(generated::TransactionCounterWritesMethodsIncrementError::System(error)) => return Err(tonic::Status::unavailable(format!("unrecoverable remote system abort: {error:?}"))),
+                    Err(generated::TransactionCounterWritesMethodsIncrementError::Grpc(error)) => return Err(error),
+                }
             }
         }
         let mut result =
@@ -181,6 +192,7 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
 }
 struct Root {
     client: generated::TransactionCounterWritesMethodsClient<LegacyApplicationResolver>,
+    multi_participant: bool,
 }
 
 /// A deliberately small, separately hosted service used only by the C++
@@ -227,10 +239,10 @@ impl proto::transaction_counter_writes_methods_server::TransactionCounterWritesM
             // A Reboot backend error that Python permits callers to catch
             // while the root transaction continues.
             104 => {
-                return Err(reboot::SystemAborted::NotFound(
-                    reboot::database_proto::NotFound {},
-                )
-                .into_status("remote state is absent"));
+                return Err(
+                    reboot::SystemAborted::NotFound(reboot::database_proto::NotFound {})
+                        .into_status("remote state is absent"),
+                );
             }
             // Reboot sourced this outcome, but it still requires the whole
             // root transaction to retry rather than committing through it.
@@ -406,11 +418,12 @@ async fn main() {
         root: root_id,
         child: Uuid::from_u128(2),
     };
-    let handler = if role == "root" {
+    let handler = if role == "root" || role == "multi-root" {
         Handler::Root(Root {
             client: generated::TransactionCounterWritesMethodsClient::new(
                 LegacyApplicationResolver::new(application.clone(), placement.clone()),
             ),
+            multi_participant: role == "multi-root",
         })
     } else {
         Handler::Target

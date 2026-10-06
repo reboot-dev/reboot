@@ -2024,6 +2024,237 @@ fn generated_factory_root_recovers_target_through_live_placement_planner_across_
     recovered_planner.stop();
 }
 
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_legacy_root_recovers_two_remote_participants_through_live_placement_planner() {
+    let database_binary =
+        std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let mut root_db = CxxDatabase::start(database_binary.clone());
+    let mut target_a_db = CxxDatabase::start(database_binary.clone());
+    let mut target_b_db = CxxDatabase::start(database_binary);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    for (database, state_ref) in [
+        (&root_db, "multi-root"),
+        (&target_a_db, "target-a"),
+        (&target_b_db, "target-b"),
+    ] {
+        runtime.block_on(store_counter(&database.endpoint(), state_ref, 0));
+    }
+
+    let root_port = port();
+    let target_a_port = port();
+    let target_b_port = port();
+    let root_id = "00000000-0000-0000-0000-000000000006";
+    let initial_plan = placement_proto::ListenForPlanResponse::decode(
+        URL_SAFE_NO_PAD
+            .decode(legacy_plan_for(&[
+                ("multi-root", root_port),
+                ("target-a", target_a_port),
+                ("target-b", target_b_port),
+            ]))
+            .unwrap()
+            .as_slice(),
+    )
+    .unwrap();
+    let initial_planner = LivePlannerServer::start(&runtime, initial_plan);
+    let marker_dir = tempfile::tempdir().unwrap();
+    let sealed = marker_dir.path().join("sealed");
+    let mut target_a = spawn_live_host(LiveHostOptions {
+        binary: &binary,
+        role: "target",
+        port: target_a_port,
+        database: &target_a_db.endpoint(),
+        planner: &initial_planner.endpoint,
+        root_id,
+        recover: false,
+        invoke: false,
+        factory_target_invoke: false,
+        marker: None,
+        watch_terminalized: None,
+        state_ref: Some("target-a"),
+        coordinator_state_ref: Some("target-a"),
+        watch_coordinator_state_ref: None,
+    });
+    let mut target_b = spawn_live_host(LiveHostOptions {
+        binary: &binary,
+        role: "target",
+        port: target_b_port,
+        database: &target_b_db.endpoint(),
+        planner: &initial_planner.endpoint,
+        root_id,
+        recover: false,
+        invoke: false,
+        factory_target_invoke: false,
+        marker: None,
+        watch_terminalized: None,
+        state_ref: Some("target-b"),
+        coordinator_state_ref: Some("target-b"),
+        watch_coordinator_state_ref: None,
+    });
+    wait(target_a_port);
+    wait(target_b_port);
+    let mut root = spawn_live_host(LiveHostOptions {
+        binary: &binary,
+        role: "multi-root",
+        port: root_port,
+        database: &root_db.endpoint(),
+        planner: &initial_planner.endpoint,
+        root_id,
+        recover: false,
+        invoke: true,
+        factory_target_invoke: false,
+        marker: Some(&sealed),
+        watch_terminalized: None,
+        state_ref: Some("multi-root"),
+        coordinator_state_ref: Some("multi-root"),
+        watch_coordinator_state_ref: None,
+    });
+    wait(root_port);
+    initial_planner.wait_for_connections(3);
+    for _ in 0..100 {
+        if sealed.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(
+        sealed.exists(),
+        "root never sealed the two-participant decision"
+    );
+    let _ = root.kill();
+    let _ = root.wait();
+    let _ = target_a.kill();
+    let _ = target_a.wait();
+    let _ = target_b.kill();
+    let _ = target_b.wait();
+    initial_planner.stop();
+    root_db.restart();
+    target_a_db.restart();
+    target_b_db.restart();
+
+    let recovered_root_port = port();
+    let recovered_plan = placement_proto::ListenForPlanResponse::decode(
+        URL_SAFE_NO_PAD
+            .decode(legacy_plan_for(&[
+                ("multi-root", recovered_root_port),
+                ("target-a", target_a_port),
+                ("target-b", target_b_port),
+            ]))
+            .unwrap()
+            .as_slice(),
+    )
+    .unwrap();
+    let recovered_planner = LivePlannerServer::start(&runtime, recovered_plan);
+    let target_a_terminalized = marker_dir.path().join("target-a-watch-terminalized");
+    let target_b_terminalized = marker_dir.path().join("target-b-watch-terminalized");
+    target_a = spawn_live_host(LiveHostOptions {
+        binary: &binary,
+        role: "target",
+        port: target_a_port,
+        database: &target_a_db.endpoint(),
+        planner: &recovered_planner.endpoint,
+        root_id,
+        recover: true,
+        invoke: false,
+        factory_target_invoke: false,
+        marker: None,
+        watch_terminalized: Some(&target_a_terminalized),
+        state_ref: Some("target-a"),
+        coordinator_state_ref: Some("target-a"),
+        watch_coordinator_state_ref: Some("multi-root"),
+    });
+    target_b = spawn_live_host(LiveHostOptions {
+        binary: &binary,
+        role: "target",
+        port: target_b_port,
+        database: &target_b_db.endpoint(),
+        planner: &recovered_planner.endpoint,
+        root_id,
+        recover: true,
+        invoke: false,
+        factory_target_invoke: false,
+        marker: None,
+        watch_terminalized: Some(&target_b_terminalized),
+        state_ref: Some("target-b"),
+        coordinator_state_ref: Some("target-b"),
+        watch_coordinator_state_ref: Some("multi-root"),
+    });
+    wait(target_a_port);
+    wait(target_b_port);
+    root = spawn_live_host(LiveHostOptions {
+        binary: &binary,
+        role: "multi-root",
+        port: recovered_root_port,
+        database: &root_db.endpoint(),
+        planner: &recovered_planner.endpoint,
+        root_id,
+        recover: true,
+        invoke: false,
+        factory_target_invoke: false,
+        marker: None,
+        watch_terminalized: None,
+        state_ref: Some("multi-root"),
+        coordinator_state_ref: Some("multi-root"),
+        watch_coordinator_state_ref: Some("multi-root"),
+    });
+    wait(recovered_root_port);
+    recovered_planner.wait_for_connections(3);
+    for _ in 0..100 {
+        if target_a_terminalized.exists() && target_b_terminalized.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    for marker in [&target_a_terminalized, &target_b_terminalized] {
+        assert_eq!(
+            std::fs::read(marker).unwrap(),
+            b"watch-terminalized\n",
+            "each recovered participant must terminalize exactly once after Watch"
+        );
+    }
+    for _ in 0..100 {
+        if runtime.block_on(load_state(&root_db.endpoint(), "multi-root")) == Some(vec![0x08, 0x07])
+            && runtime.block_on(load_state(&target_a_db.endpoint(), "target-a"))
+                == Some(vec![0x08, 0x07])
+            && runtime.block_on(load_state(&target_b_db.endpoint(), "target-b"))
+                == Some(vec![0x08, 0x07])
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert_eq!(
+        runtime.block_on(load_state(&root_db.endpoint(), "multi-root")),
+        Some(vec![0x08, 0x07])
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&target_a_db.endpoint(), "target-a")),
+        Some(vec![0x08, 0x07])
+    );
+    assert_eq!(
+        runtime.block_on(load_state(&target_b_db.endpoint(), "target-b")),
+        Some(vec![0x08, 0x07])
+    );
+    let _ = root.kill();
+    let _ = root.wait();
+    let _ = target_a.kill();
+    let _ = target_a.wait();
+    let _ = target_b.kill();
+    let _ = target_b.wait();
+    recovered_planner.stop();
+}
+
 fn factory_target_root_host(
     binary: &std::path::Path,
     database: &str,

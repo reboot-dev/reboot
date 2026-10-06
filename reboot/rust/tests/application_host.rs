@@ -997,7 +997,11 @@ async fn fatal_placement_planner_status_is_supervised_and_closes_host() {
 
     planner.wait_for_connections(1).await;
     match server.await.unwrap() {
-        Err(ApplicationHostError::RecoveryTask(status)) => {
+        Err(ApplicationHostError::Lifecycle {
+            phase: ApplicationLifecyclePhase::Recover,
+            component: 0,
+            source: status,
+        }) => {
             assert_eq!(status.code(), tonic::Code::PermissionDenied);
         }
         other => panic!("expected fatal planner status to fail host, got {other:?}"),
