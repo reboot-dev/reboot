@@ -1,3 +1,62 @@
+## Candidate supervised successful-return descendant trees (not yet delivered)
+
+Explicit generated `with_supervised_transaction_tree()` is separate from default
+leaf task ownership. It requires actual registered fresh-root execution or an
+active reserved exact-incarnation participant Watch execution, existing distinct
+actors, exclusive non-factory/non-idempotent methods, one child per branch,
+<=32 transaction IDs and <=1024 transitive participants. Inbound contexts own a
+new branch collection; local clones/nesting share that ledger without granting
+fresh-root authority. Successful trailers aggregate local+descendant identities
+with writer precedence. Seal requires zero generated outbound futures and known
+membership, before root execution release. Error/Drop closes clones synchronously;
+bounded host workers wait for actual scoped futures before releasing execution.
+A successfully sealed root still belongs to its registered pre-handoff owner
+while execution-mutex release awaits: cancellation transfers that same sealed
+ledger, registration and permit to host cleanup. Queue admission rejects a local
+capability already handed to durable recovery. Deterministic unit mutex contention
+proved the original stranded-lease failure, then restored Abort/readmission with
+one remote/local terminal attempt. This is local lifecycle evidence, separate
+from the three-sidecar durability matrix. Public manual scoped helpers require
+caller-retained scope/trailer discipline; generated calls, not arbitrary manual
+scope reuse or premature caller completion, define counted outbound guarantees.
+Only the root publishes immutable Abort; unknown descendants self-Watch.
+
+Sources: Python `aio/contexts.py:111-235`, `aio/stubs.py:685-755`,
+`aio/state_managers.py:892-1041`; Rust `runtime.rs`, `explicit_abort.rs`,
+`codegen.rs`, `successful_trailers.rs`. Child-specific relinquish/rollback is
+still unavailable. No sibling/reentrant/shared/factory/idempotent trees, subtree
+tasks, retry/recoverable-error Commit, migration or pre-Prepare crash guarantee.
+Actor-only lost terminal ACKs retain ownership and fail supervision without retry.
+
+New real canonical C++/RocksDB fixture uses three independent sidecars/hosts;
+B actually calls C. Focused evidence covers actual paths, transitive durable root
+membership, Commit/restart, confirmed root failure/deadline, B lost upstream
+trailers with C self-Watch, target-Watch-ready-before-root recovery, active child
+Prepare/terminal exclusion, closed clones, missing/inactive/full Watch owners,
+all-actor task denial and C ACK-held competitor admission/one attempt/restart.
+The same-revision nine-case tree matrix also exercises the actual B handler catch
+of uncertain C staging, distinct positive path IDs, duplicate/depth overflow,
+shared/factory/idempotent rejection and generated self/root reentrant child calls.
+The distinct-actor requirement remains host composition: the seam explicitly
+rejects self/root targets, not arbitrary ancestor routing. No claim of generic
+ancestor enumeration or migration/fencing is made.
+Public API unit tests exercise non-drainable ledgers, counted helper rejection,
+context identity and inbound root-drive rejection. All five causal RED controls
+failed independent invariants (durable membership, actual late child success,
+Prepare success while child active, C exclusive readmission, target host exit).
+Post-fix verification passed formatting, locked strict all-features/all-targets
+Clippy, locked all-features/all-targets tests (250 library units and 26 generated
+downstream vectors), the complete **71 ignored generated C++ process tests**
+(baseline62 plus9 tree cases), then **8 ignored Native2pc transport tests**.
+Final logs: `/tmp/tree-final-{fmt,clippy,alltargets,full-cxx,native}.log`.
+Native2pc remains independent protocol regression, not Python legacy parity.
+The sealed-root cancellation regression executed one invariant-specific original
+source RED (stranded readmission), followed by fixed-source GREEN; an independent
+delta source review found no new blocker. Review did not independently rerun tests.
+This remains an uncommitted candidate, not delivery/push certification. See
+`/tmp/supervised-descendant-trees-checkpoint.md` for exact source/log identities,
+review provenance, scope boundaries and sole-build-owner release status.
+
 # Python → Rust SDK parity map
 
 ## Remote actor unary-reader task checkpoint

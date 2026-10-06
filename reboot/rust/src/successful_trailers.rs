@@ -109,6 +109,60 @@ impl ParticipantMetadata {
         })
     }
 
+    /// Encodes a bounded transitive union; writer classification wins.
+    pub fn classified_aggregate(
+        participants: &[ReturnedParticipant],
+        read_only_aware: bool,
+    ) -> Result<Self, ParticipantMetadataError> {
+        let mut union = std::collections::BTreeMap::new();
+        for participant in participants {
+            if participant.target.state_type.is_empty() {
+                return Err(ParticipantMetadataError::EmptyStateType);
+            }
+            if participant.target.state_ref.is_empty() {
+                return Err(ParticipantMetadataError::InvalidStateRef(
+                    participant.target.state_type.clone(),
+                ));
+            }
+            union
+                .entry(participant.target.clone())
+                .and_modify(|read_only| *read_only &= participant.read_only)
+                .or_insert(participant.read_only);
+        }
+        if union.is_empty() {
+            return Err(ParticipantMetadataError::Empty);
+        }
+        if union.len() > 1024 {
+            return Err(ParticipantMetadataError::TooMany);
+        }
+        let mut writers: std::collections::BTreeMap<String, Vec<String>> =
+            std::collections::BTreeMap::new();
+        let mut readers: std::collections::BTreeMap<String, Vec<String>> =
+            std::collections::BTreeMap::new();
+        for (target, read_only) in union {
+            let set = if read_only && read_only_aware {
+                &mut readers
+            } else {
+                &mut writers
+            };
+            set.entry(target.state_type)
+                .or_default()
+                .push(target.state_ref);
+        }
+        let encode = |set| {
+            HeaderValue::from_str(&serde_json::to_string(&set).expect("participant map serializes"))
+                .map_err(ParticipantMetadataError::HeaderValue)
+        };
+        Ok(Self {
+            should_commit: encode(writers)?,
+            read_only: if read_only_aware {
+                Some(encode(readers)?)
+            } else {
+                None
+            },
+        })
+    }
+
     fn should_commit_header_value(&self) -> HeaderValue {
         self.should_commit.clone()
     }
@@ -125,6 +179,7 @@ pub enum ParticipantMetadataError {
     ExpectedObject,
     Empty,
     EmptyStateType,
+    TooMany,
     ExpectedStateRefArray(String),
     EmptyStateRefArray(String),
     InvalidStateRef(String),
@@ -137,6 +192,7 @@ impl std::fmt::Display for ParticipantMetadataError {
             Self::Json(error) => write!(f, "invalid participant JSON: {error}"),
             Self::ExpectedObject => write!(f, "participant metadata must be a JSON object"),
             Self::Empty => write!(f, "participant metadata must not be empty"),
+            Self::TooMany => write!(f, "participant aggregate exceeds 1024"),
             Self::EmptyStateType => write!(f, "participant state type must not be empty"),
             Self::ExpectedStateRefArray(state_type) => {
                 write!(
@@ -206,6 +262,11 @@ impl ReturnedParticipants {
                 read_only: read_only.contains(target) && !should_commit.contains(target),
             })
             .collect::<Vec<_>>();
+        if participants.len() > 1024 {
+            return Err(ReturnedParticipantsError::InvalidParticipantMetadata(
+                ParticipantMetadataError::TooMany,
+            ));
+        }
         if participants.is_empty() {
             return Err(ReturnedParticipantsError::Empty);
         }
@@ -231,6 +292,11 @@ fn participant_targets<'a>(
         let value = value
             .to_str()
             .map_err(|_| ReturnedParticipantsError::InvalidMetadataValue)?;
+        if value.len() > 65536 {
+            return Err(ReturnedParticipantsError::InvalidParticipantMetadata(
+                ParticipantMetadataError::TooMany,
+            ));
+        }
         let parsed: Value = serde_json::from_str(value).map_err(|error| {
             ReturnedParticipantsError::InvalidParticipantMetadata(ParticipantMetadataError::Json(
                 error,

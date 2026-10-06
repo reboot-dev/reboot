@@ -171,6 +171,7 @@ pub struct TransactionContext {
     /// A handler may catch it, but a root must still abort rather than commit.
     doomed: Arc<Mutex<Option<Status>>>,
     live_leaf: bool,
+    supervised_tree: bool,
 }
 
 #[derive(Debug, Default)]
@@ -180,6 +181,7 @@ struct ReturnedParticipantCollection {
     active: usize,
     late_enlistment: bool,
     membership_uncertain: bool,
+    dispatched: bool,
 }
 
 /// Generated clients retain this guard from before routing through enlistment.
@@ -343,6 +345,55 @@ pub async fn transactional_outbound_request<R, Message>(
 where
     R: TransactionalChannelResolver,
 {
+    if context.tree_owned() {
+        return Err(Status::failed_precondition(
+            "tree outbound requires counted generated scope",
+        ));
+    }
+    transactional_outbound_request_inner(resolver, context, state_type, state_ref, message).await
+}
+
+/// Builds a request under a caller-retained counted scope from the same branch.
+/// Generated clients retain that scope through trailer enlistment. Manual callers
+/// must likewise retain it through their RPC and complete it only after validated
+/// trailers; this helper cannot police arbitrary manual scope reuse/completion.
+#[doc(hidden)]
+pub async fn scoped_transactional_outbound_request<R: TransactionalChannelResolver, Message>(
+    resolver: &R,
+    context: &TransactionContext,
+    scope: &TransactionalOutboundScope,
+    state_type: &str,
+    state_ref: &str,
+    message: Message,
+) -> Result<(tonic::transport::Channel, Request<Message>), Status> {
+    let valid = match (&context.returned_participants, &scope.collection) {
+        (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+        (None, None) => true,
+        _ => false,
+    };
+    if scope.completed || !valid {
+        return Err(Status::failed_precondition(
+            "outbound scope differs from branch",
+        ));
+    }
+    if context.tree_owned()
+        && (state_ref == context.headers().state_ref
+            || state_ref == context.transaction_coordinator_state_ref())
+    {
+        return Err(Status::failed_precondition(
+            "tree actors must be distinct and non-reentrant",
+        ));
+    }
+    transactional_outbound_request_inner(resolver, context, state_type, state_ref, message).await
+}
+
+async fn transactional_outbound_request_inner<R: TransactionalChannelResolver, Message>(
+    resolver: &R,
+    context: &TransactionContext,
+    state_type: &str,
+    state_ref: &str,
+    message: Message,
+) -> Result<(tonic::transport::Channel, Request<Message>), Status> {
     if state_type.is_empty() || state_ref.is_empty() {
         return Err(Status::invalid_argument(
             "target state type and reference must not be empty",
@@ -389,6 +440,7 @@ impl TransactionContext {
             returned_participants: None,
             doomed: Arc::new(Mutex::new(None)),
             live_leaf: false,
+            supervised_tree: false,
         })
     }
 
@@ -421,6 +473,80 @@ impl TransactionContext {
 
     pub(crate) fn is_fresh_root(&self) -> bool {
         self.returned_participants.is_some() && self.transaction_ids().len() == 1
+    }
+
+    // Called only after the guard installs actual root or live execution ownership.
+    #[doc(hidden)]
+    pub fn validate_tree_scope(&self) -> Result<(), Status> {
+        if self.mode != TransactionMode::Exclusive
+            || self.headers.idempotency_key.is_some()
+            || self.transaction_ids().len() > 32
+        {
+            return Err(Status::failed_precondition(
+                "tree requires bounded exclusive non-idempotent execution",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn enable_supervised_tree(&mut self) -> Result<(), Status> {
+        self.validate_tree_scope()?;
+        if self.returned_participants.is_none() {
+            self.returned_participants = Some(Arc::new(Mutex::new(
+                ReturnedParticipantCollection::default(),
+            )));
+        }
+        self.supervised_tree = true;
+        Ok(())
+    }
+
+    pub(crate) fn same_ownership_context(&self, other: &Self) -> bool {
+        self == other
+            && Arc::ptr_eq(&self.doomed, &other.doomed)
+            && match (&self.returned_participants, &other.returned_participants) {
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+
+    /// Whether an actual supervising guard has installed tree execution authority.
+    pub fn supervised_tree_execution(&self) -> bool {
+        self.supervised_tree
+    }
+
+    pub(crate) fn tree_owned(&self) -> bool {
+        self.supervised_tree
+    }
+
+    pub(crate) fn close_branch(&self) {
+        if self.supervised_tree
+            && let Some(collection) = &self.returned_participants
+        {
+            collection
+                .lock()
+                .expect("returned participant mutex poisoned")
+                .sealed = true;
+        }
+    }
+
+    pub(crate) async fn wait_branch_quiescent(&self) {
+        loop {
+            let active = self
+                .returned_participants
+                .as_ref()
+                .map(|collection| {
+                    collection
+                        .lock()
+                        .expect("returned participant mutex poisoned")
+                        .active
+                })
+                .unwrap_or(0);
+            if active == 0 {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
     }
 
     /// A live participant owner permits only a direct-root exclusive leaf.
@@ -461,6 +587,17 @@ impl TransactionContext {
                     "root outbound collection is sealed",
                 ));
             }
+            if state.active >= 1024 {
+                return Err(Status::resource_exhausted(
+                    "outbound branch capacity exceeded",
+                ));
+            }
+            if self.supervised_tree && state.dispatched {
+                return Err(Status::failed_precondition(
+                    "tree branch admits only one child",
+                ));
+            }
+            state.dispatched = true;
             state.active += 1;
         }
         Ok(TransactionalOutboundScope {
@@ -507,11 +644,10 @@ impl TransactionContext {
         let mut state = collection
             .lock()
             .expect("returned participant mutex poisoned");
-        if state.sealed {
-            return Err(Status::failed_precondition(
-                "root already handed off or closed",
-            ));
-        }
+        // A successful Commit seal may precede the cancellable execution-mutex
+        // wait. The actual registered, pre-handoff owner may still abandon it.
+        // This is admission closure, not durable handoff authority: the caller
+        // must retain the registration and reject a handed-off local capability.
         state.sealed = true;
         Ok(state
             .participants
@@ -544,8 +680,9 @@ impl TransactionContext {
 
     /// Enlists validated identities from one successful generated outbound RPC.
     ///
-    /// This is a no-op for inbound contexts: only a fresh root can aggregate
-    /// remote participants for the root coordinator.
+    /// Default inbound contexts do not collect membership. Supervised inbound
+    /// trees collect descendants in their own branch ledger; only a fresh root
+    /// can drive root coordinator completion.
     pub fn enlist_returned_participants(
         &self,
         returned: &crate::successful_trailers::ReturnedParticipants,
@@ -560,6 +697,18 @@ impl TransactionContext {
             let mut collected = participants
                 .lock()
                 .expect("returned participant mutex poisoned");
+            let new_count = returned
+                .participants()
+                .iter()
+                .filter(|participant| !collected.participants.contains_key(&participant.target))
+                .count();
+            if collected.participants.len().saturating_add(new_count) > 1024 {
+                collected.membership_uncertain = true;
+                self.doom(Status::resource_exhausted(
+                    "returned participant aggregate exceeded",
+                ));
+                return;
+            }
             for participant in returned.participants() {
                 // A successful call that classifies a target as a writer wins
                 // over any prior read-only classification from another call.
@@ -605,11 +754,15 @@ impl TransactionContext {
 
     /// Drains the root's generated outbound participant set exactly once.
     ///
-    /// Generated root adapters call this immediately before durable coordinator
-    /// completion. Inbound contexts return an empty set and never coordinate.
+    /// Legacy generated root adapters consume this immediately before durable
+    /// completion. Supervised trees return a non-draining snapshot, including
+    /// inbound descendant ledgers; inbound capabilities never coordinate roots.
     pub fn take_returned_participants(
         &self,
     ) -> Vec<crate::durable_coordinator::ReturnedParticipant> {
+        if self.supervised_tree {
+            return self.returned_participants_snapshot();
+        }
         self.returned_participants
             .as_ref()
             .map(|participants| {
@@ -701,10 +854,11 @@ impl TransactionContext {
         Ok(Self {
             headers,
             mode: self.mode,
-            // Nested inbound contexts must not retain root aggregation state.
-            returned_participants: None,
+            // A locally derived path shares its branch, never root coordinator authority.
+            returned_participants: self.returned_participants.clone(),
             doomed: Arc::clone(&self.doomed),
             live_leaf: self.live_leaf,
+            supervised_tree: self.supervised_tree,
         })
     }
 }
@@ -1223,6 +1377,14 @@ impl ActorGate {
     }
 
     pub async fn exclusive(&self) -> ExclusiveActorLease {
+        #[cfg(feature = "test-support")]
+        if let Some(path) = std::env::var_os("REBOOT_TEST_TREE_COMPETITOR_ENTRY") {
+            std::fs::write(
+                path,
+                b"actual exclusive actor gate entered before lease acquisition",
+            )
+            .unwrap();
+        }
         let ticket = {
             let mut state = self.inner.state.lock().expect("actor gate mutex poisoned");
             let ticket = state.next_waiter;
@@ -3597,6 +3759,122 @@ mod tests {
             );
         }
         assert_eq!(resolver.0.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn supervised_tree_branch_ledger_scoped_helper_and_identity_are_not_caller_flags() {
+        #[derive(Default)]
+        struct Resolver(std::sync::atomic::AtomicUsize);
+        #[tonic::async_trait]
+        impl TransactionalChannelResolver for Resolver {
+            async fn resolve(&self, _: &str, _: &str) -> Result<tonic::transport::Channel, Status> {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(tonic::transport::Endpoint::from_static("http://127.0.0.1:1").connect_lazy())
+            }
+        }
+        let root = Uuid::new_v4();
+        let child = Uuid::new_v4();
+        let mut headers = RebootHeaders::new("branch");
+        headers.transaction_ids = Some(vec![root, child]);
+        headers.transaction_coordinator_state_type = Some("example.Actor".into());
+        headers.transaction_coordinator_state_ref = Some("root".into());
+        let mut context =
+            TransactionContext::from_headers(headers.clone(), TransactionMode::Exclusive).unwrap();
+        context.enable_supervised_tree().unwrap();
+        assert!(
+            !context.is_fresh_root(),
+            "branch collection never grants coordinator authority"
+        );
+        let clone = context.clone();
+        assert!(context.same_ownership_context(&clone));
+        let reconstructed =
+            TransactionContext::from_headers(headers, TransactionMode::Exclusive).unwrap();
+        assert_eq!(context, reconstructed);
+        assert!(
+            !context.same_ownership_context(&reconstructed),
+            "matching headers are not branch ownership"
+        );
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert(
+            crate::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER,
+            r#"{"example.Actor":["tip"]}"#.parse().unwrap(),
+        );
+        context.enlist_returned_participants(
+            &crate::successful_trailers::ReturnedParticipants::from_metadata(&metadata).unwrap(),
+        );
+        assert_eq!(clone.take_returned_participants().len(), 1);
+        assert_eq!(
+            context.returned_participants_snapshot().len(),
+            1,
+            "public drain cannot erase ownership ledger"
+        );
+        let nested = clone.with_nested_transaction_id(Uuid::new_v4()).unwrap();
+        assert!(Arc::ptr_eq(
+            context.returned_participants.as_ref().unwrap(),
+            nested.returned_participants.as_ref().unwrap()
+        ));
+        assert!(clone.with_nested_transaction_id(child).is_err());
+        let resolver = Resolver::default();
+        assert_eq!(
+            transactional_outbound_request(
+                &resolver,
+                &context,
+                "example.Actor",
+                "other",
+                proto::Empty {}
+            )
+            .await
+            .unwrap_err()
+            .code(),
+            tonic::Code::FailedPrecondition
+        );
+        assert_eq!(
+            resolver.0.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "manual helper must not resolve uncounted tree work"
+        );
+        let mut scope = context.begin_generated_outbound().unwrap();
+        assert!(
+            context.seal_explicit_abort().is_err(),
+            "active scope forbids successful return"
+        );
+        let (_, request) = scoped_transactional_outbound_request(
+            &resolver,
+            &context,
+            &scope,
+            "example.Actor",
+            "tip",
+            proto::Empty {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(request.metadata().get(STATE_REF_HEADER).unwrap(), "tip");
+        scope.completed();
+        drop(scope);
+        assert_eq!(context.seal_explicit_abort().unwrap().len(), 1);
+        assert!(
+            clone.begin_generated_outbound().is_err(),
+            "clones share sealed admission"
+        );
+        assert_eq!(
+            transactional_outbound_request(
+                &resolver,
+                &clone,
+                "example.Actor",
+                "other",
+                proto::Empty {}
+            )
+            .await
+            .unwrap_err()
+            .code(),
+            tonic::Code::FailedPrecondition
+        );
+        assert_eq!(resolver.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            clone.take_returned_participants().len(),
+            1,
+            "seal does not discard ownership"
+        );
     }
 
     #[test]

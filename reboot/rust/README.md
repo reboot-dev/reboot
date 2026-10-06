@@ -11,6 +11,46 @@ enumeration and pre-Prepare coordinator-crash recovery remain unsupported.
 For the narrower explicit-error cleanup contract, see the canonical
 [pre-handoff failure checkpoint](PARITY-MAP.md#explicit-pre-handoff-transaction-tree-failure-checkpoint).
 
+## Supervised successful-return descendant trees
+
+Generated adapters explicitly opt in with `with_supervised_transaction_tree()`.
+This is a separate bounded transaction path, not a relaxation of reader-task
+eligibility: fixed hosts, existing distinct actors, exclusive non-factory and
+non-idempotent methods, one child per branch, at most 32 transaction IDs and
+1024 transitive participants. The root requires its actual active registered
+execution/cleanup reservation; each inbound actor requires an active reserved
+exact-incarnation live-Watch execution. Builder attachment alone grants neither.
+Successful return carries local plus transitive descendants; a non-drainable
+branch ledger and counted generated outbound scopes seal only at quiescence,
+before execution ends. Surviving generated clones cannot start another child after
+closure. Manual scoped-request callers must retain their scope through validated
+trailers; reusable scopes/caller-asserted completion are not misuse-proof RPC
+ownership. Cancellation during the sealed pre-handoff execution-mutex wait retains
+the same host cleanup registration/permit; durable handoff still forbids Abort.
+Inbound branches cannot drive the root coordinator. Caught uncertain child
+outcomes doom the branch: no child rollback or retry permits catch-and-Commit.
+
+Three independent generated hosts and canonical C++ Database/RocksDB sidecars
+exercise A -> B -> C Commit/restart, complete durable membership before fanout,
+confirmed root error/deadline cleanup, lost B trailers with unknown C self-Watch,
+target-first prepared recovery, active-child Prepare/terminal exclusion,
+missing/inactive/full Watch owners, task denial at all three actors, and lost C
+terminal ACK with retained exclusive admission, one attempt and restart. Explicit
+scope vectors exercise duplicate IDs, depth overflow, shared/factory/idempotent
+rejection and self/root reentrant child rejection; caught B -> C uncertainty is
+asserted at the actual handler catch branch. Public API tests separately exercise
+ledger/helper ownership and inbound root-drive rejection. Final verification and
+remaining scope are recorded in
+[the parity map](PARITY-MAP.md#candidate-supervised-successful-return-descendant-trees-not-yet-delivered).
+
+No subtree tasks, sibling fanout, child rollback/retry, arbitrary ancestor actor
+routing validation, pre-Prepare coordinator-crash recovery, migration/fencing or
+exactly-once effects are established. Actors must be distinct by host composition;
+the outbound seam rejects the current actor and root coordinator explicitly.
+Lost actor-only terminal ACK retains ownership and fails supervision without
+retry. An already-pending Watch observes uncertainty on response/recheck or the
+existing owner deadline, not a universally immediate wakeup.
+
 ## Reader-only one-shot task checkpoint
 
 Partial vertical: generated immediate or absolute-UTC-scheduled unary reader tasks without declared errors,
@@ -19,8 +59,9 @@ non-idempotent direct-root remote exclusive leaf. The latter requires the genera
 adapter's `with_live_participant_owner(...)` and the same owner's
 `live_participant_recovery_registration()` on `ApplicationHost`, in addition to
 the matching singleton task owner/recovery registration. Builder attachment is
-not active ownership. Shared/factory/idempotent/deeper/descendant shapes and
-shared-registry scheduling remain rejected. Inbound success stages effects only:
+not active ownership. Shared/factory/idempotent/deeper/descendant **task-producing**
+shapes and shared-registry scheduling remain rejected. Explicit supervised
+transaction-tree opt-in above permits bounded descendant state mutations only. Inbound success stages effects only:
 no predecision dispatch hint is emitted; canonical host scans admit/reload the
 durable task after participant terminal ACK. Independent C++ sidecar acceptance
 exercises target-local Commit/Wait, prepared restart/redelivery, no completed

@@ -1336,6 +1336,300 @@ mod tests {
     };
 
     #[tokio::test]
+    async fn supervised_tree_actual_guard_rejects_inbound_root_drive_and_reconstructed_context() {
+        use crate::{
+            RebootHeaders,
+            application_host::{HostRecovery, RecoveryCancellation},
+            explicit_abort::RootHandlerGuard,
+            runtime::TransactionContext,
+        };
+        struct NeverDecision;
+        impl crate::legacy_coordinator::CoordinatorWatchEndpoint for NeverDecision {
+            fn watch(
+                &self,
+                _: database::WatchRequest,
+            ) -> crate::legacy_coordinator::CoordinatorWatchFuture<'_, database::WatchResponse>
+            {
+                Box::pin(async { Err(Status::unavailable("no durable root decision")) })
+            }
+        }
+        let trace = Arc::new(Mutex::new(Vec::new()));
+        let sidecar = Arc::new(MockSidecar {
+            trace: trace.clone(),
+            ..Default::default()
+        });
+        let endpoint = Arc::new(MockEndpoint {
+            trace: trace.clone(),
+            ..Default::default()
+        });
+        let local_sidecar = Arc::new(InProcessSidecar {
+            trace: trace.clone(),
+            ..Default::default()
+        });
+        let participant = DurableActorParticipant::new(local_sidecar, "example.Actor", "branch");
+        let root = Uuid::new_v4();
+        let child = Uuid::new_v4();
+        let mut headers = RebootHeaders::new("branch");
+        headers.transaction_ids = Some(vec![root, child]);
+        headers.transaction_coordinator_state_type = Some("example.Actor".into());
+        headers.transaction_coordinator_state_ref = Some("root".into());
+        let context =
+            TransactionContext::from_headers(headers.clone(), TransactionMode::Exclusive).unwrap();
+        let start = ActorTransactionStart {
+            transaction_ids: vec![root, child],
+            transaction_path: crate::durable_participant::TransactionPathContract::PreserveNested,
+            coordinator_state_type: "example.Actor".into(),
+            coordinator_state_ref: "root".into(),
+            mode: TransactionMode::Exclusive,
+            read_only: false,
+            factory: false,
+            state_type: "example.Actor".into(),
+            state_ref: "branch".into(),
+        };
+        let owner = crate::live_participant::LiveParticipantOwner::new(
+            2,
+            ParticipantTarget {
+                state_type: "example.Actor".into(),
+                state_ref: "root".into(),
+            },
+            Arc::new(NeverDecision),
+        )
+        .unwrap();
+        let cancel = RecoveryCancellation::new();
+        let mut supervisor = tokio::task::JoinSet::new();
+        owner
+            .recovery_registration()
+            .start(&mut supervisor, cancel.clone())
+            .await
+            .unwrap();
+        let local = participant
+            .start_local(start.clone(), ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        let guard = RootHandlerGuard::before_handler(
+            local,
+            context.clone(),
+            coordinator(sidecar.clone(), endpoint.clone()),
+            None,
+        )
+        .await
+        .unwrap();
+        let mut reconstructed =
+            TransactionContext::from_headers(headers, TransactionMode::Exclusive).unwrap();
+        assert!(
+            matches!(guard.with_supervised_tree(&mut reconstructed,Some(&owner)).await,Err(status) if status.code()==tonic::Code::FailedPrecondition)
+        );
+        let local = tokio::time::timeout(
+            Duration::from_secs(1),
+            participant.start_local(start, ParticipantStartMode::Exclusive),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let guard = RootHandlerGuard::before_handler(
+            local,
+            context.clone(),
+            coordinator(sidecar, endpoint),
+            None,
+        )
+        .await
+        .unwrap();
+        let mut context = context;
+        let guard = guard
+            .with_supervised_tree(&mut context, Some(&owner))
+            .await
+            .unwrap();
+        let fake = RootCoordinatorStart {
+            transaction_ids: vec![root],
+            coordinator_state_type: "example.Actor".into(),
+            coordinator_state_ref: "root".into(),
+            participant: ParticipantTarget {
+                state_type: "example.Actor".into(),
+                state_ref: "branch".into(),
+            },
+            mode: TransactionMode::Exclusive,
+            read_only: false,
+            factory: false,
+            placement_requested: false,
+        };
+        assert_eq!(
+            guard
+                .complete_root(fake, Vec::new())
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::FailedPrecondition
+        );
+        assert!(
+            trace.lock().unwrap().is_empty(),
+            "inbound tree must issue no root decision or participant terminal RPC"
+        );
+        cancel.cancel();
+        while let Some(result) = supervisor.join_next().await {
+            result.unwrap().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn supervised_tree_sealed_root_cancel_under_execution_mutex_retains_cleanup_owner() {
+        use crate::{
+            RebootHeaders,
+            application_host::{HostRecovery, RecoveryCancellation},
+            explicit_abort::{ExplicitAbortOwner, RegisteredRoot},
+            runtime::RootTransactionContext,
+        };
+        use std::{future::Future, task::Poll};
+        let trace = Arc::new(Mutex::new(Vec::new()));
+        let sidecar = Arc::new(MockSidecar {
+            trace: trace.clone(),
+            ..Default::default()
+        });
+        let endpoint = Arc::new(MockEndpoint {
+            trace: trace.clone(),
+            ..Default::default()
+        });
+        let local_sidecar = Arc::new(InProcessSidecar {
+            trace: trace.clone(),
+            ..Default::default()
+        });
+        let participant =
+            DurableActorParticipant::new(local_sidecar.clone(), "example.Actor", "actor/1");
+        let id = Uuid::new_v4();
+        let start = ActorTransactionStart {
+            transaction_ids: vec![id],
+            transaction_path: crate::durable_participant::TransactionPathContract::RootOnly,
+            coordinator_state_type: "example.Actor".into(),
+            coordinator_state_ref: "actor/1".into(),
+            mode: TransactionMode::Exclusive,
+            read_only: false,
+            factory: false,
+            state_type: "example.Actor".into(),
+            state_ref: "actor/1".into(),
+        };
+        let mut context = RootTransactionContext::start(
+            RebootHeaders::new("actor/1"),
+            "example.Actor",
+            TransactionMode::Exclusive,
+            id,
+            prost_types::Timestamp::default(),
+        )
+        .unwrap()
+        .transaction()
+        .clone();
+        let owner = ExplicitAbortOwner::new(1).unwrap();
+        let cancel = RecoveryCancellation::new();
+        let mut supervisor = tokio::task::JoinSet::new();
+        owner
+            .recovery_registration()
+            .start(&mut supervisor, cancel.clone())
+            .await
+            .unwrap();
+        let coordinator = coordinator(sidecar.clone(), endpoint.clone());
+        let registration = RegisteredRoot::before_load(
+            &participant,
+            context.clone(),
+            coordinator.clone(),
+            Some(&owner),
+        )
+        .unwrap();
+        let local = participant
+            .start_local(start.clone(), ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        let guard = registration
+            .admitted(local)
+            .await
+            .unwrap()
+            .with_supervised_tree(&mut context, None)
+            .await
+            .unwrap();
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert(
+            crate::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER,
+            r#"{"example.Remote":["remote/writer"]}"#.parse().unwrap(),
+        );
+        context.enlist_returned_participants(
+            &crate::successful_trailers::ReturnedParticipants::from_metadata(&metadata).unwrap(),
+        );
+        let (entered, wait_entered) = tokio::sync::oneshot::channel();
+        let (release, wait_release) = tokio::sync::oneshot::channel();
+        let locked = participant.clone();
+        let lock = tokio::spawn(async move {
+            locked.hold_pending_for_test(entered, wait_release).await;
+        });
+        wait_entered.await.unwrap();
+        let root_start = RootCoordinatorStart {
+            transaction_ids: vec![id],
+            coordinator_state_type: "example.Actor".into(),
+            coordinator_state_ref: "actor/1".into(),
+            participant: ParticipantTarget {
+                state_type: "example.Actor".into(),
+                state_ref: "actor/1".into(),
+            },
+            mode: TransactionMode::Exclusive,
+            read_only: false,
+            factory: false,
+            placement_requested: false,
+        };
+        let mut completion = Box::pin(guard.complete_root(root_start, Vec::new()));
+        std::future::poll_fn(|cx| {
+            assert!(
+                matches!(completion.as_mut().poll(cx), Poll::Pending),
+                "completion must actually wait on held execution mutex"
+            );
+            Poll::Ready(())
+        })
+        .await;
+        assert!(
+            context.begin_generated_outbound().is_err(),
+            "successful membership seal must precede execution mutex wait"
+        );
+        assert!(
+            trace.lock().unwrap().is_empty(),
+            "no durable handoff or terminal call before execution release"
+        );
+        drop(completion); // genuine future cancellation at the proven contested await
+        assert!(
+            RegisteredRoot::before_load(&participant, context.clone(), coordinator, Some(&owner))
+                .is_err(),
+            "the same registered root token must remain owned across queued cleanup"
+        );
+        release.send(()).unwrap();
+        lock.await.unwrap();
+        let next = tokio::time::timeout(
+            Duration::from_secs(1),
+            participant.start_local(start, ParticipantStartMode::Exclusive),
+        )
+        .await
+        .expect("sealed pre-handoff cancellation lost host cleanup and stranded participant")
+        .unwrap();
+        assert_eq!(
+            *trace.lock().unwrap(),
+            vec![
+                "database.decision",
+                "participant.abort",
+                "participant.abort"
+            ]
+        );
+        assert!(
+            matches!(&sidecar.calls.lock().unwrap()[0],Call::DecisionPut(request) if request.decision.as_ref().unwrap().outcome == database::transaction_coordinator_decision::Outcome::Abort as i32)
+        );
+        assert_eq!(
+            endpoint.calls.lock().unwrap().len(),
+            1,
+            "confirmed descendant terminal delivery must happen once"
+        );
+        assert_eq!(
+            context.returned_participants_snapshot().len(),
+            1,
+            "registered abandonment retains its sealed ownership ledger"
+        );
+        drop(next);
+        cancel.cancel();
+        supervisor.join_next().await.unwrap().unwrap().unwrap();
+    }
+
+    #[tokio::test]
     async fn registered_unknown_abort_lost_decision_or_terminal_ack_is_once_retained() {
         use crate::{
             RebootHeaders,

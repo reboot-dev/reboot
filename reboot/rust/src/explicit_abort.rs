@@ -313,12 +313,13 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         if !context.is_fresh_root()
             && let Some(owner) = owner
         {
-            if context != &self.context {
+            if !context.same_ownership_context(&self.context) {
                 return Err(Status::failed_precondition(
                     "live execution context differs from guard",
                 ));
             }
             context.enforce_live_leaf()?;
+            self.context = context.clone();
             let reservation = owner.reserve(context)?;
             let execution = self
                 .local
@@ -331,6 +332,77 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         }
         Ok(self)
     }
+    /// Explicit tree opt-in is not ownership: reserve and install actual execution first.
+    #[doc(hidden)]
+    pub async fn with_supervised_tree(
+        mut self,
+        context: &mut TransactionContext,
+        owner: Option<&crate::live_participant::LiveParticipantOwner>,
+    ) -> Result<Self, Status> {
+        if !context.same_ownership_context(&self.context) {
+            return Err(Status::failed_precondition(
+                "tree context differs from guard",
+            ));
+        }
+        context.validate_tree_scope()?;
+        if context.is_fresh_root() {
+            if self.registration.is_none() || self.reservation.is_none() {
+                return Err(Status::failed_precondition(
+                    "tree requires active registered root execution",
+                ));
+            }
+            let token = self.registration.as_ref().unwrap();
+            let state = token.owner.state.lock().unwrap();
+            if !state.active
+                || token.owner.failure.borrow().is_some()
+                || !state
+                    .registered_roots
+                    .contains(&context.transaction_root_id())
+            {
+                return Err(Status::unavailable("registered tree root owner stopped"));
+            }
+        } else {
+            let owner = owner.ok_or_else(|| {
+                Status::failed_precondition("tree requires live participant owner")
+            })?;
+            let reservation = owner.reserve(context)?;
+            let execution = self
+                .local
+                .as_mut()
+                .unwrap()
+                .reserve_live_execution(context)
+                .await?;
+            self.inbound = Some((reservation, execution));
+            self.inbound.as_ref().unwrap().0.validate_active()?;
+        }
+        context.enable_supervised_tree()?;
+        self.context = context.clone();
+        Ok(self)
+    }
+
+    /// Seal descendants and encode the local plus transitive participant union.
+    #[doc(hidden)]
+    pub fn inbound_participant_metadata(
+        &self,
+        local: crate::durable_coordinator::ParticipantTarget,
+        read_only: bool,
+    ) -> Result<crate::successful_trailers::ParticipantMetadata, Status> {
+        let mut returned = if self.context.tree_owned() {
+            self.context.seal_explicit_abort()?
+        } else {
+            Vec::new()
+        };
+        returned.push(crate::durable_coordinator::ReturnedParticipant {
+            target: local,
+            read_only,
+        });
+        crate::successful_trailers::ParticipantMetadata::classified_aggregate(
+            &returned,
+            self.context.headers().coordinator_read_only_aware,
+        )
+        .map_err(|error| Status::failed_precondition(error.to_string()))
+    }
+
     pub fn cancellation_owned(&self) -> bool {
         self.reservation.is_some()
     }
@@ -343,6 +415,9 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
             return Ok(false);
         };
         reservation.validate_active()?;
+        if self.context.tree_owned() {
+            return Ok(false);
+        }
         if let Some(error) = self.context.doomed_status() {
             return Err(error);
         }
@@ -398,28 +473,32 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         if let Some(status) = self.context.doomed_status() {
             return Err(status);
         }
-        if self.reservation.is_some()
-            && (start.transaction_ids != self.context.transaction_ids()
-                || start.coordinator_state_type
-                    != self.context.transaction_coordinator_state_type()
-                || start.coordinator_state_ref != self.context.transaction_coordinator_state_ref()
-                || start.participant.state_type
-                    != self.context.transaction_coordinator_state_type()
-                || start.participant.state_ref != self.context.headers().state_ref
-                || start.mode != crate::runtime::TransactionMode::Exclusive
-                || start.read_only
-                || start.factory
-                || start.placement_requested)
+        if self.inbound.is_some() || self.context.transaction_ids().len() != 1 {
+            return Err(Status::failed_precondition(
+                "inbound branch cannot drive root completion",
+            ));
+        }
+        if start.transaction_ids != self.context.transaction_ids()
+            || start.coordinator_state_type != self.context.transaction_coordinator_state_type()
+            || start.coordinator_state_ref != self.context.transaction_coordinator_state_ref()
+            || start.participant.state_type != self.context.transaction_coordinator_state_type()
+            || start.participant.state_ref != self.context.headers().state_ref
+            || start.mode != self.context.mode()
+            || (self.reservation.is_some()
+                && (start.mode != crate::runtime::TransactionMode::Exclusive
+                    || start.read_only
+                    || start.factory
+                    || start.placement_requested))
         {
             return Err(Status::failed_precondition(
                 "root completion does not match admitted cancellation authority",
             ));
         }
-        if self.registration.is_some() {
-            self.local.as_ref().unwrap().end_execution().await?;
-        }
         if let Some(sealed) = self.seal_for_handoff()? {
             returned = sealed;
+        }
+        if self.registration.is_some() {
+            self.local.as_ref().unwrap().end_execution().await?;
         }
         self.handoff_to_durable_recovery();
         self.context.take_returned_participants();
@@ -532,8 +611,13 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver> Drop
 {
     fn drop(&mut self) {
         if let Some((reservation, execution)) = self.inbound.take() {
+            self.context.close_branch();
+            let context = self.context.clone();
             let watch = reservation.endpoint();
-            reservation.submit(Box::pin(execution.watch(watch)));
+            reservation.submit(Box::pin(async move {
+                context.wait_branch_quiescent().await;
+                execution.watch(watch).await
+            }));
         }
         if let Some((owner, permit)) = self.reservation.take() {
             if self
@@ -570,14 +654,24 @@ impl ExplicitAbortOwner {
     ) -> Result<oneshot::Receiver<Result<(), Status>>, Status> {
         // CLOSE synchronously, before queue transfer or any worker await.
         // Unknown/active scopes remain unknown and cannot authorize Commit.
+        if local.was_handed_off() {
+            let error = Status::unavailable(
+                "registered cleanup cannot Abort after durable handoff; ownership retained",
+            );
+            self.failure.send_replace(Some(error.clone()));
+            return Err(error);
+        }
         let registered = registration.is_some();
-        if registered {
-            context.close_for_abandonment()?;
+        if registered && let Err(error) = context.close_for_abandonment() {
+            // Never silently release a reserved owner when closure fails.
+            self.failure.send_replace(Some(error.clone()));
+            return Err(error);
         }
         // Own the disarmed capability even before the worker's first poll.
         let work = Box::pin(async move {
             let _registration = registration;
             if registered {
+                context.wait_branch_quiescent().await;
                 local.end_execution().await?;
             }
             let work = if registered {

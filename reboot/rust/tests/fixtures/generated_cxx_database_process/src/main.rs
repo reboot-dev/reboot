@@ -122,6 +122,9 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
             }
         }
         state.value += request.amount;
+        if context.supervised_tree_execution() && let Some(path) = optional_arg("--tree-path-marker") {
+            std::fs::write(path, context.transaction_ids().iter().map(ToString::to_string).collect::<Vec<_>>().join("\n")).unwrap();
+        }
         if let Some(path) = std::env::var_os("REBOOT_TEST_TARGET_UNFINISHED_OUTBOUND") {
             std::fs::write(&path, b"target admitted, no successful trailers").unwrap();
             struct HandlerDrop(std::path::PathBuf);
@@ -138,12 +141,25 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
             // This branch deliberately enlists two independently routed remote
             // actors so the root coordinator's concurrent Prepare fan-out and
             // post-decision recovery retain the whole durable participant set.
-            let targets: &[&str] = if root.multi_participant {
+            let tree_next = if has("--tree-reentrant-root") { Some("root".to_owned()) } else { optional_arg("--tree-next") };
+            let tree_targets: Vec<&str> = tree_next.as_deref().into_iter().collect();
+            let targets: &[&str] = if tree_next.is_some() { &tree_targets } else if root.multi_participant {
                 &["target-a", "target-b"]
             } else {
                 &["target"]
             };
-            for target in targets {
+            if has("--tree-active-child") {
+                let client = root.client.clone(); let context = context.clone(); let request = request.clone();
+                let child = targets[0].to_owned(); let marker = arg("--tree-active-marker"); let child_marker = marker.clone();
+                tokio::spawn(async move {
+                    let result = client.increment(&context, &generated::TransactionCounterWritesMethodsTarget::new(child), request.clone()).await;
+                    std::fs::write(format!("{child_marker}.child-ended"), format!("{result:?}")).unwrap();
+                    let error = client.increment(&context, &generated::TransactionCounterWritesMethodsTarget::new("unregistered-post-close"), request).await.unwrap_err();
+                    assert!(matches!(error, generated::TransactionCounterWritesMethodsIncrementError::Grpc(ref status) if status.code() == tonic::Code::FailedPrecondition));
+                    std::fs::write(format!("{child_marker}.clone-denied"), b"closed clone denied generated call before resolution").unwrap();
+                });
+                while !std::path::Path::new(&marker).exists() { tokio::time::sleep(std::time::Duration::from_millis(5)).await; }
+            } else { for target in targets {
                 match root.client
                     .increment(
                         context,
@@ -161,7 +177,14 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                         std::fs::write(arg("--outbound-error-marker"), b"caught uncertain generated outbound, empty membership").unwrap();
                     },
                 }
+            } }
+        }
+        if context.supervised_tree_execution() {
+            if let Some(path) = optional_arg("--tree-members-marker") {
+                let members: Vec<_> = context.returned_participants_snapshot().into_iter().map(|p| p.target.state_ref).collect();
+                std::fs::write(path, members.join("\n")).unwrap();
             }
+            if has("--tree-handler-error") { return Err(tonic::Status::invalid_argument("tree handler rejected after descendant success")); }
         }
         if matches!(self, Self::Root(_)) && let Some(path) = std::env::var_os("REBOOT_TEST_ROOT_AFTER_REMOTE") {
             let path = std::path::PathBuf::from(path);
@@ -305,7 +328,7 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 execution.task_upserts.push(task);
             }
         }
-        if matches!(self, Self::Target) && has("--negative-task-shape") {
+        if (matches!(self, Self::Target) || has("--supervised-tree")) && has("--negative-task-shape") {
             execution.task_upserts.push(generated::TransactionCounterWritesMethodsTasks::query(&context.headers().state_ref, &proto::TransactionIncrementRequest { amount: 9000 }));
             std::fs::write(arg("--negative-shape-marker"), b"actual inbound handler returned task").unwrap();
         }
@@ -812,11 +835,11 @@ async fn main() {
 
     let starts = Starts {
         root: root_id,
-        child: Uuid::from_u128(2),
+        child: optional_arg("--tree-child").map(|value| Uuid::parse_str(&value).unwrap()).unwrap_or_else(|| Uuid::from_u128(2)),
     };
     let handler = if role == "tasks" || has("--remote-reader-task") {
         Handler::Tasks { state_ref: state_ref.clone(), marker: arg("--task-marker"), block: has("--block-task"), vector: optional_arg("--task-vector").unwrap_or_default() }
-    } else if role == "root" || role == "multi-root" {
+    } else if role == "root" || role == "multi-root" || role == "tree-branch" {
         Handler::Root(Root {
             client: generated::TransactionCounterWritesMethodsClient::new(
                 LegacyApplicationResolver::new(application.clone(), placement.clone()),
@@ -839,7 +862,7 @@ async fn main() {
         handler,
     );
     let (adapter, tasks) =
-        if (role == "tasks" || has("--root-reader-task") || has("--remote-reader-task")) && !has("--no-task-owner") {
+        if (role == "tasks" || has("--root-reader-task") || has("--remote-reader-task") || has("--tree-task-owner")) && !has("--no-task-owner") {
             let (adapter, tasks) = adapter.with_one_shot_reader_tasks(&state_ref).unwrap();
             (adapter, Some(tasks))
         } else {
@@ -854,6 +877,7 @@ async fn main() {
             Arc::new(LegacyApplicationCoordinatorWatchEndpoint::new(application.clone(), placement.clone(), watch_coordinator_state_ref.clone()).unwrap())).unwrap())
     } else { None };
     let adapter = if let Some(owner) = &live_owner { adapter.with_live_participant_owner(owner.clone()) } else { adapter };
+    let adapter = if has("--supervised-tree") { adapter.with_supervised_transaction_tree() } else { adapter };
     if has("--prove-cancel-before-durable") {
         use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
         let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: -9000 });

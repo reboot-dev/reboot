@@ -8,6 +8,7 @@ include!("remote_leaf_scope_acceptance.rs");
 include!("remote_leaf_uncertainty_acceptance.rs");
 include!("root_handler_cancellation_acceptance.rs");
 include!("live_root_abandonment_acceptance.rs");
+include!("supervised_tree_acceptance.rs");
 include!("task_wait_acceptance.rs");
 include!("task_wait_registry_acceptance.rs");
 #[derive(Clone, PartialEq, prost::Message)]

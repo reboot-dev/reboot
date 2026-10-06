@@ -1,5 +1,45 @@
 # Rust SDK parity ledger
 
+## Supervised successful-return descendant trees
+
+Generated adapters explicitly opt in with `with_supervised_transaction_tree()`.
+This is a separate bounded transaction path, not a relaxation of reader-task
+eligibility: fixed hosts, existing distinct actors, exclusive non-factory and
+non-idempotent methods, one child per branch, at most 32 transaction IDs and
+1024 transitive participants. The root requires its actual active registered
+execution/cleanup reservation; each inbound actor requires an active reserved
+exact-incarnation live-Watch execution. Builder attachment alone grants neither.
+Successful return carries local plus transitive descendants; a non-drainable
+branch ledger and counted generated outbound scopes seal only at quiescence,
+before execution ends. Surviving generated clones cannot start another child after
+closure. Manual scoped-request callers must retain their scope through validated
+trailers; reusable scopes/caller-asserted completion are not misuse-proof RPC
+ownership. Cancellation during the sealed pre-handoff execution-mutex wait retains
+the same host cleanup registration/permit; durable handoff still forbids Abort.
+Inbound branches cannot drive the root coordinator. Caught uncertain child
+outcomes doom the branch: no child rollback or retry permits catch-and-Commit.
+
+Three independent generated hosts and canonical C++ Database/RocksDB sidecars
+exercise A -> B -> C Commit/restart, complete durable membership before fanout,
+confirmed root error/deadline cleanup, lost B trailers with unknown C self-Watch,
+target-first prepared recovery, active-child Prepare/terminal exclusion,
+missing/inactive/full Watch owners, task denial at all three actors, and lost C
+terminal ACK with retained exclusive admission, one attempt and restart. Explicit
+scope vectors exercise duplicate IDs, depth overflow, shared/factory/idempotent
+rejection and self/root reentrant child rejection; caught B -> C uncertainty is
+asserted at the actual handler catch branch. Public API tests separately exercise
+ledger/helper ownership and inbound root-drive rejection. Final verification and
+remaining scope are recorded in
+[the parity map](PARITY-MAP.md#candidate-supervised-successful-return-descendant-trees-not-yet-delivered).
+
+No subtree tasks, sibling fanout, child rollback/retry, arbitrary ancestor actor
+routing validation, pre-Prepare coordinator-crash recovery, migration/fencing or
+exactly-once effects are established. Actors must be distinct by host composition;
+the outbound seam rejects the current actor and root coordinator explicitly.
+Lost actor-only terminal ACK retains ownership and fails supervision without
+retry. An already-pending Watch observes uncertainty on response/recheck or the
+existing owner deadline, not a universally immediate wakeup.
+
 ## Explicit pre-handoff transaction-tree failure checkpoint
 
 Bounded prerequisite for distributed tasks: generated fresh, non-idempotent,
@@ -41,8 +81,9 @@ Partial vertical: generated immediate or absolute-UTC-scheduled unary reader tas
 for the same actor, scheduled by fresh exclusive non-factory roots or the separate
 [guard-owned direct-root remote exclusive leaf](PARITY-MAP.md#remote-actor-unary-reader-task-checkpoint).
 The latter requires actual active singleton task and reserved live-Watch ownership,
-not builder attachment. Shared/factory/idempotent/deeper/descendant shapes remain
-rejected. Inbound success stages effects without predecision hints; host canonical
+not builder attachment. Shared/factory/idempotent/deeper/descendant task-producing
+shapes remain rejected; the separate explicit supervised-tree path above permits
+state mutations, never subtree tasks. Inbound success stages effects without predecision hints; host canonical
 scans dispatch after terminal ACK. Lost ACK retains ownership without retry; live
 Watch detects the terminal-attempt latch on recheck, not necessarily immediately
 for an already-pending Watch (the existing 300-second owner deadline is fallback).
