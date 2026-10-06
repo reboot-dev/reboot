@@ -227,6 +227,14 @@ impl generated::CounterReadsMethodsDatabaseHandler for Counter {
                 proto::CounterLimitExceeded { limit: state.value },
             ));
         }
+        if state.value == 50 {
+            return Err(generated::CounterReadsMethodsGetError::System(
+                reboot::SystemAbort {
+                    error: reboot::SystemAborted::NotFound(reboot::database_proto::NotFound {}),
+                    message: "reader state is absent".into(),
+                },
+            ));
+        }
         Ok(proto::CounterValue { value: state.value })
     }
 }
@@ -1394,17 +1402,23 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
     ));
     assert_eq!(
         writes
-            .increment(proto::IncrementRequest { amount: 5 })
+            .increment(proto::IncrementRequest { amount: 50 })
             .await
             .unwrap()
             .into_inner()
             .value,
-        5
+        50
     );
+    assert!(matches!(
+        reads.get(proto::Empty {}).await,
+        Err(generated::CounterReadsMethodsGetError::System(system))
+            if matches!(system.error, reboot::SystemAborted::NotFound(_))
+                && system.message == "reader state is absent"
+    ));
     assert!(matches!(
         writes.increment(proto::IncrementRequest { amount: -1 }).await,
         Err(generated::CounterWritesMethodsIncrementError::CounterLimitExceeded(error))
-            if error.limit == 5
+            if error.limit == 50
     ));
     assert!(matches!(
         writes.increment(proto::IncrementRequest { amount: -2 }).await,
@@ -1426,7 +1440,7 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
             .unwrap()
             .into_inner()
             .value,
-        7
+        52
     );
     assert_eq!(
         writes
@@ -1435,7 +1449,7 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
             .unwrap()
             .into_inner()
             .value,
-        7,
+        52,
         "an explicit idempotency key must replay the first writer response"
     );
 
@@ -1443,7 +1457,7 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
     let mut reads = generated::CounterReadsMethodsExternalClient::new(reader_channel, context);
     assert_eq!(
         reads.get(proto::Empty {}).await.unwrap().into_inner().value,
-        7
+        52
     );
 
     let stores = database.store_requests();
