@@ -1,8 +1,10 @@
 #include <openssl/sha.h>
 
 #include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <future>
+#include <mutex>
 #include <random>
 #include <set>
 #include <thread>
@@ -10,8 +12,10 @@
 #include "gmock/gmock-matchers.h"
 #include "google/protobuf/any.pb.h"
 #include "google/protobuf/descriptor.h"
+#include "google/protobuf/empty.pb.h"
 #include "google/protobuf/util/message_differencer.h"
 #include "google/protobuf/wrappers.pb.h"
+#include "google/rpc/status.pb.h"
 #include "rbt/v1alpha1/application_metadata.pb.h"
 #include "rbt/v1alpha1/native_2pc.grpc.pb.h"
 #include "reboot/server/database.h"
@@ -865,6 +869,307 @@ TEST_F(TwoShardDatabaseTest, TaskLifecycle) {
   google::protobuf::StringValue value;
   ASSERT_TRUE(any.UnpackTo(&value));
   EXPECT_EQ("hello world", value.value());
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, CompleteTaskRejectsInvalidTerminalResults) {
+  auto pending =
+      MakeTask("Greeter", make_state_ref("invalid_result"), "invalid-task");
+  store({}, {pending});
+  v1alpha1::CompleteTaskRequest valid;
+  *valid.mutable_task() = pending;
+  valid.mutable_task()->set_status(v1alpha1::Task::COMPLETED);
+  valid.mutable_task()->mutable_response()->PackFrom(google::protobuf::Empty());
+
+  std::vector<v1alpha1::CompleteTaskRequest> invalid;
+  invalid.emplace_back();
+  invalid.push_back(valid);
+  invalid.back().mutable_task()->set_status(v1alpha1::Task::PENDING);
+  invalid.push_back(valid);
+  invalid.back().mutable_task()->mutable_task_id()->clear_state_type();
+  invalid.push_back(valid);
+  invalid.back().mutable_task()->mutable_task_id()->clear_state_ref();
+  invalid.push_back(valid);
+  invalid.back().mutable_task()->mutable_task_id()->clear_task_uuid();
+  invalid.push_back(valid);
+  invalid.back().mutable_task()->clear_response();
+  invalid.push_back(valid);
+  invalid.back().mutable_task()->mutable_response()->clear_type_url();
+  invalid.push_back(valid);
+  invalid.back().mutable_task()->mutable_response()->set_type_url("no-slash");
+  invalid.push_back(valid);
+  invalid.back().mutable_task()->mutable_response()->set_type_url("prefix/");
+  invalid.push_back(valid);
+  invalid.back().mutable_task()->set_method("different");
+  invalid.push_back(valid);
+  invalid.back().mutable_task()->set_request("different");
+  invalid.push_back(valid);
+  invalid.back().mutable_task()->set_iteration(1);
+  invalid.push_back(valid);
+  invalid.back().mutable_task()->mutable_error()->PackFrom(
+      MakeStringValue("not-status"));
+  invalid.push_back(valid);
+  invalid.back().mutable_task()->mutable_error()->set_type_url(
+      "type.googleapis.com/google.rpc.Status");
+  invalid.back().mutable_task()->mutable_error()->set_value(
+      std::string(1, '\xff'));
+  for (int code : {0, -1, 17}) {
+    google::rpc::Status error;
+    error.set_code(code);
+    invalid.push_back(valid);
+    invalid.back().mutable_task()->mutable_error()->PackFrom(error);
+  }
+  google::rpc::Status bad_detail;
+  bad_detail.set_code(grpc::INVALID_ARGUMENT);
+  bad_detail.add_details();
+  invalid.push_back(valid);
+  invalid.back().mutable_task()->mutable_error()->PackFrom(bad_detail);
+
+  for (size_t i = 0; i < invalid.size(); ++i) {
+    SCOPED_TRACE(i);
+    grpc::ClientContext context;
+    v1alpha1::CompleteTaskResponse response;
+    EXPECT_EQ(
+        grpc::INVALID_ARGUMENT,
+        stub->CompleteTask(&context, invalid[i], &response).error_code());
+    EXPECT_FALSE(response.completed());
+    EXPECT_FALSE(
+        load_task_response(v1alpha1::TaskId(pending.task_id())).has_value());
+  }
+  // Rejections never removed the pending record, even after reopening RocksDB.
+  restart_server();
+  grpc::ClientContext context;
+  v1alpha1::CompleteTaskResponse response;
+  ASSERT_TRUE(stub->CompleteTask(&context, valid, &response).ok());
+  EXPECT_TRUE(response.completed());
+  auto bytes = load_task_response(v1alpha1::TaskId(pending.task_id()));
+  ASSERT_TRUE(bytes.has_value());
+  v1alpha1::TaskResponseOrError result;
+  ASSERT_TRUE(result.ParseFromString(*bytes));
+  google::protobuf::Empty empty;
+  EXPECT_TRUE(result.response().UnpackTo(&empty));
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, CompleteTaskErrorAndLegacyStoreBoundary) {
+  auto pending =
+      MakeTask("Greeter", make_state_ref("error_result"), "error-task");
+  store({}, {pending});
+  v1alpha1::CompleteTaskRequest request;
+  *request.mutable_task() = pending;
+  request.mutable_task()->set_status(v1alpha1::Task::COMPLETED);
+  google::rpc::Status error;
+  error.set_code(grpc::PERMISSION_DENIED);
+  error.set_message("denied");
+  error.add_details()->PackFrom(MakeStringValue("detail"));
+  request.mutable_task()->mutable_error()->PackFrom(error);
+  request.set_sync(true);
+  grpc::ClientContext context;
+  v1alpha1::CompleteTaskResponse response;
+  ASSERT_TRUE(stub->CompleteTask(&context, request, &response).ok());
+  EXPECT_TRUE(response.completed());
+  restart_server();
+  auto bytes = load_task_response(v1alpha1::TaskId(pending.task_id()));
+  ASSERT_TRUE(bytes.has_value());
+  v1alpha1::TaskResponseOrError result;
+  ASSERT_TRUE(result.ParseFromString(*bytes));
+  google::rpc::Status stored_error;
+  ASSERT_TRUE(result.error().UnpackTo(&stored_error));
+  EXPECT_EQ(error.SerializeAsString(), stored_error.SerializeAsString());
+
+  // Compatibility: legacy Store can overwrite a CAS winner. The new RPC is
+  // first-result-wins only among CompleteTask users, not a global invariant.
+  auto legacy = request.task();
+  legacy.mutable_response()->PackFrom(MakeStringValue("legacy overwrite"));
+  store({}, {legacy});
+  bytes = load_task_response(v1alpha1::TaskId(pending.task_id()));
+  ASSERT_TRUE(bytes.has_value());
+  ASSERT_TRUE(result.ParseFromString(*bytes));
+  google::protobuf::StringValue value;
+  ASSERT_TRUE(result.response().UnpackTo(&value));
+  EXPECT_EQ("legacy overwrite", value.value());
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, CompleteTaskMissingPendingDoesNotCreateResult) {
+  auto task =
+      MakeTask("MissingType", make_state_ref("missing_actor"), "missing-task");
+  task.set_status(v1alpha1::Task::COMPLETED);
+  task.mutable_response()->PackFrom(MakeStringValue("unused"));
+  v1alpha1::CompleteTaskRequest request;
+  *request.mutable_task() = task;
+  grpc::ClientContext context;
+  v1alpha1::CompleteTaskResponse response;
+  ASSERT_TRUE(stub->CompleteTask(&context, request, &response).ok());
+  EXPECT_FALSE(response.completed());
+  // An existing column family with no matching pending key is also a no-op.
+  store(
+      {},
+      {MakeTask(
+          "MissingType",
+          make_state_ref("another_actor"),
+          "another-task")});
+  grpc::ClientContext second_context;
+  ASSERT_TRUE(stub->CompleteTask(&second_context, request, &response).ok());
+  EXPECT_FALSE(response.completed());
+  restart_server();
+  EXPECT_THAT(
+      [&]() { load_task_response(v1alpha1::TaskId(task.task_id())); },
+      ThrowsMessage<std::runtime_error>(
+          HasSubstr("Task response was requested for nonexistent TaskId")));
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, CompleteTaskFirstCompletionWins) {
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("actor_1234");
+  v1alpha1::Task pending = MakeTask(state_type, state_ref, "task-uuid-1234");
+  store({}, {pending});
+
+  v1alpha1::CompleteTaskRequest first;
+  *first.mutable_task() = pending;
+  first.mutable_task()->set_status(v1alpha1::Task::COMPLETED);
+  first.mutable_task()->mutable_response()->PackFrom(MakeStringValue("first"));
+  v1alpha1::CompleteTaskResponse first_response;
+  grpc::ClientContext first_context;
+  ASSERT_TRUE(stub->CompleteTask(&first_context, first, &first_response).ok());
+  EXPECT_TRUE(first_response.completed());
+  EXPECT_TRUE(first_response.has_timestamp());
+
+  // Reopen the same RocksDB directory before a redelivery attempt. The first
+  // terminal result must survive a sidecar restart.
+  restart_server();
+
+  v1alpha1::CompleteTaskRequest second = first;
+  second.mutable_task()->mutable_response()->PackFrom(
+      MakeStringValue("second"));
+  v1alpha1::CompleteTaskResponse second_response;
+  grpc::ClientContext second_context;
+  ASSERT_TRUE(
+      stub->CompleteTask(&second_context, second, &second_response).ok());
+  EXPECT_FALSE(second_response.completed());
+  EXPECT_TRUE(second_response.has_timestamp());
+
+  std::optional<std::string> response =
+      load_task_response(v1alpha1::TaskId(pending.task_id()));
+  ASSERT_TRUE(response.has_value());
+  v1alpha1::TaskResponseOrError response_or_error;
+  ASSERT_TRUE(response_or_error.ParseFromString(*response));
+  google::protobuf::StringValue value;
+  ASSERT_TRUE(response_or_error.response().UnpackTo(&value));
+  EXPECT_EQ("first", value.value());
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, CompleteTaskConcurrentFirstCompletionWins) {
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("actor_5678");
+  v1alpha1::Task pending = MakeTask(state_type, state_ref, "task-uuid-5678");
+  store({}, {pending});
+
+  std::mutex mutex;
+  std::condition_variable condition;
+  int entered = 0;
+  bool first_paused = false;
+  bool release_first = false;
+  SetTestOnlyHookForLongRunningRPC(
+      server->TestOnly_GetService(),
+      [&](TestOnlyLongRunningRPCHookSite site) {
+        std::unique_lock lock(mutex);
+        if (site == TestOnlyLongRunningRPCHookSite::COMPLETE_TASK_ENTERED) {
+          ++entered;
+          condition.notify_all();
+          return;
+        }
+        if (site
+            == TestOnlyLongRunningRPCHookSite::
+                COMPLETE_TASK_AFTER_PENDING_READ) {
+          first_paused = true;
+          condition.notify_all();
+          condition.wait(lock, [&]() { return release_first; });
+        }
+      });
+
+  auto request = [&](const std::string& result) {
+    v1alpha1::CompleteTaskRequest request;
+    *request.mutable_task() = pending;
+    request.mutable_task()->set_status(v1alpha1::Task::COMPLETED);
+    request.mutable_task()->mutable_response()->PackFrom(
+        MakeStringValue(result));
+    return request;
+  };
+
+  bool first_completed = false;
+  bool second_completed = false;
+  grpc::Status first_status;
+  grpc::Status second_status;
+  std::thread first([&]() {
+    auto first_request = request("first");
+    v1alpha1::CompleteTaskResponse response;
+    grpc::ClientContext context;
+    first_status = stub->CompleteTask(&context, first_request, &response);
+    first_completed = response.completed();
+  });
+
+  bool first_reached_barrier;
+  {
+    std::unique_lock lock(mutex);
+    first_reached_barrier =
+        condition.wait_for(lock, std::chrono::seconds(5), [&]() {
+          return first_paused;
+        });
+    if (!first_reached_barrier) {
+      release_first = true;
+    }
+  }
+  if (!first_reached_barrier) {
+    condition.notify_all();
+    first.join();
+    SetTestOnlyHookForLongRunningRPC(server->TestOnly_GetService(), nullptr);
+    FAIL() << "First completer did not reach the durable-read barrier";
+  }
+
+  std::thread second([&]() {
+    auto second_request = request("second");
+    v1alpha1::CompleteTaskResponse response;
+    grpc::ClientContext context;
+    second_status = stub->CompleteTask(&context, second_request, &response);
+    second_completed = response.completed();
+  });
+
+  bool second_reached_lock;
+  {
+    std::unique_lock lock(mutex);
+    second_reached_lock =
+        condition.wait_for(lock, std::chrono::seconds(5), [&]() {
+          return entered == 2;
+        });
+    release_first = true;
+  }
+  condition.notify_all();
+  first.join();
+  second.join();
+  SetTestOnlyHookForLongRunningRPC(server->TestOnly_GetService(), nullptr);
+
+  ASSERT_TRUE(second_reached_lock);
+  ASSERT_TRUE(first_status.ok()) << first_status.error_message();
+  ASSERT_TRUE(second_status.ok()) << second_status.error_message();
+  EXPECT_TRUE(first_completed);
+  EXPECT_FALSE(second_completed);
+
+  std::optional<std::string> response =
+      load_task_response(v1alpha1::TaskId(pending.task_id()));
+  ASSERT_TRUE(response.has_value());
+  v1alpha1::TaskResponseOrError response_or_error;
+  ASSERT_TRUE(response_or_error.ParseFromString(*response));
+  google::protobuf::StringValue value;
+  ASSERT_TRUE(response_or_error.response().UnpackTo(&value));
+  EXPECT_EQ("first", value.value());
 }
 
 ////////////////////////////////////////////////////////////////////////

@@ -2651,6 +2651,15 @@ pub mod test_support {
             Ok(Response::new(tokio_stream::iter(vec![])))
         }
 
+        async fn complete_task(
+            &self,
+            _request: Request<database::CompleteTaskRequest>,
+        ) -> Result<Response<database::CompleteTaskResponse>, Status> {
+            // The RocksDB/gRPC suite owns CAS evidence. This actor-store fake
+            // intentionally does not simulate durable task completion.
+            Err(Status::unimplemented("task completion is not modeled"))
+        }
+
         async fn store(
             &self,
             request: Request<database::StoreRequest>,

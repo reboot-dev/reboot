@@ -392,6 +392,32 @@ message StoreResponse {
   optional google.protobuf.Timestamp timestamp = 1;
 }
 
+// Atomically completes a pending task among concurrent CompleteTask callers.
+// Legacy Store and transactional task upserts remain unconditional and can
+// overwrite or recreate task records; this is not a global first-result-wins
+// guarantee. Callers must exclusively use CompleteTask for terminal writes.
+message CompleteTaskRequest {
+  // Must be a completed task with a task ID. The task response or error is the
+  // durable result of the winning completion. A response must have a non-empty
+  // Any type URL prefix and message name; its payload is application-opaque
+  // (including valid empty messages). An error must unpack as google.rpc.Status
+  // with a non-OK canonical code (1..16) and typed Any details.
+  Task task = 1;
+
+  // Sync the RocksDB write before returning success.
+  bool sync = 2;
+}
+
+message CompleteTaskResponse {
+  // True only for the caller that changed the task from PENDING to COMPLETED.
+  // False means the task was already completed or was not pending.
+  bool completed = 1;
+
+  // Latest timestamp from database clock, for timestamp refresh.
+  // Optional for explicit backwards compatibility.
+  optional google.protobuf.Timestamp timestamp = 2;
+}
+
 // Atomically creates one actor only when it does not already exist, together
 // with the completed idempotent writer response. This is intentionally a
 // separate operation: Store remains an unconditional upsert for compatibility.
@@ -696,6 +722,9 @@ service Database {
 
   // Stores the specified data.
   rpc Store(StoreRequest) returns (StoreResponse);
+
+  // Changes a task from PENDING to COMPLETED only if it is still pending.
+  rpc CompleteTask(CompleteTaskRequest) returns (CompleteTaskResponse);
 
   // Creates a previously absent actor and its idempotent response atomically.
   // Returns FAILED_PRECONDITION when the actor already exists.

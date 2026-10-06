@@ -79,6 +79,39 @@ real-sidecar evidence is recorded in the individual capability rows.
 | Colocated collections / SortedMap range | `aio/state_managers.py:3739-3816,6721-6820`; `std/collections/v1/sorted_map.py` | **Missing.** Only FakeDatabase test stubs exist. | Requires collection effect model, sidecar range bindings, transaction visibility, and generated collection API. |
 | Streaming and reactive readers | `aio/state_managers.py:4350-4613,6554-6699` | **Missing.** Runtime reader is unary; successful trailers are transport plumbing, not state subscriptions. | Requires lifecycle/backpressure/reconnect/visibility contract and subscription runtime before any generated API. |
 
+### CompleteTask sidecar prerequisite (2026-10-06)
+
+`rbt/v1alpha1/database.proto` adds a distinct `Database.CompleteTask` RPC;
+`reboot/server/database.cc` serializes concurrent completers through the existing
+check/write mutex and atomically stores COMPLETED while deleting PENDING in one
+RocksDB WriteBatch. An absent pending record returns `completed = false` without
+creating a column family or terminal result. Scheduling fields are copied from
+the durable pending record; mismatched method/request/iteration is rejected.
+Only the supplied terminal response/error is used. Responses require a typed
+Any URL (nonempty prefix and final name), but application payloads remain opaque
+and may be empty. Errors must unpack as `google.rpc.Status` with a canonical
+non-OK code (1..16); details require typed Any URLs and remain payload-opaque.
+
+**Compatibility boundary:** this is first-completion-wins among `CompleteTask`
+callers on the sidecar, not a global invariant. Legacy `Store`, transactional
+`Apply`, and import/restore paths retain unconditional task-upsert semantics;
+nontransactional Store shares the mutex but still unconditionally overwrites,
+while transaction commit/import have separate write authority. These paths can
+overwrite a terminal result or recreate pending data. Python still completes through `_store` under its actor
+lock (`aio/state_managers.py:4743-4782`). Enforcing a global invariant requires a
+separate migration of those authorities, including workflow iteration behavior;
+this change deliberately does not alter that established contract.
+
+Real RocksDB/gRPC tests in `tests/reboot/server/database_tests.cc` cover restart
+persistence, deterministic competing completion at the locked read/write
+boundary, malformed terminal/identity/scheduling rejection with subsequent
+successful completion after restart, packed status persistence, valid empty
+response payloads, absent-task no-op, and the legacy Store overwrite boundary.
+The Rust actor-store fake explicitly returns Unimplemented for this RPC; it is
+not CAS evidence. **Task SDK/runtime parity remains missing:** no generated
+handler/dispatch owner, actor-locked SDK completion, or crash/redelivery runtime
+has been added by this prerequisite.
+
 ### Application host, web, and security
 
 | Capability | Python reference | Rust status and reference | Evidence / remaining work |

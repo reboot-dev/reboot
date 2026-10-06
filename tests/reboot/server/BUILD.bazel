@@ -101,6 +101,7 @@ cc_test(
     ],
     deps = [
         "//reboot/server:database_cc",
+        "@googleapis//google/rpc:status_cc_proto",
         "@com_github_3rdparty_stout//:stout",
         "@com_github_google_googletest//:gtest_main",
     ] + select(

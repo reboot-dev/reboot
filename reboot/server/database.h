@@ -160,6 +160,13 @@ enum class TestOnlyLongRunningRPCHookSite {
   // a test can commit or abort a participant transaction that the
   // snapshot still lists.
   RECOVER_TRANSACTIONS_RIGHT_AFTER_IMPLICIT_SNAPSHOT,
+  // `CompleteTask`: after validating the request and before acquiring the CAS
+  // lock. Tests use this to prove a competing RPC reaches the lock boundary.
+  COMPLETE_TASK_ENTERED,
+  // `CompleteTask`: after reading the durable pending record and while holding
+  // the completion CAS lock, before writing the terminal record. Tests use
+  // this to prove a concurrent completer cannot slip between the read/write.
+  COMPLETE_TASK_AFTER_PENDING_READ,
   // `DeleteTransaction`: immediately after entering, while the
   // committed or rolled back transaction is still in memory, so that
   // a test can observe it there.

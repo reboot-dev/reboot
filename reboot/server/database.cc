@@ -25,6 +25,7 @@
 #include "google/protobuf/timestamp.pb.h"
 #include "google/protobuf/util/message_differencer.h"
 #include "google/protobuf/util/time_util.h"
+#include "google/rpc/status.pb.h"
 #include "grpcpp/server_builder.h"
 #include "rbt/v1alpha1/application_metadata.pb.h"
 #include "rbt/v1alpha1/database.grpc.pb.h"
@@ -53,6 +54,8 @@ using rbt::v1alpha1::ColocatedRangeResponse;
 using rbt::v1alpha1::ColocatedReverseRangeRequest;
 using rbt::v1alpha1::ColocatedReverseRangeResponse;
 using rbt::v1alpha1::ColocatedUpsert;
+using rbt::v1alpha1::CompleteTaskRequest;
+using rbt::v1alpha1::CompleteTaskResponse;
 using rbt::v1alpha1::CreateActorRequest;
 using rbt::v1alpha1::CreateActorResponse;
 using rbt::v1alpha1::ExportItem;
@@ -473,6 +476,10 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       grpc::ServerContext* context,
       const StoreRequest* request,
       StoreResponse* response) override;
+  grpc::Status CompleteTask(
+      grpc::ServerContext* context,
+      const CompleteTaskRequest* request,
+      CompleteTaskResponse* response) override;
   grpc::Status CreateActor(
       grpc::ServerContext* context,
       const CreateActorRequest* request,
@@ -686,9 +693,11 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
 
   stout::Borrowable<std::unique_ptr<rocksdb::TransactionDB>> db_;
 
-  // Serializes check-and-store of idempotent mutations. Store() otherwise
-  // uses a WriteBatch, which cannot atomically read an existing value before
-  // writing; keep this lock through the final database write.
+  // Serializes operations which must atomically read an existing value before
+  // writing it. Store() otherwise uses a WriteBatch and remains an
+  // unconditional upsert. This covers Store writes, idempotency collision
+  // checks, actor creation, and competing task-completion attempts; keep it
+  // through each final database write.
   std::mutex idempotency_collision_mutex_;
 
   // Native state uses only the n2pc/v1 namespace and has independent
@@ -2632,6 +2641,160 @@ expected<void> DatabaseService::ValidateNonTransactionalStore(
   }
 
   return {};
+}
+
+////////////////////////////////////////////////////////////////////////
+
+grpc::Status DatabaseService::CompleteTask(
+    grpc::ServerContext* context,
+    const CompleteTaskRequest* request,
+    CompleteTaskResponse* response) {
+  REBOOT_DATABASE_LOG(1) << "CompleteTask { " << request->ShortDebugString()
+                         << " }";
+  *response->mutable_timestamp() = monotonic_clock_->Now();
+
+  if (!request->has_task() || request->task().status() != Task::COMPLETED
+      || request->task().task_id().state_type().empty()
+      || request->task().task_id().state_ref().empty()
+      || request->task().task_id().task_uuid().empty()
+      || request->task().response_or_error_case()
+          == Task::RESPONSE_OR_ERROR_NOT_SET) {
+    return grpc::Status(
+        grpc::INVALID_ARGUMENT,
+        "CompleteTask requires a completed task with a complete task ID and "
+        "result");
+  }
+
+  const Task& task = request->task();
+  // A response is opaque: the sidecar has no application message descriptor.
+  // Empty protobuf payloads are valid, but Any must name a message type.
+  auto valid_any = [](const google::protobuf::Any& any) {
+    const auto slash = any.type_url().rfind('/');
+    return slash != std::string::npos && slash > 0
+        && slash + 1 < any.type_url().size();
+  };
+  if (task.has_response()) {
+    if (!valid_any(task.response())) {
+      return grpc::Status(
+          grpc::INVALID_ARGUMENT,
+          "Task response requires a typed Any");
+    }
+  } else {
+    google::rpc::Status status;
+    if (!valid_any(task.error()) || !task.error().UnpackTo(&status)
+        || status.code() <= 0 || status.code() > 16) {
+      return grpc::Status(
+          grpc::INVALID_ARGUMENT,
+          "Task error requires a valid non-OK google.rpc.Status Any");
+    }
+    for (const auto& detail : status.details()) {
+      if (!valid_any(detail)) {
+        return grpc::Status(
+            grpc::INVALID_ARGUMENT,
+            "Task error detail requires a typed Any");
+      }
+    }
+  }
+
+  if (test_only_hook_for_long_running_rpc_) {
+    test_only_hook_for_long_running_rpc_(
+        TestOnlyLongRunningRPCHookSite::COMPLETE_TASK_ENTERED);
+  }
+
+  // Holding this lock across the read and final write serializes competing
+  // CompleteTask calls and nontransactional Store writes in this sidecar.
+  // Store still unconditionally upserts tasks, and transaction commit/import
+  // have separate authority: serialization alone is not a global first-result
+  // guarantee. This RPC owns only its PENDING -> COMPLETED check-and-write.
+  std::lock_guard<std::mutex> lock(idempotency_collision_mutex_);
+  expected<rocksdb::ColumnFamilyHandle*> column_family =
+      LookupColumnFamilyHandle(task.task_id().state_type());
+  if (!column_family.has_value()) {
+    // A task can only be pending in an existing state-type column family.
+    // Therefore an absent column family means this completion did not win.
+    response->set_completed(false);
+    return grpc::Status::OK;
+  }
+
+  const std::string pending_key = MakeTaskKey(Task::PENDING, task.task_id());
+  std::string pending_task;
+  rocksdb::Status get = db_->Get(
+      rocksdb::ReadOptions(),
+      *column_family,
+      rocksdb::Slice(pending_key),
+      &pending_task);
+  if (get.IsNotFound()) {
+    response->set_completed(false);
+    return grpc::Status::OK;
+  }
+  if (!get.ok()) {
+    return grpc::Status(
+        grpc::UNKNOWN,
+        fmt::format("Failed to read pending task: {}", get.ToString()));
+  }
+
+  Task stored_task;
+  if (!stored_task.ParseFromString(pending_task)) {
+    return grpc::Status(grpc::UNKNOWN, "Failed to parse pending task");
+  }
+  // Scheduling data is immutable. A completer may choose only the terminal
+  // response/error; preserve every other field from the durable pending record
+  // rather than persisting a caller-controlled copy.
+  if (stored_task.method() != task.method()
+      || stored_task.request() != task.request()
+      || stored_task.iteration() != task.iteration()) {
+    return grpc::Status(
+        grpc::INVALID_ARGUMENT,
+        "Completed task does not match its pending scheduling data");
+  }
+
+  if (test_only_hook_for_long_running_rpc_) {
+    test_only_hook_for_long_running_rpc_(
+        TestOnlyLongRunningRPCHookSite::COMPLETE_TASK_AFTER_PENDING_READ);
+  }
+
+  Task completed = stored_task;
+  completed.set_status(Task::COMPLETED);
+  if (task.has_response()) {
+    *completed.mutable_response() = task.response();
+  } else {
+    *completed.mutable_error() = task.error();
+  }
+
+  std::string completed_task;
+  if (!completed.SerializeToString(&completed_task)) {
+    return grpc::Status(
+        grpc::UNKNOWN,
+        fmt::format(
+            "Failed to serialize completed task: {}",
+            completed.ShortDebugString()));
+  }
+
+  rocksdb::WriteBatch batch;
+  rocksdb::Status status = batch.Put(
+      *column_family,
+      rocksdb::Slice(MakeTaskKey(Task::COMPLETED, task.task_id())),
+      rocksdb::Slice(completed_task));
+  if (!status.ok()) {
+    return grpc::Status(
+        grpc::UNKNOWN,
+        fmt::format("Failed to store completed task: {}", status.ToString()));
+  }
+  status = batch.Delete(*column_family, rocksdb::Slice(pending_key));
+  if (!status.ok()) {
+    return grpc::Status(
+        grpc::UNKNOWN,
+        fmt::format("Failed to delete pending task: {}", status.ToString()));
+  }
+  status = db_->Write(DefaultWriteOptions(request->sync()), &batch);
+  if (!status.ok()) {
+    return grpc::Status(
+        grpc::UNKNOWN,
+        fmt::format("Failed to complete task: {}", status.ToString()));
+  }
+
+  response->set_completed(true);
+  return grpc::Status::OK;
 }
 
 ////////////////////////////////////////////////////////////////////////

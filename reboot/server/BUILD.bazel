@@ -16,6 +16,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//reboot:settings_cc",
+        "@googleapis//google/rpc:status_cc_proto",
         "@com_github_3rdparty_stout//:stout",
         "@com_github_facebook_rocksdb//:rocksdb",
         "@com_github_fmtlib_fmt//:fmt",
