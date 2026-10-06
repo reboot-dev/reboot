@@ -166,11 +166,36 @@ pub struct TransactionContext {
     mode: TransactionMode,
     /// Present only for a generated fresh root. Inbound contexts deliberately
     /// have no root aggregation authority.
-    returned_participants:
-        Option<Arc<Mutex<BTreeMap<crate::durable_coordinator::ParticipantTarget, bool>>>>,
+    returned_participants: Option<Arc<Mutex<ReturnedParticipantCollection>>>,
     /// First outbound failure whose transport outcome is not known recoverable.
     /// A handler may catch it, but a root must still abort rather than commit.
     doomed: Arc<Mutex<Option<Status>>>,
+}
+
+#[derive(Debug, Default)]
+struct ReturnedParticipantCollection {
+    participants: BTreeMap<crate::durable_coordinator::ParticipantTarget, bool>,
+    sealed: bool,
+    active: usize,
+    late_enlistment: bool,
+}
+
+/// Generated clients retain this guard from before routing through enlistment.
+/// It tracks quiescence only; cancellation does not recover unknown trailers.
+#[doc(hidden)]
+pub struct TransactionalOutboundScope {
+    collection: Option<Arc<Mutex<ReturnedParticipantCollection>>>,
+}
+
+impl Drop for TransactionalOutboundScope {
+    fn drop(&mut self) {
+        if let Some(collection) = &self.collection {
+            collection
+                .lock()
+                .expect("returned participant mutex poisoned")
+                .active -= 1;
+        }
+    }
 }
 
 impl PartialEq for TransactionContext {
@@ -375,8 +400,77 @@ impl TransactionContext {
     }
 
     fn with_returned_participant_collection(mut self) -> Self {
-        self.returned_participants = Some(Arc::new(Mutex::new(BTreeMap::new())));
+        self.returned_participants = Some(Arc::new(Mutex::new(
+            ReturnedParticipantCollection::default(),
+        )));
         self
+    }
+
+    pub(crate) fn is_fresh_root(&self) -> bool {
+        self.returned_participants.is_some() && self.transaction_ids().len() == 1
+    }
+
+    /// Acquires generated outbound admission before any resolver or network call.
+    #[doc(hidden)]
+    pub fn begin_generated_outbound(&self) -> Result<TransactionalOutboundScope, Status> {
+        if let Some(collection) = &self.returned_participants {
+            let mut state = collection
+                .lock()
+                .expect("returned participant mutex poisoned");
+            if state.sealed {
+                return Err(Status::failed_precondition(
+                    "root outbound collection is sealed",
+                ));
+            }
+            state.active += 1;
+        }
+        Ok(TransactionalOutboundScope {
+            collection: self.returned_participants.clone(),
+        })
+    }
+
+    pub(crate) fn seal_explicit_abort(
+        &self,
+    ) -> Result<Vec<crate::durable_coordinator::ReturnedParticipant>, Status> {
+        let collection = self.returned_participants.as_ref().ok_or_else(|| {
+            Status::failed_precondition("explicit abort requires fresh root provenance")
+        })?;
+        let mut state = collection
+            .lock()
+            .expect("returned participant mutex poisoned");
+        if state.sealed || state.active != 0 {
+            return Err(Status::failed_precondition(
+                "unsupported explicit-abort uncertainty: collection sealed or generated outbound calls still active; ownership retained",
+            ));
+        }
+        state.sealed = true;
+        Ok(state
+            .participants
+            .iter()
+            .map(
+                |(target, read_only)| crate::durable_coordinator::ReturnedParticipant {
+                    target: target.clone(),
+                    read_only: *read_only,
+                },
+            )
+            .collect())
+    }
+
+    pub(crate) fn finish_explicit_abort(&self) -> Result<(), Status> {
+        let collection = self
+            .returned_participants
+            .as_ref()
+            .expect("fresh root was validated");
+        let mut state = collection
+            .lock()
+            .expect("returned participant mutex poisoned");
+        if !state.sealed || state.active != 0 || state.late_enlistment {
+            return Err(Status::failed_precondition(
+                "late enlistment retained; explicit cleanup is incomplete",
+            ));
+        }
+        state.participants.clear();
+        Ok(())
     }
 
     /// Enlists validated identities from one successful generated outbound RPC.
@@ -395,11 +489,43 @@ impl TransactionContext {
                 // A successful call that classifies a target as a writer wins
                 // over any prior read-only classification from another call.
                 collected
+                    .participants
                     .entry(participant.target.clone())
                     .and_modify(|read_only| *read_only &= participant.read_only)
                     .or_insert(participant.read_only);
             }
+            if collected.sealed {
+                // Public/manual callers cannot silently discard new ownership.
+                collected.late_enlistment = true;
+                self.doom(Status::failed_precondition(
+                    "participant enlisted after explicit abort seal",
+                ));
+            }
         }
+    }
+
+    /// Copies confirmed enlistments without relinquishing their ownership.
+    /// Explicit pre-handoff cleanup must retain this set until terminal ACKs.
+    pub fn returned_participants_snapshot(
+        &self,
+    ) -> Vec<crate::durable_coordinator::ReturnedParticipant> {
+        self.returned_participants
+            .as_ref()
+            .map(|participants| {
+                participants
+                    .lock()
+                    .expect("returned participant mutex poisoned")
+                    .participants
+                    .iter()
+                    .map(
+                        |(target, read_only)| crate::durable_coordinator::ReturnedParticipant {
+                            target: target.clone(),
+                            read_only: *read_only,
+                        },
+                    )
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Drains the root's generated outbound participant set exactly once.
@@ -412,19 +538,22 @@ impl TransactionContext {
         self.returned_participants
             .as_ref()
             .map(|participants| {
-                std::mem::take(
-                    &mut *participants
-                        .lock()
-                        .expect("returned participant mutex poisoned"),
-                )
-                .into_iter()
-                .map(
-                    |(target, read_only)| crate::durable_coordinator::ReturnedParticipant {
-                        target,
-                        read_only,
-                    },
-                )
-                .collect()
+                let mut state = participants
+                    .lock()
+                    .expect("returned participant mutex poisoned");
+                // Explicit abort exclusively owns its sealed set, including on failure.
+                if state.sealed {
+                    return Vec::new();
+                }
+                std::mem::take(&mut state.participants)
+                    .into_iter()
+                    .map(
+                        |(target, read_only)| crate::durable_coordinator::ReturnedParticipant {
+                            target,
+                            read_only,
+                        },
+                    )
+                    .collect()
             })
             .unwrap_or_default()
     }
@@ -2906,6 +3035,75 @@ pub mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_abort_seal_retains_late_metadata_and_blocks_generated_outbound() {
+        let root = RootTransactionContext::start(
+            RebootHeaders::new("actor/1"),
+            "example.Actor",
+            TransactionMode::Exclusive,
+            Uuid::new_v4(),
+            prost_types::Timestamp::default(),
+        )
+        .unwrap();
+        let context = root.transaction();
+        let active = context.begin_generated_outbound().unwrap();
+        assert!(context.seal_explicit_abort().is_err());
+        drop(active);
+        assert!(context.seal_explicit_abort().unwrap().is_empty());
+        assert!(context.clone().begin_generated_outbound().is_err());
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert(
+            crate::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER,
+            r#"{"example.Remote":["late/1"]}"#.parse().unwrap(),
+        );
+        let returned =
+            crate::successful_trailers::ReturnedParticipants::from_metadata(&metadata).unwrap();
+        context.enlist_returned_participants(&returned);
+        assert!(context.doomed_status().is_some());
+        assert!(context.finish_explicit_abort().is_err());
+        assert!(context.take_returned_participants().is_empty());
+        assert_eq!(context.returned_participants_snapshot().len(), 1);
+    }
+
+    #[test]
+    fn explicit_abort_seal_and_outbound_admission_are_atomic() {
+        for _ in 0..32 {
+            let root = RootTransactionContext::start(
+                RebootHeaders::new("actor/1"),
+                "example.Actor",
+                TransactionMode::Exclusive,
+                Uuid::new_v4(),
+                prost_types::Timestamp::default(),
+            )
+            .unwrap();
+            let context = root.transaction().clone();
+            let barrier = Arc::new(std::sync::Barrier::new(2));
+            let worker_context = context.clone();
+            let worker_barrier = Arc::clone(&barrier);
+            let worker = std::thread::spawn(move || {
+                worker_barrier.wait();
+                let scope = worker_context.begin_generated_outbound();
+                worker_barrier.wait(); // retain the winner until sealing finishes
+                scope
+            });
+            barrier.wait();
+            let sealed = context.seal_explicit_abort();
+            barrier.wait();
+            let outbound = worker.join().unwrap();
+            assert_ne!(
+                sealed.is_ok(),
+                outbound.is_ok(),
+                "seal and active outbound must never both win"
+            );
+            drop(outbound);
+            if sealed.is_ok() {
+                assert!(context.begin_generated_outbound().is_err());
+            } else {
+                assert!(context.seal_explicit_abort().is_ok());
+            }
+        }
+    }
 
     #[test]
     fn admission_requires_existing_or_preserves_default_compatibility() {

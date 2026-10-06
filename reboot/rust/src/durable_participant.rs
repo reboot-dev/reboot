@@ -354,6 +354,7 @@ pub struct StartedLocalTransaction<C: ParticipantSidecar> {
     transaction_id: Uuid,
     state: Option<Vec<u8>>,
     local_owner: Uuid,
+    admitted_explicit_root_scope: bool,
     armed: bool,
 }
 
@@ -395,6 +396,52 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
             started: self,
             promotion,
         })
+    }
+
+    /// Checks the exact live incarnation and seals off speculative Drop release
+    /// before an explicit root Abort decision RPC can become ambiguous.
+    pub(crate) async fn begin_explicit_root_abort(
+        &mut self,
+        context: &crate::runtime::TransactionContext,
+    ) -> Result<Vec<crate::durable_coordinator::ReturnedParticipant>, Status> {
+        let pending = self.participant.pending.lock().await;
+        if !context.is_fresh_root()
+            || !self.admitted_explicit_root_scope
+            || self.participant.state_type != context.transaction_coordinator_state_type()
+            || self.participant.state_ref != context.transaction_coordinator_state_ref()
+            || !self.armed
+            || !pending.as_ref().is_some_and(|current| {
+                current.root_id == context.transaction_root_id()
+                    && current.root_id == self.transaction_id
+                    && current.local_owner == Some(self.local_owner)
+                    && current.transaction_ids.len() == 1
+                    && !current.prepared
+                    && current.coordinator_state_type
+                        == context.transaction_coordinator_state_type()
+                    && current.coordinator_state_ref == context.transaction_coordinator_state_ref()
+                    && self.participant.state_ref == context.headers().state_ref
+            })
+        {
+            return Err(Status::failed_precondition(
+                "explicit root abort requires live pre-handoff ownership",
+            ));
+        }
+        // Seal atomically while the exact local authority is still locked.
+        // Even rejected active-outbound uncertainty must not release local
+        // ownership through Drop once explicit cleanup has begun.
+        self.armed = false;
+        let returned = context.seal_explicit_abort()?;
+        Ok(returned)
+    }
+
+    pub(crate) fn database_endpoint(&self) -> Option<&str> {
+        self.participant.sidecar.database_endpoint()
+    }
+
+    pub(crate) async fn acknowledge_explicit_root_abort(&self) -> Result<(), Status> {
+        self.participant
+            .terminal_owned(self.transaction_id, false, Some(self.local_owner))
+            .await
     }
 
     /// Relinquishes pre-durable Drop cleanup before the first coordinator RPC
@@ -571,6 +618,14 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             .await
     }
 
+    #[doc(hidden)]
+    pub fn actor_target(&self) -> crate::durable_coordinator::ParticipantTarget {
+        crate::durable_coordinator::ParticipantTarget {
+            state_type: self.state_type.clone(),
+            state_ref: self.state_ref.clone(),
+        }
+    }
+
     /// Starts with an explicit local lock contract.
     pub async fn start_with_mode(
         &self,
@@ -659,6 +714,13 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             .first()
             .copied()
             .ok_or_else(|| Status::invalid_argument("transaction ID path must not be empty"))?;
+        let admitted_explicit_root_scope = mode == ParticipantStartMode::Exclusive
+            && start.mode == TransactionMode::Exclusive
+            && !start.read_only
+            && !start.factory
+            && start.transaction_ids.len() == 1
+            && start.coordinator_state_type == self.state_type
+            && start.coordinator_state_ref == self.state_ref;
         let local_owner = Uuid::new_v4();
         let state = self.start_owned(start, mode, Some(local_owner)).await?;
         Ok(StartedLocalTransaction {
@@ -666,6 +728,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             transaction_id,
             state,
             local_owner,
+            admitted_explicit_root_scope,
             armed: true,
         })
     }
@@ -1075,7 +1138,29 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
     }
 
     async fn terminal(&self, transaction_id: Uuid, commit: bool) -> Result<(), Status> {
+        self.terminal_owned(transaction_id, commit, None).await
+    }
+
+    async fn terminal_owned(
+        &self,
+        transaction_id: Uuid,
+        commit: bool,
+        expected_local_owner: Option<Uuid>,
+    ) -> Result<(), Status> {
         let mut pending = self.pending.lock().await;
+        if let Some(owner) = expected_local_owner
+            && !pending.as_ref().is_some_and(|current| {
+                current.root_id == transaction_id
+                    && current.local_owner == Some(owner)
+                    && !current.prepared
+            })
+        {
+            return Err(Status::failed_precondition(
+                "explicit abort local incarnation no longer owns the transaction",
+            ));
+        }
+        // This mutex remains held through the sidecar ACK, excluding replacement
+        // and concurrent Prepare/terminal controls throughout terminal delivery.
         // Terminal delivery is deliberately idempotent.  In particular, a
         // coordinator that recovers a sealed `preparing` record can discover
         // that this process lost an unprepared, in-memory participant and
@@ -1290,6 +1375,7 @@ mod tests {
 
     #[derive(Default)]
     struct MockSidecar {
+        park_abort: bool,
         calls: Mutex<Vec<Call>>,
         prepare_results: Mutex<VecDeque<Result<(), Status>>>,
         terminal_results: Mutex<VecDeque<Result<(), Status>>>,
@@ -1363,6 +1449,9 @@ mod tests {
                 .pop_front()
                 .unwrap_or(Ok(()));
             Box::pin(async move {
+                if self.park_abort {
+                    std::future::pending::<()>().await;
+                }
                 result.map(|()| database::TransactionParticipantAbortResponse::default())
             })
         }
@@ -1408,6 +1497,149 @@ mod tests {
                 .expect("test must provide a Watch response");
             Box::pin(async move { response })
         }
+    }
+
+    #[tokio::test]
+    async fn explicit_abort_holds_incarnation_lock_through_ack_or_cancel() {
+        let sidecar = Arc::new(MockSidecar {
+            park_abort: true,
+            ..Default::default()
+        });
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let id = Uuid::new_v4();
+        let mut root_start = start(id);
+        root_start.coordinator_state_type = "example.Actor".into();
+        root_start.coordinator_state_ref = "actor/1".into();
+        let mut local = participant
+            .start_local(root_start, ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        let root = crate::runtime::RootTransactionContext::start(
+            crate::RebootHeaders::new("actor/1"),
+            "example.Actor",
+            TransactionMode::Exclusive,
+            id,
+            prost_types::Timestamp::default(),
+        )
+        .unwrap();
+        local
+            .begin_explicit_root_abort(root.transaction())
+            .await
+            .unwrap();
+        let mut terminal = Box::pin(local.acknowledge_explicit_root_abort());
+        tokio::select! {
+            biased;
+            result = &mut terminal => panic!("parked terminal returned: {result:?}"),
+            _ = tokio::task::yield_now() => {}
+        }
+        assert!(participant.pending.try_lock().is_err());
+        assert!(
+            sidecar
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|call| matches!(call, Call::Abort(_)))
+        );
+        drop(terminal);
+        let owner = local.local_owner;
+        drop(local);
+        tokio::task::yield_now().await;
+        assert_eq!(
+            participant
+                .pending
+                .lock()
+                .await
+                .as_ref()
+                .unwrap()
+                .local_owner,
+            Some(owner)
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_abort_rechecks_local_owner_and_preserves_replacement() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let id = Uuid::new_v4();
+        let mut root_start = start(id);
+        root_start.coordinator_state_type = "example.Actor".into();
+        root_start.coordinator_state_ref = "actor/1".into();
+        let mut local = participant
+            .start_local(root_start.clone(), ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        let root = crate::runtime::RootTransactionContext::start(
+            crate::RebootHeaders::new("actor/1"),
+            "example.Actor",
+            TransactionMode::Exclusive,
+            id,
+            prost_types::Timestamp::default(),
+        )
+        .unwrap();
+        let original = local.local_owner;
+        // Simulate a stale capability before admission: no seal or external RPC.
+        let replacement = Uuid::new_v4();
+        participant
+            .pending
+            .lock()
+            .await
+            .as_mut()
+            .unwrap()
+            .local_owner = Some(replacement);
+        assert!(
+            local
+                .begin_explicit_root_abort(root.transaction())
+                .await
+                .is_err()
+        );
+        assert!(root.transaction().begin_generated_outbound().is_ok());
+        participant
+            .pending
+            .lock()
+            .await
+            .as_mut()
+            .unwrap()
+            .local_owner = Some(original);
+        local
+            .begin_explicit_root_abort(root.transaction())
+            .await
+            .unwrap();
+        // A terminal control can release the original before the decision await
+        // returns, and a same-UUID start can install a different local owner.
+        participant.abort(id).await.unwrap();
+        let next = participant
+            .start_local(root_start, ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        let before = sidecar.calls.lock().unwrap().len();
+        assert!(local.acknowledge_explicit_root_abort().await.is_err());
+        assert_eq!(sidecar.calls.lock().unwrap().len(), before);
+        assert_eq!(
+            participant
+                .pending
+                .lock()
+                .await
+                .as_ref()
+                .unwrap()
+                .local_owner,
+            Some(next.local_owner)
+        );
+        drop(local);
+        tokio::task::yield_now().await;
+        assert_eq!(
+            participant
+                .pending
+                .lock()
+                .await
+                .as_ref()
+                .unwrap()
+                .local_owner,
+            Some(next.local_owner)
+        );
+        drop(next);
     }
 
     fn start(id: Uuid) -> ActorTransactionStart {

@@ -85,6 +85,11 @@ pub struct CoordinatorRecovery {
 /// Database control records, not actor staging. A coordinator must use these
 /// three RPCs rather than `Store` or an in-memory substitute.
 pub trait CoordinatorSidecar: Send + Sync + 'static {
+    /// Exact normalized Database authority; unknown authority fails closed.
+    fn database_endpoint(&self) -> Option<&str> {
+        None
+    }
+
     fn coordinator_prepare(
         &self,
         request: database::TransactionCoordinatorPrepareRequest,
@@ -165,6 +170,7 @@ fn participant_request<T>(state_ref: &str, body: T) -> Result<Request<T>, Status
 
 /// Native Database implementation for the coordinator's durable control data.
 pub struct TonicCoordinatorSidecar {
+    endpoint: String,
     client:
         tokio::sync::Mutex<database::database_client::DatabaseClient<tonic::transport::Channel>>,
 }
@@ -172,6 +178,9 @@ pub struct TonicCoordinatorSidecar {
 impl TonicCoordinatorSidecar {
     pub async fn connect(endpoint: impl AsRef<str>) -> Result<Self, tonic::transport::Error> {
         Ok(Self {
+            endpoint: tonic::transport::Endpoint::from_shared(endpoint.as_ref().to_owned())?
+                .uri()
+                .to_string(),
             client: tokio::sync::Mutex::new(
                 database::database_client::DatabaseClient::connect(endpoint.as_ref().to_owned())
                     .await?,
@@ -181,6 +190,9 @@ impl TonicCoordinatorSidecar {
 }
 
 impl CoordinatorSidecar for TonicCoordinatorSidecar {
+    fn database_endpoint(&self) -> Option<&str> {
+        Some(&self.endpoint)
+    }
     fn coordinator_prepare(
         &self,
         request: database::TransactionCoordinatorPrepareRequest,
@@ -469,11 +481,41 @@ impl<C: ParticipantSidecar> ParticipantResolver for SingleParticipantResolver<C>
 pub struct DurableRootCoordinator<C: CoordinatorSidecar, R: ParticipantResolver> {
     sidecar: Arc<C>,
     resolver: Arc<R>,
+    identity: Option<ParticipantTarget>,
+}
+
+impl<C: CoordinatorSidecar, R: ParticipantResolver> Clone for DurableRootCoordinator<C, R> {
+    fn clone(&self) -> Self {
+        Self {
+            sidecar: Arc::clone(&self.sidecar),
+            resolver: Arc::clone(&self.resolver),
+            identity: self.identity.clone(),
+        }
+    }
 }
 
 impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R> {
     pub fn new(sidecar: Arc<C>, resolver: Arc<R>) -> Self {
-        Self { sidecar, resolver }
+        Self {
+            sidecar,
+            resolver,
+            identity: None,
+        }
+    }
+
+    /// Binds coordinator authority once. An already supplied identity is never
+    /// replaced by a generated adapter's local target.
+    pub fn with_identity(mut self, identity: ParticipantTarget) -> Self {
+        if self.identity.is_none() {
+            self.identity = Some(identity);
+        }
+        self
+    }
+
+    fn require_identity(&self) -> Result<&ParticipantTarget, Status> {
+        self.identity.as_ref().ok_or_else(|| {
+            Status::failed_precondition("explicit root abort requires coordinator identity")
+        })
     }
 
     /// Returns the injected sidecar so generated Tonic adapters can clone their
@@ -486,6 +528,71 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
     /// host's routing and placement policy.
     pub fn resolver(&self) -> Arc<R> {
         Arc::clone(&self.resolver)
+    }
+
+    /// Definitive generated fresh-exclusive root errors only, BEFORE coordinator
+    /// handoff. The local incarnation is the authority, not a caller-supplied ID.
+    /// Publish immutable Abort directly; never create a preparing record that
+    /// recovery could commit. No terminal RPC is issued unless DecisionPut ACKs.
+    /// Cancellation/lost ACK retains local ownership and confirmed enlistments;
+    /// this bounded seam does not own interrupted outbound RPCs or retry fanout.
+    /// Only generated outbound scopes are tracked. Sealing rejects active calls
+    /// and prevents new generated routing; manual late enlistment is retained
+    /// and dooms the context, never reported as complete cleanup. There is no
+    /// automatic retry, unknown-trailer recovery, or durable enlistment recovery.
+    /// Local terminalization revalidates its exact incarnation under the lock;
+    /// concurrent control before that point fails closed rather than reserving it.
+    pub async fn abort_explicit_root_before_handoff<P: ParticipantSidecar>(
+        &self,
+        local: &mut crate::durable_participant::StartedLocalTransaction<P>,
+        context: &crate::runtime::TransactionContext,
+    ) -> Result<(), Status> {
+        if context.transaction_ids().len() != 1
+            || context.mode() != TransactionMode::Exclusive
+            || context.headers().idempotency_key.is_some()
+        {
+            return Err(Status::failed_precondition(
+                "explicit root abort requires a fresh non-idempotent exclusive root",
+            ));
+        }
+        let identity = self.require_identity()?;
+        if identity.state_type != context.transaction_coordinator_state_type()
+            || identity.state_ref != context.transaction_coordinator_state_ref()
+        {
+            return Err(Status::failed_precondition(
+                "explicit root abort coordinator identity differs from root context",
+            ));
+        }
+        if self.sidecar.database_endpoint().is_none()
+            || self.sidecar.database_endpoint() != local.database_endpoint()
+        {
+            return Err(Status::failed_precondition(
+                "explicit root abort requires the same verified Database authority",
+            ));
+        }
+        let returned = local.begin_explicit_root_abort(context).await?;
+        let mut targets = BTreeSet::new();
+        for participant in returned {
+            if participant.target.state_type.is_empty() || participant.target.state_ref.is_empty() {
+                return Err(Status::invalid_argument(
+                    "participant identity must be specified",
+                ));
+            }
+            // Local control is delivered only by the owner-token checked ACK.
+            if &participant.target != identity {
+                targets.insert(participant.target);
+            }
+        }
+        self.persist_abort(
+            context.transaction_root_id(),
+            context.transaction_coordinator_state_ref(),
+        )
+        .await?;
+        self.terminal_all(context.transaction_root_id(), &targets, false)
+            .await?;
+        local.acknowledge_explicit_root_abort().await?;
+        context.finish_explicit_abort()?;
+        Ok(())
     }
 
     /// Completes a root transaction with no remote transactional calls.
@@ -1078,11 +1185,24 @@ mod tests {
     }
     #[derive(Default)]
     struct MockSidecar {
+        unknown_endpoint: bool,
+        wrong_endpoint: bool,
         calls: Mutex<Vec<Call>>,
         trace: Arc<Mutex<Vec<&'static str>>>,
         recover: Mutex<VecDeque<Result<database::RecoverResponse, Status>>>,
+        decision_error: bool,
+        park_decision: bool,
     }
     impl CoordinatorSidecar for MockSidecar {
+        fn database_endpoint(&self) -> Option<&str> {
+            if self.unknown_endpoint {
+                None
+            } else if self.wrong_endpoint {
+                Some("http://other-database/")
+            } else {
+                Some("http://fake-database/")
+            }
+        }
         fn coordinator_prepare(
             &self,
             r: database::TransactionCoordinatorPrepareRequest,
@@ -1113,7 +1233,15 @@ mod tests {
         ) -> CoordinatorFuture<'_, database::TransactionCoordinatorDecisionPutResponse> {
             self.calls.lock().unwrap().push(Call::DecisionPut(request));
             self.trace.lock().unwrap().push("database.decision");
-            Box::pin(async { Ok(Default::default()) })
+            Box::pin(async move {
+                if self.park_decision {
+                    std::future::pending::<()>().await;
+                }
+                if self.decision_error {
+                    return Err(Status::unavailable("lost decision ACK"));
+                }
+                Ok(Default::default())
+            })
         }
         fn recover(
             &self,
@@ -1135,6 +1263,8 @@ mod tests {
         calls: Mutex<Vec<Call>>,
         trace: Arc<Mutex<Vec<&'static str>>>,
         prepares: Mutex<VecDeque<Result<database::PrepareResponse, Status>>>,
+        abort_error: bool,
+        park_abort: bool,
     }
     impl ParticipantEndpoint for MockEndpoint {
         fn prepare(
@@ -1168,7 +1298,15 @@ mod tests {
         ) -> CoordinatorFuture<'_, database::AbortResponse> {
             self.calls.lock().unwrap().push(Call::Abort(r));
             self.trace.lock().unwrap().push("participant.abort");
-            Box::pin(async { Ok(Default::default()) })
+            Box::pin(async move {
+                if self.park_abort {
+                    std::future::pending::<()>().await;
+                }
+                if self.abort_error {
+                    return Err(Status::unavailable("lost remote Abort ACK"));
+                }
+                Ok(Default::default())
+            })
         }
     }
     struct MockResolver {
@@ -1320,6 +1458,7 @@ mod tests {
         endpoint: Arc<MockEndpoint>,
     ) -> DurableRootCoordinator<MockSidecar, MockResolver> {
         DurableRootCoordinator::new(sidecar, Arc::new(MockResolver { endpoint }))
+            .with_identity(local_target())
     }
 
     #[derive(Default)]
@@ -1328,9 +1467,14 @@ mod tests {
         trace: Arc<Mutex<Vec<&'static str>>>,
         load_state: Mutex<Option<Vec<u8>>>,
         prepares: Mutex<VecDeque<Result<database::TransactionParticipantPrepareResponse, Status>>>,
+        abort_error: bool,
+        park_abort: bool,
     }
 
     impl ParticipantSidecar for InProcessSidecar {
+        fn database_endpoint(&self) -> Option<&str> {
+            Some("http://fake-database/")
+        }
         fn load(&self, _: database::LoadRequest) -> CoordinatorFuture<'_, database::LoadResponse> {
             self.calls.lock().unwrap().push("load");
             let state = self.load_state.lock().unwrap().clone();
@@ -1376,7 +1520,15 @@ mod tests {
         ) -> CoordinatorFuture<'_, database::TransactionParticipantAbortResponse> {
             self.calls.lock().unwrap().push("abort");
             self.trace.lock().unwrap().push("participant.abort");
-            Box::pin(async { Ok(Default::default()) })
+            Box::pin(async move {
+                if self.park_abort {
+                    std::future::pending::<()>().await;
+                }
+                if self.abort_error {
+                    return Err(Status::unavailable("lost local Abort ACK"));
+                }
+                Ok(Default::default())
+            })
         }
 
         fn recover(
@@ -1410,6 +1562,323 @@ mod tests {
             DurableActorParticipantHost::new(participant),
         )
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn explicit_pre_handoff_abort_orders_decision_and_preserves_uncertainty() {
+        use crate::RebootHeaders;
+        use crate::runtime::RootTransactionContext;
+        use crate::successful_trailers::{
+            ReturnedParticipants, TRANSACTION_PARTICIPANTS_HEADER,
+            TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER,
+        };
+        // Success, lost ACK at each boundary, and real future drop while parked.
+        for scenario in [
+            "success",
+            "decision-error",
+            "remote-error",
+            "local-error",
+            "decision-cancel",
+            "remote-cancel",
+            "local-cancel",
+            "after-handoff",
+        ] {
+            let trace = Arc::new(Mutex::new(Vec::new()));
+            let sidecar = Arc::new(MockSidecar {
+                trace: Arc::clone(&trace),
+                decision_error: scenario == "decision-error",
+                park_decision: scenario == "decision-cancel",
+                ..Default::default()
+            });
+            let endpoint = Arc::new(MockEndpoint {
+                trace: Arc::clone(&trace),
+                abort_error: scenario == "remote-error",
+                park_abort: scenario == "remote-cancel",
+                ..Default::default()
+            });
+            let local_sidecar = Arc::new(InProcessSidecar {
+                trace: Arc::clone(&trace),
+                abort_error: scenario == "local-error",
+                park_abort: scenario == "local-cancel",
+                ..Default::default()
+            });
+            let participant = DurableActorParticipant::new(
+                Arc::clone(&local_sidecar),
+                "example.Actor",
+                "actor/1",
+            );
+            let id = Uuid::new_v4();
+            let start = ActorTransactionStart {
+                transaction_ids: vec![id],
+                transaction_path: crate::durable_participant::TransactionPathContract::RootOnly,
+                coordinator_state_type: "example.Actor".into(),
+                coordinator_state_ref: "actor/1".into(),
+                mode: TransactionMode::Exclusive,
+                read_only: false,
+                factory: false,
+                state_type: "example.Actor".into(),
+                state_ref: "actor/1".into(),
+            };
+            let mut local = participant
+                .start_local(start.clone(), ParticipantStartMode::Exclusive)
+                .await
+                .unwrap();
+            let root = RootTransactionContext::start(
+                RebootHeaders::new("actor/1"),
+                "example.Actor",
+                TransactionMode::Exclusive,
+                id,
+                prost_types::Timestamp::default(),
+            )
+            .unwrap();
+            let context = root.transaction();
+            let mut metadata = tonic::metadata::MetadataMap::new();
+            metadata.append(
+                TRANSACTION_PARTICIPANTS_HEADER,
+                r#"{"example.Remote":["remote/writer","remote/writer"],"example.Actor":["actor/1"]}"#
+                    .parse()
+                    .unwrap(),
+            );
+            metadata.append(
+                TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER,
+                r#"{"example.Remote":["remote/reader","remote/writer"]}"#
+                    .parse()
+                    .unwrap(),
+            );
+            context.enlist_returned_participants(
+                &ReturnedParticipants::from_metadata(&metadata).unwrap(),
+            );
+            let confirmed = context.returned_participants_snapshot();
+            assert_eq!(confirmed.len(), 3);
+            assert!(
+                !confirmed
+                    .iter()
+                    .find(|p| p.target.state_ref == "remote/writer")
+                    .unwrap()
+                    .read_only
+            );
+            let coordinator = coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint));
+            if scenario == "after-handoff" {
+                local.handoff_to_durable_recovery();
+            }
+            let outcome = tokio::time::timeout(
+                Duration::from_millis(20),
+                coordinator.abort_explicit_root_before_handoff(&mut local, context),
+            )
+            .await;
+            if scenario.ends_with("cancel") {
+                assert!(outcome.is_err(), "{scenario}");
+            } else if scenario == "success" {
+                outcome.unwrap().unwrap();
+            } else {
+                assert!(outcome.unwrap().is_err(), "{scenario}");
+            }
+            drop(local);
+            tokio::task::yield_now().await;
+            let calls = sidecar.calls.lock().unwrap().clone();
+            assert!(!calls.iter().any(|c| matches!(
+                c,
+                Call::DbPrepare(_) | Call::DbPrepared(_) | Call::Cleanup(_)
+            )));
+            let remote_calls = endpoint.calls.lock().unwrap().clone();
+            if matches!(
+                scenario,
+                "decision-error" | "decision-cancel" | "after-handoff"
+            ) {
+                assert!(remote_calls.is_empty());
+                assert!(!local_sidecar.calls.lock().unwrap().contains(&"abort"));
+            }
+            if scenario == "success" {
+                assert_eq!(
+                    remote_calls.len(),
+                    2,
+                    "read-only AND writer need Abort before Prepare"
+                );
+                assert!(remote_calls.iter().all(|c| matches!(c, Call::Abort(_))));
+                assert_eq!(
+                    *trace.lock().unwrap(),
+                    vec![
+                        "database.decision",
+                        "participant.abort",
+                        "participant.abort",
+                        "participant.abort"
+                    ]
+                );
+                assert!(context.returned_participants_snapshot().is_empty());
+                let next = participant
+                    .start_local(start, ParticipantStartMode::Exclusive)
+                    .await
+                    .unwrap();
+                drop(next);
+            } else {
+                assert_eq!(
+                    context.returned_participants_snapshot(),
+                    confirmed,
+                    "{scenario} discarded unacknowledged ownership"
+                );
+                assert!(
+                    tokio::time::timeout(
+                        Duration::from_millis(20),
+                        participant.start_local(start, ParticipantStartMode::Exclusive)
+                    )
+                    .await
+                    .is_err(),
+                    "{scenario} released ambiguous local ownership"
+                );
+            }
+            if scenario != "after-handoff" {
+                assert!(
+                    matches!(&calls[0], Call::DecisionPut(request) if request.decision.as_ref().unwrap().outcome == database::transaction_coordinator_decision::Outcome::Abort as i32)
+                );
+            } else {
+                assert!(calls.is_empty(), "handoff must forbid synthetic Abort");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_abort_rejects_untrusted_scope_before_external_calls() {
+        use crate::runtime::{RootTransactionContext, TransactionContext};
+        for scenario in [
+            "inbound-one-id",
+            "idempotent",
+            "wrong-type",
+            "wrong-ref",
+            "wrong-id",
+            "read-only",
+            "factory",
+            "shared",
+            "unknown-endpoint",
+            "wrong-endpoint",
+            "unknown-coordinator",
+            "wrong-coordinator-type",
+            "wrong-coordinator-ref",
+            "active-outbound",
+            "sealed",
+        ] {
+            let sidecar = Arc::new(MockSidecar {
+                unknown_endpoint: scenario == "unknown-endpoint",
+                wrong_endpoint: scenario == "wrong-endpoint",
+                ..Default::default()
+            });
+            let endpoint = Arc::new(MockEndpoint::default());
+            let local_sidecar = Arc::new(InProcessSidecar::default());
+            let participant = DurableActorParticipant::new(
+                Arc::clone(&local_sidecar),
+                "example.Actor",
+                "actor/1",
+            );
+            let id = Uuid::new_v4();
+            let mut start = ActorTransactionStart {
+                transaction_ids: vec![id],
+                transaction_path: crate::durable_participant::TransactionPathContract::RootOnly,
+                coordinator_state_type: "example.Actor".into(),
+                coordinator_state_ref: "actor/1".into(),
+                mode: TransactionMode::Exclusive,
+                read_only: false,
+                factory: false,
+                state_type: "example.Actor".into(),
+                state_ref: "actor/1".into(),
+            };
+            if scenario == "read-only" {
+                start.read_only = true;
+            }
+            if scenario == "factory" {
+                start.factory = true;
+            }
+            if scenario == "shared" {
+                start.mode = TransactionMode::Shared;
+            }
+            let mode = if scenario == "shared" {
+                ParticipantStartMode::SharedUpgradeable
+            } else {
+                ParticipantStartMode::Exclusive
+            };
+            let mut local = participant.start_local(start.clone(), mode).await.unwrap();
+            let mut headers = crate::RebootHeaders::new(if scenario == "wrong-ref" {
+                "actor/2"
+            } else {
+                "actor/1"
+            });
+            if scenario == "idempotent" {
+                headers.idempotency_key = Some(Uuid::new_v4());
+            }
+            let root = RootTransactionContext::start(
+                headers,
+                if scenario == "wrong-type" {
+                    "example.Other"
+                } else {
+                    "example.Actor"
+                },
+                TransactionMode::Exclusive,
+                if scenario == "wrong-id" {
+                    Uuid::new_v4()
+                } else {
+                    id
+                },
+                prost_types::Timestamp::default(),
+            )
+            .unwrap();
+            let inbound = TransactionContext::from_headers(
+                root.transaction().headers().clone(),
+                TransactionMode::Exclusive,
+            )
+            .unwrap();
+            let context = if scenario == "inbound-one-id" {
+                &inbound
+            } else {
+                root.transaction()
+            };
+            let active = if scenario == "active-outbound" {
+                Some(context.begin_generated_outbound().unwrap())
+            } else {
+                None
+            };
+            if scenario == "sealed" {
+                context.seal_explicit_abort().unwrap();
+            }
+            let mut coordinator = coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint));
+            if scenario == "unknown-coordinator" {
+                coordinator.identity = None;
+            }
+            if scenario == "wrong-coordinator-type" {
+                coordinator.identity.as_mut().unwrap().state_type = "example.Other".into();
+            }
+            if scenario == "wrong-coordinator-ref" {
+                coordinator.identity.as_mut().unwrap().state_ref = "actor/2".into();
+            }
+            let error = coordinator
+                .abort_explicit_root_before_handoff(&mut local, context)
+                .await
+                .unwrap_err();
+            assert_eq!(error.code(), tonic::Code::FailedPrecondition, "{scenario}");
+            assert!(sidecar.calls.lock().unwrap().is_empty(), "{scenario}");
+            assert!(endpoint.calls.lock().unwrap().is_empty(), "{scenario}");
+            assert_eq!(
+                *local_sidecar.calls.lock().unwrap(),
+                vec!["load"],
+                "{scenario}"
+            );
+            if matches!(scenario, "active-outbound" | "sealed") {
+                assert!(
+                    error
+                        .message()
+                        .contains("unsupported explicit-abort uncertainty")
+                );
+                drop(local);
+                drop(active);
+                tokio::task::yield_now().await;
+                assert!(
+                    tokio::time::timeout(
+                        Duration::from_millis(20),
+                        participant.start_local(start, mode)
+                    )
+                    .await
+                    .is_err(),
+                    "{scenario} released uncertain ownership"
+                );
+            }
+        }
     }
 
     #[tokio::test]

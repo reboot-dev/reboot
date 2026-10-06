@@ -1,5 +1,37 @@
 # Rust SDK parity ledger
 
+## Explicit pre-handoff transaction-tree failure checkpoint
+
+Bounded prerequisite for distributed tasks: generated fresh, non-idempotent,
+exclusive, non-factory roots now clean up confirmed returned participants on
+explicit handler, task-admission or staging rejection. Task scheduling with
+returned participants remains rejected; this does not enable cross-actor tasks.
+
+The capability validates fresh-root provenance, admitted scope, exact local
+incarnation and actor/coordinator identity, and matching normalized Database
+endpoints. Generated outbound guards span resolution through successful-trailer
+enlistment. Cleanup atomically seals only a quiescent collection, blocks new
+generated calls, and snapshots the deduplicated writer/read-only union. It writes
+immutable Abort directly, then awaits remote terminal ACKs and owner-token-checked
+local Abort ACK under the participant mutex before clearing confirmed membership.
+It creates no preparing coordinator record and rejects post-handoff authority.
+
+Source comparison: Python `aio/state_managers.py` `_transaction_coordinator_abort`
+(lines 5869–5980). Rust Watch treats absent decisions as unavailable, so direct
+durable Abort—not presumed absence—is the terminal authority here. Unit coverage
+exercises ordering, lost ACK/future drop, scope/identity/endpoint rejection,
+same-UUID replacement, held-ACK mutex and outbound sealing races. The real C++
+process vectors `distributed_task_admission_failure_must_release_remote_actor`
+and `distributed_direct_handler_failure_must_release_remote_actor` require
+unchanged actor/task state, exclusive remote re-admission without peer restart,
+no preparing records, and immutable Abort surviving RocksDB restart.
+
+**Still blocked:** cancellation before cleanup, unknown/lost successful trailers,
+inbound task ownership, automatic fanout retry and restart convergence of the
+in-memory enlistment worklist. Interrupted cleanup parks uncertain ownership;
+retention is not durable membership or automatic recovery. Manual late enlistment
+is retained and dooms the context, not silently discarded as acknowledged work.
+
 ## Reader-only one-shot task checkpoint
 
 Partial vertical: generated immediate or absolute-UTC-scheduled unary reader tasks without declared errors,

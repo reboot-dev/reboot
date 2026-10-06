@@ -64,7 +64,15 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         state: &proto::TransactionCounter,
         request: proto::TransactionIncrementRequest,
     ) -> Result<proto::TransactionCounterValue, tonic::Status> {
-        if let Self::Tasks { marker, block, .. } = self {
+        let reader = match self {
+            Self::Tasks { marker, block, .. } => Some((marker, *block)),
+            Self::Root(root) => root
+                .task_marker
+                .as_ref()
+                .map(|marker| (marker, root.block_task)),
+            Self::Target => None,
+        };
+        if let Some((marker, block)) = reader {
             if request.amount == 9000 {
                 // Append per invocation: an identical overwritten result cannot
                 // hide replay across Wait calls or host recovery.
@@ -77,7 +85,7 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 std::fs::write(format!("{marker}.started-at"), std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos().to_string()).unwrap();
                 std::fs::write(marker, state.value.to_string()).unwrap();
-                if *block {
+                if block {
                     struct ReaderDrop(String);
                     impl Drop for ReaderDrop {
                         fn drop(&mut self) {
@@ -157,7 +165,12 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 "uuid" => task.task_id.as_mut().unwrap().task_uuid = vec![1],
                 "uuid-version" => task.task_id.as_mut().unwrap().task_uuid[6] = 0x70,
                 "uuid-variant" => task.task_id.as_mut().unwrap().task_uuid[8] = 0,
-                "schedule" => task.timestamp = Some(prost_types::Timestamp { seconds: i64::MAX, nanos: 0 }),
+                "schedule" => {
+                    task.timestamp = Some(prost_types::Timestamp {
+                        seconds: i64::MAX,
+                        nanos: 0,
+                    })
+                }
                 "iteration" => task.iteration = 1,
                 _ => {}
             }
@@ -166,13 +179,27 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 // exclusive admission, so the live dispatcher cannot drain the
                 // durable records before validate_staged counts them.
                 let count = if vector == "saturation" { 1024 } else { 1023 };
-                let pending = (0..count).map(|_| generated::TransactionCounterWritesMethodsTasks::query(
-                    state_ref, &proto::TransactionIncrementRequest { amount: 9000 },
-                )).collect();
-                let mut database = reboot::database_proto::database_client::DatabaseClient::connect(arg("--database")).await.map_err(|error| tonic::Status::unavailable(error.to_string()))?;
-                database.store(reboot::database_proto::StoreRequest {
-                    task_upserts: pending, sync: true, ..Default::default()
-                }).await?;
+                let pending = (0..count)
+                    .map(|_| {
+                        generated::TransactionCounterWritesMethodsTasks::query(
+                            state_ref,
+                            &proto::TransactionIncrementRequest { amount: 9000 },
+                        )
+                    })
+                    .collect();
+                let mut database =
+                    reboot::database_proto::database_client::DatabaseClient::connect(arg(
+                        "--database",
+                    ))
+                    .await
+                    .map_err(|error| tonic::Status::unavailable(error.to_string()))?;
+                database
+                    .store(reboot::database_proto::StoreRequest {
+                        task_upserts: pending,
+                        sync: true,
+                        ..Default::default()
+                    })
+                    .await?;
                 if let Self::Tasks { marker, .. } = self {
                     std::fs::write(format!("{marker}.staged"), Uuid::from_slice(&task.task_id.as_ref().unwrap().task_uuid).unwrap().to_string()).unwrap();
                 }
@@ -182,18 +209,45 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
             execution.task_upserts.push(task);
             return Ok(execution);
         }
-        // Deliberately leave final_state unset: the fresh exclusive generated
-        // adapter must durably materialize the handler-mutated state.
-        Ok(TransactionExecution::new(proto::TransactionCounterValue {
-            value: state.value,
-        }))
+        // The generated adapter stages the task with root participant effects,
+        // while the remote participant comes from successful generated trailers.
+        let mut execution =
+            TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
+        if let Self::Root(root) = self {
+            if root.task_marker.is_some() {
+                let mut task = generated::TransactionCounterWritesMethodsTasks::query(
+                    &context.headers().state_ref,
+                    &proto::TransactionIncrementRequest { amount: 9000 },
+                );
+                if has("--root-task-invalid") {
+                    task.method = "Missing".into();
+                }
+                std::fs::write(
+                    format!("{}.task-id", root.task_marker.as_ref().unwrap()),
+                    Uuid::from_slice(&task.task_id.as_ref().unwrap().task_uuid)
+                        .unwrap()
+                        .to_string(),
+                )
+                .unwrap();
+                if has("--root-handler-error") {
+                    return Err(tonic::Status::invalid_argument(
+                        "explicit root handler rejection after successful remote enlistment",
+                    ));
+                }
+                execution.task_upserts.push(task);
+            }
+        }
+        Ok(execution)
     }
     async fn factory_increment(
         &self,
         _: &TransactionContext,
         state: &mut proto::TransactionCounter,
         request: proto::TransactionIncrementRequest,
-    ) -> Result<TransactionExecution<proto::TransactionCounterValue>, generated::TransactionCounterWritesMethodsFactoryIncrementError> {
+    ) -> Result<
+        TransactionExecution<proto::TransactionCounterValue>,
+        generated::TransactionCounterWritesMethodsFactoryIncrementError,
+    > {
         if request.amount == 13 {
             return Err(generated::TransactionCounterWritesMethodsFactoryIncrementError::TransactionLimitExceeded(proto::TransactionLimitExceeded { limit: request.amount }));
         }
@@ -290,6 +344,8 @@ impl generated::RegistryGaugeMethodsTransactionHandler for GaugeTaskHandler {
 struct Root {
     client: generated::TransactionCounterWritesMethodsClient<LegacyApplicationResolver>,
     multi_participant: bool,
+    task_marker: Option<String>,
+    block_task: bool,
 }
 
 /// The direct external-unary acceptance intentionally does not mount legacy
@@ -303,10 +359,8 @@ impl generated::ExternalConstructorMethodsDatabaseHandler for ExternalConstructo
         &self,
         state: &mut proto::ExternalConstructorCounter,
         request: proto::ExternalConstructorRequest,
-    ) -> Result<
-        proto::ExternalConstructorValue,
-        generated::ExternalConstructorMethodsConstructError,
-    > {
+    ) -> Result<proto::ExternalConstructorValue, generated::ExternalConstructorMethodsConstructError>
+    {
         if request.amount < 0 {
             return Err(
                 generated::ExternalConstructorMethodsConstructError::ExternalConstructorLimitExceeded(
@@ -661,10 +715,7 @@ async fn main() {
     );
     let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
         Arc::clone(&coordinator_sidecar),
-        Arc::new(LegacyApplicationParticipantResolver::new(
-            application.clone(),
-            placement.clone(),
-        )),
+        Arc::new(LegacyApplicationParticipantResolver::new(application.clone(), placement.clone())),
     );
     // Any recovered participant can host the legacy Coordinator route for this
     // configured coordinator identity. The decision itself is read from the
@@ -686,6 +737,8 @@ async fn main() {
                 LegacyApplicationResolver::new(application.clone(), placement.clone()),
             ),
             multi_participant: role == "multi-root",
+            task_marker: optional_arg("--root-reader-task"),
+            block_task: has("--block-task"),
         })
     } else {
         Handler::Target
@@ -700,10 +753,13 @@ async fn main() {
         starts,
         handler,
     );
-    let (adapter, tasks) = if role == "tasks" && !has("--no-task-owner") {
-        let (adapter, tasks) = adapter.with_one_shot_reader_tasks(&state_ref).unwrap();
-        (adapter, Some(tasks))
-    } else { (adapter, None) };
+    let (adapter, tasks) =
+        if (role == "tasks" || has("--root-reader-task")) && !has("--no-task-owner") {
+            let (adapter, tasks) = adapter.with_one_shot_reader_tasks(&state_ref).unwrap();
+            (adapter, Some(tasks))
+        } else {
+            (adapter, None)
+        };
     if has("--prove-cancel-before-durable") {
         use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
         let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: -9000 });
@@ -885,14 +941,22 @@ async fn main() {
                     adapter,
                 ),
             );
-        let host = if let Some(service) = wait_service { host.add_public_service(service) } else { host };
-        let result = host.serve_with_shutdown(address, async {
-            if let Some(path) = optional_arg("--task-shutdown-file") {
-                while !std::path::Path::new(&path).exists() {
-                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        let host = if let Some(service) = wait_service {
+            host.add_public_service(service)
+        } else {
+            host
+        };
+        let result = host
+            .serve_with_shutdown(address, async {
+                if let Some(path) = optional_arg("--task-shutdown-file") {
+                    while !std::path::Path::new(&path).exists() {
+                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                    }
+                } else {
+                    std::future::pending::<()>().await;
                 }
-            } else { std::future::pending::<()>().await; }
-        }).await;
+            })
+            .await;
         if let Some(marker) = std::env::var_os("REBOOT_TEST_COMPETING_ADMISSION") {
             assert!(matches!(result, Err(reboot::application_host::ApplicationHostError::RecoveryTask(_))));
             std::fs::write(format!("{}.host-returned", marker.to_string_lossy()), "supervised host failure returned with open competing client").unwrap();
@@ -958,7 +1022,17 @@ async fn main() {
                 client.increment(request).await
             };
             match result {
-                Err(_) if ["REBOOT_TEST_LOST_PARTICIPANT_COMMIT_ACK", "REBOOT_TEST_CANCEL_PARTICIPANT_COMMIT_ACK"].iter().any(|name| std::env::var_os(name).is_some_and(|marker| std::path::Path::new(&marker).exists())) => {
+                Err(_)
+                    if [
+                        "REBOOT_TEST_LOST_PARTICIPANT_COMMIT_ACK",
+                        "REBOOT_TEST_CANCEL_PARTICIPANT_COMMIT_ACK",
+                    ]
+                    .iter()
+                    .any(|name| {
+                        std::env::var_os(name)
+                            .is_some_and(|marker| std::path::Path::new(&marker).exists())
+                    }) =>
+                {
                     break; // Await supervised host failure, never a manual kill.
                 }
                 Ok(response) => {
