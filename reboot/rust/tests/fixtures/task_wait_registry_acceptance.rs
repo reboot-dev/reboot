@@ -1,15 +1,15 @@
-// Multi-actor read-serving proof with independent sidecars/recovery owners.
+// Multi-actor read-serving/recovery proof over independent or shared sidecars.
 // Seeded pending records exercise actual generated reader dispatch; this is not
-// a shared-shard multi-actor transaction scheduling or migration acceptance.
+// a multi-actor transaction scheduling or migration acceptance.
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_wait_registry_routes_two_independent_actors() {
-    run_task_wait_registry(false);
+    run_task_wait_registry(false, false, None);
 }
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
 fn generated_reader_task_wait_registry_routes_heterogeneous_same_ref_and_uuid() {
-    run_task_wait_registry(true);
+    run_task_wait_registry(true, false, None);
 }
 #[derive(Clone, PartialEq, prost::Message)]
 struct TaskGaugeResponse {
@@ -30,7 +30,27 @@ fn registry_result(response: database::WaitResponse, id: &database::TaskId) -> S
         other => panic!("unexpected task result: {other:?}"),
     }
 }
-fn run_task_wait_registry(heterogeneous: bool) {
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
+fn generated_reader_task_wait_registry_recovers_shared_shard_actors() {
+    run_task_wait_registry(false, true, None);
+}
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
+fn generated_reader_task_wait_registry_recovers_shared_shard_heterogeneous() {
+    run_task_wait_registry(true, true, None);
+}
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
+fn generated_reader_task_shared_registry_rejects_unknown_owner_before_any_dispatch() {
+    run_task_wait_registry(true, true, Some(false));
+}
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
+fn generated_reader_task_shared_registry_rejects_malformed_binding_before_any_dispatch() {
+    run_task_wait_registry(true, true, Some(true));
+}
+fn run_task_wait_registry(heterogeneous: bool, shared: bool, reject: Option<bool>) {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/generated_cxx_database_process");
     assert!(Command::new("cargo").args(["build", "--locked"]).current_dir(&fixture).status().unwrap().success());
@@ -54,7 +74,7 @@ fn run_task_wait_registry(heterogeneous: bool) {
     runtime.block_on(async {
         for (endpoint, actor, value, task) in [
             (db.endpoint(), "root", 12, first.clone()),
-            (second_db.endpoint(), if heterogeneous { "root" } else { "second" }, 42, second.clone()),
+            (if shared { db.endpoint() } else { second_db.endpoint() }, if heterogeneous { "root" } else { "second" }, 42, second.clone()),
         ] {
             database::database_client::DatabaseClient::connect(endpoint).await.unwrap()
                 .store(database::StoreRequest {
@@ -65,6 +85,17 @@ fn run_task_wait_registry(heterogeneous: bool) {
                 }).await.unwrap();
         }
     });
+    let rejected = reject.map(|malformed| {
+        let mut task = make_task(if malformed { "tests.reboot.protoc.RegistryGauge" } else { "example.Unregistered" }, "root");
+        task.task_id.as_mut().unwrap().task_uuid = Uuid::new_v4().as_bytes().to_vec();
+        if malformed { task.method = "UnknownReader".into(); }
+        runtime.block_on(async {
+            database::database_client::DatabaseClient::connect(db.endpoint()).await.unwrap()
+                .store(database::StoreRequest { task_upserts: vec![task.clone()], sync: true, ..Default::default() }).await.unwrap();
+        });
+        db.restart();
+        task
+    });
     let listen = port();
     let plan = placement_proto::ListenForPlanResponse::decode(URL_SAFE_NO_PAD.decode(legacy_plan_for(&[("root", listen)])).unwrap().as_slice()).unwrap();
     let planner = LivePlannerServer::start(&runtime, plan.clone());
@@ -73,22 +104,58 @@ fn run_task_wait_registry(heterogeneous: bool) {
     let second_marker = markers.path().join("second");
     let ack = markers.path().join("unused-ack");
     let first_endpoint = db.endpoint();
-    let second_endpoint = second_db.endpoint();
-    let start_host = || WaitHostGuard(task_host_command(TaskHostOptions {
+    let second_endpoint = if shared { db.endpoint() } else { second_db.endpoint() };
+    let start_host = || {
+    let mut command = task_host_command(TaskHostOptions {
         binary: &binary, database: &first_endpoint, planner: &planner.endpoint,
         port: listen, marker: &marker, ack: &ack, invoke: false,
         block: false, recover: true, vector: None,
-    }).args([if heterogeneous { "--gauge-task-database" } else { "--second-task-database" }, &second_endpoint,
-        "--second-task-marker", second_marker.to_str().unwrap()]).spawn().unwrap());
+    });
+    command.args([if heterogeneous { "--gauge-task-database" } else { "--second-task-database" }, &second_endpoint,
+        "--second-task-marker", second_marker.to_str().unwrap()]);
+    if shared {
+        command.arg("--shared-task-recovery");
+        if reject.is_none() { command.args(["--invoke", "--expect-task-error", "--task-vector", "no-owner"]); }
+    }
+    command.stderr(Stdio::from(std::fs::File::create(markers.path().join("stderr")).unwrap()));
+    WaitHostGuard(command.spawn().unwrap())
+    };
     let mut host = start_host();
+    if let Some(rejected) = rejected {
+        let exit = (0..200).find_map(|_| {
+            let exit = host.try_wait().unwrap();
+            if exit.is_none() { std::thread::sleep(Duration::from_millis(25)); }
+            exit
+        }).expect("shared recovery did not reject within five seconds");
+        assert!(!exit.success());
+        let stderr = std::fs::read_to_string(markers.path().join("stderr")).unwrap();
+        let diagnostic = if reject == Some(true) { "unknown or unsupported reader task method" } else { "unregistered actor in shared task recovery" };
+        assert!(stderr.contains(diagnostic), "wrong rejection: {stderr}");
+        for path in [&marker, &second_marker] {
+            assert!(!path.exists());
+            assert!(!path.with_extension("invocations").exists(), "shared registry dispatched before validating all owners");
+        }
+        db.restart();
+        runtime.block_on(async {
+            for task in [&first, &second, &rejected] {
+                assert_eq!(load_task(&db.endpoint(), task.task_id.clone().unwrap()).await, *task);
+            }
+        });
+        planner.stop();
+        return;
+    }
     await_marker(&marker, &mut host);
     await_marker(&second_marker, &mut host);
+    if shared {
+        await_marker(&ack, &mut host);
+        assert_eq!(runtime.block_on(load_state(&db.endpoint(), "root")), Some(vec![0x08, 12]), "shared registry accidentally enabled scheduling mutation");
+    }
     let ids = [first.task_id.clone().unwrap(), second.task_id.clone().unwrap()];
     let completions = runtime.block_on(async {
         let channel = tonic::transport::Endpoint::from_shared(format!("http://127.0.0.1:{listen}")).unwrap().connect_lazy();
         let mut client = database::tasks_client::TasksClient::new(channel);
         let mut completions = Vec::new();
-        for (id, endpoint, expected) in [(ids[0].clone(), db.endpoint(), "12"), (ids[1].clone(), second_db.endpoint(), if heterogeneous { "gauge:42" } else { "42" })] {
+        for (id, endpoint, expected) in [(ids[0].clone(), db.endpoint(), "12"), (ids[1].clone(), second_endpoint.clone(), if heterogeneous { "gauge:42" } else { "42" })] {
             let mut request = tonic::Request::new(database::WaitRequest { task_id: Some(id.clone()) });
             request.metadata_mut().insert("x-reboot-state-ref", id.state_ref.parse().unwrap());
             request.set_timeout(Duration::from_secs(5));
@@ -108,6 +175,7 @@ fn run_task_wait_registry(heterogeneous: bool) {
         completions
     });
     host.kill().unwrap(); host.wait().unwrap();
+    if shared { std::fs::remove_file(&ack).unwrap(); }
     db.restart();
     second_db.restart();
     let mut host = start_host();
@@ -134,8 +202,12 @@ fn run_task_wait_registry(heterogeneous: bool) {
             }).await.unwrap();
         }
         assert_eq!(load_task(&db.endpoint(), ids[0].clone()).await, completions[0]);
-        assert_eq!(load_task(&second_db.endpoint(), ids[1].clone()).await, completions[1]);
+        assert_eq!(load_task(&second_endpoint, ids[1].clone()).await, completions[1]);
     });
+    if shared {
+        await_marker(&ack, &mut host);
+        assert_eq!(runtime.block_on(load_state(&db.endpoint(), "root")), Some(vec![0x08, 12]));
+    }
     for path in [&marker, &second_marker] {
         assert_eq!(std::fs::read(path.with_extension("invocations")).unwrap(), b"query\n", "registry recovery/retrieval replayed handler");
     }

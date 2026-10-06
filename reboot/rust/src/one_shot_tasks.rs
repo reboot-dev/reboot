@@ -125,6 +125,19 @@ impl OneShotTasks {
             placement,
         })
     }
+    // Called only while the registry owns this actor's DispatchOwner claim.
+    // A clone may have survived an earlier singleton registration; never carry
+    // that admission authority into shared reader-only recovery.
+    fn activate_reader_only(&self) {
+        *self
+            .inner
+            .recovery_request
+            .lock()
+            .expect("task recovery mutex poisoned") = None;
+        self.inner
+            .active
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
     /// Scheduling is usable only after host registration has taken ownership.
     pub async fn validate_staged(&self, tasks: &[db::Task]) -> Result<(), Status> {
         if !self.inner.active.load(std::sync::atomic::Ordering::Acquire) {
@@ -333,6 +346,12 @@ impl Drop for DispatchOwner {
             .inner
             .active
             .store(false, std::sync::atomic::Ordering::Release);
+        *self
+            .tasks
+            .inner
+            .recovery_request
+            .lock()
+            .expect("task recovery mutex poisoned") = None;
         owners()
             .lock()
             .expect("owner registry poisoned")
@@ -428,6 +447,172 @@ impl HostRecovery for OneShotTaskRecovery {
                 .inner
                 .active
                 .store(false, std::sync::atomic::Ordering::Release);
+            result
+        });
+        Ok(())
+    }
+}
+
+/// Reader-only recovery over one canonical shared-shard Database stream.
+/// Register after legacy transaction recovery. Scheduling is deliberately not
+/// enabled: cross-actor staged admission needs a separate capacity contract.
+#[derive(Clone)]
+pub struct ReaderTaskRecoveryRegistry {
+    tasks: std::collections::BTreeMap<(String, String), OneShotTasks>,
+    request: db::RecoverRequest,
+}
+impl ReaderTaskRecoveryRegistry {
+    pub fn new(
+        tasks: impl IntoIterator<Item = OneShotTasks>,
+        request: db::RecoverRequest,
+    ) -> Result<Self, Status> {
+        let mut owners = std::collections::BTreeMap::new();
+        let mut endpoint = None;
+        for task in tasks {
+            if endpoint
+                .as_ref()
+                .is_some_and(|value: &String| value != task.inner.store.database_endpoint())
+            {
+                return Err(Status::invalid_argument(
+                    "shared task recovery requires one Database endpoint",
+                ));
+            }
+            endpoint = Some(task.inner.store.database_endpoint().to_owned());
+            if !request
+                .state_tags_by_state_type
+                .contains_key(&task.inner.state_type)
+            {
+                return Err(Status::invalid_argument(
+                    "shared task recovery needs every registered state tag",
+                ));
+            }
+            if owners
+                .insert(
+                    (task.inner.state_type.clone(), task.inner.state_ref.clone()),
+                    task,
+                )
+                .is_some()
+            {
+                return Err(Status::already_exists(
+                    "duplicate shared task recovery owner",
+                ));
+            }
+        }
+        if owners.is_empty() || owners.len() > MAX_TASKS || request.shard_ids.is_empty() {
+            return Err(Status::invalid_argument(
+                "shared task recovery needs 1..1024 owners and exact shards",
+            ));
+        }
+        Ok(Self {
+            tasks: owners,
+            request,
+        })
+    }
+    async fn pending(&self) -> Result<Vec<db::Task>, Status> {
+        let store = &self
+            .tasks
+            .first_key_value()
+            .expect("nonempty registry")
+            .1
+            .inner
+            .store;
+        let mut stream = store
+            .task_database()
+            .recover(self.request.clone())
+            .await?
+            .into_inner();
+        let mut pending = Vec::new();
+        while let Some(batch) = stream.message().await? {
+            if pending.len().saturating_add(batch.pending_tasks.len()) > MAX_TASKS {
+                return Err(Status::resource_exhausted(
+                    "durable pending task admission exceeds 1024",
+                ));
+            }
+            pending.extend(batch.pending_tasks);
+        }
+        // No handler runs until the complete stream and every binding validate.
+        let mut partitions = std::collections::BTreeMap::<_, Vec<db::Task>>::new();
+        for task in &pending {
+            let id = task
+                .task_id
+                .as_ref()
+                .ok_or_else(|| Status::invalid_argument("missing task ID"))?;
+            let key = (id.state_type.clone(), id.state_ref.clone());
+            if !self.tasks.contains_key(&key) {
+                return Err(Status::invalid_argument(
+                    "unregistered actor in shared task recovery",
+                ));
+            }
+            partitions.entry(key).or_default().push(task.clone());
+        }
+        for (key, batch) in partitions {
+            self.tasks[&key].validate(&batch)?;
+        }
+        Ok(pending)
+    }
+}
+#[tonic::async_trait]
+impl HostRecovery for ReaderTaskRecoveryRegistry {
+    async fn start(
+        &self,
+        supervisor: &mut JoinSet<Result<(), Status>>,
+        cancel: RecoveryCancellation,
+    ) -> Result<(), Status> {
+        let mut owners = Vec::new();
+        for tasks in self.tasks.values() {
+            // Mixing registrations must fail before consuming any receiver or
+            // enabling an actor. RAII releases earlier claims on failure.
+            owners.push(DispatchOwner::claim(tasks.clone())?);
+        }
+        let pending = self.pending().await?;
+        let registry = self.clone();
+        for tasks in self.tasks.values() {
+            tasks.activate_reader_only();
+        }
+        supervisor.spawn(async move {
+            let _owners = owners;
+            let mut failures = JoinSet::new();
+            for tasks in registry.tasks.values() {
+                let mut uncertain = tasks.inner.uncertain.subscribe();
+                failures.spawn(async move {
+                    loop {
+                        if *uncertain.borrow_and_update() {
+                            return Status::unavailable("scheduling root outcome uncertain; restart host through durable recovery");
+                        }
+                        if uncertain.changed().await.is_err() {
+                            return Status::unavailable("scheduling ownership supervision lost");
+                        }
+                    }
+                });
+            }
+            let work = async {
+                cancel.public_ready().await?;
+                let mut pending = pending;
+                loop {
+                    for task in pending {
+                        cancel.public_ready().await?;
+                        if schedule_due(&task)? {
+                            let id = task.task_id.as_ref().expect("validated task ID");
+                            registry.tasks[&(id.state_type.clone(), id.state_ref.clone())].execute(task, &cancel).await?;
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    cancel.public_ready().await?;
+                    pending = registry.pending().await?;
+                }
+            };
+            let result = tokio::select! {
+                biased;
+                failure = failures.join_next() => Err(match failure {
+                    Some(Ok(status)) => status,
+                    Some(Err(error)) => Status::internal(error.to_string()),
+                    None => Status::unavailable("shared task supervision lost"),
+                }),
+                _ = cancel.cancelled() => Ok(()),
+                result = work => result,
+            };
+            failures.abort_all();
+            while failures.join_next().await.is_some() {}
             result
         });
         Ok(())
@@ -776,6 +961,111 @@ mod tests {
                 .state_type,
             "test.Second"
         );
+    }
+    #[tokio::test]
+    async fn shared_reader_activation_revokes_stale_singleton_admission() {
+        let tasks = OneShotTasks::new(
+            DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+            "test.Reused".into(),
+            "actor".into(),
+            Binding,
+        )
+        .unwrap();
+        let owner = DispatchOwner::claim(tasks.clone()).unwrap();
+        // Reproduce the admission metadata left by an earlier singleton host.
+        *tasks.inner.recovery_request.lock().unwrap() = Some(db::RecoverRequest {
+            shard_ids: vec!["shard".into()],
+            ..Default::default()
+        });
+        tasks.activate_reader_only();
+        assert_eq!(
+            tasks.validate_staged(&[]).await.unwrap_err().code(),
+            tonic::Code::FailedPrecondition
+        );
+        assert!(tasks.inner.recovery_request.lock().unwrap().is_none());
+        // Teardown must independently revoke admission, including singleton
+        // metadata installed after activation in this lifecycle regression.
+        *tasks.inner.recovery_request.lock().unwrap() = Some(db::RecoverRequest::default());
+        drop(owner);
+        assert!(
+            !tasks
+                .inner
+                .active
+                .load(std::sync::atomic::Ordering::Acquire)
+        );
+        assert!(tasks.inner.recovery_request.lock().unwrap().is_none());
+        assert!(DispatchOwner::claim(tasks).is_ok());
+    }
+    #[tokio::test]
+    async fn shared_recovery_registry_rejects_invalid_registration() {
+        let owner = |endpoint: &str, state_type: &str, state_ref: &str| {
+            OneShotTasks::new(
+                DatabaseActorStore::connect_lazy(endpoint).unwrap(),
+                state_type.into(),
+                state_ref.into(),
+                Binding,
+            )
+            .unwrap()
+        };
+        let request = || db::RecoverRequest {
+            shard_ids: vec!["shard".into()],
+            state_tags_by_state_type: [("test.First".into(), "First".into())].into(),
+            ..Default::default()
+        };
+        let first = owner("http://127.0.0.1:1", "test.First", "actor");
+        for (owners, request, code) in [
+            (vec![], request(), tonic::Code::InvalidArgument),
+            (
+                vec![first.clone(), first.clone()],
+                request(),
+                tonic::Code::AlreadyExists,
+            ),
+            (
+                vec![
+                    first.clone(),
+                    owner("http://127.0.0.1:2", "test.First", "other"),
+                ],
+                request(),
+                tonic::Code::InvalidArgument,
+            ),
+            (
+                vec![
+                    first.clone(),
+                    owner("http://127.0.0.1:1", "test.Second", "actor"),
+                ],
+                request(),
+                tonic::Code::InvalidArgument,
+            ),
+            (
+                vec![first.clone()],
+                db::RecoverRequest {
+                    shard_ids: vec![],
+                    ..request()
+                },
+                tonic::Code::InvalidArgument,
+            ),
+        ] {
+            assert!(
+                matches!(ReaderTaskRecoveryRegistry::new(owners, request), Err(error) if error.code() == code)
+            );
+        }
+        assert!(
+            ReaderTaskRecoveryRegistry::new(
+                [
+                    first.clone(),
+                    owner("http://127.0.0.1:1", "test.First", "other")
+                ],
+                request()
+            )
+            .is_ok()
+        );
+        assert!(
+            !first
+                .inner
+                .active
+                .load(std::sync::atomic::Ordering::Acquire)
+        );
+        assert!(first.inner.recovery_request.lock().unwrap().is_none());
     }
     #[tokio::test]
     async fn duplicate_local_owner_rejected_and_drop_releases_registration() {

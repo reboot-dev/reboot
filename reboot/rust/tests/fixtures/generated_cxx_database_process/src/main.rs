@@ -761,10 +761,11 @@ async fn main() {
             Handler::Tasks { state_ref: "second".into(), marker: arg("--second-task-marker"), block: false, vector: String::new() },
         );
         let (_, second) = second_adapter.with_one_shot_reader_tasks("second").unwrap();
-        host = host.with_host_recovery(second.recovery(reboot::database_proto::RecoverRequest {
+        if !has("--shared-task-recovery") { host = host.with_host_recovery(second.recovery(reboot::database_proto::RecoverRequest {
             state_tags_by_state_type: [("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())].into(),
             shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
         }));
+        }
         wait_owners.push(second);
     }
     if let Some(endpoint) = optional_arg("--gauge-task-database") {
@@ -782,18 +783,29 @@ async fn main() {
             GaugeTaskHandler { marker: arg("--second-task-marker") },
         );
         let (_, gauge) = adapter.with_one_shot_reader_tasks("root").unwrap();
-        host = host.with_host_recovery(gauge.recovery(reboot::database_proto::RecoverRequest {
+        if !has("--shared-task-recovery") { host = host.with_host_recovery(gauge.recovery(reboot::database_proto::RecoverRequest {
             state_tags_by_state_type: [("tests.reboot.protoc.RegistryGauge".into(), "RegistryGauge".into())].into(),
             shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
         }));
+        }
         wait_owners.push(gauge);
+    }
+    if has("--shared-task-recovery") {
+        let tags = if has("--gauge-task-database") {
+            vec![("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into()), ("tests.reboot.protoc.RegistryGauge".into(), "RegistryGauge".into())]
+        } else { vec![("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())] };
+        host = host.with_host_recovery(reboot::one_shot_tasks::ReaderTaskRecoveryRegistry::new(
+            wait_owners.clone(), reboot::database_proto::RecoverRequest {
+                state_tags_by_state_type: tags.into_iter().collect(),
+                shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
+            }).unwrap());
     }
     let wait_service = if wait_owners.is_empty() { None } else { Some(
         reboot::database_proto::tasks_server::TasksServer::new(
             reboot::one_shot_tasks::ReaderTaskWaitService::new(wait_owners,
                 application.clone(), optional_arg("--server-id").unwrap_or_else(|| "server-0".into()),
                 placement.clone()).unwrap())) };
-    if let Some(tasks) = tasks {
+    if let Some(tasks) = tasks.filter(|_| !has("--shared-task-recovery")) {
         host = host.with_host_recovery(tasks.recovery(reboot::database_proto::RecoverRequest {
             state_tags_by_state_type: [("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())].into(),
             shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
@@ -926,6 +938,10 @@ async fn main() {
                     let vector = arg("--task-vector");
                     let expected = if matches!(vector.as_str(), "capacity" | "saturation") { tonic::Code::ResourceExhausted } else if vector.starts_with("reuse:") { tonic::Code::AlreadyExists } else if vector == "no-owner" { tonic::Code::FailedPrecondition } else { tonic::Code::InvalidArgument };
                     assert_eq!(status.code(), expected, "denial vector {vector}: {status}");
+                    if has("--shared-task-recovery") {
+                        assert_eq!(status.message(), "no task recovery owner");
+                        std::fs::write(arg("--invoke-marker"), "shared reader recovery refuses scheduling").unwrap();
+                    }
                     if vector == "saturation" {
                         // Probe the same actor in the same live host: a retained
                         // exclusive admission would make this reader time out.

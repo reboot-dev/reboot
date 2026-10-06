@@ -141,11 +141,37 @@ records. Single-owner host startup rejects with the exact identity validation
 error before any reader marker/invocation; actor state and both Pending records
 remain unchanged after another RocksDB restart. A RED silently filtering unknown
 owners admits the host and fails both tests. This is rejection-boundary evidence,
-not successful shared-shard multi-owner recovery. The next implementation must
-collect and validate the whole bounded stream against one exact owner registry
-before opening readiness or dispatching; per-owner scans/skipping unknown tasks
-are not an acceptable substitute. Wrong-type Wait rejection now uses a registered
-state-ref in both registry vectors, isolating the type mismatch. Source: aio/internals/tasks_servicer.py:48-126 and
+not successful shared-shard multi-owner recovery. Wrong-type Wait rejection uses
+a registered state-ref in both registry vectors, isolating the type mismatch.
+
+**Shared-shard reader recovery:** `ReaderTaskRecoveryRegistry::new(owners, request)`
+now collects ONE canonical stream from a common Database endpoint, bounds the
+entire Pending batch to 1024, partitions by exact `(state_type, state_ref)`, and
+validates EVERY generated binding before activating any owner. Empty/duplicate
+owners, mismatched endpoints, missing state tags/shards, foreign task identities,
+and malformed binding requests fail closed. One host-owned serial dispatcher
+rescans the whole stream every 100ms, reuses canonical task Load/actor admission/
+UTC scheduling/CompleteTask CAS, and owns every local dispatcher claim. Its
+uncertainty watchers are bounded by owner count and cancelled/joined on exit.
+Register this component after legacy transaction recovery; do NOT also register
+individual `owner.recovery(...)` components for the same owners.
+
+Real C++/RocksDB acceptance covers two actors and two heterogeneous generated
+state types over the SAME shard/database, including same UUID and, for the
+heterogeneous case, same state-ref. Distinct typed results survive actual
+Database/host restart, completed records stay unchanged, and handler-entry logs
+remain one each. Unknown-owner and malformed-binding startup vectors preserve
+all Pending records and execute no reader; omitting whole-batch binding validation
+fails the required early-rejection diagnostic. Actual generated scheduling RPCs
+are deliberately rejected with FailedPrecondition before and after restart, with
+root state unchanged: this registry supports recovered readers, NOT cross-actor
+transaction task scheduling/admission. It intentionally does not install an
+individual scheduling recovery request. Shared activation explicitly clears any
+stale singleton admission request before publishing active ownership, and owner
+Drop clears that request before releasing the local claim. A lifecycle regression
+plus stale-request RED exercise this reuse boundary. Global staged-capacity reservations,
+second-actor transaction control/recovery registration, task auth/errors/retries,
+and distributed dispatcher fencing/migration remain outside this slice. Source: aio/internals/tasks_servicer.py:48-126 and
 templates/reboot.py.j2:4697-4775. Earlier durable RPC cancellation windows still need dedicated
 acceptance. No exactly-once
 handler effects, writer tasks, workflows, distributed task
