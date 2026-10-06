@@ -550,6 +550,7 @@ pub enum ApplicationHostError {
     RecoveryTask(tonic::Status),
     Reflection(tonic_reflection::server::Error),
     Bind(std::io::Error),
+    HttpTransport(std::io::Error),
     Transport(tonic::transport::Error),
 }
 
@@ -577,6 +578,9 @@ impl fmt::Display for ApplicationHostError {
                 formatter,
                 "application host could not bind listener: {source}"
             ),
+            Self::HttpTransport(source) => {
+                write!(formatter, "application HTTP transport failed: {source}")
+            }
             Self::Transport(source) => {
                 write!(formatter, "application host transport failed: {source}")
             }
@@ -591,6 +595,7 @@ impl Error for ApplicationHostError {
             Self::RecoveryTask(source) => Some(source),
             Self::Reflection(source) => Some(source),
             Self::Bind(source) => Some(source),
+            Self::HttpTransport(source) => Some(source),
             Self::Transport(source) => Some(source),
         }
     }
@@ -606,6 +611,10 @@ pub struct TrustedApplicationContext {
 }
 
 impl TrustedApplicationContext {
+    pub(crate) fn for_host(application_id: String) -> Self {
+        Self { application_id }
+    }
+
     /// The immutable application identity selected by the host owner.
     pub fn application_id(&self) -> &str {
         &self.application_id
@@ -735,6 +744,12 @@ impl ApplicationHost {
     pub fn with_lifecycle(mut self, lifecycle: impl ApplicationLifecycle) -> Self {
         self.lifecycle.push(Arc::new(lifecycle));
         self
+    }
+
+    /// Consumes this initial host stage into bounded external-only HTTP route
+    /// registration. HTTP and gRPC multiplexing are deliberately out of scope.
+    pub fn http(self) -> crate::http_host::HttpApplicationHost {
+        crate::http_host::HttpApplicationHost::new(self.application_id, self.lifecycle)
     }
 
     pub fn with_host_recovery(mut self, recovery: impl HostRecovery) -> Self {
@@ -1053,7 +1068,7 @@ impl RunningApplicationHost {
         serving.map_err(ApplicationHostError::Transport)
     }
 
-    async fn start_lifecycle(
+    pub(crate) async fn start_lifecycle(
         lifecycle: &[Arc<dyn ApplicationLifecycle>],
     ) -> Result<(), ApplicationHostError> {
         let mut initialized = 0;

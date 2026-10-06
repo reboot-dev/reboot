@@ -20,6 +20,7 @@ pub mod build;
 pub mod codegen;
 pub mod durable_coordinator;
 pub mod durable_participant;
+pub mod http_host;
 pub mod legacy_coordinator;
 pub mod legacy_placement;
 pub mod native_2pc;
@@ -1142,13 +1143,34 @@ impl ExternalChannelManager {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalContext {
     headers: RebootHeaders,
+    name: Option<String>,
 }
 
 impl ExternalContext {
     pub fn new(state_ref: impl Into<String>) -> Self {
         Self {
             headers: RebootHeaders::new(state_ref),
+            name: None,
         }
+    }
+
+    /// Creates the untrusted caller context supplied to an external HTTP
+    /// handler. It deliberately carries no caller ID: a public HTTP request
+    /// cannot acquire app-internal authority merely by reaching a route.
+    pub fn for_http(method: &str, path: &str, bearer_token: Option<String>) -> Self {
+        let mut headers = RebootHeaders::new("");
+        headers.bearer_token = bearer_token;
+        Self {
+            headers,
+            name: Some(format!("HTTP {method} '{path}'")),
+        }
+    }
+
+    /// The source-faithful HTTP/request identity when this context was
+    /// created by an [`ApplicationHost`](crate::application_host::ApplicationHost)
+    /// HTTP route.
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 
     /// Connects one caller-specified external Tonic endpoint.
@@ -1186,7 +1208,10 @@ impl ExternalContext {
     }
 
     pub fn with_headers(headers: RebootHeaders) -> Self {
-        Self { headers }
+        Self {
+            headers,
+            name: None,
+        }
     }
 
     pub fn headers(&self) -> &RebootHeaders {

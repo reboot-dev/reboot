@@ -23,6 +23,7 @@ test-support = []
 
 [dependencies]
 base64 = "0.22"
+axum = "0.7"
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 googleapis-tonic-google-rpc = "0.11"
@@ -30,6 +31,8 @@ heck = "0.5"
 http = "1"
 http-body = "1"
 http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
 prost = "0.13"
 prost-types = "0.13"
 sha1 = "0.10"
