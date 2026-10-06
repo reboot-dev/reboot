@@ -24,6 +24,7 @@ pub mod http_host;
 pub mod legacy_coordinator;
 pub mod legacy_placement;
 pub mod native_2pc;
+pub mod one_shot_tasks;
 pub mod placement;
 /// Canonical PlacementPlanner transport DTOs and generated Tonic client/server
 /// bindings. The application host owns the bounded stream lifecycle.

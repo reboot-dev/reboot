@@ -41,6 +41,10 @@ pub struct ParticipantRecovery {
 /// tests may use this trait to verify requests and failure ordering without
 /// pretending to be a database.
 pub trait ParticipantSidecar: Send + Sync + 'static {
+    /// Exact normalized Database authority, if this is a real sidecar client.
+    fn database_endpoint(&self) -> Option<&str> {
+        None
+    }
     fn load(&self, request: database::LoadRequest) -> SidecarFuture<'_, database::LoadResponse>;
     fn prepare(
         &self,
@@ -68,6 +72,7 @@ pub trait ParticipantSidecar: Send + Sync + 'static {
 
 /// Native Tonic implementation of the actor participant's sidecar boundary.
 pub struct TonicParticipantSidecar {
+    endpoint: String,
     client:
         tokio::sync::Mutex<database::database_client::DatabaseClient<tonic::transport::Channel>>,
 }
@@ -75,6 +80,9 @@ pub struct TonicParticipantSidecar {
 impl TonicParticipantSidecar {
     pub async fn connect(endpoint: impl AsRef<str>) -> Result<Self, tonic::transport::Error> {
         Ok(Self {
+            endpoint: tonic::transport::Endpoint::from_shared(endpoint.as_ref().to_owned())?
+                .uri()
+                .to_string(),
             client: tokio::sync::Mutex::new(
                 database::database_client::DatabaseClient::connect(endpoint.as_ref().to_owned())
                     .await?,
@@ -84,6 +92,9 @@ impl TonicParticipantSidecar {
 }
 
 impl ParticipantSidecar for TonicParticipantSidecar {
+    fn database_endpoint(&self) -> Option<&str> {
+        Some(&self.endpoint)
+    }
     fn load(&self, request: database::LoadRequest) -> SidecarFuture<'_, database::LoadResponse> {
         Box::pin(async move {
             self.client
@@ -114,12 +125,39 @@ impl ParticipantSidecar for TonicParticipantSidecar {
         request: database::TransactionParticipantCommitRequest,
     ) -> SidecarFuture<'_, database::TransactionParticipantCommitResponse> {
         Box::pin(async move {
-            self.client
+            let response = self
+                .client
                 .lock()
                 .await
                 .transaction_participant_commit(request)
-                .await
-                .map(Response::into_inner)
+                .await?
+                .into_inner();
+            #[cfg(feature = "test-support")]
+            if let Some(marker) = std::env::var_os("REBOOT_TEST_LOST_PARTICIPANT_COMMIT_ACK") {
+                std::fs::write(marker, "durably committed; ACK lost")
+                    .map_err(|error| Status::internal(error.to_string()))?;
+                #[cfg(feature = "test-support")]
+                if let Some(queued) = std::env::var_os("REBOOT_TEST_COMPETING_ADMISSION") {
+                    let queued = std::path::Path::new(&queued);
+                    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                        while !queued.exists() {
+                            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                        }
+                    })
+                    .await
+                    .map_err(|_| {
+                        Status::internal("competing public request did not reach actor admission")
+                    })?;
+                }
+                return Err(Status::unavailable("injected lost participant Commit ACK"));
+            }
+            #[cfg(feature = "test-support")]
+            if let Some(marker) = std::env::var_os("REBOOT_TEST_CANCEL_PARTICIPANT_COMMIT_ACK") {
+                std::fs::write(marker, "durably committed; terminal future parked")
+                    .map_err(|error| Status::internal(error.to_string()))?;
+                std::future::pending::<()>().await;
+            }
+            Ok(response)
         })
     }
 
@@ -294,6 +332,7 @@ enum PendingDisposition {
 }
 
 struct Pending {
+    local_owner: Option<Uuid>,
     root_id: Uuid,
     transaction_ids: Vec<Uuid>,
     coordinator_state_type: String,
@@ -314,6 +353,7 @@ pub struct StartedLocalTransaction<C: ParticipantSidecar> {
     participant: DurableActorParticipant<C>,
     transaction_id: Uuid,
     state: Option<Vec<u8>>,
+    local_owner: Uuid,
     armed: bool,
 }
 
@@ -355,6 +395,14 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
             started: self,
             promotion,
         })
+    }
+
+    /// Relinquishes pre-durable Drop cleanup before the first coordinator RPC
+    /// can persist a record. The generated scheduling path simultaneously arms
+    /// its host-owned uncertainty guard: errors/cancellation require supervised
+    /// restart rather than speculative participant release or Abort.
+    pub fn handoff_to_durable_recovery(&mut self) {
+        self.armed = false;
     }
 
     /// Marks that a durable Prepare boundary has been crossed. A future
@@ -424,7 +472,12 @@ impl<C: ParticipantSidecar> Drop for StartedLocalTransaction<C> {
         }
         let participant = self.participant.clone();
         let transaction_id = self.transaction_id;
-        tokio::spawn(async move { participant.drop_undurable(transaction_id).await });
+        let local_owner = self.local_owner;
+        tokio::spawn(async move {
+            participant
+                .drop_undurable(transaction_id, local_owner)
+                .await
+        });
     }
 }
 
@@ -490,6 +543,24 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         self
     }
 
+    /// Verify the generated task owner shares this exact actor and sidecar.
+    pub fn validate_task_owner(
+        &self,
+        store: &crate::runtime::DatabaseActorStore,
+        state_type: &str,
+        state_ref: &str,
+    ) -> Result<(), Status> {
+        if self.state_type != state_type
+            || self.state_ref != state_ref
+            || self.sidecar.database_endpoint() != Some(store.database_endpoint())
+        {
+            return Err(Status::failed_precondition(
+                "task owner must share participant actor and Database endpoint",
+            ));
+        }
+        Ok(())
+    }
+
     /// Compatibility entrypoint for existing exclusive/read-only callers.
     ///
     /// The returned bytes are for the transaction adapter to deserialize; this
@@ -506,7 +577,29 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         start: ActorTransactionStart,
         mode: ParticipantStartMode,
     ) -> Result<Option<Vec<u8>>, Status> {
+        self.start_owned(start, mode, None).await
+    }
+
+    async fn start_owned(
+        &self,
+        start: ActorTransactionStart,
+        mode: ParticipantStartMode,
+        local_owner: Option<Uuid>,
+    ) -> Result<Option<Vec<u8>>, Status> {
         self.validate_start_with_mode(&start, mode)?;
+        #[cfg(feature = "test-support")]
+        if self
+            .pending
+            .try_lock()
+            .map_or(true, |pending| pending.is_some())
+            && let Some(marker) = std::env::var_os("REBOOT_TEST_COMPETING_ADMISSION")
+        {
+            std::fs::write(
+                marker,
+                "public RPC admitted; waiting for retained actor lease",
+            )
+            .map_err(|error| Status::internal(error.to_string()))?;
+        }
         let lock = match mode {
             ParticipantStartMode::Exclusive => PendingLock::Exclusive(self.lock.exclusive().await),
             ParticipantStartMode::SharedUpgradeable => {
@@ -536,6 +629,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             .next()
             .and_then(|actor| actor.state);
         *pending = Some(Pending {
+            local_owner,
             root_id: start.transaction_ids[0],
             transaction_ids: start.transaction_ids,
             coordinator_state_type: start.coordinator_state_type,
@@ -565,11 +659,13 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             .first()
             .copied()
             .ok_or_else(|| Status::invalid_argument("transaction ID path must not be empty"))?;
-        let state = self.start_with_mode(start, mode).await?;
+        let local_owner = Uuid::new_v4();
+        let state = self.start_owned(start, mode, Some(local_owner)).await?;
         Ok(StartedLocalTransaction {
             participant: self.clone(),
             transaction_id,
             state,
+            local_owner,
             armed: true,
         })
     }
@@ -877,6 +973,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             ));
         }
         *pending = Some(Pending {
+            local_owner: None,
             root_id,
             transaction_ids,
             coordinator_state_type: transaction.coordinator_state_type,
@@ -966,12 +1063,13 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         }
     }
 
-    async fn drop_undurable(&self, transaction_id: Uuid) {
+    async fn drop_undurable(&self, transaction_id: Uuid, local_owner: Uuid) {
         let mut pending = self.pending.lock().await;
-        if pending
-            .as_ref()
-            .is_some_and(|current| current.root_id == transaction_id && !current.prepared)
-        {
+        if pending.as_ref().is_some_and(|current| {
+            current.root_id == transaction_id
+                && current.local_owner == Some(local_owner)
+                && !current.prepared
+        }) {
             *pending = None;
         }
     }
@@ -2201,6 +2299,55 @@ mod tests {
                 [Call::Load(_)]
             ));
         }
+    }
+
+    #[tokio::test]
+    async fn stale_local_drop_cannot_release_same_uuid_readmission() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant =
+            DurableActorParticipant::new(Arc::clone(&sidecar), "example.Actor", "actor/1");
+        let id = Uuid::from_u128(805);
+        let first = participant
+            .start_local(start(id), ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        participant.abort(id).await.unwrap();
+        drop(first); // Queue cleanup, but do not let it run before readmission.
+        let second = participant
+            .start_local(start(id), ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        tokio::task::yield_now().await;
+        assert_eq!(
+            participant
+                .pending
+                .lock()
+                .await
+                .as_ref()
+                .unwrap()
+                .local_owner,
+            Some(second.local_owner)
+        );
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(10),
+                participant.start(start(Uuid::from_u128(807)))
+            )
+            .await
+            .is_err()
+        );
+        drop(second);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            participant.start(start(Uuid::from_u128(808))),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Load(_), Call::Abort(_), Call::Load(_), Call::Load(_)]
+        ));
     }
 
     #[tokio::test]

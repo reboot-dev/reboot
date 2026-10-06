@@ -54,6 +54,7 @@ impl InboundTransactionStartFactory for Starts {
 
 enum Handler {
     Target,
+    Tasks { state_ref: String, marker: String, block: bool, vector: String },
     Root(Root),
 }
 #[tonic::async_trait]
@@ -61,8 +62,14 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
     async fn query(
         &self,
         state: &proto::TransactionCounter,
-        _: proto::TransactionIncrementRequest,
+        request: proto::TransactionIncrementRequest,
     ) -> Result<proto::TransactionCounterValue, tonic::Status> {
+        if let Self::Tasks { marker, block, .. } = self {
+            if request.amount == 9000 {
+                std::fs::write(marker, state.value.to_string()).unwrap();
+                if *block { std::future::pending::<()>().await; }
+            }
+        }
         Ok(proto::TransactionCounterValue { value: state.value })
     }
 
@@ -81,6 +88,12 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         state: &mut proto::TransactionCounter,
         request: proto::TransactionIncrementRequest,
     ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+        if request.amount == -9000 {
+            if let Self::Tasks { marker, .. } = self {
+                std::fs::write(format!("{marker}.cancel"), "handler entered before durable handoff").unwrap();
+                std::future::pending::<()>().await;
+            }
+        }
         state.value += request.amount;
         if let Self::Root(root) = self {
             // The ordinary legacy recovery acceptance uses the first target.
@@ -107,6 +120,27 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                     Err(generated::TransactionCounterWritesMethodsIncrementError::Grpc(error)) => return Err(error),
                 }
             }
+        }
+        if let Self::Tasks { state_ref, vector, .. } = self {
+            let mut execution = TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
+            let mut task = generated::TransactionCounterWritesMethodsTasks::query(state_ref, &proto::TransactionIncrementRequest { amount: 9000 });
+            if let Some(id) = vector.strip_prefix("reuse:") { task.task_id.as_mut().unwrap().task_uuid = uuid::Uuid::parse_str(id).unwrap().as_bytes().to_vec(); }
+            match vector.as_str() {
+                "unknown" => task.method = "Missing".into(),
+                "writer" => task.method = "Apply".into(),
+                "malformed" => task.request = vec![0xff],
+                "identity" => task.task_id.as_mut().unwrap().state_ref = "other".into(),
+                "uuid" => task.task_id.as_mut().unwrap().task_uuid = vec![1],
+                "uuid-version" => task.task_id.as_mut().unwrap().task_uuid[6] = 0x70,
+                "uuid-variant" => task.task_id.as_mut().unwrap().task_uuid[8] = 0,
+                "schedule" => task.timestamp = Some(prost_types::Timestamp { seconds: i64::MAX, nanos: 0 }),
+                "iteration" => task.iteration = 1,
+                _ => {}
+            }
+            if vector == "duplicate" { execution.task_upserts.push(task.clone()); }
+            if vector == "capacity" { execution.task_upserts = vec![task.clone(); 1024]; }
+            execution.task_upserts.push(task);
+            return Ok(execution);
         }
         // Deliberately leave final_state unset: the fresh exclusive generated
         // adapter must durably materialize the handler-mutated state.
@@ -544,7 +578,9 @@ async fn main() {
         root: root_id,
         child: Uuid::from_u128(2),
     };
-    let handler = if role == "root" || role == "multi-root" {
+    let handler = if role == "tasks" {
+        Handler::Tasks { state_ref: state_ref.clone(), marker: arg("--task-marker"), block: has("--block-task"), vector: optional_arg("--task-vector").unwrap_or_default() }
+    } else if role == "root" || role == "multi-root" {
         Handler::Root(Root {
             client: generated::TransactionCounterWritesMethodsClient::new(
                 LegacyApplicationResolver::new(application.clone(), placement.clone()),
@@ -564,6 +600,19 @@ async fn main() {
         starts,
         handler,
     );
+    let (adapter, tasks) = if role == "tasks" && !has("--no-task-owner") {
+        let (adapter, tasks) = adapter.with_one_shot_reader_tasks(&state_ref).unwrap();
+        (adapter, Some(tasks))
+    } else { (adapter, None) };
+    if has("--prove-cancel-before-durable") {
+        use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: -9000 });
+        *request.metadata_mut() = reboot::RebootHeaders::new(&state_ref).to_metadata().unwrap();
+        assert!(tokio::time::timeout(std::time::Duration::from_secs(1), adapter.increment(request)).await.is_err());
+        assert!(std::path::Path::new(&format!("{}.cancel", arg("--task-marker"))).exists());
+        // The next ordinary public root below must admit and commit against the
+        // same participant, not a reconstructed or manually released actor.
+    }
     let address = listen.parse().unwrap();
     // The generated adapter, rather than fixture-only construction, supplies
     // the exact injected Participant and Coordinator control services. For
@@ -603,8 +652,14 @@ async fn main() {
             .unwrap();
         host = host.with_host_recovery(recovery);
     }
+    if let Some(tasks) = tasks {
+        host = host.with_host_recovery(tasks.recovery(reboot::database_proto::RecoverRequest {
+            state_tags_by_state_type: [("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())].into(),
+            shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
+        }));
+    }
     let server = tokio::spawn(async move {
-        host.add_legacy_control_service(adapter.legacy_participant_control_service())
+        let result = host.add_legacy_control_service(adapter.legacy_participant_control_service())
             .add_legacy_control_service(
                 adapter
                     .legacy_coordinator_control_service(
@@ -619,8 +674,30 @@ async fn main() {
                 ),
             )
             .serve(address)
-            .await
-            .unwrap();
+            .await;
+        if let Some(marker) = std::env::var_os("REBOOT_TEST_COMPETING_ADMISSION") {
+            assert!(matches!(result, Err(reboot::application_host::ApplicationHostError::RecoveryTask(_))));
+            std::fs::write(format!("{}.host-returned", marker.to_string_lossy()), "supervised host failure returned with open competing client").unwrap();
+            return;
+        }
+        result.unwrap();
+    });
+    let competing = std::env::var_os("REBOOT_TEST_COMPETING_ADMISSION").map(|marker| {
+        let listen = listen.clone();
+        let state_ref = state_ref.clone();
+        let ack = std::env::var_os("REBOOT_TEST_LOST_PARTICIPANT_COMMIT_ACK").unwrap();
+        tokio::spawn(async move {
+            tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                while !std::path::Path::new(&ack).exists() { tokio::time::sleep(std::time::Duration::from_millis(5)).await; }
+            }).await.unwrap();
+            let mut client = proto::transaction_counter_writes_methods_client::TransactionCounterWritesMethodsClient::connect(format!("http://{listen}")).await.unwrap();
+            let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 7000 });
+            *request.metadata_mut() = reboot::RebootHeaders::new(&state_ref).to_metadata().unwrap();
+            // Deliberately no request deadline and no manual client cancellation.
+            let status = client.increment(request).await.unwrap_err();
+            assert_eq!(status.code(), tonic::Code::Unavailable);
+            std::fs::write(format!("{}.released", marker.to_string_lossy()), "already-admitted unary request cancelled by host failure").unwrap();
+        })
     });
     if has("--invoke") {
         let endpoint = format!("http://{listen}");
@@ -646,6 +723,13 @@ async fn main() {
             let mut headers = reboot::RebootHeaders::new(&state_ref);
             headers.idempotency_key = idempotency_key;
             *request.metadata_mut() = headers.to_metadata().unwrap();
+            if let Some(marker) = std::env::var_os("REBOOT_TEST_TASK_ADMISSION_CANCEL") {
+                if !std::path::Path::new(&format!("{}.cancelled", marker.to_string_lossy())).exists()
+                    || std::env::var_os("REBOOT_TEST_CANCEL_PARTICIPANT_COMMIT_ACK").is_some()
+                {
+                    request.set_timeout(std::time::Duration::from_millis(350));
+                }
+            }
             let result = if has("--shared-invoke") {
                 client.shared_read(request).await
             } else if has("--factory-target-invoke") {
@@ -656,11 +740,38 @@ async fn main() {
                 client.increment(request).await
             };
             match result {
+                Err(_) if ["REBOOT_TEST_LOST_PARTICIPANT_COMMIT_ACK", "REBOOT_TEST_CANCEL_PARTICIPANT_COMMIT_ACK"].iter().any(|name| std::env::var_os(name).is_some_and(|marker| std::path::Path::new(&marker).exists())) => {
+                    break; // Await supervised host failure, never a manual kill.
+                }
                 Ok(response) => {
+                    assert!(!has("--expect-task-error"));
+                    if let Some(marker) = optional_arg("--invoke-marker") { std::fs::write(marker, "acknowledged").unwrap(); }
                     if let Some(expected) = expected_response {
                         assert_eq!(response.into_inner().value, expected);
                     }
                     break;
+                }
+                Err(status) if std::env::var_os("REBOOT_TEST_TASK_ADMISSION_CANCEL").is_some_and(|marker| {
+                    std::path::Path::new(&marker).exists() && !std::path::Path::new(&format!("{}.cancelled", marker.to_string_lossy())).exists()
+                }) => {
+                    assert!(matches!(status.code(), tonic::Code::Cancelled | tonic::Code::DeadlineExceeded), "admission should timeout, not fail: {status}");
+                    let mut database = reboot::database_proto::database_client::DatabaseClient::connect(database_endpoint.clone()).await.unwrap();
+                    let loaded = database.load(reboot::database_proto::LoadRequest {
+                        actors: vec![reboot::database_proto::Actor { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: state_ref.clone(), state: None }],
+                        task_ids: vec![],
+                    }).await.unwrap().into_inner();
+                    assert_eq!(loaded.actors[0].state, Some(vec![0x08, 5]));
+                    let mut recovery = database.recover(reboot::database_proto::RecoverRequest {
+                        shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true, ..Default::default()
+                    }).await.unwrap().into_inner();
+                    while let Some(batch) = recovery.message().await.unwrap() {
+                        assert!(batch.pending_tasks.is_empty());
+                        assert!(batch.participant_transactions.is_empty());
+                        assert!(batch.transaction_coordinators.is_empty());
+                    }
+                    let marker = std::env::var_os("REBOOT_TEST_TASK_ADMISSION_CANCEL").unwrap();
+                    std::fs::write(format!("{}.cancelled", marker.to_string_lossy()), "real sidecar unchanged; cancelled before stage/prepare").unwrap();
+                    // Retry through the same generated participant and host. No reset.
                 }
                 Err(status)
                     if has("--placement-planner") && status.code() == tonic::Code::Unavailable =>
@@ -669,6 +780,12 @@ async fn main() {
                         panic!("fixture invocation never became ready: {status}");
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                Err(status) if has("--expect-task-error") => {
+                    let vector = arg("--task-vector");
+                    let expected = if vector == "capacity" { tonic::Code::ResourceExhausted } else if vector.starts_with("reuse:") { tonic::Code::AlreadyExists } else if vector == "no-owner" { tonic::Code::FailedPrecondition } else { tonic::Code::InvalidArgument };
+                    assert_eq!(status.code(), expected, "denial vector {vector}: {status}");
+                    break;
                 }
                 Err(status) if has("--expect-declared-factory-error") => {
                     assert_eq!(status.code(), tonic::Code::Unknown);
@@ -694,4 +811,10 @@ async fn main() {
         }
     }
     server.await.unwrap();
+    if let Some(competing) = competing {
+        competing.await.unwrap();
+        let marker = std::env::var_os("REBOOT_TEST_COMPETING_ADMISSION").unwrap();
+        assert!(std::path::Path::new(&format!("{}.host-returned", marker.to_string_lossy())).exists());
+        panic!("expected supervised host failure returned after cancelling competing admission");
+    }
 }

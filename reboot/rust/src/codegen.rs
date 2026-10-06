@@ -1349,6 +1349,20 @@ fn emit_durable(
         annotation,
         &database_methods,
     );
+    if has_transactions
+        && database_methods
+            .iter()
+            .any(|(kind, _, _, _, _)| matches!(**kind, DurableKind::Reader))
+    {
+        emit_reader_tasks(
+            output,
+            service,
+            annotation,
+            service_name,
+            &state,
+            runtime_module,
+        );
+    }
     emit_transactions(
         output,
         service_name,
@@ -1692,18 +1706,24 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
     };
     let read_only = mode == "Shared";
     output.push_str(&format!("{prefix}{context}\n{prefix}if {read_only} {{ context.enable_read_only_aware(); }}\n{prefix}let transaction_id = context.transaction_root_id();\n{prefix}let automatic_idempotency = {automatic_idempotency} {{ Some(context.idempotency(\"{method_identity}\", request.get_ref())?) }} else {{ None }};\n{prefix}if let Some(idempotency) = &automatic_idempotency {{ let recovered = self.participant.sidecar().recover_idempotent_mutations({runtime_module}::database_proto::RecoverIdempotentMutationsRequest {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone(), idempotency_key: Some(idempotency.key().as_bytes().to_vec()), workflow_id: None, workflow_iteration: None }}).await?; for recovered in recovered {{ for mutation in recovered.idempotent_mutations {{ if let Some(response) = idempotency.replay::<proto::{response}>(&mutation)? {{ return Ok(tonic::Response::new(response)); }} }} }} }}\n"));
-    output.push_str(&format!("{prefix}let participant_metadata = {participant_metadata};\n{prefix}let loaded = self.participant.start({runtime_module}::durable_participant::ActorTransactionStart {{ transaction_ids: context.transaction_ids().to_vec(), transaction_path: {transaction_path}, coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: {read_only}, factory: {factory}, state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}).await?;\n{prefix}// A duplicate may have waited for local actor admission while the original\n{prefix}// root transaction committed. Re-check durable replay before invoking the handler.\n{prefix}if let Some(idempotency) = &automatic_idempotency {{ let replay_after_admission = async {{ let recovered = self.participant.sidecar().recover_idempotent_mutations({runtime_module}::database_proto::RecoverIdempotentMutationsRequest {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone(), idempotency_key: Some(idempotency.key().as_bytes().to_vec()), workflow_id: None, workflow_iteration: None }}).await?; for recovered in recovered {{ for mutation in recovered.idempotent_mutations {{ if let Some(response) = idempotency.replay::<proto::{response}>(&mutation)? {{ return Ok(Some(response)); }} }} }} Ok::<Option<proto::{response}>, tonic::Status>(None) }}.await; match replay_after_admission {{ Ok(Some(response)) => {{ self.participant.abort(transaction_id).await?; return Ok(tonic::Response::new(response)); }}, Ok(None) => {{}}, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(error); }} }} }}\n{prefix}let mut state = match loaded.as_ref() {{ Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes.as_slice()) {{ Ok(state) => state, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(format!(\"stored actor state is not a valid {state}: {{error}}\"))); }} }}, None if {factory} => proto::{state}::default(), None => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"non-factory transaction requires an existing actor state\")); }} }};\n"));
+    output.push_str(&format!("{prefix}let participant_metadata = {participant_metadata};\n{prefix}let mut local = self.participant.start_local({runtime_module}::durable_participant::ActorTransactionStart {{ transaction_ids: context.transaction_ids().to_vec(), transaction_path: {transaction_path}, coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: {read_only}, factory: {factory}, state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, {runtime_module}::durable_participant::ParticipantStartMode::Exclusive).await?;\n{prefix}let loaded = local.state_bytes();\n{prefix}if {read_only} || {factory} || context.transaction_ids().len() != 1 {{ local.disarm_after_durable_prepare(); }}\n{prefix}// A duplicate may have waited for local actor admission while the original\n{prefix}// root transaction committed. Re-check durable replay before invoking the handler.\n{prefix}if let Some(idempotency) = &automatic_idempotency {{ let replay_after_admission = async {{ let recovered = self.participant.sidecar().recover_idempotent_mutations({runtime_module}::database_proto::RecoverIdempotentMutationsRequest {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone(), idempotency_key: Some(idempotency.key().as_bytes().to_vec()), workflow_id: None, workflow_iteration: None }}).await?; for recovered in recovered {{ for mutation in recovered.idempotent_mutations {{ if let Some(response) = idempotency.replay::<proto::{response}>(&mutation)? {{ return Ok(Some(response)); }} }} }} Ok::<Option<proto::{response}>, tonic::Status>(None) }}.await; match replay_after_admission {{ Ok(Some(response)) => {{ self.participant.abort(transaction_id).await?; return Ok(tonic::Response::new(response)); }}, Ok(None) => {{}}, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(error); }} }} }}\n{prefix}let mut state = match loaded.as_ref() {{ Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes.as_slice()) {{ Ok(state) => state, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(format!(\"stored actor state is not a valid {state}: {{error}}\"))); }} }}, None if {factory} => proto::{state}::default(), None => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"non-factory transaction requires an existing actor state\")); }} }};\n"));
     if authorize_after_load {
         output.push_str(&format!("{prefix}let authorization_state = match loaded.as_ref() {{ Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes.as_slice()) {{ Ok(state) => Some(state), Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(format!(\"stored actor state is not a valid {state}: {{error}}\"))); }} }}, None => None }};\n{prefix}if let Err(error) = self.authorization.authorize(&authorization_context, authorization_auth.as_ref(), authorization_state.as_ref().map(|state| <proto::{state} as prost::Message>::encode_to_vec(state)).as_deref(), &<proto::{request} as prost::Message>::encode_to_vec(request.get_ref())).await {{ self.participant.abort(transaction_id).await?; return Err(error); }}\n{prefix}if {factory} && loaded.is_some() {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"factory transaction requires an absent actor state\")); }}\n"));
     }
-    let default_mutated_state =
-        !factory && mode == "Exclusive" && matches!(inbound, TransactionInbound::Dynamic);
+    // Python transaction.state owns the mutated state for both root and inbound
+    // exclusive execution. An explicit envelope override remains authoritative.
+    let default_mutated_state = !factory && mode == "Exclusive";
+    let task_scope = if matches!(inbound, TransactionInbound::Dynamic) {
+        "!inbound"
+    } else {
+        "false"
+    };
     let handler_error_map = if declared_error {
         ".map_err(|error| error.into_status())"
     } else {
         ""
     };
-    output.push_str(&format!("{prefix}let execution = match self.handler.{method}(&context, &mut state, request.into_inner()).await{handler_error_map} {{ Ok(execution) => execution, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(error); }} }};\n{prefix}if let Some(status) = context.doomed_status() {{ self.participant.abort(transaction_id).await?; return Err(status); }}\n{prefix}if automatic_idempotency.is_some() && !execution.idempotent_mutations.is_empty() {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"root-local idempotency stages exactly one automatic mutation\")); }}\n{prefix}let automatic_mutations = automatic_idempotency.as_ref().map(|idempotency| idempotency.mutation(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, context.headers().state_ref.clone(), &execution.response)).into_iter().collect::<Vec<_>>();\n{prefix}if let Err(error) = self.participant.stage(transaction_id, {runtime_module}::durable_participant::PendingActorEffects {{ state: if {factory} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else if {default_mutated_state} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else {{ execution.final_state.clone() }}, task_upserts: execution.task_upserts.clone(), idempotent_mutations: if automatic_idempotency.is_some() {{ automatic_mutations }} else {{ execution.idempotent_mutations.clone() }} }}).await {{ self.participant.abort(transaction_id).await?; return Err(error); }}\n"));
+    output.push_str(&format!("{prefix}let execution = match self.handler.{method}(&context, &mut state, request.into_inner()).await{handler_error_map} {{ Ok(execution) => execution, Err(error) => {{ self.participant.abort(transaction_id).await?; return Err(error); }} }};\n{prefix}if let Some(status) = context.doomed_status() {{ self.participant.abort(transaction_id).await?; return Err(status); }}\n{prefix}if automatic_idempotency.is_some() && !execution.idempotent_mutations.is_empty() {{ self.participant.abort(transaction_id).await?; return Err(tonic::Status::failed_precondition(\"root-local idempotency stages exactly one automatic mutation\")); }}\n{prefix}let returned_participants = {returned_participants};\n{prefix}if !execution.task_upserts.is_empty() {{ let validation = if !({task_scope}) || {read_only} || {factory} || !returned_participants.is_empty() {{ Err(tonic::Status::failed_precondition(\"tasks require a fresh same-actor exclusive non-factory root\")) }} else {{ let validation = self.tasks.as_ref().ok_or_else(|| tonic::Status::failed_precondition(\"no host-owned task dispatcher registered\")); match validation {{ Ok(tasks) => tasks.validate_staged(&execution.task_upserts).await, Err(error) => Err(error) }} }}; if let Err(error) = validation {{ self.participant.abort(transaction_id).await?; return Err(error); }} }}\n{prefix}let automatic_mutations = automatic_idempotency.as_ref().map(|idempotency| idempotency.mutation(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, context.headers().state_ref.clone(), &execution.response)).into_iter().collect::<Vec<_>>();\n{prefix}if let Err(error) = self.participant.stage(transaction_id, {runtime_module}::durable_participant::PendingActorEffects {{ state: if {factory} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else if {default_mutated_state} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else {{ execution.final_state.clone() }}, task_upserts: execution.task_upserts.clone(), idempotent_mutations: if automatic_idempotency.is_some() {{ automatic_mutations }} else {{ execution.idempotent_mutations.clone() }} }}).await {{ self.participant.abort(transaction_id).await?; return Err(error); }}\n"));
     if shared_root_ownership_seam {
         output.push_str(&format!("{prefix}// Local-only shared-root ownership is intentionally not activated: the\n{prefix}// current coordinator accepts only the read-only shared classification.\n"));
     }
@@ -1720,7 +1740,100 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
                 "self.coordinator.complete_with_classified_returned_participants({runtime_module}::durable_coordinator::RootCoordinatorStart {{ transaction_ids: context.transaction_ids().to_vec(), coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), participant: {runtime_module}::durable_coordinator::ParticipantTarget {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: {read_only}, factory: {factory}, placement_requested: false }}, returned_participants).await?;"
             ),
         );
-    output.push_str(&format!("{prefix}let returned_participants = {returned_participants};\n{prefix}let mut response = tonic::Response::new(execution.response);\n{prefix}{completion}\n{prefix}Ok(response)\n"));
+    output.push_str(&format!("{prefix}let mut response = tonic::Response::new(execution.response);\n{prefix}// Hand off before any potentially durable coordinator RPC, not after its ACK.\n{prefix}local.handoff_to_durable_recovery();\n{prefix}let mut uncertainty = if !{read_only} && !{factory} && context.transaction_ids().len() == 1 {{ self.tasks.as_ref().map(|tasks| tasks.own_root_handoff()) }} else {{ None }};\n{prefix}{completion}\n{prefix}if let Some(owner) = &mut uncertainty {{ owner.completed(); }}\n{prefix}if let Some(tasks) = &self.tasks {{ tasks.dispatch_committed(execution.task_upserts); }}\n{prefix}Ok(response)\n"));
+}
+
+fn emit_reader_tasks(
+    output: &mut String,
+    service: &ServiceDescriptorProto,
+    annotation: &DurableService,
+    service_name: &str,
+    state: &str,
+    runtime_module: &str,
+) {
+    let handler = format!("{service_name}TransactionHandler");
+    let binding = format!("{service_name}ReaderTaskBinding");
+    let scheduler = format!("{service_name}Tasks");
+    output.push_str(&format!("/// Immediate same-actor reader task scheduling; method views come from RPC descriptors, not task annotations.\npub struct {scheduler};\nimpl {scheduler} {{\n"));
+    for method in &service.method {
+        let name = method.name.as_deref().unwrap();
+        if !matches!(annotation.methods.get(name), Some(DurableKind::Reader))
+            || annotation
+                .declared_errors
+                .get(name)
+                .is_some_and(|errors| !errors.is_empty())
+        {
+            continue;
+        }
+        let rust_name = snake_case(name);
+        let request = method
+            .input_type
+            .as_ref()
+            .unwrap()
+            .rsplit('.')
+            .next()
+            .unwrap()
+            .to_upper_camel_case();
+        output.push_str(&format!("    pub fn {rust_name}(state_ref: &str, request: &proto::{request}) -> {runtime_module}::database_proto::Task {{ {runtime_module}::database_proto::Task {{ task_id: Some({runtime_module}::database_proto::TaskId {{ state_type: <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: state_ref.to_owned(), task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec() }}), method: \"{name}\".to_owned(), status: {runtime_module}::database_proto::task::Status::Pending as i32, request: <proto::{request} as prost::Message>::encode_to_vec(request), timestamp: None, iteration: 0, response_or_error: None }} }}\n"));
+    }
+    output.push_str("}\n");
+    output.push_str(&format!("struct {binding}<H> {{ handler: std::sync::Arc<H>, store: {runtime_module}::runtime::DatabaseActorStore }}\n#[tonic::async_trait]\nimpl<H: {handler}> {runtime_module}::one_shot_tasks::ReaderTaskBinding for {binding}<H> {{\n    fn validate(&self, task: &{runtime_module}::database_proto::Task) -> Result<(), tonic::Status> {{ match task.method.as_str() {{\n"));
+    for method in &service.method {
+        let name = method.name.as_deref().unwrap();
+        if !matches!(annotation.methods.get(name), Some(DurableKind::Reader))
+            || annotation
+                .declared_errors
+                .get(name)
+                .is_some_and(|errors| !errors.is_empty())
+        {
+            continue;
+        }
+        let request = method
+            .input_type
+            .as_ref()
+            .unwrap()
+            .rsplit('.')
+            .next()
+            .unwrap()
+            .to_upper_camel_case();
+        output.push_str(&format!("        \"{name}\" => {{ <proto::{request} as prost::Message>::decode(task.request.as_slice()).map_err(|_| tonic::Status::invalid_argument(\"malformed task request\"))?; Ok(()) }},\n"));
+    }
+    output.push_str("        _ => Err(tonic::Status::invalid_argument(\"unknown or unsupported reader task method\")),\n    } }\n");
+    output.push_str(&format!("    async fn execute(&self, task: &{runtime_module}::database_proto::Task) -> Result<prost_types::Any, tonic::Status> {{ let id = task.task_id.as_ref().ok_or_else(|| tonic::Status::invalid_argument(\"missing task identity\"))?; let state = self.store.load_for_declaration::<{state}DurableState>(&id.state_ref).await?.ok_or_else(|| tonic::Status::failed_precondition(\"reader task requires existing actor\"))?; match task.method.as_str() {{\n"));
+    for method in &service.method {
+        let name = method.name.as_deref().unwrap();
+        if !matches!(annotation.methods.get(name), Some(DurableKind::Reader))
+            || annotation
+                .declared_errors
+                .get(name)
+                .is_some_and(|errors| !errors.is_empty())
+        {
+            continue;
+        }
+        let rust_name = snake_case(name);
+        let request = method
+            .input_type
+            .as_ref()
+            .unwrap()
+            .rsplit('.')
+            .next()
+            .unwrap()
+            .to_upper_camel_case();
+        let response = method
+            .output_type
+            .as_ref()
+            .unwrap()
+            .rsplit('.')
+            .next()
+            .unwrap()
+            .to_upper_camel_case();
+        let response_name = method.output_type.as_ref().unwrap().trim_start_matches('.');
+        output.push_str(&format!("        \"{name}\" => {{ let request = <proto::{request} as prost::Message>::decode(task.request.as_slice()).map_err(|_| tonic::Status::invalid_argument(\"malformed task request\"))?; let response = self.handler.{rust_name}(&state, request).await?; Ok(prost_types::Any {{ type_url: \"type.googleapis.com/{response_name}\".to_owned(), value: <proto::{response} as prost::Message>::encode_to_vec(&response) }}) }},\n"));
+    }
+    output.push_str(
+        "        _ => Err(tonic::Status::invalid_argument(\"unknown reader task\")),\n    } }\n}\n",
+    );
+    output.push_str(&format!("impl<H, P, C, R, F> {service_name}TransactionAdapter<H, P, C, R, F> where H: {handler}, P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{\n    pub fn with_one_shot_reader_tasks(mut self, state_ref: &str) -> Result<(Self, {runtime_module}::one_shot_tasks::OneShotTasks), tonic::Status> {{ self.participant.validate_task_owner(&self.store, <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, state_ref)?; let tasks = {runtime_module}::one_shot_tasks::OneShotTasks::new(self.store.clone(), <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref.to_owned(), {binding} {{ handler: self.handler.clone(), store: self.store.clone() }})?; self.tasks = Some(tasks.clone()); Ok((self, tasks)) }}\n}}\n"));
 }
 
 fn emit_transactions(
@@ -1788,7 +1901,7 @@ fn emit_transactions(
                 "let participant = participant.with_database_actor_gate(&store); ".to_owned(),
             )
         };
-    output.push_str(&format!("/// Executable Tonic adapter for one fresh, same-actor exclusive root transaction or one validated inbound nested transaction.\n///\n/// The host must inject the participant sidecar, coordinator sidecar, resolver,\n/// and transaction-start factory. Inbound calls receive a host-supplied child ID,\n/// stage only their local participant, and return it through the successful trailer seam; they never drive the root coordinator. This adapter does not choose routing, placement, a clock, or a transaction UUID.\npub struct {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ {store_field}handler: std::sync::Arc<H>, authorization: {runtime_module}::auth::AuthorizationPolicy, participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: std::sync::Arc<F> }}\nimpl<H, P, C, R, F> Clone for {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ fn clone(&self) -> Self {{ Self {{ {store_clone}handler: self.handler.clone(), authorization: self.authorization.clone(), participant: self.participant.clone(), coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator::new(self.coordinator.sidecar(), self.coordinator.resolver()), root_start: self.root_start.clone() }} }} }}\nimpl<H, P, C, R, F> {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ pub fn new({store_argument}participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: F, handler: H) -> Self {{ {participant_bind}Self {{ {store_init}handler: std::sync::Arc::new(handler), authorization: {runtime_module}::auth::AuthorizationPolicy::default(), participant, coordinator, root_start: std::sync::Arc::new(root_start) }} }} pub fn with_authorization(mut self, authorization: {runtime_module}::auth::AuthorizationPolicy) -> Self {{ self.authorization = authorization; self }}\n    /// Exposes the existing injected local participant as the legacy control service.\n    pub fn legacy_participant_control_service(&self) -> {runtime_module}::database_proto::participant_server::ParticipantServer<{runtime_module}::durable_participant::DurableActorParticipantHost<P>> {{ {runtime_module}::database_proto::participant_server::ParticipantServer::new({runtime_module}::durable_participant::DurableActorParticipantHost::new(self.participant.clone())) }}\n    /// Exposes a durable legacy Coordinator.Watch service for the exact supplied coordinator identity.\n    pub fn legacy_coordinator_control_service(&self, coordinator_state_type: impl Into<String>, coordinator_state_ref: impl Into<String>) -> Result<{runtime_module}::database_proto::coordinator_server::CoordinatorServer<{runtime_module}::legacy_coordinator::DurableCoordinatorWatchHost<C>>, tonic::Status> {{ Ok({runtime_module}::database_proto::coordinator_server::CoordinatorServer::new({runtime_module}::legacy_coordinator::DurableCoordinatorWatchHost::new(self.coordinator.sidecar(), coordinator_state_type, coordinator_state_ref)?)) }}\n    /// Registers recovery using only this adapter's injected participant and coordinator.\n    pub fn legacy_recovery_registration<W: {runtime_module}::legacy_coordinator::CoordinatorWatchEndpoint>(&self, metadata: {runtime_module}::application_host::LegacyRecoveryMetadata, watch: std::sync::Arc<W>) -> Result<{runtime_module}::application_host::LegacyDurableRecovery<P, C, R, W>, tonic::Status> {{ {runtime_module}::application_host::LegacyDurableRecovery::new(self.participant.clone(), {runtime_module}::durable_coordinator::DurableRootCoordinator::new(self.coordinator.sidecar(), self.coordinator.resolver()), metadata, watch) }}\n}}\n\n"));
+    output.push_str(&format!("/// Executable Tonic adapter for one fresh, same-actor exclusive root transaction or one validated inbound nested transaction.\n///\n/// The host must inject the participant sidecar, coordinator sidecar, resolver,\n/// and transaction-start factory. Inbound calls receive a host-supplied child ID,\n/// stage only their local participant, and return it through the successful trailer seam; they never drive the root coordinator. This adapter does not choose routing, placement, a clock, or a transaction UUID.\npub struct {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ {store_field}tasks: Option<{runtime_module}::one_shot_tasks::OneShotTasks>, handler: std::sync::Arc<H>, authorization: {runtime_module}::auth::AuthorizationPolicy, participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: std::sync::Arc<F> }}\nimpl<H, P, C, R, F> Clone for {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ fn clone(&self) -> Self {{ Self {{ {store_clone}tasks: self.tasks.clone(), handler: self.handler.clone(), authorization: self.authorization.clone(), participant: self.participant.clone(), coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator::new(self.coordinator.sidecar(), self.coordinator.resolver()), root_start: self.root_start.clone() }} }} }}\nimpl<H, P, C, R, F> {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ pub fn new({store_argument}participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: F, handler: H) -> Self {{ {participant_bind}Self {{ {store_init}tasks: None, handler: std::sync::Arc::new(handler), authorization: {runtime_module}::auth::AuthorizationPolicy::default(), participant, coordinator, root_start: std::sync::Arc::new(root_start) }} }} pub fn with_authorization(mut self, authorization: {runtime_module}::auth::AuthorizationPolicy) -> Self {{ self.authorization = authorization; self }}\n    /// Exposes the existing injected local participant as the legacy control service.\n    pub fn legacy_participant_control_service(&self) -> {runtime_module}::database_proto::participant_server::ParticipantServer<{runtime_module}::durable_participant::DurableActorParticipantHost<P>> {{ {runtime_module}::database_proto::participant_server::ParticipantServer::new({runtime_module}::durable_participant::DurableActorParticipantHost::new(self.participant.clone())) }}\n    /// Exposes a durable legacy Coordinator.Watch service for the exact supplied coordinator identity.\n    pub fn legacy_coordinator_control_service(&self, coordinator_state_type: impl Into<String>, coordinator_state_ref: impl Into<String>) -> Result<{runtime_module}::database_proto::coordinator_server::CoordinatorServer<{runtime_module}::legacy_coordinator::DurableCoordinatorWatchHost<C>>, tonic::Status> {{ Ok({runtime_module}::database_proto::coordinator_server::CoordinatorServer::new({runtime_module}::legacy_coordinator::DurableCoordinatorWatchHost::new(self.coordinator.sidecar(), coordinator_state_type, coordinator_state_ref)?)) }}\n    /// Registers recovery using only this adapter's injected participant and coordinator.\n    pub fn legacy_recovery_registration<W: {runtime_module}::legacy_coordinator::CoordinatorWatchEndpoint>(&self, metadata: {runtime_module}::application_host::LegacyRecoveryMetadata, watch: std::sync::Arc<W>) -> Result<{runtime_module}::application_host::LegacyDurableRecovery<P, C, R, W>, tonic::Status> {{ {runtime_module}::application_host::LegacyDurableRecovery::new(self.participant.clone(), {runtime_module}::durable_coordinator::DurableRootCoordinator::new(self.coordinator.sidecar(), self.coordinator.resolver()), metadata, watch) }}\n}}\n\n"));
     output.push_str("#[tonic::async_trait]\n");
     output.push_str(&format!("impl<H, P, C, R, F> proto::{server}::{service_name} for {adapter}<H, P, C, R, F> where H: {handler}, P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{\n"));
     let requires_constructor = !database_methods.is_empty()
@@ -2075,6 +2188,51 @@ fn snake_case(value: &str) -> String {
 mod tests {
     use super::*;
     use prost_types::{FileDescriptorProto, MethodDescriptorProto, ServiceDescriptorProto};
+    #[test]
+    fn reader_task_generation_excludes_declared_error_targets_at_every_surface() {
+        let method = |name: &str| MethodDescriptorProto {
+            name: Some(name.into()),
+            input_type: Some(".example.QueryRequest".into()),
+            output_type: Some(".example.QueryResponse".into()),
+            ..Default::default()
+        };
+        let service = ServiceDescriptorProto {
+            name: Some("ActorMethods".into()),
+            method: vec![method("Query"), method("QueryError")],
+            ..Default::default()
+        };
+        let annotation = DurableService {
+            state: "example.Actor".into(),
+            methods: [
+                ("Query".into(), DurableKind::Reader),
+                ("QueryError".into(), DurableKind::Reader),
+            ]
+            .into(),
+            declared_errors: [("QueryError".into(), vec!["example.QueryFailed".into()])].into(),
+            ..Default::default()
+        };
+        let mut output = String::new();
+        emit_reader_tasks(
+            &mut output,
+            &service,
+            &annotation,
+            "ActorMethods",
+            "Actor",
+            "reboot",
+        );
+        assert!(output.contains("pub fn query(state_ref:"));
+        assert_eq!(
+            output.matches("\"Query\" =>").count(),
+            2,
+            "ordinary reader must have validation and execution arms"
+        );
+        assert!(output.contains("self.handler.query(&state, request)"));
+        assert!(!output.contains("pub fn query_error("));
+        assert!(!output.contains("\"QueryError\" =>"));
+        assert!(!output.contains("self.handler.query_error("));
+        assert!(output.contains("unknown or unsupported reader task method"));
+    }
+
     fn request() -> CodeGeneratorRequest {
         CodeGeneratorRequest {
             parameter: Some("module=reboot_rust_schema::proto".into()),
@@ -3859,7 +4017,10 @@ mod tests {
         assert!(content.contains("next_inbound_transaction(&inbound_context)"));
         assert!(content.contains("TransactionPathContract::PreserveNested"));
         assert!(content.contains("stage_successful_participants(&mut response, metadata)"));
-        assert!(content.contains("participant.start("));
+        assert!(content.contains("participant.start_local("));
+        assert!(content.contains("local.handoff_to_durable_recovery();"));
+        assert!(content.contains("tasks.own_root_handoff()"));
+        assert!(content.contains("owner.completed();"));
         assert!(content.contains("recover_idempotent_mutations("));
         assert!(content.contains("context.idempotency("));
         assert!(content.contains("root-local idempotency stages exactly one automatic mutation"));
@@ -3994,7 +4155,7 @@ mod tests {
         assert!(content.contains("idempotency.replay::<proto::CounterValue>"));
         let first_recovery = content.find("recover_idempotent_mutations(").unwrap();
         let admission = content
-            .find("let loaded = self.participant.start(")
+            .find("let mut local = self.participant.start_local(")
             .unwrap();
         let second_recovery = content.rfind("recover_idempotent_mutations(").unwrap();
         let handler = content[second_recovery..]

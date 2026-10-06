@@ -1,3 +1,8 @@
+#[path = "fixtures/task_recovery_rejection.rs"]
+mod task_recovery_rejection;
+#[path = "fixtures/task_vertical_acceptance.rs"]
+mod task_vertical_acceptance;
+
 use std::{
     net::{SocketAddr, TcpListener},
     pin::Pin,
@@ -14,6 +19,19 @@ use prost::Message;
 use reboot_rust_schema::{database_proto as database, placement_proto};
 use sha1::{Digest as _, Sha1};
 use uuid::Uuid;
+
+fn generated_host_binary(fixture: &std::path::Path) -> std::path::PathBuf {
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| fixture.join("target"));
+    // A relative Cargo target is resolved from the fixture's build directory.
+    let target = if target.is_absolute() {
+        target
+    } else {
+        fixture.join(target)
+    };
+    target.join("debug/generated-cxx-database-process-host")
+}
 
 type PlacementPlanResult = Result<placement_proto::ListenForPlanResponse, tonic::Status>;
 type PlannerStreams = Arc<Mutex<Vec<tokio::sync::mpsc::Sender<PlacementPlanResult>>>>;
@@ -767,7 +785,7 @@ fn generated_external_constructor_declared_error_leaves_real_cxx_database_empty_
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let mut db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let state_ref = "external-constructor-declared-error";
@@ -861,7 +879,7 @@ fn generated_external_unavailable_retry_replays_once_through_restarted_real_cxx_
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let mut db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let state_ref = "external-unavailable-retry";
@@ -917,7 +935,7 @@ fn generated_root_declared_outbound_errors_commit_or_abort_durably_through_real_
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let mut db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let remote_port = port();
@@ -1063,7 +1081,7 @@ fn generated_root_exclusive_idempotency_is_durable_replayed_and_collision_safe()
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let state_ref = "idempotent-root";
@@ -1138,7 +1156,7 @@ fn generated_application_host_recovers_idempotent_root_exactly_once_after_decisi
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let mut db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let state_ref = "idempotent-recovery-root";
@@ -1233,7 +1251,7 @@ fn generated_factory_root_idempotency_replays_before_absent_state_admission_and_
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let state_ref = "idempotent-factory-root";
@@ -1307,7 +1325,7 @@ fn generated_factory_root_idempotency_recovers_after_post_decision_crash() {
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let mut db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let state_ref = "idempotent-factory-recovery-root";
@@ -1399,7 +1417,7 @@ fn generated_shared_roots_overlap_without_mutation_then_exclusive_works() {
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     runtime.block_on(async {
@@ -1466,7 +1484,7 @@ fn generated_fresh_shared_noop_releases_without_a_durable_recovery_decision() {
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let mut db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     runtime.block_on(store_counter(&db.endpoint(), "root", 5));
@@ -1534,7 +1552,7 @@ fn generated_fresh_shared_local_promotion_recovers_after_durable_decision() {
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let mut db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let state_ref = "fresh-shared-promotion-root";
@@ -1606,7 +1624,7 @@ fn generated_exclusive_cross_actor_recovers_through_real_cxx_database_processes(
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let mut root_db = CxxDatabase::start(database_binary.clone());
     let mut target_db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
@@ -1745,7 +1763,7 @@ fn generated_exclusive_factory_creates_only_absent_actor_through_real_cxx_databa
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let db = CxxDatabase::start(database_binary);
     // Do not seed this state type or actor. C++ Load deliberately omits an
     // unknown column family, and TransactionParticipantPrepare creates it
@@ -1790,7 +1808,7 @@ fn generated_exclusive_factory_creates_root_and_commits_existing_target_through_
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     runtime.block_on(async {
@@ -1888,7 +1906,7 @@ fn generated_factory_root_recovers_target_across_two_cxx_database_processes() {
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     // The root factory actor and pre-existing target actor live in separate
     // C++ Database/RocksDB sidecars; no shared sidecar can mask routing.
     let mut root_db = CxxDatabase::start(database_binary.clone());
@@ -2073,7 +2091,7 @@ fn generated_fresh_exclusive_default_state_persists_through_live_placement_plann
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     runtime.block_on(store_counter(&db.endpoint(), "root", 5));
@@ -2138,7 +2156,7 @@ fn generated_factory_declared_error_aborts_then_retries_once_through_live_placem
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let mut db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let state_ref = "factory-declared-error-live-planner";
@@ -2275,7 +2293,7 @@ fn generated_factory_root_recovers_target_through_live_placement_planner_across_
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let mut root_db = CxxDatabase::start(database_binary.clone());
     let mut target_db = CxxDatabase::start(database_binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
@@ -2457,7 +2475,7 @@ fn generated_legacy_root_recovers_two_remote_participants_through_live_placement
             .unwrap()
             .success()
     );
-    let binary = fixture.join("target/debug/generated-cxx-database-process-host");
+    let binary = generated_host_binary(&fixture);
     let mut root_db = CxxDatabase::start(database_binary.clone());
     let mut target_a_db = CxxDatabase::start(database_binary.clone());
     let mut target_b_db = CxxDatabase::start(database_binary);

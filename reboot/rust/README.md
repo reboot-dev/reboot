@@ -1,5 +1,53 @@
 # Rust Reboot SDK
 
+## Reader-only one-shot task checkpoint
+
+Partial vertical: generated immediate unary reader tasks without declared errors,
+for the same local actor, scheduled only by fresh exclusive non-factory roots.
+The host owns one dispatcher per normalized Database endpoint/type/reference;
+startup and live canonical recovery scans validate the whole bounded pending set
+before dispatch. Delivery is serialized, notifications are coalesced hints, and
+live scans discover durable commits even when notification is lost. Staging
+checks UUIDv4/RFC4122 identity, duplicate staged IDs, any existing durable ID,
+and pending-plus-staged capacity (1024) while participant actor admission is held.
+Cancellation/errors leave pending records, not synthetic terminal results.
+
+Real C++ Database/RocksDB acceptance exercises generated root invocation through
+live canonical PlacementPlanner, denial cleanup, commit plus pending task,
+crash/redelivery, CompleteTask, second restart without redispatch, completed-ID
+reuse denial, and live durable discovery without a notification. The discovery
+vector writes a pending record via real Store. A separate real-C++ ownership
+acceptance cancels a fresh root in its handler, admits the next root, loses that
+root's durable participant Commit ACK, observes supervised host failure, then
+restarts through legacy transaction recovery and completes the task. Uncertain
+handoff never speculatively releases or aborts the participant. Duplicate-owner
+release has an ownership-only unit test, not cross-process fencing evidence.
+Admission-specific local ownership tokens prevent delayed guard cleanup from
+releasing a later admission which reuses the transaction UUID; a deterministic
+regression exercises old-guard Drop after readmission. The full generated C++
+process suite also exercises exclusive inbound mutated-state persistence when
+`final_state` is omitted; explicit final-state overrides remain authoritative.
+A real Tonic request deadline also cancels admission after canonical Recover
+and before staging/Prepare, verifies unchanged actor state and no durable task or
+transaction records, then admits a retry on the same participant. A second
+request deadline cancels after real Database Commit while terminal delivery is
+parked: the supervised host fails, the task reader does not acquire the uncertain
+lease, and restart through legacy recovery completes the task. Failed readiness
+also cancels already-admitted unary RPCs, including control calls, without
+releasing uncertain participant ownership. A real competing-request regression
+keeps its client open without a deadline, proves host termination, and completes
+the task after restart; removing only the ingress cancellation reproduces the
+shutdown hang. Generator regression coverage excludes declared-error readers
+from scheduling and dispatch surfaces. Capacity-saturation and earlier durable
+RPC cancellation windows still need dedicated acceptance. No exactly-once
+handler effects, writer tasks, workflows, delayed schedules, distributed task
+ownership, task auth, retries, or full Rust/Python task parity are claimed.
+Python sources: templates/reboot.py.j2:420-467,858-1028,2350-2475;
+aio/state_managers.py:4743-5009,6586-6593,6848-6867;
+aio/internals/tasks_dispatcher.py. Rust: src/one_shot_tasks.rs and src/codegen.rs;
+acceptance: tests/fixtures/task_vertical_acceptance.rs.
+
+
 The crate began as a schema/proto spike and now contains several durable Rust
 runtime slices. It is not yet full Python SDK parity; the evidence-backed
 implementation status and pending sidecar acceptances live in

@@ -151,12 +151,36 @@ struct LegacyPlacementRequirement {
 #[derive(Clone, Debug)]
 pub struct RecoveryCancellation {
     state: Arc<tokio::sync::watch::Sender<bool>>,
+    readiness: Option<tokio::sync::watch::Receiver<RecoveryState>>,
+    placement: Option<tokio::sync::watch::Receiver<bool>>,
 }
 impl RecoveryCancellation {
     fn new() -> Self {
         let (state, _) = tokio::sync::watch::channel(false);
         Self {
             state: Arc::new(state),
+            readiness: None,
+            placement: None,
+        }
+    }
+    /// Wait for both durable recovery and required placement completeness.
+    /// Only a real serving host can supply this authority.
+    pub async fn public_ready(&self) -> Result<(), tonic::Status> {
+        let mut readiness = self.readiness.clone().ok_or_else(|| {
+            tonic::Status::failed_precondition("task dispatch requires host readiness")
+        })?;
+        let mut placement = self.placement.clone().ok_or_else(|| {
+            tonic::Status::failed_precondition("task dispatch requires placement readiness")
+        })?;
+        loop {
+            if *readiness.borrow() == RecoveryState::Ready && *placement.borrow() {
+                return Ok(());
+            }
+            tokio::select! {
+                _ = self.cancelled() => return Err(tonic::Status::cancelled("host stopped before task readiness")),
+                result = readiness.changed() => result.map_err(|_| tonic::Status::unavailable("host readiness closed"))?,
+                result = placement.changed() => result.map_err(|_| tonic::Status::unavailable("placement readiness closed"))?,
+            }
         }
     }
     pub fn cancel(&self) {
@@ -494,7 +518,28 @@ where
                 Ok(tonic::Status::unavailable("application recovery in progress").into_http())
             });
         }
-        Box::pin(self.inner.call(request))
+        let future = self.inner.call(request);
+        let mut readiness = self.readiness.state.clone();
+        Box::pin(async move {
+            let failed = async {
+                loop {
+                    if *readiness.borrow_and_update() == RecoveryState::Failed {
+                        return;
+                    }
+                    if readiness.changed().await.is_err() {
+                        return;
+                    }
+                }
+            };
+            // Readiness must revoke already-admitted unary work too. Otherwise
+            // a waiter on an uncertain participant lease prevents Tonic's
+            // graceful connection drain from ever returning the host failure.
+            tokio::select! {
+                biased;
+                _ = failed => Ok(tonic::Status::unavailable("application host stopped").into_http()),
+                result = future => result,
+            }
+        })
     }
 }
 
@@ -988,7 +1033,9 @@ impl RunningApplicationHost {
         let listener = tokio::net::TcpListener::bind(address)
             .await
             .map_err(ApplicationHostError::Bind)?;
-        let cancel = RecoveryCancellation::new();
+        let mut cancel = RecoveryCancellation::new();
+        cancel.readiness = Some(readiness.subscribe());
+        cancel.placement = Some(placement_gate.state.clone());
         let serving_cancel = cancel.clone();
         // Poll the fixed router before recovery. Control services were part of
         // that router at construction; public routes remain gated below.
@@ -1005,8 +1052,7 @@ impl RunningApplicationHost {
             if let Err(source) = registration.start(&mut supervisor, cancel.clone()).await {
                 readiness.send_replace(RecoveryState::Failed);
                 cancel.cancel();
-                supervisor.abort_all();
-                while supervisor.join_next().await.is_some() {}
+                Self::join_cancelled_recovery(&mut supervisor).await;
                 let _ = serving.await;
                 Self::shutdown_lifecycle(&lifecycle).await?;
                 return Err(ApplicationHostError::Lifecycle {
@@ -1048,24 +1094,39 @@ impl RunningApplicationHost {
                 };
                 readiness.send_replace(RecoveryState::Failed);
                 cancel.cancel();
-                supervisor.abort_all();
-                while supervisor.join_next().await.is_some() {}
+                Self::join_cancelled_recovery(&mut supervisor).await;
                 let _ = serving.await;
                 Self::shutdown_lifecycle(&lifecycle).await?;
                 return Err(ApplicationHostError::RecoveryTask(source));
             }
             result = &mut serving => {
+                readiness.send_replace(RecoveryState::Failed);
+                cancel.cancel();
+                Self::join_cancelled_recovery(&mut supervisor).await;
                 let result = result.expect("application serving task panicked");
                 Self::shutdown_lifecycle(&lifecycle).await?;
                 return result.map_err(ApplicationHostError::Transport);
             }
         }
         readiness.send_replace(RecoveryState::Failed);
-        supervisor.abort_all();
-        while supervisor.join_next().await.is_some() {}
+        Self::join_cancelled_recovery(&mut supervisor).await;
         let serving = serving.await.expect("application serving task panicked");
         Self::shutdown_lifecycle(&lifecycle).await?;
         serving.map_err(ApplicationHostError::Transport)
+    }
+
+    async fn join_cancelled_recovery(supervisor: &mut JoinSet<Result<(), tonic::Status>>) {
+        // Give cancellation-aware owners time to cancel and join their children
+        // before the bounded fallback aborts an uncooperative component.
+        if tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while supervisor.join_next().await.is_some() {}
+        })
+        .await
+        .is_err()
+        {
+            supervisor.abort_all();
+            while supervisor.join_next().await.is_some() {}
+        }
     }
 
     pub(crate) async fn start_lifecycle(

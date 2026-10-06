@@ -1558,6 +1558,16 @@ impl DatabaseActorStore {
         self.lock_for_type(state_type, state_ref)
     }
 
+    pub fn database_endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
+    pub(crate) fn task_database(
+        &self,
+    ) -> database::database_client::DatabaseClient<tonic::transport::Channel> {
+        self.database.clone()
+    }
+
     /// Loads the current state for an actor, if it has been stored.
     pub async fn load<State: RebootState>(&self, state_ref: &str) -> Result<Option<State>, Status> {
         self.load_type(State::STATE_TYPE, state_ref).await
@@ -1590,6 +1600,14 @@ impl DatabaseActorStore {
         State::decode(state.as_slice()).map(Some).map_err(|error| {
             Status::internal(format!("invalid persisted {state_type} state: {error}"))
         })
+    }
+
+    /// Loads a generated state snapshot. The caller owns actor admission.
+    pub async fn load_for_declaration<D: DurableStateDeclaration>(
+        &self,
+        state_ref: &str,
+    ) -> Result<Option<D::State>, Status> {
+        self.load_type(D::STATE_TYPE, state_ref).await
     }
 
     /// Returns a completed response for a writer idempotency key, if present.
