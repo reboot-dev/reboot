@@ -1322,6 +1322,74 @@ impl SystemAborted {
             Self::TransactionShouldRetry(_) | Self::NestedTransactionShouldRetry(_)
         )
     }
+
+    /// Encodes this backend-originated abort as the rich gRPC status used by
+    /// Python's `SystemAborted`. The inner status envelope always matches the
+    /// transport code and message so a receiver can safely classify it.
+    pub fn into_status(self, message: impl Into<String>) -> tonic::Status {
+        macro_rules! status {
+            ($code:expr, $type_url:literal, $error:expr) => {
+                declared_error_status($code, message, $type_url, &$error)
+            };
+        }
+        match self {
+            Self::StateAlreadyConstructed(error) => status!(
+                tonic::Code::Aborted,
+                "type.googleapis.com/rbt.v1alpha1.StateAlreadyConstructed",
+                error
+            ),
+            Self::StateNotConstructed(error) => status!(
+                tonic::Code::Aborted,
+                "type.googleapis.com/rbt.v1alpha1.StateNotConstructed",
+                error
+            ),
+            Self::InvalidArgument(error) => status!(
+                tonic::Code::InvalidArgument,
+                "type.googleapis.com/rbt.v1alpha1.InvalidArgument",
+                error
+            ),
+            Self::NotFound(error) => status!(
+                tonic::Code::NotFound,
+                "type.googleapis.com/rbt.v1alpha1.NotFound",
+                error
+            ),
+            Self::AlreadyExists(error) => status!(
+                tonic::Code::AlreadyExists,
+                "type.googleapis.com/rbt.v1alpha1.AlreadyExists",
+                error
+            ),
+            Self::FailedPrecondition(error) => status!(
+                tonic::Code::FailedPrecondition,
+                "type.googleapis.com/rbt.v1alpha1.FailedPrecondition",
+                error
+            ),
+            Self::Aborted(error) => status!(
+                tonic::Code::Aborted,
+                "type.googleapis.com/rbt.v1alpha1.Aborted",
+                error
+            ),
+            Self::OutOfRange(error) => status!(
+                tonic::Code::OutOfRange,
+                "type.googleapis.com/rbt.v1alpha1.OutOfRange",
+                error
+            ),
+            Self::DataLoss(error) => status!(
+                tonic::Code::DataLoss,
+                "type.googleapis.com/rbt.v1alpha1.DataLoss",
+                error
+            ),
+            Self::TransactionShouldRetry(error) => status!(
+                tonic::Code::Unavailable,
+                "type.googleapis.com/rbt.v1alpha1.TransactionShouldRetry",
+                error
+            ),
+            Self::NestedTransactionShouldRetry(error) => status!(
+                tonic::Code::Unavailable,
+                "type.googleapis.com/rbt.v1alpha1.NestedTransactionShouldRetry",
+                error
+            ),
+        }
+    }
 }
 
 /// Decodes one known Reboot system-abort detail.
@@ -2343,6 +2411,46 @@ mod tests {
                 Err(ExternalEndpointError::HasPathQueryOrFragment)
                     | Err(ExternalEndpointError::InvalidUrl)
             ));
+        }
+    }
+
+    #[test]
+    fn system_aborted_status_encodes_matching_rich_envelopes() {
+        let statuses = [
+            (
+                SystemAborted::StateAlreadyConstructed(database_proto::StateAlreadyConstructed {}),
+                tonic::Code::Aborted,
+                "type.googleapis.com/rbt.v1alpha1.StateAlreadyConstructed",
+            ),
+            (
+                SystemAborted::NotFound(database_proto::NotFound {}),
+                tonic::Code::NotFound,
+                "type.googleapis.com/rbt.v1alpha1.NotFound",
+            ),
+            (
+                SystemAborted::TransactionShouldRetry(database_proto::TransactionShouldRetry {
+                    reason: database_proto::transaction_should_retry::Reason::RestartDetected
+                        as i32,
+                    retry_age: "root-attempt".into(),
+                }),
+                tonic::Code::Unavailable,
+                "type.googleapis.com/rbt.v1alpha1.TransactionShouldRetry",
+            ),
+        ];
+        for (error, code, type_url) in statuses {
+            let status = error.into_status("backend outcome");
+            assert_eq!(status.code(), code);
+            assert_eq!(status.message(), "backend outcome");
+            let rich = declared_error_details(&status).unwrap().unwrap();
+            assert_eq!(rich.code, code as i32);
+            assert_eq!(rich.message, "backend outcome");
+            assert_eq!(rich.details.len(), 1);
+            assert_eq!(rich.details[0].type_url, type_url);
+            assert!(
+                system_aborted_from_detail(&rich.details[0])
+                    .unwrap()
+                    .is_some()
+            );
         }
     }
 

@@ -226,27 +226,23 @@ impl proto::transaction_counter_writes_methods_server::TransactionCounterWritesM
             },
             // A Reboot backend error that Python permits callers to catch
             // while the root transaction continues.
-            104 => googleapis_tonic_google_rpc::google::rpc::Status {
-                code: tonic::Code::NotFound as i32,
-                message: "remote state is absent".into(),
-                details: vec![prost_types::Any {
-                    type_url: "type.googleapis.com/rbt.v1alpha1.NotFound".into(),
-                    value: reboot::database_proto::NotFound {}.encode_to_vec(),
-                }],
-            },
+            104 => {
+                return Err(reboot::SystemAborted::NotFound(
+                    reboot::database_proto::NotFound {},
+                )
+                .into_status("remote state is absent"));
+            }
             // Reboot sourced this outcome, but it still requires the whole
             // root transaction to retry rather than committing through it.
-            105 => googleapis_tonic_google_rpc::google::rpc::Status {
-                code: tonic::Code::Unavailable as i32,
-                message: "remote transaction must retry".into(),
-                details: vec![prost_types::Any {
-                    type_url: "type.googleapis.com/rbt.v1alpha1.TransactionShouldRetry".into(),
-                    value: reboot::database_proto::TransactionShouldRetry {
+            105 => {
+                return Err(reboot::SystemAborted::TransactionShouldRetry(
+                    reboot::database_proto::TransactionShouldRetry {
                         reason: reboot::database_proto::transaction_should_retry::Reason::RestartDetected as i32,
                         retry_age: "fixture".into(),
-                    }.encode_to_vec(),
-                }],
-            },
+                    },
+                )
+                .into_status("remote transaction must retry"));
+            }
             // A trailer which cannot decode as google.rpc.Status.
             102 => {
                 return Err(tonic::Status::with_details(
