@@ -10,6 +10,9 @@ use std::{
 };
 
 use tokio::sync::mpsc;
+use tonic_health::pb::{
+    HealthCheckRequest, health_check_response::ServingStatus, health_client::HealthClient,
+};
 
 use reboot_rust_schema::{
     RebootHeaders,
@@ -360,10 +363,28 @@ async fn public_ingress_is_unavailable_until_host_recovery_succeeds() {
             .unwrap()
     });
     started_rx.await.unwrap();
-    let mut client =
-        proto::echo_methods_client::EchoMethodsClient::connect(format!("http://{address}"))
+    let endpoint = format!("http://{address}");
+    let mut health = HealthClient::new(
+        tonic::transport::Endpoint::from_shared(endpoint.clone())
+            .unwrap()
+            .connect()
             .await
-            .unwrap();
+            .unwrap(),
+    );
+    assert_eq!(
+        health
+            .check(HealthCheckRequest {
+                service: String::new()
+            })
+            .await
+            .unwrap()
+            .into_inner()
+            .status,
+        ServingStatus::NotServing as i32
+    );
+    let mut client = proto::echo_methods_client::EchoMethodsClient::connect(endpoint)
+        .await
+        .unwrap();
     assert_eq!(
         client
             .reply(proto::Text {
@@ -376,6 +397,17 @@ async fn public_ingress_is_unavailable_until_host_recovery_succeeds() {
     );
     release_tx.send(()).unwrap();
     tokio::time::sleep(Duration::from_millis(10)).await;
+    assert_eq!(
+        health
+            .check(HealthCheckRequest {
+                service: String::new()
+            })
+            .await
+            .unwrap()
+            .into_inner()
+            .status,
+        ServingStatus::Serving as i32
+    );
     let mut open = Request::new(proto::Text {
         content: "open".into(),
     });

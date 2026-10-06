@@ -27,6 +27,7 @@ use tonic::{
     server::NamedService,
     transport::{Endpoint, Server, server::Router},
 };
+use tonic_health::{ServingStatus, server::HealthReporter};
 use tower::{
     Layer, Service,
     layer::util::{Identity, Stack},
@@ -392,14 +393,10 @@ where
         self.inner.poll_ready(cx)
     }
     fn call(&mut self, mut request: HttpRequest<B>) -> Self::Future {
-        let control = request
-            .uri()
-            .path()
-            .starts_with("/rbt.v1alpha1.Participant/")
-            || request
-                .uri()
-                .path()
-                .starts_with("/rbt.v1alpha1.Coordinator/");
+        let path = request.uri().path();
+        let control = path.starts_with("/rbt.v1alpha1.Participant/")
+            || path.starts_with("/rbt.v1alpha1.Coordinator/")
+            || path.starts_with("/grpc.health.v1.Health/");
         request.headers_mut().remove(APPLICATION_ID_HEADER);
         request.extensions_mut().insert(self.context.clone());
         if !control
@@ -413,13 +410,13 @@ where
     }
 }
 
-/// Only the two legacy recovery services bypass public readiness. Any other
-/// `NamedService` passed through the control-route builder remains public and
-/// must be represented in placement completeness.
+/// Legacy recovery controls and the host-owned health service bypass public
+/// readiness. Every caller-added service remains public and must be represented
+/// in placement completeness.
 fn is_legacy_control_service(service_name: &str) -> bool {
     matches!(
         service_name,
-        "rbt.v1alpha1.Participant" | "rbt.v1alpha1.Coordinator"
+        "rbt.v1alpha1.Participant" | "rbt.v1alpha1.Coordinator" | "grpc.health.v1.Health"
     )
 }
 
@@ -586,7 +583,8 @@ where
 /// service routes until [`Self::add_service`] is called.
 pub struct ApplicationHost {
     application_id: String,
-    server: Server<RecoveryIngressStack>,
+    router: Router<RecoveryIngressStack>,
+    health: HealthReporter,
     lifecycle: Vec<Arc<dyn ApplicationLifecycle>>,
     recovery: Vec<Arc<dyn HostRecovery>>,
     readiness: tokio::sync::watch::Sender<RecoveryState>,
@@ -605,15 +603,20 @@ impl ApplicationHost {
         );
         let (readiness, state) = tokio::sync::watch::channel(RecoveryState::Ready);
         let placement_gate = LegacyPlacementGate::new();
+        // Health is host-owned: it is never a generated, placement-routable
+        // service and reports readiness independently of the public ingress gate.
+        let (health, health_service) = tonic_health::server::health_reporter();
         Self {
-            server: Server::builder()
+            router: Server::builder()
                 .layer(crate::successful_trailers::SuccessfulParticipantTrailerLayer)
                 .layer(RecoveryIngressLayer::new(
                     application_id.clone(),
                     RecoveryReadiness { state },
                     placement_gate.clone(),
-                )),
+                ))
+                .add_service(health_service),
             application_id,
+            health,
             lifecycle: Vec::new(),
             recovery: Vec::new(),
             readiness,
@@ -654,7 +657,7 @@ impl ApplicationHost {
     }
 
     /// Registers the first generated Tonic service and returns a serving host.
-    pub fn add_service<S>(mut self, service: S) -> RunningApplicationHost
+    pub fn add_service<S>(self, service: S) -> RunningApplicationHost
     where
         S: Service<http::Request<BoxBody>, Response = HttpResponse<BoxBody>, Error = Infallible>
             + NamedService
@@ -667,13 +670,14 @@ impl ApplicationHost {
         public_services.insert(S::NAME.to_owned());
         RunningApplicationHost {
             application_id: self.application_id,
+            health: self.health,
             lifecycle: self.lifecycle,
             recovery: self.recovery,
             readiness: self.readiness,
             placement_gate: self.placement_gate,
             placement_requirement: self.placement_requirement,
             public_services,
-            router: self.server.add_service(service),
+            router: self.router.add_service(service),
         }
     }
 
@@ -691,7 +695,7 @@ impl ApplicationHost {
     }
 
     /// Registers a fixed legacy control route reachable during recovery.
-    pub fn add_legacy_control_service<S>(mut self, service: S) -> RunningApplicationHost
+    pub fn add_legacy_control_service<S>(self, service: S) -> RunningApplicationHost
     where
         S: Service<http::Request<BoxBody>, Response = HttpResponse<BoxBody>, Error = Infallible>
             + NamedService
@@ -706,13 +710,14 @@ impl ApplicationHost {
         }
         RunningApplicationHost {
             application_id: self.application_id,
+            health: self.health,
             lifecycle: self.lifecycle,
             recovery: self.recovery,
             readiness: self.readiness,
             placement_gate: self.placement_gate,
             placement_requirement: self.placement_requirement,
             public_services,
-            router: self.server.add_service(service),
+            router: self.router.add_service(service),
         }
     }
 }
@@ -720,6 +725,7 @@ impl ApplicationHost {
 /// A generic host with at least one registered generated Tonic service.
 pub struct RunningApplicationHost {
     application_id: String,
+    health: HealthReporter,
     lifecycle: Vec<Arc<dyn ApplicationLifecycle>>,
     recovery: Vec<Arc<dyn HostRecovery>>,
     readiness: tokio::sync::watch::Sender<RecoveryState>,
@@ -748,6 +754,7 @@ impl RunningApplicationHost {
         self.public_services.insert(S::NAME.to_owned());
         Self {
             application_id: self.application_id,
+            health: self.health,
             lifecycle: self.lifecycle,
             recovery: self.recovery,
             readiness: self.readiness,
@@ -784,6 +791,7 @@ impl RunningApplicationHost {
         }
         Self {
             application_id: self.application_id,
+            health: self.health,
             lifecycle: self.lifecycle,
             recovery: self.recovery,
             readiness: self.readiness,
@@ -814,6 +822,7 @@ impl RunningApplicationHost {
         let RunningApplicationHost {
             lifecycle,
             recovery,
+            mut health,
             readiness,
             placement_gate,
             placement_requirement,
@@ -822,6 +831,9 @@ impl RunningApplicationHost {
             ..
         } = self;
         Self::start_lifecycle(&lifecycle).await?;
+        health
+            .set_service_status("", ServingStatus::NotServing)
+            .await;
         // Bind before recovery so peers can reach the fixed Participant and
         // Coordinator control routes while public generated routes remain
         // gated by `RecoveryIngressLayer`.
@@ -877,6 +889,7 @@ impl RunningApplicationHost {
             });
         }
         readiness.send_replace(RecoveryState::Ready);
+        health.set_service_status("", ServingStatus::Serving).await;
         tokio::select! {
             _ = shutdown => cancel.cancel(),
             result = supervisor.join_next(), if !supervisor.is_empty() => {
