@@ -70,6 +70,11 @@ fn protoc_plugin_emits_durable_counter_adapters() {
         .find("CounterLimitExceeded(proto::CounterLimitExceeded)")
         .unwrap();
     assert!(secondary < limit, "declared errors must retain proto order");
+    assert!(content.contains("pub enum CounterReadsMethodsGetError"));
+    assert!(content.contains("async fn get(&self, state: &proto::Counter, request: proto::Empty) -> Result<proto::CounterValue, CounterReadsMethodsGetError>;"));
+    assert!(content.contains(
+        "self.client.get(request).await.map_err(CounterReadsMethodsGetError::from_status)"
+    ));
 }
 
 #[test]
@@ -204,8 +209,13 @@ impl generated::CounterReadsMethodsDatabaseHandler for Counter {
         &self,
         state: &proto::Counter,
         _: proto::Empty,
-    ) -> Result<proto::CounterValue, tonic::Status> {
+    ) -> Result<proto::CounterValue, generated::CounterReadsMethodsGetError> {
         tokio::task::yield_now().await;
+        if state.value == 0 {
+            return Err(generated::CounterReadsMethodsGetError::CounterLimitExceeded(
+                proto::CounterLimitExceeded { limit: state.value },
+            ));
+        }
         Ok(proto::CounterValue { value: state.value })
     }
 }
@@ -255,7 +265,7 @@ impl generated::CounterWritesMethodsDatabaseHandler for AuthCounter {
 
 #[tonic::async_trait]
 impl generated::CounterReadsMethodsDatabaseHandler for AuthCounter {
-    async fn get(&self, state: &proto::Counter, _: proto::Empty) -> Result<proto::CounterValue, tonic::Status> {
+    async fn get(&self, state: &proto::Counter, _: proto::Empty) -> Result<proto::CounterValue, generated::CounterReadsMethodsGetError> {
         self.0.fetch_add(1, Ordering::SeqCst);
         Ok(proto::CounterValue { value: state.value })
     }
@@ -1362,6 +1372,13 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
     );
     let automatic_channel = context.connect(address.clone()).await.unwrap();
     let mut writes = generated::CounterWritesMethodsExternalClient::new(automatic_channel, context.clone());
+    let reader_channel = context.connect(address.clone()).await.unwrap();
+    let mut reads = generated::CounterReadsMethodsExternalClient::new(reader_channel, context.clone());
+    assert!(matches!(
+        reads.get(proto::Empty {}).await,
+        Err(generated::CounterReadsMethodsGetError::CounterLimitExceeded(error))
+            if error.limit == 0
+    ));
     assert_eq!(
         writes
             .increment(proto::IncrementRequest { amount: 5 })

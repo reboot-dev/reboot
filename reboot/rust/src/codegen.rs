@@ -529,7 +529,8 @@ fn annotations_for_generated_files(
                 if !method_declared_errors.is_empty()
                     && !matches!(
                         kind,
-                        DurableKind::Writer(_)
+                        DurableKind::Reader
+                            | DurableKind::Writer(_)
                             | DurableKind::Transaction(TransactionMetadata {
                                 mode: TransactionMode::Exclusive,
                                 factory: false
@@ -537,7 +538,7 @@ fn annotations_for_generated_files(
                     )
                 {
                     return Err(format!(
-                        "{file_name}: service `{service_name}` method `{method_name}` declares errors, but declared errors are supported only on writer methods and non-factory exclusive transactions"
+                        "{file_name}: service `{service_name}` method `{method_name}` declares errors, but declared errors are supported only on unary reader/writer methods and non-factory exclusive transactions"
                     ));
                 }
                 methods.insert(method_name.clone(), kind);
@@ -1240,7 +1241,7 @@ fn emit_durable(
         let adapter = format!("{service_name}DatabaseAdapter");
         let server = format!("{}_server", snake_case(service_name));
         for (kind, method, _, _, method_identity) in &database_methods {
-            let declared_errors = declared_writer_errors(annotation, kind, method_identity);
+            let declared_errors = declared_database_errors(annotation, kind, method_identity);
             if !declared_errors.is_empty() {
                 emit_declared_error_enum(
                     output,
@@ -1255,12 +1256,12 @@ fn emit_durable(
         output.push_str("#[tonic::async_trait]\n");
         output.push_str(&format!("pub trait {handler}: Send + Sync + 'static {{\n"));
         for (kind, method, request, response, method_identity) in &database_methods {
-            let declared_errors = declared_writer_errors(annotation, kind, method_identity);
+            let declared_errors = declared_database_errors(annotation, kind, method_identity);
             if declared_errors.is_empty() {
                 output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n", if matches!(**kind, DurableKind::Writer(_)) { "&mut " } else { "&" }));
             } else {
                 let error = declared_error_type(service_name, method);
-                output.push_str(&format!("    async fn {method}(&self, state: &mut proto::{state}, request: proto::{request}) -> Result<proto::{response}, {error}>;\n"));
+                output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, {error}>;\n", if matches!(**kind, DurableKind::Writer(_)) { "&mut " } else { "&" }));
             }
         }
         output.push_str("}\n\n");
@@ -1309,7 +1310,7 @@ fn emit_durable(
                 DurableKind::Transaction(_) => unreachable!("transactions are filtered above"),
             };
             let map_declared_error =
-                if declared_writer_errors(annotation, kind, method_identity).is_empty() {
+                if declared_database_errors(annotation, kind, method_identity).is_empty() {
                     String::new()
                 } else {
                     ".map_err(|error| error.into_status())".to_owned()
@@ -1360,12 +1361,12 @@ fn emit_durable(
 /// Emits a typed external client for declared database reader and writer RPCs.
 ///
 /// Transaction methods deliberately remain on the host-routed `ServiceClient`.
-fn declared_writer_errors<'a>(
+fn declared_database_errors<'a>(
     annotation: &'a DurableService,
     kind: &DurableKind,
     method_identity: &str,
 ) -> &'a [String] {
-    if !matches!(kind, DurableKind::Writer(_)) {
+    if !matches!(kind, DurableKind::Reader | DurableKind::Writer(_)) {
         return &[];
     }
     method_identity
@@ -1450,11 +1451,21 @@ fn emit_external_client(
     ));
     for (kind, method, request, response, method_identity) in database_methods {
         match **kind {
-            DurableKind::Reader => output.push_str(&format!(
-                "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let request = self.context.reader(request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; self.client.{method}(request).await }}\n"
-            )),
+            DurableKind::Reader => {
+                let declared_errors = declared_database_errors(annotation, kind, method_identity);
+                if declared_errors.is_empty() {
+                    output.push_str(&format!(
+                        "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let request = self.context.reader(request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; self.client.{method}(request).await }}\n"
+                    ));
+                } else {
+                    let error = declared_error_type(service_name, method);
+                    output.push_str(&format!(
+                        "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, {error}> {{ let request = self.context.reader(request).map_err(|error| {error}::Grpc(tonic::Status::invalid_argument(error.to_string())))?; self.client.{method}(request).await.map_err({error}::from_status) }}\n"
+                    ));
+                }
+            }
             DurableKind::Writer(_) => {
-                let declared_errors = declared_writer_errors(annotation, kind, method_identity);
+                let declared_errors = declared_database_errors(annotation, kind, method_identity);
                 if declared_errors.is_empty() {
                     output.push_str(&format!(
                         "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let request = self.context.writer(request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; self.client.{method}(request).await }}\n    pub async fn {method}_with_key(&mut self, request: proto::{request}, idempotency_key: uuid::Uuid) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let request = self.context.writer_with_key(request, idempotency_key).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; self.client.{method}(request).await }}\n"
@@ -3669,7 +3680,7 @@ mod tests {
             .error
             .as_deref(),
             Some(
-                "tests/reboot/protoc/counter.proto: service `CounterWritesMethods` method `Increment` declares errors, but declared errors are supported only on writer methods and non-factory exclusive transactions"
+                "tests/reboot/protoc/counter.proto: service `CounterWritesMethods` method `Increment` declares errors, but declared errors are supported only on unary reader/writer methods and non-factory exclusive transactions"
             )
         );
         assert!(

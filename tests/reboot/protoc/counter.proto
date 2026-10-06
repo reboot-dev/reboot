@@ -52,6 +52,9 @@ service CounterReadsMethods {
   };
 
   rpc Get(Empty) returns (CounterValue) {
-    option (rbt.v1alpha1.method).reader = {};
+    option (rbt.v1alpha1.method) = {
+      reader: {}
+      errors: ".tests.reboot.protoc.CounterLimitExceeded"
+    };
   }
 }
