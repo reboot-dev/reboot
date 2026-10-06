@@ -382,6 +382,29 @@ async fn public_ingress_is_unavailable_until_host_recovery_succeeds() {
             .status,
         ServingStatus::NotServing as i32
     );
+    // Python ignores the requested service and reports host readiness, rather
+    // than making generated service names part of health/placement discovery.
+    assert_eq!(
+        health
+            .check(HealthCheckRequest {
+                service: "not-a-registered-service".into(),
+            })
+            .await
+            .unwrap()
+            .into_inner()
+            .status,
+        ServingStatus::NotServing as i32
+    );
+    assert_eq!(
+        health
+            .watch(HealthCheckRequest {
+                service: String::new(),
+            })
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unimplemented
+    );
     let mut client = proto::echo_methods_client::EchoMethodsClient::connect(endpoint)
         .await
         .unwrap();

@@ -27,7 +27,11 @@ use tonic::{
     server::NamedService,
     transport::{Endpoint, Server, server::Router},
 };
-use tonic_health::{ServingStatus, server::HealthReporter};
+use tonic_health::pb::{
+    HealthCheckRequest, HealthCheckResponse,
+    health_check_response::ServingStatus,
+    health_server::{Health, HealthServer},
+};
 use tower::{
     Layer, Service,
     layer::util::{Identity, Stack},
@@ -67,6 +71,46 @@ pub struct RecoveryReadiness {
 impl RecoveryReadiness {
     fn state(&self) -> RecoveryState {
         *self.state.borrow()
+    }
+}
+
+/// The Python health servicer reports the host's lifecycle readiness for any
+/// `Check` request. It deliberately does not implement streaming `Watch`.
+#[derive(Clone, Debug)]
+struct HostHealth {
+    readiness: RecoveryReadiness,
+}
+
+#[tonic::async_trait]
+impl Health for HostHealth {
+    async fn check(
+        &self,
+        _: Request<HealthCheckRequest>,
+    ) -> Result<tonic::Response<HealthCheckResponse>, tonic::Status> {
+        let status = match self.readiness.state() {
+            RecoveryState::Ready => ServingStatus::Serving,
+            RecoveryState::Recovering | RecoveryState::Failed => ServingStatus::NotServing,
+        };
+        Ok(tonic::Response::new(HealthCheckResponse {
+            status: status as i32,
+        }))
+    }
+
+    type WatchStream = Pin<
+        Box<
+            dyn tokio_stream::Stream<Item = Result<HealthCheckResponse, tonic::Status>>
+                + Send
+                + 'static,
+        >,
+    >;
+
+    async fn watch(
+        &self,
+        _: Request<HealthCheckRequest>,
+    ) -> Result<tonic::Response<Self::WatchStream>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "health watch is not implemented",
+        ))
     }
 }
 
@@ -584,7 +628,6 @@ where
 pub struct ApplicationHost {
     application_id: String,
     router: Router<RecoveryIngressStack>,
-    health: HealthReporter,
     lifecycle: Vec<Arc<dyn ApplicationLifecycle>>,
     recovery: Vec<Arc<dyn HostRecovery>>,
     readiness: tokio::sync::watch::Sender<RecoveryState>,
@@ -604,8 +647,12 @@ impl ApplicationHost {
         let (readiness, state) = tokio::sync::watch::channel(RecoveryState::Ready);
         let placement_gate = LegacyPlacementGate::new();
         // Health is host-owned: it is never a generated, placement-routable
-        // service and reports readiness independently of the public ingress gate.
-        let (health, health_service) = tonic_health::server::health_reporter();
+        // service and reports lifecycle readiness independently of public ingress.
+        let health_service = HealthServer::new(HostHealth {
+            readiness: RecoveryReadiness {
+                state: state.clone(),
+            },
+        });
         Self {
             router: Server::builder()
                 .layer(crate::successful_trailers::SuccessfulParticipantTrailerLayer)
@@ -616,7 +663,6 @@ impl ApplicationHost {
                 ))
                 .add_service(health_service),
             application_id,
-            health,
             lifecycle: Vec::new(),
             recovery: Vec::new(),
             readiness,
@@ -670,7 +716,6 @@ impl ApplicationHost {
         public_services.insert(S::NAME.to_owned());
         RunningApplicationHost {
             application_id: self.application_id,
-            health: self.health,
             lifecycle: self.lifecycle,
             recovery: self.recovery,
             readiness: self.readiness,
@@ -710,7 +755,6 @@ impl ApplicationHost {
         }
         RunningApplicationHost {
             application_id: self.application_id,
-            health: self.health,
             lifecycle: self.lifecycle,
             recovery: self.recovery,
             readiness: self.readiness,
@@ -725,7 +769,6 @@ impl ApplicationHost {
 /// A generic host with at least one registered generated Tonic service.
 pub struct RunningApplicationHost {
     application_id: String,
-    health: HealthReporter,
     lifecycle: Vec<Arc<dyn ApplicationLifecycle>>,
     recovery: Vec<Arc<dyn HostRecovery>>,
     readiness: tokio::sync::watch::Sender<RecoveryState>,
@@ -754,7 +797,6 @@ impl RunningApplicationHost {
         self.public_services.insert(S::NAME.to_owned());
         Self {
             application_id: self.application_id,
-            health: self.health,
             lifecycle: self.lifecycle,
             recovery: self.recovery,
             readiness: self.readiness,
@@ -791,7 +833,6 @@ impl RunningApplicationHost {
         }
         Self {
             application_id: self.application_id,
-            health: self.health,
             lifecycle: self.lifecycle,
             recovery: self.recovery,
             readiness: self.readiness,
@@ -822,7 +863,6 @@ impl RunningApplicationHost {
         let RunningApplicationHost {
             lifecycle,
             recovery,
-            mut health,
             readiness,
             placement_gate,
             placement_requirement,
@@ -831,9 +871,6 @@ impl RunningApplicationHost {
             ..
         } = self;
         Self::start_lifecycle(&lifecycle).await?;
-        health
-            .set_service_status("", ServingStatus::NotServing)
-            .await;
         // Bind before recovery so peers can reach the fixed Participant and
         // Coordinator control routes while public generated routes remain
         // gated by `RecoveryIngressLayer`.
@@ -889,7 +926,6 @@ impl RunningApplicationHost {
             });
         }
         readiness.send_replace(RecoveryState::Ready);
-        health.set_service_status("", ServingStatus::Serving).await;
         tokio::select! {
             _ = shutdown => cancel.cancel(),
             result = supervisor.join_next(), if !supervisor.is_empty() => {
