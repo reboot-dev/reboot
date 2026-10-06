@@ -2,7 +2,7 @@
 
 ## Reader-only one-shot task checkpoint
 
-Partial vertical: generated immediate unary reader tasks without declared errors,
+Partial vertical: generated immediate or absolute-UTC-scheduled unary reader tasks without declared errors,
 for the same local actor, scheduled only by fresh exclusive non-factory roots.
 The host owns one dispatcher per normalized Database endpoint/type/reference;
 startup and live canonical recovery scans validate the whole bounded pending set
@@ -45,9 +45,18 @@ Live admission also exercises 1023 pending plus one staged (committed state and
 task) and 1024 plus one staged (ResourceExhausted, unchanged actor, absent staged
 task). The fixture seeds real Store records while exclusive admission is held;
 a same-host reader proves denied-root admission was released, and RocksDB restart
-preserves all 1024 pending records in both cases. Earlier durable RPC cancellation
+preserves all 1024 pending records in both cases. `*TasksAt` helpers accept
+canonical protobuf UTC timestamps; staging and recovery validate their range.
+Future records remain pending and do not block later immediate tasks. A real
+RocksDB acceptance schedules a reader through the generated root, completes an
+immediate peer before its deadline, crashes/restarts before the deadline, and
+records the actual handler invocation instant to prove no early delivery. The
+recovered task completes durably with its timestamp unchanged. Dispatch uses
+host-owned 100ms canonical rescans, not per-task detached timers; handler failure
+still leaves a task pending and fails supervision rather than retrying silently.
+Earlier durable RPC cancellation
 windows still need dedicated acceptance. No exactly-once
-handler effects, writer tasks, workflows, delayed schedules, distributed task
+handler effects, writer tasks, workflows, distributed task
 ownership, task auth, retries, or full Rust/Python task parity are claimed.
 Python sources: templates/reboot.py.j2:420-467,858-1028,2350-2475;
 aio/state_managers.py:4743-5009,6586-6593,6848-6867;

@@ -1,4 +1,5 @@
 use super::*;
+include!("task_schedule_acceptance.rs");
 #[derive(Clone, PartialEq, prost::Message)]
 struct TaskQueryRequest {
     #[prost(int64, tag = "1")]
@@ -73,6 +74,11 @@ fn task_host(options: TaskHostOptions<'_>) -> Child {
             "REBOOT_TEST_LOST_PARTICIPANT_COMMIT_ACK"
         };
         command.env(fault, options.ack);
+    } else if options
+        .vector
+        .is_some_and(|vector| vector.starts_with("delayed:"))
+    {
+        command.args(["--task-vector", options.vector.unwrap()]);
     } else if options.vector == Some("saturation-allowed") {
         command.args(["--task-vector", "saturation-allowed", "--exit-after-invoke"]);
     } else if let Some(vector) = options.vector {

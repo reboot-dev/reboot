@@ -1,5 +1,6 @@
 //! Bounded generated same-local-actor unary reader tasks. No retries, writer
-//! effects, delayed schedules, workflow iterations, or task cancellation API.
+//! effects, workflow iterations, or task cancellation API. Absolute UTC schedules
+//! are durable; the host rescans without spawning a sleeping child per task.
 //! Handler failures and host cancellation leave durable tasks pending.
 use crate::{
     application_host::{HostRecovery, RecoveryCancellation},
@@ -89,16 +90,16 @@ impl OneShotTasks {
             }
             if task.status != db::task::Status::Pending as i32
                 || task.response_or_error.is_some()
-                || task.timestamp.is_some()
                 || task.iteration != 0
             {
                 return Err(Status::invalid_argument(
-                    "only immediate pending one-shot tasks are supported",
+                    "only pending one-shot tasks are supported",
                 ));
             }
             if !ids.insert(id.task_uuid.clone()) {
                 return Err(Status::invalid_argument("duplicate task UUID"));
             }
+            scheduled_at(task)?;
             self.inner.binding.validate(task)?;
         }
         Ok(())
@@ -212,6 +213,11 @@ impl OneShotTasks {
         let response = {
             let _lease = gate.shared().await;
             cancel.public_ready().await?;
+            // Actor admission may have waited while the wall clock moved back.
+            // Recheck before user code, leaving the durable record pending.
+            if !schedule_due(&task)? {
+                return Ok(());
+            }
             // Do not re-deliver already completed records queued by a duplicate.
             let loaded = self
                 .inner
@@ -233,6 +239,9 @@ impl OneShotTasks {
                 return Err(Status::failed_precondition(
                     "committed task differs from dispatch",
                 ));
+            }
+            if !schedule_due(&task)? {
+                return Ok(());
             }
             self.inner.binding.execute(&task).await?
         };
@@ -365,7 +374,10 @@ impl HostRecovery for OneShotTaskRecovery {
                 loop {
                     for task in pending {
                         cancel.public_ready().await?;
-                        tasks.execute(task, &cancel).await?;
+                        // Future work does not block immediate tasks later in
+                        // this batch. Canonical rescans remain bounded and own
+                        // all scheduling; no detached timer is created.
+                        if schedule_due(&task)? { tasks.execute(task, &cancel).await?; }
                     }
                     tokio::select! {
                         _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {},
@@ -401,9 +413,50 @@ impl HostRecovery for OneShotTaskRecovery {
     }
 }
 
+fn scheduled_at(task: &db::Task) -> Result<Option<chrono::DateTime<chrono::Utc>>, Status> {
+    task.timestamp
+        .as_ref()
+        .map(|timestamp| {
+            // Canonical google.protobuf.Timestamp range: year 0001 through 9999.
+            if !(-62_135_596_800..=253_402_300_799).contains(&timestamp.seconds)
+                || !(0..1_000_000_000).contains(&timestamp.nanos)
+            {
+                return Err(Status::invalid_argument("invalid UTC task schedule"));
+            }
+            chrono::DateTime::from_timestamp(timestamp.seconds, timestamp.nanos as u32)
+                .ok_or_else(|| Status::invalid_argument("invalid UTC task schedule"))
+        })
+        .transpose()
+}
+fn schedule_due(task: &db::Task) -> Result<bool, Status> {
+    Ok(scheduled_at(task)?.is_none_or(|schedule| schedule <= chrono::Utc::now()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn absolute_task_schedule_validates_and_respects_deadline() {
+        let task = |seconds, nanos| db::Task {
+            timestamp: Some(prost_types::Timestamp { seconds, nanos }),
+            ..Default::default()
+        };
+        assert!(schedule_due(&db::Task::default()).unwrap());
+        assert!(schedule_due(&task(0, 0)).unwrap());
+        assert!(!schedule_due(&task(253_402_300_799, 999_999_999)).unwrap());
+        assert!(scheduled_at(&task(-62_135_596_800, 0)).is_ok());
+        for (seconds, nanos) in [
+            (-62_135_596_801, 0),
+            (253_402_300_800, 0),
+            (0, -1),
+            (0, 1_000_000_000),
+        ] {
+            assert_eq!(
+                scheduled_at(&task(seconds, nanos)).unwrap_err().code(),
+                tonic::Code::InvalidArgument
+            );
+        }
+    }
     struct Binding;
     #[tonic::async_trait]
     impl ReaderTaskBinding for Binding {

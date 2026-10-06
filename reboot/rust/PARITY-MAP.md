@@ -2,7 +2,7 @@
 
 ## Reader-only one-shot task checkpoint
 
-Partial vertical: generated immediate unary reader tasks without declared errors,
+Partial vertical: generated immediate or absolute-UTC-scheduled unary reader tasks without declared errors,
 for the same local actor, scheduled only by fresh exclusive non-factory roots.
 The host owns one dispatcher per normalized Database endpoint/type/reference;
 startup and live canonical recovery scans validate the whole bounded pending set
@@ -45,9 +45,18 @@ Live admission also exercises 1023 pending plus one staged (committed state and
 task) and 1024 plus one staged (ResourceExhausted, unchanged actor, absent staged
 task). The fixture seeds real Store records while exclusive admission is held;
 a same-host reader proves denied-root admission was released, and RocksDB restart
-preserves all 1024 pending records in both cases. Earlier durable RPC cancellation
+preserves all 1024 pending records in both cases. `*TasksAt` helpers accept
+canonical protobuf UTC timestamps; staging and recovery validate their range.
+Future records remain pending and do not block later immediate tasks. A real
+RocksDB acceptance schedules a reader through the generated root, completes an
+immediate peer before its deadline, crashes/restarts before the deadline, and
+records the actual handler invocation instant to prove no early delivery. The
+recovered task completes durably with its timestamp unchanged. Dispatch uses
+host-owned 100ms canonical rescans, not per-task detached timers; handler failure
+still leaves a task pending and fails supervision rather than retrying silently.
+Earlier durable RPC cancellation
 windows still need dedicated acceptance. No exactly-once
-handler effects, writer tasks, workflows, delayed schedules, distributed task
+handler effects, writer tasks, workflows, distributed task
 ownership, task auth, retries, or full Rust/Python task parity are claimed.
 Python sources: templates/reboot.py.j2:420-467,858-1028,2350-2475;
 aio/state_managers.py:4743-5009,6586-6593,6848-6867;
@@ -130,7 +139,7 @@ real-sidecar evidence is recorded in the individual capability rows.
 
 | Capability | Python reference | Rust status and reference | Evidence / remaining work |
 |---|---|---|---|
-| Tasks, task workflows, responses, dispatch and recovery | `aio/state_managers.py:4743-5009,5431-5438,6408-6416,6586-6593,6848-6867`; generated ownership `templates/reboot.py.j2:420-467,858-1028,2350-2475` | **Partial: bounded generated reader-only one-shot vertical.** `src/codegen.rs` supplies typed immediate same-actor unary reader scheduling without declared errors; `src/one_shot_tasks.rs` supplies host-owned serial recovery/dispatch and actor-locked CompleteTask. Fresh exclusive non-factory roots retain consuming local cancellation ownership until coordinator handoff, then a non-cloneable uncertainty guard fails the supervised host on errors/drop without releasing or aborting uncertain participants. | Real C++ Database/RocksDB tests exercise denial, commit/pending, restart/redelivery, terminal response, no redispatch and lost-notification discovery; `generated_task_cancellation_and_lost_commit_ack_fail_host_then_restart_completes` exercises pre-durable handler cancellation followed by new-root admission, genuine durable Commit ACK loss, supervised host failure and task completion after restart with legacy coordinator recovery registered. Real Tonic deadlines additionally exercise cancellation during generated task admission and after durable participant Commit; unchanged pre-durable sidecar records and post-durable supervised restart completion are asserted. Failed readiness revokes already-admitted unary work; the competing-request real-C++ regression proves bounded host termination and restart without cancelling the client. Recovery capacity at 1024/1025 is exercised against real RocksDB with whole-batch rejection and unchanged records across restart. Real live admission additionally exercises 1023+1 commit and 1024+1 rejection, same-host admission release, absent rejected task, and unchanged pending records across restart. Earlier durable RPC cancellation windows need dedicated coverage. Writer tasks, workflows, distributed fencing, task auth, delayed schedules and task cancellation APIs remain missing; no exactly-once handler-effects claim. |
+| Tasks, task workflows, responses, dispatch and recovery | `aio/state_managers.py:4743-5009,5431-5438,6408-6416,6586-6593,6848-6867`; generated ownership `templates/reboot.py.j2:420-467,858-1028,2350-2475` | **Partial: bounded generated reader-only one-shot vertical.** `src/codegen.rs` supplies typed immediate/absolute-UTC same-actor unary reader scheduling without declared errors; `src/one_shot_tasks.rs` supplies host-owned serial recovery/dispatch and actor-locked CompleteTask. Fresh exclusive non-factory roots retain consuming local cancellation ownership until coordinator handoff, then a non-cloneable uncertainty guard fails the supervised host on errors/drop without releasing or aborting uncertain participants. | Real C++ Database/RocksDB tests exercise denial, commit/pending, restart/redelivery, terminal response, no redispatch and lost-notification discovery; `generated_task_cancellation_and_lost_commit_ack_fail_host_then_restart_completes` exercises pre-durable handler cancellation followed by new-root admission, genuine durable Commit ACK loss, supervised host failure and task completion after restart with legacy coordinator recovery registered. Real Tonic deadlines additionally exercise cancellation during generated task admission and after durable participant Commit; unchanged pre-durable sidecar records and post-durable supervised restart completion are asserted. Failed readiness revokes already-admitted unary work; the competing-request real-C++ regression proves bounded host termination and restart without cancelling the client. Recovery capacity at 1024/1025 is exercised against real RocksDB with whole-batch rejection and unchanged records across restart. Real live admission additionally exercises 1023+1 commit and 1024+1 rejection, same-host admission release, absent rejected task, and unchanged pending records across restart. Earlier durable RPC cancellation windows need dedicated coverage. Writer tasks, workflows, distributed fencing, task auth and task cancellation APIs remain missing; no exactly-once handler-effects claim. |
 | Colocated collections / SortedMap range | `aio/state_managers.py:3739-3816,6721-6820`; `std/collections/v1/sorted_map.py` | **Missing.** Only FakeDatabase test stubs exist. | Requires collection effect model, sidecar range bindings, transaction visibility, and generated collection API. |
 | Streaming and reactive readers | `aio/state_managers.py:4350-4613,6554-6699` | **Missing.** Runtime reader is unary; successful trailers are transport plumbing, not state subscriptions. | Requires lifecycle/backpressure/reconnect/visibility contract and subscription runtime before any generated API. |
 

@@ -66,6 +66,8 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
     ) -> Result<proto::TransactionCounterValue, tonic::Status> {
         if let Self::Tasks { marker, block, .. } = self {
             if request.amount == 9000 {
+                std::fs::write(format!("{marker}.started-at"), std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos().to_string()).unwrap();
                 std::fs::write(marker, state.value.to_string()).unwrap();
                 if *block { std::future::pending::<()>().await; }
             }
@@ -124,6 +126,11 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         if let Self::Tasks { state_ref, vector, .. } = self {
             let mut execution = TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
             let mut task = generated::TransactionCounterWritesMethodsTasks::query(state_ref, &proto::TransactionIncrementRequest { amount: 9000 });
+            if let Some(seconds) = vector.strip_prefix("delayed:") {
+                task = generated::TransactionCounterWritesMethodsTasksAt::query(state_ref,
+                    &proto::TransactionIncrementRequest { amount: 9000 },
+                    prost_types::Timestamp { seconds: seconds.parse().unwrap(), nanos: 0 });
+            }
             if let Some(id) = vector.strip_prefix("reuse:") { task.task_id.as_mut().unwrap().task_uuid = uuid::Uuid::parse_str(id).unwrap().as_bytes().to_vec(); }
             match vector.as_str() {
                 "unknown" => task.method = "Missing".into(),
