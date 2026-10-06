@@ -103,8 +103,26 @@ This is read-serving authority only, not
 ownership fencing of the dispatcher or a guarantee against concurrent plan changes
 after the final synchronous check.
 ListTasks/streaming/CancelTask return Unimplemented; task authorization, typed
-terminal errors, external/cross-application task routing, and a multi-actor Wait registry remain
-outside this slice. Source: aio/internals/tasks_servicer.py:48-126 and
+terminal errors and external/cross-application task routing remain outside this slice.
+
+`ReaderTaskWaitService::new(owners, application, server_id, placement)` provides an
+immutable multi-actor read-serving registry keyed by exact `(state_type, state_ref)`.
+Empty/duplicate registrations and empty server identity fail construction. The
+existing `OneShotTasks::wait_service` remains the single-actor convenience API.
+Each owner must be separately registered with host recovery; Wait chooses that
+owner's sidecar/binding/active state and retains routed-header, UUID and per-poll
+before/after-Load placement checks. No unknown-actor fallback or dynamic discovery.
+Source: Python `aio/internals/tasks_servicer.py:54-57` middleware registry; Rust
+`src/one_shot_tasks.rs`. New real-C++ acceptance seeds durable pending records in
+two independent actor sidecars and uses their actual generated readers to complete
+them. Both actors deliberately share a task UUID but return distinct results;
+unknown actor/type fail, restart preserves both completions, and invocation logs
+stay at one entry each. A first-owner fallback RED control fails result retrieval.
+This proves multi-actor Wait with independent registered recovery owners, not
+multi-actor transaction scheduling, shared-shard Recover partitioning, migration,
+or heterogeneous-state-type process acceptance. `OneShotTasks::pending` still
+validates the whole recovered batch against its one registered actor; do not
+register independent owners over a shared Recover stream containing both actors. Source: aio/internals/tasks_servicer.py:48-126 and
 templates/reboot.py.j2:4697-4775. Earlier durable RPC cancellation windows still need dedicated
 acceptance. No exactly-once
 handler effects, writer tasks, workflows, distributed task

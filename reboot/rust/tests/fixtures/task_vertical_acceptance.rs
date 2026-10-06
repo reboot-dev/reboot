@@ -1,6 +1,7 @@
 use super::*;
 include!("task_schedule_acceptance.rs");
 include!("task_wait_acceptance.rs");
+include!("task_wait_registry_acceptance.rs");
 #[derive(Clone, PartialEq, prost::Message)]
 struct TaskQueryRequest {
     #[prost(int64, tag = "1")]

@@ -115,7 +115,11 @@ impl OneShotTasks {
         placement: crate::legacy_placement::PlanOnlyLegacyPlacement,
     ) -> db::tasks_server::TasksServer<ReaderTaskWaitService> {
         db::tasks_server::TasksServer::new(ReaderTaskWaitService {
-            tasks: self.clone(),
+            tasks: [(
+                (self.inner.state_type.clone(), self.inner.state_ref.clone()),
+                self.clone(),
+            )]
+            .into(),
             application,
             server_id: server_id.into(),
             placement,
@@ -449,15 +453,51 @@ impl Drop for WaitLoadTestBarrier {
     }
 }
 
-/// Read-only canonical task result retrieval for one host-owned local actor.
+/// Read-only canonical task results for explicitly registered host-owned actors.
 #[derive(Clone)]
 pub struct ReaderTaskWaitService {
-    tasks: OneShotTasks,
+    tasks: std::collections::BTreeMap<(String, String), OneShotTasks>,
     application: crate::legacy_placement::LegacyApplicationId,
     server_id: String,
     placement: crate::legacy_placement::PlanOnlyLegacyPlacement,
 }
 impl ReaderTaskWaitService {
+    /// Register exact actor identities once before mounting this PUBLIC service.
+    /// Each task owner must separately be registered with ApplicationHost recovery.
+    /// This does not partition a shared sidecar's Recover stream or grant dispatch
+    /// authority, and performs no dynamic actor discovery.
+    pub fn new(
+        owners: impl IntoIterator<Item = OneShotTasks>,
+        application: crate::legacy_placement::LegacyApplicationId,
+        server_id: impl Into<String>,
+        placement: crate::legacy_placement::PlanOnlyLegacyPlacement,
+    ) -> Result<Self, Status> {
+        let mut tasks = std::collections::BTreeMap::new();
+        for owner in owners {
+            let key = (
+                owner.inner.state_type.clone(),
+                owner.inner.state_ref.clone(),
+            );
+            if tasks.insert(key, owner).is_some() {
+                return Err(Status::already_exists("duplicate task actor registration"));
+            }
+        }
+        if tasks.is_empty() {
+            return Err(Status::invalid_argument("task Wait registry is empty"));
+        }
+        let server_id = server_id.into();
+        if server_id.is_empty() {
+            return Err(Status::invalid_argument(
+                "task Wait server identity is empty",
+            ));
+        }
+        Ok(Self {
+            tasks,
+            application,
+            server_id,
+            placement,
+        })
+    }
     fn require_authority(&self, state_ref: &str) -> Result<(), Status> {
         let route = self.placement.route(&self.application, state_ref)?;
         if self.server_id.is_empty() || route.server_id != self.server_id {
@@ -485,28 +525,27 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
                 "task ID does not match routed state ref",
             ));
         }
-        if id.state_type != self.tasks.inner.state_type
-            || id.state_ref != self.tasks.inner.state_ref
-            || uuid::Uuid::from_slice(&id.task_uuid).map_or(true, |id| {
-                id.get_version_num() != 4 || id.get_variant() != uuid::Variant::RFC4122
-            })
-        {
+        let tasks = self
+            .tasks
+            .get(&(id.state_type.clone(), id.state_ref.clone()))
+            .ok_or_else(|| Status::invalid_argument("task actor is not registered"))?;
+        if uuid::Uuid::from_slice(&id.task_uuid).map_or(true, |id| {
+            id.get_version_num() != 4 || id.get_variant() != uuid::Variant::RFC4122
+        }) {
             return Err(Status::invalid_argument(
                 "task must name the registered local actor and UUIDv4",
             ));
         }
         loop {
             self.require_authority(&id.state_ref)?;
-            if !self
-                .tasks
+            if !tasks
                 .inner
                 .active
                 .load(std::sync::atomic::Ordering::Acquire)
             {
                 return Err(Status::unavailable("task dispatcher is not active"));
             }
-            let loaded = self
-                .tasks
+            let loaded = tasks
                 .inner
                 .store
                 .task_database()
@@ -557,9 +596,9 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
                 ));
             }
             scheduled_at(task)?;
-            self.tasks.inner.binding.validate(task)?;
+            tasks.inner.binding.validate(task)?;
             match db::task::Status::try_from(task.status) {
-                Ok(db::task::Status::Pending) => self.tasks.validate(std::slice::from_ref(task))?,
+                Ok(db::task::Status::Pending) => tasks.validate(std::slice::from_ref(task))?,
                 Ok(db::task::Status::Completed) => {
                     let result = match task.response_or_error.clone() {
                         Some(db::task::ResponseOrError::Response(response)) => {
@@ -671,15 +710,71 @@ mod tests {
             Binding,
         )
         .unwrap();
-        let service = ReaderTaskWaitService {
-            tasks,
-            application: crate::legacy_placement::LegacyApplicationId::new("application").unwrap(),
-            server_id: "server".into(),
-            placement: crate::legacy_placement::PlanOnlyLegacyPlacement::new(),
-        };
+        let service = ReaderTaskWaitService::new(
+            [tasks],
+            crate::legacy_placement::LegacyApplicationId::new("application").unwrap(),
+            "server",
+            crate::legacy_placement::PlanOnlyLegacyPlacement::new(),
+        )
+        .unwrap();
         assert_eq!(
             service.require_authority("actor").unwrap_err().code(),
             tonic::Code::Unavailable
+        );
+    }
+    #[tokio::test]
+    async fn wait_registry_rejects_empty_duplicate_and_empty_server_registrations() {
+        let tasks = OneShotTasks::new(
+            DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+            "test.Registry".into(),
+            "actor".into(),
+            Binding,
+        )
+        .unwrap();
+        let application = crate::legacy_placement::LegacyApplicationId::new("application").unwrap();
+        let placement = crate::legacy_placement::PlanOnlyLegacyPlacement::new();
+        for (owners, server, code) in [
+            (vec![], "server", tonic::Code::InvalidArgument),
+            (
+                vec![tasks.clone(), tasks.clone()],
+                "server",
+                tonic::Code::AlreadyExists,
+            ),
+            (vec![tasks], "", tonic::Code::InvalidArgument),
+        ] {
+            let result =
+                ReaderTaskWaitService::new(owners, application.clone(), server, placement.clone());
+            assert!(matches!(result, Err(error) if error.code() == code));
+        }
+    }
+    #[tokio::test]
+    async fn wait_registry_identity_includes_both_state_type_and_state_ref() {
+        let store = DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap();
+        let owners = [
+            ("test.First", "actor"),
+            ("test.Second", "actor"),
+            ("test.First", "other"),
+        ]
+        .into_iter()
+        .map(|(state_type, state_ref)| {
+            OneShotTasks::new(store.clone(), state_type.into(), state_ref.into(), Binding).unwrap()
+        });
+        let service = ReaderTaskWaitService::new(
+            owners,
+            crate::legacy_placement::LegacyApplicationId::new("application").unwrap(),
+            "server",
+            crate::legacy_placement::PlanOnlyLegacyPlacement::new(),
+        )
+        .unwrap();
+        assert_eq!(service.tasks.len(), 3);
+        assert_eq!(
+            service
+                .tasks
+                .get(&("test.Second".into(), "actor".into()))
+                .unwrap()
+                .inner
+                .state_type,
+            "test.Second"
         );
     }
     #[tokio::test]

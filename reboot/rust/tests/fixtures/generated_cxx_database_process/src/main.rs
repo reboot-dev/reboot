@@ -727,11 +727,35 @@ async fn main() {
             .unwrap();
         host = host.with_host_recovery(recovery);
     }
-    let wait_service = tasks.as_ref().map(|tasks| tasks.wait_service(
-        application.clone(),
-        optional_arg("--server-id").unwrap_or_else(|| "server-0".into()),
-        placement.clone(),
-    ));
+    let mut wait_owners: Vec<_> = tasks.iter().cloned().collect();
+    if let Some(endpoint) = optional_arg("--second-task-database") {
+        // An independently recovered actor/database, not a filtered shared
+        // shard stream or a second registration of the primary owner.
+        let second_participant = DurableActorParticipant::new(
+            Arc::new(TonicParticipantSidecar::connect(&endpoint).await.unwrap()),
+            "tests.reboot.protoc.TransactionCounter", "second",
+        );
+        let second_coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
+            Arc::new(TonicCoordinatorSidecar::connect(&endpoint).await.unwrap()),
+            Arc::new(LegacyApplicationParticipantResolver::new(application.clone(), placement.clone())),
+        );
+        let second_adapter = generated::TransactionCounterWritesMethodsTransactionAdapter::new(
+            DatabaseActorStore::connect(&endpoint).await.unwrap(), second_participant,
+            second_coordinator, Starts { root: Uuid::new_v4(), child: Uuid::new_v4() },
+            Handler::Tasks { state_ref: "second".into(), marker: arg("--second-task-marker"), block: false, vector: String::new() },
+        );
+        let (_, second) = second_adapter.with_one_shot_reader_tasks("second").unwrap();
+        host = host.with_host_recovery(second.recovery(reboot::database_proto::RecoverRequest {
+            state_tags_by_state_type: [("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())].into(),
+            shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
+        }));
+        wait_owners.push(second);
+    }
+    let wait_service = if wait_owners.is_empty() { None } else { Some(
+        reboot::database_proto::tasks_server::TasksServer::new(
+            reboot::one_shot_tasks::ReaderTaskWaitService::new(wait_owners,
+                application.clone(), optional_arg("--server-id").unwrap_or_else(|| "server-0".into()),
+                placement.clone()).unwrap())) };
     if let Some(tasks) = tasks {
         host = host.with_host_recovery(tasks.recovery(reboot::database_proto::RecoverRequest {
             state_tags_by_state_type: [("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())].into(),
