@@ -19,12 +19,19 @@ message ConstructorCounterValue {
   int64 value = 1;
 }
 
+message ConstructorInitialValueRejected {
+  int64 initial_value = 1;
+}
+
 service ConstructorCounterWritesMethods {
   option (rbt.v1alpha1.service) = {
     state: "tests.reboot.protoc.ConstructorCounter"
   };
 
   rpc Create(ConstructorCreateRequest) returns (ConstructorCounterValue) {
-    option (rbt.v1alpha1.method).writer = { constructor: {} };
+    option (rbt.v1alpha1.method) = {
+      writer: { constructor: {} }
+      errors: ".tests.reboot.protoc.ConstructorInitialValueRejected"
+    };
   }
 }

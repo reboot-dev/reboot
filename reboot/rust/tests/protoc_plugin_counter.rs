@@ -303,8 +303,38 @@ impl constructor_generated::ConstructorCounterWritesMethodsDatabaseHandler for C
         &self,
         state: &mut proto::ConstructorCounter,
         request: proto::ConstructorCreateRequest,
-    ) -> Result<proto::ConstructorCounterValue, tonic::Status> {
+    ) -> Result<
+        proto::ConstructorCounterValue,
+        constructor_generated::ConstructorCounterWritesMethodsCreateError,
+    > {
         self.0.fetch_add(1, Ordering::SeqCst);
+        if request.initial_value == -1 {
+            return Err(
+                constructor_generated::ConstructorCounterWritesMethodsCreateError::ConstructorInitialValueRejected(
+                    proto::ConstructorInitialValueRejected {
+                        initial_value: request.initial_value,
+                    },
+                ),
+            );
+        }
+        if request.initial_value == -2 {
+            return Err(
+                constructor_generated::ConstructorCounterWritesMethodsCreateError::Grpc(
+                    tonic::Status::with_details(
+                        tonic::Code::InvalidArgument,
+                        "malformed rich status",
+                        vec![0xff].into(),
+                    ),
+                ),
+            );
+        }
+        if request.initial_value == -3 {
+            return Err(
+                constructor_generated::ConstructorCounterWritesMethodsCreateError::Grpc(
+                    tonic::Status::invalid_argument("ordinary grpc"),
+                ),
+            );
+        }
         state.value = request.initial_value;
         Ok(proto::ConstructorCounterValue { value: state.value })
     }
@@ -2058,6 +2088,59 @@ async fn generated_external_constructor_authorization_hides_absence_and_authoriz
     );
     assert_eq!(snapshots[1].1, proto::ConstructorCreateRequest { initial_value: 9 }.encode_to_vec());
     drop(snapshots);
+    server.abort();
+    database_server.abort();
+}
+
+#[tokio::test]
+async fn generated_external_constructor_declared_errors_round_trip_without_creation() {
+    let (database_endpoint, database, database_server) = start_database().await;
+    let handler_calls = Arc::new(AtomicUsize::new(0));
+    let adapter = constructor_generated::ConstructorCounterWritesMethodsDatabaseAdapter::new(
+        DatabaseActorStore::connect(&database_endpoint).await.unwrap(),
+        ConstructorCounter(Arc::clone(&handler_calls)),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(proto::constructor_counter_writes_methods_server::ConstructorCounterWritesMethodsServer::new(adapter))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+
+    let context = ExternalContext::new("constructor-declared-error");
+    let channel = context.connect(format!("http://{address}")).await.unwrap();
+    let mut client = constructor_generated::ConstructorCounterWritesMethodsExternalClient::new(channel, context);
+    assert!(matches!(
+        client.create(proto::ConstructorCreateRequest { initial_value: -1 }).await,
+        Err(constructor_generated::ConstructorCounterWritesMethodsCreateError::ConstructorInitialValueRejected(error))
+            if error == proto::ConstructorInitialValueRejected { initial_value: -1 }
+    ));
+    assert!(database.create_requests().is_empty(), "a declared constructor error must not create actor or idempotency state");
+    assert!(matches!(
+        client.create(proto::ConstructorCreateRequest { initial_value: -2 }).await,
+        Err(constructor_generated::ConstructorCounterWritesMethodsCreateError::Grpc(status))
+            if status.code() == tonic::Code::InvalidArgument && status.message() == "malformed rich status"
+    ));
+    assert!(matches!(
+        client.create(proto::ConstructorCreateRequest { initial_value: -3 }).await,
+        Err(constructor_generated::ConstructorCounterWritesMethodsCreateError::Grpc(status))
+            if status.code() == tonic::Code::InvalidArgument && status.message() == "ordinary grpc"
+    ));
+    assert!(database.create_requests().is_empty(), "malformed and ordinary gRPC constructor errors must not create actor or idempotency state");
+    assert_eq!(
+        client
+            .create(proto::ConstructorCreateRequest { initial_value: 42 })
+            .await
+            .unwrap()
+            .into_inner()
+            .value,
+        42
+    );
+    assert_eq!(database.create_requests().len(), 1, "the succeeding constructor must create exactly once");
+    assert_eq!(handler_calls.load(Ordering::SeqCst), 4);
     server.abort();
     database_server.abort();
 }
