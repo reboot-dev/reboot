@@ -1388,6 +1388,111 @@ async fn generated_mixed_service_mounts_and_dispatches_database_and_transaction_
 }
 
 #[tokio::test]
+async fn generated_mixed_service_authorizes_external_database_methods_without_changing_transactions() {
+    fn probe(decision: AuthorizationDecision) -> Arc<AuthProbe> {
+        Arc::new(AuthProbe {
+            verifier_calls: Arc::new(AtomicUsize::new(0)),
+            authorizer_calls: Arc::new(AtomicUsize::new(0)),
+            handler_calls: Arc::new(AtomicUsize::new(0)),
+            decision,
+            contexts: Arc::new(std::sync::Mutex::new(Vec::new())),
+            snapshots: Arc::new(std::sync::Mutex::new(Vec::new())),
+        })
+    }
+    fn request(
+        context: &ExternalContext,
+        token: &str,
+        request: proto::TransactionIncrementRequest,
+        key: Uuid,
+    ) -> tonic::Request<proto::TransactionIncrementRequest> {
+        let mut request = context.writer_with_key(request, key).unwrap();
+        request
+            .metadata_mut()
+            .insert("authorization", format!("Bearer {token}").parse().unwrap());
+        request
+    }
+
+    let (database_endpoint, _, database_server) = start_database().await;
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let context = ExternalContext::new("transaction-counter");
+
+    let rejected = probe(AuthorizationDecision::Allow);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let adapter = transaction_adapter_with_store(
+        Arc::clone(&trace), false, DatabaseActorStore::connect(&database_endpoint).await.unwrap(),
+    ).with_authorization(AuthorizationPolicy::new(Some(rejected.clone()), Some(rejected.clone())));
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(adapter))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+    let mut client = proto::transaction_counter_writes_methods_client::TransactionCounterWritesMethodsClient::connect(format!("http://{address}")).await.unwrap();
+    assert_eq!(client.apply(request(&context, "reject", proto::TransactionIncrementRequest { amount: 2 }, Uuid::from_u128(401))).await.unwrap_err().code(), tonic::Code::Unauthenticated);
+    assert_eq!(rejected.verifier_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(rejected.authorizer_calls.load(Ordering::SeqCst), 0);
+    server.abort();
+
+    let denied = probe(AuthorizationDecision::PermissionDenied { message: "denied".into() });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let adapter = transaction_adapter_with_store(
+        Arc::clone(&trace), false, DatabaseActorStore::connect(&database_endpoint).await.unwrap(),
+    ).with_authorization(AuthorizationPolicy::new(Some(denied.clone()), Some(denied.clone())));
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(adapter))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+    let mut client = proto::transaction_counter_writes_methods_client::TransactionCounterWritesMethodsClient::connect(format!("http://{address}")).await.unwrap();
+    assert_eq!(client.apply(request(&context, "allow", proto::TransactionIncrementRequest { amount: 2 }, Uuid::from_u128(402))).await.unwrap_err().code(), tonic::Code::PermissionDenied);
+    assert_eq!(denied.authorizer_calls.load(Ordering::SeqCst), 1);
+    server.abort();
+
+    let allowed = probe(AuthorizationDecision::Allow);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let adapter = transaction_adapter_with_store(
+        Arc::clone(&trace), false, DatabaseActorStore::connect(&database_endpoint).await.unwrap(),
+    ).with_authorization(AuthorizationPolicy::new(Some(allowed.clone()), Some(allowed.clone())));
+    let server = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .layer(reboot::successful_trailers::SuccessfulParticipantTrailerLayer)
+            .add_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(adapter))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+    let mut client = proto::transaction_counter_writes_methods_client::TransactionCounterWritesMethodsClient::connect(format!("http://{address}")).await.unwrap();
+    let mut reader = context.reader(proto::TransactionIncrementRequest { amount: 0 }).unwrap();
+    reader.metadata_mut().insert("authorization", "Bearer allow".parse().unwrap());
+    assert_eq!(client.query(reader).await.unwrap().into_inner().value, 0);
+    assert_eq!(client.apply(request(&context, "allow", proto::TransactionIncrementRequest { amount: 2 }, Uuid::from_u128(403))).await.unwrap().into_inner().value, 2);
+    let snapshots = allowed.snapshots.lock().unwrap();
+    assert_eq!(snapshots.len(), 2);
+    assert_eq!(proto::TransactionCounter::decode(snapshots[0].0.as_ref().unwrap().as_slice()).unwrap(), proto::TransactionCounter { value: 0 });
+    assert_eq!(proto::TransactionIncrementRequest::decode(snapshots[0].1.as_slice()).unwrap(), proto::TransactionIncrementRequest { amount: 0 });
+    assert_eq!(proto::TransactionCounter::decode(snapshots[1].0.as_ref().unwrap().as_slice()).unwrap(), proto::TransactionCounter { value: 0 });
+    assert_eq!(proto::TransactionIncrementRequest::decode(snapshots[1].1.as_slice()).unwrap(), proto::TransactionIncrementRequest { amount: 2 });
+    drop(snapshots);
+    let contexts = allowed.contexts.lock().unwrap();
+    assert_eq!(contexts[0].method, "tests.reboot.protoc.TransactionCounterWritesMethods.Query");
+    assert_eq!(contexts[1].method, "tests.reboot.protoc.TransactionCounterWritesMethods.Apply");
+    assert_eq!(contexts[1].headers.bearer_token.as_deref(), Some("allow"));
+    assert!(contexts[1].headers.transaction_ids.is_none());
+    drop(contexts);
+    // The existing mixed-service fixture above exercises Increment unchanged;
+    // this test proves policy applies only to its external database methods.
+    assert_eq!(*trace.lock().unwrap(), ["reader handler", "writer handler"]);
+    server.abort();
+    database_server.abort();
+}
+
+#[tokio::test]
 async fn generated_shared_root_to_remote_read_only_call_returns_classified_participant() {
     let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

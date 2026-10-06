@@ -1782,25 +1782,37 @@ fn emit_transactions(
             )
         });
     for (kind, method, request, response, method_identity) in database_methods {
+        // Database methods on a mixed service use the same external unary
+        // authorization boundary as a database-only adapter. Transactions
+        // below retain their distinct lifecycle and policy ordering.
         let (envelope, prefix) = match kind {
             DurableKind::Writer(WriterMetadata { constructor: true }) => (
-                "constructor_writer_async_for_method",
-                format!("\"{method_identity}\", "),
+                "constructor_writer_async_for_method_authorized",
+                format!("\"{method_identity}\", &self.authorization, "),
             ),
             DurableKind::Reader if requires_constructor => (
-                "reader_async_for_with_admission",
-                format!("{runtime_module}::runtime::StateAdmission::RequireExisting, "),
-            ),
-            DurableKind::Reader => ("reader_async_for", String::new()),
-            DurableKind::Writer(_) if requires_constructor => (
-                "writer_async_for_method_with_admission",
+                "reader_async_for_with_admission_authorized",
                 format!(
-                    "\"{method_identity}\", {runtime_module}::runtime::StateAdmission::RequireExisting, "
+                    "\"{method_identity}\", {runtime_module}::runtime::StateAdmission::RequireExisting, &self.authorization, "
+                ),
+            ),
+            DurableKind::Reader => (
+                "reader_async_for_with_admission_authorized",
+                format!(
+                    "\"{method_identity}\", {runtime_module}::runtime::StateAdmission::DefaultOnAbsent, &self.authorization, "
+                ),
+            ),
+            DurableKind::Writer(_) if requires_constructor => (
+                "writer_async_for_method_with_admission_authorized",
+                format!(
+                    "\"{method_identity}\", {runtime_module}::runtime::StateAdmission::RequireExisting, &self.authorization, "
                 ),
             ),
             DurableKind::Writer(_) => (
-                "writer_async_for_method",
-                format!("\"{method_identity}\", "),
+                "writer_async_for_method_with_admission_authorized",
+                format!(
+                    "\"{method_identity}\", {runtime_module}::runtime::StateAdmission::DefaultOnAbsent, &self.authorization, "
+                ),
             ),
             DurableKind::Transaction(_) => unreachable!("transactions are filtered above"),
         };
@@ -4141,6 +4153,12 @@ mod tests {
         assert!(content.contains("async fn transaction(&self, context:"));
         assert!(content.contains("pub struct CounterWritesMethodsTransactionAdapter"));
         assert!(content.contains("store: reboot_rust_schema::runtime::DatabaseActorStore"));
+        assert!(content.contains("authorization: reboot_rust_schema::auth::AuthorizationPolicy"));
+        assert!(content.contains(
+            "store.writer_async_for_method_with_admission_authorized::<CounterDurableState"
+        ));
+        assert!(content.contains("\"tests.reboot.protoc.CounterWritesMethods.Increment\", reboot_rust_schema::runtime::StateAdmission::DefaultOnAbsent, &self.authorization, request"));
+        assert!(!content.contains("store.writer_async_for_method::<CounterDurableState"));
     }
 
     #[test]
