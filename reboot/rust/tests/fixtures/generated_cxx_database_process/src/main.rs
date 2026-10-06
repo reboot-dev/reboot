@@ -262,6 +262,22 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         Ok(proto::TransactionCounterValue { value: state.value })
     }
 }
+struct GaugeTaskHandler { marker: String }
+#[tonic::async_trait]
+impl generated::RegistryGaugeMethodsTransactionHandler for GaugeTaskHandler {
+    async fn query(&self, state: &proto::RegistryGauge, _: proto::TransactionIncrementRequest) -> Result<proto::RegistryGaugeValue, tonic::Status> {
+        use std::io::Write;
+        let mut calls = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}.invocations", self.marker)).unwrap();
+        writeln!(calls, "query").unwrap();
+        let reading = format!("gauge:{}", state.value);
+        std::fs::write(&self.marker, &reading).unwrap();
+        Ok(proto::RegistryGaugeValue { reading })
+    }
+    async fn increment(&self, _: &TransactionContext, _: &mut proto::RegistryGauge, _: proto::TransactionIncrementRequest) -> Result<TransactionExecution<proto::RegistryGaugeValue>, tonic::Status> {
+        Err(tonic::Status::unimplemented("seeded reader-only registry fixture"))
+    }
+}
+
 struct Root {
     client: generated::TransactionCounterWritesMethodsClient<LegacyApplicationResolver>,
     multi_participant: bool,
@@ -750,6 +766,27 @@ async fn main() {
             shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
         }));
         wait_owners.push(second);
+    }
+    if let Some(endpoint) = optional_arg("--gauge-task-database") {
+        let participant = DurableActorParticipant::new(
+            Arc::new(TonicParticipantSidecar::connect(&endpoint).await.unwrap()),
+            "tests.reboot.protoc.RegistryGauge", "root",
+        );
+        let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
+            Arc::new(TonicCoordinatorSidecar::connect(&endpoint).await.unwrap()),
+            Arc::new(LegacyApplicationParticipantResolver::new(application.clone(), placement.clone())),
+        );
+        let adapter = generated::RegistryGaugeMethodsTransactionAdapter::new(
+            DatabaseActorStore::connect(&endpoint).await.unwrap(), participant,
+            coordinator, Starts { root: Uuid::new_v4(), child: Uuid::new_v4() },
+            GaugeTaskHandler { marker: arg("--second-task-marker") },
+        );
+        let (_, gauge) = adapter.with_one_shot_reader_tasks("root").unwrap();
+        host = host.with_host_recovery(gauge.recovery(reboot::database_proto::RecoverRequest {
+            state_tags_by_state_type: [("tests.reboot.protoc.RegistryGauge".into(), "RegistryGauge".into())].into(),
+            shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
+        }));
+        wait_owners.push(gauge);
     }
     let wait_service = if wait_owners.is_empty() { None } else { Some(
         reboot::database_proto::tasks_server::TasksServer::new(

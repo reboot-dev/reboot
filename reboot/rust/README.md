@@ -118,11 +118,22 @@ two independent actor sidecars and uses their actual generated readers to comple
 them. Both actors deliberately share a task UUID but return distinct results;
 unknown actor/type fail, restart preserves both completions, and invocation logs
 stay at one entry each. A first-owner fallback RED control fails result retrieval.
-This proves multi-actor Wait with independent registered recovery owners, not
-multi-actor transaction scheduling, shared-shard Recover partitioning, migration,
-or heterogeneous-state-type process acceptance. `OneShotTasks::pending` still
-validates the whole recovered batch against its one registered actor; do not
-register independent owners over a shared Recover stream containing both actors. Source: aio/internals/tasks_servicer.py:48-126 and
+A second real-process vector registers two different generated state types with
+the SAME state-ref and UUID. Their reader bindings produce different protobuf
+response types (`TransactionCounterValue` and string-valued `RegistryGaugeValue`);
+Wait checks exact Any URLs and decodes the distinct results before and after
+restarting BOTH RocksDB sidecars and the serving host. Full durable completion
+records remain unchanged and each binding's invocation log stays at one entry.
+Replacing composite lookup with state-ref-only matching fails result retrieval.
+The gauge transaction method is explicitly unsupported in this seeded reader
+fixture: no second-actor transaction scheduling/recovery proof is implied.
+This proves multi-actor/heterogeneous Wait with independent registered recovery
+owners, not multi-actor transaction scheduling, shared-shard Recover partitioning,
+or migration. `OneShotTasks::pending` still validates the whole recovered batch
+against its one registered actor; do not register independent owners over a shared
+Recover stream containing both actors. C++ `reboot/server/database.cc:4121-4160`
+recovers pending tasks by shard, without state-tag filtering; changing only each
+Rust owner's state-tag map cannot safely partition the canonical stream. Source: aio/internals/tasks_servicer.py:48-126 and
 templates/reboot.py.j2:4697-4775. Earlier durable RPC cancellation windows still need dedicated
 acceptance. No exactly-once
 handler effects, writer tasks, workflows, distributed task
