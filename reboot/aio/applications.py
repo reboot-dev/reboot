@@ -35,6 +35,7 @@ from reboot.controller.server_managers import (
     run_python_server_process,
 )
 from reboot.controller.settings import ENVVAR_REBOOT_MODE, REBOOT_MODE_CONFIG
+from reboot.mcp.bridge import register_app_bridge_tools
 from reboot.mcp.factories import create_mcp_factory
 from reboot.mcp.ui import find_project_root_from
 from reboot.nodejs.python import should_print_stacktrace
@@ -252,6 +253,7 @@ class Application:
         description: Optional[str] = None,
         example_prompts: Optional[list[ExamplePrompt]] = None,
         root: Optional[str] = None,
+        experimental_mcp_app_bridge: bool = False,
     ):
         """
         :param servicers: the types of Reboot-powered servicers that
@@ -298,6 +300,8 @@ class Application:
             application.
         :param example_prompts: a list of `ExamplePrompt` instances
             for using this application in a chat client.
+        :param experimental_mcp_app_bridge: enable the experimental app-only
+            query/mutate tools. Requires a single MCP server process.
         :param root: a path on this application, e.g. `/dashboard/`,
             that the root page `/` forwards a browser to instead of
             showing Reboot's own page.
@@ -306,6 +310,8 @@ class Application:
         transaction and ensure that the transaction has finished before
         serving any other calls on the servicers.
         """
+        self._experimental_mcp_app_bridge = experimental_mcp_app_bridge
+
         # NOTE: `oauth.provider` is an `OAuthProviderSelector`,
         # resolved lazily in `_mount_oauth` whenever it is
         # configured, mounting the OAuth server even for an app
@@ -884,6 +890,10 @@ class Application:
         server = FastMCP(name="reboot-mcp")
         for servicer_cls in servicers:
             servicer_cls._add_mcp(server, auto_construct_state_type_full_names)
+        if self._experimental_mcp_app_bridge:
+            register_app_bridge_tools(
+                server, [cls.__state_type_name__ for cls in servicers]
+            )
 
         # The OAuth server (if any) was mounted earlier by
         # `_mount_oauth`; reach into it for the MCP-SDK token

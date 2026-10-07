@@ -593,7 +593,8 @@ export interface SettingsParams {
 
 class {{ client.proto.state_name | to_camel }}Instance {
 
-  constructor(id: string, stateRef: string, url: string) {
+  constructor(id: string, stateRef: string, url: string,
+    readonly transport?: reboot_react.ReactTransport) {
     this.id = id;
     this.stateRef = stateRef;
     this.url = url;
@@ -602,7 +603,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
     // An empty `id` marks the inert instance shared by every no-id
     // caller while no default ID has resolved (e.g. signed out): it
     // opens no socket so there's nothing to connect to.
-    if (id !== "") {
+    if (id !== "" && transport === undefined) {
       reboot_web.websockets.connect(this.url, this.stateRef);
       this.initializeWebSocket();
     }
@@ -626,7 +627,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
 
   readonly id: string;
   readonly stateRef: string;
-  private url: string;
+  readonly url: string;
   private refs: number;
   private observers: reboot_react.Observers = {};
   private loadingReaders = 0;
@@ -653,6 +654,10 @@ class {{ client.proto.state_name | to_camel }}Instance {
     if (this.queuedMutates.length > 0) {
       this.runningMutates = this.queuedMutates;
       this.queuedMutates = [];
+
+      if (this.transport !== undefined) {
+        for (const mutation of this.runningMutates) this.sendBridgeMutation(mutation);
+      }
 
       if (this.websocket?.readyState === WebSocket.OPEN) {
         for (const { request, update } of this.runningMutates) {
@@ -747,6 +752,22 @@ class {{ client.proto.state_name | to_camel }}Instance {
     }
   }
 
+  private sendBridgeMutation(mutation: reboot_react.Mutate) {
+    mutation.update({ isLoading: true });
+    void this.transport!.mutate("{{ client.proto.state_full_name }}", this.stateRef, mutation.request)
+      .then(response => {
+        this.runningMutates = this.runningMutates.filter(value => value !== mutation);
+        mutation.resolve(response);
+        if (this.runningMutates.length === 0) this.flushMutates?.set();
+      }).catch(error => {
+        this.runningMutates = this.runningMutates.filter(value => value !== mutation);
+        mutation.resolve(new reboot_api.react_pb.MutateResponse({
+          responseOrStatus: {case: "status", value: JSON.stringify({code: 1, message: String(error)})},
+        }));
+        if (this.runningMutates.length === 0) this.flushMutates?.set();
+      });
+  }
+
   private async mutate(
     partialRequest: protobuf_es.PartialMessage<reboot_api.react_pb.MutateRequest>,
     update: (props: { isLoading: boolean; error?: any }) => void
@@ -757,7 +778,9 @@ class {{ client.proto.state_name | to_camel }}Instance {
 
     return new Promise((resolve, _) => {
       if (this.loadingReaders === 0) {
-        this.runningMutates = this.runningMutates.concat({ request, resolve, update });
+        const mutation = { request, resolve, update };
+        this.runningMutates = this.runningMutates.concat(mutation);
+        if (this.transport !== undefined) this.sendBridgeMutation(mutation);
         if (this.websocket?.readyState === WebSocket.OPEN) {
           update({ isLoading: true });
           try {
@@ -865,7 +888,10 @@ class {{ client.proto.state_name | to_camel }}Instance {
 
           reader.setIsLoading(true);
 
-          const queryResponses = reboot_web.reactiveReader({
+          const queryResponses = this.transport !== undefined
+            ? this.transport.query("{{ client.proto.state_full_name }}", this.stateRef,
+                queryRequest, reader.abortController.signal)
+            : reboot_web.reactiveReader({
             endpoint: `${this.url}/__/reboot/rpc/${this.stateRef}`,
             request: queryRequest,
             signal: reader.abortController.signal,
@@ -1375,21 +1401,31 @@ class {{ client.proto.state_name | to_camel }}Instance {
   {% endfor %}
   {% endfor %}
 
-  private static instances: { [id: string]: {{ client.proto.state_name | to_camel }}Instance } = {};
+  private static instances = new Map<reboot_react.ReactTransport | undefined,
+    Map<string, {{ client.proto.state_name | to_camel }}Instance>>();
 
-  static use(id: string, stateRef: string, url: string) {
-    if (!(id in this.instances)) {
-      this.instances[id] = new {{ client.proto.state_name | to_camel }}Instance(id, stateRef, url);
-    } else {
-      this.instances[id].ref();
+  static use(id: string, stateRef: string, url: string, transport?: reboot_react.ReactTransport) {
+    let instances = this.instances.get(transport);
+    if (instances === undefined) {
+      instances = new Map();
+      this.instances.set(transport, instances);
     }
-
-    return this.instances[id];
+    const key = JSON.stringify([url, id]);
+    let instance = instances.get(key);
+    if (instance === undefined) {
+      instance = new {{ client.proto.state_name | to_camel }}Instance(id, stateRef, url, transport);
+      instances.set(key, instance);
+    } else {
+      instance.ref();
+    }
+    return instance;
   }
 
   unuse() {
     if (this.unref() === 0) {
-      delete {{ client.proto.state_name | to_camel }}Instance.instances[this.id];
+      const instances = {{ client.proto.state_name | to_camel }}Instance.instances.get(this.transport)!;
+      instances.delete(JSON.stringify([this.url, this.id]));
+      if (instances.size === 0) {{ client.proto.state_name | to_camel }}Instance.instances.delete(this.transport);
     }
   }
 }
@@ -1509,14 +1545,14 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
   const [instance, setInstance] = useState(() => {
     return {{ client.proto.state_name | to_camel }}Instance.use(
-      id, stateRef, url
+      id, stateRef, url, rebootClient.transport
     );
   });
 
-  if (instance.id !== id) {
+  if (instance.id !== id || instance.url !== url || instance.transport !== rebootClient.transport) {
     setInstance(
       {{ client.proto.state_name | to_camel }}Instance.use(
-        id, stateRef, url
+        id, stateRef, url, rebootClient.transport
       )
     );
   }
@@ -1839,6 +1875,33 @@ export const use{{ client.proto.state_name | to_camel }} = (
     }
 
     const request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
+
+    if (rebootClient.transport !== undefined) {
+      const signal = options?.signal ?? new AbortController().signal;
+      try {
+        for await (const result of rebootClient.transport.query(
+          "{{ client.proto.state_full_name }}", stateRef,
+          new reboot_api.react_pb.QueryRequest({
+            method: "{{ method.proto.name }}", request: request.toBinary(), bearerToken,
+          }), signal
+        )) {
+          if (result.responseOrStatus.case === "response") {
+            return {
+              response: {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(
+                {{ method.output_type }}.fromBinary(result.responseOrStatus.value)),
+              aborted: undefined,
+            };
+          }
+        }
+        throw new Error("Bridge read ended without a response");
+      } catch (error) {
+        if (error instanceof reboot_api.Status) {
+          return { response: undefined,
+            aborted: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(error) };
+        }
+        throw error;
+      }
+    }
 
     // The age of the transaction this call started, once an error has
     // told us: the root transaction id of its first attempt. A retry
@@ -2171,4 +2234,3 @@ export type {{ ui.request_message }} =
 {% endif %}
 
 {% endfor %}
-

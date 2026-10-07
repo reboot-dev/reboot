@@ -88,6 +88,10 @@ message WebSocketsConnectionResponse {}
 ////////////////////////////////////////////////////////////////////////
 
 service React {
+  // Unary equivalent of the frontend mutation WebSocket protocol. Used by
+  // transports such as MCP Apps that cannot open a browser WebSocket.
+  rpc Mutate(MutateRequest) returns (MutateResponse) {}
+
   // Allows users to "watch" the response of a unary reader method for
   // changes. The current response of the method is sent when the
   // stream is opened, then a new response is sent whenever the

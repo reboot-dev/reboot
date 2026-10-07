@@ -2,6 +2,21 @@ load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
+    name = "bridge_py",
+    srcs = ["bridge.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":context_py",
+        "//rbt/v1alpha1:react_py_grpc",
+        "//reboot/aio:headers_py",
+        "//reboot/aio:types_py",
+        requirement("mcp"),
+        requirement("grpcio"),
+        requirement("googleapis-common-protos"),
+    ],
+)
+
+py_library(
     name = "context_py",
     srcs = ["context.py"],
     srcs_version = "PY3",

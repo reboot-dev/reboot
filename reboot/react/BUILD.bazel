@@ -71,6 +71,7 @@ ts_project(
     srcs = [
         ":index.tsx",
         ":internal/McpConnector.tsx",
+        ":internal/bridge.ts",
         ":internal/index.ts",
         ":internal/useAppSafe.ts",
         ":native/index.ts",

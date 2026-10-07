@@ -310,3 +310,35 @@ vitest_test(
     node_modules = "//:node_modules",
     visibility = ["//visibility:public"],
 )
+
+ts_project(
+    name = "bridge_client_test_ts",
+    srcs = [
+        "bridge_transport.test.ts",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "esnext",
+            "moduleResolution": "bundler",
+            "skipLibCheck": True,
+            "target": "es2020",
+        },
+    },
+    deps = [
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@reboot-dev/reboot-react",
+        "//reboot/std/vitest:vitest_ts",
+    ],
+)
+
+vitest_test(
+    name = "bridge_client_test",
+    config = "vitest.config.mjs",
+    data = [
+        "package.json",
+        ":bridge_client_test_ts",
+    ],
+    node_modules = "//:node_modules",
+)

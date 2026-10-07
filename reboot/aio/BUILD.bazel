@@ -45,6 +45,7 @@ py_library(
         "//reboot/cli/common:terminal_py",
         "//reboot/controller:server_managers_py",
         "//reboot/inspect:servicer_py",
+        "//reboot/mcp:bridge_py",
         "//reboot/mcp:factories_py",
         "//reboot/mcp:ui_py",
         "//reboot/nodejs:python_py",

@@ -1658,7 +1658,8 @@ export class GreeterConstructAndStoreRecursiveMessageAborted extends reboot_api.
 }
 _GreeterConstructAndStoreRecursiveMessageAborted_error = new WeakMap(), _GreeterConstructAndStoreRecursiveMessageAborted_message = new WeakMap();
 class GreeterInstance {
-    constructor(id, stateRef, url) {
+    constructor(id, stateRef, url, transport) {
+        this.transport = transport;
         this.observers = {};
         this.loadingReaders = 0;
         this.runningMutates = [];
@@ -1751,7 +1752,7 @@ class GreeterInstance {
         // An empty `id` marks the inert instance shared by every no-id
         // caller while no default ID has resolved (e.g. signed out): it
         // opens no socket so there's nothing to connect to.
-        if (id !== "") {
+        if (id !== "" && transport === undefined) {
             reboot_web.websockets.connect(this.url, this.stateRef);
             this.initializeWebSocket();
         }
@@ -1783,6 +1784,10 @@ class GreeterInstance {
         if (this.queuedMutates.length > 0) {
             this.runningMutates = this.queuedMutates;
             this.queuedMutates = [];
+            if (this.transport !== undefined) {
+                for (const mutation of this.runningMutates)
+                    this.sendBridgeMutation(mutation);
+            }
             if (((_a = this.websocket) === null || _a === void 0 ? void 0 : _a.readyState) === WebSocket.OPEN) {
                 for (const { request, update } of this.runningMutates) {
                     update({ isLoading: true });
@@ -1855,6 +1860,25 @@ class GreeterInstance {
             };
         }
     }
+    sendBridgeMutation(mutation) {
+        mutation.update({ isLoading: true });
+        void this.transport.mutate("tests.reboot.Greeter", this.stateRef, mutation.request)
+            .then(response => {
+            var _a;
+            this.runningMutates = this.runningMutates.filter(value => value !== mutation);
+            mutation.resolve(response);
+            if (this.runningMutates.length === 0)
+                (_a = this.flushMutates) === null || _a === void 0 ? void 0 : _a.set();
+        }).catch(error => {
+            var _a;
+            this.runningMutates = this.runningMutates.filter(value => value !== mutation);
+            mutation.resolve(new reboot_api.react_pb.MutateResponse({
+                responseOrStatus: { case: "status", value: JSON.stringify({ code: 1, message: String(error) }) },
+            }));
+            if (this.runningMutates.length === 0)
+                (_a = this.flushMutates) === null || _a === void 0 ? void 0 : _a.set();
+        });
+    }
     async mutate(partialRequest, update) {
         const request = partialRequest instanceof reboot_api.react_pb.MutateRequest
             ? partialRequest
@@ -1862,7 +1886,10 @@ class GreeterInstance {
         return new Promise((resolve, _) => {
             var _a;
             if (this.loadingReaders === 0) {
-                this.runningMutates = this.runningMutates.concat({ request, resolve, update });
+                const mutation = { request, resolve, update };
+                this.runningMutates = this.runningMutates.concat(mutation);
+                if (this.transport !== undefined)
+                    this.sendBridgeMutation(mutation);
                 if (((_a = this.websocket) === null || _a === void 0 ? void 0 : _a.readyState) === WebSocket.OPEN) {
                     update({ isLoading: true });
                     try {
@@ -1932,11 +1959,13 @@ class GreeterInstance {
                         await this.flushMutations();
                     }
                     reader.setIsLoading(true);
-                    const queryResponses = reboot_web.reactiveReader({
-                        endpoint: `${this.url}/__/reboot/rpc/${this.stateRef}`,
-                        request: queryRequest,
-                        signal: reader.abortController.signal,
-                    });
+                    const queryResponses = this.transport !== undefined
+                        ? this.transport.query("tests.reboot.Greeter", this.stateRef, queryRequest, reader.abortController.signal)
+                        : reboot_web.reactiveReader({
+                            endpoint: `${this.url}/__/reboot/rpc/${this.stateRef}`,
+                            request: queryRequest,
+                            signal: reader.abortController.signal,
+                        });
                     for await (const queryResponse of queryResponses) {
                         if (!loaded) {
                             if ((this.loadingReaders -= 1) === 0) {
@@ -3889,22 +3918,33 @@ class GreeterInstance {
     unuseConstructAndStoreRecursiveMessage(id) {
         delete this.useConstructAndStoreRecursiveMessageSetPendings[id];
     }
-    static use(id, stateRef, url) {
-        if (!(id in this.instances)) {
-            this.instances[id] = new GreeterInstance(id, stateRef, url);
+    static use(id, stateRef, url, transport) {
+        let instances = this.instances.get(transport);
+        if (instances === undefined) {
+            instances = new Map();
+            this.instances.set(transport, instances);
+        }
+        const key = JSON.stringify([url, id]);
+        let instance = instances.get(key);
+        if (instance === undefined) {
+            instance = new GreeterInstance(id, stateRef, url, transport);
+            instances.set(key, instance);
         }
         else {
-            this.instances[id].ref();
+            instance.ref();
         }
-        return this.instances[id];
+        return instance;
     }
     unuse() {
         if (this.unref() === 0) {
-            delete GreeterInstance.instances[this.id];
+            const instances = GreeterInstance.instances.get(this.transport);
+            instances.delete(JSON.stringify([this.url, this.id]));
+            if (instances.size === 0)
+                GreeterInstance.instances.delete(this.transport);
         }
     }
 }
-GreeterInstance.instances = {};
+GreeterInstance.instances = new Map();
 export function useGreeter({ id: providedId } = {}) {
     var _a;
     // Resolve `id` from the frontend-agnostic state-ID map. A `null` map
@@ -3941,10 +3981,10 @@ export function useGreeter({ id: providedId } = {}) {
     const bearerToken = rebootClient.bearerToken;
     const refreshBearerToken = useRefreshBearerToken();
     const [instance, setInstance] = useState(() => {
-        return GreeterInstance.use(id, stateRef, url);
+        return GreeterInstance.use(id, stateRef, url, rebootClient.transport);
     });
-    if (instance.id !== id) {
-        setInstance(GreeterInstance.use(id, stateRef, url));
+    if (instance.id !== id || instance.url !== url || instance.transport !== rebootClient.transport) {
+        setInstance(GreeterInstance.use(id, stateRef, url, rebootClient.transport));
     }
     useEffect(() => {
         return () => {
@@ -4152,11 +4192,35 @@ export function useGreeter({ id: providedId } = {}) {
         return { response, isLoading, aborted };
     }
     async function greet(partialRequest = {}, options) {
+        var _a;
         let retry = true;
         if (options !== undefined && options.retry !== undefined) {
             retry = options.retry;
         }
         const request = GreeterGreetRequestToProtobuf(partialRequest);
+        if (rebootClient.transport !== undefined) {
+            const signal = (_a = options === null || options === void 0 ? void 0 : options.signal) !== null && _a !== void 0 ? _a : new AbortController().signal;
+            try {
+                for await (const result of rebootClient.transport.query("tests.reboot.Greeter", stateRef, new reboot_api.react_pb.QueryRequest({
+                    method: "Greet", request: request.toBinary(), bearerToken,
+                }), signal)) {
+                    if (result.responseOrStatus.case === "response") {
+                        return {
+                            response: GreeterGreetResponseFromProtobufShape(greeter_pb.GreetResponse.fromBinary(result.responseOrStatus.value)),
+                            aborted: undefined,
+                        };
+                    }
+                }
+                throw new Error("Bridge read ended without a response");
+            }
+            catch (error) {
+                if (error instanceof reboot_api.Status) {
+                    return { response: undefined,
+                        aborted: GreeterGreetAborted.fromStatus(error) };
+                }
+                throw error;
+            }
+        }
         // The age of the transaction this call started, once an error has
         // told us: the root transaction id of its first attempt. A retry
         // carries it so that the retried transaction is as old as its first
@@ -4324,7 +4388,7 @@ export function useGreeter({ id: providedId } = {}) {
                                 };
                             }
                         }
-                        catch (_a) {
+                        catch (_b) {
                             // Fall through to return the original aborted error.
                         }
                     }
@@ -4583,11 +4647,35 @@ export function useGreeter({ id: providedId } = {}) {
         return { response, isLoading, aborted };
     }
     async function tryToConstructContext(partialRequest = {}, options) {
+        var _a;
         let retry = true;
         if (options !== undefined && options.retry !== undefined) {
             retry = options.retry;
         }
         const request = GreeterTryToConstructContextRequestToProtobuf(partialRequest);
+        if (rebootClient.transport !== undefined) {
+            const signal = (_a = options === null || options === void 0 ? void 0 : options.signal) !== null && _a !== void 0 ? _a : new AbortController().signal;
+            try {
+                for await (const result of rebootClient.transport.query("tests.reboot.Greeter", stateRef, new reboot_api.react_pb.QueryRequest({
+                    method: "TryToConstructContext", request: request.toBinary(), bearerToken,
+                }), signal)) {
+                    if (result.responseOrStatus.case === "response") {
+                        return {
+                            response: GreeterTryToConstructContextResponseFromProtobufShape(Empty.fromBinary(result.responseOrStatus.value)),
+                            aborted: undefined,
+                        };
+                    }
+                }
+                throw new Error("Bridge read ended without a response");
+            }
+            catch (error) {
+                if (error instanceof reboot_api.Status) {
+                    return { response: undefined,
+                        aborted: GreeterTryToConstructContextAborted.fromStatus(error) };
+                }
+                throw error;
+            }
+        }
         // The age of the transaction this call started, once an error has
         // told us: the root transaction id of its first attempt. A retry
         // carries it so that the retried transaction is as old as its first
@@ -4755,7 +4843,7 @@ export function useGreeter({ id: providedId } = {}) {
                                 };
                             }
                         }
-                        catch (_a) {
+                        catch (_b) {
                             // Fall through to return the original aborted error.
                         }
                     }
@@ -4924,11 +5012,35 @@ export function useGreeter({ id: providedId } = {}) {
         return { response, isLoading, aborted };
     }
     async function tryToConstructExternalContext(partialRequest = {}, options) {
+        var _a;
         let retry = true;
         if (options !== undefined && options.retry !== undefined) {
             retry = options.retry;
         }
         const request = GreeterTryToConstructExternalContextRequestToProtobuf(partialRequest);
+        if (rebootClient.transport !== undefined) {
+            const signal = (_a = options === null || options === void 0 ? void 0 : options.signal) !== null && _a !== void 0 ? _a : new AbortController().signal;
+            try {
+                for await (const result of rebootClient.transport.query("tests.reboot.Greeter", stateRef, new reboot_api.react_pb.QueryRequest({
+                    method: "TryToConstructExternalContext", request: request.toBinary(), bearerToken,
+                }), signal)) {
+                    if (result.responseOrStatus.case === "response") {
+                        return {
+                            response: GreeterTryToConstructExternalContextResponseFromProtobufShape(Empty.fromBinary(result.responseOrStatus.value)),
+                            aborted: undefined,
+                        };
+                    }
+                }
+                throw new Error("Bridge read ended without a response");
+            }
+            catch (error) {
+                if (error instanceof reboot_api.Status) {
+                    return { response: undefined,
+                        aborted: GreeterTryToConstructExternalContextAborted.fromStatus(error) };
+                }
+                throw error;
+            }
+        }
         // The age of the transaction this call started, once an error has
         // told us: the root transaction id of its first attempt. A retry
         // carries it so that the retried transaction is as old as its first
@@ -5096,7 +5208,7 @@ export function useGreeter({ id: providedId } = {}) {
                                 };
                             }
                         }
-                        catch (_a) {
+                        catch (_b) {
                             // Fall through to return the original aborted error.
                         }
                     }
@@ -5265,11 +5377,35 @@ export function useGreeter({ id: providedId } = {}) {
         return { response, isLoading, aborted };
     }
     async function testLongRunningFetch(partialRequest = {}, options) {
+        var _a;
         let retry = true;
         if (options !== undefined && options.retry !== undefined) {
             retry = options.retry;
         }
         const request = GreeterTestLongRunningFetchRequestToProtobuf(partialRequest);
+        if (rebootClient.transport !== undefined) {
+            const signal = (_a = options === null || options === void 0 ? void 0 : options.signal) !== null && _a !== void 0 ? _a : new AbortController().signal;
+            try {
+                for await (const result of rebootClient.transport.query("tests.reboot.Greeter", stateRef, new reboot_api.react_pb.QueryRequest({
+                    method: "TestLongRunningFetch", request: request.toBinary(), bearerToken,
+                }), signal)) {
+                    if (result.responseOrStatus.case === "response") {
+                        return {
+                            response: GreeterTestLongRunningFetchResponseFromProtobufShape(Empty.fromBinary(result.responseOrStatus.value)),
+                            aborted: undefined,
+                        };
+                    }
+                }
+                throw new Error("Bridge read ended without a response");
+            }
+            catch (error) {
+                if (error instanceof reboot_api.Status) {
+                    return { response: undefined,
+                        aborted: GreeterTestLongRunningFetchAborted.fromStatus(error) };
+                }
+                throw error;
+            }
+        }
         // The age of the transaction this call started, once an error has
         // told us: the root transaction id of its first attempt. A retry
         // carries it so that the retried transaction is as old as its first
@@ -5437,7 +5573,7 @@ export function useGreeter({ id: providedId } = {}) {
                                 };
                             }
                         }
-                        catch (_a) {
+                        catch (_b) {
                             // Fall through to return the original aborted error.
                         }
                     }
@@ -5651,11 +5787,35 @@ export function useGreeter({ id: providedId } = {}) {
         return { response, isLoading, aborted };
     }
     async function getWholeState(partialRequest = {}, options) {
+        var _a;
         let retry = true;
         if (options !== undefined && options.retry !== undefined) {
             retry = options.retry;
         }
         const request = GreeterGetWholeStateRequestToProtobuf(partialRequest);
+        if (rebootClient.transport !== undefined) {
+            const signal = (_a = options === null || options === void 0 ? void 0 : options.signal) !== null && _a !== void 0 ? _a : new AbortController().signal;
+            try {
+                for await (const result of rebootClient.transport.query("tests.reboot.Greeter", stateRef, new reboot_api.react_pb.QueryRequest({
+                    method: "GetWholeState", request: request.toBinary(), bearerToken,
+                }), signal)) {
+                    if (result.responseOrStatus.case === "response") {
+                        return {
+                            response: GreeterGetWholeStateResponseFromProtobufShape(GreeterProto.fromBinary(result.responseOrStatus.value)),
+                            aborted: undefined,
+                        };
+                    }
+                }
+                throw new Error("Bridge read ended without a response");
+            }
+            catch (error) {
+                if (error instanceof reboot_api.Status) {
+                    return { response: undefined,
+                        aborted: GreeterGetWholeStateAborted.fromStatus(error) };
+                }
+                throw error;
+            }
+        }
         // The age of the transaction this call started, once an error has
         // told us: the root transaction id of its first attempt. A retry
         // carries it so that the retried transaction is as old as its first
@@ -5823,7 +5983,7 @@ export function useGreeter({ id: providedId } = {}) {
                                 };
                             }
                         }
-                        catch (_a) {
+                        catch (_b) {
                             // Fall through to return the original aborted error.
                         }
                     }
@@ -5992,11 +6152,35 @@ export function useGreeter({ id: providedId } = {}) {
         return { response, isLoading, aborted };
     }
     async function failWithException(partialRequest = {}, options) {
+        var _a;
         let retry = true;
         if (options !== undefined && options.retry !== undefined) {
             retry = options.retry;
         }
         const request = GreeterFailWithExceptionRequestToProtobuf(partialRequest);
+        if (rebootClient.transport !== undefined) {
+            const signal = (_a = options === null || options === void 0 ? void 0 : options.signal) !== null && _a !== void 0 ? _a : new AbortController().signal;
+            try {
+                for await (const result of rebootClient.transport.query("tests.reboot.Greeter", stateRef, new reboot_api.react_pb.QueryRequest({
+                    method: "FailWithException", request: request.toBinary(), bearerToken,
+                }), signal)) {
+                    if (result.responseOrStatus.case === "response") {
+                        return {
+                            response: GreeterFailWithExceptionResponseFromProtobufShape(Empty.fromBinary(result.responseOrStatus.value)),
+                            aborted: undefined,
+                        };
+                    }
+                }
+                throw new Error("Bridge read ended without a response");
+            }
+            catch (error) {
+                if (error instanceof reboot_api.Status) {
+                    return { response: undefined,
+                        aborted: GreeterFailWithExceptionAborted.fromStatus(error) };
+                }
+                throw error;
+            }
+        }
         // The age of the transaction this call started, once an error has
         // told us: the root transaction id of its first attempt. A retry
         // carries it so that the retried transaction is as old as its first
@@ -6164,7 +6348,7 @@ export function useGreeter({ id: providedId } = {}) {
                                 };
                             }
                         }
-                        catch (_a) {
+                        catch (_b) {
                             // Fall through to return the original aborted error.
                         }
                     }
@@ -6333,11 +6517,35 @@ export function useGreeter({ id: providedId } = {}) {
         return { response, isLoading, aborted };
     }
     async function failWithAborted(partialRequest = {}, options) {
+        var _a;
         let retry = true;
         if (options !== undefined && options.retry !== undefined) {
             retry = options.retry;
         }
         const request = GreeterFailWithAbortedRequestToProtobuf(partialRequest);
+        if (rebootClient.transport !== undefined) {
+            const signal = (_a = options === null || options === void 0 ? void 0 : options.signal) !== null && _a !== void 0 ? _a : new AbortController().signal;
+            try {
+                for await (const result of rebootClient.transport.query("tests.reboot.Greeter", stateRef, new reboot_api.react_pb.QueryRequest({
+                    method: "FailWithAborted", request: request.toBinary(), bearerToken,
+                }), signal)) {
+                    if (result.responseOrStatus.case === "response") {
+                        return {
+                            response: GreeterFailWithAbortedResponseFromProtobufShape(Empty.fromBinary(result.responseOrStatus.value)),
+                            aborted: undefined,
+                        };
+                    }
+                }
+                throw new Error("Bridge read ended without a response");
+            }
+            catch (error) {
+                if (error instanceof reboot_api.Status) {
+                    return { response: undefined,
+                        aborted: GreeterFailWithAbortedAborted.fromStatus(error) };
+                }
+                throw error;
+            }
+        }
         // The age of the transaction this call started, once an error has
         // told us: the root transaction id of its first attempt. A retry
         // carries it so that the retried transaction is as old as its first
@@ -6505,7 +6713,7 @@ export function useGreeter({ id: providedId } = {}) {
                                 };
                             }
                         }
-                        catch (_a) {
+                        catch (_b) {
                             // Fall through to return the original aborted error.
                         }
                     }
@@ -6764,11 +6972,35 @@ export function useGreeter({ id: providedId } = {}) {
         return { response, isLoading, aborted };
     }
     async function readRecursiveMessage(partialRequest = {}, options) {
+        var _a;
         let retry = true;
         if (options !== undefined && options.retry !== undefined) {
             retry = options.retry;
         }
         const request = GreeterReadRecursiveMessageRequestToProtobuf(partialRequest);
+        if (rebootClient.transport !== undefined) {
+            const signal = (_a = options === null || options === void 0 ? void 0 : options.signal) !== null && _a !== void 0 ? _a : new AbortController().signal;
+            try {
+                for await (const result of rebootClient.transport.query("tests.reboot.Greeter", stateRef, new reboot_api.react_pb.QueryRequest({
+                    method: "ReadRecursiveMessage", request: request.toBinary(), bearerToken,
+                }), signal)) {
+                    if (result.responseOrStatus.case === "response") {
+                        return {
+                            response: GreeterReadRecursiveMessageResponseFromProtobufShape(greeter_pb.ReadRecursiveMessageResponse.fromBinary(result.responseOrStatus.value)),
+                            aborted: undefined,
+                        };
+                    }
+                }
+                throw new Error("Bridge read ended without a response");
+            }
+            catch (error) {
+                if (error instanceof reboot_api.Status) {
+                    return { response: undefined,
+                        aborted: GreeterReadRecursiveMessageAborted.fromStatus(error) };
+                }
+                throw error;
+            }
+        }
         // The age of the transaction this call started, once an error has
         // told us: the root transaction id of its first attempt. A retry
         // carries it so that the retried transaction is as old as its first
@@ -6936,7 +7168,7 @@ export function useGreeter({ id: providedId } = {}) {
                                 };
                             }
                         }
-                        catch (_a) {
+                        catch (_b) {
                             // Fall through to return the original aborted error.
                         }
                     }

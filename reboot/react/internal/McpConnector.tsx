@@ -22,6 +22,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useEffect,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -33,15 +34,19 @@ import {
   type DefaultStateIdsContextValue,
 } from "./index.js";
 import { useAppSafe } from "./useAppSafe.js";
+import { AppBridgeTransport } from "./bridge.js";
+import { RebootTransportProvider } from "../index.js";
 
 export default function McpConnector({
   appName,
   setBearerToken,
   children,
+  useBridge = false,
 }: {
   appName: string;
   setBearerToken: (token?: string) => void;
   children: ReactNode;
+  useBridge?: boolean;
 }) {
   // Reboot auto-injects the AI-supplied `UI(request=...)` props onto
   // the single child element via `React.cloneElement` (see the render
@@ -277,6 +282,21 @@ export default function McpConnector({
     [toolData?.ids]
   );
 
+  const [bridge, setBridge] = useState<AppBridgeTransport>();
+  useEffect(() => {
+    if (!mcpApp || !useBridge) {
+      setBridge(undefined);
+      return;
+    }
+    // Create a fresh transport for each effect lifetime, including React's
+    // development StrictMode setup/cleanup cycle.
+    const transport = new AppBridgeTransport((params, options) =>
+      mcpApp.callServerTool(params, options)
+    );
+    setBridge(transport);
+    return () => transport.close();
+  }, [mcpApp, useBridge]);
+
   if (error) {
     return (
       <div style={{ color: "red", padding: "1rem" }}>
@@ -304,11 +324,19 @@ export default function McpConnector({
   const child =
     requestProps !== null ? cloneElement(onlyChild, requestProps) : onlyChild;
 
+  if (useBridge && !bridge) return <div>Connecting MCP bridge…</div>;
+
   return (
     <McpAppContext.Provider value={contextValue}>
       <BearerRefreshContext.Provider value={refreshMCPBearerToken}>
         <DefaultStateIdsContext.Provider value={stateIdsContextValue}>
-          {child}
+          {bridge ? (
+            <RebootTransportProvider transport={bridge}>
+              {child}
+            </RebootTransportProvider>
+          ) : (
+            child
+          )}
         </DefaultStateIdsContext.Provider>
       </BearerRefreshContext.Provider>
     </McpAppContext.Provider>

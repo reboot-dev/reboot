@@ -1,5 +1,8 @@
 "use client";
 import { Event, react_pb, Status } from "@reboot-dev/reboot-api";
+import type { ReactTransport } from "./internal/bridge.js";
+export type { ReactTransport } from "./internal/bridge.js";
+export { AppBridgeTransport } from "./internal/bridge.js";
 import {
   createContext,
   lazy,
@@ -124,6 +127,7 @@ function detectMcpProperties(
 const LazyMcpConnector = lazy(() => import("./internal/McpConnector.js"));
 
 export class RebootClient {
+  transport?: ReactTransport;
   readonly url: string;
   readonly bearerToken: string | undefined;
   readonly setBearerToken: (token?: string) => void;
@@ -140,6 +144,7 @@ export class RebootClient {
           // TODO: Remove after a deprecation cycle.
           setAuthorizationBearer?: (token?: string) => void;
           offlineCacheEnabled?: boolean;
+          transport?: ReactTransport;
         }
   ) {
     if (typeof constructorArgs === "string") {
@@ -165,6 +170,7 @@ export class RebootClient {
       this.setAuthorizationBearer = () => {};
     } else {
       this.url = constructorArgs.url;
+      this.transport = constructorArgs.transport;
       this.bearerToken = constructorArgs.bearerToken;
       this.setBearerToken =
         constructorArgs.setBearerToken ||
@@ -496,10 +502,31 @@ interface RebootClientProviderAutoProps {
   offlineCacheEnabled?: boolean;
 }
 
-type RebootClientProviderProps =
+type RebootClientProviderProps = (
   | RebootClientProviderWithClientProps
   | RebootClientProviderWithURLProps
-  | RebootClientProviderAutoProps;
+  | RebootClientProviderAutoProps
+) & { transport?: "app-bridge" };
+
+export function RebootTransportProvider({
+  transport,
+  children,
+}: {
+  transport: ReactTransport | undefined;
+  children: ReactNode;
+}) {
+  const parent = useRebootClient();
+  const client = useMemo(
+    () =>
+      new RebootClient({ ...parent, transport: transport ?? parent.transport }),
+    [parent, transport]
+  );
+  return (
+    <RebootClientContext.Provider value={client}>
+      {children}
+    </RebootClientContext.Provider>
+  );
+}
 
 export const RebootClientProvider = ({
   children,
@@ -509,6 +536,7 @@ export const RebootClientProvider = ({
   nativeAuth,
   client,
   offlineCacheEnabled = false,
+  transport,
 }: RebootClientProviderProps) => {
   const [bearerToken, setBearerToken] = useState<string | undefined>(token);
 
@@ -835,6 +863,7 @@ export const RebootClientProvider = ({
             <LazyMcpConnector
               appName={mcpTitle.uiTitle}
               setBearerToken={setBearerToken}
+              useBridge={transport === "app-bridge"}
             >
               {children}
             </LazyMcpConnector>

@@ -390,6 +390,31 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
 
             yield query_response
 
+    async def Mutate(
+        self,
+        request: react_pb2.MutateRequest,
+        grpc_context: grpc.aio.ServicerContext,
+    ) -> react_pb2.MutateResponse:
+        headers = Headers.from_grpc_context(grpc_context)
+        state_type = self._state_type_name_for_state_ref(headers.state_ref)
+        try:
+            if state_type is None:
+                raise SystemAborted(UnknownService())
+            # The caller supplies the same metadata and idempotency key as
+            # the WebSocket path; the generated middleware performs routing,
+            # authorization, retry and transaction handling in both cases.
+            response = await self._middleware_by_state_type[
+                state_type].react_mutate(
+                    headers, request.method, request.request
+                )
+            return react_pb2.MutateResponse(
+                response=response.SerializeToString()
+            )
+        except Aborted as aborted:
+            return react_pb2.MutateResponse(
+                status=MessageToJson(aborted.to_status())
+            )
+
     async def Query(
         self,
         request: react_pb2.QueryRequest,
