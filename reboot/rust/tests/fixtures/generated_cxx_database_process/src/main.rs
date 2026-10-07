@@ -62,25 +62,137 @@ enum Handler {
     },
     Root(Root),
 }
+fn record_rollback_identity(context: &TransactionContext) {
+    if let Some(path) = optional_arg("--tree-path-marker") {
+        std::fs::write(
+            &path,
+            context
+                .transaction_ids()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            format!("{path}.coordinator"),
+            format!(
+                "{}\n{}",
+                context.transaction_coordinator_state_type(),
+                context.transaction_coordinator_state_ref()
+            ),
+        )
+        .unwrap();
+    }
+}
+
 /// Implements only the legacy Status hook: the generated default typed hook must run.
 struct LegacyRollbackHandler(Handler);
 #[tonic::async_trait]
 impl generated::TransactionCounterWritesMethodsTransactionHandler for LegacyRollbackHandler {
-    async fn query_declared(&self, state: &proto::TransactionCounter, request: proto::TransactionIncrementRequest) -> Result<proto::TransactionCounterValue, generated::TransactionCounterWritesMethodsQueryDeclaredError> { self.0.query_declared(state, request).await }
-    async fn apply_declared(&self, state: &mut proto::TransactionCounter, request: proto::TransactionIncrementRequest) -> Result<proto::TransactionCounterValue, generated::TransactionCounterWritesMethodsApplyDeclaredError> { self.0.apply_declared(state, request).await }
-    async fn query(&self, state: &proto::TransactionCounter, request: proto::TransactionIncrementRequest) -> Result<proto::TransactionCounterValue, tonic::Status> { self.0.query(state, request).await }
-    async fn apply(&self, state: &mut proto::TransactionCounter, request: proto::TransactionIncrementRequest) -> Result<proto::TransactionCounterValue, tonic::Status> { self.0.apply(state, request).await }
-    async fn increment(&self, context: &TransactionContext, state: &mut proto::TransactionCounter, request: proto::TransactionIncrementRequest) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> { state.value += 1000;
-        let mut private = TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
-        private.task_upserts.push(generated::TransactionCounterWritesMethodsTasks::query(&context.headers().state_ref, &request));
+    async fn query_declared(
+        &self,
+        state: &proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<
+        proto::TransactionCounterValue,
+        generated::TransactionCounterWritesMethodsQueryDeclaredError,
+    > {
+        self.0.query_declared(state, request).await
+    }
+    async fn apply_declared(
+        &self,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<
+        proto::TransactionCounterValue,
+        generated::TransactionCounterWritesMethodsApplyDeclaredError,
+    > {
+        self.0.apply_declared(state, request).await
+    }
+    async fn query(
+        &self,
+        state: &proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<proto::TransactionCounterValue, tonic::Status> {
+        self.0.query(state, request).await
+    }
+    async fn apply(
+        &self,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<proto::TransactionCounterValue, tonic::Status> {
+        self.0.apply(state, request).await
+    }
+    async fn increment(
+        &self,
+        context: &TransactionContext,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+        record_rollback_identity(context);
+        state.value += 1000;
+        let mut private =
+            TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
+        private
+            .task_upserts
+            .push(generated::TransactionCounterWritesMethodsTasks::query(
+                &context.headers().state_ref,
+                &request,
+            ));
         let marker = arg("--rollback-leaf");
         std::fs::write(&marker, private.task_upserts[0].encode_to_vec()).unwrap();
-        std::fs::write(format!("{marker}.legacy-handler"), b"legacy Status handler invoked; no typed override").unwrap();
-        Err(reboot::declared_error_status(tonic::Code::Unknown, "legacy declared rollback", "type.googleapis.com/tests.reboot.protoc.TransactionLimitExceeded", &proto::TransactionLimitExceeded { limit: 4242 })) }
-    async fn factory_increment(&self, context: &TransactionContext, state: &mut proto::TransactionCounter, request: proto::TransactionIncrementRequest) -> Result<TransactionExecution<proto::TransactionCounterValue>, generated::TransactionCounterWritesMethodsFactoryIncrementError> { self.0.factory_increment(context, state, request).await }
-    async fn factory_increment_target(&self, context: &TransactionContext, state: &mut proto::TransactionCounter, request: proto::TransactionIncrementRequest) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> { self.0.factory_increment_target(context, state, request).await }
-    async fn shared_read(&self, context: &TransactionContext, state: &mut proto::TransactionCounter, request: proto::TransactionIncrementRequest) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> { self.0.shared_read(context, state, request).await }
-    async fn shared_read_fresh_shared(&self, context: &reboot::runtime::SharedLocalTransactionContext, state: &mut proto::TransactionCounter, request: proto::TransactionIncrementRequest) -> Result<proto::TransactionCounterValue, tonic::Status> { self.0.shared_read_fresh_shared(context, state, request).await }
+        std::fs::write(
+            format!("{marker}.legacy-handler"),
+            b"legacy Status handler invoked; no typed override",
+        )
+        .unwrap();
+        Err(reboot::declared_error_status(
+            tonic::Code::Unknown,
+            "legacy declared rollback",
+            "type.googleapis.com/tests.reboot.protoc.TransactionLimitExceeded",
+            &proto::TransactionLimitExceeded { limit: 4242 },
+        ))
+    }
+    async fn factory_increment(
+        &self,
+        context: &TransactionContext,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<
+        TransactionExecution<proto::TransactionCounterValue>,
+        generated::TransactionCounterWritesMethodsFactoryIncrementError,
+    > {
+        self.0.factory_increment(context, state, request).await
+    }
+    async fn factory_increment_target(
+        &self,
+        context: &TransactionContext,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+        self.0
+            .factory_increment_target(context, state, request)
+            .await
+    }
+    async fn shared_read(
+        &self,
+        context: &TransactionContext,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+        self.0.shared_read(context, state, request).await
+    }
+    async fn shared_read_fresh_shared(
+        &self,
+        context: &reboot::runtime::SharedLocalTransactionContext,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<proto::TransactionCounterValue, tonic::Status> {
+        self.0
+            .shared_read_fresh_shared(context, state, request)
+            .await
+    }
 }
 
 #[tonic::async_trait]
@@ -241,17 +353,50 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         context: &TransactionContext,
         state: &mut proto::TransactionCounter,
         request: proto::TransactionIncrementRequest,
-    ) -> Result<TransactionExecution<proto::TransactionCounterValue>, generated::TransactionCounterWritesMethodsIncrementError> {
+    ) -> Result<
+        TransactionExecution<proto::TransactionCounterValue>,
+        generated::TransactionCounterWritesMethodsIncrementError,
+    > {
         if has("--rollback-leaf") {
+            record_rollback_identity(context);
             state.value += 1000;
-            let mut private = TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
-            private.task_upserts.push(generated::TransactionCounterWritesMethodsTasks::query(
-                &context.headers().state_ref, &request));
-            std::fs::write(arg("--rollback-leaf"), private.task_upserts[0].encode_to_vec()).unwrap();
-            return Err(generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(
-                proto::TransactionLimitExceeded { limit: 4242 }));
+            if let Some(marker) = optional_arg("--rollback-handler-park") {
+                std::fs::write(&marker, b"actual private C handler active").unwrap();
+                while !std::path::Path::new(&format!("{marker}.release")).exists() {
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+            }
+            let mut private =
+                TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
+            private
+                .task_upserts
+                .push(generated::TransactionCounterWritesMethodsTasks::query(
+                    &context.headers().state_ref,
+                    &request,
+                ));
+            std::fs::write(
+                arg("--rollback-leaf"),
+                private.task_upserts[0].encode_to_vec(),
+            )
+            .unwrap();
+            return Err(
+                generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(
+                    proto::TransactionLimitExceeded { limit: 4242 },
+                ),
+            );
         }
-        self.increment(context, state, request).await.map_err(generated::TransactionCounterWritesMethodsIncrementError::Grpc)
+        let execution = self
+            .increment(context, state, request)
+            .await
+            .map_err(generated::TransactionCounterWritesMethodsIncrementError::Grpc)?;
+        if has("--rollback-b-declared-after-catch") {
+            return Err(
+                generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(
+                    proto::TransactionLimitExceeded { limit: 4242 },
+                ),
+            );
+        }
+        Ok(execution)
     }
 
     async fn increment(
@@ -274,6 +419,15 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         if context.supervised_tree_execution()
             && let Some(path) = optional_arg("--tree-path-marker")
         {
+            std::fs::write(
+                format!("{path}.coordinator"),
+                format!(
+                    "{}\n{}",
+                    context.transaction_coordinator_state_type(),
+                    context.transaction_coordinator_state_ref()
+                ),
+            )
+            .unwrap();
             std::fs::write(
                 path,
                 context
@@ -394,6 +548,7 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                             assert_eq!(members.len(), 1);
                             assert!(members[0].read_only);
                             assert_eq!(members[0].target.state_ref, *target);
+                            assert_eq!(members[0].target.state_type, "tests.reboot.protoc.TransactionCounter");
                             assert!(context.doomed_status().is_none());
                             std::fs::write(&marker, b"typed error caught after validated read-only enlistment").unwrap();
                             while !std::path::Path::new(&format!("{marker}.release")).exists() {
@@ -1498,13 +1653,25 @@ async fn main() {
                 state_type: "tests.reboot.protoc.TransactionCounter".into(),
                 state_ref: watch_coordinator_state_ref.clone(),
             },
-            Arc::new(LegacyApplicationCoordinatorWatchEndpoint::new(
-                application.clone(), placement.clone(), watch_coordinator_state_ref.clone(),
-            ).unwrap()),
-        ).unwrap();
+            Arc::new(
+                LegacyApplicationCoordinatorWatchEndpoint::new(
+                    application.clone(),
+                    placement.clone(),
+                    watch_coordinator_state_ref.clone(),
+                )
+                .unwrap(),
+            ),
+        )
+        .unwrap();
         let legacy = generated::TransactionCounterWritesMethodsTransactionAdapter::new(
-            store, participant.clone(), coordinator.clone(), starts, LegacyRollbackHandler(handler),
-        ).with_live_participant_owner(owner).with_supervised_transaction_tree();
+            store,
+            participant.clone(),
+            coordinator.clone(),
+            starts,
+            LegacyRollbackHandler(handler),
+        )
+        .with_live_participant_owner(owner)
+        .with_supervised_transaction_tree();
         let mut legacy_host = ApplicationHost::new("generated-cxx-database-process")
             .with_legacy_placement_readiness(placement.clone())
             .with_host_recovery(legacy.live_participant_recovery_registration().unwrap());

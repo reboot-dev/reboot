@@ -1,3 +1,47 @@
+## Bounded descendant first-touch rollback (review candidate)
+
+Supervised exclusive non-idempotent **A→B→C**, distinct existing actors, now
+admits C's canonical method-declared first-touch error at B. B must enlist the
+exact singleton C reader before exposing the catch, then succeed; A remains the
+only coordinator and commits A/B writers plus C reader. Actual guard-installed
+inbound provenance binds the complete original headers and initialized ledger;
+a derived outbound clone or builder opt-in cannot manufacture this authority.
+The ordinary `enforce_live_leaf` restriction is unchanged. C's private mutation
+and task envelope are never staged, and its exact live incarnation atomically
+retains a read-only lease until valid aware/read-only Prepare.
+
+Python references: `reboot/aio/contexts.py:1225–1244` (original root coordinator),
+`state_managers.py:835–947,1082–1108,1179–1216` (ownership, first-touch rollback),
+`aio/stubs.py:698–755` (error membership before call completion), and
+`state_managers.py:6417–6465` (ownership barrier/read-only Prepare release).
+Rust source: `src/{runtime,explicit_abort,durable_participant,codegen}.rs`;
+real-process fixtures: `tests/fixtures/descendant_rollback{,_failure}_acceptance.rs`.
+
+Exercised scoped acceptance uses three real canonical CXX/RocksDB processes:
+typed and distinct legacy Status-only C handlers, B-catch and A-after-B barriers,
+unchanged admitted C readers and blocked genuine C writers, durable exact
+A/B-writer+C-reader maps, actual paths/original A identity, absent canonical C
+private task identity (Pending or Completed), no C-error canonical idempotent records (legitimate Apply(0) readmission probes
+are distinguished by their exact request fingerprint),
+and all-sidecar restart. Failure vectors cover B failure
+after catch (including declared error; A cannot recover that subtree), A error
+and deadlines, lost B success/unknown C's actual A Watch, unsupported error/member
+vectors at B with independently wrong type/reference, and C restart before
+Prepare. That restart exposed a previous successful public response after a
+definitive durable Abort: completion now carries an internal acknowledged outcome
+so the guard releases settled supervision but returns Aborted, rather than
+confusing it with ambiguous handoff failure. Exact lifecycle units retain all
+three wrong Prepare flag pairs and queued/inflight old Watch exclusion against a
+still-live replacement, plus shutdown uncertainty and full-path negatives.
+
+**Not full Python/Rust parity.** No general subtree/ancestor staged snapshot
+rollback, sibling/reentrant actors, arbitrary depth, retries, shared/factory or
+idempotent scopes. Missing-pending duplicate-Prepare/lost-ACK retry parity is
+explicitly excluded: restarted C must fail closed; no synthetic Prepare success
+or crash-surviving read lock is supplied. Final source-stable verification and
+causal-control evidence are tracked separately in
+`/tmp/reboot-rust-descendant-checkpoint.md`; this section is not certification.
+
 ## Candidate: bounded first-touch declared-error leaf rollback
 
 The supervised A→B path now rolls a method-declared error back to retained

@@ -233,10 +233,54 @@ impl Drop for CxxDatabase {
     }
 }
 fn port() -> u16 {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
-    port
+    // Hosts bind only after startup RPCs. Releasing a kernel-selected ephemeral
+    // port lets one of those outbound RPCs claim it before the host can bind.
+    // Allocate distinct low listener ports outside Linux's ephemeral range.
+    // This is not a reservation against unrelated external server processes.
+    static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(10000);
+    static END: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
+    let end = *END.get_or_init(|| {
+        if cfg!(target_os = "linux") {
+            std::fs::read_to_string("/proc/sys/net/ipv4/ip_local_port_range")
+                .expect("read Linux ephemeral port range")
+                .split_whitespace()
+                .next()
+                .expect("ephemeral range lower bound")
+                .parse::<u16>()
+                .expect("numeric ephemeral range lower bound")
+                .min(30000)
+        } else {
+            30000
+        }
+    });
+    loop {
+        let candidate = NEXT.fetch_add(1, Ordering::Relaxed);
+        assert!(
+            candidate < end,
+            "non-ephemeral test listener range exhausted"
+        );
+        if let Ok(listener) = TcpListener::bind(("127.0.0.1", candidate)) {
+            return listener.local_addr().unwrap().port();
+        }
+    }
+}
+
+#[test]
+fn preallocated_host_ports_are_distinct_and_outside_linux_ephemeral_range() {
+    let ports: Vec<_> = (0..64).map(|_| port()).collect();
+    let distinct: std::collections::BTreeSet<_> = ports.iter().copied().collect();
+    assert_eq!(distinct.len(), ports.len());
+    if cfg!(target_os = "linux") {
+        let range = std::fs::read_to_string("/proc/sys/net/ipv4/ip_local_port_range").unwrap();
+        let minimum: u16 = range.split_whitespace().next().unwrap().parse().unwrap();
+        assert!(ports.iter().all(|port| *port < minimum));
+    }
+    // Check simultaneous real binds, not just integer uniqueness.
+    let listeners: Vec<_> = ports
+        .iter()
+        .map(|port| TcpListener::bind(("127.0.0.1", *port)).unwrap())
+        .collect();
+    assert_eq!(listeners.len(), ports.len());
 }
 
 fn legacy_routing_component(state_ref: &str) -> &str {
@@ -430,6 +474,10 @@ fn live_host_log(port: u16) -> std::path::PathBuf {
     ))
 }
 fn spawn_live_host(options: LiveHostOptions<'_>) -> Child {
+    live_host_command(options).spawn().unwrap()
+}
+
+fn live_host_command(options: LiveHostOptions<'_>) -> Command {
     let mut command = Command::new(options.binary);
     command
         .args([
@@ -483,7 +531,7 @@ fn spawn_live_host(options: LiveHostOptions<'_>) -> Child {
     if let Some(marker) = options.watch_terminalized {
         command.env("REBOOT_TEST_TARGET_WATCH_TERMINALIZED", marker);
     }
-    command.spawn().unwrap()
+    command
 }
 
 macro_rules! spawn_with_plan {
@@ -2370,7 +2418,7 @@ fn generated_factory_root_recovers_target_through_live_placement_planner_across_
     let initial_planner = LivePlannerServer::start(&runtime, initial_plan);
     let marker_dir = tempfile::tempdir().unwrap();
     let marker = marker_dir.path().join("sealed");
-    let mut target = spawn_live_host(LiveHostOptions {
+    let mut target = WaitHostGuard(spawn_live_host(LiveHostOptions {
         binary: &binary,
         role: "target",
         port: target_port,
@@ -2387,10 +2435,10 @@ fn generated_factory_root_recovers_target_through_live_placement_planner_across_
         state_ref: None,
         coordinator_state_ref: Some("factory-root"),
         watch_coordinator_state_ref: None,
-    });
+    }));
     wait(target_port);
     initial_planner.wait_for_connections(1);
-    let mut root = spawn_live_host(LiveHostOptions {
+    let mut initial_command = live_host_command(LiveHostOptions {
         binary: &binary,
         role: "root",
         port: root_port,
@@ -2402,12 +2450,14 @@ fn generated_factory_root_recovers_target_through_live_placement_planner_across_
         factory_invoke: false,
         factory_target_invoke: true,
         expect_factory_declared_error: false,
-        marker: Some(&marker),
+        marker: None,
         watch_terminalized: None,
         state_ref: Some("factory-root"),
         coordinator_state_ref: Some("factory-root"),
         watch_coordinator_state_ref: None,
     });
+    initial_command.env("REBOOT_TEST_PAUSE_PREPARED_BEFORE_DECISION", &marker);
+    let mut root = WaitHostGuard(initial_command.spawn().unwrap());
     wait(root_port);
     initial_planner.wait_for_connections(2);
     for _ in 0..100 {
@@ -2420,6 +2470,68 @@ fn generated_factory_root_recovers_target_through_live_placement_planner_across_
         marker.exists(),
         "factory root never sealed its real C++ coordinator record"
     );
+    // Prove initial live Watch cannot have terminalized before the crash.
+    runtime.block_on(async {
+        let mut client = database::database_client::DatabaseClient::connect(root_db.endpoint())
+            .await
+            .unwrap();
+        let decision = client
+            .transaction_coordinator_decision_get(
+                database::TransactionCoordinatorDecisionGetRequest {
+                    root_transaction_id: Uuid::parse_str(root_id).unwrap().as_bytes().to_vec(),
+                    coordinator_state_ref: "factory-root".into(),
+                },
+            )
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(
+            decision.decision.is_none(),
+            "initial Watch must have no terminal decision"
+        );
+        assert_eq!(
+            load_state(&target_db.endpoint(), "target").await,
+            Some(vec![0x08, 0x05])
+        );
+        let mut client = database::database_client::DatabaseClient::connect(target_db.endpoint())
+            .await
+            .unwrap();
+        let mut stream = client
+            .recover(database::RecoverRequest {
+                state_tags_by_state_type: [(
+                    "tests.reboot.protoc.TransactionCounter".into(),
+                    "TransactionCounter".into(),
+                )]
+                .into(),
+                shard_ids: vec!["s000000000".into()],
+                skip_idempotent_mutations: true,
+            })
+            .await
+            .unwrap()
+            .into_inner();
+        let mut prepared = None;
+        while let Some(batch) = stream.message().await.unwrap() {
+            for record in batch.participant_transactions {
+                if record.state_ref == "target" {
+                    assert!(prepared.is_none(), "multiple prepared target transactions");
+                    prepared = Some(record);
+                }
+            }
+        }
+        let prepared = prepared.expect("target must have a canonical participant to recover");
+        assert!(
+            prepared.prepared,
+            "target must be durably prepared before the crash"
+        );
+        assert_eq!(prepared.state_ref, "target");
+        assert_eq!(
+            prepared
+                .transaction_ids
+                .first()
+                .map(|bytes| Uuid::from_slice(bytes).unwrap().to_string()),
+            Some(root_id.to_owned())
+        );
+    });
     let _ = root.kill();
     let _ = root.wait();
     let _ = target.kill();
@@ -2429,6 +2541,7 @@ fn generated_factory_root_recovers_target_through_live_placement_planner_across_
     target_db.restart();
 
     let watch_terminalized = marker_dir.path().join("target-watch-terminalized");
+    let recovery_decision = marker_dir.path().join("recovery-decision");
     let recovered_root_port = port();
     let recovered_plan = placement_proto::ListenForPlanResponse::decode(
         URL_SAFE_NO_PAD
@@ -2441,7 +2554,7 @@ fn generated_factory_root_recovers_target_through_live_placement_planner_across_
     )
     .unwrap();
     let recovered_planner = LivePlannerServer::start(&runtime, recovered_plan);
-    target = spawn_live_host(LiveHostOptions {
+    target = WaitHostGuard(spawn_live_host(LiveHostOptions {
         binary: &binary,
         role: "target",
         port: target_port,
@@ -2458,10 +2571,21 @@ fn generated_factory_root_recovers_target_through_live_placement_planner_across_
         state_ref: None,
         coordinator_state_ref: Some("target"),
         watch_coordinator_state_ref: Some("factory-root"),
-    });
+    }));
     wait(target_port);
     recovered_planner.wait_for_connections(1);
-    root = spawn_live_host(LiveHostOptions {
+    let watch_ready = watch_terminalized.with_extension("watch-ready");
+    for _ in 0..100 {
+        if watch_ready.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(
+        watch_ready.exists(),
+        "target did not restore prepared Watch ownership"
+    );
+    let mut recovered_command = live_host_command(LiveHostOptions {
         binary: &binary,
         role: "root",
         port: recovered_root_port,
@@ -2479,6 +2603,12 @@ fn generated_factory_root_recovers_target_through_live_placement_planner_across_
         coordinator_state_ref: Some("factory-root"),
         watch_coordinator_state_ref: Some("factory-root"),
     });
+    // Separate from the initial-prepare barrier used by other recovery tests.
+    recovered_command.env(
+        "REBOOT_TEST_PAUSE_RECOVERY_BEFORE_TERMINALS",
+        &recovery_decision,
+    );
+    root = WaitHostGuard(recovered_command.spawn().unwrap());
     wait(recovered_root_port);
     recovered_planner.wait_for_connections(2);
     for _ in 0..100 {
@@ -2489,8 +2619,18 @@ fn generated_factory_root_recovers_target_through_live_placement_planner_across_
     }
     assert!(
         watch_terminalized.exists(),
-        "target did not Watch the factory-root decision and terminalize"
+        "target did not Watch the factory-root decision and terminalize; recovery_park={} target_exit={:?} root_exit={:?} target_log={} root_log={}",
+        recovery_decision.exists(),
+        target.try_wait().unwrap(),
+        root.try_wait().unwrap(),
+        std::fs::read_to_string(live_host_log(target_port)).unwrap_or_default(),
+        std::fs::read_to_string(live_host_log(recovered_root_port)).unwrap_or_default()
     );
+    assert!(
+        recovery_decision.exists(),
+        "recovered root did not park before direct terminals"
+    );
+    std::fs::remove_file(&recovery_decision).unwrap();
     for _ in 0..100 {
         if runtime.block_on(load_state(&root_db.endpoint(), "factory-root"))
             == Some(vec![0x08, 0x07])

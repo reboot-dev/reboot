@@ -376,6 +376,9 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
             self.inbound.as_ref().unwrap().0.validate_active()?;
         }
         context.enable_supervised_tree()?;
+        if self.inbound.is_some() {
+            context.mark_supervised_inbound();
+        }
         self.context = context.clone();
         Ok(self)
     }
@@ -451,9 +454,15 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
                     );
                 }
                 "wrong-type" => {
-                    status
-                        .metadata_mut()
-                        .insert(READERS, "{\"foreign.Actor\":[\"target\"]}".parse().unwrap());
+                    status.metadata_mut().insert(
+                        READERS,
+                        format!(
+                            "{{\"foreign.Actor\":[\"{}\"]}}",
+                            self.context.headers().state_ref
+                        )
+                        .parse()
+                        .unwrap(),
+                    );
                 }
                 "malformed-rich" => {
                     status = Status::with_details(
@@ -680,10 +689,16 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         }
         self.handoff_to_durable_recovery();
         self.context.take_returned_participants();
-        self.coordinator
-            .complete_with_classified_returned_participants(start, returned)
+        let committed = self
+            .coordinator
+            .complete_classified_outcome(start, returned)
             .await?;
-        self.completed()
+        self.completed()?;
+        if committed {
+            Ok(())
+        } else {
+            Err(Status::aborted("participant rejected Prepare"))
+        }
     }
 
     #[doc(hidden)]

@@ -774,6 +774,20 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         start: RootCoordinatorStart,
         returned: Vec<ReturnedParticipant>,
     ) -> Result<(), Status> {
+        if self.complete_classified_outcome(start, returned).await? {
+            Ok(())
+        } else {
+            Err(Status::aborted("participant rejected Prepare"))
+        }
+    }
+
+    /// `false` is a definitive, fully acknowledged Abort, not handoff uncertainty.
+    /// Guards use this typed outcome to release supervision without exposing success.
+    pub(crate) async fn complete_classified_outcome(
+        &self,
+        start: RootCoordinatorStart,
+        returned: Vec<ReturnedParticipant>,
+    ) -> Result<bool, Status> {
         Self::validate_start(&start)?;
         let participants = Self::participant_set(&start, returned)?;
         self.complete_participants(start, participants).await
@@ -839,7 +853,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         &self,
         start: RootCoordinatorStart,
         participants: ParticipantSet,
-    ) -> Result<(), Status> {
+    ) -> Result<bool, Status> {
         let transaction_id = start.transaction_ids[0];
         self.sidecar
             .coordinator_prepare(database::TransactionCoordinatorPrepareRequest {
@@ -881,9 +895,9 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 .await?;
             self.terminal_all(transaction_id, &participants.should_commit, false)
                 .await?;
-            return self
-                .cleanup(transaction_id, &start.coordinator_state_ref)
-                .await;
+            self.cleanup(transaction_id, &start.coordinator_state_ref)
+                .await?;
+            return Ok(false);
         }
         self.sidecar
             .coordinator_prepared(database::TransactionCoordinatorPreparedRequest {
@@ -896,6 +910,10 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 ..Default::default()
             })
             .await?;
+        // Crash-recovery Watch acceptance must keep initial participants prepared:
+        // once a durable decision exists their live Watch can already terminalize.
+        #[cfg(feature = "test-support")]
+        test_support::pause_prepared_before_decision().await?;
         self.persist_commit(transaction_id, &start.coordinator_state_ref, &participants)
             .await?;
         #[cfg(feature = "test-support")]
@@ -903,7 +921,8 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         self.terminal_all(transaction_id, &participants.should_commit, true)
             .await?;
         self.cleanup(transaction_id, &start.coordinator_state_ref)
-            .await
+            .await?;
+        Ok(true)
     }
 
     /// Recovers all matching coordinator records. A preparing record is
@@ -978,6 +997,10 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             // an optimization after this write.
             self.persist_commit(transaction_id, &record.state_ref, &participants)
                 .await?;
+            // Recovery acceptance can prove Watch independently of the direct
+            // terminal-delivery optimization, after the real decision is durable.
+            #[cfg(feature = "test-support")]
+            test_support::pause_recovery_before_terminals().await?;
             self.terminal_all(transaction_id, &participants.should_commit, true)
                 .await?;
             self.cleanup(transaction_id, &record.state_ref).await?;
@@ -1308,7 +1331,34 @@ pub mod test_support {
     use std::{fs, path::Path, thread, time::Duration};
 
     pub fn pause_after_durable_decision() -> Result<(), tonic::Status> {
-        let Ok(marker) = std::env::var("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE") else {
+        pause("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE")
+    }
+
+    pub async fn pause_prepared_before_decision() -> Result<(), tonic::Status> {
+        pause_async("REBOOT_TEST_PAUSE_PREPARED_BEFORE_DECISION").await
+    }
+
+    pub async fn pause_recovery_before_terminals() -> Result<(), tonic::Status> {
+        pause_async("REBOOT_TEST_PAUSE_RECOVERY_BEFORE_TERMINALS").await
+    }
+
+    // Recovery must keep its reserved control listener schedulable. Blocking a
+    // Tokio worker can strand that worker's newly spawned Watch connection task.
+    async fn pause_async(variable: &str) -> Result<(), tonic::Status> {
+        let Ok(marker) = std::env::var(variable) else {
+            return Ok(());
+        };
+        fs::write(&marker, b"sealed\n").map_err(|error| {
+            tonic::Status::internal(format!("cannot create coordinator test barrier: {error}"))
+        })?;
+        while Path::new(&marker).exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        Ok(())
+    }
+
+    fn pause(variable: &str) -> Result<(), tonic::Status> {
+        let Ok(marker) = std::env::var(variable) else {
             return Ok(());
         };
         fs::write(&marker, b"sealed\n").map_err(|error| {
@@ -2530,6 +2580,12 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn acknowledged_abort_does_not_shutdown_but_ambiguous_prepare_retains_supervision() {
+        handler_owner_case("acknowledged-abort").await;
+        handler_owner_case("ambiguous-prepare").await;
+    }
+
     async fn handler_owner_case(scenario: &str) {
         use crate::{
             RebootHeaders,
@@ -2678,6 +2734,76 @@ mod tests {
             return;
         }
         let mut guard = result.unwrap();
+        if matches!(scenario, "acknowledged-abort" | "ambiguous-prepare") {
+            endpoint
+                .prepares
+                .lock()
+                .unwrap()
+                .push_back(if scenario == "acknowledged-abort" {
+                    Ok(database::PrepareResponse {
+                        abort: true,
+                        ..Default::default()
+                    })
+                } else {
+                    Err(Status::unavailable("lost Prepare reply"))
+                });
+            let error = guard
+                .complete_root(
+                    RootCoordinatorStart {
+                        transaction_ids: vec![id],
+                        coordinator_state_type: "example.Actor".into(),
+                        coordinator_state_ref: "actor/1".into(),
+                        participant: participant.actor_target(),
+                        mode: TransactionMode::Exclusive,
+                        read_only: false,
+                        factory: false,
+                        placement_requested: false,
+                    },
+                    Vec::new(),
+                )
+                .await
+                .unwrap_err();
+            if scenario == "acknowledged-abort" {
+                assert_eq!(error.code(), tonic::Code::Aborted);
+                assert_eq!(error.message(), "participant rejected Prepare");
+                assert!(matches!(
+                    sidecar.calls.lock().unwrap().last(),
+                    Some(Call::Cleanup(_))
+                ));
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(20), supervisor.join_next())
+                        .await
+                        .is_err(),
+                    "known Abort must not shut down host"
+                );
+                cancel.cancel();
+                supervisor.join_next().await.unwrap().unwrap().unwrap();
+            } else {
+                assert_eq!(error.code(), tonic::Code::Unavailable);
+                assert_eq!(error.message(), "lost Prepare reply");
+                let failure = supervisor.join_next().await.unwrap().unwrap().unwrap_err();
+                assert_eq!(failure.code(), tonic::Code::Unavailable);
+                assert!(
+                    tokio::time::timeout(
+                        Duration::from_millis(20),
+                        participant.start_local(start, ParticipantStartMode::Exclusive)
+                    )
+                    .await
+                    .is_err(),
+                    "ambiguous completion released ownership"
+                );
+                assert_eq!(sidecar.calls.lock().unwrap().len(), 1);
+                assert!(
+                    !endpoint
+                        .calls
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .any(|call| matches!(call, Call::Abort(_) | Call::Commit(_)))
+                );
+            }
+            return;
+        }
         if scenario == "premature-completion" {
             assert_eq!(
                 guard.test_completed().unwrap_err().code(),
@@ -3596,7 +3722,7 @@ mod tests {
             }),
         ]);
         let id = Uuid::from_u128(7);
-        coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
+        let error = coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
             .complete_with_classified_returned_participants(
                 start(id),
                 vec![returned(ParticipantTarget {
@@ -3605,7 +3731,9 @@ mod tests {
                 })],
             )
             .await
-            .unwrap();
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::Aborted);
+        assert_eq!(error.message(), "participant rejected Prepare");
         let calls = endpoint.calls.lock().unwrap();
         assert_eq!(
             calls
@@ -3664,10 +3792,12 @@ mod tests {
             }));
         let sidecar = Arc::new(MockSidecar::default());
         let endpoint = Arc::new(endpoint);
-        coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
+        let error = coordinator(Arc::clone(&sidecar), Arc::clone(&endpoint))
             .complete(start(Uuid::from_u128(3)))
             .await
-            .unwrap();
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::Aborted);
+        assert_eq!(error.message(), "participant rejected Prepare");
         assert!(matches!(
             endpoint.calls.lock().unwrap().last(),
             Some(Call::Abort(_))

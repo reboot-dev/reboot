@@ -1813,7 +1813,7 @@ async fn generated_fresh_shared_root_uses_read_only_or_direct_local_promotion() 
     assert_eq!(client.shared_read(unchanged).await.unwrap().into_inner().value, 4);
     assert_eq!(
         *trace.lock().unwrap(),
-        ["participant load", "fresh shared handler", "coordinator DB prepare", "coordinator DB decision", "coordinator DB cleanup"]
+        ["participant load", "fresh shared handler"]
     );
 
     trace.lock().unwrap().clear();

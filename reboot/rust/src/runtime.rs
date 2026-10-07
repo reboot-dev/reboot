@@ -172,6 +172,9 @@ pub struct TransactionContext {
     doomed: Arc<Mutex<Option<Status>>>,
     live_leaf: bool,
     supervised_tree: bool,
+    /// Installed only after actual inbound live reservation/execution admission.
+    /// An outbound nested clone is not a newly admitted inbound incarnation.
+    supervised_inbound_headers: Option<RebootHeaders>,
 }
 
 #[derive(Debug, Default)]
@@ -441,6 +444,7 @@ impl TransactionContext {
             doomed: Arc::new(Mutex::new(None)),
             live_leaf: false,
             supervised_tree: false,
+            supervised_inbound_headers: None,
         })
     }
 
@@ -501,6 +505,24 @@ impl TransactionContext {
             self.enable_read_only_aware();
         }
         Ok(())
+    }
+
+    pub(crate) fn mark_supervised_inbound(&mut self) {
+        debug_assert!(self.supervised_tree && self.returned_participants.is_some());
+        self.supervised_inbound_headers = Some(self.headers.clone());
+    }
+
+    fn supervised_inbound_at_depth(&self, depth: usize) -> bool {
+        self.supervised_tree
+            && self.returned_participants.is_some()
+            && self.transaction_ids().len() == depth
+            && self.supervised_inbound_headers.as_ref() == Some(&self.headers)
+    }
+
+    /// Bounded first-touch recovery dispatch; ledger and participant checks remain independent.
+    #[doc(hidden)]
+    pub fn supports_rollback_leaf_path(&self) -> bool {
+        self.transaction_ids().len() == 2 || self.supervised_inbound_at_depth(3)
     }
 
     pub(crate) fn same_ownership_context(&self, other: &Self) -> bool {
@@ -638,14 +660,14 @@ impl TransactionContext {
         state_ref: &str,
     ) -> Result<(), Status> {
         if !self.supervised_tree
-            || !self.is_fresh_root()
+            || !(self.is_fresh_root() || self.supervised_inbound_at_depth(2))
             || self.mode != TransactionMode::Exclusive
             || self.headers.idempotency_key.is_some()
             || !self.headers.coordinator_read_only_aware
             || self.doomed_status().is_some()
         {
             return Err(Status::failed_precondition(
-                "recoverable error requires supervised fresh root",
+                "recoverable error requires supervised root or exact admitted inbound branch",
             ));
         }
         let returned = crate::successful_trailers::ReturnedParticipants::from_metadata(metadata)
@@ -660,7 +682,9 @@ impl TransactionContext {
                 "error must retain exact read-only leaf membership",
             ));
         }
-        let collection = self.returned_participants.as_ref().unwrap();
+        let collection = self.returned_participants.as_ref().ok_or_else(|| {
+            Status::failed_precondition("recoverable error requires initialized branch")
+        })?;
         let mut ledger = collection
             .lock()
             .expect("returned participant mutex poisoned");
@@ -680,7 +704,9 @@ impl TransactionContext {
 
     pub(crate) fn validate_rollback_leaf_branch(&self) -> Result<(), Status> {
         if !self.supervised_tree
-            || self.transaction_ids().len() != 2
+            || !self.supports_rollback_leaf_path()
+            || self.mode != TransactionMode::Exclusive
+            || self.headers.idempotency_key.is_some()
             || !self.headers.coordinator_read_only_aware
             || self.doomed_status().is_some()
         {
@@ -688,7 +714,13 @@ impl TransactionContext {
                 "rollback excludes unsupported branches",
             ));
         }
-        let ledger = self.returned_participants.as_ref().unwrap().lock().unwrap();
+        let collection = self
+            .returned_participants
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("rollback requires initialized branch"))?;
+        let ledger = collection
+            .lock()
+            .expect("returned participant mutex poisoned");
         if ledger.sealed
             || ledger.active != 0
             || ledger.dispatched
@@ -956,6 +988,7 @@ impl TransactionContext {
             doomed: Arc::clone(&self.doomed),
             live_leaf: self.live_leaf,
             supervised_tree: self.supervised_tree,
+            supervised_inbound_headers: None,
         })
     }
 }
@@ -4120,6 +4153,107 @@ mod tests {
             );
         }
         assert_eq!(resolver.0.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn descendant_error_admission_requires_exact_initialized_inbound_provenance() {
+        let root = Uuid::new_v4();
+        let branch_id = Uuid::new_v4();
+        let tip_id = Uuid::new_v4();
+        let mut headers = RebootHeaders::new("B");
+        headers.transaction_ids = Some(vec![root, branch_id]);
+        headers.transaction_coordinator_state_type = Some("example.Actor".into());
+        headers.transaction_coordinator_state_ref = Some("A".into());
+        headers.coordinator_read_only_aware = true;
+        let metadata = crate::successful_trailers::ParticipantMetadata::classified_single(
+            "example.Actor",
+            "C",
+            true,
+            true,
+        )
+        .unwrap();
+        let mut status = Status::unknown("declared");
+        metadata.attach_to_status(&mut status);
+        let mut branch =
+            TransactionContext::from_headers(headers.clone(), TransactionMode::Exclusive).unwrap();
+        assert!(
+            branch
+                .enlist_rolled_back_leaf(status.metadata(), "example.Actor", "C")
+                .is_err()
+        );
+        branch.enable_supervised_tree().unwrap();
+        let mut scope = branch.begin_generated_outbound().unwrap();
+        assert!(
+            branch
+                .enlist_rolled_back_leaf(status.metadata(), "example.Actor", "C")
+                .is_err(),
+            "opt-in without actual inbound provenance must fail"
+        );
+        branch.mark_supervised_inbound();
+        assert!(
+            branch
+                .enlist_rolled_back_leaf(status.metadata(), "wrong.Type", "C")
+                .is_err()
+        );
+        assert!(
+            branch
+                .enlist_rolled_back_leaf(status.metadata(), "example.Actor", "wrong-ref")
+                .is_err()
+        );
+        branch
+            .enlist_rolled_back_leaf(status.metadata(), "example.Actor", "C")
+            .unwrap();
+        scope.completed();
+        drop(scope);
+        assert!(!branch.is_fresh_root());
+        assert_eq!(branch.returned_participants_snapshot().len(), 1);
+        assert!(
+            branch.begin_generated_outbound().is_err(),
+            "siblings/retries stay forbidden"
+        );
+        assert!(
+            branch.validate_rollback_leaf_branch().is_err(),
+            "B cannot roll back its caught C subtree"
+        );
+        let mut derived = branch.with_nested_transaction_id(tip_id).unwrap();
+        assert!(
+            !derived.supports_rollback_leaf_path(),
+            "derived clone is not admitted C"
+        );
+        derived.enable_supervised_tree().unwrap();
+        assert!(
+            !derived.supports_rollback_leaf_path(),
+            "enabling cannot forge C provenance"
+        );
+        let mut tip_headers = headers.clone();
+        tip_headers.state_ref = "C".into();
+        tip_headers.transaction_ids.as_mut().unwrap().push(tip_id);
+        let mut tip =
+            TransactionContext::from_headers(tip_headers, TransactionMode::Exclusive).unwrap();
+        tip.enable_supervised_tree().unwrap();
+        tip.mark_supervised_inbound();
+        tip.validate_rollback_leaf_branch().unwrap();
+        assert!(!tip.is_fresh_root());
+        for coordinate in 0..4 {
+            let mut changed = tip.clone();
+            match coordinate {
+                0 => changed.headers.transaction_ids.as_mut().unwrap()[0] = Uuid::new_v4(),
+                1 => changed.headers.transaction_ids.as_mut().unwrap()[1] = Uuid::new_v4(),
+                2 => changed.headers.transaction_coordinator_state_ref = Some("B".into()),
+                _ => changed.headers.state_ref = "wrong-C".into(),
+            }
+            assert!(!changed.supports_rollback_leaf_path());
+            assert!(changed.validate_rollback_leaf_branch().is_err());
+        }
+        tip.doom(Status::unavailable("uncertain"));
+        assert!(tip.validate_rollback_leaf_branch().is_err());
+        let reconstructed =
+            TransactionContext::from_headers(headers, TransactionMode::Exclusive).unwrap();
+        assert!(
+            reconstructed
+                .enlist_rolled_back_leaf(status.metadata(), "example.Actor", "C")
+                .is_err()
+        );
     }
 
     #[tokio::test]

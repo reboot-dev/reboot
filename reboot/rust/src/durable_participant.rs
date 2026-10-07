@@ -649,7 +649,7 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         let mut pending = self.participant.pending.lock().await;
         if self.handed_off
             || context.mode() != TransactionMode::Exclusive
-            || context.transaction_ids().len() != 2
+            || !context.supports_rollback_leaf_path()
             || context.headers().idempotency_key.is_some()
             || !context.headers().coordinator_read_only_aware
             || context.doomed_status().is_some()
@@ -2016,6 +2016,482 @@ mod tests {
             ));
             // Test teardown alone discards this in-memory retained capability.
             *participant.pending.lock().await = None;
+        }
+    }
+
+    #[tokio::test]
+    async fn rollback_descendant_rejects_full_path_root_coordinator_actor_and_staged_effects() {
+        for coordinate in 0..8 {
+            let sidecar = Arc::new(MockSidecar::default());
+            *sidecar.load_state.lock().unwrap() = Some(vec![42]);
+            let participant =
+                DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+            let root = Uuid::new_v4();
+            let (local, context) =
+                rollback_descendant_local(&participant, root, Uuid::new_v4()).await;
+            let mut headers = context.headers().clone();
+            match coordinate {
+                0 => headers.transaction_ids.as_mut().unwrap()[0] = Uuid::new_v4(),
+                1 => headers.transaction_ids.as_mut().unwrap()[1] = Uuid::new_v4(),
+                2 => headers.transaction_ids.as_mut().unwrap()[2] = Uuid::new_v4(),
+                3 => headers.transaction_coordinator_state_type = Some("wrong.Type".into()),
+                4 => headers.transaction_coordinator_state_ref = Some("wrong-coordinator".into()),
+                5 => headers.state_ref = "wrong-C".into(),
+                6 => headers
+                    .transaction_ids
+                    .as_mut()
+                    .unwrap()
+                    .push(Uuid::new_v4()),
+                _ => {
+                    local
+                        .stage(PendingActorEffects {
+                            state: Some(vec![99]),
+                            task_upserts: vec![database::Task::default()],
+                            ..Default::default()
+                        })
+                        .await
+                        .unwrap();
+                }
+            }
+            let mut changed = crate::runtime::TransactionContext::from_headers(
+                headers,
+                TransactionMode::Exclusive,
+            )
+            .unwrap();
+            changed.enable_supervised_tree().unwrap();
+            changed.mark_supervised_inbound();
+            assert!(
+                local.rollback_declared_leaf(&changed).await.is_err(),
+                "coordinate {coordinate} must retain exact owner"
+            );
+            let pending = participant.pending.lock().await;
+            let current = pending.as_ref().unwrap();
+            assert!(current.execution_active);
+            assert_eq!(current.disposition, PendingDisposition::Commit);
+            assert!(!current.lock.is_shared());
+            drop(pending);
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(10),
+                    participant.lock.shared()
+                )
+                .await
+                .is_err()
+            );
+            local.end_execution().await.unwrap();
+            participant.terminal(root, false).await.unwrap();
+        }
+    }
+    fn rollback_descendant_context(root: Uuid, child: Uuid) -> crate::runtime::TransactionContext {
+        let mut headers = rollback_context(root, child).headers().clone();
+        headers
+            .transaction_ids
+            .as_mut()
+            .unwrap()
+            .push(Uuid::from_u128(777));
+        let mut context =
+            crate::runtime::TransactionContext::from_headers(headers, TransactionMode::Exclusive)
+                .unwrap();
+        context.enable_supervised_tree().unwrap();
+        context.mark_supervised_inbound();
+        context
+    }
+    async fn rollback_descendant_local(
+        participant: &DurableActorParticipant<MockSidecar>,
+        root: Uuid,
+        child: Uuid,
+    ) -> (
+        StartedLocalTransaction<MockSidecar>,
+        crate::runtime::TransactionContext,
+    ) {
+        let context = rollback_descendant_context(root, child);
+        let mut request = start(root);
+        request
+            .transaction_ids
+            .extend([child, Uuid::from_u128(777)]);
+        request.transaction_path = TransactionPathContract::PreserveNested;
+        let mut local = participant
+            .start_local(request, ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        local.reserve_live_execution(&context).await.unwrap();
+        (local, context)
+    }
+    #[tokio::test]
+    async fn rollback_descendant_watch_shutdown_retains_at_all_transfer_phases() {
+        use crate::application_host::{HostRecovery, RecoveryCancellation};
+        struct ParkWatch(Arc<tokio::sync::Semaphore>);
+        impl CoordinatorWatchEndpoint for ParkWatch {
+            fn watch(
+                &self,
+                _: database::WatchRequest,
+            ) -> crate::legacy_coordinator::CoordinatorWatchFuture<'_, database::WatchResponse>
+            {
+                self.0.add_permits(1);
+                Box::pin(std::future::pending())
+            }
+        }
+        for phase in 0..4 {
+            let sidecar = Arc::new(MockSidecar::default());
+            *sidecar.load_state.lock().unwrap() = Some(vec![42]);
+            let participant =
+                DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+            let root = Uuid::new_v4();
+            let (local, context) =
+                rollback_descendant_local(&participant, root, Uuid::new_v4()).await;
+            let entered = Arc::new(tokio::sync::Semaphore::new(0));
+            let watch = Arc::new(ParkWatch(entered.clone()));
+            let owner = crate::live_participant::LiveParticipantOwner::new(
+                1,
+                crate::durable_coordinator::ParticipantTarget {
+                    state_type: "example.Coordinator".into(),
+                    state_ref: "coordinator/1".into(),
+                },
+                watch.clone(),
+            )
+            .unwrap();
+            let mut supervisor = tokio::task::JoinSet::new();
+            let cancellation = RecoveryCancellation::new();
+            owner
+                .recovery_registration()
+                .start(&mut supervisor, cancellation.clone())
+                .await
+                .unwrap();
+            let reservation = owner.reserve(&context).unwrap();
+            if phase > 0 {
+                local.rollback_declared_leaf(&context).await.unwrap();
+            }
+            if phase < 2 {
+                cancellation.cancel();
+                supervisor.join_next().await.unwrap().unwrap().unwrap();
+                assert!(reservation.validate_active().is_err());
+            }
+            let execution = LiveExecution {
+                participant: participant.clone(),
+                root,
+                owner: local.local_owner,
+            };
+            reservation.submit(Box::pin(async move { execution.watch(watch).await }));
+            if phase == 2 {
+                cancellation.cancel();
+            } // queued but not polled
+            if phase == 3 {
+                tokio::time::timeout(std::time::Duration::from_millis(100), entered.acquire())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .forget();
+                cancellation.cancel();
+            }
+            if phase >= 2 {
+                supervisor.join_next().await.unwrap().unwrap().unwrap();
+            }
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(10),
+                    participant.lock.exclusive()
+                )
+                .await
+                .is_err(),
+                "shutdown phase {phase} released retained observation"
+            );
+            if phase > 0 {
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(50),
+                    participant.lock.shared(),
+                )
+                .await
+                .unwrap();
+            }
+            assert!(matches!(
+                sidecar.calls.lock().unwrap().as_slice(),
+                [Call::Load(_)]
+            ));
+            // Test teardown alone discards this in-memory retained capability.
+            *participant.pending.lock().await = None;
+        }
+    }
+
+    #[tokio::test]
+    async fn rollback_descendant_atomic_downgrade_retains_until_readonly_prepare() {
+        let sidecar = Arc::new(MockSidecar::default());
+        *sidecar.load_state.lock().unwrap() = Some(vec![42]);
+        let participant = DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+        let root = Uuid::new_v4();
+        let (local, context) = rollback_descendant_local(&participant, root, Uuid::new_v4()).await;
+        local.rollback_declared_leaf(&context).await.unwrap();
+        assert_eq!(local.state_bytes(), Some(vec![42]));
+        let reader = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            participant.lock.shared(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(10),
+                participant.lock.exclusive()
+            )
+            .await
+            .is_err()
+        );
+        // Direct Prepare cannot release the downgraded lease while rollback execution is active.
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(10),
+                participant.prepare(root, true, true)
+            )
+            .await
+            .is_err()
+        );
+        local.end_execution().await.unwrap();
+        for (read_only, aware) in [(false, false), (false, true), (true, false)] {
+            assert!(participant.prepare(root, read_only, aware).await.is_err());
+            assert!(participant.pending.lock().await.is_some());
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(10),
+                    participant.lock.exclusive()
+                )
+                .await
+                .is_err(),
+                "wrong flags ({read_only}, {aware}) released ownership"
+            );
+            assert!(matches!(
+                sidecar.calls.lock().unwrap().as_slice(),
+                [Call::Load(_)]
+            ));
+        }
+        participant.prepare(root, true, true).await.unwrap();
+        drop(reader);
+        tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            participant.lock.exclusive(),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Load(_)]
+        ));
+    }
+    #[tokio::test]
+    async fn rollback_descendant_rejects_stale_same_root_exact_incarnation() {
+        let sidecar = Arc::new(MockSidecar::default());
+        *sidecar.load_state.lock().unwrap() = Some(vec![42]);
+        let participant = DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+        let root = Uuid::new_v4();
+        let child = Uuid::new_v4();
+        let (old, context) = rollback_descendant_local(&participant, root, child).await;
+        *participant.pending.lock().await = None;
+        let (replacement, _) = rollback_descendant_local(&participant, root, child).await;
+        assert!(old.rollback_declared_leaf(&context).await.is_err());
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(10),
+                participant.lock.shared()
+            )
+            .await
+            .is_err()
+        );
+        replacement.rollback_declared_leaf(&context).await.unwrap();
+        replacement.end_execution().await.unwrap();
+        participant.terminal(root, false).await.unwrap();
+    }
+    #[tokio::test]
+    async fn rollback_descendant_old_guard_watch_cannot_release_live_replacement() {
+        use crate::application_host::{HostRecovery, RecoveryCancellation};
+        use crate::durable_coordinator::{
+            CoordinatorSidecar, DurableRootCoordinator, ParticipantResolver, ParticipantTarget,
+        };
+        struct UnusedCoordinator;
+        impl CoordinatorSidecar for UnusedCoordinator {
+            fn coordinator_prepare(
+                &self,
+                _: database::TransactionCoordinatorPrepareRequest,
+            ) -> SidecarFuture<'_, database::TransactionCoordinatorPrepareResponse> {
+                panic!("stale guard must not coordinate")
+            }
+            fn coordinator_prepared(
+                &self,
+                _: database::TransactionCoordinatorPreparedRequest,
+            ) -> SidecarFuture<'_, database::TransactionCoordinatorPreparedResponse> {
+                panic!("stale guard must not coordinate")
+            }
+            fn coordinator_cleanup(
+                &self,
+                _: database::TransactionCoordinatorCleanupRequest,
+            ) -> SidecarFuture<'_, database::TransactionCoordinatorCleanupResponse> {
+                panic!("stale guard must not coordinate")
+            }
+            fn recover(
+                &self,
+                _: database::RecoverRequest,
+            ) -> SidecarFuture<'_, Vec<database::RecoverResponse>> {
+                panic!("stale guard must not recover")
+            }
+        }
+        struct UnusedResolver;
+        impl ParticipantResolver for UnusedResolver {
+            type Endpoint = InProcessParticipantEndpoint<MockSidecar>;
+            fn resolve(&self, _: &ParticipantTarget) -> SidecarFuture<'_, Arc<Self::Endpoint>> {
+                panic!("stale guard must not resolve")
+            }
+        }
+        struct ControlledWatch {
+            entered: tokio::sync::Semaphore,
+            release: tokio::sync::Notify,
+        }
+        impl CoordinatorWatchEndpoint for ControlledWatch {
+            fn watch(
+                &self,
+                _: database::WatchRequest,
+            ) -> crate::legacy_coordinator::CoordinatorWatchFuture<'_, database::WatchResponse>
+            {
+                self.entered.add_permits(1);
+                Box::pin(async move {
+                    self.release.notified().await;
+                    Ok(database::WatchResponse { aborted: false })
+                })
+            }
+        }
+        // Exercise the actual consuming guard's queued transfer and an already
+        // active old Watch receiving Commit after replacement admission.
+        for active in [false, true] {
+            let sidecar = Arc::new(MockSidecar::default());
+            *sidecar.load_state.lock().unwrap() = Some(vec![42]);
+            let participant =
+                DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+            let root = Uuid::new_v4();
+            let child = Uuid::new_v4();
+            let mut context = rollback_descendant_context(root, child);
+            let mut request = start(root);
+            request
+                .transaction_ids
+                .extend([child, Uuid::from_u128(777)]);
+            request.transaction_path = TransactionPathContract::PreserveNested;
+            let local = participant
+                .start_local(request, ParticipantStartMode::Exclusive)
+                .await
+                .unwrap();
+            let watch = Arc::new(ControlledWatch {
+                entered: tokio::sync::Semaphore::new(0),
+                release: tokio::sync::Notify::new(),
+            });
+            let owner = crate::live_participant::LiveParticipantOwner::new(
+                1,
+                ParticipantTarget {
+                    state_type: "example.Coordinator".into(),
+                    state_ref: "coordinator/1".into(),
+                },
+                watch.clone(),
+            )
+            .unwrap();
+            let cancellation = RecoveryCancellation::new();
+            let mut supervisor = tokio::task::JoinSet::new();
+            owner
+                .recovery_registration()
+                .start(&mut supervisor, cancellation.clone())
+                .await
+                .unwrap();
+            let coordinator =
+                DurableRootCoordinator::new(Arc::new(UnusedCoordinator), Arc::new(UnusedResolver));
+            let guard = crate::explicit_abort::RootHandlerGuard::before_handler(
+                local,
+                context.clone(),
+                coordinator,
+                None,
+            )
+            .await
+            .unwrap()
+            .with_supervised_tree(&mut context, Some(&owner))
+            .await
+            .unwrap();
+            let old_guard = if active {
+                drop(guard);
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(100),
+                    watch.entered.acquire(),
+                )
+                .await
+                .unwrap()
+                .unwrap()
+                .forget();
+                None
+            } else {
+                Some(guard)
+            };
+            // Explicitly simulate replacement of an incarnation, not a terminal
+            // replacement that makes the old guard's no-op uninformative.
+            *participant.pending.lock().await = None;
+            let (replacement, replacement_context) =
+                rollback_descendant_local(&participant, root, child).await;
+            let replacement_owner = replacement.local_owner;
+            drop(old_guard);
+            if active {
+                watch.release.notify_one();
+            }
+            // Capacity re-admission acknowledges completion of the queued old
+            // guard/Watch work, rather than assuming yield/sleep is sufficient.
+            tokio::time::timeout(std::time::Duration::from_millis(100), async {
+                loop {
+                    if let Ok(reservation) = owner.reserve(&replacement_context) {
+                        drop(reservation);
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            {
+                let pending = participant.pending.lock().await;
+                let current = pending.as_ref().unwrap();
+                assert_eq!(current.root_id, root);
+                assert_eq!(current.local_owner, Some(replacement_owner));
+                assert!(
+                    current.execution_active,
+                    "old Watch cleared live replacement execution"
+                );
+                assert!(!current.terminal_attempted);
+            }
+            assert_eq!(watch.entered.available_permits(), 0);
+            assert!(matches!(
+                sidecar.calls.lock().unwrap().as_slice(),
+                [Call::Load(_), Call::Load(_)]
+            ));
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(10),
+                    participant.lock.shared()
+                )
+                .await
+                .is_err()
+            );
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(10),
+                    participant.lock.exclusive()
+                )
+                .await
+                .is_err()
+            );
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(10),
+                    participant.prepare(root, true, true)
+                )
+                .await
+                .is_err()
+            );
+            cancellation.cancel();
+            supervisor.join_next().await.unwrap().unwrap().unwrap();
+            replacement
+                .rollback_declared_leaf(&replacement_context)
+                .await
+                .unwrap();
+            replacement.end_execution().await.unwrap();
+            participant.prepare(root, true, true).await.unwrap();
         }
     }
 
