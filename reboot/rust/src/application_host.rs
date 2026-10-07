@@ -153,6 +153,8 @@ pub struct RecoveryCancellation {
     state: Arc<tokio::sync::watch::Sender<bool>>,
     readiness: Option<tokio::sync::watch::Receiver<RecoveryState>>,
     placement: Option<tokio::sync::watch::Receiver<bool>>,
+    failure: Option<tokio::sync::watch::Sender<RecoveryState>>,
+    failure_latched: Arc<std::sync::atomic::AtomicBool>,
 }
 impl RecoveryCancellation {
     pub(crate) fn new() -> Self {
@@ -161,6 +163,8 @@ impl RecoveryCancellation {
             state: Arc::new(state),
             readiness: None,
             placement: None,
+            failure: None,
+            failure_latched: Arc::new(false.into()),
         }
     }
     /// Wait for both durable recovery and required placement completeness.
@@ -173,6 +177,9 @@ impl RecoveryCancellation {
             tonic::Status::failed_precondition("task dispatch requires placement readiness")
         })?;
         loop {
+            if *readiness.borrow() == RecoveryState::Failed {
+                return Err(tonic::Status::unavailable("application host failed"));
+            }
             if *readiness.borrow() == RecoveryState::Ready && *placement.borrow() {
                 return Ok(());
             }
@@ -181,6 +188,23 @@ impl RecoveryCancellation {
                 result = readiness.changed() => result.map_err(|_| tonic::Status::unavailable("host readiness closed"))?,
                 result = placement.changed() => result.map_err(|_| tonic::Status::unavailable("placement readiness closed"))?,
             }
+        }
+    }
+    #[cfg(test)]
+    pub(crate) fn test_host() -> (Self, tokio::sync::watch::Receiver<RecoveryState>) {
+        let (sender, receiver) = tokio::sync::watch::channel(RecoveryState::Ready);
+        let mut cancel = Self::new();
+        cancel.failure = Some(sender);
+        cancel.readiness = Some(receiver.clone());
+        cancel.placement = Some(tokio::sync::watch::channel(true).1);
+        (cancel, receiver)
+    }
+    // Only ApplicationHost installs this authority. No public readiness setter.
+    pub(crate) fn fail(&self) {
+        self.failure_latched
+            .store(true, std::sync::atomic::Ordering::Release);
+        if let Some(failure) = &self.failure {
+            failure.send_replace(RecoveryState::Failed);
         }
     }
     pub fn cancel(&self) {
@@ -1035,6 +1059,7 @@ impl RunningApplicationHost {
             .map_err(ApplicationHostError::Bind)?;
         let mut cancel = RecoveryCancellation::new();
         cancel.readiness = Some(readiness.subscribe());
+        cancel.failure = Some(readiness.clone());
         cancel.placement = Some(placement_gate.state.clone());
         let serving_cancel = cancel.clone();
         // Poll the fixed router before recovery. Control services were part of
@@ -1088,7 +1113,7 @@ impl RunningApplicationHost {
                 Self::join_cancelled_recovery(&mut supervisor).await;
                 let serving = serving.await.expect("application serving task panicked");
                 Self::shutdown_lifecycle(&lifecycle).await?;
-                return serving.map_err(ApplicationHostError::Transport);
+                return Self::shutdown_result(&cancel, serving);
             };
             if let Err(source) = started {
                 readiness.send_replace(RecoveryState::Failed);
@@ -1123,7 +1148,14 @@ impl RunningApplicationHost {
                 }
             });
         }
-        readiness.send_replace(RecoveryState::Ready);
+        readiness.send_if_modified(|state| {
+            if *state == RecoveryState::Failed {
+                false
+            } else {
+                *state = RecoveryState::Ready;
+                true
+            }
+        });
         tokio::select! {
             _ = &mut shutdown => cancel.cancel(),
             result = Self::next_recovery_child(&mut supervisor), if supervisor.iter().any(|group| !group.is_empty()) => {
@@ -1141,13 +1173,30 @@ impl RunningApplicationHost {
                 Self::join_cancelled_recovery(&mut supervisor).await;
                 let result = result.expect("application serving task panicked");
                 Self::shutdown_lifecycle(&lifecycle).await?;
-                return result.map_err(ApplicationHostError::Transport);
+                return Self::shutdown_result(&cancel, result);
             }
         }
         readiness.send_replace(RecoveryState::Failed);
         Self::join_cancelled_recovery(&mut supervisor).await;
         let serving = serving.await.expect("application serving task panicked");
         Self::shutdown_lifecycle(&lifecycle).await?;
+        Self::shutdown_result(&cancel, serving)
+    }
+
+    // Check after work destruction on every otherwise successful host exit,
+    // including interrupted startup and an early router exit.
+    fn shutdown_result(
+        cancel: &RecoveryCancellation,
+        serving: Result<(), tonic::transport::Error>,
+    ) -> Result<(), ApplicationHostError> {
+        if cancel
+            .failure_latched
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Err(ApplicationHostError::RecoveryTask(
+                tonic::Status::unavailable("durable task outcome uncertain during shutdown"),
+            ));
+        }
         serving.map_err(ApplicationHostError::Transport)
     }
 
@@ -1254,5 +1303,73 @@ impl RunningApplicationHost {
             })?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod writer_failure_lifecycle_tests {
+    use super::*;
+    struct FailDuringStart;
+    #[tonic::async_trait]
+    impl HostRecovery for FailDuringStart {
+        async fn start(
+            &self,
+            children: &mut JoinSet<Result<(), tonic::Status>>,
+            cancel: RecoveryCancellation,
+        ) -> Result<(), tonic::Status> {
+            cancel.fail();
+            children.spawn(async move {
+                cancel.cancelled().await;
+                Ok(())
+            });
+            Ok(())
+        }
+    }
+    #[tokio::test]
+    async fn writer_failure_latched_during_start_cannot_be_overwritten_by_ready() {
+        let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = socket.local_addr().unwrap();
+        drop(socket);
+        let service = crate::proto::echo_methods_server::EchoMethodsServer::new(
+            crate::runtime::InMemoryHost::default(),
+        );
+        let host =
+            ApplicationHost::new("sticky-writer-failure").with_host_recovery(FailDuringStart);
+        let mut readiness = host.readiness.subscribe();
+        let host = host.add_public_service(service);
+        let (shutdown, stopped) = tokio::sync::oneshot::channel();
+        let serving = tokio::spawn(host.serve_with_shutdown(address, async {
+            let _ = stopped.await;
+        }));
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while *readiness.borrow_and_update() != RecoveryState::Failed {
+                readiness.changed().await.unwrap();
+            }
+        })
+        .await
+        .unwrap();
+        // The registration returned Ok; the real host now executes its Ready
+        // transition. Sticky Failed must survive that startup path.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert_eq!(*readiness.borrow(), RecoveryState::Failed);
+        let channel = tonic::transport::Endpoint::from_shared(format!("http://{address}"))
+            .unwrap()
+            .connect()
+            .await
+            .unwrap();
+        let mut client = crate::proto::echo_methods_client::EchoMethodsClient::new(channel);
+        assert_eq!(
+            client
+                .last_message(crate::proto::Empty {})
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unavailable
+        );
+        shutdown.send(()).unwrap();
+        assert!(
+            matches!(serving.await.unwrap(), Err(ApplicationHostError::RecoveryTask(status)) if status.code() == tonic::Code::Unavailable)
+        );
+        assert!(tokio::net::TcpStream::connect(address).await.is_err());
     }
 }

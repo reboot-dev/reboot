@@ -1350,9 +1350,12 @@ fn emit_durable(
         &database_methods,
     );
     if has_transactions
-        && database_methods
-            .iter()
-            .any(|(kind, _, _, _, _)| matches!(**kind, DurableKind::Reader))
+        && database_methods.iter().any(|(kind, _, _, _, _)| {
+            matches!(
+                **kind,
+                DurableKind::Reader | DurableKind::Writer(WriterMetadata { constructor: false })
+            )
+        })
     {
         emit_reader_tasks(
             output,
@@ -1361,6 +1364,7 @@ fn emit_durable(
             service_name,
             &state,
             runtime_module,
+            package,
         );
     }
     emit_transactions(
@@ -1726,7 +1730,7 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
         ""
     };
 
-    output.push_str(&format!("{prefix}let execution = match self.handler.{method}(&context, &mut state, request.into_inner()).await{handler_error_map} {{ Ok(execution) => execution, Err(error) => {{ if local.cancellation_owned() || (({task_scope}) && !{read_only} && !{factory} && context.transaction_ids().len() == 1 && !context.returned_participants_snapshot().is_empty()) {{ local.abort_explicit().await?; }} else {{ local.abort_local().await?; }} return Err(error); }} }};\n{prefix}if let Some(status) = context.doomed_status() {{ if local.cancellation_owned() || (({task_scope}) && !{read_only} && !{factory} && context.transaction_ids().len() == 1 && !context.returned_participants_snapshot().is_empty()) {{ local.abort_explicit().await?; }} else {{ local.abort_local().await?; }} return Err(status); }}\n{prefix}if automatic_idempotency.is_some() && !execution.idempotent_mutations.is_empty() {{ if local.cancellation_owned() || (({task_scope}) && !{read_only} && !{factory} && context.transaction_ids().len() == 1 && !context.returned_participants_snapshot().is_empty()) {{ local.abort_explicit().await?; }} else {{ local.abort_local().await?; }} return Err(tonic::Status::failed_precondition(\"root-local idempotency stages exactly one automatic mutation\")); }}\n{prefix}let returned_participants = {returned_participants};\n{prefix}if !execution.task_upserts.is_empty() {{ let validation = if self.supervised_tree || (!({task_scope}) && !local.live_leaf_tasks_owned()?) || {read_only} || {factory} || (!returned_participants.is_empty() && !local.cancellation_owned()) {{ Err(tonic::Status::failed_precondition(\"tasks require a fresh same-actor exclusive non-factory root with cancellation ownership for remote participants\")) }} else {{ let validation = self.tasks.as_ref().ok_or_else(|| tonic::Status::failed_precondition(\"no host-owned task dispatcher registered\")); match validation {{ Ok(tasks) => tasks.validate_staged(&execution.task_upserts).await, Err(error) => Err(error) }} }}; if let Err(error) = validation {{ if local.cancellation_owned() || (({task_scope}) && !{read_only} && !{factory} && context.transaction_ids().len() == 1 && !context.returned_participants_snapshot().is_empty()) {{ local.abort_explicit().await?; }} else {{ local.abort_local().await?; }} return Err(error); }} }}\n{prefix}let automatic_mutations = automatic_idempotency.as_ref().map(|idempotency| idempotency.mutation(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, context.headers().state_ref.clone(), &execution.response)).into_iter().collect::<Vec<_>>();\n{prefix}if let Err(error) = self.participant.stage(transaction_id, {runtime_module}::durable_participant::PendingActorEffects {{ state: if {factory} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else if {default_mutated_state} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else {{ execution.final_state.clone() }}, task_upserts: execution.task_upserts.clone(), idempotent_mutations: if automatic_idempotency.is_some() {{ automatic_mutations }} else {{ execution.idempotent_mutations.clone() }} }}).await {{ if local.cancellation_owned() || (({task_scope}) && !{read_only} && !{factory} && context.transaction_ids().len() == 1 && !context.returned_participants_snapshot().is_empty()) {{ local.abort_explicit().await?; }} else {{ local.abort_local().await?; }} return Err(error); }}\n"));
+    output.push_str(&format!("{prefix}let execution = match self.handler.{method}(&context, &mut state, request.into_inner()).await{handler_error_map} {{ Ok(execution) => execution, Err(error) => {{ if local.cancellation_owned() || (({task_scope}) && !{read_only} && !{factory} && context.transaction_ids().len() == 1 && !context.returned_participants_snapshot().is_empty()) {{ local.abort_explicit().await?; }} else {{ local.abort_local().await?; }} return Err(error); }} }};\n{prefix}if let Some(status) = context.doomed_status() {{ if local.cancellation_owned() || (({task_scope}) && !{read_only} && !{factory} && context.transaction_ids().len() == 1 && !context.returned_participants_snapshot().is_empty()) {{ local.abort_explicit().await?; }} else {{ local.abort_local().await?; }} return Err(status); }}\n{prefix}if automatic_idempotency.is_some() && !execution.idempotent_mutations.is_empty() {{ if local.cancellation_owned() || (({task_scope}) && !{read_only} && !{factory} && context.transaction_ids().len() == 1 && !context.returned_participants_snapshot().is_empty()) {{ local.abort_explicit().await?; }} else {{ local.abort_local().await?; }} return Err(tonic::Status::failed_precondition(\"root-local idempotency stages exactly one automatic mutation\")); }}\n{prefix}let returned_participants = {returned_participants};\n{prefix}if !execution.task_upserts.is_empty() {{ let validation = if self.supervised_tree || (!({task_scope}) && !local.live_leaf_tasks_owned()?) || {read_only} || {factory} || (!returned_participants.is_empty() && !local.cancellation_owned()) {{ Err(tonic::Status::failed_precondition(\"tasks require a fresh same-actor exclusive non-factory root with cancellation ownership for remote participants\")) }} else {{ let validation = self.tasks.as_ref().ok_or_else(|| tonic::Status::failed_precondition(\"no host-owned task dispatcher registered\")); match validation {{ Ok(tasks) => {{ if tasks.contains_writer(&execution.task_upserts) && (!({task_scope}) || !returned_participants.is_empty()) {{ Err(tonic::Status::failed_precondition(\"writer tasks require root-local execution\")) }} else {{ tasks.validate_staged(&execution.task_upserts).await }} }}, Err(error) => Err(error) }} }}; if let Err(error) = validation {{ if local.cancellation_owned() || (({task_scope}) && !{read_only} && !{factory} && context.transaction_ids().len() == 1 && !context.returned_participants_snapshot().is_empty()) {{ local.abort_explicit().await?; }} else {{ local.abort_local().await?; }} return Err(error); }} }}\n{prefix}let automatic_mutations = automatic_idempotency.as_ref().map(|idempotency| idempotency.mutation(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, context.headers().state_ref.clone(), &execution.response)).into_iter().collect::<Vec<_>>();\n{prefix}if let Err(error) = self.participant.stage(transaction_id, {runtime_module}::durable_participant::PendingActorEffects {{ state: if {factory} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else if {default_mutated_state} {{ execution.final_state.clone().or_else(|| Some(<proto::{state} as prost::Message>::encode_to_vec(&state))) }} else {{ execution.final_state.clone() }}, task_upserts: execution.task_upserts.clone(), idempotent_mutations: if automatic_idempotency.is_some() {{ automatic_mutations }} else {{ execution.idempotent_mutations.clone() }} }}).await {{ if local.cancellation_owned() || (({task_scope}) && !{read_only} && !{factory} && context.transaction_ids().len() == 1 && !context.returned_participants_snapshot().is_empty()) {{ local.abort_explicit().await?; }} else {{ local.abort_local().await?; }} return Err(error); }}\n"));
     if shared_root_ownership_seam {
         output.push_str(&format!("{prefix}// Local-only shared-root ownership is intentionally not activated: the\n{prefix}// current coordinator accepts only the read-only shared classification.\n"));
     }
@@ -1753,6 +1757,7 @@ fn emit_reader_tasks(
     service_name: &str,
     state: &str,
     runtime_module: &str,
+    package: &str,
 ) {
     let handler = format!("{service_name}TransactionHandler");
     let binding = format!("{service_name}ReaderTaskBinding");
@@ -1760,14 +1765,16 @@ fn emit_reader_tasks(
     let mut scheduled_methods = String::new();
     let mut wait_methods = String::new();
     let mut routed_wait_methods = String::new();
-    output.push_str(&format!("/// Immediate same-actor reader task scheduling; method views come from RPC descriptors, not task annotations.\npub struct {scheduler};\nimpl {scheduler} {{\n"));
+    output.push_str(&format!("/// Immediate same-actor reader/writer task scheduling; method views come from RPC descriptors, not task annotations.\npub struct {scheduler};\nimpl {scheduler} {{\n"));
     for method in &service.method {
         let name = method.name.as_deref().unwrap();
-        if !matches!(annotation.methods.get(name), Some(DurableKind::Reader))
-            || annotation
-                .declared_errors
-                .get(name)
-                .is_some_and(|errors| !errors.is_empty())
+        if !matches!(
+            annotation.methods.get(name),
+            Some(DurableKind::Reader | DurableKind::Writer(WriterMetadata { constructor: false }))
+        ) || annotation
+            .declared_errors
+            .get(name)
+            .is_some_and(|errors| !errors.is_empty())
         {
             continue;
         }
@@ -1803,14 +1810,16 @@ fn emit_reader_tasks(
         "pub struct {scheduler}Wait;\nimpl {scheduler}Wait {{\n{wait_methods}}}\n"
     ));
     output.push_str(&format!("/// Placement-aware task results using an explicit caller-owned resolver.\n/// With LegacyApplicationResolver this follows the latest accepted legacy plan.\npub struct {scheduler}WaitRouted<R> {{ resolver: R }}\nimpl<R: {runtime_module}::runtime::TransactionalChannelResolver> {scheduler}WaitRouted<R> {{ pub fn new(resolver: R) -> Self {{ Self {{ resolver }} }}\n{routed_wait_methods}}}\n"));
-    output.push_str(&format!("struct {binding}<H> {{ handler: std::sync::Arc<H>, store: {runtime_module}::runtime::DatabaseActorStore }}\n#[tonic::async_trait]\nimpl<H: {handler}> {runtime_module}::one_shot_tasks::ReaderTaskBinding for {binding}<H> {{\n    fn validate(&self, task: &{runtime_module}::database_proto::Task) -> Result<(), tonic::Status> {{ match task.method.as_str() {{\n"));
+    output.push_str(&format!("struct {binding}<H> {{ handler: std::sync::Arc<H>, store: {runtime_module}::runtime::DatabaseActorStore, writers: bool }}\n#[tonic::async_trait]\nimpl<H: {handler}> {runtime_module}::one_shot_tasks::ReaderTaskBinding for {binding}<H> {{\n    fn validate(&self, task: &{runtime_module}::database_proto::Task) -> Result<(), tonic::Status> {{ match task.method.as_str() {{\n"));
     for method in &service.method {
         let name = method.name.as_deref().unwrap();
-        if !matches!(annotation.methods.get(name), Some(DurableKind::Reader))
-            || annotation
-                .declared_errors
-                .get(name)
-                .is_some_and(|errors| !errors.is_empty())
+        if !matches!(
+            annotation.methods.get(name),
+            Some(DurableKind::Reader | DurableKind::Writer(WriterMetadata { constructor: false }))
+        ) || annotation
+            .declared_errors
+            .get(name)
+            .is_some_and(|errors| !errors.is_empty())
         {
             continue;
         }
@@ -1822,7 +1831,17 @@ fn emit_reader_tasks(
             .next()
             .unwrap()
             .to_upper_camel_case();
-        output.push_str(&format!("        \"{name}\" => {{ <proto::{request} as prost::Message>::decode(task.request.as_slice()).map_err(|_| tonic::Status::invalid_argument(\"malformed task request\"))?; Ok(()) }},\n"));
+        let writer_validation = if matches!(
+            annotation.methods.get(name),
+            Some(DurableKind::Writer(_))
+        ) {
+            format!(
+                "if !self.writers {{ return Err(tonic::Status::failed_precondition(\"reader-only task owner\")); }} let id = task.task_id.as_ref().ok_or_else(|| tonic::Status::invalid_argument(\"missing task identity\"))?; {runtime_module}::runtime::writer_task_key(id, \"{package}.{service_name}.{name}\")?; "
+            )
+        } else {
+            String::new()
+        };
+        output.push_str(&format!("        \"{name}\" => {{ {writer_validation}<proto::{request} as prost::Message>::decode(task.request.as_slice()).map_err(|_| tonic::Status::invalid_argument(\"malformed task request\"))?; Ok(()) }},\n"));
     }
     output.push_str("        _ => Err(tonic::Status::invalid_argument(\"unknown or unsupported reader task method\")),\n    } }\n");
     output.push_str(&format!("    async fn execute(&self, task: &{runtime_module}::database_proto::Task) -> Result<prost_types::Any, tonic::Status> {{ let id = task.task_id.as_ref().ok_or_else(|| tonic::Status::invalid_argument(\"missing task identity\"))?; let state = self.store.load_for_declaration::<{state}DurableState>(&id.state_ref).await?.ok_or_else(|| tonic::Status::failed_precondition(\"reader task requires existing actor\"))?; match task.method.as_str() {{\n"));
@@ -1857,9 +1876,118 @@ fn emit_reader_tasks(
         output.push_str(&format!("        \"{name}\" => {{ let request = <proto::{request} as prost::Message>::decode(task.request.as_slice()).map_err(|_| tonic::Status::invalid_argument(\"malformed task request\"))?; let response = self.handler.{rust_name}(&state, request).await?; Ok(prost_types::Any {{ type_url: \"type.googleapis.com/{response_name}\".to_owned(), value: <proto::{response} as prost::Message>::encode_to_vec(&response) }}) }},\n"));
     }
     output.push_str(
-        "        _ => Err(tonic::Status::invalid_argument(\"unknown reader task\")),\n    } }\n}\n",
+        "        _ => Err(tonic::Status::invalid_argument(\"unknown reader task\")),\n    } }\n",
     );
-    output.push_str(&format!("impl<H, P, C, R, F> {service_name}TransactionAdapter<H, P, C, R, F> where H: {handler}, P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{\n    pub fn with_one_shot_reader_tasks(mut self, state_ref: &str) -> Result<(Self, {runtime_module}::one_shot_tasks::OneShotTasks), tonic::Status> {{ self.participant.validate_task_owner(&self.store, <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, state_ref)?; let tasks = {runtime_module}::one_shot_tasks::OneShotTasks::new(self.store.clone(), <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref.to_owned(), {binding} {{ handler: self.handler.clone(), store: self.store.clone() }})?; self.tasks = Some(tasks.clone()); Ok((self, tasks)) }}\n}}\n"));
+    output.push_str(&format!("    fn validate_response(&self, task: &{runtime_module}::database_proto::Task, response: &prost_types::Any) -> Result<(), tonic::Status> {{ match task.method.as_str() {{\n"));
+    for method in &service.method {
+        let name = method.name.as_deref().unwrap();
+        if !matches!(
+            annotation.methods.get(name),
+            Some(DurableKind::Reader | DurableKind::Writer(WriterMetadata { constructor: false }))
+        ) || annotation
+            .declared_errors
+            .get(name)
+            .is_some_and(|errors| !errors.is_empty())
+        {
+            continue;
+        }
+        let full = method.output_type.as_ref().unwrap().trim_start_matches('.');
+        let response = full.rsplit('.').next().unwrap().to_upper_camel_case();
+        output.push_str(&format!("        \"{name}\" => {{ if response.type_url != \"type.googleapis.com/{full}\" {{ return Err(tonic::Status::data_loss(\"mismatched typed writer task response\")); }} <proto::{response} as prost::Message>::decode(response.value.as_slice()).map_err(|_| tonic::Status::data_loss(\"malformed typed writer task response\"))?; Ok(()) }},\n"));
+    }
+    output.push_str("        _ => Err(tonic::Status::failed_precondition(\"unsupported completed task method\")), } }\n");
+    output.push_str(
+        "    fn writer_capable(&self) -> bool { self.writers }\n    fn is_writer(&self, task: &",
+    );
+    output.push_str(&format!(
+        "{runtime_module}::database_proto::Task) -> bool {{ match task.method.as_str() {{\n"
+    ));
+    for method in &service.method {
+        let name = method.name.as_deref().unwrap();
+        if matches!(
+            annotation.methods.get(name),
+            Some(DurableKind::Writer(WriterMetadata { constructor: false }))
+        ) && annotation
+            .declared_errors
+            .get(name)
+            .is_none_or(|errors| errors.is_empty())
+        {
+            output.push_str(&format!("        \"{name}\" => true,\n"));
+        }
+    }
+    output.push_str("        _ => false, } }\n");
+    output.push_str(&format!("    fn writer_method(&self, task: &{runtime_module}::database_proto::Task) -> Option<&'static str> {{ match task.method.as_str() {{\n"));
+    for method in &service.method {
+        let name = method.name.as_deref().unwrap();
+        if matches!(
+            annotation.methods.get(name),
+            Some(DurableKind::Writer(WriterMetadata { constructor: false }))
+        ) && annotation
+            .declared_errors
+            .get(name)
+            .is_none_or(|errors| errors.is_empty())
+        {
+            output.push_str(&format!(
+                "        \"{name}\" => Some(\"{package}.{service_name}.{name}\"),\n"
+            ));
+        }
+    }
+    output.push_str("        _ => None, } }\n");
+    output.push_str(&format!("    fn writer_response_type(&self, task: &{runtime_module}::database_proto::Task) -> Option<&'static str> {{ match task.method.as_str() {{\n"));
+    for method in &service.method {
+        let name = method.name.as_deref().unwrap();
+        if matches!(
+            annotation.methods.get(name),
+            Some(DurableKind::Writer(WriterMetadata { constructor: false }))
+        ) && annotation
+            .declared_errors
+            .get(name)
+            .is_none_or(|errors| errors.is_empty())
+        {
+            let response = method.output_type.as_ref().unwrap().trim_start_matches('.');
+            output.push_str(&format!(
+                "        \"{name}\" => Some(\"type.googleapis.com/{response}\"),\n"
+            ));
+        }
+    }
+    output.push_str("        _ => None, } }\n");
+
+    output.push_str(&format!("    async fn execute_writer(&self, admitted: {runtime_module}::one_shot_tasks::AdmittedWriterTask<'_>) -> Result<{runtime_module}::one_shot_tasks::WriterTaskReceipt, tonic::Status> {{ if !self.writers {{ return Err(tonic::Status::failed_precondition(\"reader-only task owner\")); }} match admitted.task().method.as_str() {{\n"));
+    for method in &service.method {
+        let name = method.name.as_deref().unwrap();
+        if !matches!(
+            annotation.methods.get(name),
+            Some(DurableKind::Writer(WriterMetadata { constructor: false }))
+        ) || annotation
+            .declared_errors
+            .get(name)
+            .is_some_and(|errors| !errors.is_empty())
+        {
+            continue;
+        }
+        let rust_name = snake_case(name);
+        let request = method
+            .input_type
+            .as_ref()
+            .unwrap()
+            .rsplit('.')
+            .next()
+            .unwrap()
+            .to_upper_camel_case();
+        let response = method
+            .output_type
+            .as_ref()
+            .unwrap()
+            .rsplit('.')
+            .next()
+            .unwrap()
+            .to_upper_camel_case();
+        output.push_str(&format!("        \"{name}\" => {{ let handler = self.handler.clone(); admitted.execute::<{state}DurableState, proto::{request}, proto::{response}, _>(move |state, request| {{ Box::pin(async move {{ handler.{rust_name}(state, request).await }}) }}).await }},\n"));
+    }
+    output.push_str(
+        "        _ => Err(tonic::Status::invalid_argument(\"unsupported writer task\")), } }\n}\n",
+    );
+    output.push_str(&format!("impl<H, P, C, R, F> {service_name}TransactionAdapter<H, P, C, R, F> where H: {handler}, P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{\n    pub fn with_one_shot_reader_tasks(mut self, state_ref: &str) -> Result<(Self, {runtime_module}::one_shot_tasks::OneShotTasks), tonic::Status> {{ self.participant.validate_task_owner(&self.store, <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, state_ref)?; let tasks = {runtime_module}::one_shot_tasks::OneShotTasks::new(self.store.clone(), <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref.to_owned(), {binding} {{ handler: self.handler.clone(), store: self.store.clone(), writers: false }})?; self.tasks = Some(tasks.clone()); Ok((self, tasks)) }}\n    pub fn with_one_shot_writer_tasks(mut self, state_ref: &str) -> Result<(Self, {runtime_module}::one_shot_tasks::OneShotTasks), tonic::Status> {{ self.participant.validate_task_owner(&self.store, <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, state_ref)?; let tasks = {runtime_module}::one_shot_tasks::OneShotTasks::new(self.store.clone(), <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref.to_owned(), {binding} {{ handler: self.handler.clone(), store: self.store.clone(), writers: true }})?; self.tasks = Some(tasks.clone()); Ok((self, tasks)) }}\n}}\n"));
 }
 
 fn emit_transactions(
@@ -2245,6 +2373,7 @@ mod tests {
             "ActorMethods",
             "Actor",
             "reboot",
+            "example",
         );
         assert!(output.contains("pub fn query(state_ref:"));
         assert!(output.contains("pub struct ActorMethodsTasksAt;"));
@@ -2256,8 +2385,8 @@ mod tests {
         assert!(output.contains("request.map(|task_id|"));
         assert_eq!(
             output.matches("\"Query\" =>").count(),
-            2,
-            "ordinary reader must have validation and execution arms"
+            3,
+            "ordinary reader must have validation, response validation and execution arms"
         );
         assert!(output.contains("self.handler.query(&state, request)"));
         assert!(!output.contains("pub fn query_error("));

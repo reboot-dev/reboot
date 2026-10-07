@@ -2,6 +2,8 @@
 mod task_recovery_rejection;
 #[path = "fixtures/task_vertical_acceptance.rs"]
 mod task_vertical_acceptance;
+#[path = "fixtures/writer_task_replay_acceptance.rs"]
+mod writer_task_replay_acceptance;
 
 // Own only the fixture child; dropping the guard after an assertion failure
 // must not leave a serving host behind. Real sidecars keep their own guards.

@@ -130,7 +130,7 @@ fn remote_leaf_task_rejections_release_both_live_exclusive_actors() {
         let expected = match vector {
             "persisted" => tonic::Code::AlreadyExists,
             "capacity" | "saturation" | "full-live-owner" => tonic::Code::ResourceExhausted,
-            "malformed" | "identity" | "foreign-type" | "duplicate" | "unknown" | "writer" => {
+            "malformed" | "identity" | "foreign-type" | "duplicate" | "unknown" => {
                 tonic::Code::InvalidArgument
             }
             _ => tonic::Code::FailedPrecondition,

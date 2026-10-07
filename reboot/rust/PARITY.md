@@ -444,3 +444,31 @@ independently rather than smuggled into it:
 
 Each requires its own design and real sidecar acceptance; none should be claimed
 by the current generated unary adapter surface.
+
+## Verified fixed-owner ordinary writer tasks (2026-10-07)
+
+The writer-task vertical is **verified within its bounded scope**, not full task parity;
+see [the source/evidence map](PARITY-MAP.md#verified-bounded-generated-writer-tasks).
+It supports only an explicitly attached singleton on one existing canonical
+local actor, unary non-constructor writers without declared errors, immediate or
+absolute UTC scheduling and typed canonical Wait. Mutable state and idempotent
+response are atomically Stored, then task completion is a separate CAS.
+
+Dispatcher-minted consuming admission binds the persisted request and configured
+full RPC identity. A private receipt is required; arbitrary Any success cannot
+complete. Exclusive admission and sticky uncertainty cover the whole custom
+binding and completion, including receipt parking after Store/replay. Failed is
+synchronous before lease destruction, survives Ready, and propagates through
+otherwise successful shutdown after children are destroyed. Exact error statuses
+are preserved. Real CXX/RocksDB acceptance includes original-response replay after
+an intervening writer, post-Store and replay binding cancellation, staged/prepared
+no-dispatch barriers, deadline scheduling, negative checkpoint/identity/scheduling/
+missing-actor paths, losing-CAS record preservation and local failed-ingress order.
+Compile-fail and unit matrices complement, not replace, that durable evidence.
+
+No workflows, task errors/retries/auth, remote/shared writers, tree tasks,
+overlapping hosts, checkpoint deletion, fencing, global winner-only writes or
+exactly-once external/handler effects are claimed. A pre-Store crash can rerun
+user code. Final restored verification passed: 255 library tests, 26 generated
+downstream vectors, 78 real CXX/RocksDB cases, 8 Native2pc cases, 3 compile-fail
+doctests, formatting and strict Clippy. Independent delta review is source-clean.

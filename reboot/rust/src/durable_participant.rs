@@ -1158,6 +1158,14 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             }
             current.effects = effects;
             current.staged = true;
+            #[cfg(feature = "test-support")]
+            if !current.effects.task_upserts.is_empty()
+                && let Some(path) = std::env::var_os("REBOOT_TEST_WRITER_TASK_STAGED")
+            {
+                std::fs::write(path, b"actual participant effects staged; no Prepare")
+                    .map_err(|error| Status::internal(error.to_string()))?;
+                std::future::pending::<()>().await;
+            }
             Ok(promoted)
         } else if current.effects.matches_staged(&effects) {
             Ok(None)

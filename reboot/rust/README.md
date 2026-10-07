@@ -51,7 +51,25 @@ Lost actor-only terminal ACK retains ownership and fails supervision without
 retry. An already-pending Watch observes uncertainty on response/recheck or the
 existing owner deadline, not a universally immediate wakeup.
 
-## Reader-only one-shot task checkpoint
+## Delivered reader-only one-shot task checkpoint
+
+The **verified bounded writer-task vertical** additionally emits immediate/UTC
+writer scheduling and typed Wait for unary non-constructor/no-declared-error
+targets, behind explicit `with_one_shot_writer_tasks` singleton attachment.
+It uses dispatcher-owned exclusive admission, an opaque acknowledged
+Store/checkpoint receipt, and separate completion CAS. Real CXX/RocksDB crash
+replay and lost-ACK vectors are exercised. Added downstream custom-binding
+acceptance proves post-Store and strict-replay receipt cancellation propagates
+Failed through graceful shutdown while preserving Pending; compile-fail tests
+reject fabricated receipts, arbitrary Any success, and method/request replacement.
+Generated real-process proof covers writer staging/Prepare without dispatch, UTC
+`At`, and malformed identity/scheduling/inactive-owner rejection. Strict checkpoint
+and losing-CAS rejection preserve canonical records across RocksDB restart.
+Final verification: 255 library tests, 26 generated downstream vectors, 78 real
+CXX/RocksDB process cases, 8 Native2pc cases, 3 compile-fail doctests, formatting
+and strict Clippy passed; independent safety delta review found no new blocker.
+See the verified writer section of `PARITY-MAP.md` for bounded evidence scope.
+The reader exclusions below describe the reader contract, not writer capability.
 
 Partial vertical: generated immediate or absolute-UTC-scheduled unary reader tasks without declared errors,
 for the same actor, scheduled by fresh exclusive non-factory roots or a guard-owned

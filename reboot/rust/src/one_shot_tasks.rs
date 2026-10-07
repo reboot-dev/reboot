@@ -21,6 +21,125 @@ use tonic::Status;
 pub trait ReaderTaskBinding: Send + Sync + 'static {
     fn validate(&self, task: &db::Task) -> Result<(), Status>;
     async fn execute(&self, task: &db::Task) -> Result<prost_types::Any, Status>;
+    /// Reader-only owners and shared recovery remain the default.
+    fn validate_response(
+        &self,
+        _task: &db::Task,
+        _response: &prost_types::Any,
+    ) -> Result<(), Status> {
+        Err(Status::failed_precondition(
+            "binding has no typed writer response validator",
+        ))
+    }
+    fn writer_method(&self, _task: &db::Task) -> Option<&'static str> {
+        None
+    }
+    fn writer_response_type(&self, _task: &db::Task) -> Option<&'static str> {
+        None
+    }
+    fn writer_capable(&self) -> bool {
+        false
+    }
+    fn is_writer(&self, _task: &db::Task) -> bool {
+        false
+    }
+    async fn execute_writer(
+        &self,
+        _admitted: AdmittedWriterTask<'_>,
+    ) -> Result<WriterTaskReceipt, Status> {
+        Err(Status::failed_precondition("reader-only task owner"))
+    }
+}
+
+/// Exclusive authority minted only by the registered dispatcher, after canonical
+/// reload. Not cloneable or constructible by generated/downstream callers.
+/// The dispatcher retains the lease until this capability and completion finish.
+pub struct AdmittedWriterTask<'a> {
+    pub(crate) store: &'a DatabaseActorStore,
+    pub(crate) task: &'a db::Task,
+    pub(crate) method: &'static str,
+    pub(crate) response_type: &'static str,
+    pub(crate) started: &'a std::sync::atomic::AtomicBool,
+    cancel: &'a RecoveryCancellation,
+    tasks: &'a OneShotTasks,
+}
+impl AdmittedWriterTask<'_> {
+    pub fn task(&self) -> &db::Task {
+        self.task
+    }
+    pub(crate) fn durable(&self) -> DurableTaskOperation<'_> {
+        self.started
+            .store(true, std::sync::atomic::Ordering::Release);
+        DurableTaskOperation {
+            cancel: self.cancel,
+            tasks: self.tasks,
+            acknowledged: false,
+            started: None,
+        }
+    }
+}
+
+/// A successful acknowledged Store or strict checkpoint replay; private construction.
+/// Custom bindings cannot discard admission and manufacture success:
+/// ```compile_fail
+/// use reboot_rust_schema::one_shot_tasks::WriterTaskReceipt;
+/// let receipt = WriterTaskReceipt { task: Default::default(), response: Default::default() };
+/// ```
+/// Returning an arbitrary `Any` is not completion authority:
+/// ```compile_fail
+/// use reboot_rust_schema::one_shot_tasks::WriterTaskReceipt;
+/// fn bypass() -> Result<WriterTaskReceipt, tonic::Status> {
+///     Ok(prost_types::Any::default())
+/// }
+/// ```
+pub struct WriterTaskReceipt {
+    pub(crate) task: db::Task,
+    pub(crate) response: prost_types::Any,
+}
+// Declaration order at call sites matters: this guard drops BEFORE the lease.
+// Arm synchronously before the first potentially durable await; no cancellation gap.
+pub(crate) struct DurableTaskOperation<'a> {
+    cancel: &'a RecoveryCancellation,
+    tasks: &'a OneShotTasks,
+    acknowledged: bool,
+    started: Option<&'a std::sync::atomic::AtomicBool>,
+}
+impl DurableTaskOperation<'_> {
+    pub(crate) fn acknowledged(&mut self) {
+        self.acknowledged = true;
+    }
+}
+impl Drop for DurableTaskOperation<'_> {
+    fn drop(&mut self) {
+        if !self.acknowledged
+            && self
+                .started
+                .is_none_or(|started| started.load(std::sync::atomic::Ordering::Acquire))
+        {
+            self.tasks.inner.uncertain.send_replace(true);
+            self.cancel.fail();
+            #[cfg(feature = "test-support")]
+            if let Some(path) = std::env::var_os("REBOOT_TEST_WRITER_FAILURE_BEFORE_RELEASE") {
+                let path = std::path::PathBuf::from(path);
+                if !path.exists() {
+                    let _ = std::fs::write(
+                        &path,
+                        b"actual durable operation Drop before exclusive lease Drop",
+                    );
+                    // Hand the worker's runnable queue back to Tokio while the
+                    // test holds this synchronous destructor boundary.
+                    tokio::task::block_in_place(|| {
+                        let start = std::time::Instant::now();
+                        while !path.with_extension("release").exists()
+                            && start.elapsed() < std::time::Duration::from_secs(10)
+                        {
+                            std::thread::sleep(std::time::Duration::from_millis(5));
+                        }
+                    });
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -64,6 +183,10 @@ impl OneShotTasks {
                 uncertain: tokio::sync::watch::channel(false).0,
             }),
         })
+    }
+    /// Used by generated staging to retain root-local-only writer eligibility.
+    pub fn contains_writer(&self, tasks: &[db::Task]) -> bool {
+        tasks.iter().any(|task| self.inner.binding.is_writer(task))
     }
     /// Validate the whole staged set before the participant stages any data.
     pub fn validate(&self, tasks: &[db::Task]) -> Result<(), Status> {
@@ -258,6 +381,136 @@ impl OneShotTasks {
     ) -> Result<(), Status> {
         let id = task.task_id.clone().expect("validated task identity");
         let gate = self.inner.store.actor_gate(&id.state_type, &id.state_ref);
+        if self.inner.binding.is_writer(&task) {
+            let _lease = gate.exclusive().await;
+            cancel.public_ready().await?;
+            let loaded = self
+                .inner
+                .store
+                .task_database()
+                .load(db::LoadRequest {
+                    actors: vec![],
+                    task_ids: vec![id.clone()],
+                })
+                .await?
+                .into_inner();
+            if loaded.tasks.len() != 1 {
+                return Err(Status::failed_precondition(
+                    "committed writer task missing or ambiguous",
+                ));
+            }
+            let canonical = &loaded.tasks[0];
+            if canonical.status == db::task::Status::Completed as i32 {
+                validate_completed(&task, canonical, None)?;
+                if let Some(db::task::ResponseOrError::Response(response)) =
+                    &canonical.response_or_error
+                {
+                    self.inner.binding.validate_response(canonical, response)?;
+                }
+                return Ok(());
+            }
+            if canonical != &task {
+                return Err(Status::failed_precondition(
+                    "committed writer task differs from dispatch",
+                ));
+            }
+            if !schedule_due(canonical)? {
+                return Ok(());
+            }
+            let started = std::sync::atomic::AtomicBool::new(false);
+            let mut whole_execution = DurableTaskOperation {
+                cancel,
+                tasks: self,
+                acknowledged: false,
+                started: Some(&started),
+            };
+            let admitted = AdmittedWriterTask {
+                store: &self.inner.store,
+                task: &task,
+                method: self.inner.binding.writer_method(&task).ok_or_else(|| {
+                    Status::failed_precondition("missing generated writer descriptor")
+                })?,
+                response_type: self
+                    .inner
+                    .binding
+                    .writer_response_type(&task)
+                    .ok_or_else(|| {
+                        Status::failed_precondition("missing generated writer response descriptor")
+                    })?,
+                started: &started,
+                cancel,
+                tasks: self,
+            };
+            let receipt = match self.inner.binding.execute_writer(admitted).await {
+                Ok(response) => response,
+                Err(error) => {
+                    self.inner.uncertain.send_replace(true);
+                    cancel.fail(); // BEFORE exclusive lease release, including handler Status.
+                    return Err(error);
+                }
+            };
+            if receipt.task != task {
+                return Err(Status::failed_precondition(
+                    "durable receipt task identity mismatch",
+                ));
+            }
+            let response = receipt.response;
+            self.inner.binding.validate_response(&task, &response)?;
+            task.status = db::task::Status::Completed as i32;
+            task.response_or_error = Some(db::task::ResponseOrError::Response(response.clone()));
+            let mut operation = DurableTaskOperation {
+                cancel,
+                tasks: self,
+                acknowledged: false,
+                started: None,
+            };
+            let completed = self
+                .inner
+                .store
+                .task_database()
+                .complete_task(db::CompleteTaskRequest {
+                    task: Some(task.clone()),
+                    sync: true,
+                })
+                .await?
+                .into_inner()
+                .completed;
+            #[cfg(feature = "test-support")]
+            if let Some(path) = std::env::var_os("REBOOT_TEST_WRITER_AFTER_COMPLETE") {
+                let path = std::path::PathBuf::from(path);
+                std::fs::write(&path, b"actual CompleteTask ACK")
+                    .map_err(|e| Status::internal(e.to_string()))?;
+                while !path.with_extension("release").exists() {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                return Err(Status::unavailable("lost actual CompleteTask ACK"));
+            }
+            if !completed {
+                let loaded = self
+                    .inner
+                    .store
+                    .task_database()
+                    .load(db::LoadRequest {
+                        actors: vec![],
+                        task_ids: vec![id],
+                    })
+                    .await?
+                    .into_inner();
+                if loaded.tasks.len() != 1 {
+                    return Err(Status::failed_precondition(
+                        "losing completion has no canonical result",
+                    ));
+                }
+                validate_completed(&task, &loaded.tasks[0], Some(&response))?;
+                self.inner
+                    .binding
+                    .validate_response(&loaded.tasks[0], &response)?;
+            }
+            operation.acknowledged();
+            whole_execution.acknowledged();
+            return Ok(());
+        }
+
         let response = {
             let _lease = gate.shared().await;
             cancel.public_ready().await?;
@@ -305,6 +558,32 @@ impl OneShotTasks {
             })
             .await?;
         Ok(())
+    }
+}
+
+fn validate_completed(
+    expected: &db::Task,
+    canonical: &db::Task,
+    response: Option<&prost_types::Any>,
+) -> Result<(), Status> {
+    let mut pending = canonical.clone();
+    pending.status = expected.status;
+    pending.response_or_error = expected.response_or_error.clone();
+    if pending != *expected || canonical.status != db::task::Status::Completed as i32 {
+        return Err(Status::failed_precondition(
+            "canonical completion identity/scheduling mismatch",
+        ));
+    }
+    match &canonical.response_or_error {
+        Some(db::task::ResponseOrError::Response(saved))
+            if !saved.type_url.is_empty()
+                && response.is_none_or(|candidate| saved == candidate) =>
+        {
+            Ok(())
+        }
+        _ => Err(Status::failed_precondition(
+            "canonical completion response mismatch",
+        )),
     }
 }
 
@@ -457,10 +736,13 @@ impl HostRecovery for OneShotTaskRecovery {
                 _ = cancel.cancelled() => Ok(()),
                 result = work => result,
             };
-            tasks
-                .inner
-                .active
-                .store(false, std::sync::atomic::Ordering::Release);
+            tasks.inner.active.store(false, std::sync::atomic::Ordering::Release);
+            if *tasks.inner.uncertain.borrow() {
+                cancel.fail();
+                if result.is_ok() {
+                    return Err(Status::unavailable("durable task operation dropped during shutdown"));
+                }
+            }
             result
         });
         Ok(())
@@ -483,6 +765,11 @@ impl ReaderTaskRecoveryRegistry {
         let mut owners = std::collections::BTreeMap::new();
         let mut endpoint = None;
         for task in tasks {
+            if task.inner.binding.writer_capable() {
+                return Err(Status::failed_precondition(
+                    "shared recovery is reader-only",
+                ));
+            }
             if endpoint
                 .as_ref()
                 .is_some_and(|value: &String| value != task.inner.store.database_endpoint())
@@ -868,6 +1155,95 @@ fn schedule_due(task: &db::Task) -> Result<bool, Status> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn writer_uncertainty_fails_readiness_before_exclusive_release() {
+        let tasks = OneShotTasks::new(
+            DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+            "test.WriterFailure".into(),
+            "actor".into(),
+            Binding,
+        )
+        .unwrap();
+        let (cancel, readiness) = RecoveryCancellation::test_host();
+        let gate = tasks.inner.store.actor_gate("test.WriterFailure", "actor");
+        let lease = gate.exclusive().await;
+        let mut competing = Box::pin(gate.exclusive());
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(10), &mut competing)
+                .await
+                .is_err()
+        );
+        let operation = DurableTaskOperation {
+            tasks: &tasks,
+            cancel: &cancel,
+            acknowledged: false,
+            started: None,
+        };
+        drop(operation); // same producer used for Store/CAS error and future Drop
+        assert_eq!(
+            *readiness.borrow(),
+            crate::application_host::RecoveryState::Failed,
+            "Failed must be synchronous BEFORE lease release"
+        );
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(10), &mut competing)
+                .await
+                .is_err()
+        );
+        assert!(
+            *tasks.inner.uncertain.borrow(),
+            "owner failure remains sticky"
+        );
+        assert_eq!(
+            cancel.public_ready().await.unwrap_err().code(),
+            tonic::Code::Unavailable
+        );
+        drop(lease);
+        let _competitor = tokio::time::timeout(std::time::Duration::from_secs(1), competing)
+            .await
+            .unwrap();
+        assert_eq!(
+            *readiness.borrow(),
+            crate::application_host::RecoveryState::Failed
+        );
+    }
+    #[test]
+    fn writer_key_matches_python_uuid5_decoded_final_actor_alias() {
+        let reference = crate::state_ref::StateRef::from_id("test.Parent", "parent")
+            .unwrap()
+            .colocate("test.Child", "child/id")
+            .unwrap();
+        let id = db::TaskId {
+            state_type: "test.Child".into(),
+            state_ref: reference.to_string(),
+            task_uuid: uuid::Uuid::parse_str("00000000-0000-4000-8000-000000000001")
+                .unwrap()
+                .as_bytes()
+                .to_vec(),
+        };
+        assert_eq!(
+            crate::runtime::writer_task_key(&id, "test.Service.Apply")
+                .unwrap()
+                .to_string(),
+            "8cdac126-1097-5300-b18d-b08cd93146bc"
+        );
+        let mut opaque = id.clone();
+        opaque.state_ref = "opaque-reader".into();
+        assert_eq!(
+            crate::runtime::writer_task_key(&opaque, "test.Service.Apply")
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        let mut foreign = id;
+        foreign.state_type = "test.Other".into();
+        assert_eq!(
+            crate::runtime::writer_task_key(&foreign, "test.Service.Apply")
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+    }
     #[test]
     fn absolute_task_schedule_validates_and_respects_deadline() {
         let task = |seconds, nanos| db::Task {
@@ -1110,5 +1486,73 @@ mod tests {
                 .load(std::sync::atomic::Ordering::Acquire)
         );
         assert!(DispatchOwner::claim(second).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod writer_completion_identity_tests {
+    use super::*;
+    #[test]
+    fn completed_writer_identity_and_scheduling_are_exact_and_read_only() {
+        let expected = db::Task {
+            task_id: Some(db::TaskId {
+                state_type: "test.Counter".into(),
+                state_ref: "actor".into(),
+                task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec(),
+            }),
+            method: "Apply".into(),
+            request: vec![8, 3],
+            timestamp: Some(prost_types::Timestamp {
+                seconds: 1,
+                nanos: 2,
+            }),
+            status: db::task::Status::Pending as i32,
+            ..Default::default()
+        };
+        let response = prost_types::Any {
+            type_url: "type.googleapis.com/test.Value".into(),
+            value: vec![8, 5],
+        };
+        let mut completed = expected.clone();
+        completed.status = db::task::Status::Completed as i32;
+        completed.response_or_error = Some(db::task::ResponseOrError::Response(response.clone()));
+        assert!(validate_completed(&expected, &completed, Some(&response)).is_ok());
+        assert!(validate_completed(&expected, &completed, None).is_ok());
+        for field in 0..12 {
+            let mut invalid = completed.clone();
+            match field {
+                0 => invalid.task_id.as_mut().unwrap().state_type = "other.Counter".into(),
+                1 => invalid.task_id.as_mut().unwrap().state_ref = "other".into(),
+                2 => {
+                    invalid.task_id.as_mut().unwrap().task_uuid =
+                        uuid::Uuid::new_v4().as_bytes().to_vec()
+                }
+                3 => invalid.task_id = None,
+                4 => invalid.method = "Other".into(),
+                5 => invalid.request = vec![8, 4],
+                6 => invalid.timestamp.as_mut().unwrap().seconds = 2,
+                7 => invalid.timestamp.as_mut().unwrap().nanos = 3,
+                8 => invalid.iteration = 1,
+                9 => invalid.status = db::task::Status::Pending as i32,
+                10 => invalid.response_or_error = None,
+                11 => {
+                    invalid.response_or_error =
+                        Some(db::task::ResponseOrError::Response(prost_types::Any {
+                            value: vec![8, 6],
+                            ..response.clone()
+                        }))
+                }
+                _ => unreachable!(),
+            }
+            let before = invalid.clone();
+            assert_eq!(
+                validate_completed(&expected, &invalid, Some(&response))
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::FailedPrecondition,
+                "completion vector {field}"
+            );
+            assert_eq!(invalid, before);
+        }
     }
 }

@@ -109,7 +109,7 @@ fn task_host_command(options: TaskHostOptions<'_>) -> Command {
     command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
     command
 }
-fn await_marker(path: &std::path::Path, child: &mut Child) {
+pub(super) fn await_marker(path: &std::path::Path, child: &mut Child) {
     for _ in 0..200 {
         if path.exists() {
             return;
@@ -123,7 +123,7 @@ fn await_marker(path: &std::path::Path, child: &mut Child) {
     }
     panic!("task host never reached marker {}", path.display());
 }
-async fn pending_tasks(endpoint: &str) -> Vec<database::Task> {
+pub(super) async fn pending_tasks(endpoint: &str) -> Vec<database::Task> {
     let mut client = database::database_client::DatabaseClient::connect(endpoint.to_owned())
         .await
         .unwrap();
@@ -146,7 +146,7 @@ async fn pending_tasks(endpoint: &str) -> Vec<database::Task> {
     }
     tasks
 }
-async fn load_task(endpoint: &str, id: database::TaskId) -> database::Task {
+pub(super) async fn load_task(endpoint: &str, id: database::TaskId) -> database::Task {
     database::database_client::DatabaseClient::connect(endpoint.to_owned())
         .await
         .unwrap()

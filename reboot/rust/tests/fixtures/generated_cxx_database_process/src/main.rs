@@ -105,6 +105,19 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         state: &mut proto::TransactionCounter,
         request: proto::TransactionIncrementRequest,
     ) -> Result<proto::TransactionCounterValue, tonic::Status> {
+        if has("--writer-tasks") && request.amount == 3 {
+            use std::io::Write;
+            let marker = arg("--task-marker");
+            let mut log = std::fs::OpenOptions::new().create(true).append(true).open(format!("{marker}.writer-invocations")).unwrap();
+            writeln!(log, "apply {}", request.amount).unwrap();
+            std::fs::write(format!("{marker}.started-at"), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos().to_string()).unwrap();
+            std::fs::write(&marker, "writer handler entered").unwrap();
+            if has("--writer-handler-error") { return Err(tonic::Status::invalid_argument("writer task handler failed")); }
+            if has("--block-task") { std::future::pending::<()>().await; }
+        }
+        if has("--writer-tasks") && request.amount == 100 {
+            std::fs::write(format!("{}.ordinary-entered", arg("--task-marker")), b"ordinary exclusive writer admitted").unwrap();
+        }
         state.value += request.amount;
         Ok(proto::TransactionCounterValue { value: state.value })
     }
@@ -203,7 +216,13 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
             }
             let mut execution = TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
             let mut task = generated::TransactionCounterWritesMethodsTasks::query(state_ref, &proto::TransactionIncrementRequest { amount: 9000 });
-            if let Some(seconds) = vector.strip_prefix("delayed:") {
+            if has("--writer-tasks") {
+                task = generated::TransactionCounterWritesMethodsTasks::apply(state_ref, &proto::TransactionIncrementRequest { amount: 3 });
+                if let Some(seconds) = vector.strip_prefix("delayed:") {
+                    task = generated::TransactionCounterWritesMethodsTasksAt::apply(state_ref, &proto::TransactionIncrementRequest { amount: 3 }, prost_types::Timestamp { seconds: seconds.parse().unwrap(), nanos: 0 });
+                }
+            }
+            if !has("--writer-tasks") && let Some(seconds) = vector.strip_prefix("delayed:") {
                 task = generated::TransactionCounterWritesMethodsTasksAt::query(state_ref,
                     &proto::TransactionIncrementRequest { amount: 9000 },
                     prost_types::Timestamp { seconds: seconds.parse().unwrap(), nanos: 0 });
@@ -673,7 +692,7 @@ async fn shared_barrier(transaction_id: Uuid) -> Result<(), tonic::Status> {
     ))
 }
 
-#[tokio::main]
+#[tokio::main(worker_threads = 4)]
 async fn main() {
     let role = arg("--role");
     let listen = arg("--listen");
@@ -863,7 +882,9 @@ async fn main() {
     );
     let (adapter, tasks) =
         if (role == "tasks" || has("--root-reader-task") || has("--remote-reader-task") || has("--tree-task-owner")) && !has("--no-task-owner") {
-            let (adapter, tasks) = adapter.with_one_shot_reader_tasks(&state_ref).unwrap();
+            let (adapter, tasks) = if has("--writer-tasks") {
+                adapter.with_one_shot_writer_tasks(&state_ref).unwrap()
+            } else { adapter.with_one_shot_reader_tasks(&state_ref).unwrap() };
             (adapter, Some(tasks))
         } else {
             (adapter, None)
@@ -1139,7 +1160,31 @@ async fn main() {
             .map(|key| Uuid::parse_str(&key).expect("--idempotency-key must be a UUID"));
         let expected_response = optional_arg("--expect-response")
             .map(|value| value.parse::<i64>().expect("--expect-response must be i64"));
-        for attempt in 0..100 {
+        if has("--writer-tasks") {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    let mut probe = tonic::Request::new(proto::TransactionIncrementRequest { amount: 0 });
+                    *probe.metadata_mut() = reboot::RebootHeaders::new(&state_ref).to_metadata().unwrap();
+                    match client.query(probe).await {
+                        Ok(_) => break,
+                        Err(status) if status.code() == tonic::Code::Unavailable => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+                        Err(status) => panic!("writer readiness probe: {status}"),
+                    }
+                }
+            }).await.expect("writer host readiness");
+            let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount });
+            *request.metadata_mut() = reboot::RebootHeaders::new(&state_ref).to_metadata().unwrap();
+            let result = client.increment(request).await;
+            if has("--expect-task-error") {
+                let error = result.unwrap_err();
+                let expected = if has("--inactive-task-owner") || has("--no-task-owner") { tonic::Code::FailedPrecondition } else { tonic::Code::InvalidArgument };
+                assert_eq!(error.code(), expected, "writer scheduling denial");
+            } else {
+                result.expect("one writer scheduling mutation");
+            }
+            std::fs::write(arg("--invoke-marker"), "acknowledged").unwrap();
+        }
+        for attempt in 0..if has("--writer-tasks") { 0 } else { 100 } {
             let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount });
             let mut headers = reboot::RebootHeaders::new(&state_ref);
             headers.idempotency_key = idempotency_key;
@@ -1214,7 +1259,7 @@ async fn main() {
                 }
                 Err(status) if has("--expect-task-error") => {
                     let vector = arg("--task-vector");
-                    let expected = if matches!(vector.as_str(), "capacity" | "saturation") { tonic::Code::ResourceExhausted } else if vector.starts_with("reuse:") { tonic::Code::AlreadyExists } else if vector == "no-owner" { tonic::Code::FailedPrecondition } else { tonic::Code::InvalidArgument };
+                    let expected = if matches!(vector.as_str(), "capacity" | "saturation") { tonic::Code::ResourceExhausted } else if vector.starts_with("reuse:") { tonic::Code::AlreadyExists } else if matches!(vector.as_str(), "no-owner" | "writer") { tonic::Code::FailedPrecondition } else { tonic::Code::InvalidArgument };
                     assert_eq!(status.code(), expected, "denial vector {vector}: {status}");
                     if has("--shared-task-recovery") {
                         assert_eq!(status.message(), "no task recovery owner");
@@ -1253,6 +1298,21 @@ async fn main() {
         if has("--exit-after-invoke") {
             return;
         }
+    }
+    if let Some(task_uuid) = optional_arg("--writer-wait") {
+        let channel = tonic::transport::Endpoint::from_shared(format!("http://{listen}")).unwrap().connect_lazy();
+        let id = reboot::database_proto::TaskId { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: state_ref.clone(), task_uuid: Uuid::parse_str(&task_uuid).unwrap().as_bytes().to_vec() };
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let mut request = tonic::Request::new(id.clone()); request.set_timeout(std::time::Duration::from_secs(2));
+                match generated::TransactionCounterWritesMethodsTasksWait::apply(channel.clone(), request).await {
+                    Ok(response) => break response,
+                    Err(status) if status.code() == tonic::Code::Unavailable => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+                    Err(status) => panic!("generated writer typed Wait: {status}"),
+                }
+            }
+        }).await.expect("typed writer Wait timed out");
+        std::fs::write(arg("--invoke-marker"), result.value.to_string()).unwrap();
     }
     server.await.unwrap();
     if let Some(competing) = competing {

@@ -1892,6 +1892,157 @@ pub struct DatabaseActorStore {
     endpoint: String,
 }
 
+impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
+    /// Execute once under dispatcher-minted exclusive admission. A durable
+    /// checkpoint returns before state Load/handler/Store, even after another
+    /// ordinary writer changed state. Completion remains a separate CAS.
+    /// Method identity and request bytes are dispatcher-bound, not callback arguments.
+    /// ```compile_fail
+    /// use reboot_rust_schema::one_shot_tasks::AdmittedWriterTask;
+    /// async fn replace(admitted: AdmittedWriterTask<'_>) {
+    ///     admitted.execute("other.Service.Apply", prost_types::Any::default(), |_| async {}).await;
+    /// }
+    /// ```
+    pub async fn execute<Declaration, RequestBody, ResponseBody, F>(
+        self,
+        invoke: F,
+    ) -> Result<crate::one_shot_tasks::WriterTaskReceipt, Status>
+    where
+        Declaration: DurableStateDeclaration,
+        RequestBody: Message + Default + Send + 'static,
+        ResponseBody: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut Declaration::State,
+            RequestBody,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
+        let id = self
+            .task
+            .task_id
+            .as_ref()
+            .ok_or_else(|| Status::invalid_argument("missing task identity"))?;
+        if id.state_type != Declaration::STATE_TYPE
+            || self.method.rsplit('.').next() != Some(self.task.method.as_str())
+        {
+            return Err(Status::failed_precondition(
+                "admitted task method/state identity mismatch",
+            ));
+        }
+        let request = RequestBody::decode(self.task.request.as_slice())
+            .map_err(|_| Status::invalid_argument("malformed canonical writer task request"))?;
+        let key = writer_task_key(id, self.method)?;
+        let fingerprint = request_fingerprint(self.method, &request);
+        if let Some(response) = self
+            .store
+            .replay_task_checkpoint::<ResponseBody>(
+                &id.state_type,
+                &id.state_ref,
+                key,
+                &fingerprint,
+            )
+            .await?
+        {
+            self.started
+                .store(true, std::sync::atomic::Ordering::Release);
+            return Ok(crate::one_shot_tasks::WriterTaskReceipt {
+                task: self.task.clone(),
+                response: prost_types::Any {
+                    type_url: self.response_type.to_owned(),
+                    value: response.encode_to_vec(),
+                },
+            });
+        }
+        let mut state = self
+            .store
+            .load_for_declaration::<Declaration>(&id.state_ref)
+            .await?
+            .ok_or_else(|| Status::failed_precondition("writer task requires existing actor"))?;
+        let response = invoke(&mut state, request).await?;
+        let mut operation = self.durable();
+        self.store
+            .store_type(
+                &id.state_type,
+                &id.state_ref,
+                key,
+                state,
+                response.clone(),
+                Some(fingerprint),
+            )
+            .await?;
+        #[cfg(feature = "test-support")]
+        if let Some(path) = std::env::var_os("REBOOT_TEST_WRITER_AFTER_STORE") {
+            let path = std::path::PathBuf::from(path);
+            std::fs::write(&path, b"actual writer Store ACK; task still Pending")
+                .map_err(|e| Status::internal(e.to_string()))?;
+            while !path.with_extension("release").exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+            if std::env::var_os("REBOOT_TEST_WRITER_LOST_STORE_ACK").is_some() {
+                return Err(Status::unavailable("lost actual writer Store ACK"));
+            }
+        }
+        operation.acknowledged();
+        Ok(crate::one_shot_tasks::WriterTaskReceipt {
+            task: self.task.clone(),
+            response: prost_types::Any {
+                type_url: self.response_type.to_owned(),
+                value: response.encode_to_vec(),
+            },
+        })
+    }
+}
+
+fn decode_writer_task_checkpoint<Response: Message + Default>(
+    mutation: &database::IdempotentMutation,
+    state_type: &str,
+    state_ref: &str,
+    key: Uuid,
+    fingerprint: &[u8],
+) -> Result<Response, Status> {
+    if mutation.state_type != state_type
+        || mutation.state_ref != state_ref
+        || mutation.key != key.as_bytes()
+        || mutation.workflow_id.is_some()
+        || mutation.workflow_iteration.is_some()
+        || mutation.request_fingerprint.as_deref() != Some(fingerprint)
+        || fingerprint.is_empty()
+        || !mutation.task_ids.is_empty()
+    {
+        return Err(Status::failed_precondition(
+            "writer task checkpoint identity/fingerprint mismatch",
+        ));
+    }
+    Response::decode(mutation.response.as_slice())
+        .map_err(|_| Status::data_loss("malformed writer task checkpoint response"))
+}
+
+/// Source-faithful Python task-seeded alias. Does not normalize durable tokens.
+pub fn writer_task_key(id: &database::TaskId, method_identity: &str) -> Result<Uuid, Status> {
+    let uuid = Uuid::from_slice(&id.task_uuid)
+        .map_err(|_| Status::invalid_argument("invalid task UUID"))?;
+    if !crate::state_ref::StateRef::is_encoded(&id.state_ref) {
+        return Err(Status::invalid_argument(
+            "writer task requires canonical StateRef",
+        ));
+    }
+    let reference = crate::state_ref::StateRef::from_maybe_readable(id.state_ref.clone())
+        .map_err(|_| Status::invalid_argument("invalid writer StateRef"))?;
+    if !reference.matches_state_type(&id.state_type) {
+        return Err(Status::invalid_argument(
+            "writer task StateRef type mismatch",
+        ));
+    }
+    let actor_id = reference.id();
+    crate::state_ref::StateRef::from_id(&id.state_type, &actor_id)
+        .map_err(|_| Status::invalid_argument("invalid writer actor ID"))?;
+    Ok(Uuid::new_v5(
+        &uuid,
+        format!("'{method_identity}'@{actor_id}: Task {uuid}").as_bytes(),
+    ))
+}
+
 impl DatabaseActorStore {
     /// Connects to an existing Reboot Database sidecar.
     pub async fn connect(endpoint: impl AsRef<str>) -> Result<Self, tonic::transport::Error> {
@@ -2030,6 +2181,45 @@ impl DatabaseActorStore {
             }
         }
         Ok(None)
+    }
+
+    async fn replay_task_checkpoint<Response: Message + Default>(
+        &self,
+        state_type: &str,
+        state_ref: &str,
+        key: Uuid,
+        fingerprint: &[u8],
+    ) -> Result<Option<Response>, Status> {
+        let mut stream = self
+            .database
+            .clone()
+            .recover_idempotent_mutations(database::RecoverIdempotentMutationsRequest {
+                state_type: state_type.to_owned(),
+                state_ref: state_ref.to_owned(),
+                idempotency_key: Some(key.as_bytes().to_vec()),
+                workflow_id: None,
+                workflow_iteration: None,
+            })
+            .await?
+            .into_inner();
+        let mut result = None;
+        while let Some(batch) = stream.message().await? {
+            for mutation in batch.idempotent_mutations {
+                if result.is_some() {
+                    return Err(Status::failed_precondition(
+                        "duplicate writer task checkpoint",
+                    ));
+                }
+                result = Some(decode_writer_task_checkpoint::<Response>(
+                    &mutation,
+                    state_type,
+                    state_ref,
+                    key,
+                    fingerprint,
+                )?);
+            }
+        }
+        Ok(result)
     }
 
     /// Atomically stores state and its idempotent writer response.
@@ -5166,5 +5356,78 @@ mod tests {
         let invalid_key = client.reply(invalid_key).await.unwrap_err();
         assert_eq!(invalid_key.code(), tonic::Code::InvalidArgument);
         server.abort();
+    }
+}
+
+#[cfg(test)]
+mod writer_checkpoint_tests {
+    use super::*;
+    #[test]
+    fn strict_checkpoint_rejects_every_noncanonical_field() {
+        let key = Uuid::new_v4();
+        let record = database::IdempotentMutation {
+            state_type: "test.Counter".into(),
+            state_ref: "actor".into(),
+            key: key.as_bytes().to_vec(),
+            request_fingerprint: Some(vec![1]),
+            response: proto::Counter::default().encode_to_vec(),
+            ..Default::default()
+        };
+        assert!(
+            decode_writer_task_checkpoint::<proto::Counter>(
+                &record,
+                "test.Counter",
+                "actor",
+                key,
+                &[1]
+            )
+            .is_ok()
+        );
+        for field in 0..10 {
+            let mut invalid = record.clone();
+            match field {
+                0 => invalid.state_type = "other.Counter".into(),
+                1 => invalid.state_ref = "other".into(),
+                2 => invalid.key = Uuid::new_v4().as_bytes().to_vec(),
+                3 => invalid.workflow_id = Some(vec![1]),
+                4 => invalid.workflow_iteration = Some(1),
+                5 => invalid.request_fingerprint = None,
+                6 => invalid.request_fingerprint = Some(vec![]),
+                7 => invalid.request_fingerprint = Some(vec![2]),
+                8 => invalid.task_ids = vec![database::TaskId::default()],
+                9 => invalid.response = vec![0xff],
+                _ => unreachable!(),
+            }
+            let before = invalid.clone();
+            let error = decode_writer_task_checkpoint::<proto::Counter>(
+                &invalid,
+                "test.Counter",
+                "actor",
+                key,
+                &[1],
+            )
+            .unwrap_err();
+            assert_eq!(
+                error.code(),
+                if field == 9 {
+                    tonic::Code::DataLoss
+                } else {
+                    tonic::Code::FailedPrecondition
+                }
+            );
+            assert_eq!(invalid, before);
+        }
+        assert_eq!(
+            decode_writer_task_checkpoint::<proto::Counter>(
+                &record,
+                "test.Counter",
+                "actor",
+                key,
+                &[]
+            )
+            .unwrap_err()
+            .code(),
+            tonic::Code::FailedPrecondition
+        );
     }
 }
