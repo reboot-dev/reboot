@@ -509,6 +509,11 @@ impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler fo
         request: proto::TransactionIncrementRequest,
     ) -> Result<reboot::runtime::TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
         self.trace.lock().unwrap().push("handler");
+        if request.amount == 4242 {
+            state.value += 1000;
+            return Err(reboot::declared_error_status(tonic::Code::Unknown, "legacy declared", "type.googleapis.com/tests.reboot.protoc.TransactionLimitExceeded", &proto::TransactionLimitExceeded { limit: 4242 }));
+        }
+        if request.amount == 4243 { return Err(tonic::Status::with_details(tonic::Code::Unknown, "malformed legacy", vec![0xff].into())); }
         if self.fail {
             return Err(tonic::Status::invalid_argument("handler rejected request"));
         }
@@ -1219,6 +1224,22 @@ async fn generated_fresh_non_factory_exclusive_transaction_replays_durably_after
     assert_eq!(replay.handler_calls.load(Ordering::SeqCst), 0);
     assert!(replay_recovery.lock().unwrap().is_empty(), "matching durable replay must be consumed");
     assert!(replay_trace.lock().unwrap().is_empty(), "replay must bypass participant admission and handler execution");
+}
+
+#[tokio::test]
+async fn generated_typed_transaction_hook_classifies_legacy_declared_and_rejects_malformed() {
+    use transaction_generated::TransactionCounterWritesMethodsTransactionHandler;
+    let handler = TransactionCounter { trace: Arc::new(std::sync::Mutex::new(Vec::new())), fail: false, downstream: None, final_state_override: None };
+    let mut headers = reboot::RebootHeaders::new("transaction-counter");
+    headers.transaction_ids = Some(vec![Uuid::new_v4()]);
+    headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.TransactionCounter".into());
+    headers.transaction_coordinator_state_ref = Some("root".into());
+    let context = reboot::runtime::TransactionContext::from_headers(headers, reboot::runtime::TransactionMode::Exclusive).unwrap();
+    let mut state = proto::TransactionCounter { value: 20 };
+    let error = handler.increment_typed_transaction_result(&context, &mut state, proto::TransactionIncrementRequest { amount: 4242 }).await.unwrap_err();
+    assert!(matches!(error, transaction_generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(ref error) if error.limit == 4242));
+    assert_eq!(state.value, 1020); // still private; adapter owns rollback, not this classifier
+    assert!(matches!(handler.increment_typed_transaction_result(&context, &mut state, proto::TransactionIncrementRequest { amount: 4243 }).await.unwrap_err(), transaction_generated::TransactionCounterWritesMethodsIncrementError::Grpc(_)));
 }
 
 #[tokio::test]

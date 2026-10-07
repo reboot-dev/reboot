@@ -163,6 +163,21 @@ impl ParticipantMetadata {
         })
     }
 
+    /// Rich declared errors carry retained read-only membership in status trailers.
+    pub(crate) fn attach_to_status(&self, status: &mut tonic::Status) {
+        let metadata = status.metadata_mut();
+        metadata.insert(
+            TRANSACTION_PARTICIPANTS_HEADER,
+            self.should_commit.to_str().unwrap().parse().unwrap(),
+        );
+        if let Some(value) = &self.read_only {
+            metadata.insert(
+                TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER,
+                value.to_str().unwrap().parse().unwrap(),
+            );
+        }
+    }
+
     fn should_commit_header_value(&self) -> HeaderValue {
         self.should_commit.clone()
     }

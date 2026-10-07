@@ -1,3 +1,43 @@
+## Candidate: bounded first-touch declared-error leaf rollback
+
+The supervised A→B path now rolls a method-declared error back to retained
+shared/read-only B ownership. Generated clients validate exact singleton read-only
+error membership, enlist it, and complete the counted outbound scope before
+exposing the typed error. A can catch and commit its own state. The default typed
+transaction hook preserves legacy Status handlers, but malformed/noncanonical
+rich statuses, unknown/system/transport errors and missing/invalid membership
+still doom the supervised root. This is a cooperative application contract,
+not malicious-registrar or malicious-handler isolation.
+
+Only existing distinct actors, active registered exclusive non-factory/non-idempotent
+fresh root, exact first-touch direct B incarnation and active reserved Watch are
+supported. Staged B effects, descendant calls, reentry, sibling fanout and previous
+membership are rejected. Private failed handler state/effect envelopes are never
+staged; this does **not** restore previously staged ancestor or sibling effects.
+There is no general RelinquishOwnership, nested rollback/retry, pre-Prepare crash
+recovery, migration fencing, or full Python parity claim.
+
+Real CXX/RocksDB acceptance covers both the typed handler and a distinct legacy
+Status-only handler using the generated default typed hook, through the actual
+adapter/client and durable catch+Commit/restart. It checks unchanged B, reader
+admission while a writer remains blocked until root Prepare, root Abort/deadline
+cleanup, and failclosed error/membership paths including independent wrong-type/
+right-reference and right-type/wrong-reference vectors. Unsupported outcomes may
+remain typed or System errors: the harness checks caught errors, empty membership
+and a doomed root, not an incorrectly mandatory Grpc variant. Unit acceptance
+covers exact-incarnation rejection, old guard/Watch against a live same-root
+replacement (queued and in-flight Commit), atomic downgrade/Prepare exclusion,
+all three wrong Prepare flag pairs, and Watch shutdown before/after downgrade,
+queued and active transfer.
+The failed method's private task envelope is discarded before staging; absence
+of Pending tasks is checked on all sidecars/restart, not proof of rollback of
+already-staged effects or exactly-once dispatch. No failed-method idempotent
+effects are staged (idempotent scopes are excluded). Three separately exercised
+causal RED controls detect early release, omitted enlistment and actual durable
+private-state leakage; finally restoration compares full source inventories.
+Final broad regression and independent review status belongs to
+`/tmp/leaf-rollback-checkpoint.md`; this section is candidate scope, not certification.
+
 ## Verified bounded slice: method-declared one-shot task results (2026-10-07)
 
 This verified slice extends the historical response-only task slices below;
@@ -35,19 +75,21 @@ partial.** See `TASK-DECLARED-RESULT-CANDIDATE.md` for current-source evidence.
   Abort discards staging. Equal CAS error winners are accepted only after canonical
   reload and exact terminal comparison; conflicting winners fail closed.
 
-## Next vertical: recoverable declared-error rollback of a first-touch leaf
+## Current candidate: recoverable declared-error rollback of a first-touch leaf
 
-**Missing; not implemented or certified.** Target A→B with existing distinct actors:
+**Bounded candidate; not yet fully certified.** Implemented A→B with existing distinct actors:
 B mutates private state and returns a method-declared error; A catches it and
 commits. B must discard its mutation/effects yet retain shared/read-only ownership
 until root Prepare, preserving state inferred from the error.
 
 Python sources: `aio/contexts.py:202–215`, `aio/state_managers.py:892–947,
-966–984,1044–1108,1179–1216`, `aio/stubs.py:716–755`. Rust currently dooms
-supervised error calls (`src/codegen.rs:1575`) and marks incomplete outbound scopes
-uncertain (`src/runtime.rs:200–209`). Existing atomic lease downgrade
-(`runtime.rs:1470–1491`) and read-only-aware Prepare release
-(`durable_participant.rs:1336–1345`) are foundations, not proof of rollback.
+966–984,1044–1108,1179–1216`, `aio/stubs.py:716–755`. Rust retains dooming for unsupported/uncertain errors; the candidate adds exact
+read-only error membership before generated scope completion in `codegen.rs` and
+`runtime.rs`. `StartedLocalTransaction::rollback_declared_leaf` atomically downgrades
+under the pending mutex; `RootHandlerGuard::rollback_declared_leaf` retains the
+reserved Watch obligation and encodes error metadata. The candidate tests live in
+`tests/fixtures/leaf_rollback_acceptance.rs`; final evidence remains checkpointed,
+not inferred from these implementation foundations.
 
 Required evidence: exact-incarnation rollback and atomic downgrade unit tests;
 generated adapter/client error-path read-only membership tests; real independent

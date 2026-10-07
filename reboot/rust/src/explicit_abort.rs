@@ -403,6 +403,123 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         .map_err(|error| Status::failed_precondition(error.to_string()))
     }
 
+    /// Consuming rollback keeps the exact reserved Watch obligation through return.
+    #[doc(hidden)]
+    pub async fn rollback_declared_leaf(self, mut status: Status) -> Result<Status, Status> {
+        self.context.validate_rollback_leaf_branch()?;
+        let (reservation, _) = self.inbound.as_ref().ok_or_else(|| {
+            Status::failed_precondition("rollback requires active reserved Watch")
+        })?;
+        reservation.validate_active()?;
+        let metadata = crate::successful_trailers::ParticipantMetadata::classified_single(
+            &self.coordinator_state_type_for_leaf(),
+            &self.context.headers().state_ref,
+            true,
+            true,
+        )
+        .map_err(|error| Status::failed_precondition(error.to_string()))?;
+        self.local
+            .as_ref()
+            .unwrap()
+            .rollback_declared_leaf(&self.context)
+            .await?;
+        reservation.validate_active()?;
+        metadata.attach_to_status(&mut status);
+        #[cfg(feature = "test-support")]
+        if let Ok(vector) = std::env::var("REBOOT_TEST_ROLLBACK_ERROR_VECTOR") {
+            use crate::successful_trailers::{
+                TRANSACTION_PARTICIPANTS_HEADER as WRITERS,
+                TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER as READERS,
+            };
+            match vector.as_str() {
+                "missing" => {
+                    status.metadata_mut().remove(READERS);
+                }
+                "malformed" => {
+                    status
+                        .metadata_mut()
+                        .insert(READERS, "not-json".parse().unwrap());
+                }
+                "writer" => {
+                    let value = status.metadata_mut().remove(READERS).unwrap();
+                    status.metadata_mut().insert(WRITERS, value);
+                }
+                "foreign" => {
+                    status.metadata_mut().insert(
+                        READERS,
+                        "{\"foreign.Actor\":[\"foreign\"]}".parse().unwrap(),
+                    );
+                }
+                "wrong-type" => {
+                    status
+                        .metadata_mut()
+                        .insert(READERS, "{\"foreign.Actor\":[\"target\"]}".parse().unwrap());
+                }
+                "malformed-rich" => {
+                    status = Status::with_details(
+                        tonic::Code::Unknown,
+                        "malformed rich",
+                        vec![0xff].into(),
+                    )
+                }
+                "unknown" => {
+                    status = crate::declared_error_status(
+                        tonic::Code::Unknown,
+                        "unknown declared",
+                        "type.googleapis.com/foreign.Unknown",
+                        &crate::database_proto::NotFound {},
+                    )
+                }
+                "wrong-ref" => {
+                    status.metadata_mut().insert(
+                        READERS,
+                        "{\"tests.reboot.protoc.TransactionCounter\":[\"wrong-ref\"]}"
+                            .parse()
+                            .unwrap(),
+                    );
+                }
+                "extra" => {
+                    status.metadata_mut().insert(
+                        READERS,
+                        "{\"tests.reboot.protoc.TransactionCounter\":[\"target\",\"extra\"]}"
+                            .parse()
+                            .unwrap(),
+                    );
+                }
+                "overlap" => {
+                    let value = status.metadata().get(READERS).unwrap().clone();
+                    status.metadata_mut().insert(WRITERS, value);
+                }
+                "multiple" | "conflict" => {
+                    use prost::Message;
+                    let mut rich = crate::declared_error_details(&status).unwrap().unwrap();
+                    if vector == "multiple" {
+                        rich.details.push(rich.details[0].clone());
+                    } else {
+                        rich.code = tonic::Code::InvalidArgument as i32;
+                    }
+                    status = Status::with_details(
+                        tonic::Code::Unknown,
+                        rich.message.clone(),
+                        rich.encode_to_vec().into(),
+                    );
+                }
+                "system" => {
+                    status = crate::SystemAborted::NotFound(crate::database_proto::NotFound {})
+                        .into_status("system after rollback")
+                }
+                "transport" => status = Status::unavailable("transport after rollback"),
+                _ => return Err(Status::invalid_argument("unknown rollback test vector")),
+            }
+        }
+        self.finish_inbound()?;
+        Ok(status)
+    }
+
+    fn coordinator_state_type_for_leaf(&self) -> String {
+        self.local.as_ref().unwrap().actor_state_type().to_owned()
+    }
+
     pub fn cancellation_owned(&self) -> bool {
         self.reservation.is_some()
     }

@@ -497,6 +497,9 @@ impl TransactionContext {
             )));
         }
         self.supervised_tree = true;
+        if self.is_fresh_root() {
+            self.enable_read_only_aware();
+        }
         Ok(())
     }
 
@@ -624,6 +627,80 @@ impl TransactionContext {
             completed: false,
             collection: self.returned_participants.clone(),
         })
+    }
+
+    /// Validate error-path membership before the generated scope completes.
+    #[doc(hidden)]
+    pub fn enlist_rolled_back_leaf(
+        &self,
+        metadata: &tonic::metadata::MetadataMap,
+        state_type: &str,
+        state_ref: &str,
+    ) -> Result<(), Status> {
+        if !self.supervised_tree
+            || !self.is_fresh_root()
+            || self.mode != TransactionMode::Exclusive
+            || self.headers.idempotency_key.is_some()
+            || !self.headers.coordinator_read_only_aware
+            || self.doomed_status().is_some()
+        {
+            return Err(Status::failed_precondition(
+                "recoverable error requires supervised fresh root",
+            ));
+        }
+        let returned = crate::successful_trailers::ReturnedParticipants::from_metadata(metadata)
+            .map_err(|error| Status::failed_precondition(error.to_string()))?;
+        let entries = returned.participants();
+        if entries.len() != 1
+            || !entries[0].read_only
+            || entries[0].target.state_type != state_type
+            || entries[0].target.state_ref != state_ref
+        {
+            return Err(Status::failed_precondition(
+                "error must retain exact read-only leaf membership",
+            ));
+        }
+        let collection = self.returned_participants.as_ref().unwrap();
+        let mut ledger = collection
+            .lock()
+            .expect("returned participant mutex poisoned");
+        if ledger.sealed
+            || ledger.active != 1
+            || ledger.membership_uncertain
+            || ledger.late_enlistment
+            || !ledger.participants.is_empty()
+        {
+            return Err(Status::failed_precondition(
+                "recoverable error requires first outbound leaf",
+            ));
+        }
+        ledger.participants.insert(entries[0].target.clone(), true);
+        Ok(())
+    }
+
+    pub(crate) fn validate_rollback_leaf_branch(&self) -> Result<(), Status> {
+        if !self.supervised_tree
+            || self.transaction_ids().len() != 2
+            || !self.headers.coordinator_read_only_aware
+            || self.doomed_status().is_some()
+        {
+            return Err(Status::failed_precondition(
+                "rollback excludes unsupported branches",
+            ));
+        }
+        let ledger = self.returned_participants.as_ref().unwrap().lock().unwrap();
+        if ledger.sealed
+            || ledger.active != 0
+            || ledger.dispatched
+            || ledger.membership_uncertain
+            || ledger.late_enlistment
+            || !ledger.participants.is_empty()
+        {
+            return Err(Status::failed_precondition(
+                "rollback excludes descendants and prior effects",
+            ));
+        }
+        Ok(())
     }
 
     pub(crate) fn seal_explicit_abort(

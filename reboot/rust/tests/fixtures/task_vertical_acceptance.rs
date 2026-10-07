@@ -9,6 +9,7 @@ include!("remote_leaf_uncertainty_acceptance.rs");
 include!("root_handler_cancellation_acceptance.rs");
 include!("live_root_abandonment_acceptance.rs");
 include!("supervised_tree_acceptance.rs");
+include!("leaf_rollback_acceptance.rs");
 include!("tree_participant_task_acceptance.rs");
 include!("tree_declared_task_acceptance.rs");
 include!("task_wait_acceptance.rs");
